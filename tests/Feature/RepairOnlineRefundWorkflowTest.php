@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\PosRefund;
+use App\Models\PosPaymentLine;
 use App\Models\PosTransaction;
 use App\Models\ProcurementSettings;
 use App\Models\ShopOwner;
@@ -436,6 +437,80 @@ class RepairOnlineRefundWorkflowTest extends TestCase
         $response->assertOk();
         $response->assertJsonPath('data.0.media.0', 'https://example.com/evidence-photo.jpg');
         $response->assertJsonPath('data.0.media.1', 'https://example.com/evidence-video.mp4');
+    }
+
+    #[Test]
+    public function shop_owner_repair_refund_list_marks_mixed_payment_when_gateway_and_manual_tenders_exist_without_legs(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $customer = User::factory()->create();
+
+        $source = PosTransaction::create([
+            'transaction_no' => 'POS-TDD-ONLINE-RFD-MIX-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 58,
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'due_type' => 'full',
+            'subtotal' => 500,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 500,
+            'paid_amount' => 500,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        PosPaymentLine::create([
+            'pos_transaction_id' => $source->id,
+            'tender_type' => 'paymongo_wallet',
+            'provider_reference' => 'pmw_mix_owner_list_001',
+            'amount' => 200,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        PosPaymentLine::create([
+            'pos_transaction_id' => $source->id,
+            'tender_type' => 'cash',
+            'amount' => 300,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        PosRefund::create([
+            'refund_no' => 'RFD-TDD-ONLINE-RFD-MIX-001',
+            'shop_owner_id' => $shopOwner->id,
+            'source_transaction_id' => $source->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 58,
+            'workflow_source' => 'online_myrepair',
+            'request_type' => 'full',
+            'requested_amount' => 500,
+            'reason_code' => 'mixed_payment_refund',
+            'reason_notes' => 'Mixed payment refund test for owner list classification.',
+            'preferred_return_channel' => 'gcash',
+            'preferred_return_account_name' => 'Juan Dela Cruz',
+            'preferred_return_account_ref' => '09171234567',
+            'customer_payout_consent' => true,
+            'status' => 'requested',
+            'finance_status' => 'pending',
+            'shop_owner_status' => 'pending',
+            'repairer_status' => 'pending',
+            'requested_by' => $customer->id,
+            'requested_at' => now(),
+        ]);
+
+        $response = $this->actingAs($shopOwner, 'shop_owner')
+            ->getJson('/api/shop-owner/repair-refunds');
+
+        $response->assertOk();
+        $response->assertJsonPath('data.0.refundPaymentType', 'mixed');
+        $response->assertJsonPath('data.0.preferredReturnChannel', 'gcash');
+        $response->assertJsonPath('data.0.preferredReturnAccountName', 'Juan Dela Cruz');
+        $response->assertJsonPath('data.0.preferredReturnAccountRef', '09171234567');
+        $response->assertJsonPath('data.0.customerPayoutConsent', true);
     }
 
     #[Test]

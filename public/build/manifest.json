@@ -1,75 +1,75 @@
 {
-  "_AppLayout-MPzLFJgu.js": {
-    "file": "assets/AppLayout-MPzLFJgu.js",
+  "_AppLayout-yEmTqk5t.js": {
+    "file": "assets/AppLayout-yEmTqk5t.js",
     "name": "AppLayout",
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_NotificationCenter-CYTKKjod.js",
-      "_SuperAdminDropdown-BckEu07k.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
+      "_Backdrop-4TobMvSA.js",
+      "_NotificationCenter-CEgV4d_s.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
       "_index-BT6R6wLV.js"
     ]
   },
-  "_AppLayout_ERP-C2jD7vlg.js": {
-    "file": "assets/AppLayout_ERP-C2jD7vlg.js",
+  "_AppLayout_ERP-CTcucWnF.js": {
+    "file": "assets/AppLayout_ERP-CTcucWnF.js",
     "name": "AppLayout_ERP",
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
-      "_NotificationBell-BQeerrdl.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
+      "_NotificationBell-DPAaCqst.js",
       "_index-BwxT_gyP.js",
       "_index-BT6R6wLV.js"
     ]
   },
-  "_AppLayout_shopOwner-BIGEahgZ.js": {
-    "file": "assets/AppLayout_shopOwner-BIGEahgZ.js",
+  "_AppLayout_shopOwner-CAYqeuKv.js": {
+    "file": "assets/AppLayout_shopOwner-CAYqeuKv.js",
     "name": "AppLayout_shopOwner",
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
-      "_NotificationBell-BQeerrdl.js",
+      "_Backdrop-4TobMvSA.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
+      "_NotificationBell-DPAaCqst.js",
       "_index-BwxT_gyP.js",
       "_index-BT6R6wLV.js"
     ]
   },
-  "_Backdrop-Cs0zFvxC.js": {
-    "file": "assets/Backdrop-Cs0zFvxC.js",
+  "_Backdrop-4TobMvSA.js": {
+    "file": "assets/Backdrop-4TobMvSA.js",
     "name": "Backdrop",
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js"
     ]
   },
-  "_Badge-BMwafbcZ.js": {
-    "file": "assets/Badge-BMwafbcZ.js",
+  "_Badge-CBac1Mee.js": {
+    "file": "assets/Badge-CBac1Mee.js",
     "name": "Badge",
     "imports": [
       "resources/js/app.jsx"
     ]
   },
-  "_BarChartOne-Xk5hoz9m.js": {
-    "file": "assets/BarChartOne-Xk5hoz9m.js",
+  "_BarChartOne-c6c_WCba.js": {
+    "file": "assets/BarChartOne-c6c_WCba.js",
     "name": "BarChartOne",
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js"
     ]
   },
-  "_Button-PpVdiZYL.js": {
-    "file": "assets/Button-PpVdiZYL.js",
+  "_Button-BeDV9Qym.js": {
+    "file": "assets/Button-BeDV9Qym.js",
     "name": "Button",
     "imports": [
       "resources/js/app.jsx"
     ]
   },
-  "_ColorVariantManager-34pmP95A.js": {
-    "file": "assets/ColorVariantManager-34pmP95A.js",
+  "_ColorVariantManager-NAk1lR5o.js": {
+    "file": "assets/ColorVariantManager-NAk1lR5o.js",
     "name": "ColorVariantManager",
     "imports": [
       "resources/js/app.jsx",
@@ -77,51 +77,51 @@
       "_vendor-sweetalert2-BooRRB_8.js"
     ]
   },
-  "_ComponentCard--Dp6ZgGD.js": {
-    "file": "assets/ComponentCard--Dp6ZgGD.js",
+  "_ComponentCard-DOsKl-Ti.js": {
+    "file": "assets/ComponentCard-DOsKl-Ti.js",
     "name": "ComponentCard",
     "imports": [
       "resources/js/app.jsx"
     ]
   },
-  "_DropZone-CpPFKiIU.js": {
-    "file": "assets/DropZone-CpPFKiIU.js",
+  "_DropZone-D-xFNQql.js": {
+    "file": "assets/DropZone-D-xFNQql.js",
     "name": "DropZone",
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js"
     ]
   },
-  "_ErrorModal-nHbAjcTm.js": {
-    "file": "assets/ErrorModal-nHbAjcTm.js",
+  "_ErrorModal-CoU9Fk0a.js": {
+    "file": "assets/ErrorModal-CoU9Fk0a.js",
     "name": "ErrorModal",
     "imports": [
       "resources/js/app.jsx"
     ]
   },
-  "_Form-DuQ3ISD2.js": {
-    "file": "assets/Form-DuQ3ISD2.js",
+  "_Form-DYyfZTMq.js": {
+    "file": "assets/Form-DYyfZTMq.js",
     "name": "Form",
     "imports": [
       "resources/js/app.jsx"
     ]
   },
-  "_InputField-CrKjBl1V.js": {
-    "file": "assets/InputField-CrKjBl1V.js",
+  "_InputField-CxlmTzMD.js": {
+    "file": "assets/InputField-CxlmTzMD.js",
     "name": "InputField",
     "imports": [
       "resources/js/app.jsx"
     ]
   },
-  "_Label-6ykxv9Vp.js": {
-    "file": "assets/Label-6ykxv9Vp.js",
+  "_Label-B2ANprFJ.js": {
+    "file": "assets/Label-B2ANprFJ.js",
     "name": "Label",
     "imports": [
       "resources/js/app.jsx"
     ]
   },
-  "_Navigation-C3Gm4Ylt.js": {
-    "file": "assets/Navigation-C3Gm4Ylt.js",
+  "_Navigation-CWq19YRc.js": {
+    "file": "assets/Navigation-CWq19YRc.js",
     "name": "Navigation",
     "isDynamicEntry": true,
     "imports": [
@@ -129,16 +129,16 @@
       "_vendor-apexcharts-C5L_vV5G.js",
       "resources/js/Pages/UserSide/Shared/UserModal.tsx",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js"
+      "_NotificationBell-DPAaCqst.js"
     ]
   },
-  "_NotificationBell-BQeerrdl.js": {
-    "file": "assets/NotificationBell-BQeerrdl.js",
+  "_NotificationBell-DPAaCqst.js": {
+    "file": "assets/NotificationBell-DPAaCqst.js",
     "name": "NotificationBell",
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_useNotifications-K5qepJ2D.js",
+      "_useNotifications-BKJadVmo.js",
       "_vendor-sweetalert2-BooRRB_8.js",
       "_circle-alert-CKOW_eQ9.js",
       "_trash-2-BIosGwPU.js",
@@ -150,75 +150,75 @@
       "_x-DKbsWLE6.js"
     ]
   },
-  "_NotificationCenter-CYTKKjod.js": {
-    "file": "assets/NotificationCenter-CYTKKjod.js",
+  "_NotificationCenter-CEgV4d_s.js": {
+    "file": "assets/NotificationCenter-CEgV4d_s.js",
     "name": "NotificationCenter",
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_useNotifications-K5qepJ2D.js",
+      "_useNotifications-BKJadVmo.js",
       "_XMarkIcon-DHhaSAmC.js"
     ]
   },
-  "_PageBreadCrumb-DIwk15ns.js": {
-    "file": "assets/PageBreadCrumb-DIwk15ns.js",
+  "_PageBreadCrumb-Bn0e0JeA.js": {
+    "file": "assets/PageBreadCrumb-Bn0e0JeA.js",
     "name": "PageBreadCrumb",
     "imports": [
       "resources/js/app.jsx"
     ]
   },
-  "_Radio-DYxv_fjv.js": {
-    "file": "assets/Radio-DYxv_fjv.js",
+  "_Radio-ChiwiDSh.js": {
+    "file": "assets/Radio-ChiwiDSh.js",
     "name": "Radio",
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js"
     ]
   },
-  "_RecentOrders-DN4c_8ks.js": {
-    "file": "assets/RecentOrders-DN4c_8ks.js",
+  "_RecentOrders-BaSAqD8z.js": {
+    "file": "assets/RecentOrders-BaSAqD8z.js",
     "name": "RecentOrders",
     "imports": [
       "resources/js/app.jsx",
       "_index-BT6R6wLV.js",
-      "_Badge-BMwafbcZ.js",
+      "_Badge-CBac1Mee.js",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Backdrop-Cs0zFvxC.js",
+      "_Backdrop-4TobMvSA.js",
       "_index-B_JH6AFf.js",
-      "_index-D6_Amy6c.js"
+      "_index-DqYjjb-0.js"
     ]
   },
-  "_ReportShopModal-CcULd9v7.js": {
-    "file": "assets/ReportShopModal-CcULd9v7.js",
+  "_ReportShopModal-W_kPFGyo.js": {
+    "file": "assets/ReportShopModal-W_kPFGyo.js",
     "name": "ReportShopModal",
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js"
     ]
   },
-  "_ShopOwnerDropdown-2wIBz4jG.js": {
-    "file": "assets/ShopOwnerDropdown-2wIBz4jG.js",
+  "_ShopOwnerDropdown-BKUSHE2l.js": {
+    "file": "assets/ShopOwnerDropdown-BKUSHE2l.js",
     "name": "ShopOwnerDropdown",
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Backdrop-Cs0zFvxC.js",
+      "_Backdrop-4TobMvSA.js",
       "_vendor-sweetalert2-BooRRB_8.js"
     ]
   },
-  "_SuperAdminDropdown-BckEu07k.js": {
-    "file": "assets/SuperAdminDropdown-BckEu07k.js",
+  "_SuperAdminDropdown-BM00nUu6.js": {
+    "file": "assets/SuperAdminDropdown-BM00nUu6.js",
     "name": "SuperAdminDropdown",
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_index-BwxT_gyP.js",
-      "_Backdrop-Cs0zFvxC.js",
+      "_Backdrop-4TobMvSA.js",
       "_vendor-sweetalert2-BooRRB_8.js"
     ]
   },
-  "_Virtual3DShowroom-7fk5lcdO.js": {
-    "file": "assets/Virtual3DShowroom-7fk5lcdO.js",
+  "_Virtual3DShowroom-RVjCqCHz.js": {
+    "file": "assets/Virtual3DShowroom-RVjCqCHz.js",
     "name": "Virtual3DShowroom",
     "imports": [
       "resources/js/app.jsx",
@@ -239,8 +239,8 @@
       "_createLucideIcon-Ck1PURyq.js"
     ]
   },
-  "_backNavigation-CXH1AQ83.js": {
-    "file": "assets/backNavigation-CXH1AQ83.js",
+  "_backNavigation-D9l20icM.js": {
+    "file": "assets/backNavigation-D9l20icM.js",
     "name": "backNavigation",
     "imports": [
       "resources/js/app.jsx"
@@ -288,14 +288,6 @@
       "_vendor-apexcharts-C5L_vV5G.js"
     ]
   },
-  "_index-8JOFVQGS.js": {
-    "file": "assets/index-8JOFVQGS.js",
-    "name": "index",
-    "imports": [
-      "resources/js/app.jsx",
-      "_vendor-apexcharts-C5L_vV5G.js"
-    ]
-  },
   "_index-BT6R6wLV.js": {
     "file": "assets/index-BT6R6wLV.js",
     "name": "index",
@@ -311,15 +303,23 @@
     "file": "assets/index-BwxT_gyP.js",
     "name": "index"
   },
-  "_index-D6_Amy6c.js": {
-    "file": "assets/index-D6_Amy6c.js",
+  "_index-DqYjjb-0.js": {
+    "file": "assets/index-DqYjjb-0.js",
     "name": "index",
     "imports": [
       "resources/js/app.jsx"
     ]
   },
-  "_inventoryAPI-BbzmsTbf.js": {
-    "file": "assets/inventoryAPI-BbzmsTbf.js",
+  "_index-Y8om0FOp.js": {
+    "file": "assets/index-Y8om0FOp.js",
+    "name": "index",
+    "imports": [
+      "resources/js/app.jsx",
+      "_vendor-apexcharts-C5L_vV5G.js"
+    ]
+  },
+  "_inventoryAPI-DM_91dts.js": {
+    "file": "assets/inventoryAPI-DM_91dts.js",
     "name": "inventoryAPI",
     "imports": [
       "resources/js/app.jsx"
@@ -337,8 +337,8 @@
     "file": "assets/posPaymentValidation-DYPB9fDP.js",
     "name": "posPaymentValidation"
   },
-  "_purchaseRequestApi-BREcJ6G3.js": {
-    "file": "assets/purchaseRequestApi-BREcJ6G3.js",
+  "_purchaseRequestApi-CwS6zLFN.js": {
+    "file": "assets/purchaseRequestApi-CwS6zLFN.js",
     "name": "purchaseRequestApi",
     "imports": [
       "resources/js/app.jsx"
@@ -348,8 +348,8 @@
     "file": "assets/refundWorkflow-3Q9FPwQf.js",
     "name": "refundWorkflow"
   },
-  "_repairMaterialsApi-CsFlQsey.js": {
-    "file": "assets/repairMaterialsApi-CsFlQsey.js",
+  "_repairMaterialsApi-DH5qNCPP.js": {
+    "file": "assets/repairMaterialsApi-DH5qNCPP.js",
     "name": "repairMaterialsApi",
     "imports": [
       "resources/js/app.jsx"
@@ -384,8 +384,8 @@
       "_createLucideIcon-Ck1PURyq.js"
     ]
   },
-  "_supplierApi-nJ5boo5N.js": {
-    "file": "assets/supplierApi-nJ5boo5N.js",
+  "_supplierApi-BElAjXpG.js": {
+    "file": "assets/supplierApi-BElAjXpG.js",
     "name": "supplierApi",
     "imports": [
       "resources/js/app.jsx"
@@ -405,35 +405,35 @@
       "_vendor-apexcharts-C5L_vV5G.js"
     ]
   },
-  "_useFinanceQueries-CWvb3GrQ.js": {
-    "file": "assets/useFinanceQueries-CWvb3GrQ.js",
+  "_useFinanceQueries-J-12e6UP.js": {
+    "file": "assets/useFinanceQueries-J-12e6UP.js",
     "name": "useFinanceQueries",
     "imports": [
-      "_useQuery-IOiCMpUa.js",
+      "_useQuery-LX-Y0MsX.js",
       "resources/js/app.jsx",
-      "_useMutation-BuY45ZZW.js",
+      "_useMutation-ArENuc0o.js",
       "_vendor-apexcharts-C5L_vV5G.js"
     ]
   },
-  "_useMutation-BuY45ZZW.js": {
-    "file": "assets/useMutation-BuY45ZZW.js",
+  "_useMutation-ArENuc0o.js": {
+    "file": "assets/useMutation-ArENuc0o.js",
     "name": "useMutation",
     "imports": [
       "_vendor-apexcharts-C5L_vV5G.js",
       "resources/js/app.jsx"
     ]
   },
-  "_useNotifications-K5qepJ2D.js": {
-    "file": "assets/useNotifications-K5qepJ2D.js",
+  "_useNotifications-BKJadVmo.js": {
+    "file": "assets/useNotifications-BKJadVmo.js",
     "name": "useNotifications",
     "imports": [
-      "_useQuery-IOiCMpUa.js",
+      "_useQuery-LX-Y0MsX.js",
       "resources/js/app.jsx",
-      "_useMutation-BuY45ZZW.js"
+      "_useMutation-ArENuc0o.js"
     ]
   },
-  "_useQuery-IOiCMpUa.js": {
-    "file": "assets/useQuery-IOiCMpUa.js",
+  "_useQuery-LX-Y0MsX.js": {
+    "file": "assets/useQuery-LX-Y0MsX.js",
     "name": "useQuery",
     "imports": [
       "resources/js/app.jsx",
@@ -472,8 +472,8 @@
     "file": "assets/vendor-three-core-Dvt5Ztbx.js",
     "name": "vendor-three-core"
   },
-  "_vi.bdSIJ99Y-DN4PHNG-.js": {
-    "file": "assets/vi.bdSIJ99Y-DN4PHNG-.js",
+  "_vi.bdSIJ99Y-BbAm0X7N.js": {
+    "file": "assets/vi.bdSIJ99Y-BbAm0X7N.js",
     "name": "vi.bdSIJ99Y",
     "imports": [
       "_vendor-apexcharts-C5L_vV5G.js",
@@ -483,8 +483,8 @@
       "node_modules/.pnpm/magic-string@0.30.21/node_modules/magic-string/dist/magic-string.es.mjs"
     ]
   },
-  "_workflowFeedback-B8BGJiD6.js": {
-    "file": "assets/workflowFeedback-B8BGJiD6.js",
+  "_workflowFeedback-rTmU6sUv.js": {
+    "file": "assets/workflowFeedback-rTmU6sUv.js",
     "name": "workflowFeedback",
     "imports": [
       "resources/js/app.jsx",
@@ -524,7 +524,7 @@
     "isDynamicEntry": true
   },
   "resources/css/app.css": {
-    "file": "assets/app-n4Iy8HEp.css",
+    "file": "assets/app-D4xBb0t4.css",
     "src": "resources/css/app.css",
     "isEntry": true,
     "name": "app",
@@ -533,7 +533,7 @@
     ]
   },
   "resources/js/Pages/Auth/AcceptInvitation.tsx": {
-    "file": "assets/AcceptInvitation-CqflDGuY.js",
+    "file": "assets/AcceptInvitation-CHsovuZx.js",
     "name": "AcceptInvitation",
     "src": "resources/js/Pages/Auth/AcceptInvitation.tsx",
     "isDynamicEntry": true,
@@ -542,11 +542,11 @@
       "_vendor-apexcharts-C5L_vV5G.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/Auth/InvitationAlreadyAccepted.tsx": {
-    "file": "assets/InvitationAlreadyAccepted-Cwy7l7s1.js",
+    "file": "assets/InvitationAlreadyAccepted-DJNC4EYU.js",
     "name": "InvitationAlreadyAccepted",
     "src": "resources/js/Pages/Auth/InvitationAlreadyAccepted.tsx",
     "isDynamicEntry": true,
@@ -555,11 +555,11 @@
       "_vendor-apexcharts-C5L_vV5G.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/Auth/InvitationExpired.tsx": {
-    "file": "assets/InvitationExpired-Cs--J8oe.js",
+    "file": "assets/InvitationExpired-CMlYEUrP.js",
     "name": "InvitationExpired",
     "src": "resources/js/Pages/Auth/InvitationExpired.tsx",
     "isDynamicEntry": true,
@@ -568,11 +568,11 @@
       "_vendor-apexcharts-C5L_vV5G.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/Auth/InvitationInvalid.tsx": {
-    "file": "assets/InvitationInvalid-CRWG7iY3.js",
+    "file": "assets/InvitationInvalid-BlSwZPIg.js",
     "name": "InvitationInvalid",
     "src": "resources/js/Pages/Auth/InvitationInvalid.tsx",
     "isDynamicEntry": true,
@@ -581,25 +581,25 @@
       "_vendor-apexcharts-C5L_vV5G.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/Auth/PendingApproval.tsx": {
-    "file": "assets/PendingApproval-BYa8sR9C.js",
+    "file": "assets/PendingApproval-Bs1zAmfM.js",
     "name": "PendingApproval",
     "src": "resources/js/Pages/Auth/PendingApproval.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Navigation-C3Gm4Ylt.js",
+      "_Navigation-CWq19YRc.js",
       "resources/js/Pages/UserSide/Shared/UserModal.tsx",
       "_vendor-sweetalert2-BooRRB_8.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -610,25 +610,25 @@
       "_x-DKbsWLE6.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/Auth/SetupPassword.tsx": {
-    "file": "assets/SetupPassword-CpC2Qngu.js",
+    "file": "assets/SetupPassword-CXSNKPqa.js",
     "name": "SetupPassword",
     "src": "resources/js/Pages/Auth/SetupPassword.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Navigation-C3Gm4Ylt.js",
+      "_Navigation-CWq19YRc.js",
       "resources/js/Pages/UserSide/Shared/UserModal.tsx",
       "_vendor-sweetalert2-BooRRB_8.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -639,25 +639,25 @@
       "_x-DKbsWLE6.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/Auth/VerifyEmail.tsx": {
-    "file": "assets/VerifyEmail-TMdgdkb7.js",
+    "file": "assets/VerifyEmail-DNZbj-9G.js",
     "name": "VerifyEmail",
     "src": "resources/js/Pages/Auth/VerifyEmail.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Navigation-C3Gm4Ylt.js",
+      "_Navigation-CWq19YRc.js",
       "resources/js/Pages/UserSide/Shared/UserModal.tsx",
       "_vendor-sweetalert2-BooRRB_8.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -668,11 +668,11 @@
       "_x-DKbsWLE6.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/AuthPages/AuthPageLayout.tsx": {
-    "file": "assets/AuthPageLayout-CiTMAMpA.js",
+    "file": "assets/AuthPageLayout-mWjDmPFw.js",
     "name": "AuthPageLayout",
     "src": "resources/js/Pages/AuthPages/AuthPageLayout.tsx",
     "isDynamicEntry": true,
@@ -681,11 +681,11 @@
       "_vendor-apexcharts-C5L_vV5G.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/AuthPages/SignIn.tsx": {
-    "file": "assets/SignIn-tAOsoBV7.js",
+    "file": "assets/SignIn-0F_kUELl.js",
     "name": "SignIn",
     "src": "resources/js/Pages/AuthPages/SignIn.tsx",
     "isDynamicEntry": true,
@@ -695,11 +695,11 @@
       "_vendor-apexcharts-C5L_vV5G.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/AuthPages/SignUp.tsx": {
-    "file": "assets/SignUp-BKnPGn8D.js",
+    "file": "assets/SignUp-BM7hjbxI.js",
     "name": "SignUp",
     "src": "resources/js/Pages/AuthPages/SignUp.tsx",
     "isDynamicEntry": true,
@@ -709,136 +709,136 @@
       "_vendor-apexcharts-C5L_vV5G.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/Blank.tsx": {
-    "file": "assets/Blank-CU86C02V.js",
+    "file": "assets/Blank-DPsFR3ZH.js",
     "name": "Blank",
     "src": "resources/js/Pages/Blank.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
-      "_AppLayout-MPzLFJgu.js",
-      "_PageBreadCrumb-DIwk15ns.js",
+      "_AppLayout-yEmTqk5t.js",
+      "_PageBreadCrumb-Bn0e0JeA.js",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_NotificationCenter-CYTKKjod.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_Backdrop-4TobMvSA.js",
+      "_NotificationCenter-CEgV4d_s.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_XMarkIcon-DHhaSAmC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/Charts/BarChart.tsx": {
-    "file": "assets/BarChart-DhyX5JJ1.js",
+    "file": "assets/BarChart-CHvC_xzF.js",
     "name": "BarChart",
     "src": "resources/js/Pages/Charts/BarChart.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
-      "_AppLayout-MPzLFJgu.js",
-      "_PageBreadCrumb-DIwk15ns.js",
-      "_ComponentCard--Dp6ZgGD.js",
-      "_BarChartOne-Xk5hoz9m.js",
+      "_AppLayout-yEmTqk5t.js",
+      "_PageBreadCrumb-Bn0e0JeA.js",
+      "_ComponentCard-DOsKl-Ti.js",
+      "_BarChartOne-c6c_WCba.js",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_NotificationCenter-CYTKKjod.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_Backdrop-4TobMvSA.js",
+      "_NotificationCenter-CEgV4d_s.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_XMarkIcon-DHhaSAmC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/Charts/LineChart.tsx": {
-    "file": "assets/LineChart-CjFc-yzp.js",
+    "file": "assets/LineChart-Blun4KSq.js",
     "name": "LineChart",
     "src": "resources/js/Pages/Charts/LineChart.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
-      "_AppLayout-MPzLFJgu.js",
-      "_PageBreadCrumb-DIwk15ns.js",
-      "_ComponentCard--Dp6ZgGD.js",
+      "_AppLayout-yEmTqk5t.js",
+      "_PageBreadCrumb-Bn0e0JeA.js",
+      "_ComponentCard-DOsKl-Ti.js",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_NotificationCenter-CYTKKjod.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_Backdrop-4TobMvSA.js",
+      "_NotificationCenter-CEgV4d_s.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_XMarkIcon-DHhaSAmC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/Dashboard/Home.tsx": {
-    "file": "assets/Home-CrO0d7Yl.js",
+    "file": "assets/Home-CBQfopPv.js",
     "name": "Home",
     "src": "resources/js/Pages/Dashboard/Home.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
-      "_AppLayout-MPzLFJgu.js",
-      "_RecentOrders-DN4c_8ks.js",
+      "_AppLayout-yEmTqk5t.js",
+      "_RecentOrders-BaSAqD8z.js",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_NotificationCenter-CYTKKjod.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_Backdrop-4TobMvSA.js",
+      "_NotificationCenter-CEgV4d_s.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_XMarkIcon-DHhaSAmC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
       "_index-BT6R6wLV.js",
-      "_Badge-BMwafbcZ.js",
+      "_Badge-CBac1Mee.js",
       "_index-B_JH6AFf.js",
-      "_index-D6_Amy6c.js"
+      "_index-DqYjjb-0.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/CRM/CRMDashboard.tsx": {
-    "file": "assets/CRMDashboard-C-9I0igm.js",
+    "file": "assets/CRMDashboard-e_3ebQCS.js",
     "name": "CRMDashboard",
     "src": "resources/js/Pages/ERP/CRM/CRMDashboard.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_AppLayout_ERP-CTcucWnF.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -850,26 +850,26 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/CRM/CustomerReviews.tsx": {
-    "file": "assets/CustomerReviews-C7aY5z0Z.js",
+    "file": "assets/CustomerReviews-DeG-qbY1.js",
     "name": "CustomerReviews",
     "src": "resources/js/Pages/ERP/CRM/CustomerReviews.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_AppLayout_ERP-CTcucWnF.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -881,26 +881,26 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/CRM/Customers.tsx": {
-    "file": "assets/Customers-mDkN1rCN.js",
+    "file": "assets/Customers-CwmZgF_d.js",
     "name": "Customers",
     "src": "resources/js/Pages/ERP/CRM/Customers.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
+      "_AppLayout_ERP-CTcucWnF.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -912,26 +912,26 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/CRM/customerSupport.tsx": {
-    "file": "assets/customerSupport-DZKL2k2z.js",
+    "file": "assets/customerSupport-DvJbNys_.js",
     "name": "customerSupport",
     "src": "resources/js/Pages/ERP/CRM/customerSupport.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
-      "_AppLayout_ERP-C2jD7vlg.js",
+      "_AppLayout_ERP-CTcucWnF.js",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -943,59 +943,59 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/Common/GlobalSearch.tsx": {
-    "file": "assets/GlobalSearch-CSBD7bIB.js",
+    "file": "assets/GlobalSearch-DS_lLiG1.js",
     "name": "GlobalSearch",
     "src": "resources/js/Pages/ERP/Common/GlobalSearch.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_useQuery-IOiCMpUa.js",
+      "_useQuery-LX-Y0MsX.js",
       "_XMarkIcon-DHhaSAmC.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/Common/NotificationCenter.tsx": {
-    "file": "assets/NotificationCenter-C-fQcoyg.js",
+    "file": "assets/NotificationCenter-C6ondyrn.js",
     "name": "NotificationCenter",
     "src": "resources/js/Pages/ERP/Common/NotificationCenter.tsx",
     "isDynamicEntry": true,
     "imports": [
-      "_NotificationCenter-CYTKKjod.js",
+      "_NotificationCenter-CEgV4d_s.js",
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_XMarkIcon-DHhaSAmC.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/Finance/ApprovalWorkflow.tsx": {
-    "file": "assets/ApprovalWorkflow-CfccFYkn.js",
+    "file": "assets/ApprovalWorkflow-Bjk4vWcr.js",
     "name": "ApprovalWorkflow",
     "src": "resources/js/Pages/ERP/Finance/ApprovalWorkflow.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
-      "_AppLayout_ERP-C2jD7vlg.js",
+      "_AppLayout_ERP-CTcucWnF.js",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -1007,26 +1007,26 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/Finance/Dashboard.tsx": {
-    "file": "assets/Dashboard-DWECrHxS.js",
+    "file": "assets/Dashboard-C8_Q0cE9.js",
     "name": "Dashboard",
     "src": "resources/js/Pages/ERP/Finance/Dashboard.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
-      "_AppLayout_ERP-C2jD7vlg.js",
+      "_AppLayout_ERP-CTcucWnF.js",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -1038,11 +1038,11 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/Finance/Expense.tsx": {
-    "file": "assets/Expense-LO2p1myT.js",
+    "file": "assets/Expense-Hm43GFQf.js",
     "name": "Expense",
     "src": "resources/js/Pages/ERP/Finance/Expense.tsx",
     "isDynamicEntry": true,
@@ -1050,24 +1050,24 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_useFinanceQueries-CWvb3GrQ.js",
+      "_useFinanceQueries-J-12e6UP.js",
       "resources/js/Pages/ERP/Finance/InlineApprovalUtils.tsx",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js"
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/Finance/Finance.tsx": {
-    "file": "assets/Finance-CQS6kyoY.js",
+    "file": "assets/Finance-ZBQecjrZ.js",
     "name": "Finance",
     "src": "resources/js/Pages/ERP/Finance/Finance.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
+      "_AppLayout_ERP-CTcucWnF.js",
       "_permissions-6V6Yr4Dn.js",
       "resources/js/Pages/ERP/Finance/Invoice.tsx",
       "resources/js/Pages/ERP/Finance/Expense.tsx",
@@ -1077,15 +1077,15 @@
       "resources/js/Pages/ERP/Finance/PurchaseRequestApproval.tsx",
       "resources/js/Pages/ERP/Finance/payslipApproval.tsx",
       "resources/js/Pages/ERP/Finance/refundApproval.tsx",
-      "_ErrorModal-nHbAjcTm.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_ErrorModal-CoU9Fk0a.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -1095,16 +1095,16 @@
       "_bell-CDkdItch.js",
       "_x-DKbsWLE6.js",
       "_index-BT6R6wLV.js",
-      "_useFinanceQueries-CWvb3GrQ.js",
+      "_useFinanceQueries-J-12e6UP.js",
       "resources/js/Pages/ERP/Finance/InlineApprovalUtils.tsx",
       "_repairRefundExecutionPayload-D5RgUjcx.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/Finance/InlineApprovalUtils.tsx": {
-    "file": "assets/InlineApprovalUtils-BwCsr5st.js",
+    "file": "assets/InlineApprovalUtils-BLn7aB3z.js",
     "name": "InlineApprovalUtils",
     "src": "resources/js/Pages/ERP/Finance/InlineApprovalUtils.tsx",
     "isDynamicEntry": true,
@@ -1113,29 +1113,29 @@
       "_vendor-apexcharts-C5L_vV5G.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/Finance/Invoice.tsx": {
-    "file": "assets/Invoice-CvSXYeD9.js",
+    "file": "assets/Invoice-CL86JYfk.js",
     "name": "Invoice",
     "src": "resources/js/Pages/ERP/Finance/Invoice.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_useFinanceQueries-CWvb3GrQ.js",
+      "_useFinanceQueries-J-12e6UP.js",
       "resources/js/Pages/ERP/Finance/InlineApprovalUtils.tsx",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js"
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/Finance/PurchaseRequestApproval.tsx": {
-    "file": "assets/PurchaseRequestApproval-Co0BaAdH.js",
+    "file": "assets/PurchaseRequestApproval-En0FBn0o.js",
     "name": "PurchaseRequestApproval",
     "src": "resources/js/Pages/ERP/Finance/PurchaseRequestApproval.tsx",
     "isDynamicEntry": true,
@@ -1145,11 +1145,11 @@
       "_vendor-sweetalert2-BooRRB_8.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/Finance/createInvoice.tsx": {
-    "file": "assets/createInvoice-Dxo0RLRB.js",
+    "file": "assets/createInvoice-By2-PKDv.js",
     "name": "createInvoice",
     "src": "resources/js/Pages/ERP/Finance/createInvoice.tsx",
     "isDynamicEntry": true,
@@ -1157,16 +1157,16 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_useFinanceQueries-CWvb3GrQ.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js"
+      "_useFinanceQueries-J-12e6UP.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/Finance/payslipApproval.tsx": {
-    "file": "assets/payslipApproval-CP-wfMpF.js",
+    "file": "assets/payslipApproval-C4sKf0lW.js",
     "name": "payslipApproval",
     "src": "resources/js/Pages/ERP/Finance/payslipApproval.tsx",
     "isDynamicEntry": true,
@@ -1176,11 +1176,11 @@
       "_vendor-sweetalert2-BooRRB_8.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/Finance/refundApproval.tsx": {
-    "file": "assets/refundApproval-CiyxdtQp.js",
+    "file": "assets/refundApproval-CVfqZyxf.js",
     "name": "refundApproval",
     "src": "resources/js/Pages/ERP/Finance/refundApproval.tsx",
     "isDynamicEntry": true,
@@ -1192,11 +1192,11 @@
       "_repairRefundExecutionPayload-D5RgUjcx.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/Finance/repairPriceApproval.tsx": {
-    "file": "assets/repairPriceApproval-DumNwiV1.js",
+    "file": "assets/repairPriceApproval-B83ddfUC.js",
     "name": "repairPriceApproval",
     "src": "resources/js/Pages/ERP/Finance/repairPriceApproval.tsx",
     "isDynamicEntry": true,
@@ -1207,11 +1207,11 @@
       "_permissions-6V6Yr4Dn.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/Finance/shoePriceApproval.tsx": {
-    "file": "assets/shoePriceApproval-CD3XBYLS.js",
+    "file": "assets/shoePriceApproval-C4AAgN24.js",
     "name": "shoePriceApproval",
     "src": "resources/js/Pages/ERP/Finance/shoePriceApproval.tsx",
     "isDynamicEntry": true,
@@ -1222,11 +1222,11 @@
       "_permissions-6V6Yr4Dn.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/HR/AttendanceRecords.tsx": {
-    "file": "assets/AttendanceRecords-DD9YCOEP.js",
+    "file": "assets/AttendanceRecords-DACNHySh.js",
     "name": "AttendanceRecords",
     "src": "resources/js/Pages/ERP/HR/AttendanceRecords.tsx",
     "isDynamicEntry": true,
@@ -1236,11 +1236,11 @@
       "_vendor-sweetalert2-BooRRB_8.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/HR/Dashboard.tsx": {
-    "file": "assets/Dashboard-BHDlERWL.js",
+    "file": "assets/Dashboard-D-s3TWKx.js",
     "name": "Dashboard",
     "src": "resources/js/Pages/ERP/HR/Dashboard.tsx",
     "isDynamicEntry": true,
@@ -1249,11 +1249,11 @@
       "_vendor-apexcharts-C5L_vV5G.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/HR/EmployeeDirectory.tsx": {
-    "file": "assets/EmployeeDirectory-DNuddlMa.js",
+    "file": "assets/EmployeeDirectory-D9-g3tQm.js",
     "name": "EmployeeDirectory",
     "src": "resources/js/Pages/ERP/HR/EmployeeDirectory.tsx",
     "isDynamicEntry": true,
@@ -1263,18 +1263,18 @@
       "_vendor-sweetalert2-BooRRB_8.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/HR/HR.tsx": {
-    "file": "assets/HR-DSYOihfz.js",
+    "file": "assets/HR-BzXx13kG.js",
     "name": "HR",
     "src": "resources/js/Pages/ERP/HR/HR.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
+      "_AppLayout_ERP-CTcucWnF.js",
       "resources/js/Pages/ERP/HR/Dashboard.tsx",
       "resources/js/Pages/ERP/HR/EmployeeDirectory.tsx",
       "resources/js/Pages/ERP/HR/AttendanceRecords.tsx",
@@ -1283,15 +1283,15 @@
       "resources/js/Pages/ERP/HR/generateSlip.tsx",
       "resources/js/Pages/ERP/HR/viewSlip.tsx",
       "resources/js/Pages/ERP/HR/SalaryChanges.tsx",
-      "_ErrorModal-nHbAjcTm.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_ErrorModal-CoU9Fk0a.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -1303,11 +1303,11 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/HR/LeaveApprovals.tsx": {
-    "file": "assets/LeaveApprovals-OZ4PITdY.js",
+    "file": "assets/LeaveApprovals-Dg8uvjbF.js",
     "name": "LeaveApprovals",
     "src": "resources/js/Pages/ERP/HR/LeaveApprovals.tsx",
     "isDynamicEntry": true,
@@ -1317,11 +1317,11 @@
       "_vendor-sweetalert2-BooRRB_8.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/HR/OvertimeApprovals.tsx": {
-    "file": "assets/OvertimeApprovals-CfNaHMpd.js",
+    "file": "assets/OvertimeApprovals-Da29nQqN.js",
     "name": "OvertimeApprovals",
     "src": "resources/js/Pages/ERP/HR/OvertimeApprovals.tsx",
     "isDynamicEntry": true,
@@ -1331,11 +1331,11 @@
       "_vendor-sweetalert2-BooRRB_8.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/HR/SalaryChanges.tsx": {
-    "file": "assets/SalaryChanges-iZ9XbzQj.js",
+    "file": "assets/SalaryChanges-DwhTbvUY.js",
     "name": "SalaryChanges",
     "src": "resources/js/Pages/ERP/HR/SalaryChanges.tsx",
     "isDynamicEntry": true,
@@ -1345,11 +1345,11 @@
       "_vendor-sweetalert2-BooRRB_8.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/HR/generateSlip.tsx": {
-    "file": "assets/generateSlip-IXnJLeZn.js",
+    "file": "assets/generateSlip-CqTiiNbJ.js",
     "name": "generateSlip",
     "src": "resources/js/Pages/ERP/HR/generateSlip.tsx",
     "isDynamicEntry": true,
@@ -1359,11 +1359,11 @@
       "_vendor-sweetalert2-BooRRB_8.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/HR/viewSlip.tsx": {
-    "file": "assets/viewSlip-COQ2pjHs.js",
+    "file": "assets/viewSlip-CaEenHBZ.js",
     "name": "viewSlip",
     "src": "resources/js/Pages/ERP/HR/viewSlip.tsx",
     "isDynamicEntry": true,
@@ -1372,27 +1372,27 @@
       "_vendor-apexcharts-C5L_vV5G.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/Manager/AuditLogs.tsx": {
-    "file": "assets/AuditLogs-CpGCYIXD.js",
+    "file": "assets/AuditLogs-CAUDmPmB.js",
     "name": "AuditLogs",
     "src": "resources/js/Pages/ERP/Manager/AuditLogs.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
+      "_AppLayout_ERP-CTcucWnF.js",
       "_vendor-sweetalert2-BooRRB_8.js",
       "_useActivityLogFormatters-DA1IVcw2.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -1404,26 +1404,26 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/Manager/Dashboard.tsx": {
-    "file": "assets/Dashboard-DJ3FVhct.js",
+    "file": "assets/Dashboard-CdbEF_dZ.js",
     "name": "Dashboard",
     "src": "resources/js/Pages/ERP/Manager/Dashboard.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
-      "_AppLayout_ERP-C2jD7vlg.js",
+      "_AppLayout_ERP-CTcucWnF.js",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_useQuery-IOiCMpUa.js",
+      "_useQuery-LX-Y0MsX.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -1435,26 +1435,26 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/Manager/InventoryOverview.tsx": {
-    "file": "assets/InventoryOverview-BOQSbeKz.js",
+    "file": "assets/InventoryOverview-2pQF9zxp.js",
     "name": "InventoryOverview",
     "src": "resources/js/Pages/ERP/Manager/InventoryOverview.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_AppLayout_ERP-CTcucWnF.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -1466,11 +1466,11 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/Manager/Reports.tsx": {
-    "file": "assets/Reports-B4rwT9Hv.js",
+    "file": "assets/Reports-BmTESZhA.js",
     "name": "Reports",
     "src": "resources/js/Pages/ERP/Manager/Reports.tsx",
     "isDynamicEntry": true,
@@ -1478,14 +1478,14 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_AppLayout_ERP-CTcucWnF.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -1497,26 +1497,26 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/Manager/productUpload.tsx": {
-    "file": "assets/productUpload-CB8QU9MY.js",
+    "file": "assets/productUpload-CkmB4oha.js",
     "name": "productUpload",
     "src": "resources/js/Pages/ERP/Manager/productUpload.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_AppLayout_ERP-CTcucWnF.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -1528,26 +1528,26 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/Manager/repairRejectReview.tsx": {
-    "file": "assets/repairRejectReview-BaSmb9QI.js",
+    "file": "assets/repairRejectReview-C5hPwUDw.js",
     "name": "repairRejectReview",
     "src": "resources/js/Pages/ERP/Manager/repairRejectReview.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_AppLayout_ERP-CTcucWnF.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -1559,11 +1559,11 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/Manager/suspendAccountManager.tsx": {
-    "file": "assets/suspendAccountManager-DmQboj0o.js",
+    "file": "assets/suspendAccountManager-CjMV1nZL.js",
     "name": "suspendAccountManager",
     "src": "resources/js/Pages/ERP/Manager/suspendAccountManager.tsx",
     "isDynamicEntry": true,
@@ -1571,14 +1571,14 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_AppLayout_ERP-CTcucWnF.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -1590,11 +1590,11 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/Procurement/PurchaseOrders.tsx": {
-    "file": "assets/PurchaseOrders-LDrk1bn0.js",
+    "file": "assets/PurchaseOrders-CEAHy3gX.js",
     "name": "PurchaseOrders",
     "src": "resources/js/Pages/ERP/Procurement/PurchaseOrders.tsx",
     "isDynamicEntry": true,
@@ -1602,15 +1602,15 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
-      "_purchaseRequestApi-BREcJ6G3.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_AppLayout_ERP-CTcucWnF.js",
+      "_purchaseRequestApi-CwS6zLFN.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -1622,30 +1622,30 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/Procurement/PurchaseRequest.tsx": {
-    "file": "assets/PurchaseRequest-BC33h3-C.js",
+    "file": "assets/PurchaseRequest-BUM-t8nQ.js",
     "name": "PurchaseRequest",
     "src": "resources/js/Pages/ERP/Procurement/PurchaseRequest.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
-      "_purchaseRequestApi-BREcJ6G3.js",
-      "_workflowFeedback-B8BGJiD6.js",
-      "_supplierApi-nJ5boo5N.js",
+      "_AppLayout_ERP-CTcucWnF.js",
+      "_purchaseRequestApi-CwS6zLFN.js",
+      "_workflowFeedback-rTmU6sUv.js",
+      "_supplierApi-BElAjXpG.js",
       "_modalDraft-DYhtJ3su.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -1657,27 +1657,27 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/Procurement/StockRequestApproval.tsx": {
-    "file": "assets/StockRequestApproval-RBo6AF7X.js",
+    "file": "assets/StockRequestApproval-DQxM7G9s.js",
     "name": "StockRequestApproval",
     "src": "resources/js/Pages/ERP/Procurement/StockRequestApproval.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
-      "_workflowFeedback-B8BGJiD6.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_AppLayout_ERP-CTcucWnF.js",
+      "_workflowFeedback-rTmU6sUv.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -1689,11 +1689,11 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/Procurement/SuppliersManagement.tsx": {
-    "file": "assets/SuppliersManagement-D7WX3JTX.js",
+    "file": "assets/SuppliersManagement-y2KoGMTm.js",
     "name": "SuppliersManagement",
     "src": "resources/js/Pages/ERP/Procurement/SuppliersManagement.tsx",
     "isDynamicEntry": true,
@@ -1701,15 +1701,15 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
-      "_supplierApi-nJ5boo5N.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_AppLayout_ERP-CTcucWnF.js",
+      "_supplierApi-BElAjXpG.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -1721,26 +1721,26 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/Profile.tsx": {
-    "file": "assets/Profile-B5DP3XDQ.js",
+    "file": "assets/Profile-Cl9ifkmD.js",
     "name": "Profile",
     "src": "resources/js/Pages/ERP/Profile.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
+      "_AppLayout_ERP-CTcucWnF.js",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -1752,27 +1752,27 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/STAFF/Customers.tsx": {
-    "file": "assets/Customers-DBPkWNlt.js",
+    "file": "assets/Customers-CDCmkfCZ.js",
     "name": "Customers",
     "src": "resources/js/Pages/ERP/STAFF/Customers.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
-      "_ErrorModal-nHbAjcTm.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_AppLayout_ERP-CTcucWnF.js",
+      "_ErrorModal-CoU9Fk0a.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -1784,11 +1784,11 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/STAFF/JobOrders.tsx": {
-    "file": "assets/JobOrders-CJGTaK0m.js",
+    "file": "assets/JobOrders-BHlTP5SX.js",
     "name": "JobOrders",
     "src": "resources/js/Pages/ERP/STAFF/JobOrders.tsx",
     "isDynamicEntry": true,
@@ -1796,15 +1796,15 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
-      "_ErrorModal-nHbAjcTm.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_AppLayout_ERP-CTcucWnF.js",
+      "_ErrorModal-CoU9Fk0a.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -1816,26 +1816,26 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/STAFF/MyPayslips.tsx": {
-    "file": "assets/MyPayslips-zesO35yv.js",
+    "file": "assets/MyPayslips-ByLlhMs4.js",
     "name": "MyPayslips",
     "src": "resources/js/Pages/ERP/STAFF/MyPayslips.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_AppLayout_ERP-CTcucWnF.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -1847,27 +1847,27 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/STAFF/ProductManagementWithVariants.tsx": {
-    "file": "assets/ProductManagementWithVariants-hyfhtrNd.js",
+    "file": "assets/ProductManagementWithVariants-hQpbZCn5.js",
     "name": "ProductManagementWithVariants",
     "src": "resources/js/Pages/ERP/STAFF/ProductManagementWithVariants.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
+      "_AppLayout_ERP-CTcucWnF.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_ColorVariantManager-34pmP95A.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_ColorVariantManager-NAk1lR5o.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -1879,26 +1879,26 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/STAFF/TimeIn.tsx": {
-    "file": "assets/TimeIn-Ub1_ZYXy.js",
+    "file": "assets/TimeIn-_SPOlLss.js",
     "name": "TimeIn",
     "src": "resources/js/Pages/ERP/STAFF/TimeIn.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
-      "_AppLayout_ERP-C2jD7vlg.js",
+      "_AppLayout_ERP-CTcucWnF.js",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -1910,26 +1910,26 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/STAFF/leave.tsx": {
-    "file": "assets/leave-lg4g5xKU.js",
+    "file": "assets/leave-FKSKD53h.js",
     "name": "leave",
     "src": "resources/js/Pages/ERP/STAFF/leave.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
+      "_AppLayout_ERP-CTcucWnF.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -1941,11 +1941,11 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/STAFF/shoePricing.tsx": {
-    "file": "assets/shoePricing-DBumOO0a.js",
+    "file": "assets/shoePricing-C_W-ESbS.js",
     "name": "shoePricing",
     "src": "resources/js/Pages/ERP/STAFF/shoePricing.tsx",
     "isDynamicEntry": true,
@@ -1953,14 +1953,14 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_AppLayout_ERP-CTcucWnF.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -1972,27 +1972,27 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/inventory/InventoryDashboard.tsx": {
-    "file": "assets/InventoryDashboard-uvqzT0zv.js",
+    "file": "assets/InventoryDashboard-DtSw7jeQ.js",
     "name": "InventoryDashboard",
     "src": "resources/js/Pages/ERP/inventory/InventoryDashboard.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
-      "_inventoryAPI-BbzmsTbf.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_AppLayout_ERP-CTcucWnF.js",
+      "_inventoryAPI-DM_91dts.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -2004,11 +2004,11 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/inventory/ProductInventory.tsx": {
-    "file": "assets/ProductInventory-D7Azvh9L.js",
+    "file": "assets/ProductInventory-DhXZK5xc.js",
     "name": "ProductInventory",
     "src": "resources/js/Pages/ERP/inventory/ProductInventory.tsx",
     "isDynamicEntry": true,
@@ -2016,15 +2016,15 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
-      "_inventoryAPI-BbzmsTbf.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_AppLayout_ERP-CTcucWnF.js",
+      "_inventoryAPI-DM_91dts.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -2036,11 +2036,11 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/inventory/RequestApproval.tsx": {
-    "file": "assets/RequestApproval-D07DTElZ.js",
+    "file": "assets/RequestApproval-D5c3AXWG.js",
     "name": "RequestApproval",
     "src": "resources/js/Pages/ERP/inventory/RequestApproval.tsx",
     "isDynamicEntry": true,
@@ -2048,14 +2048,14 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_AppLayout_ERP-CTcucWnF.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -2067,27 +2067,27 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/inventory/StockMovement.tsx": {
-    "file": "assets/StockMovement-CWdRbzxG.js",
+    "file": "assets/StockMovement-eaIST8Co.js",
     "name": "StockMovement",
     "src": "resources/js/Pages/ERP/inventory/StockMovement.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
-      "_inventoryAPI-BbzmsTbf.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_AppLayout_ERP-CTcucWnF.js",
+      "_inventoryAPI-DM_91dts.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -2099,29 +2099,29 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/inventory/StockRequest.tsx": {
-    "file": "assets/StockRequest-CXo9jyaW.js",
+    "file": "assets/StockRequest-DWjfBK24.js",
     "name": "StockRequest",
     "src": "resources/js/Pages/ERP/inventory/StockRequest.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
-      "_workflowFeedback-B8BGJiD6.js",
-      "_inventoryAPI-BbzmsTbf.js",
+      "_AppLayout_ERP-CTcucWnF.js",
+      "_workflowFeedback-rTmU6sUv.js",
+      "_inventoryAPI-DM_91dts.js",
       "_modalDraft-DYhtJ3su.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -2133,27 +2133,27 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/inventory/SupplierOrderMonitoring.tsx": {
-    "file": "assets/SupplierOrderMonitoring-BeEtsWh4.js",
+    "file": "assets/SupplierOrderMonitoring-UWOTHdP3.js",
     "name": "SupplierOrderMonitoring",
     "src": "resources/js/Pages/ERP/inventory/SupplierOrderMonitoring.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
-      "_inventoryAPI-BbzmsTbf.js",
+      "_AppLayout_ERP-CTcucWnF.js",
+      "_inventoryAPI-DM_91dts.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -2165,11 +2165,11 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/inventory/UploadInventory.tsx": {
-    "file": "assets/UploadInventory-C65LJUwr.js",
+    "file": "assets/UploadInventory-BOpT9ZUN.js",
     "name": "UploadInventory",
     "src": "resources/js/Pages/ERP/inventory/UploadInventory.tsx",
     "isDynamicEntry": true,
@@ -2177,16 +2177,16 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
-      "_ColorVariantManager-34pmP95A.js",
-      "_inventoryAPI-BbzmsTbf.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_AppLayout_ERP-CTcucWnF.js",
+      "_ColorVariantManager-NAk1lR5o.js",
+      "_inventoryAPI-DM_91dts.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -2198,11 +2198,11 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/repairer/JobOrdersRepair.tsx": {
-    "file": "assets/JobOrdersRepair-BSGRVSoO.js",
+    "file": "assets/JobOrdersRepair-kvAFdcr4.js",
     "name": "JobOrdersRepair",
     "src": "resources/js/Pages/ERP/repairer/JobOrdersRepair.tsx",
     "isDynamicEntry": true,
@@ -2210,17 +2210,17 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
-      "_ErrorModal-nHbAjcTm.js",
+      "_AppLayout_ERP-CTcucWnF.js",
+      "_ErrorModal-CoU9Fk0a.js",
       "_repairPricing-Bc77-6RN.js",
-      "_repairMaterialsApi-CsFlQsey.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_repairMaterialsApi-DH5qNCPP.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -2232,29 +2232,29 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/repairer/POS.tsx": {
-    "file": "assets/POS-RqzsxYDQ.js",
+    "file": "assets/POS-BoEBIXCh.js",
     "name": "POS",
     "src": "resources/js/Pages/ERP/repairer/POS.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
+      "_AppLayout_ERP-CTcucWnF.js",
       "_vendor-sweetalert2-BooRRB_8.js",
       "_posPaymentValidation-DYPB9fDP.js",
       "resources/js/services/repairPosHistoryApi.ts",
       "_repairPricing-Bc77-6RN.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -2266,11 +2266,11 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/repairer/PricingAndServices.tsx": {
-    "file": "assets/PricingAndServices-c6977pnD.js",
+    "file": "assets/PricingAndServices-D8-Cvbgx.js",
     "name": "PricingAndServices",
     "src": "resources/js/Pages/ERP/repairer/PricingAndServices.tsx",
     "isDynamicEntry": true,
@@ -2278,14 +2278,14 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_AppLayout_ERP-CTcucWnF.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -2297,17 +2297,17 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/repairer/__tests__/POS.history-and-refund-request.test.tsx": {
-    "file": "assets/POS.history-and-refund-request.test-Cv_0nbIr.js",
+    "file": "assets/POS.history-and-refund-request.test-C52iPiJW.js",
     "name": "POS.history-and-refund-request.test",
     "src": "resources/js/Pages/ERP/repairer/__tests__/POS.history-and-refund-request.test.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
-      "_vi.bdSIJ99Y-DN4PHNG-.js",
+      "_vi.bdSIJ99Y-BbAm0X7N.js",
       "_vendor-apexcharts-C5L_vV5G.js"
     ],
     "dynamicImports": [
@@ -2315,11 +2315,11 @@
       "resources/js/services/repairPosHistoryApi.ts"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/repairer/components/RepairPackageManager.tsx": {
-    "file": "assets/RepairPackageManager-9GfA1ntR.js",
+    "file": "assets/RepairPackageManager-C75HKMLN.js",
     "name": "RepairPackageManager",
     "src": "resources/js/Pages/ERP/repairer/components/RepairPackageManager.tsx",
     "isDynamicEntry": true,
@@ -2329,26 +2329,26 @@
       "_vendor-sweetalert2-BooRRB_8.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/repairer/dashboardRepair.tsx": {
-    "file": "assets/dashboardRepair-D5VKg2JL.js",
+    "file": "assets/dashboardRepair-vdWWuR60.js",
     "name": "dashboardRepair",
     "src": "resources/js/Pages/ERP/repairer/dashboardRepair.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
-      "_AppLayout_ERP-C2jD7vlg.js",
+      "_AppLayout_ERP-CTcucWnF.js",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -2360,27 +2360,27 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/repairer/repairStocksOverview.tsx": {
-    "file": "assets/repairStocksOverview-CAz74h-l.js",
+    "file": "assets/repairStocksOverview-R2wl2bRD.js",
     "name": "repairStocksOverview",
     "src": "resources/js/Pages/ERP/repairer/repairStocksOverview.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
-      "_repairMaterialsApi-CsFlQsey.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_AppLayout_ERP-CTcucWnF.js",
+      "_repairMaterialsApi-DH5qNCPP.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -2392,26 +2392,26 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/repairer/repairerSupport.tsx": {
-    "file": "assets/repairerSupport-Bq1zI4i6.js",
+    "file": "assets/repairerSupport-FG599ZEz.js",
     "name": "repairerSupport",
     "src": "resources/js/Pages/ERP/repairer/repairerSupport.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
-      "_AppLayout_ERP-C2jD7vlg.js",
+      "_AppLayout_ERP-CTcucWnF.js",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -2423,11 +2423,11 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/repairer/requestMaterials.tsx": {
-    "file": "assets/requestMaterials-FuDQSp31.js",
+    "file": "assets/requestMaterials-mfb3iGCs.js",
     "name": "requestMaterials",
     "src": "resources/js/Pages/ERP/repairer/requestMaterials.tsx",
     "isDynamicEntry": true,
@@ -2435,15 +2435,15 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
-      "_repairMaterialsApi-CsFlQsey.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_AppLayout_ERP-CTcucWnF.js",
+      "_repairMaterialsApi-DH5qNCPP.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -2455,11 +2455,11 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ERP/repairer/uploadService.tsx": {
-    "file": "assets/uploadService-gBfQS610.js",
+    "file": "assets/uploadService-Ctv-Ta2p.js",
     "name": "uploadService",
     "src": "resources/js/Pages/ERP/repairer/uploadService.tsx",
     "isDynamicEntry": true,
@@ -2467,16 +2467,16 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
+      "_AppLayout_ERP-CTcucWnF.js",
       "_permissions-6V6Yr4Dn.js",
       "resources/js/Pages/ERP/repairer/components/RepairPackageManager.tsx",
-      "_Backdrop-Cs0zFvxC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_Backdrop-4TobMvSA.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -2488,44 +2488,44 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/Forms/FormElements.tsx": {
-    "file": "assets/FormElements-BrtKFfCN.js",
+    "file": "assets/FormElements-DR5JscgC.js",
     "name": "FormElements",
     "src": "resources/js/Pages/Forms/FormElements.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
-      "_AppLayout-MPzLFJgu.js",
-      "_PageBreadCrumb-DIwk15ns.js",
+      "_AppLayout-yEmTqk5t.js",
+      "_PageBreadCrumb-Bn0e0JeA.js",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_ComponentCard--Dp6ZgGD.js",
-      "_Label-6ykxv9Vp.js",
-      "_InputField-CrKjBl1V.js",
-      "_Radio-DYxv_fjv.js",
+      "_ComponentCard-DOsKl-Ti.js",
+      "_Label-B2ANprFJ.js",
+      "_InputField-CxlmTzMD.js",
+      "_Radio-ChiwiDSh.js",
       "_index-BT6R6wLV.js",
       "_index-B_JH6AFf.js",
-      "_DropZone-CpPFKiIU.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_NotificationCenter-CYTKKjod.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_DropZone-D-xFNQql.js",
+      "_Backdrop-4TobMvSA.js",
+      "_NotificationCenter-CEgV4d_s.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_XMarkIcon-DHhaSAmC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js"
+      "_ShopOwnerDropdown-BKUSHE2l.js"
     ],
     "css": [
       "assets/FormElements-BsM4JrO0.css",
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/Notifications/CustomerNotifications.tsx": {
-    "file": "assets/CustomerNotifications-7PLaDVag.js",
+    "file": "assets/CustomerNotifications-DpqA86BY.js",
     "name": "CustomerNotifications",
     "src": "resources/js/Pages/Notifications/CustomerNotifications.tsx",
     "isDynamicEntry": true,
@@ -2534,9 +2534,9 @@
       "resources/js/Pages/Notifications/NotificationList.tsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_x-DKbsWLE6.js",
       "_search--5X7gqBg.js",
@@ -2548,11 +2548,11 @@
       "_circle-alert-CKOW_eQ9.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/Notifications/CustomerPreferences.tsx": {
-    "file": "assets/CustomerPreferences-CO5oqu3v.js",
+    "file": "assets/CustomerPreferences-Bzb_ZJbS.js",
     "name": "CustomerPreferences",
     "src": "resources/js/Pages/Notifications/CustomerPreferences.tsx",
     "isDynamicEntry": true,
@@ -2560,9 +2560,9 @@
       "resources/js/app.jsx",
       "resources/js/Pages/Notifications/NotificationPreferences.tsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_settings-BBYNmxLO.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_check-DKD80YX5.js",
@@ -2571,11 +2571,11 @@
       "_archive-B8DhFm6W.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/Notifications/ERPNotifications.tsx": {
-    "file": "assets/ERPNotifications-C0B-EXQP.js",
+    "file": "assets/ERPNotifications-BRlhioAa.js",
     "name": "ERPNotifications",
     "src": "resources/js/Pages/Notifications/ERPNotifications.tsx",
     "isDynamicEntry": true,
@@ -2584,9 +2584,9 @@
       "resources/js/Pages/Notifications/NotificationList.tsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_x-DKbsWLE6.js",
       "_search--5X7gqBg.js",
@@ -2598,11 +2598,11 @@
       "_circle-alert-CKOW_eQ9.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/Notifications/ERPPreferences.tsx": {
-    "file": "assets/ERPPreferences-C5rkon8H.js",
+    "file": "assets/ERPPreferences-CvWWkrkF.js",
     "name": "ERPPreferences",
     "src": "resources/js/Pages/Notifications/ERPPreferences.tsx",
     "isDynamicEntry": true,
@@ -2610,9 +2610,9 @@
       "resources/js/app.jsx",
       "resources/js/Pages/Notifications/NotificationPreferences.tsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_settings-BBYNmxLO.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_check-DKD80YX5.js",
@@ -2621,32 +2621,32 @@
       "_archive-B8DhFm6W.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/Notifications/NotificationArchive.tsx": {
-    "file": "assets/NotificationArchive-C6OZ0Ct4.js",
+    "file": "assets/NotificationArchive-CzHr9iUr.js",
     "name": "NotificationArchive",
     "src": "resources/js/Pages/Notifications/NotificationArchive.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_useNotifications-K5qepJ2D.js",
+      "_useNotifications-BKJadVmo.js",
       "_archive-B8DhFm6W.js",
       "_search--5X7gqBg.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
       "_circle-alert-CKOW_eQ9.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js"
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/Notifications/NotificationList.tsx": {
-    "file": "assets/NotificationList-C1dP_3Ng.js",
+    "file": "assets/NotificationList-BmVn-Er3.js",
     "name": "NotificationList",
     "src": "resources/js/Pages/Notifications/NotificationList.tsx",
     "isDynamicEntry": true,
@@ -2654,7 +2654,7 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_useNotifications-K5qepJ2D.js",
+      "_useNotifications-BKJadVmo.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_x-DKbsWLE6.js",
       "_search--5X7gqBg.js",
@@ -2664,43 +2664,43 @@
       "_trash-2-BIosGwPU.js",
       "_chevron-down-DF8bPFZE.js",
       "_circle-alert-CKOW_eQ9.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js"
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/Notifications/NotificationPreferences.tsx": {
-    "file": "assets/NotificationPreferences-C_xk8aup.js",
+    "file": "assets/NotificationPreferences-DYYdllft.js",
     "name": "NotificationPreferences",
     "src": "resources/js/Pages/Notifications/NotificationPreferences.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_useNotifications-K5qepJ2D.js",
+      "_useNotifications-BKJadVmo.js",
       "_settings-BBYNmxLO.js",
       "_check-DKD80YX5.js",
       "_bell-CDkdItch.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_clock-BFV1jkvL.js",
       "_archive-B8DhFm6W.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js"
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/Notifications/NotificationStats.tsx": {
-    "file": "assets/NotificationStats-DKSHcA5H.js",
+    "file": "assets/NotificationStats-BKPipBUz.js",
     "name": "NotificationStats",
     "src": "resources/js/Pages/Notifications/NotificationStats.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
-      "_useNotifications-K5qepJ2D.js",
+      "_useNotifications-BKJadVmo.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_bell-CDkdItch.js",
       "_circle-alert-CKOW_eQ9.js",
@@ -2708,15 +2708,15 @@
       "_star-BGsfjwye.js",
       "_clock-BFV1jkvL.js",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js"
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/Notifications/ShopOwnerNotifications.tsx": {
-    "file": "assets/ShopOwnerNotifications-n8sOCc42.js",
+    "file": "assets/ShopOwnerNotifications-caMbBkdC.js",
     "name": "ShopOwnerNotifications",
     "src": "resources/js/Pages/Notifications/ShopOwnerNotifications.tsx",
     "isDynamicEntry": true,
@@ -2725,9 +2725,9 @@
       "resources/js/Pages/Notifications/NotificationList.tsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_x-DKbsWLE6.js",
       "_search--5X7gqBg.js",
@@ -2739,11 +2739,11 @@
       "_circle-alert-CKOW_eQ9.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/Notifications/ShopOwnerPreferences.tsx": {
-    "file": "assets/ShopOwnerPreferences-CUbcZz5Y.js",
+    "file": "assets/ShopOwnerPreferences-Bx6ncmRH.js",
     "name": "ShopOwnerPreferences",
     "src": "resources/js/Pages/Notifications/ShopOwnerPreferences.tsx",
     "isDynamicEntry": true,
@@ -2751,9 +2751,9 @@
       "resources/js/app.jsx",
       "resources/js/Pages/Notifications/NotificationPreferences.tsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_settings-BBYNmxLO.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_check-DKD80YX5.js",
@@ -2762,11 +2762,11 @@
       "_archive-B8DhFm6W.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/OtherPage/NotFound.tsx": {
-    "file": "assets/NotFound-aPgXlO5-.js",
+    "file": "assets/NotFound-BWsf7_00.js",
     "name": "NotFound",
     "src": "resources/js/Pages/OtherPage/NotFound.tsx",
     "isDynamicEntry": true,
@@ -2775,11 +2775,11 @@
       "_vendor-apexcharts-C5L_vV5G.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ShopOwner/Approvals/ExpenseApproval.tsx": {
-    "file": "assets/ExpenseApproval-DdEc74B0.js",
+    "file": "assets/ExpenseApproval-CDYNk7lO.js",
     "name": "ExpenseApproval",
     "src": "resources/js/Pages/ShopOwner/Approvals/ExpenseApproval.tsx",
     "isDynamicEntry": true,
@@ -2787,13 +2787,13 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout_shopOwner-BIGEahgZ.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_AppLayout_shopOwner-CAYqeuKv.js",
+      "_Backdrop-4TobMvSA.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -2806,26 +2806,26 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ShopOwner/Approvals/PayslipApproval.tsx": {
-    "file": "assets/PayslipApproval-BAFZMQpF.js",
+    "file": "assets/PayslipApproval-CXezxh_0.js",
     "name": "PayslipApproval",
     "src": "resources/js/Pages/ShopOwner/Approvals/PayslipApproval.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
-      "_AppLayout_shopOwner-BIGEahgZ.js",
+      "_AppLayout_shopOwner-CAYqeuKv.js",
       "resources/js/Pages/ERP/Finance/payslipApproval.tsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
+      "_Backdrop-4TobMvSA.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -2838,11 +2838,11 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ShopOwner/Approvals/PriceApprovals.tsx": {
-    "file": "assets/PriceApprovals-68DQaA-F.js",
+    "file": "assets/PriceApprovals-DoBy_3dt.js",
     "name": "PriceApprovals",
     "src": "resources/js/Pages/ShopOwner/Approvals/PriceApprovals.tsx",
     "isDynamicEntry": true,
@@ -2850,13 +2850,13 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout_shopOwner-BIGEahgZ.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_AppLayout_shopOwner-CAYqeuKv.js",
+      "_Backdrop-4TobMvSA.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -2869,11 +2869,11 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ShopOwner/Approvals/PurchaseRequestApproval.tsx": {
-    "file": "assets/PurchaseRequestApproval-Bu0J_xNn.js",
+    "file": "assets/PurchaseRequestApproval-Cbd_qXEf.js",
     "name": "PurchaseRequestApproval",
     "src": "resources/js/Pages/ShopOwner/Approvals/PurchaseRequestApproval.tsx",
     "isDynamicEntry": true,
@@ -2881,13 +2881,13 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout_shopOwner-BIGEahgZ.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_AppLayout_shopOwner-CAYqeuKv.js",
+      "_Backdrop-4TobMvSA.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -2900,11 +2900,11 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ShopOwner/Approvals/SalaryChangesApproval.tsx": {
-    "file": "assets/SalaryChangesApproval-C4F5sIsp.js",
+    "file": "assets/SalaryChangesApproval-DANNev2N.js",
     "name": "SalaryChangesApproval",
     "src": "resources/js/Pages/ShopOwner/Approvals/SalaryChangesApproval.tsx",
     "isDynamicEntry": true,
@@ -2912,13 +2912,13 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout_shopOwner-BIGEahgZ.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_AppLayout_shopOwner-CAYqeuKv.js",
+      "_Backdrop-4TobMvSA.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -2931,11 +2931,11 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ShopOwner/Approvals/refundApproval.tsx": {
-    "file": "assets/refundApproval-DUQQjRZl.js",
+    "file": "assets/refundApproval-Bz6LVXAM.js",
     "name": "refundApproval",
     "src": "resources/js/Pages/ShopOwner/Approvals/refundApproval.tsx",
     "isDynamicEntry": true,
@@ -2943,14 +2943,14 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout_shopOwner-BIGEahgZ.js",
+      "_AppLayout_shopOwner-CAYqeuKv.js",
       "_repairRefundExecutionPayload-D5RgUjcx.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_Backdrop-4TobMvSA.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -2963,25 +2963,25 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ShopOwner/Customers/customer management/Customers.tsx": {
-    "file": "assets/Customers-BcxZiNXW.js",
+    "file": "assets/Customers-Bs0fyNuS.js",
     "name": "Customers",
     "src": "resources/js/Pages/ShopOwner/Customers/customer management/Customers.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout_shopOwner-BIGEahgZ.js",
+      "_AppLayout_shopOwner-CAYqeuKv.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_Backdrop-4TobMvSA.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -2994,25 +2994,25 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ShopOwner/Customers/customer management/CustomersReviews.tsx": {
-    "file": "assets/CustomersReviews-8EAscIzy.js",
+    "file": "assets/CustomersReviews-CwLBOo17.js",
     "name": "CustomersReviews",
     "src": "resources/js/Pages/ShopOwner/Customers/customer management/CustomersReviews.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout_shopOwner-BIGEahgZ.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
+      "_AppLayout_shopOwner-CAYqeuKv.js",
+      "_Backdrop-4TobMvSA.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -3025,25 +3025,25 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ShopOwner/Customers/customer management/customerSupport.tsx": {
-    "file": "assets/customerSupport-DISs1ozZ.js",
+    "file": "assets/customerSupport-BVG4rlXg.js",
     "name": "customerSupport",
     "src": "resources/js/Pages/ShopOwner/Customers/customer management/customerSupport.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
-      "_AppLayout_shopOwner-BIGEahgZ.js",
+      "_AppLayout_shopOwner-CAYqeuKv.js",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
+      "_Backdrop-4TobMvSA.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -3056,25 +3056,25 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ShopOwner/Customers/customer management/repairSupport.tsx": {
-    "file": "assets/repairSupport-CWS24Iul.js",
+    "file": "assets/repairSupport-CoFwDHsE.js",
     "name": "repairSupport",
     "src": "resources/js/Pages/ShopOwner/Customers/customer management/repairSupport.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
-      "_AppLayout_shopOwner-BIGEahgZ.js",
+      "_AppLayout_shopOwner-CAYqeuKv.js",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
+      "_Backdrop-4TobMvSA.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -3087,11 +3087,11 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ShopOwner/Dashboard.tsx": {
-    "file": "assets/Dashboard-Bpg4Vztr.js",
+    "file": "assets/Dashboard-CF3dTVjc.js",
     "name": "Dashboard",
     "src": "resources/js/Pages/ShopOwner/Dashboard.tsx",
     "isDynamicEntry": true,
@@ -3099,14 +3099,14 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout_shopOwner-BIGEahgZ.js",
-      "_RecentOrders-DN4c_8ks.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_AppLayout_shopOwner-CAYqeuKv.js",
+      "_RecentOrders-BaSAqD8z.js",
+      "_Backdrop-4TobMvSA.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -3117,32 +3117,32 @@
       "_x-DKbsWLE6.js",
       "_index-BwxT_gyP.js",
       "_index-BT6R6wLV.js",
-      "_Badge-BMwafbcZ.js",
+      "_Badge-CBac1Mee.js",
       "_index-B_JH6AFf.js",
-      "_index-D6_Amy6c.js"
+      "_index-DqYjjb-0.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ShopOwner/DssInsights.tsx": {
-    "file": "assets/DssInsights-DtylBE5Z.js",
+    "file": "assets/DssInsights-CYxUmvdq.js",
     "name": "DssInsights",
     "src": "resources/js/Pages/ShopOwner/DssInsights.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout_shopOwner-BIGEahgZ.js",
-      "_AppLayout_ERP-C2jD7vlg.js",
-      "_BarChartOne-Xk5hoz9m.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
+      "_AppLayout_shopOwner-CAYqeuKv.js",
+      "_AppLayout_ERP-CTcucWnF.js",
+      "_BarChartOne-c6c_WCba.js",
+      "_Backdrop-4TobMvSA.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -3153,14 +3153,14 @@
       "_x-DKbsWLE6.js",
       "_index-BwxT_gyP.js",
       "_index-BT6R6wLV.js",
-      "_SuperAdminDropdown-BckEu07k.js"
+      "_SuperAdminDropdown-BM00nUu6.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ShopOwner/Orders/order management/JobOrders.tsx": {
-    "file": "assets/JobOrders-CLwd32Uz.js",
+    "file": "assets/JobOrders-Dk0R8da2.js",
     "name": "JobOrders",
     "src": "resources/js/Pages/ShopOwner/Orders/order management/JobOrders.tsx",
     "isDynamicEntry": true,
@@ -3168,14 +3168,14 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout_shopOwner-BIGEahgZ.js",
-      "_ErrorModal-nHbAjcTm.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_AppLayout_shopOwner-CAYqeuKv.js",
+      "_ErrorModal-CoU9Fk0a.js",
+      "_Backdrop-4TobMvSA.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -3188,11 +3188,11 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ShopOwner/Orders/order management/discount.tsx": {
-    "file": "assets/discount-bwJisoSd.js",
+    "file": "assets/discount-B1j_xmDF.js",
     "name": "discount",
     "src": "resources/js/Pages/ShopOwner/Orders/order management/discount.tsx",
     "isDynamicEntry": true,
@@ -3200,13 +3200,13 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout_shopOwner-BIGEahgZ.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_AppLayout_shopOwner-CAYqeuKv.js",
+      "_Backdrop-4TobMvSA.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -3219,11 +3219,11 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ShopOwner/Premium/premuimBenefits.tsx": {
-    "file": "assets/premuimBenefits-COtTKsVD.js",
+    "file": "assets/premuimBenefits-DRuHKK-k.js",
     "name": "premuimBenefits",
     "src": "resources/js/Pages/ShopOwner/Premium/premuimBenefits.tsx",
     "isDynamicEntry": true,
@@ -3232,25 +3232,25 @@
       "_vendor-apexcharts-C5L_vV5G.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ShopOwner/Products/product management/InventoryOverview.tsx": {
-    "file": "assets/InventoryOverview-GGGEycpy.js",
+    "file": "assets/InventoryOverview-Cj1b7-kH.js",
     "name": "InventoryOverview",
     "src": "resources/js/Pages/ShopOwner/Products/product management/InventoryOverview.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout_shopOwner-BIGEahgZ.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
+      "_AppLayout_shopOwner-CAYqeuKv.js",
+      "_Backdrop-4TobMvSA.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -3263,26 +3263,26 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ShopOwner/Products/product management/ProductManagementWithVariants.tsx": {
-    "file": "assets/ProductManagementWithVariants-Dt_rEUH1.js",
+    "file": "assets/ProductManagementWithVariants-DUcd6ReB.js",
     "name": "ProductManagementWithVariants",
     "src": "resources/js/Pages/ShopOwner/Products/product management/ProductManagementWithVariants.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout_shopOwner-BIGEahgZ.js",
+      "_AppLayout_shopOwner-CAYqeuKv.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_ColorVariantManager-34pmP95A.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_ColorVariantManager-NAk1lR5o.js",
+      "_Backdrop-4TobMvSA.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -3295,11 +3295,11 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ShopOwner/Repairs/highValueRepairs.tsx": {
-    "file": "assets/highValueRepairs-D5OjEwhX.js",
+    "file": "assets/highValueRepairs-BlUjIpeb.js",
     "name": "highValueRepairs",
     "src": "resources/js/Pages/ShopOwner/Repairs/highValueRepairs.tsx",
     "isDynamicEntry": true,
@@ -3307,13 +3307,13 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout_shopOwner-BIGEahgZ.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_AppLayout_shopOwner-CAYqeuKv.js",
+      "_Backdrop-4TobMvSA.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -3326,25 +3326,25 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ShopOwner/Repairs/historyRejection.tsx": {
-    "file": "assets/historyRejection--JRy00sN.js",
+    "file": "assets/historyRejection-B3gD2rhp.js",
     "name": "historyRejection",
     "src": "resources/js/Pages/ShopOwner/Repairs/historyRejection.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout_shopOwner-BIGEahgZ.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
+      "_AppLayout_shopOwner-CAYqeuKv.js",
+      "_Backdrop-4TobMvSA.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -3357,11 +3357,11 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ShopOwner/Repairs/individual/uploadStockMaterial.tsx": {
-    "file": "assets/uploadStockMaterial-ComuHU9a.js",
+    "file": "assets/uploadStockMaterial-CqyURiC-.js",
     "name": "uploadStockMaterial",
     "src": "resources/js/Pages/ShopOwner/Repairs/individual/uploadStockMaterial.tsx",
     "isDynamicEntry": true,
@@ -3369,13 +3369,13 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout_shopOwner-BIGEahgZ.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_AppLayout_shopOwner-CAYqeuKv.js",
+      "_Backdrop-4TobMvSA.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -3388,11 +3388,11 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ShopOwner/Repairs/repairRejectReview.tsx": {
-    "file": "assets/repairRejectReview-Y1e_UQee.js",
+    "file": "assets/repairRejectReview-DlCCH4Kj.js",
     "name": "repairRejectReview",
     "src": "resources/js/Pages/ShopOwner/Repairs/repairRejectReview.tsx",
     "isDynamicEntry": true,
@@ -3400,13 +3400,13 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout_shopOwner-BIGEahgZ.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_AppLayout_shopOwner-CAYqeuKv.js",
+      "_Backdrop-4TobMvSA.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -3419,11 +3419,11 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ShopOwner/Repairs/service management/JobOrdersRepair.tsx": {
-    "file": "assets/JobOrdersRepair-b4z34IEE.js",
+    "file": "assets/JobOrdersRepair-DDmWC-Fx.js",
     "name": "JobOrdersRepair",
     "src": "resources/js/Pages/ShopOwner/Repairs/service management/JobOrdersRepair.tsx",
     "isDynamicEntry": true,
@@ -3431,15 +3431,15 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout_shopOwner-BIGEahgZ.js",
-      "_ErrorModal-nHbAjcTm.js",
+      "_AppLayout_shopOwner-CAYqeuKv.js",
+      "_ErrorModal-CoU9Fk0a.js",
       "_repairPricing-Bc77-6RN.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_Backdrop-4TobMvSA.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -3452,28 +3452,28 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ShopOwner/Repairs/service management/POS.tsx": {
-    "file": "assets/POS-tZFA7tcU.js",
+    "file": "assets/POS-wXBp0kif.js",
     "name": "POS",
     "src": "resources/js/Pages/ShopOwner/Repairs/service management/POS.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout_shopOwner-BIGEahgZ.js",
+      "_AppLayout_shopOwner-CAYqeuKv.js",
       "_vendor-sweetalert2-BooRRB_8.js",
       "_posPaymentValidation-DYPB9fDP.js",
       "_repairPricing-Bc77-6RN.js",
       "resources/js/services/repairPosHistoryApi.ts",
-      "_Backdrop-Cs0zFvxC.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_Backdrop-4TobMvSA.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -3486,11 +3486,11 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ShopOwner/Repairs/service management/uploadService.tsx": {
-    "file": "assets/uploadService-CIkOAGdM.js",
+    "file": "assets/uploadService-DidM0K7w.js",
     "name": "uploadService",
     "src": "resources/js/Pages/ShopOwner/Repairs/service management/uploadService.tsx",
     "isDynamicEntry": true,
@@ -3498,14 +3498,14 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout_shopOwner-BIGEahgZ.js",
+      "_AppLayout_shopOwner-CAYqeuKv.js",
       "resources/js/Pages/ERP/repairer/components/RepairPackageManager.tsx",
-      "_Backdrop-Cs0zFvxC.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_Backdrop-4TobMvSA.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -3518,26 +3518,26 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ShopOwner/Settings/AuditLogs.tsx": {
-    "file": "assets/AuditLogs-D0A2bYCz.js",
+    "file": "assets/AuditLogs-DQoSMm14.js",
     "name": "AuditLogs",
     "src": "resources/js/Pages/ShopOwner/Settings/AuditLogs.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout_shopOwner-BIGEahgZ.js",
+      "_AppLayout_shopOwner-CAYqeuKv.js",
       "_vendor-sweetalert2-BooRRB_8.js",
       "_useActivityLogFormatters-DA1IVcw2.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_Backdrop-4TobMvSA.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -3550,11 +3550,11 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ShopOwner/Settings/shopProfile.tsx": {
-    "file": "assets/shopProfile-1Hjq3tZK.js",
+    "file": "assets/shopProfile-B7RPFH4A.js",
     "name": "shopProfile",
     "src": "resources/js/Pages/ShopOwner/Settings/shopProfile.tsx",
     "isDynamicEntry": true,
@@ -3562,13 +3562,13 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout_shopOwner-BIGEahgZ.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_AppLayout_shopOwner-CAYqeuKv.js",
+      "_Backdrop-4TobMvSA.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -3581,11 +3581,11 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ShopOwner/Settings/shopSetting.tsx": {
-    "file": "assets/shopSetting-Dd6_E5cH.js",
+    "file": "assets/shopSetting-CnaepCo5.js",
     "name": "shopSetting",
     "src": "resources/js/Pages/ShopOwner/Settings/shopSetting.tsx",
     "isDynamicEntry": true,
@@ -3604,29 +3604,29 @@
       "_vendor-leaflet-BwcjjA81.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ShopOwner/TeamManagement/UserAccessControl.tsx": {
-    "file": "assets/UserAccessControl-Cir1paVf.js",
+    "file": "assets/UserAccessControl-Dji3_gfw.js",
     "name": "UserAccessControl",
     "src": "resources/js/Pages/ShopOwner/TeamManagement/UserAccessControl.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout_shopOwner-BIGEahgZ.js",
+      "_AppLayout_shopOwner-CAYqeuKv.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_Button-PpVdiZYL.js",
-      "_index-8JOFVQGS.js",
-      "_index-D6_Amy6c.js",
+      "_Button-BeDV9Qym.js",
+      "_index-Y8om0FOp.js",
+      "_index-DqYjjb-0.js",
       "_index-BT6R6wLV.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_Backdrop-4TobMvSA.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -3638,11 +3638,11 @@
       "_index-BwxT_gyP.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/ShopOwner/TeamManagement/suspendAccount.tsx": {
-    "file": "assets/suspendAccount-S9WCTj7V.js",
+    "file": "assets/suspendAccount-KDizqOzc.js",
     "name": "suspendAccount",
     "src": "resources/js/Pages/ShopOwner/TeamManagement/suspendAccount.tsx",
     "isDynamicEntry": true,
@@ -3650,13 +3650,13 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout_shopOwner-BIGEahgZ.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_AppLayout_shopOwner-CAYqeuKv.js",
+      "_Backdrop-4TobMvSA.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -3669,251 +3669,251 @@
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/Tables/BasicTables.tsx": {
-    "file": "assets/BasicTables-PM_Jvw0l.js",
+    "file": "assets/BasicTables-B2YfmPkx.js",
     "name": "BasicTables",
     "src": "resources/js/Pages/Tables/BasicTables.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
-      "_AppLayout-MPzLFJgu.js",
-      "_PageBreadCrumb-DIwk15ns.js",
-      "_ComponentCard--Dp6ZgGD.js",
-      "_index-D6_Amy6c.js",
-      "_Badge-BMwafbcZ.js",
+      "_AppLayout-yEmTqk5t.js",
+      "_PageBreadCrumb-Bn0e0JeA.js",
+      "_ComponentCard-DOsKl-Ti.js",
+      "_index-DqYjjb-0.js",
+      "_Badge-CBac1Mee.js",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_NotificationCenter-CYTKKjod.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_Backdrop-4TobMvSA.js",
+      "_NotificationCenter-CEgV4d_s.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_XMarkIcon-DHhaSAmC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UiElements/Alerts.tsx": {
-    "file": "assets/Alerts-1RYXXbDG.js",
+    "file": "assets/Alerts-CDVUW-DQ.js",
     "name": "Alerts",
     "src": "resources/js/Pages/UiElements/Alerts.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
-      "_AppLayout-MPzLFJgu.js",
-      "_PageBreadCrumb-DIwk15ns.js",
-      "_ComponentCard--Dp6ZgGD.js",
+      "_AppLayout-yEmTqk5t.js",
+      "_PageBreadCrumb-Bn0e0JeA.js",
+      "_ComponentCard-DOsKl-Ti.js",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_NotificationCenter-CYTKKjod.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_Backdrop-4TobMvSA.js",
+      "_NotificationCenter-CEgV4d_s.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_XMarkIcon-DHhaSAmC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UiElements/Avatars.tsx": {
-    "file": "assets/Avatars-CpQEldZ2.js",
+    "file": "assets/Avatars-D0fZPxLB.js",
     "name": "Avatars",
     "src": "resources/js/Pages/UiElements/Avatars.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
-      "_AppLayout-MPzLFJgu.js",
-      "_PageBreadCrumb-DIwk15ns.js",
-      "_ComponentCard--Dp6ZgGD.js",
+      "_AppLayout-yEmTqk5t.js",
+      "_PageBreadCrumb-Bn0e0JeA.js",
+      "_ComponentCard-DOsKl-Ti.js",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_NotificationCenter-CYTKKjod.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_Backdrop-4TobMvSA.js",
+      "_NotificationCenter-CEgV4d_s.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_XMarkIcon-DHhaSAmC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UiElements/Badges.tsx": {
-    "file": "assets/Badges-BzZmoHZV.js",
+    "file": "assets/Badges-Dah94Uly.js",
     "name": "Badges",
     "src": "resources/js/Pages/UiElements/Badges.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
-      "_AppLayout-MPzLFJgu.js",
-      "_PageBreadCrumb-DIwk15ns.js",
-      "_Badge-BMwafbcZ.js",
+      "_AppLayout-yEmTqk5t.js",
+      "_PageBreadCrumb-Bn0e0JeA.js",
+      "_Badge-CBac1Mee.js",
       "_index-BT6R6wLV.js",
-      "_ComponentCard--Dp6ZgGD.js",
+      "_ComponentCard-DOsKl-Ti.js",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_NotificationCenter-CYTKKjod.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_Backdrop-4TobMvSA.js",
+      "_NotificationCenter-CEgV4d_s.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_XMarkIcon-DHhaSAmC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js"
+      "_ShopOwnerDropdown-BKUSHE2l.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UiElements/Buttons.tsx": {
-    "file": "assets/Buttons-C2N0i58u.js",
+    "file": "assets/Buttons-CMYhZvUn.js",
     "name": "Buttons",
     "src": "resources/js/Pages/UiElements/Buttons.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
-      "_AppLayout-MPzLFJgu.js",
-      "_ComponentCard--Dp6ZgGD.js",
-      "_PageBreadCrumb-DIwk15ns.js",
-      "_Button-PpVdiZYL.js",
+      "_AppLayout-yEmTqk5t.js",
+      "_ComponentCard-DOsKl-Ti.js",
+      "_PageBreadCrumb-Bn0e0JeA.js",
+      "_Button-BeDV9Qym.js",
       "_index-BT6R6wLV.js",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_NotificationCenter-CYTKKjod.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_Backdrop-4TobMvSA.js",
+      "_NotificationCenter-CEgV4d_s.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_XMarkIcon-DHhaSAmC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js"
+      "_ShopOwnerDropdown-BKUSHE2l.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UiElements/Images.tsx": {
-    "file": "assets/Images-BjW4209Y.js",
+    "file": "assets/Images-DkHZvaxR.js",
     "name": "Images",
     "src": "resources/js/Pages/UiElements/Images.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
-      "_AppLayout-MPzLFJgu.js",
-      "_PageBreadCrumb-DIwk15ns.js",
-      "_ComponentCard--Dp6ZgGD.js",
+      "_AppLayout-yEmTqk5t.js",
+      "_PageBreadCrumb-Bn0e0JeA.js",
+      "_ComponentCard-DOsKl-Ti.js",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_NotificationCenter-CYTKKjod.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_Backdrop-4TobMvSA.js",
+      "_NotificationCenter-CEgV4d_s.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_XMarkIcon-DHhaSAmC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UiElements/Videos.tsx": {
-    "file": "assets/Videos-C5XDh9o9.js",
+    "file": "assets/Videos-CT5yZ7Da.js",
     "name": "Videos",
     "src": "resources/js/Pages/UiElements/Videos.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
-      "_AppLayout-MPzLFJgu.js",
-      "_ComponentCard--Dp6ZgGD.js",
-      "_PageBreadCrumb-DIwk15ns.js",
+      "_AppLayout-yEmTqk5t.js",
+      "_ComponentCard-DOsKl-Ti.js",
+      "_PageBreadCrumb-Bn0e0JeA.js",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_NotificationCenter-CYTKKjod.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_Backdrop-4TobMvSA.js",
+      "_NotificationCenter-CEgV4d_s.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_XMarkIcon-DHhaSAmC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UserProfiles.tsx": {
-    "file": "assets/UserProfiles-CKZgeXmU.js",
+    "file": "assets/UserProfiles-Cf_9asVn.js",
     "name": "UserProfiles",
     "src": "resources/js/Pages/UserProfiles.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
-      "_AppLayout-MPzLFJgu.js",
-      "_PageBreadCrumb-DIwk15ns.js",
+      "_AppLayout-yEmTqk5t.js",
+      "_PageBreadCrumb-Bn0e0JeA.js",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_index-8JOFVQGS.js",
-      "_Button-PpVdiZYL.js",
-      "_InputField-CrKjBl1V.js",
-      "_Label-6ykxv9Vp.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_NotificationCenter-CYTKKjod.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_index-Y8om0FOp.js",
+      "_Button-BeDV9Qym.js",
+      "_InputField-CxlmTzMD.js",
+      "_Label-B2ANprFJ.js",
+      "_Backdrop-4TobMvSA.js",
+      "_NotificationCenter-CEgV4d_s.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_XMarkIcon-DHhaSAmC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UserSide/Auth/Forgot.tsx": {
-    "file": "assets/Forgot-pkBRjasq.js",
+    "file": "assets/Forgot-DqMAIK7t.js",
     "name": "Forgot",
     "src": "resources/js/Pages/UserSide/Auth/Forgot.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Navigation-C3Gm4Ylt.js",
-      "_Form-DuQ3ISD2.js",
-      "_Label-6ykxv9Vp.js",
-      "_InputField-CrKjBl1V.js",
+      "_Navigation-CWq19YRc.js",
+      "_Form-DYyfZTMq.js",
+      "_Label-B2ANprFJ.js",
+      "_InputField-CxlmTzMD.js",
       "_index-BT6R6wLV.js",
       "resources/js/Pages/UserSide/Shared/UserModal.tsx",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_vendor-sweetalert2-BooRRB_8.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
@@ -3925,11 +3925,11 @@
       "_x-DKbsWLE6.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UserSide/Auth/Login.tsx": {
-    "file": "assets/Login-B1AMQC0L.js",
+    "file": "assets/Login-QeuXXBGB.js",
     "name": "Login",
     "src": "resources/js/Pages/UserSide/Auth/Login.tsx",
     "isDynamicEntry": true,
@@ -3937,14 +3937,14 @@
       "resources/js/Pages/UserSide/Auth/UserLogin.tsx",
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Navigation-C3Gm4Ylt.js",
+      "_Navigation-CWq19YRc.js",
       "resources/js/Pages/UserSide/Shared/UserModal.tsx",
       "_vendor-sweetalert2-BooRRB_8.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -3953,16 +3953,16 @@
       "_star-BGsfjwye.js",
       "_bell-CDkdItch.js",
       "_x-DKbsWLE6.js",
-      "_Form-DuQ3ISD2.js",
-      "_Label-6ykxv9Vp.js",
+      "_Form-DYyfZTMq.js",
+      "_Label-B2ANprFJ.js",
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UserSide/Auth/NewPassword.tsx": {
-    "file": "assets/NewPassword-7xMfGIGA.js",
+    "file": "assets/NewPassword-B-JmXcaY.js",
     "name": "NewPassword",
     "src": "resources/js/Pages/UserSide/Auth/NewPassword.tsx",
     "isDynamicEntry": true,
@@ -3970,15 +3970,15 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_index-BwxT_gyP.js",
-      "_Navigation-C3Gm4Ylt.js",
-      "_Form-DuQ3ISD2.js",
-      "_Label-6ykxv9Vp.js",
-      "_InputField-CrKjBl1V.js",
+      "_Navigation-CWq19YRc.js",
+      "_Form-DYyfZTMq.js",
+      "_Label-B2ANprFJ.js",
+      "_InputField-CxlmTzMD.js",
       "resources/js/Pages/UserSide/Shared/UserModal.tsx",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_vendor-sweetalert2-BooRRB_8.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
@@ -3990,25 +3990,25 @@
       "_x-DKbsWLE6.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UserSide/Auth/Otp.tsx": {
-    "file": "assets/Otp-MNNWEKkp.js",
+    "file": "assets/Otp-B-pzGLkR.js",
     "name": "Otp",
     "src": "resources/js/Pages/UserSide/Auth/Otp.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Navigation-C3Gm4Ylt.js",
-      "_Form-DuQ3ISD2.js",
+      "_Navigation-CWq19YRc.js",
+      "_Form-DYyfZTMq.js",
       "resources/js/Pages/UserSide/Shared/UserModal.tsx",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_vendor-sweetalert2-BooRRB_8.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
@@ -4020,11 +4020,11 @@
       "_x-DKbsWLE6.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UserSide/Auth/Register.tsx": {
-    "file": "assets/Register-BeRAXZSd.js",
+    "file": "assets/Register-CVpNESv4.js",
     "name": "Register",
     "src": "resources/js/Pages/UserSide/Auth/Register.tsx",
     "isDynamicEntry": true,
@@ -4032,17 +4032,17 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "resources/js/Pages/UserSide/Shared/UserModal.tsx",
-      "_Navigation-C3Gm4Ylt.js",
-      "_Label-6ykxv9Vp.js",
-      "_InputField-CrKjBl1V.js",
-      "_DropZone-CpPFKiIU.js",
+      "_Navigation-CWq19YRc.js",
+      "_Label-B2ANprFJ.js",
+      "_InputField-CxlmTzMD.js",
+      "_DropZone-D-xFNQql.js",
       "_index-BT6R6wLV.js",
       "_vendor-sweetalert2-BooRRB_8.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -4053,11 +4053,11 @@
       "_x-DKbsWLE6.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UserSide/Auth/ShopOwnerRegistration.tsx": {
-    "file": "assets/ShopOwnerRegistration-BgwOWn_2.js",
+    "file": "assets/ShopOwnerRegistration-CrG-RiBc.js",
     "name": "ShopOwnerRegistration",
     "src": "resources/js/Pages/UserSide/Auth/ShopOwnerRegistration.tsx",
     "isDynamicEntry": true,
@@ -4067,17 +4067,17 @@
       "_index-BwxT_gyP.js",
       "resources/js/Pages/UserSide/Shared/UserModal.tsx",
       "_vendor-leaflet-BwcjjA81.js",
-      "_Navigation-C3Gm4Ylt.js",
-      "_ComponentCard--Dp6ZgGD.js",
-      "_Label-6ykxv9Vp.js",
-      "_InputField-CrKjBl1V.js",
-      "_Radio-DYxv_fjv.js",
-      "_DropZone-CpPFKiIU.js",
+      "_Navigation-CWq19YRc.js",
+      "_ComponentCard-DOsKl-Ti.js",
+      "_Label-B2ANprFJ.js",
+      "_InputField-CxlmTzMD.js",
+      "_Radio-ChiwiDSh.js",
+      "_DropZone-D-xFNQql.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -4091,27 +4091,27 @@
       "_vendor-leaflet-BwcjjA81.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UserSide/Auth/UserLogin.tsx": {
-    "file": "assets/UserLogin-jUz7HMzG.js",
+    "file": "assets/UserLogin-Dqu5iyyO.js",
     "name": "UserLogin",
     "src": "resources/js/Pages/UserSide/Auth/UserLogin.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Navigation-C3Gm4Ylt.js",
-      "_Form-DuQ3ISD2.js",
-      "_Label-6ykxv9Vp.js",
+      "_Navigation-CWq19YRc.js",
+      "_Form-DYyfZTMq.js",
+      "_Label-B2ANprFJ.js",
       "_index-BT6R6wLV.js",
       "resources/js/Pages/UserSide/Shared/UserModal.tsx",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_vendor-sweetalert2-BooRRB_8.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
@@ -4123,11 +4123,11 @@
       "_x-DKbsWLE6.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UserSide/Auth/VerificationNotice.tsx": {
-    "file": "assets/VerificationNotice-nR0WzKoP.js",
+    "file": "assets/VerificationNotice-DdaCrLai.js",
     "name": "VerificationNotice",
     "src": "resources/js/Pages/UserSide/Auth/VerificationNotice.tsx",
     "isDynamicEntry": true,
@@ -4136,12 +4136,12 @@
       "_vendor-apexcharts-C5L_vV5G.js",
       "_index-BwxT_gyP.js",
       "resources/js/Pages/UserSide/Shared/UserModal.tsx",
-      "_Navigation-C3Gm4Ylt.js",
+      "_Navigation-CWq19YRc.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -4152,11 +4152,11 @@
       "_x-DKbsWLE6.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UserSide/Auth/VerifyEmail.tsx": {
-    "file": "assets/VerifyEmail-BcWoVem8.js",
+    "file": "assets/VerifyEmail-aJKTLiJo.js",
     "name": "VerifyEmail",
     "src": "resources/js/Pages/UserSide/Auth/VerifyEmail.tsx",
     "isDynamicEntry": true,
@@ -4164,13 +4164,13 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_index-BwxT_gyP.js",
-      "_Navigation-C3Gm4Ylt.js",
+      "_Navigation-CWq19YRc.js",
       "resources/js/Pages/UserSide/Shared/UserModal.tsx",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -4181,25 +4181,25 @@
       "_x-DKbsWLE6.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UserSide/Communication/message.tsx": {
-    "file": "assets/message-BwizKgg8.js",
+    "file": "assets/message-JoT_UDoQ.js",
     "name": "message",
     "src": "resources/js/Pages/UserSide/Communication/message.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Navigation-C3Gm4Ylt.js",
+      "_Navigation-CWq19YRc.js",
       "resources/js/Pages/UserSide/Shared/UserModal.tsx",
       "_vendor-sweetalert2-BooRRB_8.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -4210,24 +4210,24 @@
       "_x-DKbsWLE6.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UserSide/Orders/Checkout.tsx": {
-    "file": "assets/Checkout-CIN8phfM.js",
+    "file": "assets/Checkout-DsmWuWQ_.js",
     "name": "Checkout",
     "src": "resources/js/Pages/UserSide/Orders/Checkout.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Navigation-C3Gm4Ylt.js",
+      "_Navigation-CWq19YRc.js",
       "resources/js/Pages/UserSide/Shared/UserModal.tsx",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_vendor-sweetalert2-BooRRB_8.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
@@ -4239,24 +4239,24 @@
       "_x-DKbsWLE6.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UserSide/Orders/MyOrders.tsx": {
-    "file": "assets/MyOrders-BfLwajgv.js",
+    "file": "assets/MyOrders-CKvjWnC2.js",
     "name": "MyOrders",
     "src": "resources/js/Pages/UserSide/Orders/MyOrders.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Navigation-C3Gm4Ylt.js",
+      "_Navigation-CWq19YRc.js",
       "resources/js/Pages/UserSide/Shared/UserModal.tsx",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_vendor-sweetalert2-BooRRB_8.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
@@ -4268,25 +4268,25 @@
       "_x-DKbsWLE6.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UserSide/Orders/OrderSuccess.tsx": {
-    "file": "assets/OrderSuccess-84k-eTcC.js",
+    "file": "assets/OrderSuccess-DL18cemm.js",
     "name": "OrderSuccess",
     "src": "resources/js/Pages/UserSide/Orders/OrderSuccess.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Navigation-C3Gm4Ylt.js",
+      "_Navigation-CWq19YRc.js",
       "resources/js/Pages/UserSide/Shared/UserModal.tsx",
       "_vendor-sweetalert2-BooRRB_8.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -4297,25 +4297,25 @@
       "_x-DKbsWLE6.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UserSide/Orders/PaymentFailed.tsx": {
-    "file": "assets/PaymentFailed-DQNKK8i5.js",
+    "file": "assets/PaymentFailed-DI4X7raw.js",
     "name": "PaymentFailed",
     "src": "resources/js/Pages/UserSide/Orders/PaymentFailed.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
-      "_Navigation-C3Gm4Ylt.js",
+      "_Navigation-CWq19YRc.js",
       "_vendor-apexcharts-C5L_vV5G.js",
       "resources/js/Pages/UserSide/Shared/UserModal.tsx",
       "_vendor-sweetalert2-BooRRB_8.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -4326,25 +4326,25 @@
       "_x-DKbsWLE6.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UserSide/Orders/PaymentSuccess.tsx": {
-    "file": "assets/PaymentSuccess-3IOl6sEJ.js",
+    "file": "assets/PaymentSuccess-DLhPG5_3.js",
     "name": "PaymentSuccess",
     "src": "resources/js/Pages/UserSide/Orders/PaymentSuccess.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
-      "_Navigation-C3Gm4Ylt.js",
+      "_Navigation-CWq19YRc.js",
       "_vendor-apexcharts-C5L_vV5G.js",
       "resources/js/Pages/UserSide/Shared/UserModal.tsx",
       "_vendor-sweetalert2-BooRRB_8.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -4355,25 +4355,25 @@
       "_x-DKbsWLE6.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UserSide/Orders/payment.tsx": {
-    "file": "assets/payment-De9ikctB.js",
+    "file": "assets/payment-CVZC7yxQ.js",
     "name": "payment",
     "src": "resources/js/Pages/UserSide/Orders/payment.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Navigation-C3Gm4Ylt.js",
+      "_Navigation-CWq19YRc.js",
       "resources/js/Pages/UserSide/Shared/UserModal.tsx",
-      "_backNavigation-CXH1AQ83.js",
+      "_backNavigation-D9l20icM.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_vendor-sweetalert2-BooRRB_8.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
@@ -4385,7 +4385,7 @@
       "_x-DKbsWLE6.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UserSide/Orders/paymongo.tsx": {
@@ -4395,21 +4395,21 @@
     "isDynamicEntry": true
   },
   "resources/js/Pages/UserSide/Products/LandingPage.tsx": {
-    "file": "assets/LandingPage-CkS6gEvg.js",
+    "file": "assets/LandingPage-Ccaq8k_s.js",
     "name": "LandingPage",
     "src": "resources/js/Pages/UserSide/Products/LandingPage.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Navigation-C3Gm4Ylt.js",
+      "_Navigation-CWq19YRc.js",
       "resources/js/Pages/UserSide/Shared/UserModal.tsx",
       "_vendor-sweetalert2-BooRRB_8.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -4420,11 +4420,11 @@
       "_x-DKbsWLE6.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UserSide/Products/ProductShow.tsx": {
-    "file": "assets/ProductShow-CUb8zINB.js",
+    "file": "assets/ProductShow-2Wd-mvrf.js",
     "name": "ProductShow",
     "src": "resources/js/Pages/UserSide/Products/ProductShow.tsx",
     "isDynamicEntry": true,
@@ -4433,13 +4433,13 @@
       "_vendor-apexcharts-C5L_vV5G.js",
       "_index-BwxT_gyP.js",
       "resources/js/Pages/UserSide/Shared/UserModal.tsx",
-      "_Navigation-C3Gm4Ylt.js",
+      "_Navigation-CWq19YRc.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_Virtual3DShowroom-7fk5lcdO.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_Virtual3DShowroom-RVjCqCHz.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -4450,25 +4450,25 @@
       "_x-DKbsWLE6.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UserSide/Products/Products.tsx": {
-    "file": "assets/Products-B8m7wqjU.js",
+    "file": "assets/Products-DRgjfjt8.js",
     "name": "Products",
     "src": "resources/js/Pages/UserSide/Products/Products.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Navigation-C3Gm4Ylt.js",
-      "_NotificationBell-BQeerrdl.js",
+      "_Navigation-CWq19YRc.js",
+      "_NotificationBell-DPAaCqst.js",
       "resources/js/Pages/UserSide/Shared/UserModal.tsx",
       "_vendor-sweetalert2-BooRRB_8.js",
       "_index-BwxT_gyP.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -4479,11 +4479,11 @@
       "_x-DKbsWLE6.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UserSide/Products/SpaLanding.tsx": {
-    "file": "assets/SpaLanding-CHbGYyYN.js",
+    "file": "assets/SpaLanding-DNHo2el2.js",
     "name": "SpaLanding",
     "src": "resources/js/Pages/UserSide/Products/SpaLanding.tsx",
     "isDynamicEntry": true,
@@ -4492,11 +4492,11 @@
       "_vendor-apexcharts-C5L_vV5G.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UserSide/Products/VirtualShowroom.tsx": {
-    "file": "assets/VirtualShowroom-BxG5UWH3.js",
+    "file": "assets/VirtualShowroom-BPFMm1PK.js",
     "name": "VirtualShowroom",
     "src": "resources/js/Pages/UserSide/Products/VirtualShowroom.tsx",
     "isDynamicEntry": true,
@@ -4506,27 +4506,27 @@
       "_vendor-three-core-Dvt5Ztbx.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UserSide/Profile/ShopProfile.tsx": {
-    "file": "assets/ShopProfile-Dpby0SF0.js",
+    "file": "assets/ShopProfile-D8VW0dAe.js",
     "name": "ShopProfile",
     "src": "resources/js/Pages/UserSide/Profile/ShopProfile.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Navigation-C3Gm4Ylt.js",
-      "_ReportShopModal-CcULd9v7.js",
-      "_backNavigation-CXH1AQ83.js",
+      "_Navigation-CWq19YRc.js",
+      "_ReportShopModal-W_kPFGyo.js",
+      "_backNavigation-D9l20icM.js",
       "resources/js/Pages/UserSide/Shared/UserModal.tsx",
       "_vendor-sweetalert2-BooRRB_8.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -4537,11 +4537,11 @@
       "_x-DKbsWLE6.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UserSide/Profile/VirtualShowroomPage.tsx": {
-    "file": "assets/VirtualShowroomPage-DVZPGuN8.js",
+    "file": "assets/VirtualShowroomPage-CFoNDqlA.js",
     "name": "VirtualShowroomPage",
     "src": "resources/js/Pages/UserSide/Profile/VirtualShowroomPage.tsx",
     "isDynamicEntry": true,
@@ -4552,24 +4552,24 @@
       "_vendor-three-core-Dvt5Ztbx.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UserSide/Profile/customerProfile.tsx": {
-    "file": "assets/customerProfile-ChtHFJMq.js",
+    "file": "assets/customerProfile-HjtHImGY.js",
     "name": "customerProfile",
     "src": "resources/js/Pages/UserSide/Profile/customerProfile.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Navigation-C3Gm4Ylt.js",
+      "_Navigation-CWq19YRc.js",
       "resources/js/Pages/UserSide/Shared/UserModal.tsx",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_vendor-sweetalert2-BooRRB_8.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
@@ -4581,25 +4581,25 @@
       "_x-DKbsWLE6.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UserSide/Repairs/Repair.tsx": {
-    "file": "assets/Repair-UG2fMymk.js",
+    "file": "assets/Repair-Bf3USKZu.js",
     "name": "Repair",
     "src": "resources/js/Pages/UserSide/Repairs/Repair.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Navigation-C3Gm4Ylt.js",
-      "_NotificationBell-BQeerrdl.js",
+      "_Navigation-CWq19YRc.js",
+      "_NotificationBell-DPAaCqst.js",
       "resources/js/Pages/UserSide/Shared/UserModal.tsx",
       "_vendor-sweetalert2-BooRRB_8.js",
       "_index-BwxT_gyP.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -4610,25 +4610,25 @@
       "_x-DKbsWLE6.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UserSide/Repairs/RepairProcess.tsx": {
-    "file": "assets/RepairProcess-uTGg-TJU.js",
+    "file": "assets/RepairProcess-Dp7PLZX7.js",
     "name": "RepairProcess",
     "src": "resources/js/Pages/UserSide/Repairs/RepairProcess.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Navigation-C3Gm4Ylt.js",
+      "_Navigation-CWq19YRc.js",
       "resources/js/Pages/UserSide/Shared/UserModal.tsx",
       "_repairPricing-Bc77-6RN.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_vendor-sweetalert2-BooRRB_8.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
@@ -4640,41 +4640,41 @@
       "_x-DKbsWLE6.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UserSide/Repairs/__tests__/myRepairs.refund-workflow.test.tsx": {
-    "file": "assets/myRepairs.refund-workflow.test-DJnh4oVj.js",
+    "file": "assets/myRepairs.refund-workflow.test-BDFxTEIv.js",
     "name": "myRepairs.refund-workflow.test",
     "src": "resources/js/Pages/UserSide/Repairs/__tests__/myRepairs.refund-workflow.test.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_refundWorkflow-3Q9FPwQf.js",
-      "_vi.bdSIJ99Y-DN4PHNG-.js",
+      "_vi.bdSIJ99Y-BbAm0X7N.js",
       "_vendor-apexcharts-C5L_vV5G.js",
       "resources/js/app.jsx"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UserSide/Repairs/myRepairs.tsx": {
-    "file": "assets/myRepairs-L36-ja3c.js",
+    "file": "assets/myRepairs-D3-JjTaE.js",
     "name": "myRepairs",
     "src": "resources/js/Pages/UserSide/Repairs/myRepairs.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Navigation-C3Gm4Ylt.js",
+      "_Navigation-CWq19YRc.js",
       "resources/js/Pages/UserSide/Shared/UserModal.tsx",
       "_refundWorkflow-3Q9FPwQf.js",
       "_repairPricing-Bc77-6RN.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_vendor-sweetalert2-BooRRB_8.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
@@ -4686,27 +4686,27 @@
       "_x-DKbsWLE6.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UserSide/Repairs/repairShow.tsx": {
-    "file": "assets/repairShow-BiBzHIaz.js",
+    "file": "assets/repairShow-CfTdwO1W.js",
     "name": "repairShow",
     "src": "resources/js/Pages/UserSide/Repairs/repairShow.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Navigation-C3Gm4Ylt.js",
-      "_ReportShopModal-CcULd9v7.js",
-      "_backNavigation-CXH1AQ83.js",
+      "_Navigation-CWq19YRc.js",
+      "_ReportShopModal-W_kPFGyo.js",
+      "_backNavigation-D9l20icM.js",
       "resources/js/Pages/UserSide/Shared/UserModal.tsx",
       "_vendor-sweetalert2-BooRRB_8.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -4717,25 +4717,25 @@
       "_x-DKbsWLE6.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UserSide/Shared/Services.tsx": {
-    "file": "assets/Services-BxnxAPYr.js",
+    "file": "assets/Services-GyUOXtMT.js",
     "name": "Services",
     "src": "resources/js/Pages/UserSide/Shared/Services.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
-      "_Navigation-C3Gm4Ylt.js",
+      "_Navigation-CWq19YRc.js",
       "_vendor-apexcharts-C5L_vV5G.js",
       "resources/js/Pages/UserSide/Shared/UserModal.tsx",
       "_vendor-sweetalert2-BooRRB_8.js",
       "_index-BwxT_gyP.js",
-      "_NotificationBell-BQeerrdl.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_NotificationBell-DPAaCqst.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_circle-alert-CKOW_eQ9.js",
       "_createLucideIcon-Ck1PURyq.js",
       "_trash-2-BIosGwPU.js",
@@ -4746,7 +4746,7 @@
       "_x-DKbsWLE6.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/UserSide/Shared/UserModal.tsx": {
@@ -4759,22 +4759,22 @@
     ]
   },
   "resources/js/Pages/UserSide/Shared/articles.tsx": {
-    "file": "assets/articles-BEaqK8wn.js",
+    "file": "assets/articles-pjoVr246.js",
     "name": "articles",
     "src": "resources/js/Pages/UserSide/Shared/articles.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_Virtual3DShowroom-7fk5lcdO.js",
-      "_backNavigation-CXH1AQ83.js"
+      "_Virtual3DShowroom-RVjCqCHz.js",
+      "_backNavigation-D9l20icM.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/superAdmin/AdminTeam/AdminManagement.tsx": {
-    "file": "assets/AdminManagement-CoBb9YkX.js",
+    "file": "assets/AdminManagement-BliLefyP.js",
     "name": "AdminManagement",
     "src": "resources/js/Pages/superAdmin/AdminTeam/AdminManagement.tsx",
     "isDynamicEntry": true,
@@ -4782,24 +4782,24 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout-MPzLFJgu.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_NotificationCenter-CYTKKjod.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_AppLayout-yEmTqk5t.js",
+      "_Backdrop-4TobMvSA.js",
+      "_NotificationCenter-CEgV4d_s.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_XMarkIcon-DHhaSAmC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/superAdmin/AdminTeam/CreateAdmin.tsx": {
-    "file": "assets/CreateAdmin-B-VuWxcf.js",
+    "file": "assets/CreateAdmin-BGYvfiXm.js",
     "name": "CreateAdmin",
     "src": "resources/js/Pages/superAdmin/AdminTeam/CreateAdmin.tsx",
     "isDynamicEntry": true,
@@ -4807,24 +4807,24 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout-MPzLFJgu.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_NotificationCenter-CYTKKjod.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_AppLayout-yEmTqk5t.js",
+      "_Backdrop-4TobMvSA.js",
+      "_NotificationCenter-CEgV4d_s.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_XMarkIcon-DHhaSAmC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/superAdmin/Auth/SuperAdminLogin.tsx": {
-    "file": "assets/SuperAdminLogin-AFIbg_Yg.js",
+    "file": "assets/SuperAdminLogin-SMNF8m_-.js",
     "name": "SuperAdminLogin",
     "src": "resources/js/Pages/superAdmin/Auth/SuperAdminLogin.tsx",
     "isDynamicEntry": true,
@@ -4834,88 +4834,88 @@
       "_vendor-sweetalert2-BooRRB_8.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/superAdmin/Communications/NotificationCommunicationTools.tsx": {
-    "file": "assets/NotificationCommunicationTools-CTqWd8xI.js",
+    "file": "assets/NotificationCommunicationTools-DMcwQbAn.js",
     "name": "NotificationCommunicationTools",
     "src": "resources/js/Pages/superAdmin/Communications/NotificationCommunicationTools.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout-MPzLFJgu.js",
+      "_AppLayout-yEmTqk5t.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_index-D6_Amy6c.js",
-      "_Badge-BMwafbcZ.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_NotificationCenter-CYTKKjod.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_index-DqYjjb-0.js",
+      "_Badge-CBac1Mee.js",
+      "_Backdrop-4TobMvSA.js",
+      "_NotificationCenter-CEgV4d_s.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_XMarkIcon-DHhaSAmC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/superAdmin/Reports/DataReportAccess.tsx": {
-    "file": "assets/DataReportAccess-DxYNtoHo.js",
+    "file": "assets/DataReportAccess-CG0oASkd.js",
     "name": "DataReportAccess",
     "src": "resources/js/Pages/superAdmin/Reports/DataReportAccess.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout-MPzLFJgu.js",
+      "_AppLayout-yEmTqk5t.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_NotificationCenter-CYTKKjod.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_Backdrop-4TobMvSA.js",
+      "_NotificationCenter-CEgV4d_s.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_XMarkIcon-DHhaSAmC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/superAdmin/Settings/Profile.tsx": {
-    "file": "assets/Profile-DUk9qC8o.js",
+    "file": "assets/Profile-BKEWbRR8.js",
     "name": "Profile",
     "src": "resources/js/Pages/superAdmin/Settings/Profile.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout-MPzLFJgu.js",
+      "_AppLayout-yEmTqk5t.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_NotificationCenter-CYTKKjod.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_Backdrop-4TobMvSA.js",
+      "_NotificationCenter-CEgV4d_s.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_XMarkIcon-DHhaSAmC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/superAdmin/Shops/RegisteredShops.tsx": {
-    "file": "assets/RegisteredShops-DApZIAy0.js",
+    "file": "assets/RegisteredShops-BWHeXPtP.js",
     "name": "RegisteredShops",
     "src": "resources/js/Pages/superAdmin/Shops/RegisteredShops.tsx",
     "isDynamicEntry": true,
@@ -4923,50 +4923,50 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout-MPzLFJgu.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_NotificationCenter-CYTKKjod.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_AppLayout-yEmTqk5t.js",
+      "_Backdrop-4TobMvSA.js",
+      "_NotificationCenter-CEgV4d_s.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_XMarkIcon-DHhaSAmC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/superAdmin/Shops/ShopOwnerRegistrationView.tsx": {
-    "file": "assets/ShopOwnerRegistrationView-DgH0vanB.js",
+    "file": "assets/ShopOwnerRegistrationView-C96utG8g.js",
     "name": "ShopOwnerRegistrationView",
     "src": "resources/js/Pages/superAdmin/Shops/ShopOwnerRegistrationView.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout-MPzLFJgu.js",
+      "_AppLayout-yEmTqk5t.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_Button-PpVdiZYL.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_NotificationCenter-CYTKKjod.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_Button-BeDV9Qym.js",
+      "_Backdrop-4TobMvSA.js",
+      "_NotificationCenter-CEgV4d_s.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_XMarkIcon-DHhaSAmC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/superAdmin/Shops/ShopReports.tsx": {
-    "file": "assets/ShopReports-Bm_V7EHF.js",
+    "file": "assets/ShopReports-CFnVvztV.js",
     "name": "ShopReports",
     "src": "resources/js/Pages/superAdmin/Shops/ShopReports.tsx",
     "isDynamicEntry": true,
@@ -4974,24 +4974,24 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout-MPzLFJgu.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_NotificationCenter-CYTKKjod.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_AppLayout-yEmTqk5t.js",
+      "_Backdrop-4TobMvSA.js",
+      "_NotificationCenter-CEgV4d_s.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_XMarkIcon-DHhaSAmC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/superAdmin/Shops/SubscriptionManagement.tsx": {
-    "file": "assets/SubscriptionManagement-Bhjh8GrG.js",
+    "file": "assets/SubscriptionManagement-CxtElubX.js",
     "name": "SubscriptionManagement",
     "src": "resources/js/Pages/superAdmin/Shops/SubscriptionManagement.tsx",
     "isDynamicEntry": true,
@@ -4999,104 +4999,104 @@
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_AppLayout-MPzLFJgu.js",
-      "_Button-PpVdiZYL.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_NotificationCenter-CYTKKjod.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_AppLayout-yEmTqk5t.js",
+      "_Button-BeDV9Qym.js",
+      "_Backdrop-4TobMvSA.js",
+      "_NotificationCenter-CEgV4d_s.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_XMarkIcon-DHhaSAmC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/superAdmin/SystemMonitoringDashboard.tsx": {
-    "file": "assets/SystemMonitoringDashboard-T5ZAwMDV.js",
+    "file": "assets/SystemMonitoringDashboard-DNVj7iVd.js",
     "name": "SystemMonitoringDashboard",
     "src": "resources/js/Pages/superAdmin/SystemMonitoringDashboard.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout-MPzLFJgu.js",
-      "_index-D6_Amy6c.js",
-      "_Badge-BMwafbcZ.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_NotificationCenter-CYTKKjod.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_AppLayout-yEmTqk5t.js",
+      "_index-DqYjjb-0.js",
+      "_Badge-CBac1Mee.js",
+      "_Backdrop-4TobMvSA.js",
+      "_NotificationCenter-CEgV4d_s.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_XMarkIcon-DHhaSAmC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/superAdmin/Users/FlaggedAccounts.tsx": {
-    "file": "assets/FlaggedAccounts-BtrFuHmX.js",
+    "file": "assets/FlaggedAccounts-BcMf7ahA.js",
     "name": "FlaggedAccounts",
     "src": "resources/js/Pages/superAdmin/Users/FlaggedAccounts.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout-MPzLFJgu.js",
+      "_AppLayout-yEmTqk5t.js",
       "_vendor-sweetalert2-BooRRB_8.js",
       "_index-BT6R6wLV.js",
-      "_index-D6_Amy6c.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_NotificationCenter-CYTKKjod.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_index-DqYjjb-0.js",
+      "_Backdrop-4TobMvSA.js",
+      "_NotificationCenter-CEgV4d_s.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_XMarkIcon-DHhaSAmC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js"
+      "_ShopOwnerDropdown-BKUSHE2l.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/Pages/superAdmin/Users/SuperAdminUserManagement.tsx": {
-    "file": "assets/SuperAdminUserManagement-DpCkbMzu.js",
+    "file": "assets/SuperAdminUserManagement-BAi_Qt_l.js",
     "name": "SuperAdminUserManagement",
     "src": "resources/js/Pages/superAdmin/Users/SuperAdminUserManagement.tsx",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/app.jsx",
       "_vendor-apexcharts-C5L_vV5G.js",
-      "_AppLayout-MPzLFJgu.js",
+      "_AppLayout-yEmTqk5t.js",
       "_vendor-sweetalert2-BooRRB_8.js",
-      "_Button-PpVdiZYL.js",
-      "_Backdrop-Cs0zFvxC.js",
-      "_NotificationCenter-CYTKKjod.js",
-      "_useNotifications-K5qepJ2D.js",
-      "_useQuery-IOiCMpUa.js",
-      "_useMutation-BuY45ZZW.js",
+      "_Button-BeDV9Qym.js",
+      "_Backdrop-4TobMvSA.js",
+      "_NotificationCenter-CEgV4d_s.js",
+      "_useNotifications-BKJadVmo.js",
+      "_useQuery-LX-Y0MsX.js",
+      "_useMutation-ArENuc0o.js",
       "_XMarkIcon-DHhaSAmC.js",
-      "_SuperAdminDropdown-BckEu07k.js",
+      "_SuperAdminDropdown-BM00nUu6.js",
       "_index-BwxT_gyP.js",
-      "_ShopOwnerDropdown-2wIBz4jG.js",
+      "_ShopOwnerDropdown-BKUSHE2l.js",
       "_index-BT6R6wLV.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/app.jsx": {
-    "file": "assets/app-CGUkcnR4.js",
+    "file": "assets/app-DOL8BFJT.js",
     "name": "app",
     "src": "resources/js/app.jsx",
     "isEntry": true,
@@ -5260,7 +5260,7 @@
       "resources/js/Pages/UserSide/Repairs/__tests__/myRepairs.refund-workflow.test.tsx",
       "resources/js/Pages/UserSide/Repairs/myRepairs.tsx",
       "resources/js/Pages/UserSide/Repairs/repairShow.tsx",
-      "_Navigation-C3Gm4Ylt.js",
+      "_Navigation-CWq19YRc.js",
       "resources/js/Pages/UserSide/Shared/Services.tsx",
       "resources/js/Pages/UserSide/Shared/UserModal.tsx",
       "resources/js/Pages/UserSide/Shared/articles.tsx",
@@ -5342,11 +5342,11 @@
       "resources/js/Pages/ERP/repairer/uploadService.tsx"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   },
   "resources/js/services/repairPosHistoryApi.ts": {
-    "file": "assets/repairPosHistoryApi-CG_hCB1H.js",
+    "file": "assets/repairPosHistoryApi-aNX1Mz9V.js",
     "name": "repairPosHistoryApi",
     "src": "resources/js/services/repairPosHistoryApi.ts",
     "isDynamicEntry": true,
@@ -5355,7 +5355,7 @@
       "_vendor-apexcharts-C5L_vV5G.js"
     ],
     "css": [
-      "assets/app-n4Iy8HEp.css"
+      "assets/app-D4xBb0t4.css"
     ]
   }
 }

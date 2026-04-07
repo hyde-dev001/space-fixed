@@ -290,7 +290,7 @@ export default function JobOrdersPage() {
   const [loading, setLoading] = useState(true);
   const itemsPerPage = 10;
   const hasAppliedFocusOrder = useRef(false);
-  const returnCarrierCompanyOptions = ["Lalamove", "J&T", "LBC", "Ninja Van", "Grab Express", "Express Padala", "Other"];
+  const returnCarrierCompanyOptions = ["Lalamove", "J&T", "Express Padala" ];
 
   // Fetch orders from API on mount
   React.useEffect(() => {

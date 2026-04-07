@@ -1,6 +1,6 @@
 import { Head, router, usePage } from "@inertiajs/react";
 import type { ComponentType } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Swal from "sweetalert2";
 import AppLayout_shopOwner from "../../../layout/AppLayout_shopOwner";
 import RefundStageBadge from "../../../components/refunds/RefundStageBadge";
@@ -267,6 +267,12 @@ const ReceiptIcon = ({ className }: { className?: string }) => (
 interface RefundRequest {
 	id: number;
 	refundType?: "order" | "repair";
+	workflowSource?: string;
+	repairerStatus?: string;
+	preferredReturnChannel?: string;
+	preferredReturnAccountName?: string;
+	preferredReturnAccountRef?: string;
+	customerPayoutConsent?: boolean;
 	orderNumber: string;
 	customerName: string;
 	orderTotal?: string;
@@ -312,7 +318,43 @@ const parseCurrencyToNumber = (value: string): number => {
 	return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const escapeSwalText = (value?: string): string => {
+	return String(value || "")
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/"/g, "&quot;")
+		.replace(/'/g, "&#39;");
+};
+
+const formatPayoutChannelLabel = (channel?: string): string => {
+	switch (String(channel || "").toLowerCase()) {
+		case "gcash":
+			return "GCash";
+		case "card":
+			return "Card";
+		case "bank_transfer":
+			return "Bank Transfer";
+		case "manual_cash":
+			return "Manual Cash";
+		default:
+			return "Not specified";
+	}
+};
+
 const resolveRepairRefundPaymentType = (request: RefundRequest): "pure_online" | "mixed" | "manual_only" => {
+	if (request.hasGatewayLeg && request.hasPosManualLeg) {
+		return "mixed";
+	}
+
+	if (request.hasGatewayLeg && !request.hasPosManualLeg) {
+		return "pure_online";
+	}
+
+	if (!request.hasGatewayLeg && request.hasPosManualLeg) {
+		return "manual_only";
+	}
+
 	const declaredType = String(request.refundPaymentType || "").toLowerCase();
 	if (declaredType === "pure_online" || declaredType === "mixed" || declaredType === "manual_only") {
 		return declaredType;
@@ -417,6 +459,26 @@ export default function RefundApproval() {
 	const [statusFilter, setStatusFilter] = useState("All");
 	const [isActionProcessing, setIsActionProcessing] = useState(false);
 	const [isLoading, setIsLoading] = useState(false);
+	const hasAppliedFocusOrder = useRef(false);
+
+	useEffect(() => {
+		if (typeof window === "undefined") {
+			return;
+		}
+
+		const params = new URLSearchParams(window.location.search);
+		const requestedStatus = params.get("status");
+		const focusOrder = params.get("focus_order");
+
+		if (requestedStatus && ["All", "Pending", "Approved", "Rejected"].includes(requestedStatus)) {
+			setStatusFilter(requestedStatus);
+		}
+
+		if (focusOrder) {
+			setSearchQuery(focusOrder);
+			setCurrentPage(1);
+		}
+	}, []);
 
 	const isVideoEvidence = (src: string): boolean => {
 		return /\.(mp4|mov|avi|mkv|webm)(\?.*)?$/i.test(src);
@@ -489,6 +551,33 @@ export default function RefundApproval() {
 	useEffect(() => {
 		void fetchRefundRequests();
 	}, [statusFilter, searchQuery]);
+
+	useEffect(() => {
+		if (typeof window === "undefined" || isLoading || hasAppliedFocusOrder.current || requests.length === 0) {
+			return;
+		}
+
+		const params = new URLSearchParams(window.location.search);
+		const focusOrder = String(params.get("focus_order") || "").trim().toLowerCase();
+		if (!focusOrder) {
+			return;
+		}
+
+		const matchedRequest = requests.find(
+			(request) => String(request.orderNumber || "").trim().toLowerCase() === focusOrder,
+		);
+		if (!matchedRequest) {
+			return;
+		}
+
+		hasAppliedFocusOrder.current = true;
+		setSelectedRequest(matchedRequest);
+		setViewModalOpen(true);
+
+		params.delete("focus_order");
+		const nextQuery = params.toString();
+		window.history.replaceState({}, "", `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`);
+	}, [isLoading, requests]);
 
 	const filteredData = useMemo(() => {
 		return requests.filter((item) => {
@@ -798,6 +887,23 @@ export default function RefundApproval() {
 			&& !["processing", "succeeded", "failed", "rejected"].includes(rawStatus);
 	};
 
+	const getExecuteActionLabel = (request: RefundRequest): string => {
+		if (request.refundType !== "repair") {
+			return "Execute Payout";
+		}
+
+		const paymentType = resolveRepairRefundPaymentType(request);
+		if (paymentType === "pure_online") {
+			return "Execute PayMongo Refund";
+		}
+
+		if (paymentType === "mixed") {
+			return "Execute Mixed Refund";
+		}
+
+		return "Execute Manual Payout";
+	};
+
 	const handleExecuteGatewayRefund = async (request: RefundRequest) => {
 		let payload: Record<string, unknown> = {};
 
@@ -832,6 +938,13 @@ export default function RefundApproval() {
 				});
 			} else {
 				const defaultAmount = request.financeExecution?.execution_amount ?? parseCurrencyToNumber(request.refundAmount);
+				const preferredChannel = String(request.preferredReturnChannel || "").toLowerCase();
+				const defaultChannel: RepairExecutionChannel =
+					(request.financeExecution?.execution_channel as RepairExecutionChannel | undefined)
+					|| (preferredChannel === "gcash" || preferredChannel === "card" || preferredChannel === "bank_transfer" || preferredChannel === "manual_cash"
+						? (preferredChannel as RepairExecutionChannel)
+						: "gcash");
+				const defaultReference = request.financeExecution?.execution_reference || request.preferredReturnAccountRef || "";
 				const proofDefaults = Array.isArray(request.financeExecution?.execution_proof_urls)
 					? request.financeExecution?.execution_proof_urls ?? []
 					: [];
@@ -844,6 +957,7 @@ export default function RefundApproval() {
 							<p style="margin: 0;"><strong>Customer:</strong> ${request.customerName}</p>
 							<p style="margin: 0;"><strong>Amount:</strong> ${request.refundAmount}</p>
 							<p style="margin: 0;"><strong>Flow:</strong> Manual payout execution (${paymentType === "mixed" ? "POS-paid portion" : "walk-in POS payment"})</p>
+								<p style="margin: 0;"><strong>Customer Destination:</strong> ${escapeSwalText(formatPayoutChannelLabel(request.preferredReturnChannel))} ${request.preferredReturnAccountRef ? `(${escapeSwalText(request.preferredReturnAccountRef)})` : ""}</p>
 							<label style="display: grid; gap: 0.25rem;">
 								<span style="font-weight: 600;">Execution Channel</span>
 								<select id="repair-execution-channel" class="swal2-input" style="margin: 0; width: 100%;">
@@ -855,7 +969,7 @@ export default function RefundApproval() {
 							</label>
 							<label style="display: grid; gap: 0.25rem;">
 								<span style="font-weight: 600;">Execution Reference</span>
-								<input id="repair-execution-reference" class="swal2-input" style="margin: 0; width: 100%;" placeholder="Reference / auth code" value="${request.financeExecution?.execution_reference ?? ""}" />
+									<input id="repair-execution-reference" class="swal2-input" style="margin: 0; width: 100%;" placeholder="Reference / auth code" value="${escapeSwalText(defaultReference)}" />
 							</label>
 							<label style="display: grid; gap: 0.25rem;">
 								<span style="font-weight: 600;">Execution Amount</span>
@@ -873,6 +987,12 @@ export default function RefundApproval() {
 					cancelButtonColor: "#6b7280",
 					confirmButtonText: "Execute",
 					cancelButtonText: "Cancel",
+					didOpen: () => {
+						const select = document.getElementById("repair-execution-channel") as HTMLSelectElement | null;
+						if (select) {
+							select.value = defaultChannel;
+						}
+					},
 					preConfirm: () => {
 						const channel = (document.getElementById("repair-execution-channel") as HTMLSelectElement | null)?.value as RepairExecutionChannel | undefined;
 						const reference = (document.getElementById("repair-execution-reference") as HTMLInputElement | null)?.value?.trim() ?? "";
@@ -1253,6 +1373,26 @@ export default function RefundApproval() {
 									</div>
 								</div>
 
+								{selectedRequest.refundType === "repair" && resolveRepairRefundPaymentType(selectedRequest) !== "pure_online" && (
+									<div>
+										<p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Customer Payout Destination</p>
+										<div className="border border-gray-200 dark:border-gray-800 rounded-lg p-4 text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-900 grid grid-cols-1 sm:grid-cols-3 gap-3">
+											<div>
+												<p className="text-xs uppercase tracking-wide text-gray-500">Channel</p>
+												<p className="font-semibold text-gray-900 dark:text-gray-100">{formatPayoutChannelLabel(selectedRequest.preferredReturnChannel)}</p>
+											</div>
+											<div>
+												<p className="text-xs uppercase tracking-wide text-gray-500">Account Name</p>
+												<p className="font-semibold text-gray-900 dark:text-gray-100">{selectedRequest.preferredReturnAccountName || "Not provided"}</p>
+											</div>
+											<div>
+												<p className="text-xs uppercase tracking-wide text-gray-500">Account Ref / Number</p>
+												<p className="font-semibold text-gray-900 dark:text-gray-100">{selectedRequest.preferredReturnAccountRef || "Not provided"}</p>
+											</div>
+										</div>
+									</div>
+								)}
+
 								<div>
 									<p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Refund Evidence</p>
 									{selectedRequest.media && selectedRequest.media.length > 0 ? (
@@ -1319,7 +1459,7 @@ export default function RefundApproval() {
 									disabled={!canExecuteGatewayRefund(selectedRequest) || isActionProcessing}
 									className="px-5 py-2.5 text-sm font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
 								>
-									Execute Payout
+									{getExecuteActionLabel(selectedRequest)}
 								</button>
 							)}
 							{canShopOwnerReject(selectedRequest) && (

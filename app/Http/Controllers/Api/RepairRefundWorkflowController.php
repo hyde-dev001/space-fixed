@@ -408,7 +408,13 @@ class RepairRefundWorkflowController extends Controller
         } elseif (!$hasPosManualLeg) {
             $tenderTypes = $source?->paymentLines?->pluck('tender_type') ?? collect();
             $hasGatewayTender = $tenderTypes->contains(fn ($value) => in_array((string) $value, ['paymongo_card', 'paymongo_wallet'], true));
-            $refundPaymentType = $hasGatewayTender ? 'pure_online' : 'manual_only';
+            $hasManualTender = $tenderTypes->contains(fn ($value) => !in_array((string) $value, ['paymongo_card', 'paymongo_wallet'], true));
+
+            if ($hasGatewayTender && $hasManualTender) {
+                $refundPaymentType = 'mixed';
+            } elseif ($hasGatewayTender) {
+                $refundPaymentType = 'pure_online';
+            }
         }
 
         return [
@@ -426,6 +432,8 @@ class RepairRefundWorkflowController extends Controller
             'reason' => (string) ($refund->reason_notes ?? ''),
             'status' => $uiStatus,
             'rawStatus' => $status,
+            'workflowSource' => (string) ($refund->workflow_source ?? 'pos'),
+            'repairerStatus' => (string) ($refund->repairer_status ?? 'pending'),
             'shopOwnerStatus' => (string) ($refund->shop_owner_status ?? 'pending'),
             'financeStatus' => (string) ($refund->finance_status ?? 'pending'),
             'requiresOwnerApproval' => $requiresOwnerApproval,
@@ -434,6 +442,10 @@ class RepairRefundWorkflowController extends Controller
             'refundExecutedAt' => optional($refund->executed_at)->toDateTimeString(),
             'refundedAt' => optional($refund->executed_at)->toDateTimeString(),
             'rejectionReason' => (string) ($refund->failure_reason ?? ''),
+            'preferredReturnChannel' => (string) ($refund->preferred_return_channel ?? ''),
+            'preferredReturnAccountName' => (string) ($refund->preferred_return_account_name ?? ''),
+            'preferredReturnAccountRef' => (string) ($refund->preferred_return_account_ref ?? ''),
+            'customerPayoutConsent' => (bool) ($refund->customer_payout_consent ?? false),
             'media' => $evidenceMedia,
             'refundPaymentType' => $refundPaymentType,
             'hasGatewayLeg' => $hasGatewayLeg,
