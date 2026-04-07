@@ -1604,7 +1604,7 @@ const MyOrders: React.FC = () => {
                               >
                                 REFUND
                               </button>
-                            ) : getRefundStageText(order) !== 'Pending Approval' ? (
+                            ) : !['Pending Approval', 'Staff Pickup Scheduled'].includes(getRefundStageText(order) || '') ? (
                               <button
                                 disabled
                                 className={`${actionButtonBaseClass} ${actionButtonDisabledClass}`}

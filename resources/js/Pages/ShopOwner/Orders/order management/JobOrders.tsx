@@ -92,42 +92,6 @@ const parseAmount = (value: unknown): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-const escapeHtml = (value: string): string =>
-  value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-const buildPickupAddressHtml = (order: Order): string => {
-  const street = String(order.shippingAddressLine || '').trim();
-  const barangay = String(order.shippingBarangay || '').trim();
-  const city = String(order.shippingCity || '').trim();
-  const province = String(order.shippingProvince || '').trim();
-  const region = String(order.shippingRegion || '').trim();
-  const postalCode = String(order.shippingPostalCode || '').trim();
-
-  const hasStructured = [street, barangay, city, province, region, postalCode].some((part) => part !== '');
-
-  if (hasStructured) {
-    const rows = [
-      { label: 'Street / Building', value: street },
-      { label: 'Barangay / Landmark', value: barangay },
-      { label: 'City', value: city },
-      { label: 'Province', value: province },
-      { label: 'Region', value: region },
-      { label: 'Postal Code', value: postalCode },
-    ].filter((row) => row.value !== '');
-
-    return rows
-      .map((row) => `<div style="display:flex;gap:8px;align-items:flex-start;"><span style="min-width:130px;font-size:12px;color:#64748b;">${escapeHtml(row.label)}:</span><span style="font-size:13px;color:#111827;font-weight:600;line-height:1.35;">${escapeHtml(row.value)}</span></div>`)
-      .join('');
-  }
-
-  const fallbackAddress = String(order.shippingAddress || '').trim() || 'No shipping address found on this order.';
-  return `<div style="font-size:13px;color:#111827;font-weight:600;line-height:1.4;">${escapeHtml(fallbackAddress)}</div>`;
-};
-
 type MetricCardProps = {
   title: string;
   value: number | string;
@@ -314,10 +278,19 @@ export default function JobOrdersPage() {
   const [trackingNumber, setTrackingNumber] = useState("");
   const [trackingLink, setTrackingLink] = useState("");
   const [isConfirmingShipping, setIsConfirmingShipping] = useState(false);
+  const [isReturnPickupModalOpen, setIsReturnPickupModalOpen] = useState(false);
+  const [returnPickupOrder, setReturnPickupOrder] = useState<Order | null>(null);
+  const [returnCarrierCompany, setReturnCarrierCompany] = useState("Lalamove");
+  const [returnRiderName, setReturnRiderName] = useState("");
+  const [returnRiderPhone, setReturnRiderPhone] = useState("");
+  const [returnTrackingNumber, setReturnTrackingNumber] = useState("");
+  const [returnTrackingLink, setReturnTrackingLink] = useState("");
+  const [isSavingReturnPickup, setIsSavingReturnPickup] = useState(false);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const itemsPerPage = 10;
   const hasAppliedFocusOrder = useRef(false);
+  const returnCarrierCompanyOptions = ["Lalamove", "J&T", "LBC", "Ninja Van", "Grab Express", "Express Padala", "Other"];
 
   // Fetch orders from API on mount
   React.useEffect(() => {
@@ -753,10 +726,7 @@ export default function JobOrdersPage() {
       && !isBlocked;
   };
 
-  const handleArrangeReturnPickup = async (order: Order) => {
-    const pickupAddressHtml = buildPickupAddressHtml(order);
-    const customerName = String(order.customer || 'Customer').trim() || 'Customer';
-    const customerPhone = String(order.phone || '').trim() || 'No phone provided';
+  const handleArrangeReturnPickup = (order: Order) => {
     const existingPickup = order.latest_refund || null;
     const defaultCarrier = String(existingPickup?.staff_return_carrier || '').trim();
     const defaultRiderName = String(existingPickup?.staff_return_rider_name || '').trim();
@@ -764,131 +734,76 @@ export default function JobOrdersPage() {
     const defaultTrackingNumber = String(existingPickup?.staff_return_tracking_number || '').trim();
     const defaultTrackingLink = String(existingPickup?.staff_return_tracking_link || '').trim();
 
-    const shipmentInput = await Swal.fire({
-      title: 'Arrange Return Pickup',
-      html: `
-        <div style="display:grid;gap:14px;text-align:left;">
-          <div style="border:1px solid #e5e7eb;border-radius:12px;padding:12px 14px;background:#f8fafc;display:grid;gap:8px;">
-            <p style="margin:0;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#475569;">Order Context</p>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-              <div>
-                <p style="margin:0;font-size:11px;color:#64748b;">Order #</p>
-                <p style="margin:2px 0 0;font-size:13px;font-weight:600;color:#111827;">${escapeHtml(String(order.order_number || '-'))}</p>
-              </div>
-              <div>
-                <p style="margin:0;font-size:11px;color:#64748b;">Customer</p>
-                <p style="margin:2px 0 0;font-size:13px;font-weight:600;color:#111827;">${escapeHtml(customerName)}</p>
-              </div>
-            </div>
-            <div>
-              <p style="margin:0;font-size:11px;color:#64748b;">Customer Phone</p>
-              <p style="margin:2px 0 0;font-size:13px;font-weight:600;color:#111827;">${escapeHtml(customerPhone)}</p>
-            </div>
-          </div>
+    setReturnPickupOrder(order);
+    setReturnCarrierCompany(defaultCarrier || "Lalamove");
+    setReturnRiderName(defaultRiderName);
+    setReturnRiderPhone(defaultRiderPhone);
+    setReturnTrackingNumber(defaultTrackingNumber);
+    setReturnTrackingLink(defaultTrackingLink);
+    setIsReturnPickupModalOpen(true);
+  };
 
-          <div style="display:grid;gap:6px;">
-            <label style="font-size:13px;font-weight:700;color:#334155;">Customer Pickup Address</label>
-            <div style="margin:0;min-height:80px;border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;background:#f9fafb;display:grid;gap:6px;">
-              ${pickupAddressHtml}
-            </div>
-          </div>
+  const closeReturnPickupModal = () => {
+    setIsReturnPickupModalOpen(false);
+    setReturnPickupOrder(null);
+    setReturnCarrierCompany("Lalamove");
+    setReturnRiderName("");
+    setReturnRiderPhone("");
+    setReturnTrackingNumber("");
+    setReturnTrackingLink("");
+  };
 
-          <div style="display:grid;gap:10px;">
-            <p style="margin:0;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#475569;">Courier Assignment</p>
+  const handleSaveReturnPickup = async () => {
+    if (!returnPickupOrder) return;
 
-            <div style="display:grid;gap:6px;">
-              <label style="font-size:13px;font-weight:600;color:#334155;">Carrier Company</label>
-              <input id="swal-carrier-company" class="swal2-input" placeholder="e.g. J&T, LBC, Ninja Van" value="${escapeHtml(defaultCarrier)}" style="margin:0;border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;" />
-            </div>
+    const carrierCompany = returnCarrierCompany.trim();
+    const riderName = returnRiderName.trim();
+    const riderPhone = returnRiderPhone.trim();
+    const trackingNumber = returnTrackingNumber.trim();
+    const trackingLink = returnTrackingLink.trim();
 
-            <div style="display:grid;gap:6px;">
-              <label style="font-size:13px;font-weight:600;color:#334155;">Rider Name</label>
-              <input id="swal-rider-name" class="swal2-input" placeholder="Rider full name" value="${escapeHtml(defaultRiderName)}" style="margin:0;border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;" />
-            </div>
+    if (!carrierCompany || !riderName || !riderPhone || !trackingNumber || !trackingLink) {
+      await Swal.fire({
+        title: 'Missing Information',
+        text: 'Please complete all pickup details.',
+        icon: 'warning',
+        confirmButtonColor: '#2563eb',
+      });
+      return;
+    }
 
-            <div style="display:grid;gap:6px;">
-              <label style="font-size:13px;font-weight:600;color:#334155;">Rider Number</label>
-              <input id="swal-rider-phone" class="swal2-input" placeholder="09XXXXXXXXX" value="${escapeHtml(defaultRiderPhone)}" inputmode="numeric" pattern="[0-9]*" maxlength="11" style="margin:0;border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;" />
-            </div>
-
-            <div style="display:grid;gap:6px;">
-              <label style="font-size:13px;font-weight:600;color:#334155;">Tracking Number</label>
-              <input id="swal-tracking-number" class="swal2-input" placeholder="Tracking number" value="${escapeHtml(defaultTrackingNumber)}" style="margin:0;border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;" />
-            </div>
-
-            <div style="display:grid;gap:6px;">
-              <label style="font-size:13px;font-weight:600;color:#334155;">Tracking Link</label>
-              <input id="swal-tracking-link" class="swal2-input" placeholder="https://..." value="${escapeHtml(defaultTrackingLink)}" style="margin:0;border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;" />
-            </div>
-          </div>
-
-          <p style="margin:0;font-size:12px;color:#64748b;">Tip: You can save initial rider details now, then update later with final tracking status.</p>
-        </div>
-      `,
-      showCancelButton: true,
-      showCloseButton: true,
-      width: 640,
-      confirmButtonText: 'Save Pickup',
-      confirmButtonColor: '#2563eb',
-      cancelButtonColor: '#6b7280',
-      focusConfirm: false,
-      didOpen: () => {
-        const riderPhoneInput = document.getElementById('swal-rider-phone') as HTMLInputElement | null;
-        if (!riderPhoneInput) return;
-
-        riderPhoneInput.addEventListener('input', () => {
-          riderPhoneInput.value = riderPhoneInput.value.replace(/\D/g, '');
-        });
-
-        const carrierInput = document.getElementById('swal-carrier-company') as HTMLInputElement | null;
-        if (carrierInput) {
-          carrierInput.focus();
-        }
-      },
-      preConfirm: () => {
-        const carrierCompany = (document.getElementById('swal-carrier-company') as HTMLInputElement | null)?.value?.trim() || '';
-        const riderName = (document.getElementById('swal-rider-name') as HTMLInputElement | null)?.value?.trim() || '';
-        const riderPhone = (document.getElementById('swal-rider-phone') as HTMLInputElement | null)?.value?.trim() || '';
-        const trackingNumber = (document.getElementById('swal-tracking-number') as HTMLInputElement | null)?.value?.trim() || '';
-        const trackingLink = (document.getElementById('swal-tracking-link') as HTMLInputElement | null)?.value?.trim() || '';
-
-        if (!carrierCompany || !riderName || !riderPhone || !trackingNumber || !trackingLink) {
-          Swal.showValidationMessage('Please complete all pickup details.');
-          return null;
-        }
-
-        if (!/^\d{11}$/.test(riderPhone)) {
-          Swal.showValidationMessage('Rider number must be exactly 11 digits.');
-          return null;
-        }
-
-        try {
-          new URL(trackingLink);
-        } catch {
-          Swal.showValidationMessage('Tracking link must be a valid URL.');
-          return null;
-        }
-
-        return {
-          carrierCompany,
-          riderName,
-          riderPhone,
-          trackingNumber,
-          trackingLink,
-        };
-      },
-    });
-
-    if (!shipmentInput.isConfirmed || !shipmentInput.value) return;
+    if (!/^\d{11}$/.test(riderPhone)) {
+      await Swal.fire({
+        title: 'Invalid Rider Number',
+        text: 'Rider number must be exactly 11 digits.',
+        icon: 'warning',
+        confirmButtonColor: '#2563eb',
+      });
+      return;
+    }
 
     try {
+      new URL(trackingLink);
+    } catch {
+      await Swal.fire({
+        title: 'Invalid Tracking Link',
+        text: 'Tracking link must be a valid URL (include https://).',
+        icon: 'warning',
+        confirmButtonColor: '#2563eb',
+      });
+      return;
+    }
+
+    try {
+      setIsSavingReturnPickup(true);
+
       const csrfResponse = await fetch('/api/csrf-token', {
         credentials: 'include',
         headers: { Accept: 'application/json' },
       });
       const csrfData = await csrfResponse.json();
 
-      const response = await fetch(`/api/shop-owner/orders/${order.id}/arrange-return-pickup`, {
+      const response = await fetch(`/api/shop-owner/orders/${returnPickupOrder.id}/arrange-return-pickup`, {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -897,11 +812,11 @@ export default function JobOrdersPage() {
           'X-CSRF-TOKEN': csrfData.csrf_token,
         },
         body: JSON.stringify({
-          tracking_number: shipmentInput.value.trackingNumber,
-          carrier_company: shipmentInput.value.carrierCompany,
-          rider_name: shipmentInput.value.riderName,
-          rider_phone: shipmentInput.value.riderPhone,
-          tracking_link: shipmentInput.value.trackingLink,
+          tracking_number: trackingNumber,
+          carrier_company: carrierCompany,
+          rider_name: riderName,
+          rider_phone: riderPhone,
+          tracking_link: trackingLink,
         }),
       });
 
@@ -967,9 +882,15 @@ export default function JobOrdersPage() {
         });
 
         setOrders(mappedOrders);
+
+        if (viewOrder?.id === returnPickupOrder.id) {
+          const updatedViewOrder = mappedOrders.find((item) => item.id === returnPickupOrder.id) || null;
+          setViewOrder(updatedViewOrder);
+        }
       }
 
       await Swal.fire('Pickup Arranged', data?.message || 'Return pickup details were saved successfully.', 'success');
+      closeReturnPickupModal();
     } catch (error) {
       await Swal.fire({
         title: 'Failed',
@@ -977,6 +898,8 @@ export default function JobOrdersPage() {
         icon: 'error',
         confirmButtonColor: '#2563eb',
       });
+    } finally {
+      setIsSavingReturnPickup(false);
     }
   };
 
@@ -1077,6 +1000,10 @@ export default function JobOrdersPage() {
       }
 
       await Swal.fire('Confirmed', data?.message || 'Returned item marked as received.', 'success');
+      window.location.assign(
+        `/shop-owner/refund-approvals?status=Approved&focus_order=${encodeURIComponent(order.order_number)}`,
+      );
+      return;
     } catch (error) {
       await Swal.fire({
         title: 'Failed',
@@ -1615,15 +1542,15 @@ export default function JobOrdersPage() {
           <div className="h-135 overflow-y-auto overflow-x-auto">
             <table className="w-full min-w-270 table-fixed">
               <colgroup>
-                <col className="w-[11.5%]" />
-                <col className="w-[11.5%]" />
-                <col className="w-[11.5%]" />
-                <col className="w-[11.5%]" />
-                <col className="w-[11.5%]" />
-                <col className="w-[11.5%]" />
-                <col className="w-[11.5%]" />
-                <col className="w-[11.5%]" />
-                <col className="w-[8%]" />
+                <col className="w-[11%]" />
+                <col className="w-[11%]" />
+                <col className="w-[11%]" />
+                <col className="w-[11%]" />
+                <col className="w-[11%]" />
+                <col className="w-[11%]" />
+                <col className="w-[11%]" />
+                <col className="w-[9%]" />
+                <col className="w-[14%]" />
               </colgroup>
               <thead className="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-800 sticky top-0 z-10">
                 <tr>
@@ -1744,8 +1671,8 @@ export default function JobOrdersPage() {
                           {order.eta || '-'}
                         </span>
                       </td>
-                      <td className="box-border px-4 py-4 text-center align-top">
-                        <div className="flex flex-wrap items-center justify-center gap-2">
+                      <td className="box-border px-2 py-4 text-center align-top">
+                        <div className="inline-flex flex-nowrap items-center justify-center gap-2 whitespace-nowrap">
                           <button
                             type="button"
                             onClick={() => handleViewOrder(order)}
@@ -1805,7 +1732,7 @@ export default function JobOrdersPage() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={10} className="box-border px-6 py-12 text-center">
+                    <td colSpan={9} className="box-border px-6 py-12 text-center">
                       <p className="text-sm text-gray-500 dark:text-gray-400">No orders found</p>
                     </td>
                   </tr>
@@ -1875,6 +1802,168 @@ export default function JobOrdersPage() {
             </div>
           )}
         </div>
+
+        {/* Arrange Return Pickup Modal */}
+        {isReturnPickupModalOpen && returnPickupOrder && (
+          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+            <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-3xl w-full max-h-[85vh] flex flex-col">
+              <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 shrink-0 flex items-center justify-between">
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Arrange Return Pickup</h2>
+                <button
+                  type="button"
+                  onClick={closeReturnPickupModal}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                  aria-label="Close"
+                >
+                  <svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="px-6 py-4 overflow-y-auto flex-1 space-y-4">
+                <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">Order Context</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Order #</p>
+                      <p className="font-semibold text-gray-900 dark:text-white">{returnPickupOrder.order_number || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Customer</p>
+                      <p className="font-semibold text-gray-900 dark:text-white">{returnPickupOrder.customer || 'Customer'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Customer Phone</p>
+                      <p className="font-semibold text-gray-900 dark:text-white">{returnPickupOrder.phone || 'No phone provided'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Customer Pickup Address</label>
+                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30 p-4 space-y-2 text-sm">
+                    {[
+                      { label: 'Street / Building', value: String(returnPickupOrder.shippingAddressLine || '').trim() },
+                      { label: 'Barangay / Landmark', value: String(returnPickupOrder.shippingBarangay || '').trim() },
+                      { label: 'City', value: String(returnPickupOrder.shippingCity || '').trim() },
+                      { label: 'Province', value: String(returnPickupOrder.shippingProvince || '').trim() },
+                      { label: 'Region', value: String(returnPickupOrder.shippingRegion || '').trim() },
+                      { label: 'Postal Code', value: String(returnPickupOrder.shippingPostalCode || '').trim() },
+                    ].filter((row) => row.value).length > 0 ? (
+                      [
+                        { label: 'Street / Building', value: String(returnPickupOrder.shippingAddressLine || '').trim() },
+                        { label: 'Barangay / Landmark', value: String(returnPickupOrder.shippingBarangay || '').trim() },
+                        { label: 'City', value: String(returnPickupOrder.shippingCity || '').trim() },
+                        { label: 'Province', value: String(returnPickupOrder.shippingProvince || '').trim() },
+                        { label: 'Region', value: String(returnPickupOrder.shippingRegion || '').trim() },
+                        { label: 'Postal Code', value: String(returnPickupOrder.shippingPostalCode || '').trim() },
+                      ]
+                        .filter((row) => row.value)
+                        .map((row) => (
+                          <div key={row.label} className="flex items-start gap-3">
+                            <span className="min-w-36 text-xs text-gray-500 dark:text-gray-400">{row.label}</span>
+                            <span className="font-medium text-gray-900 dark:text-white">{row.value}</span>
+                          </div>
+                        ))
+                    ) : (
+                      <p className="font-medium text-gray-900 dark:text-white">{String(returnPickupOrder.shippingAddress || '').trim() || 'No shipping address found on this order.'}</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Courier Assignment</p>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Carrier Company *</label>
+                    <select
+                      title="Carrier company"
+                      value={returnCarrierCompany}
+                      onChange={(e) => setReturnCarrierCompany(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      {returnCarrierCompanyOptions.map((option) => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Rider Name *</label>
+                      <input
+                        type="text"
+                        title="Rider name"
+                        value={returnRiderName}
+                        onChange={(e) => setReturnRiderName(e.target.value)}
+                        placeholder="Rider full name"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Rider Number *</label>
+                      <input
+                        type="tel"
+                        title="Rider number"
+                        value={returnRiderPhone}
+                        onChange={(e) => setReturnRiderPhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                        maxLength={11}
+                        placeholder="09XXXXXXXXX"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tracking Number *</label>
+                    <input
+                      type="text"
+                      title="Tracking number"
+                      value={returnTrackingNumber}
+                      onChange={(e) => setReturnTrackingNumber(e.target.value)}
+                      placeholder="Tracking number"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tracking Link *</label>
+                    <input
+                      type="url"
+                      title="Tracking link"
+                      value={returnTrackingLink}
+                      onChange={(e) => setReturnTrackingLink(e.target.value)}
+                      placeholder="https://..."
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Tip: You can save initial rider details now, then update later with final tracking status.</p>
+                </div>
+              </div>
+
+              <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex gap-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleSaveReturnPickup}
+                  disabled={isSavingReturnPickup}
+                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
+                >
+                  {isSavingReturnPickup ? 'Saving...' : 'Save Pickup'}
+                </button>
+                <button
+                  type="button"
+                  onClick={closeReturnPickupModal}
+                  disabled={isSavingReturnPickup}
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Shipping Modal */}
         {isShippingModalOpen && selectedOrder && (

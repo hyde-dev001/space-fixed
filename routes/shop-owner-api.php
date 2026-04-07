@@ -85,6 +85,8 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
             ->name('shop_owner.repair-refunds.approve');
         Route::post('/{refund}/reject', [\App\Http\Controllers\Api\RepairRefundWorkflowController::class, 'ownerReject'])
             ->name('shop_owner.repair-refunds.reject');
+        Route::post('/{refund}/execute', [\App\Http\Controllers\Api\RepairRefundWorkflowController::class, 'ownerExecute'])
+            ->name('shop_owner.repair-refunds.execute');
     });
 
     // ============================================

@@ -217,6 +217,65 @@ class RepairRefundWorkflowController extends Controller
         return response()->json(['success' => true, 'data' => $updated]);
     }
 
+    public function ownerExecute(Request $request, PosRefund $refund, RepairPosRefundService $service)
+    {
+        $actor = Auth::guard('shop_owner')->user();
+
+        if (!$actor || !$this->canOwnerExecute($actor, $refund)) {
+            abort(403, 'Not authorized to execute this refund.');
+        }
+
+        $executionMode = (string) $request->input('execution_mode', 'manual');
+        $hasPosManualLeg = $refund->legs()->where('leg_type', 'pos_manual')->exists();
+
+        $rules = [
+            'execution_mode' => ['nullable', 'in:manual,gateway'],
+            'execution_note' => ['nullable', 'string', 'max:1000'],
+            'execution_channel' => ['nullable', 'in:gcash,card,bank_transfer,manual_cash'],
+            'execution_reference' => ['nullable', 'string', 'max:150'],
+            'execution_amount' => ['nullable', 'numeric', 'min:0.01'],
+            'execution_proof_urls' => ['nullable', 'array', 'min:1'],
+            'execution_proof_urls.*' => ['url'],
+        ];
+
+        if ($executionMode === 'manual' && $hasPosManualLeg) {
+            $rules['execution_channel'] = ['required', 'in:gcash,card,bank_transfer,manual_cash'];
+            $rules['execution_reference'] = ['required', 'string', 'max:150'];
+            $rules['execution_amount'] = ['required', 'numeric', 'min:0.01'];
+            $rules['execution_proof_urls'] = ['required', 'array', 'min:1'];
+        }
+
+        $validated = $request->validate($rules);
+
+        $updated = $service->execute(
+            refund: $refund,
+            actorId: (int) $actor->id,
+            executionMode: (string) ($validated['execution_mode'] ?? 'manual'),
+            executionNote: $validated['execution_note'] ?? null,
+            executionContext: [
+                'execution_channel' => $validated['execution_channel'] ?? null,
+                'execution_reference' => $validated['execution_reference'] ?? null,
+                'execution_amount' => isset($validated['execution_amount']) ? (float) $validated['execution_amount'] : null,
+                'execution_proof_urls' => $validated['execution_proof_urls'] ?? [],
+            ],
+        );
+
+        return response()->json(['success' => true, 'data' => $updated]);
+    }
+
+    private function canOwnerExecute(object $actor, PosRefund $refund): bool
+    {
+        if ((string) $refund->module_type !== 'repair') {
+            return false;
+        }
+
+        if ((int) ($actor->id ?? 0) !== (int) $refund->shop_owner_id) {
+            return false;
+        }
+
+        return strtolower((string) ($actor->registration_type ?? '')) === 'individual';
+    }
+
     private function canFinanceExecute(object $actor, PosRefund $refund): bool
     {
         if ((string) $refund->module_type !== 'repair') {
@@ -241,6 +300,7 @@ class RepairRefundWorkflowController extends Controller
                 'sourceTransaction.paymentLines:id,pos_transaction_id,tender_type',
                 'repairRequest:id,customer_name',
                 'requestedByUser:id,name',
+                'legs:id,pos_refund_id,leg_type,requested_amount,approved_amount,status',
             ])
             ->where('module_type', 'repair')
             ->where('shop_owner_id', $shopOwnerId);
@@ -336,6 +396,21 @@ class RepairRefundWorkflowController extends Controller
             return trim($candidate) !== '' ? trim($candidate) : null;
         }, $evidenceCandidates), fn ($item) => is_string($item) && $item !== ''));
 
+        $legs = $refund->legs ?? collect();
+        $hasGatewayLeg = $legs->contains(fn ($leg) => (string) ($leg->leg_type ?? '') === 'gateway' && (float) ($leg->requested_amount ?? 0) > 0);
+        $hasPosManualLeg = $legs->contains(fn ($leg) => (string) ($leg->leg_type ?? '') === 'pos_manual' && (float) ($leg->requested_amount ?? 0) > 0);
+
+        $refundPaymentType = 'manual_only';
+        if ($hasGatewayLeg && $hasPosManualLeg) {
+            $refundPaymentType = 'mixed';
+        } elseif ($hasGatewayLeg) {
+            $refundPaymentType = 'pure_online';
+        } elseif (!$hasPosManualLeg) {
+            $tenderTypes = $source?->paymentLines?->pluck('tender_type') ?? collect();
+            $hasGatewayTender = $tenderTypes->contains(fn ($value) => in_array((string) $value, ['paymongo_card', 'paymongo_wallet'], true));
+            $refundPaymentType = $hasGatewayTender ? 'pure_online' : 'manual_only';
+        }
+
         return [
             'id' => (int) $refund->id,
             'refundType' => 'repair',
@@ -360,6 +435,9 @@ class RepairRefundWorkflowController extends Controller
             'refundedAt' => optional($refund->executed_at)->toDateTimeString(),
             'rejectionReason' => (string) ($refund->failure_reason ?? ''),
             'media' => $evidenceMedia,
+            'refundPaymentType' => $refundPaymentType,
+            'hasGatewayLeg' => $hasGatewayLeg,
+            'hasPosManualLeg' => $hasPosManualLeg,
             'financeExecution' => [
                 'execution_channel' => (string) ($refund->execution_channel ?? ''),
                 'execution_reference' => (string) ($refund->execution_reference ?? ''),
