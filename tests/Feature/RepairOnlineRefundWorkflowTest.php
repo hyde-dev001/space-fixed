@@ -437,4 +437,119 @@ class RepairOnlineRefundWorkflowTest extends TestCase
         $response->assertJsonPath('data.0.media.0', 'https://example.com/evidence-photo.jpg');
         $response->assertJsonPath('data.0.media.1', 'https://example.com/evidence-video.mp4');
     }
+
+    #[Test]
+    public function individual_shop_owner_can_approve_repair_refund_without_finance_initial_approval(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'individual',
+        ]);
+        $customer = User::factory()->create();
+        $ownerActor = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+
+        $source = PosTransaction::create([
+            'transaction_no' => 'POS-TDD-IND-RFD-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 61,
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'due_type' => 'full',
+            'subtotal' => 500,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 500,
+            'paid_amount' => 500,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $refund = PosRefund::create([
+            'refund_no' => 'RFD-TDD-IND-RFD-001',
+            'shop_owner_id' => $shopOwner->id,
+            'source_transaction_id' => $source->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 61,
+            'workflow_source' => 'online_myrepair',
+            'request_type' => 'full',
+            'requested_amount' => 500,
+            'reason_code' => 'service_defect',
+            'status' => 'requested',
+            'finance_status' => 'pending',
+            'shop_owner_status' => 'pending',
+            'repairer_status' => 'pending',
+            'requested_by' => $customer->id,
+            'requested_at' => now(),
+        ]);
+
+        $updated = app(\App\Services\RepairPosRefundService::class)->approve(
+            refund: $refund,
+            actorId: (int) $ownerActor->id,
+            approvedAmount: null,
+            approvalNote: 'Individual owner approved directly.',
+            stage: 'shop_owner',
+        );
+
+        $this->assertSame('approved', (string) $updated->status);
+        $this->assertSame('approved', (string) $updated->finance_status);
+        $this->assertSame('approved', (string) $updated->shop_owner_status);
+    }
+
+    #[Test]
+    public function individual_shop_owner_can_reject_repair_refund_without_finance_initial_approval(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'individual',
+        ]);
+        $customer = User::factory()->create();
+        $ownerActor = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+
+        $source = PosTransaction::create([
+            'transaction_no' => 'POS-TDD-IND-RFD-002',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 62,
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'due_type' => 'full',
+            'subtotal' => 500,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 500,
+            'paid_amount' => 500,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $refund = PosRefund::create([
+            'refund_no' => 'RFD-TDD-IND-RFD-002',
+            'shop_owner_id' => $shopOwner->id,
+            'source_transaction_id' => $source->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 62,
+            'workflow_source' => 'online_myrepair',
+            'request_type' => 'full',
+            'requested_amount' => 500,
+            'reason_code' => 'service_defect',
+            'status' => 'requested',
+            'finance_status' => 'pending',
+            'shop_owner_status' => 'pending',
+            'repairer_status' => 'pending',
+            'requested_by' => $customer->id,
+            'requested_at' => now(),
+        ]);
+
+        $updated = app(\App\Services\RepairPosRefundService::class)->reject(
+            refund: $refund,
+            actorId: (int) $ownerActor->id,
+            rejectionReason: 'Individual owner rejected directly.',
+            stage: 'shop_owner',
+        );
+
+        $this->assertSame('rejected', (string) $updated->status);
+        $this->assertSame('rejected', (string) $updated->finance_status);
+        $this->assertSame('rejected', (string) $updated->shop_owner_status);
+    }
 }

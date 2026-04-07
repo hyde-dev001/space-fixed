@@ -1,4 +1,4 @@
-import { Head, usePage } from "@inertiajs/react";
+import { Head, router, usePage } from "@inertiajs/react";
 import type { ComponentType } from "react";
 import { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
@@ -494,8 +494,12 @@ export default function RefundApproval() {
 		const shopOwnerStatus = String(request.shopOwnerStatus || "").toLowerCase();
 
 		if (request.refundType === "repair") {
+			const financeReadyForRepairOwner = isIndividualRegistration
+				? ["pending", "approved_initial", "approved"].includes(financeStatus)
+				: financeStatus === "approved_initial";
+
 			return request.status === "Pending"
-				&& financeStatus === "approved_initial"
+				&& financeReadyForRepairOwner
 				&& shopOwnerStatus === "pending"
 				&& !["rejected", "failed", "succeeded", "completed", "paid"].includes(rawStatus);
 		}
@@ -513,7 +517,18 @@ export default function RefundApproval() {
 	};
 
 	const canShopOwnerReject = (request: RefundRequest): boolean => {
+		const financeStatus = String(request.financeStatus || "").toLowerCase();
 		const shopOwnerStatus = String(request.shopOwnerStatus || "").toLowerCase();
+
+		if (request.refundType === "repair") {
+			const financeReadyForRepairOwner = isIndividualRegistration
+				? ["pending", "approved_initial", "approved"].includes(financeStatus)
+				: financeStatus === "approved_initial";
+
+			return request.status === "Pending"
+				&& financeReadyForRepairOwner
+				&& shopOwnerStatus === "pending";
+		}
 		
 		return request.status === "Pending"
 			&& shopOwnerStatus === "pending";
@@ -596,13 +611,16 @@ export default function RefundApproval() {
 				);
 				setSelectedRequest(updatedRefund);
 				
-				Swal.fire({
+				await Swal.fire({
 					title: "Approved!",
 					text: data?.message || "Shop owner approval recorded. Awaiting finance final approval.",
 					icon: "success",
 					confirmButtonColor: "#2563eb",
 				});
-				await fetchRefundRequests();
+				router.visit(
+					`/shop-owner/job-orders-retail?tab=refund&focus_order=${encodeURIComponent(request.orderNumber)}`,
+				);
+				return;
 			} catch (error) {
 				Swal.fire({
 					title: "Failed",
@@ -617,6 +635,18 @@ export default function RefundApproval() {
 	};
 
 	const handleReject = async (request: RefundRequest) => {
+		if (!canShopOwnerReject(request)) {
+			await Swal.fire({
+				title: "Rejection Not Allowed",
+				text: request.refundType === "repair" && !isIndividualRegistration
+					? "Finance initial approval is required before shop owner rejection for repair refunds."
+					: "This refund is no longer rejectable.",
+				icon: "info",
+				confirmButtonColor: "#2563eb",
+			});
+			return;
+		}
+
 		const { value: reason } = await Swal.fire({
 			title: "Reject Refund",
 			html: `
@@ -1078,6 +1108,14 @@ export default function RefundApproval() {
 						</div>
 
 						<div className="px-8 py-4 border-t border-gray-200 dark:border-gray-800 flex items-center justify-end gap-3">
+							{selectedRequest.refundType === "repair"
+								&& !isIndividualRegistration
+								&& String(selectedRequest.shopOwnerStatus || "").toLowerCase() === "pending"
+								&& String(selectedRequest.financeStatus || "").toLowerCase() !== "approved_initial" && (
+									<p className="mr-auto text-xs font-medium text-amber-700 dark:text-amber-300">
+										Awaiting finance initial approval before shop owner actions are enabled.
+									</p>
+							)}
 							<button
 								onClick={handleCloseModal}
 								disabled={isActionProcessing}
@@ -1085,16 +1123,16 @@ export default function RefundApproval() {
 							>
 								Close
 							</button>
-							{String(selectedRequest.shopOwnerStatus || "").toLowerCase() === "pending" && (
+							{canShopOwnerApprove(selectedRequest) && (
 								<button
 									onClick={() => handleApprove(selectedRequest)}
-									disabled={!canShopOwnerApprove(selectedRequest) || isActionProcessing}
+									disabled={isActionProcessing}
 									className="px-5 py-2.5 text-sm font-semibold rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
 								>
 									Approve
 								</button>
 							)}
-							{isIndividualRegistration && (
+							{isIndividualRegistration && selectedRequest.refundType !== "repair" && (
 								<button
 									onClick={() => handleExecuteGatewayRefund(selectedRequest)}
 									disabled={!canExecuteGatewayRefund(selectedRequest) || isActionProcessing}
@@ -1103,10 +1141,10 @@ export default function RefundApproval() {
 									Execute Payout
 								</button>
 							)}
-							{String(selectedRequest.shopOwnerStatus || "").toLowerCase() === "pending" && (
+							{canShopOwnerReject(selectedRequest) && (
 								<button
 									onClick={() => handleReject(selectedRequest)}
-									disabled={!canShopOwnerReject(selectedRequest) || isActionProcessing}
+									disabled={isActionProcessing}
 									className="px-5 py-2.5 text-sm font-semibold rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
 								>
 									Reject

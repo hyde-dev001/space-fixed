@@ -270,7 +270,9 @@ class RepairPosRefundService
             return $refund->fresh();
         }
 
-        if ((string) ($refund->finance_status ?? 'pending') !== 'approved_initial') {
+        $isIndividualRegistration = $this->isIndividualShopOwner((int) $refund->shop_owner_id);
+
+        if (!$isIndividualRegistration && (string) ($refund->finance_status ?? 'pending') !== 'approved_initial') {
             throw ValidationException::withMessages([
                 'finance_status' => ['Shop owner approval requires finance initial approval first.'],
             ]);
@@ -312,7 +314,9 @@ class RepairPosRefundService
             ]);
         }
 
-        if ($stage === 'shop_owner' && (string) ($refund->finance_status ?? 'pending') !== 'approved_initial') {
+        $isIndividualRegistration = $this->isIndividualShopOwner((int) $refund->shop_owner_id);
+
+        if ($stage === 'shop_owner' && !$isIndividualRegistration && (string) ($refund->finance_status ?? 'pending') !== 'approved_initial') {
             throw ValidationException::withMessages([
                 'finance_status' => ['Shop owner rejection requires finance initial approval first.'],
             ]);
@@ -330,6 +334,10 @@ class RepairPosRefundService
             $payload['finance_status'] = 'rejected';
         } else {
             $payload['shop_owner_status'] = 'rejected';
+
+            if ($isIndividualRegistration) {
+                $payload['finance_status'] = 'rejected';
+            }
         }
 
         $refund->update($payload);
@@ -565,6 +573,15 @@ class RepairPosRefundService
         }
 
         return $reasonCode === 'customer_cancelled_repair';
+    }
+
+    private function isIndividualShopOwner(int $shopOwnerId): bool
+    {
+        if ($shopOwnerId <= 0) {
+            return false;
+        }
+
+        return (string) (ShopOwner::query()->whereKey($shopOwnerId)->value('registration_type') ?? '') === 'individual';
     }
 
     private function sumRepairPosPaidAmount(int $repairId): float

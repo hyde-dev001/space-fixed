@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import Swal from "sweetalert2";
 import { Head, usePage } from "@inertiajs/react";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
@@ -301,7 +301,6 @@ export default function JobOrdersPage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedTab, setSelectedTab] = useState<string>("pending");
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedOrders, setSelectedOrders] = useState<number[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [isShippingModalOpen, setIsShippingModalOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
@@ -318,6 +317,7 @@ export default function JobOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const itemsPerPage = 10;
+  const hasAppliedFocusOrder = useRef(false);
 
   // Fetch orders from API on mount
   React.useEffect(() => {
@@ -432,6 +432,43 @@ export default function JobOrdersPage() {
     });
   }, [orders, selectedTab, searchTerm]);
 
+  React.useEffect(() => {
+    if (typeof window === 'undefined' || hasAppliedFocusOrder.current || loading || orders.length === 0) {
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const focusOrder = params.get('focus_order');
+    const tab = params.get('tab');
+
+    if (tab === 'refund') {
+      setSelectedTab('refund');
+    }
+
+    if (!focusOrder) {
+      return;
+    }
+
+    const normalizedFocusOrder = focusOrder.trim().toLowerCase();
+    const matchedOrder = orders.find((order) => order.order_number.toLowerCase() === normalizedFocusOrder);
+
+    if (!matchedOrder) {
+      return;
+    }
+
+    hasAppliedFocusOrder.current = true;
+    setSelectedTab('refund');
+    setSearchTerm(matchedOrder.order_number);
+    setCurrentPage(1);
+    setViewOrder(matchedOrder);
+    setIsViewModalOpen(true);
+
+    params.delete('focus_order');
+    params.delete('tab');
+    const nextQuery = params.toString();
+    window.history.replaceState({}, '', `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ''}`);
+  }, [loading, orders]);
+
   // Pagination
   const totalPages = Math.ceil(filteredOrders.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
@@ -452,20 +489,6 @@ export default function JobOrdersPage() {
       .reduce((sum, o) => sum + o.grand_total, 0);
     return { total, pending, processing, shipped, delivered, refund, totalRevenue };
   }, [orders]);
-
-  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.checked) {
-      setSelectedOrders(paginatedOrders.map((order) => order.id));
-    } else {
-      setSelectedOrders([]);
-    }
-  };
-
-  const handleSelectOrder = (id: number) => {
-    setSelectedOrders((prev) =>
-      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
-    );
-  };
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
@@ -1592,31 +1615,18 @@ export default function JobOrdersPage() {
           <div className="h-135 overflow-y-auto overflow-x-auto">
             <table className="w-full min-w-270 table-fixed">
               <colgroup>
-                <col className="w-[5%]" />
-                <col className="w-[11.875%]" />
-                <col className="w-[11.875%]" />
-                <col className="w-[11.875%]" />
-                <col className="w-[11.875%]" />
-                <col className="w-[11.875%]" />
-                <col className="w-[11.875%]" />
-                <col className="w-[11.875%]" />
-                <col className="w-[11.875%]" />
-                <col className="w-[11.875%]" />
+                <col className="w-[11.5%]" />
+                <col className="w-[11.5%]" />
+                <col className="w-[11.5%]" />
+                <col className="w-[11.5%]" />
+                <col className="w-[11.5%]" />
+                <col className="w-[11.5%]" />
+                <col className="w-[11.5%]" />
+                <col className="w-[11.5%]" />
+                <col className="w-[8%]" />
               </colgroup>
               <thead className="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-800 sticky top-0 z-10">
                 <tr>
-                  <th className="box-border px-4 py-4 text-left">
-                    <input
-                      type="checkbox"
-                      title="Select all orders on this page"
-                      checked={
-                        paginatedOrders.length > 0 &&
-                        selectedOrders.length === paginatedOrders.length
-                      }
-                      onChange={handleSelectAll}
-                      className="rounded border-gray-300 dark:border-gray-700 text-blue-600 focus:ring-blue-500"
-                    />
-                  </th>
                   <th className="box-border px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Customer
                   </th>
@@ -1632,13 +1642,13 @@ export default function JobOrdersPage() {
                   <th className="box-border px-4 py-4 text-center text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Amount Breakdown
                   </th>
-                  <th className="box-border px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                  <th className="box-border px-4 py-4 text-center text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Status
                   </th>
-                  <th className="box-border px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                  <th className="box-border px-4 py-4 text-center text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Refunded/Return
                   </th>
-                  <th className="box-border px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                  <th className="box-border px-4 py-4 text-center text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     ETA
                   </th>
                   <th className="box-border px-4 py-4 text-center text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
@@ -1653,16 +1663,6 @@ export default function JobOrdersPage() {
                       key={order.id}
                       className="hover:bg-gray-50 dark:hover:bg-gray-900/50 transition-colors"
                     >
-                      <td className="box-border px-4 py-4 align-top">
-                        <input
-                          type="checkbox"
-                          title={`Select order ${order.order_number}`}
-                          aria-label={`Select order ${order.order_number}`}
-                          checked={selectedOrders.includes(order.id)}
-                          onChange={() => handleSelectOrder(order.id)}
-                          className="rounded border-gray-300 dark:border-gray-700 text-blue-600 focus:ring-blue-500"
-                        />
-                      </td>
                       <td className="box-border px-4 py-4 align-top">
                         <div>
                           <div className="text-sm font-medium text-gray-900 dark:text-white truncate">{order.customer}</div>
@@ -1739,8 +1739,8 @@ export default function JobOrdersPage() {
                           );
                         })()}
                       </td>
-                      <td className="box-border px-4 py-4 align-top">
-                        <span className="text-sm text-gray-700 dark:text-gray-300">
+                      <td className="box-border px-4 py-4 text-center align-top">
+                        <span className="inline-flex w-full justify-center text-sm text-gray-700 dark:text-gray-300 whitespace-nowrap">
                           {order.eta || '-'}
                         </span>
                       </td>
