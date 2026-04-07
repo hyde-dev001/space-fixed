@@ -13,6 +13,7 @@ use Illuminate\Validation\ValidationException;
 class RepairPosRefundService
 {
     private const FINAL_STATUSES = ['succeeded', 'failed', 'rejected', 'cancelled'];
+    private const REPAIR_VAT_RATE_PERCENT = 12.0;
 
     public function computeRepairRefundableAmount(int $repairId): float
     {
@@ -579,18 +580,49 @@ class RepairPosRefundService
         $storedPaid = round((float) ($repair->total_paid_amount ?? 0), 2);
         $paymentStatus = strtolower(trim((string) ($repair->payment_status ?? 'pending')));
         $policy = app(PaymentSettlementService::class)->normalizeRepairPaymentPolicy((string) ($repair->payment_policy ?? 'deposit_50'));
-        $repairTotal = round(max((float) ($repair->total ?? 0), (float) ($repair->final_total ?? 0)), 2);
+        $repairGrandTotal = $this->resolveRepairGrandTotal($repair);
 
         $resolved = max(0.0, $storedPaid, $posPaid);
 
         if ($paymentStatus === 'completed' || ($policy === 'full_upfront' && $paymentStatus === 'paid')) {
-            return round(max($resolved, $repairTotal), 2);
+            return round(max($resolved, $repairGrandTotal), 2);
         }
 
         if ($paymentStatus === 'paid' && $policy === 'deposit_50') {
-            return round(max($resolved, round($repairTotal * 0.5, 2)), 2);
+            return round(max($resolved, round($repairGrandTotal * 0.5, 2)), 2);
         }
 
         return round($resolved, 2);
+    }
+
+    private function resolveRepairGrandTotal(RepairRequest $repair): float
+    {
+        $finalTotal = round(max((float) ($repair->final_total ?? 0), (float) ($repair->total ?? 0)), 2);
+        if ($finalTotal <= 0) {
+            return 0.0;
+        }
+
+        $taxMode = $this->resolveRepairTaxMode($repair);
+        if ($taxMode === 'vat_inclusive') {
+            return $finalTotal;
+        }
+
+        return round($finalTotal + ($finalTotal * (self::REPAIR_VAT_RATE_PERCENT / 100)), 2);
+    }
+
+    private function resolveRepairTaxMode(RepairRequest $repair): string
+    {
+        $pricingTaxMode = strtolower((string) data_get($repair->pricing_breakdown, 'tax_mode', ''));
+        if (in_array($pricingTaxMode, ['vat_inclusive', 'legacy_add_on'], true)) {
+            return $pricingTaxMode;
+        }
+
+        $repair->loadMissing('latestPosTransaction:id,metadata');
+        $latestPosTaxMode = strtolower((string) data_get($repair->latestPosTransaction?->metadata, 'tax_mode', ''));
+        if (in_array($latestPosTaxMode, ['vat_inclusive', 'legacy_add_on'], true)) {
+            return $latestPosTaxMode;
+        }
+
+        return 'legacy_add_on';
     }
 }

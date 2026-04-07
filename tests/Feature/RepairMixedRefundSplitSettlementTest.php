@@ -119,8 +119,11 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
         $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
 
         $repair = $this->createRepairRequest($shopOwner, $customer, [
-            'total' => 2734,
-            'final_total' => 2734,
+            'total' => 2441.07,
+            'final_total' => 2441.07,
+            'pricing_breakdown' => [
+                'tax_mode' => 'legacy_add_on',
+            ],
             'payment_policy' => 'deposit_50',
             'payment_policy_snapshot' => 'deposit_50',
             'payment_status' => 'completed',
