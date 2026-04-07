@@ -385,6 +385,74 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
     }
 
     #[Test]
+    public function myrepair_submit_pure_online_refund_can_fallback_source_transaction_when_latest_pos_is_missing(): void
+    {
+        /** @var User $customer */
+        $customer = User::factory()->create();
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+
+        $repair = $this->createRepairRequest($shopOwner, $customer, [
+            'total' => 500,
+            'final_total' => 500,
+            'pricing_breakdown' => [
+                'tax_mode' => 'vat_inclusive',
+            ],
+            'payment_policy' => 'full_upfront',
+            'payment_policy_snapshot' => 'full_upfront',
+            'payment_status' => 'completed',
+            'total_paid_amount' => 500,
+            'total_refunded_amount' => 0,
+            'paymongo_payment_id' => 'pay_online_only_fallback_001',
+            'latest_pos_transaction_id' => null,
+        ]);
+
+        $source = PosTransaction::create([
+            'transaction_no' => 'POS-ONLINE-FALLBACK-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'due_type' => 'full',
+            'subtotal' => 446.43,
+            'tax_amount' => 53.57,
+            'discount_amount' => 0,
+            'total_amount' => 500,
+            'paid_amount' => 500,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        PosPaymentLine::create([
+            'pos_transaction_id' => $source->id,
+            'tender_type' => 'paymongo_wallet',
+            'provider_reference' => 'pmw_online_fallback_001',
+            'amount' => 500,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $response = $this->actingAs($customer, 'user')->postJson("/api/customer/repairs/{$repair->id}/refunds", [
+            'request_type' => 'full',
+            'requested_amount' => 500,
+            'reason_code' => 'online_payment_refund_request',
+            'reason_notes' => 'Pure online payment refund request without explicit source transaction id.',
+            'evidence' => [['type' => 'photo', 'url' => 'https://evidence.local/online-fallback.jpg']],
+            'preferred_return_channel' => 'gcash',
+            'preferred_return_account_name' => 'Manual Destination Name',
+            'preferred_return_account_ref' => '09171234567',
+            'customer_payout_consent' => true,
+        ]);
+
+        $response->assertOk()->assertJsonPath('success', true);
+
+        $refund = PosRefund::query()->latest('id')->firstOrFail();
+
+        $this->assertSame($source->id, (int) $refund->source_transaction_id);
+        $this->assertSame('online_myrepair', (string) $refund->workflow_source);
+    }
+
+    #[Test]
     public function myrepairs_payload_marks_walk_in_only_payment_as_manual_only_refund_profile(): void
     {
         /** @var User $customer */

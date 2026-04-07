@@ -825,7 +825,7 @@ class RepairRequestController extends Controller
         }
 
         $validated = $request->validate([
-            'source_transaction_id' => ['required', 'integer', 'exists:pos_transactions,id'],
+            'source_transaction_id' => ['nullable', 'integer', 'exists:pos_transactions,id'],
             'request_type' => ['required', 'in:full,partial'],
             'requested_amount' => ['required', 'numeric', 'min:0.01'],
             'reason_code' => ['required', 'string', 'max:80'],
@@ -884,16 +884,20 @@ class RepairRequestController extends Controller
             ]);
         }
 
+        $requestedSourceTransactionId = (int) ($validated['source_transaction_id'] ?? 0);
         $sourceTransaction = PosTransaction::query()
-            ->where('id', (int) $validated['source_transaction_id'])
             ->where('module_type', 'repair')
             ->where('module_reference_id', $repair->id)
+            ->whereIn('status', ['paid', 'partially_refunded', 'refunded'])
+            ->when($requestedSourceTransactionId > 0, fn ($query) => $query->where('id', $requestedSourceTransactionId))
+            ->orderByDesc('paid_at')
+            ->orderByDesc('id')
             ->first();
 
         if (!$sourceTransaction) {
             return response()->json([
                 'success' => false,
-                'message' => 'Source transaction not found for this repair request.',
+                'message' => 'No paid transaction record found for this repair request.',
             ], 422);
         }
 

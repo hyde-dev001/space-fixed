@@ -1125,11 +1125,6 @@ const MyRepairs: React.FC = () => {
       return;
     }
 
-    if (!targetOrder.latest_pos_transaction_id) {
-      Swal.fire({ icon: 'warning', title: 'Refund Unavailable', text: 'This repair has no paid POS transaction yet.', confirmButtonColor: '#000000' });
-      return;
-    }
-
     const paidAmount = Number(targetOrder.total_paid_amount ?? 0);
     const refundedAmount = Number(targetOrder.total_refunded_amount ?? 0);
     const refundableAmount = Math.max(0, paidAmount - refundedAmount);
@@ -1216,7 +1211,9 @@ const MyRepairs: React.FC = () => {
                 : 'gcash';
 
         const payload = new FormData();
-        payload.append('source_transaction_id', String(targetOrder.latest_pos_transaction_id));
+        if (targetOrder.latest_pos_transaction_id && Number(targetOrder.latest_pos_transaction_id) > 0) {
+          payload.append('source_transaction_id', String(targetOrder.latest_pos_transaction_id));
+        }
         payload.append('request_type', 'full');
         payload.append('requested_amount', String(refundableAmount));
         payload.append('reason_code', reasonCode);
