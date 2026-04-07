@@ -150,7 +150,7 @@ class RepairRefundWorkflowController extends Controller
             'execution_channel' => ['nullable', 'in:gcash,card,bank_transfer,manual_cash'],
             'execution_reference' => ['nullable', 'string', 'max:150'],
             'execution_amount' => ['nullable', 'numeric', 'min:0.01'],
-            'execution_proof_urls' => ['nullable', 'array', 'min:1'],
+            'execution_proof_urls' => ['nullable', 'array'],
             'execution_proof_urls.*' => ['url'],
         ];
 
@@ -234,7 +234,7 @@ class RepairRefundWorkflowController extends Controller
             'execution_channel' => ['nullable', 'in:gcash,card,bank_transfer,manual_cash'],
             'execution_reference' => ['nullable', 'string', 'max:150'],
             'execution_amount' => ['nullable', 'numeric', 'min:0.01'],
-            'execution_proof_urls' => ['nullable', 'array', 'min:1'],
+            'execution_proof_urls' => ['nullable', 'array'],
             'execution_proof_urls.*' => ['url'],
         ];
 

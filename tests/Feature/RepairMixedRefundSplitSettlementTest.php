@@ -743,6 +743,67 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
     }
 
     #[Test]
+    public function finance_execute_gateway_does_not_require_execution_proof_urls(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var User $finance */
+        $finance = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+
+        Permission::findOrCreate('access-refund-approval', 'user');
+        $finance->givePermissionTo('access-refund-approval');
+
+        $source = PosTransaction::create([
+            'transaction_no' => 'POS-MIX-EXEC-GW-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 1001,
+            'customer_type' => 'registered',
+            'customer_id' => $finance->id,
+            'due_type' => 'full',
+            'subtotal' => 300,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 300,
+            'paid_amount' => 300,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        PosPaymentLine::create([
+            'pos_transaction_id' => $source->id,
+            'tender_type' => 'paymongo_card',
+            'provider_reference' => 'pmc_exec_gateway_001',
+            'amount' => 300,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $refund = PosRefund::create([
+            'refund_no' => 'RFD-MIX-EXEC-GW-001',
+            'shop_owner_id' => $shopOwner->id,
+            'source_transaction_id' => $source->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 1001,
+            'status' => 'approved',
+            'finance_status' => 'approved',
+            'shop_owner_status' => 'skipped',
+            'request_type' => 'full',
+            'requested_amount' => 300,
+            'approved_amount' => 300,
+            'reason_code' => 'pure_online_refund',
+            'requested_at' => now(),
+        ]);
+
+        $this->actingAs($finance, 'user')
+            ->postJson("/api/finance/repair-refunds/{$refund->id}/execute", [
+                'execution_mode' => 'gateway',
+                'execution_proof_urls' => [],
+            ])
+            ->assertStatus(200)
+            ->assertJsonPath('success', true);
+    }
+
+    #[Test]
     public function customer_refund_list_returns_redacted_execution_reference_only(): void
     {
         $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);

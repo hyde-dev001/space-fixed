@@ -22,6 +22,6 @@ export function buildRepairRefundExecutionPayload(input: {
     execution_channel: input.executionChannel ?? null,
     execution_reference: input.executionReference ?? null,
     execution_amount: input.executionAmount ?? null,
-    execution_proof_urls: input.executionProofUrls ?? [],
+    execution_proof_urls: input.executionProofUrls ?? null,
   };
 }
