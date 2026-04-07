@@ -1797,6 +1797,9 @@ const MyRepairs: React.FC = () => {
 
   const refundOrder = refundOrderId ? orders.find((o) => o.id === refundOrderId) : null;
   const refundTotal = refundOrder ? getOrderGrandTotal(refundOrder) : 0;
+  const refundPaidAmount = Number(refundOrder?.total_paid_amount ?? 0);
+  const refundRefundedAmount = Number(refundOrder?.total_refunded_amount ?? 0);
+  const refundAvailableAmount = Math.max(0, refundPaidAmount - refundRefundedAmount);
   const refundPaymentType = String(refundOrder?.refund_payment_type ?? 'mixed');
   const refundRequiresPayoutDestination = refundOrder ? (refundOrder.refund_requires_payout_destination !== false) : true;
   const refundOriginalMethodOnly = refundOrder ? Boolean(refundOrder.refund_original_method_only) : false;
@@ -2919,8 +2922,12 @@ const MyRepairs: React.FC = () => {
                           <span className="text-sm text-gray-900">{formatCurrency(refundTotal)}</span>
                         </div>
                         <div className="flex justify-between items-center">
-                          <span className="text-sm font-bold text-gray-900">Refund Amount:</span>
-                          <span className="text-sm font-bold text-green-600">{formatCurrency(refundTotal)}</span>
+                          <span className="text-sm text-gray-700">Total Paid:</span>
+                          <span className="text-sm text-gray-900">{formatCurrency(refundPaidAmount)}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm font-bold text-gray-900">Refundable Balance:</span>
+                          <span className="text-sm font-bold text-green-600">{formatCurrency(refundAvailableAmount)}</span>
                         </div>
                       </div>
                     </div>

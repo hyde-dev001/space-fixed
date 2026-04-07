@@ -920,12 +920,32 @@ class RepairRequestController extends Controller
             }
         }
 
+        $serverRefundableAmount = round($refundService->computeRepairRefundableAmount((int) $repair->id), 2);
+        if ($serverRefundableAmount <= 0) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'requested_amount' => ['No refundable balance is available for this repair request.'],
+            ]);
+        }
+
+        $requestedAmount = round((float) ($validated['requested_amount'] ?? 0), 2);
+        if ((string) ($validated['request_type'] ?? 'full') === 'full') {
+            // My Repairs full refund always follows the latest server-side refundable balance.
+            $requestedAmount = $serverRefundableAmount;
+        } elseif ($requestedAmount > $serverRefundableAmount) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'requested_amount' => [
+                    sprintf('Requested amount exceeds refundable balance. Available refundable amount is %.2f.', $serverRefundableAmount),
+                ],
+            ]);
+        }
+
         $refund = DB::transaction(function () use (
             $refundService,
             $sourceTransaction,
             $validated,
             $user,
             $repair,
+            $requestedAmount,
             $resolvedPreferredReturnChannel,
             $resolvedPreferredReturnAccountName,
             $resolvedPreferredReturnAccountRef,
@@ -934,7 +954,7 @@ class RepairRequestController extends Controller
             $refund = $refundService->createRefundWithSplitLegs($sourceTransaction, [
                 'workflow_source' => 'online_myrepair',
                 'request_type' => $validated['request_type'],
-                'requested_amount' => (float) $validated['requested_amount'],
+                'requested_amount' => $requestedAmount,
                 'reason_code' => $validated['reason_code'],
                 'reason_notes' => $validated['reason_notes'] ?? null,
                 'paymongo_payment_id' => $repair->paymongo_payment_id,
