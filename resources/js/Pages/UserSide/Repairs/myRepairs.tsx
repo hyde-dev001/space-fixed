@@ -1098,6 +1098,8 @@ const MyRepairs: React.FC = () => {
     const refundableAmount = Math.max(0, paidAmount - refundedAmount);
     const requiresPayoutDestination = targetOrder.refund_requires_payout_destination !== false;
     const originalMethodOnly = Boolean(targetOrder.refund_original_method_only);
+    const paymentType = String(targetOrder.refund_payment_type ?? 'mixed');
+    const isMixedPaymentRefund = paymentType === 'mixed';
 
     if (refundableAmount <= 0) {
       Swal.fire({ icon: 'warning', title: 'Refund Unavailable', text: 'No refundable balance is available for this repair.', confirmButtonColor: '#000000' });
@@ -1137,9 +1139,15 @@ const MyRepairs: React.FC = () => {
     }
 
     // Show confirmation before submitting
+    const confirmationText = originalMethodOnly
+      ? 'Your refund will be returned to your original payment method after approval. Please review your details before submitting.'
+      : isMixedPaymentRefund
+        ? 'For mixed payments: the online-paid portion returns to your original PayMongo method, and the POS-paid portion will be sent to your payout destination after approval. Please review your details before submitting.'
+        : 'Your refund will be processed to your provided payout destination after approval. Please review your details before submitting.';
+
     const result = await Swal.fire({
       title: 'Submit Refund Request?',
-      text: 'Your refund will be returned to your original payment method after approval. Please review your details before submitting.',
+      text: confirmationText,
       icon: 'question',
       showCancelButton: true,
       confirmButtonText: 'Yes, Submit',
@@ -1230,10 +1238,16 @@ const MyRepairs: React.FC = () => {
       setRefundPayoutConsent(false);
       setRefundNote('');
 
+      const successMessage = originalMethodOnly
+        ? 'Your refund request has been submitted successfully. Your refund will be returned to your original payment method after approval.'
+        : isMixedPaymentRefund
+          ? 'Your refund request has been submitted successfully. The online-paid portion will return to your original PayMongo method, and the POS-paid portion will be sent to your selected payout destination after approval.'
+          : 'Your refund request has been submitted successfully. The refund will be sent to your selected payout destination after approval.';
+
       Swal.fire({
         icon: 'success',
         title: 'Refund Request Submitted',
-        text: 'Your refund request has been submitted successfully. Your refund will be returned to your original payment method after approval.',
+        text: successMessage,
         confirmButtonColor: '#000000',
       });
 
@@ -2914,6 +2928,27 @@ const MyRepairs: React.FC = () => {
                     {/* Refund Method Selection */}
                     {refundRequiresPayoutDestination ? (
                       <>
+                        {refundPaymentType === 'mixed' && (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-3">
+                              Online-paid Portion Refund Method
+                            </label>
+                            <div className="border border-green-300 rounded-lg p-6 bg-green-50">
+                              <div className="flex items-center justify-between mb-4">
+                                <h4 className="text-base font-semibold text-green-900">Automatic Refund to Original PayMongo Method</h4>
+                                <div className="flex items-center gap-2">
+                                  <img src="/images/payment-logo/visa.png" alt="Visa" className="h-6" />
+                                  <img src="/images/payment-logo/MAYA.png" alt="Maya" className="h-6" />
+                                  <img src="/images/payment-logo/GCASH.png" alt="GCash" className="h-6" />
+                                </div>
+                              </div>
+                              <p className="text-sm text-gray-700">
+                                The online-paid portion of this mixed refund will be returned to your original PayMongo payment method automatically after approval.
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-3">
                             {refundPaymentType === 'manual_only'

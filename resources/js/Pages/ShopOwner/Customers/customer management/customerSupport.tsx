@@ -31,7 +31,24 @@ interface Ticket {
   messages: Message[];
   priority?: string;
   conversationStatus?: string;
+  shopProfile?: {
+    business_name: string;
+    location?: string;
+    profile_photo?: string;
+    profile_photo_url?: string;
+  };
+  customerProfile?: {
+    name: string;
+    profile_photo?: string;
+    profile_photo_url?: string;
+  };
 }
+
+const resolveStorageUrl = (path?: string | null) => {
+  if (!path) return null;
+  if (/^https?:\/\//i.test(path)) return path;
+  return path.startsWith("/storage/") ? path : `/storage/${path.replace(/^\/+/, "")}`;
+};
 
 export default function CustomerSupport() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -43,7 +60,7 @@ export default function CustomerSupport() {
   const [loading, setLoading] = useState(true);
   const [initialLoad, setInitialLoad] = useState(true);
   const [sendingMessage, setSendingMessage] = useState(false);
-  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [transferNote, setTransferNote] = useState("");
   const [isTransferring, setIsTransferring] = useState(false);
@@ -66,12 +83,12 @@ export default function CustomerSupport() {
     }, 3000);
     
     return () => clearInterval(conversationInterval);
-  }, [categoryFilter]);
+  }, [statusFilter]);
 
   const fetchConversations = async (isBackgroundPoll = false) => {
     try {
       if (!isBackgroundPoll) setLoading(true);
-      const params = categoryFilter !== "all" ? { category: categoryFilter } : {};
+      const params = statusFilter !== "all" ? { status: statusFilter } : {};
       const response = await axios.get("/api/shop-owner/conversations", { params });
       
       // Handle both paginated and direct array responses
@@ -100,6 +117,22 @@ export default function CustomerSupport() {
             messages: existingTicket?.messages || [], // Keep existing messages
             priority: conv.priority,
             conversationStatus: conv.status,
+            shopProfile: conv.shop_owner ? {
+              business_name: conv.shop_owner.business_name || "Shop",
+              location:
+                conv.shop_owner.location ||
+                conv.shop_owner.business_address ||
+                conv.shop_owner.address ||
+                conv.shop_owner.shop_address ||
+                "",
+              profile_photo: conv.shop_owner.profile_photo || conv.shop_owner.profile_photo_url || undefined,
+              profile_photo_url: conv.shop_owner.profile_photo_url || undefined,
+            } : undefined,
+            customerProfile: conv.customer ? {
+              name: conv.customer.name || "Customer",
+              profile_photo: conv.customer.profile_photo || conv.customer.profile_photo_url || undefined,
+              profile_photo_url: conv.customer.profile_photo_url || undefined,
+            } : undefined,
           };
         });
         return conversationsData;
@@ -199,7 +232,28 @@ export default function CustomerSupport() {
 
       setTickets((prev) =>
         prev.map((ticket) =>
-          ticket.id === conversationId ? { ...ticket, messages } : ticket
+          ticket.id === conversationId 
+            ? { 
+                ...ticket, 
+                messages,
+                shopProfile: conv.shop_owner ? {
+                  business_name: conv.shop_owner.business_name || "Shop",
+                  location:
+                    conv.shop_owner.location ||
+                    conv.shop_owner.business_address ||
+                    conv.shop_owner.address ||
+                    conv.shop_owner.shop_address ||
+                    "",
+                  profile_photo: conv.shop_owner.profile_photo || conv.shop_owner.profile_photo_url || undefined,
+                  profile_photo_url: conv.shop_owner.profile_photo_url || undefined,
+                } : undefined,
+                customerProfile: conv.customer ? {
+                  name: conv.customer.name || "Customer",
+                  profile_photo: conv.customer.profile_photo || conv.customer.profile_photo_url || undefined,
+                  profile_photo_url: conv.customer.profile_photo_url || undefined,
+                } : undefined,
+              } 
+            : ticket
         )
       );
     } catch (error) {
@@ -214,6 +268,8 @@ export default function CustomerSupport() {
   };
 
   const selectedTicket = tickets.find((t) => t.id === selectedTicketId);
+  const customerProfilePhoto = resolveStorageUrl(selectedTicket?.customerProfile?.profile_photo);
+  const shopProfilePhoto = resolveStorageUrl(selectedTicket?.shopProfile?.profile_photo);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -491,42 +547,63 @@ export default function CustomerSupport() {
           <div className="w-80 bg-white border-r border-gray-200 flex flex-col overflow-hidden">
             {/* Header */}
             <div className="border-b border-gray-200 px-6 py-4 relative z-20">
-              <h1 className="text-2xl font-bold text-black mb-4">Shop Messages</h1>
+              <h1 className="text-2xl font-bold text-black mb-4">Chat</h1>
               
-              {/* Search Box */}
-              <div className="relative mb-4">
-                <svg
-                  className="absolute left-3 top-3 w-5 h-5 text-gray-400"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <input
-                  type="text"
-                  placeholder="Search shops..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-black transition-colors"
-                />
-              </div>
-              
-              {/* Category Filters */}
+              {/* Search and Filter Menu */}
               <div className="flex gap-2">
-                {["all", "repairs", "products", "general"].map((category) => (
-                  <button
-                    key={category}
-                    onClick={() => setCategoryFilter(category)}
-                    className={`px-3 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap ${
-                      categoryFilter === category
-                        ? "bg-black text-white"
-                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                    }`}
+                <div className="relative flex-1">
+                  <svg
+                    className="absolute left-3 top-3 w-5 h-5 text-gray-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
                   >
-                    {category.charAt(0).toUpperCase() + category.slice(1)}
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <input
+                    type="text"
+                    placeholder="Search..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-black transition-colors"
+                  />
+                </div>
+                
+                {/* Filter Menu Button - Hover Dropdown */}
+                <div className="relative group">
+                  <button
+                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-600 hover:text-gray-800"
+                    title="Filter by status"
+                  >
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+                    </svg>
                   </button>
-                ))}
+                  
+                  {/* Dropdown Menu - Hidden by default, visible on group hover */}
+                  <div className="hidden group-hover:block absolute right-0 top-full mt-2 bg-white border border-gray-200 rounded-lg shadow-xl z-50 py-2 whitespace-nowrap">
+                    {["all", "open", "in_progress", "resolved"].map((status) => (
+                      <button
+                        key={status}
+                        onClick={() => {
+                          setStatusFilter(status);
+                        }}
+                        className={`flex items-center gap-3 w-full px-6 py-2 text-sm text-left transition-colors ${
+                          statusFilter === status
+                            ? "bg-blue-50 text-blue-600"
+                            : "text-gray-700 hover:bg-gray-50"
+                        }`}
+                      >
+                        <span className={`w-2 h-2 rounded-full shrink-0 ${
+                          statusFilter === status
+                            ? "bg-blue-600"
+                            : "bg-gray-400"
+                        }`}></span>
+                        {status.replace("_", " ").toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -558,9 +635,17 @@ export default function CustomerSupport() {
                   <div className="flex items-start gap-3">
                     {/* Avatar */}
                     <div className="relative shrink-0">
-                      <div className="w-12 h-12 rounded-full bg-gray-200 overflow-hidden flex items-center justify-center text-gray-700 font-semibold text-sm">
-                        {ticket.customerAvatar}
-                      </div>
+                      {resolveStorageUrl(ticket.customerProfile?.profile_photo) ? (
+                        <img
+                          src={resolveStorageUrl(ticket.customerProfile?.profile_photo) || ""}
+                          alt={ticket.customerName}
+                          className="w-12 h-12 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-full bg-gray-200 overflow-hidden flex items-center justify-center text-gray-700 font-semibold text-sm">
+                          {ticket.customerAvatar}
+                        </div>
+                      )}
                       <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${getStatusColor(ticket.status)}`} />
                     </div>
 
@@ -587,9 +672,17 @@ export default function CustomerSupport() {
               <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between bg-white">
                 <div className="flex items-center gap-4">
                   <div className="relative">
-                    <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center text-gray-700 font-semibold text-sm">
-                      {selectedTicket.customerAvatar}
-                    </div>
+                    {customerProfilePhoto ? (
+                      <img
+                        src={customerProfilePhoto}
+                        alt={selectedTicket.customerName}
+                        className="w-12 h-12 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center text-gray-700 font-semibold text-sm">
+                        {selectedTicket.customerAvatar}
+                      </div>
+                    )}
                     <div className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-white ${getStatusColor(selectedTicket.status)}`} />
                   </div>
                   <div>
@@ -624,6 +717,7 @@ export default function CustomerSupport() {
                         .replace(/\\\*/g, '*')
                         .replace(/\\"/g, '"');
                       const isRepairOrderAccepted = /repair order accepted/i.test(normalizedContent) && /\*\*type:\*\*/i.test(normalizedContent);
+                      const isNewOrderPlaced = /new order placed/i.test(normalizedContent) && /\*\*product|order/i.test(normalizedContent);
 
                       if (isRepairOrderAccepted) {
                         const titleMatch = normalizedContent.match(/\*\*(Repair Order Accepted[^*]*)\*\*/i);
@@ -646,7 +740,23 @@ export default function CustomerSupport() {
 
                         return (
                           <div key={message.id} className={`flex ${message.sender === 'staff' ? 'justify-end' : 'justify-start'} my-4`}>
-                            <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm w-full max-w-2xl">
+                            <div className={`w-full max-w-2xl flex items-start gap-3 ${message.sender === 'staff' ? 'flex-row-reverse ml-auto' : ''}`}>
+                              <div className="w-9 h-9 rounded-full overflow-hidden bg-gray-100 shrink-0 flex items-center justify-center">
+                                {message.sender === 'staff' ? (
+                                  shopProfilePhoto ? (
+                                    <img src={shopProfilePhoto} alt={selectedTicket?.shopProfile?.business_name || 'Shop'} className="w-full h-full object-cover" />
+                                  ) : (
+                                    <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5" />
+                                    </svg>
+                                  )
+                                ) : customerProfilePhoto ? (
+                                  <img src={customerProfilePhoto} alt={selectedTicket?.customerName || 'Customer'} className="w-full h-full object-cover" />
+                                ) : (
+                                  <span className="text-xs font-semibold text-gray-600">{selectedTicket?.customerAvatar || 'C'}</span>
+                                )}
+                              </div>
+                              <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm w-full">
                               <div className="flex items-start justify-between mb-4 gap-3">
                                 <div>
                                   <h3 className="text-base font-semibold text-gray-900">{title}</h3>
@@ -699,7 +809,32 @@ export default function CustomerSupport() {
                               </div>
 
                               <div className="border-t border-gray-100 pt-3 mb-3">
-                                <p className="text-sm font-semibold text-gray-900">SoleSpace Shop</p>
+                                <div className="flex items-center gap-3">
+                                  {shopProfilePhoto ? (
+                                    <img
+                                      src={shopProfilePhoto}
+                                      alt={selectedTicket?.shopProfile?.business_name || 'Shop'}
+                                      className="w-10 h-10 rounded-full object-cover"
+                                    />
+                                  ) : (
+                                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+                                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                          strokeWidth={2}
+                                          d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
+                                        />
+                                      </svg>
+                                    </div>
+                                  )}
+                                  <div>
+                                    <p className="text-sm font-semibold text-gray-900">{selectedTicket?.shopProfile?.business_name || 'SoleSpace Shop'}</p>
+                                    {selectedTicket?.shopProfile?.location && (
+                                      <p className="text-xs text-gray-500">{selectedTicket.shopProfile.location}</p>
+                                    )}
+                                  </div>
+                                </div>
                               </div>
 
                               <div className="bg-blue-50 rounded-lg px-3 py-2.5 mb-4">
@@ -712,6 +847,177 @@ export default function CustomerSupport() {
                               >
                                 View Full Details
                               </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      if (isNewOrderPlaced) {
+                        const titleMatch = normalizedContent.match(/\*\*(New Order Placed[^*]*)\*\*/i);
+                        const itemsMatch = normalizedContent.match(/\*\*Items:\*\*\s*(.+?)(?=\n|$)/i);
+                        const totalMatch = normalizedContent.match(/\*\*Total:\*\*\s*₱?(.+?)(?=\n|$)/i);
+                        const statusMatch = normalizedContent.match(/\*\*Status:\*\*\s*(.+?)(?=\n|$)/i);
+
+                        const title = titleMatch ? titleMatch[1].trim() : 'New Order Placed';
+                        const items = itemsMatch ? itemsMatch[1].trim() : '';
+                        const total = totalMatch ? totalMatch[1].trim() : '';
+                        const status = statusMatch ? statusMatch[1].trim() : 'delivered';
+                        const productImages = message.images && message.images.length > 0 ? message.images : [];
+                        const shopInfo = selectedTicket?.shopProfile;
+                        const shopDisplayName = shopInfo?.business_name || 'SoleSpace Shop';
+                        const shopLocation = shopInfo?.location || '';
+                        const shopPhoto = resolveStorageUrl(shopInfo?.profile_photo);
+
+                        // Parse products from items string (format: "item1 x qty, item2 x qty")
+                        const productList = items
+                          .split(',')
+                          .map((item) => item.trim())
+                          .filter(Boolean)
+                          .map((item) => {
+                            const match = item.match(/^(.*?)\s+x(\d+)(?:\s*•?\s*₱?([\d,]+(?:\.\d{1,2})?))?$/);
+                            return {
+                              name: match ? match[1].trim() : item,
+                              quantity: match ? match[2] : '1',
+                              price: match && match[3] ? match[3] : '',
+                            };
+                          });
+
+                        return (
+                          <div key={message.id} className={`flex ${message.sender === 'staff' ? 'justify-end' : 'justify-start'} my-4`}>
+                            <div className={`max-w-lg w-full flex items-start gap-3 ${message.sender === 'staff' ? 'flex-row-reverse ml-auto' : ''}`}>
+                              <div className="w-9 h-9 rounded-full overflow-hidden bg-gray-100 shrink-0 flex items-center justify-center">
+                                {message.sender === 'staff' ? (
+                                  shopProfilePhoto ? (
+                                    <img src={shopProfilePhoto} alt={selectedTicket?.shopProfile?.business_name || 'Shop'} className="w-full h-full object-cover" />
+                                  ) : (
+                                    <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5"
+                                      />
+                                    </svg>
+                                  )
+                                ) : customerProfilePhoto ? (
+                                  <img src={customerProfilePhoto} alt={selectedTicket?.customerName || 'Customer'} className="w-full h-full object-cover" />
+                                ) : (
+                                  <span className="text-xs font-semibold text-gray-600">{selectedTicket?.customerAvatar || 'C'}</span>
+                                )}
+                              </div>
+                              <div className="bg-white border border-gray-200 rounded-xl p-5 max-w-lg w-full shadow-sm hover:shadow-md transition-shadow">
+                              {/* Header with Title and Status Badge */}
+                              <div className="flex items-start justify-between mb-4">
+                                <div className="flex-1">
+                                  <h3 className="text-base font-semibold text-gray-900 mb-1">{title}</h3>
+                                  <p className="text-xs text-gray-500">{message.timestamp}</p>
+                                </div>
+                                {status && (
+                                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${
+                                    status.toLowerCase().includes('pending') ? 'bg-yellow-100 text-yellow-800' :
+                                    status.toLowerCase().includes('delivered') ? 'bg-blue-100 text-blue-800' :
+                                    status.toLowerCase().includes('processing') ? 'bg-blue-100 text-blue-800' :
+                                    'bg-gray-100 text-gray-800'
+                                  }`}>
+                                    {status}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Products Section */}
+                              {productList.length > 0 && (
+                                <div className="bg-gray-50 rounded-lg p-4 mb-4 space-y-3">
+                                  <span className="text-gray-500 text-xs font-medium">Products:</span>
+                                  <div className="space-y-2">
+                                    {productList.map((product, productIndex) => {
+                                      const productImage = productImages[productIndex];
+                                      return (
+                                        <div key={`${product.name}-${productIndex}`} className="flex items-center gap-3 bg-white rounded-lg p-2 border border-gray-100">
+                                          {productImage ? (
+                                            <img
+                                              src={productImage}
+                                              alt={product.name}
+                                              className="w-12 h-12 rounded-md object-cover"
+                                            />
+                                          ) : (
+                                            <div className="w-12 h-12 rounded-md bg-gray-100" />
+                                          )}
+                                          <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-medium text-gray-900 truncate">{product.name}</p>
+                                            <p className="text-xs text-gray-500">
+                                              Qty: {product.quantity}
+                                              {product.price ? ` • ₱${product.price}` : ''}
+                                            </p>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Items and Total Section */}
+                              <div className="bg-gray-50 rounded-lg p-4 mb-4 space-y-3">
+                                {items && (
+                                  <div className="flex items-start gap-3">
+                                    <span className="text-gray-500 text-xs font-medium w-24 shrink-0">Items:</span>
+                                    <span className="text-sm text-gray-900 font-medium">{items}</span>
+                                  </div>
+                                )}
+                                {total && (
+                                  <div className="flex items-start gap-3">
+                                    <span className="text-gray-500 text-xs font-medium w-24 shrink-0">Total:</span>
+                                    <span className="text-sm text-gray-900 font-semibold">₱{total}</span>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Shop Information */}
+                              <div className="border-t border-gray-100 pt-3 mb-3">
+                                <div className="flex items-center gap-3">
+                                  {shopPhoto ? (
+                                    <img
+                                      src={shopPhoto}
+                                      alt={shopDisplayName}
+                                      className="w-10 h-10 rounded-full object-cover"
+                                    />
+                                  ) : (
+                                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+                                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                          strokeWidth={2}
+                                          d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
+                                        />
+                                      </svg>
+                                    </div>
+                                  )}
+                                  <div className="flex-1">
+                                    <p className="text-sm font-semibold text-gray-900">{shopDisplayName}</p>
+                                    {shopLocation && (
+                                      <p className="text-xs text-gray-500">{shopLocation}</p>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Footer message */}
+                              <div className="bg-blue-50 rounded-lg px-3 py-2.5 mb-4">
+                                <p className="text-xs text-blue-900 leading-relaxed">
+                                  💡 Thank you for your order! We'll notify you once your items are ready for shipment.
+                                </p>
+                              </div>
+
+                              {/* View Button */}
+                              <button
+                                type="button"
+                                className="w-full bg-white hover:bg-gray-50 text-black border border-gray-300 font-semibold py-2.5 px-4 rounded-lg transition-all duration-200 text-sm shadow-sm hover:shadow-md"
+                              >
+                                View Full Details
+                              </button>
+                              </div>
                             </div>
                           </div>
                         );
@@ -725,7 +1031,23 @@ export default function CustomerSupport() {
                         onMouseLeave={() => setHoveredMessageId(null)}
                       >
                         {message.images && message.images.length > 0 ? (
-                          <div className="relative group">
+                          <div className={`relative group flex items-start gap-2 ${message.sender === 'staff' ? 'flex-row-reverse' : ''}`}>
+                            <div className="w-8 h-8 rounded-full overflow-hidden bg-gray-100 shrink-0 flex items-center justify-center">
+                              {message.sender === 'staff' ? (
+                                shopProfilePhoto ? (
+                                  <img src={shopProfilePhoto} alt={selectedTicket?.shopProfile?.business_name || 'Shop'} className="w-full h-full object-cover" />
+                                ) : (
+                                  <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5" />
+                                  </svg>
+                                )
+                              ) : customerProfilePhoto ? (
+                                <img src={customerProfilePhoto} alt={selectedTicket?.customerName || 'Customer'} className="w-full h-full object-cover" />
+                              ) : (
+                                <span className="text-[10px] font-semibold text-gray-600">{selectedTicket?.customerAvatar || 'C'}</span>
+                              )}
+                            </div>
+                            <div className="relative">
                             <div className="flex flex-wrap gap-2 mb-2">
                               {message.images.map((img, idx) => (
                                 <img
@@ -794,9 +1116,26 @@ export default function CustomerSupport() {
                                 {messageReactions[message.id]}
                               </button>
                             )}
+                            </div>
                           </div>
                         ) : (
-                          <div className="relative group">
+                          <div className={`relative group flex items-start gap-2 ${message.sender === 'staff' ? 'flex-row-reverse' : ''}`}>
+                            <div className="w-8 h-8 rounded-full overflow-hidden bg-gray-100 shrink-0 flex items-center justify-center">
+                              {message.sender === 'staff' ? (
+                                shopProfilePhoto ? (
+                                  <img src={shopProfilePhoto} alt={selectedTicket?.shopProfile?.business_name || 'Shop'} className="w-full h-full object-cover" />
+                                ) : (
+                                  <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5" />
+                                  </svg>
+                                )
+                              ) : customerProfilePhoto ? (
+                                <img src={customerProfilePhoto} alt={selectedTicket?.customerName || 'Customer'} className="w-full h-full object-cover" />
+                              ) : (
+                                <span className="text-[10px] font-semibold text-gray-600">{selectedTicket?.customerAvatar || 'C'}</span>
+                              )}
+                            </div>
+                            <div className="relative">
                             <div className={`flex flex-col gap-1 max-w-xs lg:max-w-md xl:max-w-lg ${message.sender === 'staff' ? 'items-end' : 'items-start'}`}>
                               {message.parentMessage && (
                                 <p className="text-[11px] text-gray-500 px-1">{getReplyContextLabel(message)}</p>
@@ -850,6 +1189,7 @@ export default function CustomerSupport() {
                                 {messageReactions[message.id]}
                               </button>
                             )}
+                            </div>
                           </div>
                         )}
                         <div className={`mt-2 ${message.sender === "staff" ? "text-right" : "text-left"}`}>

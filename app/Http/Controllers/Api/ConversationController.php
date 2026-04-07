@@ -33,6 +33,7 @@ class ConversationController extends Controller
         $query = Conversation::where('shop_owner_id', $shopOwner->id)
             ->with([
                 'customer',
+                'shopOwner',
                 'order',
                 'repairRequest' => function ($q) {
                     $q->select('id', 'conversation_id', 'request_id', 'shoe_type', 'brand', 'description', 'status');
@@ -95,6 +96,19 @@ class ConversationController extends Controller
                             : '/storage/' . ltrim($conversation->customer->profile_photo, '/'))
                         : null,
                 ],
+                'shop_owner' => $conversation->shopOwner ? [
+                    'id' => $conversation->shopOwner->id,
+                    'business_name' => $conversation->shopOwner->business_name,
+                    'profile_photo' => $conversation->shopOwner->profile_photo,
+                    'profile_photo_url' => $conversation->shopOwner->profile_photo
+                        ? (str_starts_with($conversation->shopOwner->profile_photo, '/')
+                            ? $conversation->shopOwner->profile_photo
+                            : '/storage/' . ltrim($conversation->shopOwner->profile_photo, '/'))
+                        : null,
+                    'location' => $conversation->shopOwner->business_address ?: $conversation->shopOwner->shop_address,
+                    'business_address' => $conversation->shopOwner->business_address,
+                    'shop_address' => $conversation->shopOwner->shop_address,
+                ] : null,
                 'repairRequest' => $repairRequestData,
                 'messages' => $conversation->messages,
             ];
@@ -131,6 +145,7 @@ class ConversationController extends Controller
 
         $conversation->load([
             'customer',
+            'shopOwner',
             'order',
             'repairRequest',
             'messages.sender',
@@ -175,6 +190,19 @@ class ConversationController extends Controller
                         : '/storage/' . ltrim($conversation->customer->profile_photo, '/'))
                     : null,
             ],
+            'shop_owner' => $conversation->shopOwner ? [
+                'id' => $conversation->shopOwner->id,
+                'business_name' => $conversation->shopOwner->business_name,
+                'profile_photo' => $conversation->shopOwner->profile_photo,
+                'profile_photo_url' => $conversation->shopOwner->profile_photo
+                    ? (str_starts_with($conversation->shopOwner->profile_photo, '/')
+                        ? $conversation->shopOwner->profile_photo
+                        : '/storage/' . ltrim($conversation->shopOwner->profile_photo, '/'))
+                    : null,
+                'location' => $conversation->shopOwner->business_address ?: $conversation->shopOwner->shop_address,
+                'business_address' => $conversation->shopOwner->business_address,
+                'shop_address' => $conversation->shopOwner->shop_address,
+            ] : null,
             'repairRequest' => $repairRequestData,
             'messages' => $conversation->messages->map(function ($msg) {
                 return [
