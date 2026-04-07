@@ -2533,7 +2533,9 @@ class RepairRequestController extends Controller
         $baseTotal = !is_null($repair->repair_package_id)
             ? round($packagePrice + $addOnsTotal, 2)
             : round((float) ($repair->total ?? 0), 2);
-        $finalTotal = round($baseTotal + $materialsTotal, 2);
+        // Keep customer-facing final total anchored to the billable base amount.
+        // Materials remain tracked in pricing_breakdown for operational visibility.
+        $finalTotal = $baseTotal;
 
         $pricingBreakdown = is_array($repair->pricing_breakdown)
             ? $repair->pricing_breakdown

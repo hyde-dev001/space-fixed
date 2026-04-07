@@ -171,7 +171,10 @@ const getOrderVatRate = (order: RepairOrder) => {
 };
 
 const getOrderBreakdown = (order: RepairOrder) => {
-  const finalTotal = Number(order.final_total ?? order.total_amount ?? 0);
+  const baseTotal = Number(order.pricing_breakdown?.base_total);
+  const finalTotal = Number.isFinite(baseTotal)
+    ? baseTotal
+    : Number(order.final_total ?? order.total_amount ?? 0);
   return buildRepairBreakdown({
     finalTotal: Number.isFinite(finalTotal) ? finalTotal : 0,
     vatRate: getOrderVatRate(order),

@@ -46,6 +46,7 @@ type RepairOrder = {
   payment_status?: string;
   paymongo_payment_id?: string | null;
   payment_policy?: 'deposit_50' | 'full_upfront';
+  totalPaidAmount?: number | string | null;
   pickup_enabled?: boolean;
   pickup_enabled_at?: string | null;
   repairPackageId?: number | null;
@@ -61,6 +62,7 @@ type RepairOrder = {
     package_name?: string;
     package_price?: number | string;
     add_ons_total?: number | string;
+    base_total?: number | string;
     final_total?: number | string;
   } | null;
 };
@@ -552,8 +554,8 @@ export default function JobOrdersRepair() {
               ?? repair.repair_package?.name
               ?? ''
           ).trim();
-          const finalTotalAmount =
-            toNumber(repair.final_total ?? repair.pricing_breakdown?.final_total ?? repair.total) ?? 0;
+          const billableBaseAmount =
+            toNumber(repair.pricing_breakdown?.base_total ?? repair.final_total ?? repair.pricing_breakdown?.final_total ?? repair.total) ?? 0;
           const rawVatRate = Number(repair.vat_rate);
           const vatRate = Number.isFinite(rawVatRate) && rawVatRate > 0 ? rawVatRate : REPAIR_VAT_RATE_PERCENT;
           const rawTaxMode = String(repair.tax_mode ?? repair.pricing_breakdown?.tax_mode ?? 'legacy_additive').toLowerCase();
@@ -561,7 +563,7 @@ export default function JobOrdersRepair() {
             ? 'vat_inclusive'
             : (rawTaxMode === 'legacy_add_on' ? 'legacy_add_on' : 'legacy_additive');
           const breakdown = buildRepairBreakdown({
-            finalTotal: finalTotalAmount,
+            finalTotal: billableBaseAmount,
             vatRate,
             taxMode,
           });
@@ -583,7 +585,7 @@ export default function JobOrdersRepair() {
           phone: repair.phone || 'N/A',
           item: repair.shoe_type || 'N/A',
           service: mappedServices || posServiceSummary || packageServiceName || 'N/A',
-          total: formatPesoAmount(finalTotalAmount) || '₱0.00',
+          total: formatPesoAmount(billableBaseAmount) || '₱0.00',
           repairPackageId: repair.repair_package_id ?? null,
           packageName: repair.pricing_breakdown?.package_name || repair.repair_package?.name || null,
           packagePrice: formatPesoAmount(repair.package_price ?? repair.pricing_breakdown?.package_price),
@@ -654,6 +656,7 @@ export default function JobOrdersRepair() {
           conversation_id: repair.conversation_id,
           payment_enabled: repair.payment_enabled || false,
           payment_status: repair.payment_status || 'pending',
+          totalPaidAmount: toNumber(repair.total_paid_amount),
           paymongo_payment_id: repair.paymongo_payment_id || null,
           payment_policy: repair.payment_policy || 'deposit_50',
           pickup_enabled: repair.pickup_enabled || false,
@@ -999,15 +1002,33 @@ export default function JobOrdersRepair() {
     return colors[status] || "bg-gray-100 text-gray-800";
   };
 
-  const getHalfPriceText = (priceText: string) => {
-    const numericPrice = parseFloat(priceText.replace(/[^0-9.]/g, "")) || 0;
-    const halfPrice = numericPrice / 2;
-    return `P${halfPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const getOrderGrandTotalValue = (order: Pick<RepairOrder, 'grandTotal' | 'total'>) => {
+    return toNumber(order.grandTotal) ?? toNumber(order.total) ?? 0;
   };
 
-  const isRemainingBalancePaid = (paymentStatus?: string) => {
-    const normalized = (paymentStatus || '').toLowerCase();
-    return normalized === 'completed';
+  const getDisplayedPaidAmount = (order: Pick<RepairOrder, 'totalPaidAmount' | 'payment_status' | 'payment_policy' | 'grandTotal' | 'total'>) => {
+    const recordedPaid = toNumber(order.totalPaidAmount);
+    if (recordedPaid !== null && recordedPaid > 0) {
+      return recordedPaid;
+    }
+
+    const status = (order.payment_status ?? '').toLowerCase();
+    const policy = order.payment_policy ?? 'deposit_50';
+    const grandTotal = getOrderGrandTotalValue(order);
+
+    if (status === 'completed') {
+      return grandTotal;
+    }
+
+    if (status === 'paid' || status === 'partially_paid') {
+      if (policy === 'full_upfront') {
+        return grandTotal;
+      }
+
+      return Math.round(grandTotal * 0.5 * 100) / 100;
+    }
+
+    return 0;
   };
 
   const isFullyPaidForRelease = (order: Pick<RepairOrder, 'payment_policy' | 'payment_status'>) => {
@@ -2333,12 +2354,28 @@ export default function JobOrdersRepair() {
                       <td className="px-4 py-4 text-sm text-gray-900 dark:text-white font-medium">
                         {order.grandTotal || order.total}
                       </td>
-                      <td className={`px-4 py-4 text-sm font-semibold ${
-                        isRemainingBalancePaid(order.payment_status)
-                          ? 'text-green-600 dark:text-green-400'
-                          : 'text-red-600 dark:text-red-400'
-                      }`}>
-                        {getHalfPriceText(order.grandTotal || order.total)}
+                      <td className="px-4 py-4 text-sm font-semibold">
+                        {(() => {
+                          const status = (order.payment_status ?? '').toLowerCase();
+                          if (status === 'refunded') {
+                            return <span className="text-rose-600 dark:text-rose-400">Refunded</span>;
+                          }
+                          if (status === 'partially_refunded') {
+                            return <span className="text-rose-600 dark:text-rose-400">Partially Refunded</span>;
+                          }
+
+                          const paidAmount = getDisplayedPaidAmount(order);
+                          if (paidAmount <= 0) {
+                            return <span className="text-gray-400 dark:text-gray-500">—</span>;
+                          }
+
+                          const amountText = formatPesoAmount(paidAmount) ?? '₱0.00';
+                          const paidClass = status === 'completed'
+                            ? 'text-green-600 dark:text-green-400'
+                            : 'text-amber-600 dark:text-amber-400';
+
+                          return <span className={paidClass}>{amountText}</span>;
+                        })()}
                       </td>
                       <td className="px-4 py-4 text-sm text-gray-500 dark:text-gray-400 wrap-break-word">
                         {order.createdAt}
