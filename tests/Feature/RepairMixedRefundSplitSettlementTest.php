@@ -187,6 +187,140 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
     }
 
     #[Test]
+    public function myrepairs_payload_marks_pure_online_refund_as_original_method_only(): void
+    {
+        /** @var User $customer */
+        $customer = User::factory()->create();
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+
+        $repair = $this->createRepairRequest($shopOwner, $customer, [
+            'total' => 500,
+            'final_total' => 500,
+            'pricing_breakdown' => [
+                'tax_mode' => 'vat_inclusive',
+            ],
+            'payment_policy' => 'full_upfront',
+            'payment_policy_snapshot' => 'full_upfront',
+            'payment_status' => 'completed',
+            'total_paid_amount' => 500,
+            'total_refunded_amount' => 0,
+        ]);
+
+        $source = PosTransaction::create([
+            'transaction_no' => 'POS-ONLINE-ONLY-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'due_type' => 'full',
+            'subtotal' => 446.43,
+            'tax_amount' => 53.57,
+            'discount_amount' => 0,
+            'total_amount' => 500,
+            'paid_amount' => 500,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        PosPaymentLine::create([
+            'pos_transaction_id' => $source->id,
+            'tender_type' => 'paymongo_wallet',
+            'provider_reference' => 'pmw_online_only_001',
+            'amount' => 500,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $repair->update(['latest_pos_transaction_id' => $source->id]);
+
+        $response = $this->actingAs($customer, 'user')->getJson('/api/customer/repairs');
+        $response->assertOk()->assertJsonPath('success', true);
+
+        $data = collect($response->json('data'))->firstWhere('id', $repair->id);
+
+        $this->assertNotNull($data);
+        $this->assertSame('pure_online', (string) ($data['refund_payment_type'] ?? ''));
+        $this->assertFalse((bool) ($data['refund_requires_payout_destination'] ?? true));
+        $this->assertTrue((bool) ($data['refund_original_method_only'] ?? false));
+    }
+
+    #[Test]
+    public function myrepair_submit_ignores_manual_payout_details_for_pure_online_payment(): void
+    {
+        /** @var User $customer */
+        $customer = User::factory()->create();
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+
+        $repair = $this->createRepairRequest($shopOwner, $customer, [
+            'total' => 500,
+            'final_total' => 500,
+            'pricing_breakdown' => [
+                'tax_mode' => 'vat_inclusive',
+            ],
+            'payment_policy' => 'full_upfront',
+            'payment_policy_snapshot' => 'full_upfront',
+            'payment_status' => 'completed',
+            'total_paid_amount' => 500,
+            'total_refunded_amount' => 0,
+            'paymongo_payment_id' => 'pay_online_only_001',
+        ]);
+
+        $source = PosTransaction::create([
+            'transaction_no' => 'POS-ONLINE-ONLY-002',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'due_type' => 'full',
+            'subtotal' => 446.43,
+            'tax_amount' => 53.57,
+            'discount_amount' => 0,
+            'total_amount' => 500,
+            'paid_amount' => 500,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        PosPaymentLine::create([
+            'pos_transaction_id' => $source->id,
+            'tender_type' => 'paymongo_card',
+            'provider_reference' => 'pmc_online_only_002',
+            'amount' => 500,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $repair->update(['latest_pos_transaction_id' => $source->id]);
+
+        $response = $this->actingAs($customer, 'user')->postJson("/api/customer/repairs/{$repair->id}/refunds", [
+            'source_transaction_id' => $source->id,
+            'request_type' => 'full',
+            'requested_amount' => 500,
+            'reason_code' => 'online_payment_refund_request',
+            'reason_notes' => 'Pure online payment refund request.',
+            'evidence' => [['type' => 'photo', 'url' => 'https://evidence.local/online-only.jpg']],
+            'preferred_return_channel' => 'gcash',
+            'preferred_return_account_name' => 'Manual Destination Name',
+            'preferred_return_account_ref' => '09171234567',
+            'customer_payout_consent' => true,
+        ]);
+
+        $response->assertOk()->assertJsonPath('success', true);
+
+        $refund = PosRefund::query()->latest('id')->firstOrFail()->load('legs');
+
+        $this->assertNull($refund->preferred_return_channel);
+        $this->assertNull($refund->preferred_return_account_name);
+        $this->assertNull($refund->preferred_return_account_ref);
+        $this->assertFalse((bool) $refund->customer_payout_consent);
+
+        $this->assertTrue($refund->legs->contains(fn ($leg) => (string) $leg->leg_type === 'gateway'));
+        $this->assertFalse($refund->legs->contains(fn ($leg) => (string) $leg->leg_type === 'pos_manual'));
+    }
+
+    #[Test]
     public function finance_execute_rejects_pos_manual_leg_without_execution_proof(): void
     {
         $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);

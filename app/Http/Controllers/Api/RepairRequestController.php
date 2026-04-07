@@ -585,7 +585,15 @@ class RepairRequestController extends Controller
             ->whereNull('owner_decision')
             ->update(['status' => 'pending']);
 
-        $query = RepairRequest::with(['services', 'shopOwner', 'repairer', 'materialUsages.inventoryItem:id,price', 'latestPosTransaction:id,metadata'])
+        $query = RepairRequest::with([
+                'services',
+                'shopOwner',
+                'repairer',
+                'materialUsages.inventoryItem:id,price',
+                'latestPosTransaction:id,metadata',
+                'posTransactions:id,module_reference_id,module_type,paid_amount,status',
+                'posTransactions.paymentLines:id,pos_transaction_id,tender_type,amount,status',
+            ])
             ->withSum([
                 'posTransactions as pos_paid_amount_ledger' => function ($builder) {
                     $builder->whereIn('status', ['paid', 'partially_refunded', 'refunded']);
@@ -616,6 +624,7 @@ class RepairRequestController extends Controller
                     $storedPaidAmount,
                     $posLedgerPaidAmount,
                 );
+                $refundPaymentProfile = $this->resolveRefundPaymentProfile($repair, $resolvedPaidAmount);
 
                 return [
                     'id' => $repair->id,
@@ -664,6 +673,9 @@ class RepairRequestController extends Controller
                     'total_paid_amount' => $resolvedPaidAmount,
                     'total_refunded_amount' => (float) $repair->total_refunded_amount,
                     'latest_pos_transaction_id' => $repair->latest_pos_transaction_id,
+                    'refund_payment_type' => $refundPaymentProfile['payment_type'],
+                    'refund_requires_payout_destination' => $refundPaymentProfile['requires_payout_destination'],
+                    'refund_original_method_only' => $refundPaymentProfile['original_method_only'],
                     'vat_rate' => self::REPAIR_VAT_RATE_PERCENT,
                     'vat_amount' => $taxSummary['vat_amount'],
                     'grand_total' => $taxSummary['grand_total'],
@@ -829,7 +841,25 @@ class RepairRequestController extends Controller
             ], 422);
         }
 
-        $refund = DB::transaction(function () use ($refundService, $sourceTransaction, $validated, $user, $repair) {
+        $pricingSnapshot = $this->calculateRepairPricingSnapshot($repair);
+        $taxMode = $this->resolveRepairTaxMode($repair);
+        $taxSummary = $this->calculateRepairTaxSummary((float) ($pricingSnapshot['final_total'] ?? 0), $taxMode);
+        $storedPaidAmount = round((float) ($repair->total_paid_amount ?? 0), 2);
+        $posLedgerPaidAmount = round((float) PosTransaction::query()
+            ->where('module_type', 'repair')
+            ->where('module_reference_id', $repair->id)
+            ->whereIn('status', ['paid', 'partially_refunded', 'refunded'])
+            ->sum('paid_amount'), 2);
+        $resolvedPaidAmount = $this->resolveCustomerFacingTotalPaidAmount(
+            $repair,
+            (float) ($taxSummary['grand_total'] ?? 0),
+            $storedPaidAmount,
+            $posLedgerPaidAmount,
+        );
+        $refundPaymentProfile = $this->resolveRefundPaymentProfile($repair, $resolvedPaidAmount);
+        $isOriginalMethodOnly = (bool) ($refundPaymentProfile['original_method_only'] ?? false);
+
+        $refund = DB::transaction(function () use ($refundService, $sourceTransaction, $validated, $user, $repair, $isOriginalMethodOnly) {
             $refund = $refundService->createRefundWithSplitLegs($sourceTransaction, [
                 'workflow_source' => 'online_myrepair',
                 'request_type' => $validated['request_type'],
@@ -837,10 +867,11 @@ class RepairRequestController extends Controller
                 'reason_code' => $validated['reason_code'],
                 'reason_notes' => $validated['reason_notes'] ?? null,
                 'paymongo_payment_id' => $repair->paymongo_payment_id,
-                'preferred_return_channel' => $validated['preferred_return_channel'] ?? null,
-                'preferred_return_account_name' => $validated['preferred_return_account_name'] ?? null,
-                'preferred_return_account_ref' => $validated['preferred_return_account_ref'] ?? null,
-                'customer_payout_consent' => (bool) ($validated['customer_payout_consent'] ?? false),
+                // Pure online refunds must return to original payment method.
+                'preferred_return_channel' => $isOriginalMethodOnly ? null : ($validated['preferred_return_channel'] ?? null),
+                'preferred_return_account_name' => $isOriginalMethodOnly ? null : ($validated['preferred_return_account_name'] ?? null),
+                'preferred_return_account_ref' => $isOriginalMethodOnly ? null : ($validated['preferred_return_account_ref'] ?? null),
+                'customer_payout_consent' => $isOriginalMethodOnly ? false : (bool) ($validated['customer_payout_consent'] ?? false),
             ], (int) $user->id);
 
             $refund->update([
@@ -2245,6 +2276,48 @@ class RepairRequestController extends Controller
         }
 
         return round($resolved, 2);
+    }
+
+    private function resolveRefundPaymentProfile(RepairRequest $repair, float $resolvedPaidAmount): array
+    {
+        $repair->loadMissing([
+            'posTransactions:id,module_reference_id,module_type,paid_amount,status',
+            'posTransactions.paymentLines:id,pos_transaction_id,tender_type,amount,status',
+        ]);
+
+        $eligibleStatuses = ['paid', 'partially_refunded', 'refunded'];
+        $gatewayTenderTypes = ['paymongo_card', 'paymongo_wallet'];
+
+        $posTransactions = $repair->posTransactions
+            ->filter(fn (PosTransaction $tx) => in_array((string) $tx->status, $eligibleStatuses, true))
+            ->values();
+
+        $posPaidAmount = round((float) $posTransactions->sum(fn (PosTransaction $tx) => (float) ($tx->paid_amount ?? 0)), 2);
+
+        $gatewayPaidFromLines = round((float) $posTransactions
+            ->flatMap(fn (PosTransaction $tx) => $tx->paymentLines ?? collect())
+            ->filter(fn ($line) => (string) ($line->status ?? '') === 'paid')
+            ->whereIn('tender_type', $gatewayTenderTypes)
+            ->sum(fn ($line) => (float) ($line->amount ?? 0)), 2);
+
+        $inferredGatewayPaid = max(0.0, round($resolvedPaidAmount - $posPaidAmount, 2));
+        $gatewayPaidAmount = round(max($gatewayPaidFromLines, $inferredGatewayPaid), 2);
+        $manualPaidAmount = max(0.0, round($resolvedPaidAmount - $gatewayPaidAmount, 2));
+
+        $paymentType = 'manual_only';
+        if ($gatewayPaidAmount > 0 && $manualPaidAmount <= 0.01) {
+            $paymentType = 'pure_online';
+        } elseif ($gatewayPaidAmount > 0 && $manualPaidAmount > 0.01) {
+            $paymentType = 'mixed';
+        }
+
+        return [
+            'payment_type' => $paymentType,
+            'requires_payout_destination' => $paymentType !== 'pure_online',
+            'original_method_only' => $paymentType === 'pure_online',
+            'gateway_paid_amount' => round($gatewayPaidAmount, 2),
+            'manual_paid_amount' => round($manualPaidAmount, 2),
+        ];
     }
 
     private function resolveEffectivePackagePrice(RepairPackage $package): float
