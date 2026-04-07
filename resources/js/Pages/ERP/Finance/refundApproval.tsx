@@ -266,6 +266,7 @@ const ReceiptIcon = ({ className }: { className?: string }) => (
 interface RefundRequest {
 	id: number;
 	refundType?: "order" | "repair";
+	refundPaymentType?: "manual_only" | "mixed" | "pure_online";
 	orderNumber: string;
 	customerName: string;
 	orderTotal?: string;
@@ -351,6 +352,19 @@ const resolveFixedExecutionAmount = (request: RefundRequest): number => {
 
 	const parsed = parseCurrencyToNumber(request.refundAmount);
 	return Math.round(parsed * 100) / 100;
+};
+
+const isPureOnlineRepairRefund = (request: RefundRequest): boolean => {
+	if (request.refundType !== "repair") {
+		return false;
+	}
+
+	if (request.refundPaymentType === "pure_online") {
+		return true;
+	}
+
+	const fallbackPaymentType = String((request as any)?.refundPaymentType || "").toLowerCase();
+	return fallbackPaymentType === "pure_online";
 };
 
 const refundReasonOptions = [
@@ -884,7 +898,7 @@ export default function RefundApproval() {
 	};
 
 	const handleExecuteGatewayRefund = async (request: RefundRequest) => {
-		if (request.refundType === "repair") {
+		if (request.refundType === "repair" && !isPureOnlineRepairRefund(request)) {
 			openExecuteModal(request);
 			return;
 		}
@@ -925,7 +939,11 @@ export default function RefundApproval() {
 					Accept: "application/json",
 					"X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "",
 				},
-				body: JSON.stringify({}),
+				body: JSON.stringify(
+					request.refundType === "repair" && isPureOnlineRepairRefund(request)
+						? { execution_mode: "gateway" }
+						: {},
+				),
 			},
 			);
 
