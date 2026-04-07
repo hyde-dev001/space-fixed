@@ -740,6 +740,7 @@ export default function JobOrdersPage() {
     setReturnRiderPhone(defaultRiderPhone);
     setReturnTrackingNumber(defaultTrackingNumber);
     setReturnTrackingLink(defaultTrackingLink);
+    setIsViewModalOpen(false);
     setIsReturnPickupModalOpen(true);
   };
 
