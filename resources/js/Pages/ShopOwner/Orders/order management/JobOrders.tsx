@@ -785,7 +785,7 @@ export default function JobOrdersPage() {
 
             <div style="display:grid;gap:6px;">
               <label style="font-size:13px;font-weight:600;color:#334155;">Rider Number</label>
-              <input id="swal-rider-phone" class="swal2-input" placeholder="09XXXXXXXXX" value="${escapeHtml(defaultRiderPhone)}" inputmode="numeric" pattern="[0-9]*" maxlength="15" style="margin:0;border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;" />
+              <input id="swal-rider-phone" class="swal2-input" placeholder="09XXXXXXXXX" value="${escapeHtml(defaultRiderPhone)}" inputmode="numeric" pattern="[0-9]*" maxlength="11" style="margin:0;border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;" />
             </div>
 
             <div style="display:grid;gap:6px;">
@@ -834,8 +834,8 @@ export default function JobOrdersPage() {
           return null;
         }
 
-        if (!/^\d+$/.test(riderPhone)) {
-          Swal.showValidationMessage('Rider number must contain numbers only.');
+        if (!/^\d{11}$/.test(riderPhone)) {
+          Swal.showValidationMessage('Rider number must be exactly 11 digits.');
           return null;
         }
 

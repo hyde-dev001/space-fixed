@@ -12,8 +12,6 @@ type MaterialItem = {
   unit: string;
   reorder_level: number;
   reorder_quantity: number;
-  cost_price: number | null;
-  price: number | null;
   notes: string | null;
   created_at: string;
 };
@@ -25,8 +23,6 @@ type MaterialForm = {
   unit: string;
   reorderLevel: string;
   reorderQuantity: string;
-  costPrice: string;
-  sellingPrice: string;
   notes: string;
 };
 
@@ -37,18 +33,7 @@ const defaultForm: MaterialForm = {
   unit: 'pcs',
   reorderLevel: '10',
   reorderQuantity: '50',
-  costPrice: '',
-  sellingPrice: '',
   notes: '',
-};
-
-const formatCurrency = (value: number | null): string => {
-  if (value === null) return '-';
-  return new Intl.NumberFormat('en-PH', {
-    style: 'currency',
-    currency: 'PHP',
-    minimumFractionDigits: 2,
-  }).format(value);
 };
 
 const formatDate = (iso: string): string => {
@@ -160,18 +145,9 @@ export default function UploadStockMaterial() {
       unit: item.unit || 'pcs',
       reorderLevel: String(item.reorder_level ?? 10),
       reorderQuantity: String(item.reorder_quantity ?? 50),
-      costPrice: item.cost_price === null ? '' : String(item.cost_price),
-      sellingPrice: item.price === null ? '' : String(item.price),
       notes: item.notes ?? '',
     });
     setIsModalOpen(true);
-  };
-
-  const parseOptionalMoney = (value: string): number | null => {
-    const trimmed = value.trim();
-    if (!trimmed) return null;
-    const parsed = Number(trimmed);
-    return Number.isFinite(parsed) ? parsed : null;
   };
 
   const buildPayload = () => {
@@ -187,8 +163,8 @@ export default function UploadStockMaterial() {
       unit: form.unit.trim() || 'pcs',
       reorder_level: Number.isFinite(reorderLevel) ? reorderLevel : 0,
       reorder_quantity: Number.isFinite(reorderQuantity) ? reorderQuantity : 0,
-      cost_price: parseOptionalMoney(form.costPrice),
-      price: parseOptionalMoney(form.sellingPrice),
+      cost_price: null,
+      price: null,
       notes: form.notes.trim() || null,
     };
   };
@@ -338,8 +314,6 @@ export default function UploadStockMaterial() {
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Material</th>
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">SKU</th>
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Quantity</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Cost</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Selling</th>
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Uploaded</th>
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Actions</th>
                 </tr>
@@ -347,13 +321,13 @@ export default function UploadStockMaterial() {
               <tbody className="bg-white divide-y divide-gray-200 dark:bg-white/2 dark:divide-gray-800">
                 {loading ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
+                    <td colSpan={5} className="px-6 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
                       Loading materials...
                     </td>
                   </tr>
                 ) : filteredMaterials.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
+                    <td colSpan={5} className="px-6 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
                       No materials found.
                     </td>
                   </tr>
@@ -368,8 +342,6 @@ export default function UploadStockMaterial() {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">
                         {item.available_quantity} {item.unit}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">{formatCurrency(item.cost_price)}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">{formatCurrency(item.price)}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">{formatDate(item.created_at)}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <div className="flex items-center gap-2">
@@ -483,34 +455,6 @@ export default function UploadStockMaterial() {
                   title="Reorder Quantity"
                   value={form.reorderQuantity}
                   onChange={(event) => setForm((prev) => ({ ...prev, reorderQuantity: event.target.value }))}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 outline-none ring-blue-500 transition focus:ring-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="material-cost-price" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Cost Price</label>
-                <input
-                  id="material-cost-price"
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  title="Cost Price"
-                  value={form.costPrice}
-                  onChange={(event) => setForm((prev) => ({ ...prev, costPrice: event.target.value }))}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 outline-none ring-blue-500 transition focus:ring-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="material-selling-price" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Selling Price</label>
-                <input
-                  id="material-selling-price"
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  title="Selling Price"
-                  value={form.sellingPrice}
-                  onChange={(event) => setForm((prev) => ({ ...prev, sellingPrice: event.target.value }))}
                   className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 outline-none ring-blue-500 transition focus:ring-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                 />
               </div>

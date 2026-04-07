@@ -586,6 +586,11 @@ class RepairRequestController extends Controller
             ->update(['status' => 'pending']);
 
         $query = RepairRequest::with(['services', 'shopOwner', 'repairer', 'materialUsages.inventoryItem:id,price', 'latestPosTransaction:id,metadata'])
+            ->withSum([
+                'posTransactions as pos_paid_amount_ledger' => function ($builder) {
+                    $builder->whereIn('status', ['paid', 'partially_refunded', 'refunded']);
+                },
+            ], 'paid_amount')
             ->forCustomer($user->id);
 
         // Filter by status if provided
@@ -603,6 +608,14 @@ class RepairRequestController extends Controller
                 $pricingSnapshot = $this->calculateRepairPricingSnapshot($repair);
                 $taxMode = $this->resolveRepairTaxMode($repair);
                 $taxSummary = $this->calculateRepairTaxSummary((float) $pricingSnapshot['final_total'], $taxMode);
+                $storedPaidAmount = round((float) ($repair->total_paid_amount ?? 0), 2);
+                $posLedgerPaidAmount = round((float) ($repair->pos_paid_amount_ledger ?? 0), 2);
+                $resolvedPaidAmount = $this->resolveCustomerFacingTotalPaidAmount(
+                    $repair,
+                    (float) $taxSummary['grand_total'],
+                    $storedPaidAmount,
+                    $posLedgerPaidAmount,
+                );
 
                 return [
                     'id' => $repair->id,
@@ -648,7 +661,7 @@ class RepairRequestController extends Controller
                     'repair_package_id' => $repair->repair_package_id,
                     'package_price' => $repair->package_price,
                     'add_ons_total' => $repair->add_ons_total,
-                    'total_paid_amount' => (float) $repair->total_paid_amount,
+                    'total_paid_amount' => $resolvedPaidAmount,
                     'total_refunded_amount' => (float) $repair->total_refunded_amount,
                     'latest_pos_transaction_id' => $repair->latest_pos_transaction_id,
                     'vat_rate' => self::REPAIR_VAT_RATE_PERCENT,
@@ -2206,6 +2219,31 @@ class RepairRequestController extends Controller
             'vat_amount' => $vatAmount,
             'grand_total' => round($total + $vatAmount, 2),
         ];
+    }
+
+    private function resolveCustomerFacingTotalPaidAmount(
+        RepairRequest $repair,
+        float $grandTotal,
+        float $storedPaidAmount,
+        float $posLedgerPaidAmount,
+    ): float {
+        $resolved = max(0.0, $storedPaidAmount, $posLedgerPaidAmount);
+        $paymentStatus = strtolower(trim((string) ($repair->payment_status ?? 'pending')));
+        $policy = $this->normalizeRepairPaymentPolicy((string) ($repair->payment_policy ?? 'deposit_50'));
+
+        if ($paymentStatus === 'completed') {
+            return round(max($resolved, $grandTotal), 2);
+        }
+
+        if ($paymentStatus === 'paid') {
+            $phaseAmount = $policy === 'full_upfront'
+                ? $grandTotal
+                : round($grandTotal * 0.5, 2);
+
+            return round(max($resolved, $phaseAmount), 2);
+        }
+
+        return round($resolved, 2);
     }
 
     private function resolveEffectivePackagePrice(RepairPackage $package): float

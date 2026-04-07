@@ -140,7 +140,8 @@ const ShopProfile: React.FC<Props> = ({ shop, products, repairServices = [], rep
   const [selectedCategory, setSelectedCategory] = useState<string>(isRepairOnlyShop ? 'Services' : 'Shoes');
   const [activeImageIndexes, setActiveImageIndexes] = useState<Record<number, number>>({});
   const hoverTimersRef = useRef<Record<number, number>>({});
-  const actionMenuRef = useRef<HTMLDivElement>(null);
+  const mobileActionMenuRef = useRef<HTMLDivElement>(null);
+  const desktopActionMenuRef = useRef<HTMLDivElement>(null);
   const shopSearchContainerRef = useRef<HTMLDivElement | null>(null);
   const shopSearchAbortRef = useRef<AbortController | null>(null);
   const isServicesTab = selectedCategory === 'Services';
@@ -287,7 +288,17 @@ const ShopProfile: React.FC<Props> = ({ shop, products, repairServices = [], rep
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (actionMenuRef.current && !actionMenuRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      const isMobileOrTablet = window.matchMedia('(max-width: 1279px)').matches;
+
+      if (isMobileOrTablet) {
+        if (mobileActionMenuRef.current && !mobileActionMenuRef.current.contains(target)) {
+          setIsActionMenuOpen(false);
+        }
+        return;
+      }
+
+      if (desktopActionMenuRef.current && !desktopActionMenuRef.current.contains(target)) {
         setIsActionMenuOpen(false);
       }
     };
@@ -549,7 +560,7 @@ const ShopProfile: React.FC<Props> = ({ shop, products, repairServices = [], rep
                 )}
               </div>
 
-              <div ref={actionMenuRef} className="relative shrink-0">
+              <div ref={mobileActionMenuRef} className="relative shrink-0">
                 <button
                   type="button"
                   onClick={() => setIsActionMenuOpen((prev) => !prev)}
@@ -868,7 +879,7 @@ const ShopProfile: React.FC<Props> = ({ shop, products, repairServices = [], rep
             <div className={`h-full w-full ${defaultCoverColorClassName}`} aria-hidden="true" />
           )}
 
-          <div ref={actionMenuRef} className="absolute right-4 top-24 z-70 xl:top-28">
+          <div ref={desktopActionMenuRef} className="absolute right-4 top-24 z-70 xl:top-28">
               <button
                 type="button"
                 onClick={() => setIsActionMenuOpen((prev) => !prev)}

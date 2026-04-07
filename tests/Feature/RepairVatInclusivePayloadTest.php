@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\PosTransaction;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\User;
@@ -60,6 +61,49 @@ class RepairVatInclusivePayloadTest extends TestCase
         $this->assertSame('1000.00', number_format((float) ($row['total_amount'] ?? 0), 2, '.', ''));
         $this->assertSame('120.00', number_format((float) ($row['vat_amount'] ?? 0), 2, '.', ''));
         $this->assertSame('1120.00', number_format((float) ($row['grand_total'] ?? 0), 2, '.', ''));
+    }
+
+    #[Test]
+    public function my_repairs_payload_reports_full_paid_amount_when_completed_with_mixed_channels(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $customer = User::factory()->create();
+
+        $repair = $this->createRepairForCustomer($shopOwner, $customer, [
+            'request_id' => 'REP-VAT-MIXED-PAID-001',
+            'pricing_breakdown' => [
+                'tax_mode' => 'vat_inclusive',
+            ],
+            'payment_policy' => 'deposit_50',
+            'payment_policy_snapshot' => 'deposit_50',
+            'payment_status' => 'completed',
+            'total_paid_amount' => 0,
+        ]);
+
+        PosTransaction::create([
+            'transaction_no' => 'POS-MIXED-PAID-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'due_type' => 'balance',
+            'subtotal' => 446.43,
+            'tax_amount' => 53.57,
+            'discount_amount' => 0,
+            'total_amount' => 500,
+            'paid_amount' => 500,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $response = $this->actingAs($customer, 'user')->getJson('/api/customer/repairs');
+
+        $response->assertOk();
+
+        $row = collect($response->json('data'))->firstWhere('id', $repair->id);
+        $this->assertNotNull($row);
+        $this->assertSame('1000.00', number_format((float) ($row['total_paid_amount'] ?? 0), 2, '.', ''));
     }
 
     #[Test]

@@ -195,7 +195,33 @@ const getOrderGrandTotal = (order: RepairOrder) => {
 
   return getOrderBreakdown(order).grandTotal;
 };
-const getOrderMaterialsTotal = (order: RepairOrder) => Number(order.materials_total ?? order.pricing_breakdown?.materials_total ?? 0);
+
+const getOrderDisplayedPaidAmount = (order: RepairOrder) => {
+  const recordedPaid = Number(order.total_paid_amount ?? 0);
+  const safeRecordedPaid = Number.isFinite(recordedPaid) && recordedPaid > 0 ? recordedPaid : 0;
+  const paymentStatus = String(order.payment_status ?? '').toLowerCase();
+  const paymentPolicy = order.payment_policy ?? 'deposit_50';
+  const grandTotal = getOrderGrandTotal(order);
+
+  if (safeRecordedPaid > 0) {
+    return safeRecordedPaid;
+  }
+
+  if (paymentStatus === 'completed') {
+    return grandTotal;
+  }
+
+  if (paymentStatus === 'paid') {
+    if (paymentPolicy === 'full_upfront') {
+      return grandTotal;
+    }
+
+    return Math.round(grandTotal * 0.5 * 100) / 100;
+  }
+
+  return 0;
+};
+
 const escapeSwalText = (value?: string | null): string => {
   return (value ?? '')
     .replace(/&/g, '&amp;')
@@ -2472,12 +2498,12 @@ const MyRepairs: React.FC = () => {
                             </div>
                           </div>
                           <p className="text-sm text-gray-500 uppercase tracking-wider mb-1">Total Paid</p>
-                          <p className="font-bold text-black text-2xl">{formatCurrency(order.total_paid_amount && Number(order.total_paid_amount) > 0 ? order.total_paid_amount : getOrderGrandTotal(order))}</p>
-                          {(order.repair_package_id || getOrderMaterialsTotal(order) > 0) && (
+                          <p className="font-bold text-black text-2xl">{formatCurrency(getOrderDisplayedPaidAmount(order))}</p>
+                          {(order.repair_package_id || Number(order.add_ons_total || 0) > 0) && (
                             <p className="mt-1 text-xs text-gray-500">
                               {order.repair_package_id
-                                ? `Package ${formatCurrency(order.package_price)}${Number(order.add_ons_total || 0) > 0 ? ` + Add-ons ${formatCurrency(order.add_ons_total)}` : ''}${getOrderMaterialsTotal(order) > 0 ? ` + Materials ${formatCurrency(getOrderMaterialsTotal(order))}` : ''}`
-                                : `Materials ${formatCurrency(getOrderMaterialsTotal(order))}`}
+                                ? `Package ${formatCurrency(order.package_price)}${Number(order.add_ons_total || 0) > 0 ? ` + Add-ons ${formatCurrency(order.add_ons_total)}` : ''}`
+                                : `Add-ons ${formatCurrency(order.add_ons_total)}`}
                             </p>
                           )}
                         </div>
