@@ -16,8 +16,22 @@ class RepairRequestPolicy
             return false;
         }
 
-        $allowedStatuses = ['pending', 'ready_for_pickup', 'in_progress', 'completed', 'picked_up'];
+        $normalizedStatus = str_replace('-', '_', strtolower(trim((string) $repair->status)));
 
-        return in_array((string) $repair->status, $allowedStatuses, true);
+        $allowedStatuses = [
+            'pending',
+            'repairer_accepted',
+            'waiting_customer_confirmation',
+            'confirmed',
+            'owner_approved',
+            'received',
+            'in_progress',
+            'completed',
+            'ready_for_pickup',
+            'shipped',
+            'picked_up',
+        ];
+
+        return in_array($normalizedStatus, $allowedStatuses, true);
     }
 }

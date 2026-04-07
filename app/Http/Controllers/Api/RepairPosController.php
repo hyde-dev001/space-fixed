@@ -1080,11 +1080,30 @@ class RepairPosController extends Controller
         }
 
         if (Auth::guard('shop_owner')->check()) {
-            $allowedStatuses = ['pending', 'ready_for_pickup', 'in_progress', 'completed', 'picked_up'];
-
-            return in_array((string) $repair->status, $allowedStatuses, true);
+            return $this->isRepairStatusAllowedForPosCheckout((string) $repair->status);
         }
 
         return method_exists($actor, 'can') && $actor->can('posCheckout', $repair);
+    }
+
+    private function isRepairStatusAllowedForPosCheckout(string $status): bool
+    {
+        $normalizedStatus = str_replace('-', '_', strtolower(trim($status)));
+
+        $allowedStatuses = [
+            'pending',
+            'repairer_accepted',
+            'waiting_customer_confirmation',
+            'confirmed',
+            'owner_approved',
+            'received',
+            'in_progress',
+            'completed',
+            'ready_for_pickup',
+            'shipped',
+            'picked_up',
+        ];
+
+        return in_array($normalizedStatus, $allowedStatuses, true);
     }
 }

@@ -42,6 +42,45 @@ class RepairPosPaymentFlowTest extends TestCase
     }
 
     #[Test]
+    public function shop_owner_guard_can_checkout_owner_approved_job_order(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var \App\Models\User $customer */
+        $customer = \App\Models\User::factory()->create();
+
+        $repair = \App\Models\RepairRequest::create([
+            'request_id' => 'REP-SO-JO-OWNER-APPROVED-001',
+            'customer_name' => $customer->name,
+            'email' => $customer->email,
+            'phone' => '09179997777',
+            'shoe_type' => 'Sneakers',
+            'description' => 'Owner approved checkout regression test',
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'images' => [],
+            'total' => 1000,
+            'final_total' => 1000,
+            'status' => 'owner_approved',
+            'payment_policy' => 'deposit_50',
+            'payment_policy_snapshot' => 'deposit_50',
+            'payment_status' => 'pending',
+        ]);
+
+        $response = $this->actingAs($shopOwner, 'shop_owner')->postJson('/api/repair-pos/checkout', [
+            'repair_request_id' => $repair->id,
+            'due_type' => 'deposit',
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'idempotency_key' => 'shop-owner-owner-approved-checkout-001',
+            'payment_lines' => [
+                ['tender_type' => 'cash', 'amount' => 500],
+            ],
+        ]);
+
+        $response->assertOk()->assertJsonPath('success', true);
+    }
+
+    #[Test]
     public function manual_pos_walk_in_repair_cannot_activate_payment(): void
     {
         $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
