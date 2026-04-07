@@ -1005,7 +1005,7 @@ export default function RefundApproval() {
 						icon: "info",
 						confirmButtonColor: "#2563eb",
 					});
-					return false;
+					return true;
 				}
 
 				throw new Error(data?.message || "Failed to execute refund payout.");
@@ -1079,6 +1079,9 @@ export default function RefundApproval() {
 		const succeeded = await submitExecuteRequest(executeRequest, payload);
 		if (succeeded) {
 			closeExecuteModal();
+			window.setTimeout(() => {
+				window.location.reload();
+			}, 120);
 		}
 	};
 

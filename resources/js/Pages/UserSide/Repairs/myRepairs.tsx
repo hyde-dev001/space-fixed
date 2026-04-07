@@ -572,6 +572,11 @@ const MyRepairs: React.FC = () => {
     return normalized === 'requested' || normalized === 'approved' || normalized === 'processing';
   };
 
+  const isRefundFlowLocked = (status?: string | null): boolean => {
+    const normalized = String(status || '').toLowerCase();
+    return normalized === 'requested' || normalized === 'approved' || normalized === 'processing' || normalized === 'succeeded';
+  };
+
   const mapRepairStatusToTab = (status: RepairStatus): RepairTab => {
     switch (status) {
       case 'new_request':
@@ -1112,6 +1117,11 @@ const MyRepairs: React.FC = () => {
     const activeRefund = latestRefundByRepairId[targetOrder.id];
     if (activeRefund && isRefundInProgress(activeRefund.status)) {
       Swal.fire({ icon: 'warning', title: 'Refund Already In Progress', text: 'A refund request is already being processed for this repair.', confirmButtonColor: '#000000' });
+      return;
+    }
+
+    if (String(activeRefund?.status || '').toLowerCase() === 'succeeded') {
+      Swal.fire({ icon: 'info', title: 'Refund Already Completed', text: 'This repair already has a completed refund.', confirmButtonColor: '#000000' });
       return;
     }
 
@@ -2762,7 +2772,7 @@ const MyRepairs: React.FC = () => {
                           </button>
                         </>
                       )}
-                      {order.status === 'picked_up' && (
+                      {order.status === 'picked_up' && !isRefundFlowLocked(latestRefundByRepairId[order.id]?.status) && (
                         <>
                           <button
                             onClick={() => {
