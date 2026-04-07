@@ -1576,36 +1576,54 @@ export default function JobOrdersRepair() {
 
     if (!result.isConfirmed) return;
 
+    const confirmProceedWithVariance = async () => {
+      const proceedResult = await Swal.fire({
+        title: "Material variance detected",
+        text: "Some planned vs actual materials exceed tolerance without review notes. Continue anyway?",
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "Continue",
+        cancelButtonText: "Review Materials",
+        confirmButtonColor: "#10b981",
+      });
+
+      return proceedResult.isConfirmed;
+    };
+
     try {
       const completionReadiness = await repairMaterialsApi.validateCompletionReadiness(Number(orderId));
 
-      if (!completionReadiness.success || completionReadiness.data.readiness_state === "variance_review_needed") {
+      if (!completionReadiness.success) {
         await Swal.fire({
-          title: "Completion blocked",
-          text: "Resolve material variance note/review first.",
-          icon: "warning",
-          confirmButtonColor: "#2563eb",
-        });
-        return;
-      }
-    } catch (readinessError: any) {
-      if (readinessError?.response?.data?.data?.readiness_state === "variance_review_needed") {
-        await Swal.fire({
-          title: "Completion blocked",
-          text: "Resolve material variance note/review first.",
-          icon: "warning",
+          title: "Readiness check failed",
+          text: "Unable to validate completion readiness right now.",
+          icon: "error",
           confirmButtonColor: "#2563eb",
         });
         return;
       }
 
-      await Swal.fire({
-        title: "Readiness check failed",
-        text: readinessError?.response?.data?.message || "Unable to validate completion readiness right now.",
-        icon: "error",
-        confirmButtonColor: "#2563eb",
-      });
-      return;
+      if (completionReadiness.data.readiness_state === "variance_review_needed") {
+        const shouldProceed = await confirmProceedWithVariance();
+        if (!shouldProceed) {
+          return;
+        }
+      }
+    } catch (readinessError: any) {
+      if (readinessError?.response?.data?.data?.readiness_state === "variance_review_needed") {
+        const shouldProceed = await confirmProceedWithVariance();
+        if (!shouldProceed) {
+          return;
+        }
+      } else {
+        await Swal.fire({
+          title: "Readiness check failed",
+          text: readinessError?.response?.data?.message || "Unable to validate completion readiness right now.",
+          icon: "error",
+          confirmButtonColor: "#2563eb",
+        });
+        return;
+      }
     }
 
     const completeRepair = (noMaterialsUsedConfirmed: boolean = false) => {
@@ -1685,36 +1703,54 @@ export default function JobOrdersRepair() {
     if (!result.isConfirmed) return;
 
     if (order.status === "in-progress") {
+      const confirmProceedWithVariance = async () => {
+        const proceedResult = await Swal.fire({
+          title: "Material variance detected",
+          text: "Some planned vs actual materials exceed tolerance without review notes. Continue anyway?",
+          icon: "warning",
+          showCancelButton: true,
+          confirmButtonText: "Continue",
+          cancelButtonText: "Review Materials",
+          confirmButtonColor: "#10b981",
+        });
+
+        return proceedResult.isConfirmed;
+      };
+
       try {
         const completionReadiness = await repairMaterialsApi.validateCompletionReadiness(order.database_id);
 
-        if (!completionReadiness.success || completionReadiness.data.readiness_state === "variance_review_needed") {
+        if (!completionReadiness.success) {
           await Swal.fire({
-            title: "Completion blocked",
-            text: "Resolve material variance note/review first.",
-            icon: "warning",
-            confirmButtonColor: "#2563eb",
-          });
-          return;
-        }
-      } catch (readinessError: any) {
-        if (readinessError?.response?.data?.data?.readiness_state === "variance_review_needed") {
-          await Swal.fire({
-            title: "Completion blocked",
-            text: "Resolve material variance note/review first.",
-            icon: "warning",
+            title: "Readiness check failed",
+            text: "Unable to validate completion readiness right now.",
+            icon: "error",
             confirmButtonColor: "#2563eb",
           });
           return;
         }
 
-        await Swal.fire({
-          title: "Readiness check failed",
-          text: readinessError?.response?.data?.message || "Unable to validate completion readiness right now.",
-          icon: "error",
-          confirmButtonColor: "#2563eb",
-        });
-        return;
+        if (completionReadiness.data.readiness_state === "variance_review_needed") {
+          const shouldProceed = await confirmProceedWithVariance();
+          if (!shouldProceed) {
+            return;
+          }
+        }
+      } catch (readinessError: any) {
+        if (readinessError?.response?.data?.data?.readiness_state === "variance_review_needed") {
+          const shouldProceed = await confirmProceedWithVariance();
+          if (!shouldProceed) {
+            return;
+          }
+        } else {
+          await Swal.fire({
+            title: "Readiness check failed",
+            text: readinessError?.response?.data?.message || "Unable to validate completion readiness right now.",
+            icon: "error",
+            confirmButtonColor: "#2563eb",
+          });
+          return;
+        }
       }
     }
 
