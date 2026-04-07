@@ -899,6 +899,112 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
     }
 
     #[Test]
+    public function finance_execute_gateway_refunds_deposit_and_remaining_payment_references_for_pure_online(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'paymongo_secret_key' => 'sk_test_multi_payment_refund',
+        ]);
+        /** @var User $finance */
+        $finance = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+
+        Permission::findOrCreate('access-refund-approval', 'user');
+        $finance->givePermissionTo('access-refund-approval');
+
+        $source = PosTransaction::create([
+            'transaction_no' => 'POS-MIX-EXEC-GW-MULTI-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 1003,
+            'customer_type' => 'registered',
+            'customer_id' => $finance->id,
+            'due_type' => 'full',
+            'subtotal' => 950,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 950,
+            'paid_amount' => 950,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $refund = PosRefund::create([
+            'refund_no' => 'RFD-MIX-EXEC-GW-MULTI-001',
+            'shop_owner_id' => $shopOwner->id,
+            'source_transaction_id' => $source->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 1003,
+            'workflow_source' => 'online_myrepair',
+            'status' => 'approved',
+            'finance_status' => 'approved',
+            'shop_owner_status' => 'skipped',
+            'request_type' => 'full',
+            'requested_amount' => 950,
+            'approved_amount' => 950,
+            'reason_code' => 'pure_online_refund',
+            'paymongo_payment_id' => 'pay_remaining_001',
+            'paymongo_payment_ids' => ['pay_deposit_001', 'pay_remaining_001'],
+            'requested_at' => now(),
+        ]);
+
+        $refund->legs()->create([
+            'leg_type' => 'gateway',
+            'requested_amount' => 950,
+            'approved_amount' => 950,
+            'status' => 'approved',
+        ]);
+
+        $mockGateway = new class extends PaymongoRefundService {
+            public array $created = [];
+
+            public function getPaymentAmountInCentavos(string $secretKey, string $paymentId): ?int
+            {
+                if ($paymentId === 'pay_deposit_001' || $paymentId === 'pay_remaining_001') {
+                    return 47500;
+                }
+
+                return null;
+            }
+
+            public function createRefund(string $secretKey, string $paymentId, int $amountInCentavos, string $reason = 'requested_by_customer'): array
+            {
+                $this->created[] = [
+                    'payment_id' => $paymentId,
+                    'amount' => $amountInCentavos,
+                ];
+
+                return [
+                    'success' => true,
+                    'message' => 'ok',
+                    'status' => 'succeeded',
+                    'refund_id' => 're_' . $paymentId,
+                ];
+            }
+        };
+
+        app()->instance(PaymongoRefundService::class, $mockGateway);
+
+        $response = $this->actingAs($finance, 'user')
+            ->postJson("/api/finance/repair-refunds/{$refund->id}/execute", [
+                'execution_mode' => 'gateway',
+            ]);
+
+        $response->assertStatus(200)->assertJsonPath('success', true);
+
+        $updated = $refund->fresh();
+        $this->assertSame('succeeded', (string) $updated->status);
+        $this->assertEqualsWithDelta(950.00, (float) $updated->approved_amount, 0.01);
+        $this->assertSame(['pay_deposit_001', 'pay_remaining_001'], array_values((array) $updated->paymongo_payment_ids));
+        $this->assertSame(['re_pay_deposit_001', 're_pay_remaining_001'], array_values((array) $updated->paymongo_refund_ids));
+
+        $this->assertCount(2, $mockGateway->created);
+        $this->assertSame('pay_deposit_001', (string) ($mockGateway->created[0]['payment_id'] ?? ''));
+        $this->assertSame(47500, (int) ($mockGateway->created[0]['amount'] ?? 0));
+        $this->assertSame('pay_remaining_001', (string) ($mockGateway->created[1]['payment_id'] ?? ''));
+        $this->assertSame(47500, (int) ($mockGateway->created[1]['amount'] ?? 0));
+    }
+
+    #[Test]
     public function customer_refund_list_returns_redacted_execution_reference_only(): void
     {
         $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);

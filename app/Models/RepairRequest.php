@@ -43,6 +43,7 @@ class RepairRequest extends Model
         'pricing_breakdown',
         'paymongo_link_id',
         'paymongo_payment_id',
+        'paymongo_payment_ids',
         'payment_link_created_at',
         'payment_expires_at',
         'payment_completed_at',
@@ -143,6 +144,7 @@ class RepairRequest extends Model
         'included_services_snapshot' => 'array',
         'add_on_services_snapshot' => 'array',
         'pricing_breakdown' => 'array',
+        'paymongo_payment_ids' => 'array',
     ];
 
     /**

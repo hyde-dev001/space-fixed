@@ -43,7 +43,9 @@ class PosRefund extends Model
         'execution_proof_urls',
         'execution_notes',
         'paymongo_payment_id',
+        'paymongo_payment_ids',
         'paymongo_refund_id',
+        'paymongo_refund_ids',
         'requested_by',
         'approved_by',
         'executed_by',
@@ -66,6 +68,8 @@ class PosRefund extends Model
         'customer_payout_consent' => 'boolean',
         'execution_amount' => 'decimal:2',
         'execution_proof_urls' => 'array',
+        'paymongo_payment_ids' => 'array',
+        'paymongo_refund_ids' => 'array',
     ];
 
     public function sourceTransaction(): BelongsTo

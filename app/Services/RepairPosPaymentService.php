@@ -79,6 +79,13 @@ class RepairPosPaymentService
         }
 
         return DB::transaction(function () use ($repair, $payload, $actorId, $paidAmount, $dueAmount, $dueType, $dueSubtotal, $vatAmount, $normalizedPolicy) {
+            $storedPaidAmount = round((float) ($repair->total_paid_amount ?? 0), 2);
+            $posPaidAmountBefore = (float) PosTransaction::query()
+                ->where('module_type', 'repair')
+                ->where('module_reference_id', $repair->id)
+                ->where('status', 'paid')
+                ->sum('paid_amount');
+
             $transaction = PosTransaction::create([
                 'transaction_no' => 'POS-' . now()->format('YmdHis') . '-' . str_pad((string) random_int(1, 9999), 4, '0', STR_PAD_LEFT),
                 'idempotency_key' => (string) ($payload['idempotency_key'] ?? ''),
@@ -118,11 +125,16 @@ class RepairPosPaymentService
                 ]);
             }
 
-            $totalPaid = (float) PosTransaction::query()
+            $posPaidAmountAfter = (float) PosTransaction::query()
                 ->where('module_type', 'repair')
                 ->where('module_reference_id', $repair->id)
                 ->where('status', 'paid')
                 ->sum('paid_amount');
+
+            // Keep any previously recorded non-POS amount (e.g., prior PayMongo payment)
+            // while refreshing the POS-ledger component after this checkout.
+            $nonPosPaidCarry = max(0.0, round($storedPaidAmount - $posPaidAmountBefore, 2));
+            $totalPaid = round($posPaidAmountAfter + $nonPosPaidCarry, 2);
 
             $paidDueTypes = PosTransaction::query()
                 ->where('module_type', 'repair')
@@ -195,11 +207,23 @@ class RepairPosPaymentService
 
             $repair = RepairRequest::query()->find((int) $transaction->module_reference_id);
             if ($repair) {
-                $totalPaid = (float) PosTransaction::query()
+                $storedPaidAmount = round((float) ($repair->total_paid_amount ?? 0), 2);
+
+                $posPaidAmountBefore = (float) PosTransaction::query()
+                    ->where('module_type', 'repair')
+                    ->where('module_reference_id', $repair->id)
+                    ->where('status', 'paid')
+                    ->where('id', '!=', $transaction->id)
+                    ->sum('paid_amount');
+
+                $posPaidAmountAfter = (float) PosTransaction::query()
                     ->where('module_type', 'repair')
                     ->where('module_reference_id', $repair->id)
                     ->where('status', 'paid')
                     ->sum('paid_amount');
+
+                $nonPosPaidCarry = max(0.0, round($storedPaidAmount - $posPaidAmountBefore, 2));
+                $totalPaid = round($posPaidAmountAfter + $nonPosPaidCarry, 2);
 
                 $paidDueTypes = PosTransaction::query()
                     ->where('module_type', 'repair')

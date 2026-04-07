@@ -1008,27 +1008,30 @@ export default function JobOrdersRepair() {
 
   const getDisplayedPaidAmount = (order: Pick<RepairOrder, 'totalPaidAmount' | 'payment_status' | 'payment_policy' | 'grandTotal' | 'total'>) => {
     const recordedPaid = toNumber(order.totalPaidAmount);
-    if (recordedPaid !== null && recordedPaid > 0) {
-      return recordedPaid;
-    }
+    const resolvedRecordedPaid = recordedPaid !== null && recordedPaid > 0 ? recordedPaid : 0;
 
     const status = (order.payment_status ?? '').toLowerCase();
     const policy = order.payment_policy ?? 'deposit_50';
     const grandTotal = getOrderGrandTotalValue(order);
 
+    let inferredPaid = 0;
+
     if (status === 'completed') {
-      return grandTotal;
+      inferredPaid = grandTotal;
+      return Math.max(resolvedRecordedPaid, inferredPaid);
     }
 
     if (status === 'paid' || status === 'partially_paid') {
       if (policy === 'full_upfront') {
-        return grandTotal;
+        inferredPaid = grandTotal;
+        return Math.max(resolvedRecordedPaid, inferredPaid);
       }
 
-      return Math.round(grandTotal * 0.5 * 100) / 100;
+      inferredPaid = Math.round(grandTotal * 0.5 * 100) / 100;
+      return Math.max(resolvedRecordedPaid, inferredPaid);
     }
 
-    return 0;
+    return resolvedRecordedPaid;
   };
 
   const isFullyPaidForRelease = (order: Pick<RepairOrder, 'payment_policy' | 'payment_status'>) => {

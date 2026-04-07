@@ -394,6 +394,63 @@ class RepairPosPaymentFlowTest extends TestCase
     }
 
     #[Test]
+    public function mixed_online_then_pos_payment_preserves_total_paid_amount_and_job_order_payload(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var \App\Models\User $customer */
+        $customer = \App\Models\User::factory()->create();
+
+        $repair = \App\Models\RepairRequest::create([
+            'request_id' => 'REP-TDD-MIXED-PAY-001',
+            'customer_name' => $customer->name,
+            'email' => $customer->email,
+            'phone' => '09173333333',
+            'shoe_type' => 'Sneakers',
+            'description' => 'Mixed online then POS payment aggregation test',
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'images' => json_encode([]),
+            'total' => 1000,
+            'final_total' => 1000,
+            'status' => 'ready_for_pickup',
+            'payment_policy' => 'deposit_50',
+            'payment_policy_snapshot' => 'deposit_50',
+            'payment_status' => 'paid',
+            'payment_status_derived' => 'paid',
+            'total_paid_amount' => 500,
+            'paymongo_payment_id' => 'pay_online_first_001',
+        ]);
+
+        $checkoutResponse = $this->actingAs($shopOwner, 'shop_owner')->postJson('/api/repair-pos/checkout', [
+            'repair_request_id' => $repair->id,
+            'due_type' => 'balance',
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'idempotency_key' => 'mixed-online-pos-balance-001',
+            'payment_lines' => [
+                ['tender_type' => 'cash', 'amount' => 500],
+            ],
+        ]);
+
+        $checkoutResponse->assertOk()->assertJsonPath('success', true);
+
+        $repair->refresh();
+        $this->assertSame('1000.00', number_format((float) $repair->total_paid_amount, 2, '.', ''));
+        $this->assertSame('completed', (string) $repair->payment_status);
+        $this->assertSame('pay_online_first_001', (string) $repair->paymongo_payment_id);
+
+        $jobOrdersResponse = $this->actingAs($shopOwner, 'shop_owner')->getJson('/api/shop-owner/repairs');
+        $jobOrdersResponse->assertOk()->assertJsonPath('success', true);
+
+        $jobOrderPayload = collect($jobOrdersResponse->json('data'))
+            ->firstWhere('id', $repair->id);
+
+        $this->assertNotNull($jobOrderPayload);
+        $this->assertSame('pay_online_first_001', (string) ($jobOrderPayload['paymongo_payment_id'] ?? ''));
+        $this->assertEqualsWithDelta(1000.00, (float) ($jobOrderPayload['total_paid_amount'] ?? 0), 0.01);
+    }
+
+    #[Test]
     public function pos_ledger_tables_exist_for_repair_module(): void
     {
         $this->assertTrue(Schema::hasTable('pos_transactions'));

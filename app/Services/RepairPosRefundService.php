@@ -75,6 +75,9 @@ class RepairPosRefundService
             'reason_code' => $payload['reason_code'],
             'reason_notes' => $payload['reason_notes'] ?? null,
             'paymongo_payment_id' => $payload['paymongo_payment_id'] ?? null,
+            'paymongo_payment_ids' => $this->normalizeGatewayReferences(
+                is_array($payload['paymongo_payment_ids'] ?? null) ? $payload['paymongo_payment_ids'] : []
+            ),
             'status' => 'requested',
             'finance_status' => 'pending',
             'shop_owner_status' => 'pending',
@@ -88,11 +91,27 @@ class RepairPosRefundService
         $refund = $this->requestRefund($source, $payload, $actorId);
         $workflowSource = strtolower(trim((string) ($refund->workflow_source ?? $payload['workflow_source'] ?? 'pos')));
 
+        $paymongoPaymentIds = $this->normalizeGatewayReferences(
+            is_array($payload['paymongo_payment_ids'] ?? null) ? $payload['paymongo_payment_ids'] : []
+        );
         $paymongoPaymentId = trim((string) ($payload['paymongo_payment_id'] ?? ''));
-        if ($paymongoPaymentId === '' && $workflowSource === 'online_myrepair') {
-            $paymongoPaymentId = trim((string) (RepairRequest::query()
-                ->whereKey((int) $source->module_reference_id)
-                ->value('paymongo_payment_id') ?? ''));
+        if ($workflowSource === 'online_myrepair') {
+            $repair = RepairRequest::query()->find((int) $source->module_reference_id);
+            if ($repair) {
+                $paymongoPaymentIds = $this->normalizeGatewayReferences(array_merge(
+                    $paymongoPaymentIds,
+                    is_array($repair->paymongo_payment_ids) ? $repair->paymongo_payment_ids : [],
+                    [(string) ($repair->paymongo_payment_id ?? '')],
+                ));
+
+                if ($paymongoPaymentId === '') {
+                    $paymongoPaymentId = trim((string) ($repair->paymongo_payment_id ?? ''));
+                }
+            }
+        }
+
+        if ($paymongoPaymentId !== '' && !in_array($paymongoPaymentId, $paymongoPaymentIds, true)) {
+            $paymongoPaymentIds[] = $paymongoPaymentId;
         }
 
         $refund->update([
@@ -101,6 +120,7 @@ class RepairPosRefundService
             'preferred_return_account_ref' => $payload['preferred_return_account_ref'] ?? null,
             'customer_payout_consent' => (bool) ($payload['customer_payout_consent'] ?? false),
             'paymongo_payment_id' => $paymongoPaymentId !== '' ? $paymongoPaymentId : null,
+            'paymongo_payment_ids' => !empty($paymongoPaymentIds) ? $paymongoPaymentIds : null,
         ]);
 
         if (!config('orders.repair_split_refund_enabled', true)) {
@@ -446,11 +466,6 @@ class RepairPosRefundService
             return $refund;
         }
 
-        $refundId = trim((string) ($refund->paymongo_refund_id ?? ''));
-        if ($refundId === '') {
-            return $refund;
-        }
-
         $source = $refund->sourceTransaction()->first();
         if (!$source) {
             return $refund;
@@ -461,38 +476,68 @@ class RepairPosRefundService
             return $refund;
         }
 
-        $gateway = app(PaymongoRefundService::class)->getRefundStatus($secretKey, $refundId);
-        if (!($gateway['success'] ?? false)) {
+        $refundIds = $this->normalizeGatewayRefundReferences(array_merge(
+            is_array($refund->paymongo_refund_ids) ? $refund->paymongo_refund_ids : [],
+            [(string) ($refund->paymongo_refund_id ?? '')],
+        ));
+
+        if (empty($refundIds)) {
             return $refund;
         }
 
-        $gatewayStatus = strtolower((string) ($gateway['status'] ?? 'processing'));
-
-        if (in_array($gatewayStatus, ['succeeded', 'completed', 'paid'], true)) {
-            $approvedAmount = round((float) ($refund->approved_amount ?? $refund->requested_amount), 2);
-            if ($approvedAmount <= 0) {
+        $statuses = [];
+        foreach ($refundIds as $refundId) {
+            $gateway = app(PaymongoRefundService::class)->getRefundStatus($secretKey, $refundId);
+            if (!($gateway['success'] ?? false)) {
                 return $refund;
             }
 
-            return $this->markRefundSucceeded(
-                refund: $refund->fresh(),
-                source: $source,
-                actorId: (int) ($refund->executed_by ?? 0),
-                approvedAmount: $approvedAmount,
-                executionMode: (string) ($refund->execution_mode ?: 'gateway'),
-                executionNote: (string) ($refund->execution_notes ?: null),
-                paymongoPaymentId: (string) ($refund->paymongo_payment_id ?: null),
-                paymongoRefundId: $refundId,
-            );
+            $statuses[] = strtolower((string) ($gateway['status'] ?? 'processing'));
         }
 
-        if (in_array($gatewayStatus, ['failed', 'canceled', 'cancelled'], true)) {
+        $hasFailure = collect($statuses)
+            ->contains(fn ($status) => in_array($status, ['failed', 'canceled', 'cancelled'], true));
+
+        if ($hasFailure) {
             return $this->markRefundFailed(
                 refund: $refund->fresh(),
                 actorId: (int) ($refund->executed_by ?? 0),
                 reason: 'paymongo_refund_failed',
                 executionNote: (string) ($refund->execution_notes ?: null),
             );
+        }
+
+        $allSucceeded = !empty($statuses) && collect($statuses)
+            ->every(fn ($status) => in_array($status, ['succeeded', 'completed', 'paid'], true));
+
+        if ($allSucceeded) {
+            $approvedAmount = round((float) ($refund->approved_amount ?? $refund->requested_amount), 2);
+            if ($approvedAmount <= 0) {
+                return $refund;
+            }
+
+            $paymentReferences = $this->normalizeGatewayReferences(array_merge(
+                is_array($refund->paymongo_payment_ids) ? $refund->paymongo_payment_ids : [],
+                [(string) ($refund->paymongo_payment_id ?? '')],
+            ));
+
+            $settled = $this->markRefundSucceeded(
+                refund: $refund->fresh(),
+                source: $source,
+                actorId: (int) ($refund->executed_by ?? 0),
+                approvedAmount: $approvedAmount,
+                executionMode: (string) ($refund->execution_mode ?: 'gateway'),
+                executionNote: (string) ($refund->execution_notes ?: null),
+                paymongoPaymentId: $paymentReferences[0] ?? (string) ($refund->paymongo_payment_id ?: null),
+                paymongoRefundId: $refundIds[0] ?? (string) ($refund->paymongo_refund_id ?: null),
+            );
+
+            $settled->update([
+                'paymongo_payment_ids' => !empty($paymentReferences) ? $paymentReferences : null,
+                'paymongo_refund_ids' => !empty($refundIds) ? $refundIds : null,
+            ]);
+
+            return $settled->fresh();
         }
 
         return $refund;
@@ -506,90 +551,157 @@ class RepairPosRefundService
             return $this->markRefundFailed($refund, $actorId, 'Payment gateway is not configured for this shop.', $executionNote);
         }
 
-        $paymentReference = trim((string) ($refund->paymongo_payment_id ?? ''));
-        if ($paymentReference === '') {
-            $source->loadMissing('paymentLines:id,pos_transaction_id,tender_type,provider_reference,status');
-            $paymentReference = trim((string) (collect($source->paymentLines)
-                ->first(fn ($line) => in_array((string) ($line->tender_type ?? ''), ['paymongo_card', 'paymongo_wallet'], true)
-                    && (string) ($line->status ?? '') === 'paid'
-                    && $this->looksLikeGatewayProviderReference((string) ($line->provider_reference ?? ''))
-                )?->provider_reference ?? ''));
-        }
-
-        if ($paymentReference === '') {
+        $paymentReferences = $this->resolveGatewayPaymentReferences($refund, $source);
+        if (empty($paymentReferences)) {
             return $this->markRefundFailed($refund, $actorId, 'Unable to resolve payment reference for gateway refund.', $executionNote);
         }
-
-        $gatewayAmountToRefund = $approvedAmount;
-        $gatewayAmountCandidates = [];
 
         $refund->loadMissing('legs');
         $gatewayLegAmount = round((float) collect($refund->legs)
             ->filter(fn ($leg) => (string) ($leg->leg_type ?? '') === 'gateway')
             ->sum(fn ($leg) => (float) ($leg->approved_amount ?? $leg->requested_amount ?? 0)), 2);
-        if ($gatewayLegAmount > 0) {
-            $gatewayAmountCandidates[] = $gatewayLegAmount;
-        }
 
-        $sourceGatewayPaid = $this->sumTrustedGatewayPaid($source, $paymentReference);
-        if ($sourceGatewayPaid > 0) {
-            $gatewayAmountCandidates[] = $sourceGatewayPaid;
-        }
+        $targetGatewayAmount = $gatewayLegAmount > 0
+            ? min($approvedAmount, $gatewayLegAmount)
+            : $approvedAmount;
 
-        $paymongoAmountInCentavos = app(PaymongoRefundService::class)->getPaymentAmountInCentavos($secretKey, $paymentReference);
-        if (is_int($paymongoAmountInCentavos) && $paymongoAmountInCentavos > 0) {
-            $gatewayAmountCandidates[] = round($paymongoAmountInCentavos / 100, 2);
-        }
-
-        if (!empty($gatewayAmountCandidates)) {
-            $gatewayAmountToRefund = round(min($approvedAmount, ...$gatewayAmountCandidates), 2);
-        }
-
-        if ($gatewayAmountToRefund <= 0) {
+        if ($targetGatewayAmount <= 0) {
             return $this->markRefundFailed($refund, $actorId, 'Resolved gateway refund amount is invalid.', $executionNote);
+        }
+
+        $remaining = round($targetGatewayAmount, 2);
+        $allocations = [];
+
+        foreach ($paymentReferences as $paymentReference) {
+            if ($remaining <= 0) {
+                break;
+            }
+
+            $referenceCap = $this->resolveGatewayReferenceRefundCap($secretKey, $source, $paymentReference);
+            if ($referenceCap <= 0) {
+                continue;
+            }
+
+            $allocated = round(min($remaining, $referenceCap), 2);
+            if ($allocated <= 0) {
+                continue;
+            }
+
+            $allocations[] = [
+                'payment_reference' => $paymentReference,
+                'amount' => $allocated,
+            ];
+
+            $remaining = round($remaining - $allocated, 2);
+        }
+
+        if (empty($allocations)) {
+            return $this->markRefundFailed($refund, $actorId, 'Resolved gateway refund amount exceeds available PayMongo payment capacity.', $executionNote);
+        }
+
+        $effectiveExecutionNote = $executionNote;
+        if ($remaining > 0) {
+            $effectiveExecutionNote = $this->appendExecutionNote(
+                base: (string) ($executionNote ?? ''),
+                suffix: sprintf('Gateway refund amount capped by available payment capacity. Unallocated amount: %.2f.', $remaining),
+            );
         }
 
         $refund->update([
             'status' => 'processing',
             'execution_mode' => 'gateway',
-            'execution_notes' => $executionNote ? Str::limit(trim($executionNote), 1000, '') : null,
-            'paymongo_payment_id' => $paymentReference,
+            'execution_notes' => $effectiveExecutionNote ? Str::limit(trim($effectiveExecutionNote), 1000, '') : null,
+            'paymongo_payment_id' => $allocations[0]['payment_reference'],
+            'paymongo_payment_ids' => collect($allocations)->pluck('payment_reference')->unique()->values()->all(),
+            'paymongo_refund_id' => null,
+            'paymongo_refund_ids' => null,
             'executed_by' => $actorId > 0 ? $actorId : null,
             'executed_at' => now(),
             'failure_reason' => null,
             'failed_at' => null,
         ]);
 
-        $gatewayResult = app(PaymongoRefundService::class)->createRefund(
-            secretKey: $secretKey,
-            paymentId: $paymentReference,
-            amountInCentavos: (int) round($gatewayAmountToRefund * 100),
-            reason: 'requested_by_customer'
+        $submittedRefundIds = [];
+        $submittedAmount = 0.0;
+        $hasProcessingLeg = false;
+
+        foreach ($allocations as $allocation) {
+            $gatewayResult = app(PaymongoRefundService::class)->createRefund(
+                secretKey: $secretKey,
+                paymentId: (string) $allocation['payment_reference'],
+                amountInCentavos: (int) round(((float) $allocation['amount']) * 100),
+                reason: 'requested_by_customer'
+            );
+
+            if (!($gatewayResult['success'] ?? false)) {
+                if (!empty($submittedRefundIds) && $submittedAmount > 0) {
+                    $refund->update([
+                        'status' => 'processing',
+                        'paymongo_refund_id' => $submittedRefundIds[0],
+                        'paymongo_refund_ids' => $submittedRefundIds,
+                        'execution_notes' => Str::limit(trim($this->appendExecutionNote(
+                            base: (string) ($refund->execution_notes ?? $executionNote ?? ''),
+                            suffix: 'Partial gateway refund submitted; manual verification required. Last error: ' . (string) ($gatewayResult['message'] ?? 'Refund request failed'),
+                        )), 1000, ''),
+                    ]);
+
+                    return $refund->fresh();
+                }
+
+                return $this->markRefundFailed($refund->fresh(), $actorId, (string) ($gatewayResult['message'] ?? 'Refund request failed'), $executionNote);
+            }
+
+            $submittedAmount = round($submittedAmount + (float) $allocation['amount'], 2);
+
+            $gatewayStatus = strtolower((string) ($gatewayResult['status'] ?? 'processing'));
+            $refundId = trim((string) ($gatewayResult['refund_id'] ?? ''));
+
+            if ($refundId !== '') {
+                $submittedRefundIds[] = $refundId;
+            }
+
+            if (!in_array($gatewayStatus, ['succeeded', 'completed', 'paid'], true)) {
+                $hasProcessingLeg = true;
+            }
+        }
+
+        if ($submittedAmount <= 0) {
+            return $this->markRefundFailed($refund->fresh(), $actorId, 'Resolved gateway refund amount is invalid.', $executionNote);
+        }
+
+        if ($hasProcessingLeg) {
+            $refund->update([
+                'status' => 'processing',
+                'paymongo_refund_id' => $submittedRefundIds[0] ?? null,
+                'paymongo_refund_ids' => !empty($submittedRefundIds) ? $submittedRefundIds : null,
+                'execution_mode' => 'gateway',
+                'execution_notes' => $effectiveExecutionNote ? Str::limit(trim($effectiveExecutionNote), 1000, '') : null,
+                'executed_by' => $actorId,
+                'executed_at' => now(),
+                'failure_reason' => null,
+                'failed_at' => null,
+            ]);
+
+            return $refund->fresh();
+        }
+
+        $succeeded = $this->markRefundSucceeded(
+            refund: $refund->fresh(),
+            source: $source,
+            actorId: $actorId,
+            approvedAmount: $submittedAmount,
+            executionMode: 'gateway',
+            executionNote: $effectiveExecutionNote,
+            paymongoPaymentId: $allocations[0]['payment_reference'] ?? null,
+            paymongoRefundId: $submittedRefundIds[0] ?? null,
         );
 
-        if (!($gatewayResult['success'] ?? false)) {
-            return $this->markRefundFailed($refund->fresh(), $actorId, (string) ($gatewayResult['message'] ?? 'Refund request failed'), $executionNote);
-        }
-
-        $gatewayStatus = strtolower((string) ($gatewayResult['status'] ?? 'processing'));
-        $refundId = trim((string) ($gatewayResult['refund_id'] ?? ''));
-
-        if (in_array($gatewayStatus, ['succeeded', 'completed', 'paid'], true)) {
-            return $this->markRefundSucceeded($refund->fresh(), $source, $actorId, $gatewayAmountToRefund, 'gateway', $executionNote, $paymentReference, $refundId !== '' ? $refundId : null);
-        }
-
-        $refund->update([
-            'status' => 'processing',
-            'paymongo_refund_id' => $refundId !== '' ? $refundId : null,
-            'execution_mode' => 'gateway',
-            'execution_notes' => $executionNote ? Str::limit(trim($executionNote), 1000, '') : null,
-            'executed_by' => $actorId,
-            'executed_at' => now(),
-            'failure_reason' => null,
-            'failed_at' => null,
+        $succeeded->update([
+            'paymongo_payment_ids' => collect($allocations)->pluck('payment_reference')->unique()->values()->all(),
+            'paymongo_refund_ids' => !empty($submittedRefundIds) ? $submittedRefundIds : null,
         ]);
 
-        return $refund->fresh();
+        return $succeeded->fresh();
     }
 
     private function markRefundSucceeded(
@@ -775,6 +887,120 @@ class RepairPosRefundService
                 return $this->looksLikeGatewayProviderReference((string) ($line->provider_reference ?? ''));
             })
             ->sum(fn ($line) => (float) ($line->amount ?? 0)), 2);
+    }
+
+    private function normalizeGatewayReferences(array $references): array
+    {
+        return collect($references)
+            ->map(fn ($value) => trim((string) $value))
+            ->filter(fn ($value) => $value !== '' && $this->looksLikeGatewayProviderReference($value))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function normalizeGatewayRefundReferences(array $references): array
+    {
+        return collect($references)
+            ->map(fn ($value) => trim((string) $value))
+            ->filter(fn ($value) => str_starts_with(strtolower($value), 're_'))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function resolveGatewayPaymentReferences(PosRefund $refund, PosTransaction $source): array
+    {
+        $references = $this->normalizeGatewayReferences(array_merge(
+            is_array($refund->paymongo_payment_ids) ? $refund->paymongo_payment_ids : [],
+            [(string) ($refund->paymongo_payment_id ?? '')],
+        ));
+
+        if (empty($references) && (string) ($source->module_type ?? '') === 'repair') {
+            $repair = RepairRequest::query()->find((int) $source->module_reference_id);
+            if ($repair) {
+                $references = $this->normalizeGatewayReferences(array_merge(
+                    is_array($repair->paymongo_payment_ids) ? $repair->paymongo_payment_ids : [],
+                    [(string) ($repair->paymongo_payment_id ?? '')],
+                ));
+            }
+        }
+
+        if (empty($references)) {
+            $source->loadMissing('paymentLines:id,pos_transaction_id,tender_type,provider_reference,status');
+            $references = $this->normalizeGatewayReferences(
+                collect($source->paymentLines)
+                    ->filter(fn ($line) => in_array((string) ($line->tender_type ?? ''), ['paymongo_card', 'paymongo_wallet'], true)
+                        && (string) ($line->status ?? '') === 'paid')
+                    ->pluck('provider_reference')
+                    ->all()
+            );
+        }
+
+        return $references;
+    }
+
+    private function resolveGatewayReferenceRefundCap(string $secretKey, PosTransaction $source, string $paymentReference): float
+    {
+        $candidates = [];
+
+        $paymongoAmountInCentavos = app(PaymongoRefundService::class)->getPaymentAmountInCentavos($secretKey, $paymentReference);
+        if (is_int($paymongoAmountInCentavos) && $paymongoAmountInCentavos > 0) {
+            $candidates[] = round($paymongoAmountInCentavos / 100, 2);
+        }
+
+        $trustedSourceAmount = $this->sumTrustedGatewayPaidForReference($source, $paymentReference);
+        if ($trustedSourceAmount > 0) {
+            $candidates[] = $trustedSourceAmount;
+        }
+
+        if (empty($candidates)) {
+            return 0.0;
+        }
+
+        $resolvedCap = count($candidates) === 1 ? $candidates[0] : min(...$candidates);
+
+        return round((float) $resolvedCap, 2);
+    }
+
+    private function sumTrustedGatewayPaidForReference(PosTransaction $source, string $paymentReference): float
+    {
+        $needle = strtolower(trim($paymentReference));
+        if ($needle === '') {
+            return 0.0;
+        }
+
+        $source->loadMissing('paymentLines:id,pos_transaction_id,tender_type,provider_reference,amount,status');
+
+        return round((float) collect($source->paymentLines)
+            ->filter(function ($line) use ($needle) {
+                if ((string) ($line->status ?? '') !== 'paid') {
+                    return false;
+                }
+
+                if (!in_array((string) ($line->tender_type ?? ''), ['paymongo_card', 'paymongo_wallet'], true)) {
+                    return false;
+                }
+
+                return strtolower(trim((string) ($line->provider_reference ?? ''))) === $needle;
+            })
+            ->sum(fn ($line) => (float) ($line->amount ?? 0)), 2);
+    }
+
+    private function appendExecutionNote(string $base, string $suffix): string
+    {
+        $base = trim($base);
+        $suffix = trim($suffix);
+
+        if ($base === '') {
+            return $suffix;
+        }
+
+        if ($suffix === '') {
+            return $base;
+        }
+
+        return $base . "\n\n" . $suffix;
     }
 
     private function looksLikeGatewayProviderReference(?string $reference): bool

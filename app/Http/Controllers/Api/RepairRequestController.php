@@ -1023,6 +1023,14 @@ class RepairRequestController extends Controller
             $resolvedPreferredReturnAccountRef,
             $resolvedCustomerPayoutConsent
         ) {
+            $paymentReferences = collect(is_array($repair->paymongo_payment_ids) ? $repair->paymongo_payment_ids : [])
+                ->push((string) ($repair->paymongo_payment_id ?? ''))
+                ->map(fn ($value) => trim((string) $value))
+                ->filter(fn ($value) => $value !== '')
+                ->unique()
+                ->values()
+                ->all();
+
             $refund = $refundService->createRefundWithSplitLegs($sourceTransaction, [
                 'workflow_source' => 'online_myrepair',
                 'request_type' => $validated['request_type'],
@@ -1030,6 +1038,7 @@ class RepairRequestController extends Controller
                 'reason_code' => $validated['reason_code'],
                 'reason_notes' => $validated['reason_notes'] ?? null,
                 'paymongo_payment_id' => $repair->paymongo_payment_id,
+                'paymongo_payment_ids' => $paymentReferences,
                 'preferred_return_channel' => $resolvedPreferredReturnChannel,
                 'preferred_return_account_name' => $resolvedPreferredReturnAccountName,
                 'preferred_return_account_ref' => $resolvedPreferredReturnAccountRef,

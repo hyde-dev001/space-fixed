@@ -60,6 +60,7 @@ class PaymentSettlementService
     public function settleRepairPaid(RepairRequest $repair, ?string $paymentId = null, bool $ignoreExpiry = false): array
     {
         $policy = $this->normalizeRepairPaymentPolicy($repair->payment_policy ?? 'deposit_50');
+        $resolvedPaymentId = trim((string) ($paymentId ?? ''));
 
         if ($this->isRepairSettled($repair, $policy)) {
             return [
@@ -85,8 +86,14 @@ class PaymentSettlementService
             ];
         }
 
+        $paymentReferenceHistory = $this->appendRepairPaymentReference(
+            current: is_array($repair->paymongo_payment_ids) ? $repair->paymongo_payment_ids : null,
+            paymentReference: $resolvedPaymentId,
+        );
+
         $repair->update([
-            'paymongo_payment_id' => $paymentId,
+            'paymongo_payment_id' => $resolvedPaymentId !== '' ? $resolvedPaymentId : $repair->paymongo_payment_id,
+            'paymongo_payment_ids' => !empty($paymentReferenceHistory) ? $paymentReferenceHistory : null,
             'payment_completed_at' => now(),
             'payment_failed_at' => null,
             'payment_failure_reason' => null,
@@ -375,5 +382,39 @@ class PaymentSettlementService
     private function isRepairRemainingBalancePhase(RepairRequest $repair): bool
     {
         return in_array((string) $repair->status, ['ready_for_pickup', 'ready-for-pickup'], true);
+    }
+
+    private function appendRepairPaymentReference(?array $current, ?string $paymentReference): array
+    {
+        $history = collect($current ?? [])
+            ->map(fn ($value) => trim((string) $value))
+            ->filter(fn ($value) => $value !== '' && $this->looksLikeGatewayPaymentReference($value))
+            ->values()
+            ->all();
+
+        $candidate = trim((string) ($paymentReference ?? ''));
+        if ($candidate === '' || !$this->looksLikeGatewayPaymentReference($candidate)) {
+            return $history;
+        }
+
+        if (!in_array($candidate, $history, true)) {
+            $history[] = $candidate;
+        }
+
+        return $history;
+    }
+
+    private function looksLikeGatewayPaymentReference(string $reference): bool
+    {
+        $value = strtolower(trim($reference));
+
+        return $value !== ''
+            && (
+                str_starts_with($value, 'pay_')
+                || str_starts_with($value, 'pi_')
+                || str_starts_with($value, 'src_')
+                || str_starts_with($value, 'pmw_')
+                || str_starts_with($value, 'pmc_')
+            );
     }
 }
