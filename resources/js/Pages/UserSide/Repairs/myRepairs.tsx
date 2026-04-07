@@ -2983,20 +2983,26 @@ const MyRepairs: React.FC = () => {
                         </label>
                       </>
                     ) : (
-                      <div className="border border-gray-300 rounded-lg p-6 bg-white">
-                        <div className="flex items-center justify-between mb-4">
-                          <h4 className="text-base font-normal">Original Payment Method Refund</h4>
-                          <div className="flex items-center gap-2">
-                            <img src="/images/payment-logo/visa.png" alt="Visa" className="h-6" />
-                            <img src="/images/payment-logo/MAYA.png" alt="Maya" className="h-6" />
-                            <img src="/images/payment-logo/GCASH.png" alt="GCash" className="h-6" />
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-3">
+                          Refund Method
+                        </label>
+
+                        <div className="border border-green-300 rounded-lg p-6 bg-green-50">
+                          <div className="flex items-center justify-between mb-4">
+                            <h4 className="text-base font-semibold text-green-900">Secure Refund to Original Payment Method</h4>
+                            <div className="flex items-center gap-2">
+                              <img src="/images/payment-logo/visa.png" alt="Visa" className="h-6" />
+                              <img src="/images/payment-logo/MAYA.png" alt="Maya" className="h-6" />
+                              <img src="/images/payment-logo/GCASH.png" alt="GCash" className="h-6" />
+                            </div>
                           </div>
+                          <p className="text-sm text-gray-700">
+                            {refundOriginalMethodOnly
+                              ? 'Your refund will be processed securely to the same payment method you used for this repair. If you paid with GCash, Maya, or Credit Card, your refund will go back to that account within 2-4 business days after approval.'
+                              : 'Refund will follow the original payment channel when applicable.'}
+                          </p>
                         </div>
-                        <p className="text-sm text-gray-700 text-center">
-                          {refundOriginalMethodOnly
-                            ? 'This is a pure online payment. Refund will be sent back to your original PayMongo payment method after approval.'
-                            : 'Refund will follow the original payment channel when applicable.'}
-                        </p>
                       </div>
                     )}
 
