@@ -440,6 +440,64 @@ class RepairPosRefundService
         return $this->markRefundSucceeded($refund->fresh(), $source, $actorId, $approvedAmount, 'manual', $executionNote, null, null);
     }
 
+    public function reconcileGatewayProcessingRefund(PosRefund $refund): PosRefund
+    {
+        if ((string) ($refund->status ?? '') !== 'processing') {
+            return $refund;
+        }
+
+        $refundId = trim((string) ($refund->paymongo_refund_id ?? ''));
+        if ($refundId === '') {
+            return $refund;
+        }
+
+        $source = $refund->sourceTransaction()->first();
+        if (!$source) {
+            return $refund;
+        }
+
+        $secretKey = trim((string) (ShopOwner::query()->whereKey((int) $source->shop_owner_id)->value('paymongo_secret_key') ?? ''));
+        if ($secretKey === '') {
+            return $refund;
+        }
+
+        $gateway = app(PaymongoRefundService::class)->getRefundStatus($secretKey, $refundId);
+        if (!($gateway['success'] ?? false)) {
+            return $refund;
+        }
+
+        $gatewayStatus = strtolower((string) ($gateway['status'] ?? 'processing'));
+
+        if (in_array($gatewayStatus, ['succeeded', 'completed', 'paid'], true)) {
+            $approvedAmount = round((float) ($refund->approved_amount ?? $refund->requested_amount), 2);
+            if ($approvedAmount <= 0) {
+                return $refund;
+            }
+
+            return $this->markRefundSucceeded(
+                refund: $refund->fresh(),
+                source: $source,
+                actorId: (int) ($refund->executed_by ?? 0),
+                approvedAmount: $approvedAmount,
+                executionMode: (string) ($refund->execution_mode ?: 'gateway'),
+                executionNote: (string) ($refund->execution_notes ?: null),
+                paymongoPaymentId: (string) ($refund->paymongo_payment_id ?: null),
+                paymongoRefundId: $refundId,
+            );
+        }
+
+        if (in_array($gatewayStatus, ['failed', 'canceled', 'cancelled'], true)) {
+            return $this->markRefundFailed(
+                refund: $refund->fresh(),
+                actorId: (int) ($refund->executed_by ?? 0),
+                reason: 'paymongo_refund_failed',
+                executionNote: (string) ($refund->execution_notes ?: null),
+            );
+        }
+
+        return $refund;
+    }
+
     private function executeViaGateway(PosRefund $refund, PosTransaction $source, int $actorId, float $approvedAmount, ?string $executionNote): PosRefund
     {
         $shopOwner = ShopOwner::query()->find((int) $source->shop_owner_id);
@@ -548,11 +606,13 @@ class RepairPosRefundService
             'status' => 'succeeded',
             'approved_amount' => round($approvedAmount, 2),
             'execution_mode' => $executionMode,
-            'execution_notes' => $executionNote ? Str::limit(trim($executionNote), 1000, '') : null,
-            'paymongo_payment_id' => $paymongoPaymentId,
-            'paymongo_refund_id' => $paymongoRefundId,
-            'executed_by' => $actorId > 0 ? $actorId : null,
-            'executed_at' => now(),
+            'execution_notes' => $executionNote
+                ? Str::limit(trim($executionNote), 1000, '')
+                : ($refund->execution_notes ? Str::limit(trim((string) $refund->execution_notes), 1000, '') : null),
+            'paymongo_payment_id' => $paymongoPaymentId ?? $refund->paymongo_payment_id,
+            'paymongo_refund_id' => $paymongoRefundId ?? $refund->paymongo_refund_id,
+            'executed_by' => $actorId > 0 ? $actorId : ($refund->executed_by ?? null),
+            'executed_at' => $refund->executed_at ?? now(),
             'failure_reason' => null,
             'failed_at' => null,
         ]);
@@ -591,9 +651,11 @@ class RepairPosRefundService
         $refund->update([
             'status' => 'failed',
             'execution_mode' => 'gateway',
-            'execution_notes' => $executionNote ? Str::limit(trim($executionNote), 1000, '') : null,
-            'executed_by' => $actorId > 0 ? $actorId : null,
-            'executed_at' => now(),
+            'execution_notes' => $executionNote
+                ? Str::limit(trim($executionNote), 1000, '')
+                : ($refund->execution_notes ? Str::limit(trim((string) $refund->execution_notes), 1000, '') : null),
+            'executed_by' => $actorId > 0 ? $actorId : ($refund->executed_by ?? null),
+            'executed_at' => $refund->executed_at ?? now(),
             'failure_reason' => Str::limit(trim($reason), 255, ''),
             'failed_at' => now(),
         ]);

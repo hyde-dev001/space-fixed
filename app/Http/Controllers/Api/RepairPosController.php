@@ -382,7 +382,7 @@ class RepairPosController extends Controller
         ]);
     }
 
-    public function listRefundQueue(Request $request)
+    public function listRefundQueue(Request $request, RepairPosRefundService $service)
     {
         $shopOwnerId = $this->resolveActorShopOwnerId($this->resolveActor());
         $includeHistory = filter_var($request->query('include_history', false), FILTER_VALIDATE_BOOLEAN);
@@ -401,7 +401,9 @@ class RepairPosController extends Controller
             ])
             ->orderByDesc('requested_at')
             ->orderByDesc('id')
-            ->get();
+            ->get()
+            ->map(fn (PosRefund $refund) => $service->reconcileGatewayProcessingRefund($refund))
+            ->values();
 
         return response()->json([
             'success' => true,
@@ -409,7 +411,7 @@ class RepairPosController extends Controller
         ]);
     }
 
-    public function listMyRefunds(Request $request)
+    public function listMyRefunds(Request $request, RepairPosRefundService $service)
     {
         if (!Auth::guard('user')->check()) {
             return response()->json([
@@ -438,7 +440,9 @@ class RepairPosController extends Controller
             ->with(['sourceTransaction:id,transaction_no,module_reference_id,paid_amount,paid_at'])
             ->orderByDesc('requested_at')
             ->orderByDesc('id')
-            ->get();
+            ->get()
+            ->map(fn (PosRefund $refund) => $service->reconcileGatewayProcessingRefund($refund))
+            ->values();
 
         $data = $refunds->map(function (PosRefund $refund) {
             $maskedReference = null;
