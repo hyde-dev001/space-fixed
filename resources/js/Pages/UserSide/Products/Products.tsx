@@ -3,6 +3,7 @@ import { Head, Link, router, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import { useCart } from '../../../contexts/CartContext';
 import NotificationBell from '../../../Components/common/NotificationBell';
+import StarRating from '../../../Components/common/StarRating';
 import { useBadgeCounts } from '../../../hooks/useBadgeCounts';
 
 type Product = {
@@ -17,6 +18,7 @@ type Product = {
   brand: string | null;
   stock_quantity: number;
   description?: string | null;
+  average_rating?: number;
   shop_owner?: {
     id: number;
     name?: string;
@@ -904,6 +906,12 @@ const Products: React.FC<Props> = () => {
                       <div className="mb-1 min-h-4 xl:mb-1.5 xl:min-h-[1.1rem]">
                         {p.brand && (
                           <p className="text-[10px] uppercase tracking-[0.12em] text-black/55 xl:text-xs">{p.brand}</p>
+                        )}
+                      </div>
+
+                      <div className="mb-2 xl:mb-2.5">
+                        {p.average_rating !== undefined && (
+                          <StarRating rating={p.average_rating} size="sm" />
                         )}
                       </div>
                       

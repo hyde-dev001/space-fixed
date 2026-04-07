@@ -146,14 +146,22 @@ class RepairPosRefundService
 
     private function inferGatewayAmount(PosTransaction $source, float $requestedAmount, string $workflowSource = 'pos'): float
     {
-        $sourceGatewayPaid = (float) $source->paymentLines()
-            ->whereIn('tender_type', ['paymongo_card', 'paymongo_wallet'])
-            ->where('status', 'paid')
-            ->sum('amount');
+        $repairPaymongoPaymentId = '';
+        if ($workflowSource === 'online_myrepair' && (string) $source->module_type === 'repair') {
+            $repairPaymongoPaymentId = trim((string) (RepairRequest::query()
+                ->whereKey((int) $source->module_reference_id)
+                ->value('paymongo_payment_id') ?? ''));
+        }
+
+        $sourceGatewayPaid = $this->sumTrustedGatewayPaid($source, $repairPaymongoPaymentId);
 
         if ($workflowSource === 'online_myrepair' && (string) $source->module_type === 'repair') {
             if ($sourceGatewayPaid > 0) {
                 return max(0.0, min($requestedAmount, round($sourceGatewayPaid, 2)));
+            }
+
+            if (!$this->looksLikeGatewayProviderReference($repairPaymongoPaymentId)) {
+                return 0.0;
             }
 
             $repairId = (int) $source->module_reference_id;
@@ -442,10 +450,12 @@ class RepairPosRefundService
 
         $paymentReference = trim((string) ($refund->paymongo_payment_id ?? ''));
         if ($paymentReference === '') {
-            $paymentReference = trim((string) ($source->paymentLines()
-                ->whereIn('tender_type', ['paymongo_card', 'paymongo_wallet'])
-                ->whereNotNull('provider_reference')
-                ->value('provider_reference') ?? ''));
+            $source->loadMissing('paymentLines:id,pos_transaction_id,tender_type,provider_reference,status');
+            $paymentReference = trim((string) (collect($source->paymentLines)
+                ->first(fn ($line) => in_array((string) ($line->tender_type ?? ''), ['paymongo_card', 'paymongo_wallet'], true)
+                    && (string) ($line->status ?? '') === 'paid'
+                    && $this->looksLikeGatewayProviderReference((string) ($line->provider_reference ?? ''))
+                )?->provider_reference ?? ''));
         }
 
         if ($paymentReference === '') {
@@ -649,5 +659,44 @@ class RepairPosRefundService
         }
 
         return 'legacy_add_on';
+    }
+
+    private function sumTrustedGatewayPaid(PosTransaction $source, ?string $repairPaymongoPaymentId = null): float
+    {
+        $source->loadMissing('paymentLines:id,pos_transaction_id,tender_type,provider_reference,amount,status');
+
+        $hasStoredGatewayPaymentId = $this->looksLikeGatewayProviderReference((string) ($repairPaymongoPaymentId ?? ''));
+
+        return round((float) collect($source->paymentLines)
+            ->filter(function ($line) use ($hasStoredGatewayPaymentId) {
+                if ((string) ($line->status ?? '') !== 'paid') {
+                    return false;
+                }
+
+                if (!in_array((string) ($line->tender_type ?? ''), ['paymongo_card', 'paymongo_wallet'], true)) {
+                    return false;
+                }
+
+                if ($hasStoredGatewayPaymentId) {
+                    return true;
+                }
+
+                return $this->looksLikeGatewayProviderReference((string) ($line->provider_reference ?? ''));
+            })
+            ->sum(fn ($line) => (float) ($line->amount ?? 0)), 2);
+    }
+
+    private function looksLikeGatewayProviderReference(?string $reference): bool
+    {
+        $value = strtolower(trim((string) ($reference ?? '')));
+        if ($value === '') {
+            return false;
+        }
+
+        return str_starts_with($value, 'pay_')
+            || str_starts_with($value, 'pi_')
+            || str_starts_with($value, 'src_')
+            || str_starts_with($value, 'pmw_')
+            || str_starts_with($value, 'pmc_');
     }
 }

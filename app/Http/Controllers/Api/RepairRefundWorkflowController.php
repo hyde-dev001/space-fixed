@@ -297,8 +297,8 @@ class RepairRefundWorkflowController extends Controller
             ->with([
                 'sourceTransaction:id,transaction_no,shop_owner_id,customer_type,customer_id,walk_in_name,module_type,module_reference_id,total_amount,paid_amount',
                 'sourceTransaction.receipt:id,pos_transaction_id,receipt_no',
-                'sourceTransaction.paymentLines:id,pos_transaction_id,tender_type',
-                'repairRequest:id,customer_name',
+                'sourceTransaction.paymentLines:id,pos_transaction_id,tender_type,provider_reference,status',
+                'repairRequest:id,customer_name,paymongo_payment_id',
                 'requestedByUser:id,name',
                 'legs:id,pos_refund_id,leg_type,requested_amount,approved_amount,status',
             ])
@@ -406,9 +406,29 @@ class RepairRefundWorkflowController extends Controller
         } elseif ($hasGatewayLeg) {
             $refundPaymentType = 'pure_online';
         } elseif (!$hasPosManualLeg) {
-            $tenderTypes = $source?->paymentLines?->pluck('tender_type') ?? collect();
-            $hasGatewayTender = $tenderTypes->contains(fn ($value) => in_array((string) $value, ['paymongo_card', 'paymongo_wallet'], true));
-            $hasManualTender = $tenderTypes->contains(fn ($value) => !in_array((string) $value, ['paymongo_card', 'paymongo_wallet'], true));
+            $paymentLines = collect($source?->paymentLines ?? []);
+            $hasStoredGatewayPaymentId = $this->looksLikeGatewayProviderReference((string) ($refund->paymongo_payment_id ?? $repair?->paymongo_payment_id ?? ''));
+
+            $hasGatewayTender = $paymentLines->contains(function ($line) use ($hasStoredGatewayPaymentId) {
+                if (!in_array((string) ($line->tender_type ?? ''), ['paymongo_card', 'paymongo_wallet'], true)) {
+                    return false;
+                }
+
+                if ((string) ($line->status ?? '') !== 'paid') {
+                    return false;
+                }
+
+                if ($hasStoredGatewayPaymentId) {
+                    return true;
+                }
+
+                return $this->looksLikeGatewayProviderReference((string) ($line->provider_reference ?? ''));
+            });
+
+            $hasManualTender = $paymentLines->contains(function ($line) {
+                return (string) ($line->status ?? '') === 'paid'
+                    && !in_array((string) ($line->tender_type ?? ''), ['paymongo_card', 'paymongo_wallet'], true);
+            });
 
             if ($hasGatewayTender && $hasManualTender) {
                 $refundPaymentType = 'mixed';
@@ -467,5 +487,19 @@ class RepairRefundWorkflowController extends Controller
             'cash' => 'Cash',
             default => 'Original Payment Method',
         };
+    }
+
+    private function looksLikeGatewayProviderReference(?string $reference): bool
+    {
+        $value = strtolower(trim((string) ($reference ?? '')));
+        if ($value === '') {
+            return false;
+        }
+
+        return str_starts_with($value, 'pay_')
+            || str_starts_with($value, 'pi_')
+            || str_starts_with($value, 'src_')
+            || str_starts_with($value, 'pmw_')
+            || str_starts_with($value, 'pmc_');
     }
 }

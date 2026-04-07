@@ -310,6 +310,9 @@ class ProductController extends Controller
                     $product->unsetRelation('shopOwner');
                 }
 
+                // Add average rating from reviews
+                $product->average_rating = \App\Models\ProductReview::getAverageRating($product->id);
+
                 return $product;
             });
 

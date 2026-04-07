@@ -592,7 +592,7 @@ class RepairRequestController extends Controller
                 'materialUsages.inventoryItem:id,price',
                 'latestPosTransaction:id,metadata',
                 'posTransactions:id,module_reference_id,module_type,paid_amount,status',
-                'posTransactions.paymentLines:id,pos_transaction_id,tender_type,amount,status',
+                'posTransactions.paymentLines:id,pos_transaction_id,tender_type,provider_reference,amount,status',
             ])
             ->withSum([
                 'posTransactions as pos_paid_amount_ledger' => function ($builder) {
@@ -2429,7 +2429,7 @@ class RepairRequestController extends Controller
     {
         $repair->loadMissing([
             'posTransactions:id,module_reference_id,module_type,paid_amount,status',
-            'posTransactions.paymentLines:id,pos_transaction_id,tender_type,amount,status',
+            'posTransactions.paymentLines:id,pos_transaction_id,tender_type,provider_reference,amount,status',
         ]);
 
         $eligibleStatuses = ['paid', 'partially_refunded', 'refunded'];
@@ -2441,13 +2441,32 @@ class RepairRequestController extends Controller
 
         $posPaidAmount = round((float) $posTransactions->sum(fn (PosTransaction $tx) => (float) ($tx->paid_amount ?? 0)), 2);
 
+        $storedGatewayPaymentId = trim((string) ($repair->paymongo_payment_id ?? ''));
+        $hasStoredGatewayPaymentId = $this->looksLikeGatewayProviderReference($storedGatewayPaymentId);
+
         $gatewayPaidFromLines = round((float) $posTransactions
             ->flatMap(fn (PosTransaction $tx) => $tx->paymentLines ?? collect())
-            ->filter(fn ($line) => (string) ($line->status ?? '') === 'paid')
-            ->whereIn('tender_type', $gatewayTenderTypes)
+            ->filter(function ($line) use ($gatewayTenderTypes, $hasStoredGatewayPaymentId) {
+                if ((string) ($line->status ?? '') !== 'paid') {
+                    return false;
+                }
+
+                if (!in_array((string) ($line->tender_type ?? ''), $gatewayTenderTypes, true)) {
+                    return false;
+                }
+
+                if ($hasStoredGatewayPaymentId) {
+                    return true;
+                }
+
+                return $this->looksLikeGatewayProviderReference((string) ($line->provider_reference ?? ''));
+            })
             ->sum(fn ($line) => (float) ($line->amount ?? 0)), 2);
 
-        $inferredGatewayPaid = max(0.0, round($resolvedPaidAmount - $posPaidAmount, 2));
+        $canInferGatewayPaid = $hasStoredGatewayPaymentId || $gatewayPaidFromLines > 0.01;
+        $inferredGatewayPaid = $canInferGatewayPaid
+            ? max(0.0, round($resolvedPaidAmount - $posPaidAmount, 2))
+            : 0.0;
         $gatewayPaidAmount = round(max($gatewayPaidFromLines, $inferredGatewayPaid), 2);
         $manualPaidAmount = max(0.0, round($resolvedPaidAmount - $gatewayPaidAmount, 2));
 
@@ -2465,6 +2484,20 @@ class RepairRequestController extends Controller
             'gateway_paid_amount' => round($gatewayPaidAmount, 2),
             'manual_paid_amount' => round($manualPaidAmount, 2),
         ];
+    }
+
+    private function looksLikeGatewayProviderReference(?string $reference): bool
+    {
+        $value = strtolower(trim((string) ($reference ?? '')));
+        if ($value === '') {
+            return false;
+        }
+
+        return str_starts_with($value, 'pay_')
+            || str_starts_with($value, 'pi_')
+            || str_starts_with($value, 'src_')
+            || str_starts_with($value, 'pmw_')
+            || str_starts_with($value, 'pmc_');
     }
 
     private function resolveEffectivePackagePrice(RepairPackage $package): float

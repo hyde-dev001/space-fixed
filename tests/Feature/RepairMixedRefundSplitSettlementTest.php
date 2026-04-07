@@ -443,6 +443,66 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
     }
 
     #[Test]
+    public function myrepairs_payload_treats_manual_gcash_reference_as_manual_only_refund_profile(): void
+    {
+        /** @var User $customer */
+        $customer = User::factory()->create();
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+
+        $repair = $this->createRepairRequest($shopOwner, $customer, [
+            'total' => 950,
+            'final_total' => 950,
+            'pricing_breakdown' => [
+                'tax_mode' => 'vat_inclusive',
+            ],
+            'payment_policy' => 'full_upfront',
+            'payment_policy_snapshot' => 'full_upfront',
+            'payment_status' => 'completed',
+            'total_paid_amount' => 950,
+            'total_refunded_amount' => 0,
+            'paymongo_payment_id' => null,
+        ]);
+
+        $source = PosTransaction::create([
+            'transaction_no' => 'POS-WALKIN-GCASH-MANUAL-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'due_type' => 'full',
+            'subtotal' => 848.21,
+            'tax_amount' => 101.79,
+            'discount_amount' => 0,
+            'total_amount' => 950,
+            'paid_amount' => 950,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        PosPaymentLine::create([
+            'pos_transaction_id' => $source->id,
+            'tender_type' => 'paymongo_wallet',
+            'provider_reference' => '09123456789',
+            'amount' => 950,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $repair->update(['latest_pos_transaction_id' => $source->id]);
+
+        $response = $this->actingAs($customer, 'user')->getJson('/api/customer/repairs');
+        $response->assertOk()->assertJsonPath('success', true);
+
+        $data = collect($response->json('data'))->firstWhere('id', $repair->id);
+
+        $this->assertNotNull($data);
+        $this->assertSame('manual_only', (string) ($data['refund_payment_type'] ?? ''));
+        $this->assertTrue((bool) ($data['refund_requires_payout_destination'] ?? false));
+        $this->assertFalse((bool) ($data['refund_original_method_only'] ?? true));
+    }
+
+    #[Test]
     public function myrepair_submit_for_walk_in_only_payment_forces_gcash_destination_channel(): void
     {
         /** @var User $customer */

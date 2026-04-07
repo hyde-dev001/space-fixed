@@ -514,6 +514,65 @@ class RepairOnlineRefundWorkflowTest extends TestCase
     }
 
     #[Test]
+    public function shop_owner_repair_refund_list_treats_manual_gcash_reference_as_manual_only(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $customer = User::factory()->create();
+
+        $source = PosTransaction::create([
+            'transaction_no' => 'POS-TDD-ONLINE-RFD-MANUAL-GCASH-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 59,
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'due_type' => 'full',
+            'subtotal' => 500,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 500,
+            'paid_amount' => 500,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        PosPaymentLine::create([
+            'pos_transaction_id' => $source->id,
+            'tender_type' => 'paymongo_wallet',
+            'provider_reference' => '09123456789',
+            'amount' => 500,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        PosRefund::create([
+            'refund_no' => 'RFD-TDD-ONLINE-RFD-MANUAL-GCASH-001',
+            'shop_owner_id' => $shopOwner->id,
+            'source_transaction_id' => $source->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 59,
+            'workflow_source' => 'online_myrepair',
+            'request_type' => 'full',
+            'requested_amount' => 500,
+            'reason_code' => 'manual_gcash_walkin_refund',
+            'reason_notes' => 'Manual GCash POS payment should not be treated as gateway-only.',
+            'paymongo_payment_id' => null,
+            'status' => 'requested',
+            'finance_status' => 'pending',
+            'shop_owner_status' => 'pending',
+            'repairer_status' => 'pending',
+            'requested_by' => $customer->id,
+            'requested_at' => now(),
+        ]);
+
+        $response = $this->actingAs($shopOwner, 'shop_owner')
+            ->getJson('/api/shop-owner/repair-refunds');
+
+        $response->assertOk();
+        $response->assertJsonPath('data.0.refundPaymentType', 'manual_only');
+    }
+
+    #[Test]
     public function individual_shop_owner_can_approve_repair_refund_without_finance_initial_approval(): void
     {
         $shopOwner = ShopOwner::factory()->approved()->create([
