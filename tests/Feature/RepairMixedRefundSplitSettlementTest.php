@@ -453,6 +453,50 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
     }
 
     #[Test]
+    public function myrepair_submit_pure_online_refund_backfills_source_transaction_when_pos_ledger_is_empty(): void
+    {
+        /** @var User $customer */
+        $customer = User::factory()->create();
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+
+        $repair = $this->createRepairRequest($shopOwner, $customer, [
+            'total' => 950,
+            'final_total' => 950,
+            'pricing_breakdown' => [
+                'tax_mode' => 'vat_inclusive',
+            ],
+            'payment_policy' => 'full_upfront',
+            'payment_policy_snapshot' => 'full_upfront',
+            'payment_status' => 'completed',
+            'total_paid_amount' => 950,
+            'total_refunded_amount' => 0,
+            'paymongo_payment_id' => 'pay_legacy_online_only_003',
+            'latest_pos_transaction_id' => null,
+        ]);
+
+        $response = $this->actingAs($customer, 'user')->postJson("/api/customer/repairs/{$repair->id}/refunds", [
+            'request_type' => 'full',
+            'requested_amount' => 950,
+            'reason_code' => 'online_payment_refund_request',
+            'reason_notes' => 'Pure online payment refund request with no POS ledger rows.',
+            'evidence' => [['type' => 'photo', 'url' => 'https://evidence.local/online-backfill-ledger.jpg']],
+        ]);
+
+        $response->assertOk()->assertJsonPath('success', true);
+
+        $refund = PosRefund::query()->latest('id')->firstOrFail();
+        $source = PosTransaction::query()->findOrFail((int) $refund->source_transaction_id);
+
+        $this->assertSame('repair', (string) $source->module_type);
+        $this->assertSame($repair->id, (int) $source->module_reference_id);
+        $this->assertSame('paid', (string) $source->status);
+
+        $line = PosPaymentLine::query()->where('pos_transaction_id', $source->id)->latest('id')->first();
+        $this->assertNotNull($line);
+        $this->assertSame('pay_legacy_online_only_003', (string) ($line->provider_reference ?? ''));
+    }
+
+    #[Test]
     public function myrepairs_payload_marks_walk_in_only_payment_as_manual_only_refund_profile(): void
     {
         /** @var User $customer */

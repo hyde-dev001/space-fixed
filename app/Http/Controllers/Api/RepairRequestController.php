@@ -15,6 +15,7 @@ use App\Models\ShopOwner;
 use App\Models\User;
 use App\Models\Finance\Invoice;
 use App\Models\Finance\InvoiceItem;
+use App\Models\PosPaymentLine;
 use App\Models\PosTransaction;
 use App\Support\Tax\VatInclusiveCalculator;
 use App\Services\NotificationService;
@@ -884,23 +885,6 @@ class RepairRequestController extends Controller
             ]);
         }
 
-        $requestedSourceTransactionId = (int) ($validated['source_transaction_id'] ?? 0);
-        $sourceTransaction = PosTransaction::query()
-            ->where('module_type', 'repair')
-            ->where('module_reference_id', $repair->id)
-            ->whereIn('status', ['paid', 'partially_refunded', 'refunded'])
-            ->when($requestedSourceTransactionId > 0, fn ($query) => $query->where('id', $requestedSourceTransactionId))
-            ->orderByDesc('paid_at')
-            ->orderByDesc('id')
-            ->first();
-
-        if (!$sourceTransaction) {
-            return response()->json([
-                'success' => false,
-                'message' => 'No paid transaction record found for this repair request.',
-            ], 422);
-        }
-
         $pricingSnapshot = $this->calculateRepairPricingSnapshot($repair);
         $taxMode = $this->resolveRepairTaxMode($repair);
         $taxSummary = $this->calculateRepairTaxSummary((float) ($pricingSnapshot['final_total'] ?? 0), $taxMode);
@@ -919,6 +903,33 @@ class RepairRequestController extends Controller
         $refundPaymentProfile = $this->resolveRefundPaymentProfile($repair, $resolvedPaidAmount);
         $isOriginalMethodOnly = (bool) ($refundPaymentProfile['original_method_only'] ?? false);
         $paymentType = (string) ($refundPaymentProfile['payment_type'] ?? 'mixed');
+
+        $requestedSourceTransactionId = (int) ($validated['source_transaction_id'] ?? 0);
+        $sourceTransaction = PosTransaction::query()
+            ->where('module_type', 'repair')
+            ->where('module_reference_id', $repair->id)
+            ->whereIn('status', ['paid', 'partially_refunded', 'refunded'])
+            ->when($requestedSourceTransactionId > 0, fn ($query) => $query->where('id', $requestedSourceTransactionId))
+            ->orderByDesc('paid_at')
+            ->orderByDesc('id')
+            ->first();
+
+        if (!$sourceTransaction) {
+            $sourceTransaction = $this->backfillPureOnlineRepairSourceTransaction(
+                repair: $repair,
+                actorUserId: (int) $user->id,
+                paymentType: $paymentType,
+                requestedSourceTransactionId: $requestedSourceTransactionId,
+                resolvedPaidAmount: $resolvedPaidAmount,
+            );
+        }
+
+        if (!$sourceTransaction) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No paid transaction record found for this repair request.',
+            ], 422);
+        }
 
         $resolvedPreferredReturnChannel = $validated['preferred_return_channel'] ?? null;
         $resolvedPreferredReturnAccountName = $validated['preferred_return_account_name'] ?? null;
@@ -2502,6 +2513,86 @@ class RepairRequestController extends Controller
             || str_starts_with($value, 'src_')
             || str_starts_with($value, 'pmw_')
             || str_starts_with($value, 'pmc_');
+    }
+
+    private function backfillPureOnlineRepairSourceTransaction(
+        RepairRequest $repair,
+        int $actorUserId,
+        string $paymentType,
+        int $requestedSourceTransactionId,
+        float $resolvedPaidAmount,
+    ): ?PosTransaction {
+        if ($requestedSourceTransactionId > 0) {
+            return null;
+        }
+
+        if ($paymentType !== 'pure_online') {
+            return null;
+        }
+
+        $paymongoPaymentId = trim((string) ($repair->paymongo_payment_id ?? ''));
+        if (!$this->looksLikeGatewayProviderReference($paymongoPaymentId)) {
+            return null;
+        }
+
+        $paidAmount = round($resolvedPaidAmount, 2);
+        if ($paidAmount <= 0) {
+            return null;
+        }
+
+        $existing = PosTransaction::query()
+            ->where('module_type', 'repair')
+            ->where('module_reference_id', $repair->id)
+            ->whereIn('status', ['paid', 'partially_refunded', 'refunded'])
+            ->orderByDesc('paid_at')
+            ->orderByDesc('id')
+            ->first();
+
+        if ($existing) {
+            return $existing;
+        }
+
+        $taxBreakdown = VatInclusiveCalculator::extract($paidAmount, self::REPAIR_VAT_RATE_PERCENT);
+        $isCardLikeReference = str_starts_with(strtolower($paymongoPaymentId), 'pmc_');
+
+        return DB::transaction(function () use ($repair, $actorUserId, $paidAmount, $taxBreakdown, $paymongoPaymentId, $isCardLikeReference) {
+            $transaction = PosTransaction::create([
+                'transaction_no' => 'POS-BKF-' . now()->format('YmdHis') . '-' . str_pad((string) random_int(1, 9999), 4, '0', STR_PAD_LEFT),
+                'shop_owner_id' => (int) $repair->shop_owner_id,
+                'module_type' => 'repair',
+                'module_reference_id' => (int) $repair->id,
+                'customer_type' => 'registered',
+                'customer_id' => (int) $repair->user_id,
+                'due_type' => 'full',
+                'subtotal' => round((float) ($taxBreakdown['net'] ?? $paidAmount), 2),
+                'tax_amount' => round((float) ($taxBreakdown['vat'] ?? 0), 2),
+                'discount_amount' => 0,
+                'total_amount' => $paidAmount,
+                'paid_amount' => $paidAmount,
+                'status' => 'paid',
+                'paid_at' => now(),
+                'created_by' => $actorUserId > 0 ? $actorUserId : null,
+                'metadata' => [
+                    'tax_mode' => 'vat_inclusive',
+                    'source' => 'myrepair_refund_online_backfill',
+                ],
+            ]);
+
+            PosPaymentLine::create([
+                'pos_transaction_id' => $transaction->id,
+                'tender_type' => $isCardLikeReference ? 'paymongo_card' : 'paymongo_wallet',
+                'provider_reference' => $paymongoPaymentId,
+                'amount' => $paidAmount,
+                'status' => 'paid',
+                'paid_at' => now(),
+            ]);
+
+            if (!$repair->latest_pos_transaction_id) {
+                $repair->update(['latest_pos_transaction_id' => $transaction->id]);
+            }
+
+            return $transaction;
+        });
     }
 
     private function resolveEffectivePackagePrice(RepairPackage $package): float
