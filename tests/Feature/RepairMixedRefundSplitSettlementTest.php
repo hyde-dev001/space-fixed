@@ -321,6 +321,133 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
     }
 
     #[Test]
+    public function myrepairs_payload_marks_walk_in_only_payment_as_manual_only_refund_profile(): void
+    {
+        /** @var User $customer */
+        $customer = User::factory()->create();
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+
+        $repair = $this->createRepairRequest($shopOwner, $customer, [
+            'total' => 874.50,
+            'final_total' => 874.50,
+            'pricing_breakdown' => [
+                'tax_mode' => 'vat_inclusive',
+            ],
+            'payment_policy' => 'full_upfront',
+            'payment_policy_snapshot' => 'full_upfront',
+            'payment_status' => 'completed',
+            'total_paid_amount' => 874.50,
+            'total_refunded_amount' => 0,
+        ]);
+
+        $source = PosTransaction::create([
+            'transaction_no' => 'POS-WALKIN-ONLY-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'due_type' => 'full',
+            'subtotal' => 780.80,
+            'tax_amount' => 93.70,
+            'discount_amount' => 0,
+            'total_amount' => 874.50,
+            'paid_amount' => 874.50,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        PosPaymentLine::create([
+            'pos_transaction_id' => $source->id,
+            'tender_type' => 'cash',
+            'amount' => 874.50,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $repair->update(['latest_pos_transaction_id' => $source->id]);
+
+        $response = $this->actingAs($customer, 'user')->getJson('/api/customer/repairs');
+        $response->assertOk()->assertJsonPath('success', true);
+
+        $data = collect($response->json('data'))->firstWhere('id', $repair->id);
+
+        $this->assertNotNull($data);
+        $this->assertSame('manual_only', (string) ($data['refund_payment_type'] ?? ''));
+        $this->assertTrue((bool) ($data['refund_requires_payout_destination'] ?? false));
+        $this->assertFalse((bool) ($data['refund_original_method_only'] ?? true));
+    }
+
+    #[Test]
+    public function myrepair_submit_for_walk_in_only_payment_forces_manual_cash_channel(): void
+    {
+        /** @var User $customer */
+        $customer = User::factory()->create();
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+
+        $repair = $this->createRepairRequest($shopOwner, $customer, [
+            'total' => 874.50,
+            'final_total' => 874.50,
+            'pricing_breakdown' => [
+                'tax_mode' => 'vat_inclusive',
+            ],
+            'payment_policy' => 'full_upfront',
+            'payment_policy_snapshot' => 'full_upfront',
+            'payment_status' => 'completed',
+            'total_paid_amount' => 874.50,
+            'total_refunded_amount' => 0,
+        ]);
+
+        $source = PosTransaction::create([
+            'transaction_no' => 'POS-WALKIN-ONLY-002',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'due_type' => 'full',
+            'subtotal' => 780.80,
+            'tax_amount' => 93.70,
+            'discount_amount' => 0,
+            'total_amount' => 874.50,
+            'paid_amount' => 874.50,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        PosPaymentLine::create([
+            'pos_transaction_id' => $source->id,
+            'tender_type' => 'cash',
+            'amount' => 874.50,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $repair->update(['latest_pos_transaction_id' => $source->id]);
+
+        $response = $this->actingAs($customer, 'user')->postJson("/api/customer/repairs/{$repair->id}/refunds", [
+            'source_transaction_id' => $source->id,
+            'request_type' => 'full',
+            'requested_amount' => 874.50,
+            'reason_code' => 'walk_in_refund_request',
+            'reason_notes' => 'Walk-in only payment refund request.',
+            'evidence' => [['type' => 'photo', 'url' => 'https://evidence.local/walkin-only.jpg']],
+            'preferred_return_channel' => 'gcash',
+            'preferred_return_account_name' => 'Should be ignored',
+            'preferred_return_account_ref' => '09170000000',
+            'customer_payout_consent' => true,
+        ]);
+
+        $response->assertOk()->assertJsonPath('success', true);
+
+        $refund = PosRefund::query()->latest('id')->firstOrFail();
+        $this->assertSame('manual_cash', (string) $refund->preferred_return_channel);
+        $this->assertNull($refund->preferred_return_account_name);
+        $this->assertNull($refund->preferred_return_account_ref);
+        $this->assertFalse((bool) $refund->customer_payout_consent);
+    }
+
+    #[Test]
     public function finance_execute_rejects_pos_manual_leg_without_execution_proof(): void
     {
         $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);

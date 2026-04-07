@@ -858,8 +858,41 @@ class RepairRequestController extends Controller
         );
         $refundPaymentProfile = $this->resolveRefundPaymentProfile($repair, $resolvedPaidAmount);
         $isOriginalMethodOnly = (bool) ($refundPaymentProfile['original_method_only'] ?? false);
+        $paymentType = (string) ($refundPaymentProfile['payment_type'] ?? 'mixed');
 
-        $refund = DB::transaction(function () use ($refundService, $sourceTransaction, $validated, $user, $repair, $isOriginalMethodOnly) {
+        $resolvedPreferredReturnChannel = $validated['preferred_return_channel'] ?? null;
+        $resolvedPreferredReturnAccountName = $validated['preferred_return_account_name'] ?? null;
+        $resolvedPreferredReturnAccountRef = $validated['preferred_return_account_ref'] ?? null;
+        $resolvedCustomerPayoutConsent = (bool) ($validated['customer_payout_consent'] ?? false);
+
+        if ($isOriginalMethodOnly) {
+            $resolvedPreferredReturnChannel = null;
+            $resolvedPreferredReturnAccountName = null;
+            $resolvedPreferredReturnAccountRef = null;
+            $resolvedCustomerPayoutConsent = false;
+        } elseif ($paymentType === 'manual_only') {
+            // Walk-in/manual-only refunds are processed outside PayMongo.
+            $resolvedPreferredReturnChannel = 'manual_cash';
+            $resolvedPreferredReturnAccountName = null;
+            $resolvedPreferredReturnAccountRef = null;
+            $resolvedCustomerPayoutConsent = false;
+        } elseif ($paymentType === 'mixed' && (string) ($resolvedPreferredReturnChannel ?? '') === 'card') {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'preferred_return_channel' => ['Card payout is not available for mixed payment refunds. Use GCash, bank transfer, or manual cash.'],
+            ]);
+        }
+
+        $refund = DB::transaction(function () use (
+            $refundService,
+            $sourceTransaction,
+            $validated,
+            $user,
+            $repair,
+            $resolvedPreferredReturnChannel,
+            $resolvedPreferredReturnAccountName,
+            $resolvedPreferredReturnAccountRef,
+            $resolvedCustomerPayoutConsent
+        ) {
             $refund = $refundService->createRefundWithSplitLegs($sourceTransaction, [
                 'workflow_source' => 'online_myrepair',
                 'request_type' => $validated['request_type'],
@@ -867,11 +900,10 @@ class RepairRequestController extends Controller
                 'reason_code' => $validated['reason_code'],
                 'reason_notes' => $validated['reason_notes'] ?? null,
                 'paymongo_payment_id' => $repair->paymongo_payment_id,
-                // Pure online refunds must return to original payment method.
-                'preferred_return_channel' => $isOriginalMethodOnly ? null : ($validated['preferred_return_channel'] ?? null),
-                'preferred_return_account_name' => $isOriginalMethodOnly ? null : ($validated['preferred_return_account_name'] ?? null),
-                'preferred_return_account_ref' => $isOriginalMethodOnly ? null : ($validated['preferred_return_account_ref'] ?? null),
-                'customer_payout_consent' => $isOriginalMethodOnly ? false : (bool) ($validated['customer_payout_consent'] ?? false),
+                'preferred_return_channel' => $resolvedPreferredReturnChannel,
+                'preferred_return_account_name' => $resolvedPreferredReturnAccountName,
+                'preferred_return_account_ref' => $resolvedPreferredReturnAccountRef,
+                'customer_payout_consent' => $resolvedCustomerPayoutConsent,
             ], (int) $user->id);
 
             $refund->update([

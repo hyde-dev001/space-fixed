@@ -1114,7 +1114,7 @@ const MyRepairs: React.FC = () => {
       return;
     }
 
-    if (requiresPayoutDestination) {
+    if (requiresPayoutDestination && refundMethod !== 'manual_cash') {
       if (!refundAccountName.trim() || !refundAccountRef.trim()) {
         Swal.fire({
           icon: 'warning',
@@ -1181,9 +1181,9 @@ const MyRepairs: React.FC = () => {
         reasonCode: reasonCode,
         reasonNotes: reasonNotes,
         preferredReturnChannel,
-        preferredReturnAccountName: requiresPayoutDestination ? refundAccountName.trim() : '',
-        preferredReturnAccountRef: requiresPayoutDestination ? refundAccountRef.trim() : '',
-        customerPayoutConsent: requiresPayoutDestination ? refundPayoutConsent : false,
+        preferredReturnAccountName: (requiresPayoutDestination && refundMethod !== 'manual_cash') ? refundAccountName.trim() : '',
+        preferredReturnAccountRef: (requiresPayoutDestination && refundMethod !== 'manual_cash') ? refundAccountRef.trim() : '',
+        customerPayoutConsent: (requiresPayoutDestination && refundMethod !== 'manual_cash') ? refundPayoutConsent : false,
         evidence,
       });
 
@@ -1783,8 +1783,24 @@ const MyRepairs: React.FC = () => {
 
   const refundOrder = refundOrderId ? orders.find((o) => o.id === refundOrderId) : null;
   const refundTotal = refundOrder ? getOrderGrandTotal(refundOrder) : 0;
+  const refundPaymentType = String(refundOrder?.refund_payment_type ?? 'mixed');
   const refundRequiresPayoutDestination = refundOrder ? (refundOrder.refund_requires_payout_destination !== false) : true;
   const refundOriginalMethodOnly = refundOrder ? Boolean(refundOrder.refund_original_method_only) : false;
+  const refundMethodOptions = refundPaymentType === 'manual_only'
+    ? [{ value: 'manual_cash', label: 'Manual Cash' }]
+    : refundPaymentType === 'mixed'
+      ? [
+          { value: 'gcash', label: 'GCash' },
+          { value: 'bank_transfer', label: 'Bank Transfer' },
+          { value: 'manual_cash', label: 'Manual Cash' },
+        ]
+      : [
+          { value: 'gcash', label: 'GCash' },
+          { value: 'card', label: 'Card' },
+          { value: 'bank_transfer', label: 'Bank Transfer' },
+          { value: 'manual_cash', label: 'Manual Cash' },
+        ];
+  const showPayoutAccountFields = refundRequiresPayoutDestination && refundMethod !== 'manual_cash';
   const tabButtonBaseClass =
     'relative inline-flex min-w-[112px] shrink-0 items-center justify-center gap-2 rounded-2xl border px-3 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 xl:min-w-0 xl:flex-1 xl:rounded-full xl:px-4 xl:text-[11px] xl:tracking-[0.16em]';
   const tabBadgeClass =
@@ -2659,7 +2675,7 @@ const MyRepairs: React.FC = () => {
                               setRefundStep(1);
                               setRefundReason('');
                               setRefundMedia([]);
-                              setRefundMethod('gcash');
+                              setRefundMethod(order.refund_payment_type === 'manual_only' ? 'manual_cash' : 'gcash');
                               setRefundAccountName('');
                               setRefundAccountRef('');
                               setRefundPayoutConsent(false);
@@ -2914,17 +2930,14 @@ const MyRepairs: React.FC = () => {
                               </div>
                             </div>
                             <p className="text-sm text-gray-700 text-center">
-                              This refund includes non-online payment. Please provide payout destination details for manual disbursement after approval.
+                              {refundPaymentType === 'manual_only'
+                                ? 'This refund came from walk-in POS payment. PayMongo refund is not available, so refund will be processed as manual cash payout after approval.'
+                                : 'This refund includes non-online payment. Please provide payout destination details for manual disbursement after approval.'}
                             </p>
                           </div>
 
                           <div className="grid grid-cols-2 gap-3 mt-4">
-                            {[
-                              { value: 'gcash', label: 'GCash' },
-                              { value: 'card', label: 'Card' },
-                              { value: 'bank_transfer', label: 'Bank Transfer' },
-                              { value: 'manual_cash', label: 'Manual Cash' },
-                            ].map((method) => (
+                            {refundMethodOptions.map((method) => (
                               <label
                                 key={method.value}
                                 className={`flex items-center gap-3 p-4 border-2 rounded-lg cursor-pointer transition-all ${
@@ -2947,40 +2960,44 @@ const MyRepairs: React.FC = () => {
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Account Name</label>
-                            <input
-                              type="text"
-                              value={refundAccountName}
-                              onChange={(e) => setRefundAccountName(e.target.value)}
-                              className="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-gray-400 focus:outline-none"
-                              placeholder="Name on destination account"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Account Number / Reference</label>
-                            <input
-                              type="text"
-                              value={refundAccountRef}
-                              onChange={(e) => setRefundAccountRef(e.target.value)}
-                              className="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-gray-400 focus:outline-none"
-                              placeholder="e.g. mobile number or account ref"
-                            />
-                          </div>
-                        </div>
+                        {showPayoutAccountFields && (
+                          <>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Account Name</label>
+                                <input
+                                  type="text"
+                                  value={refundAccountName}
+                                  onChange={(e) => setRefundAccountName(e.target.value)}
+                                  className="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-gray-400 focus:outline-none"
+                                  placeholder="Name on destination account"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Account Number / Reference</label>
+                                <input
+                                  type="text"
+                                  value={refundAccountRef}
+                                  onChange={(e) => setRefundAccountRef(e.target.value)}
+                                  className="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-gray-400 focus:outline-none"
+                                  placeholder="e.g. mobile number or account ref"
+                                />
+                              </div>
+                            </div>
 
-                        <label className="flex items-start gap-3 p-3 border border-gray-200 rounded-lg bg-gray-50">
-                          <input
-                            type="checkbox"
-                            checked={refundPayoutConsent}
-                            onChange={(e) => setRefundPayoutConsent(e.target.checked)}
-                            className="mt-1 h-4 w-4"
-                          />
-                          <span className="text-sm text-gray-700">
-                            I confirm that the payout destination details above are correct.
-                          </span>
-                        </label>
+                            <label className="flex items-start gap-3 p-3 border border-gray-200 rounded-lg bg-gray-50">
+                              <input
+                                type="checkbox"
+                                checked={refundPayoutConsent}
+                                onChange={(e) => setRefundPayoutConsent(e.target.checked)}
+                                className="mt-1 h-4 w-4"
+                              />
+                              <span className="text-sm text-gray-700">
+                                I confirm that the payout destination details above are correct.
+                              </span>
+                            </label>
+                          </>
+                        )}
                       </>
                     ) : (
                       <div>
