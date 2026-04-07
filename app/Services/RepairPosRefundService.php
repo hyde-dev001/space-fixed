@@ -182,7 +182,15 @@ class RepairPosRefundService
         }
 
         $source = $refund->sourceTransaction()->firstOrFail();
-        $amountToApprove = $approvedAmount ?? (float) $refund->requested_amount;
+        $resolvedApprovedAmount = $approvedAmount;
+        if ($resolvedApprovedAmount === null && strtolower(trim($stage)) === 'shop_owner') {
+            $existingApprovedAmount = (float) ($refund->approved_amount ?? 0);
+            if ($existingApprovedAmount > 0) {
+                $resolvedApprovedAmount = $existingApprovedAmount;
+            }
+        }
+
+        $amountToApprove = $resolvedApprovedAmount ?? (float) $refund->requested_amount;
         if ($amountToApprove <= 0) {
             throw ValidationException::withMessages([
                 'approved_amount' => ['Approved amount must be greater than zero.'],

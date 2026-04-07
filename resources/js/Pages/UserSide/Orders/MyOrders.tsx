@@ -715,7 +715,34 @@ const MyOrders: React.FC = () => {
       hour: 'numeric',
       minute: '2-digit',
       hour12: true,
-      timeZoneName: 'short',
+    });
+  };
+
+  const parseServerDateTime = (value?: string | null): Date | null => {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+
+    const normalized = raw.includes('T') ? raw : raw.replace(' ', 'T');
+    const hasTimezone = /(Z|[+-]\d{2}:?\d{2})$/i.test(normalized);
+    const iso = hasTimezone ? normalized : `${normalized}Z`;
+    const parsed = new Date(iso);
+
+    return Number.isFinite(parsed.getTime()) ? parsed : null;
+  };
+
+  const formatStaffPickupDateTime = (value?: string | null): string => {
+    const parsed = parseServerDateTime(value);
+    if (!parsed) return '-';
+
+    return parsed.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+      timeZone: 'Asia/Manila',
     });
   };
 
@@ -1396,12 +1423,13 @@ const MyOrders: React.FC = () => {
                       {(() => {
                         const stage = order.refund_stage;
                         const isRefundedOrder = isOrderRefunded(order);
+                        const isRefundProcessing = displayStatus === 'refund_processing';
                         const isCancelledRefundOrder = order.status === 'cancelled' && isRefundedOrder;
-                        const hasShippingInfo = !isRefundedOrder && ['shipped', 'to_ship', 'delivered', 'completed'].includes(order.status);
+                        const hasShippingInfo = !isRefundProcessing && !isRefundedOrder && ['shipped', 'to_ship', 'delivered', 'completed'].includes(order.status);
                         const returnStatus = String(stage?.return_status || '').toLowerCase();
                         const returnSource = String(stage?.return_source || 'customer').toLowerCase();
                         const hasStaffPickupDetails = returnSource === 'staff' || returnStatus === 'pending_staff_pickup';
-                        const hasStaffPickup = !isCancelledRefundOrder && (hasStaffPickupDetails || (isRefundedOrder && Boolean(stage)));
+                        const hasStaffPickup = !isCancelledRefundOrder && (isRefundProcessing || hasStaffPickupDetails || (isRefundedOrder && Boolean(stage)));
                         const hasBothDetailSections = hasShippingInfo && hasStaffPickup;
 
                         if (!hasShippingInfo && !hasStaffPickup) return null;
@@ -1478,7 +1506,7 @@ const MyOrders: React.FC = () => {
                                     </div>
                                     <div className="flex items-start justify-between gap-3 sm:block">
                                       <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Arranged At</p>
-                                      <p className="text-sm text-black font-medium text-right sm:text-left">{stage?.return_arranged_by_staff_at ? new Date(stage.return_arranged_by_staff_at).toLocaleString() : '-'}</p>
+                                      <p className="text-sm text-black font-medium text-right sm:text-left">{formatStaffPickupDateTime(stage?.return_arranged_by_staff_at)}</p>
                                     </div>
                                     <div className="sm:col-span-2">
                                       <div className="flex items-start justify-between gap-3 sm:block">
@@ -1576,14 +1604,14 @@ const MyOrders: React.FC = () => {
                               >
                                 REFUND
                               </button>
-                            ) : (
+                            ) : getRefundStageText(order) !== 'Pending Approval' ? (
                               <button
                                 disabled
                                 className={`${actionButtonBaseClass} ${actionButtonDisabledClass}`}
                               >
                                 {getRefundStageText(order) || 'REFUND PROCESSING'}
                               </button>
-                            )}
+                            ) : null}
                             <button
                               onClick={() => {
                                 if (primaryItem?.product_slug) {

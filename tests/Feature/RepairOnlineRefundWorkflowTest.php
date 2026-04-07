@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\PosRefund;
 use App\Models\PosTransaction;
+use App\Models\ProcurementSettings;
 use App\Models\ShopOwner;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -296,5 +297,144 @@ class RepairOnlineRefundWorkflowTest extends TestCase
         $this->assertSame('approved', (string) $refund->finance_status);
         $this->assertContains((string) $refund->shop_owner_status, ['approved', 'skipped']);
         $this->assertSame('succeeded', (string) $refund->status);
+    }
+
+    #[Test]
+    public function shop_owner_approval_defaults_to_finance_approved_amount_when_partial(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $customer = User::factory()->create();
+        $financeActor = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $ownerActor = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+
+        ProcurementSettings::query()->updateOrCreate(
+            ['shop_owner_id' => $shopOwner->id],
+            [
+                'settings_json' => [
+                    'approval_pages' => [
+                        'refund_approval' => ['enabled' => true, 'limit' => null],
+                        'price_approval' => ['enabled' => false, 'limit' => null],
+                        'purchase_request_approval' => ['enabled' => false, 'limit' => null],
+                        'repair_reject_approval' => ['enabled' => false, 'limit' => null],
+                    ],
+                ],
+            ],
+        );
+
+        $source = PosTransaction::create([
+            'transaction_no' => 'POS-TDD-WALKIN-RFD-002',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 41,
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Walk In Customer',
+            'walk_in_phone' => '09170000022',
+            'due_type' => 'full',
+            'subtotal' => 500,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 500,
+            'paid_amount' => 500,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $refund = PosRefund::create([
+            'refund_no' => 'RFD-TDD-WALKIN-RFD-002',
+            'shop_owner_id' => $shopOwner->id,
+            'source_transaction_id' => $source->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 41,
+            'workflow_source' => 'pos',
+            'request_type' => 'partial',
+            'requested_amount' => 500,
+            'reason_code' => 'walk_in_refund',
+            'status' => 'requested',
+            'finance_status' => 'pending',
+            'shop_owner_status' => 'pending',
+            'repairer_status' => 'pending',
+            'requested_by' => $customer->id,
+            'requested_at' => now(),
+        ]);
+
+        $refundService = app(\App\Services\RepairPosRefundService::class);
+
+        $refund = $refundService->approve(
+            refund: $refund,
+            actorId: (int) $financeActor->id,
+            approvedAmount: 300.0,
+            approvalNote: 'Finance approved partial amount.',
+            stage: 'finance',
+        );
+
+        $this->assertSame('approved_initial', (string) $refund->finance_status);
+        $this->assertSame('pending', (string) $refund->shop_owner_status);
+        $this->assertSame(300.0, (float) $refund->approved_amount);
+
+        $refund = $refundService->approve(
+            refund: $refund,
+            actorId: (int) $ownerActor->id,
+            approvedAmount: null,
+            approvalNote: 'Owner confirmed finance-approved amount.',
+            stage: 'shop_owner',
+        );
+
+        $this->assertSame('approved', (string) $refund->finance_status);
+        $this->assertSame('approved', (string) $refund->shop_owner_status);
+        $this->assertSame(300.0, (float) $refund->approved_amount);
+    }
+
+    #[Test]
+    public function shop_owner_repair_refund_list_includes_media_urls_from_object_evidence_snapshot(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $customer = User::factory()->create();
+
+        $source = PosTransaction::create([
+            'transaction_no' => 'POS-TDD-ONLINE-RFD-005',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 51,
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'due_type' => 'full',
+            'subtotal' => 650,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 650,
+            'paid_amount' => 650,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        PosRefund::create([
+            'refund_no' => 'RFD-TDD-ONLINE-RFD-005',
+            'shop_owner_id' => $shopOwner->id,
+            'source_transaction_id' => $source->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 51,
+            'workflow_source' => 'online_myrepair',
+            'request_type' => 'full',
+            'requested_amount' => 650,
+            'reason_code' => 'service_defect',
+            'reason_notes' => 'Evidence attached by customer.',
+            'status' => 'requested',
+            'finance_status' => 'approved_initial',
+            'shop_owner_status' => 'pending',
+            'repairer_status' => 'approved',
+            'evidence_snapshot' => [
+                ['type' => 'photo', 'url' => 'https://example.com/evidence-photo.jpg'],
+                ['type' => 'video', 'url' => 'https://example.com/evidence-video.mp4'],
+            ],
+            'requested_by' => $customer->id,
+            'requested_at' => now(),
+        ]);
+
+        $response = $this->actingAs($shopOwner, 'shop_owner')
+            ->getJson('/api/shop-owner/repair-refunds');
+
+        $response->assertOk();
+        $response->assertJsonPath('data.0.media.0', 'https://example.com/evidence-photo.jpg');
+        $response->assertJsonPath('data.0.media.1', 'https://example.com/evidence-video.mp4');
     }
 }

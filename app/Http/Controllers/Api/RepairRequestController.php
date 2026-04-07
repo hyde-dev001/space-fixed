@@ -819,14 +819,59 @@ class RepairRequestController extends Controller
             'requested_amount' => ['required', 'numeric', 'min:0.01'],
             'reason_code' => ['required', 'string', 'max:80'],
             'reason_notes' => ['nullable', 'string', 'max:2000'],
-            'evidence' => ['required', 'array', 'min:1'],
-            'evidence.*.type' => ['required', 'in:photo,video'],
-            'evidence.*.url' => ['required', 'url'],
+            'evidence' => ['nullable', 'array', 'min:1'],
+            'evidence.*.type' => ['required_with:evidence', 'in:photo,video'],
+            'evidence.*.url' => ['required_with:evidence', 'url'],
+            'media' => ['nullable', 'array', 'min:1'],
+            'media.*' => ['file', 'mimetypes:image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/x-msvideo,video/x-matroska,video/webm', 'max:262144'],
             'preferred_return_channel' => ['nullable', 'in:gcash,card,bank_transfer,manual_cash'],
             'preferred_return_account_name' => ['nullable', 'string', 'max:120'],
             'preferred_return_account_ref' => ['nullable', 'string', 'max:120'],
             'customer_payout_consent' => ['nullable', 'boolean'],
         ]);
+
+        $uploadedEvidence = [];
+        if ($request->hasFile('media')) {
+            $maxImageBytes = 20 * 1024 * 1024;
+            $maxVideoBytes = 256 * 1024 * 1024;
+
+            foreach (($request->file('media') ?? []) as $index => $mediaFile) {
+                if (!$mediaFile) {
+                    continue;
+                }
+
+                $mimeType = strtolower((string) $mediaFile->getMimeType());
+                $isVideo = str_starts_with($mimeType, 'video/');
+                $maxAllowedBytes = $isVideo ? $maxVideoBytes : $maxImageBytes;
+                $fileSize = (int) ($mediaFile->getSize() ?? 0);
+
+                if ($fileSize > $maxAllowedBytes) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        "media.{$index}" => [
+                            $isVideo
+                                ? 'Video evidence must be 256MB or smaller.'
+                                : 'Image evidence must be 20MB or smaller.',
+                        ],
+                    ]);
+                }
+
+                $path = $mediaFile->store('refund-evidence/repair-' . $repair->id, 'public');
+                $uploadedEvidence[] = [
+                    'type' => $isVideo ? 'video' : 'photo',
+                    'url' => Storage::url($path),
+                ];
+            }
+        }
+
+        $evidenceSnapshot = !empty($uploadedEvidence)
+            ? $uploadedEvidence
+            : (is_array($validated['evidence'] ?? null) ? $validated['evidence'] : []);
+
+        if (count($evidenceSnapshot) < 1) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'evidence' => ['Please upload at least one photo or video evidence file.'],
+            ]);
+        }
 
         $sourceTransaction = PosTransaction::query()
             ->where('id', (int) $validated['source_transaction_id'])
@@ -945,6 +990,7 @@ class RepairRequestController extends Controller
             $validated,
             $user,
             $repair,
+            $evidenceSnapshot,
             $requestedAmount,
             $resolvedPreferredReturnChannel,
             $resolvedPreferredReturnAccountName,
@@ -966,7 +1012,7 @@ class RepairRequestController extends Controller
 
             $refund->update([
                 'repairer_status' => 'pending',
-                'evidence_snapshot' => $validated['evidence'],
+                'evidence_snapshot' => $evidenceSnapshot,
             ]);
 
             return $refund->fresh();

@@ -5,7 +5,7 @@ import Swal from '@/Pages/UserSide/Shared/UserModal';
 import axios from 'axios';
 import { refundStageLabel } from './refundWorkflow';
 import { buildRepairBreakdown, type RepairTaxMode } from '../../../utils/repairPricing';
-import { buildRepairRefundPayload, type PreferredReturnChannel, type RefundEvidenceItem } from './refundPayloadBuilder';
+import type { PreferredReturnChannel } from './refundPayloadBuilder';
 
 const MAX_REFUND_IMAGE_SIZE_BYTES = 20 * 1024 * 1024;
 const MAX_REFUND_VIDEO_SIZE_BYTES = 256 * 1024 * 1024;
@@ -1170,11 +1170,6 @@ const MyRepairs: React.FC = () => {
         : '';
       const reasonNotes = [refundNote.trim(), mediaSummary].filter(Boolean).join('\n').slice(0, 2000);
 
-      const evidence: RefundEvidenceItem[] = refundMedia.map((file) => ({
-        type: (file.type.startsWith('video/') ? 'video' : 'photo') as RefundEvidenceItem['type'],
-        url: `https://evidence.local/${encodeURIComponent(file.name)}`,
-      }));
-
       const preferredReturnChannel: PreferredReturnChannel =
         originalMethodOnly
           ? 'card'
@@ -1186,27 +1181,29 @@ const MyRepairs: React.FC = () => {
                 ? 'manual_cash'
                 : 'gcash';
 
-      const payload = buildRepairRefundPayload({
-        sourceTransactionId: targetOrder.latest_pos_transaction_id,
-        requestedAmount: refundableAmount,
-        reasonCode: reasonCode,
-        reasonNotes: reasonNotes,
-        preferredReturnChannel,
-        preferredReturnAccountName: requiresPayoutDestination ? refundAccountName.trim() : '',
-        preferredReturnAccountRef: requiresPayoutDestination ? refundAccountRef.trim() : '',
-        customerPayoutConsent: requiresPayoutDestination ? refundPayoutConsent : false,
-        evidence,
-      });
+        const payload = new FormData();
+        payload.append('source_transaction_id', String(targetOrder.latest_pos_transaction_id));
+        payload.append('request_type', 'full');
+        payload.append('requested_amount', String(refundableAmount));
+        payload.append('reason_code', reasonCode);
+        payload.append('reason_notes', reasonNotes);
+        payload.append('preferred_return_channel', preferredReturnChannel);
+        payload.append('preferred_return_account_name', requiresPayoutDestination ? refundAccountName.trim() : '');
+        payload.append('preferred_return_account_ref', requiresPayoutDestination ? refundAccountRef.trim() : '');
+        payload.append('customer_payout_consent', requiresPayoutDestination ? String(refundPayoutConsent) : 'false');
+
+        refundMedia.forEach((file, index) => {
+          payload.append(`media[${index}]`, file);
+        });
 
       const response = await fetch(`/api/customer/repairs/${targetOrder.id}/refunds`, {
         method: 'POST',
         credentials: 'include',
         headers: {
-          'Content-Type': 'application/json',
           'Accept': 'application/json',
           'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
         },
-        body: JSON.stringify(payload),
+        body: payload,
       });
 
       const raw = await response.text();

@@ -313,12 +313,28 @@ class RepairRefundWorkflowController extends Controller
         };
 
         $evidenceSnapshot = is_array($refund->evidence_snapshot) ? $refund->evidence_snapshot : [];
-        $evidenceMedia = [];
-        if (isset($evidenceSnapshot['media']) && is_array($evidenceSnapshot['media'])) {
-            $evidenceMedia = $evidenceSnapshot['media'];
+        $evidenceCandidates = [];
+
+        if (array_is_list($evidenceSnapshot)) {
+            $evidenceCandidates = $evidenceSnapshot;
+        } elseif (isset($evidenceSnapshot['media']) && is_array($evidenceSnapshot['media'])) {
+            $evidenceCandidates = $evidenceSnapshot['media'];
         } elseif (isset($evidenceSnapshot['images']) && is_array($evidenceSnapshot['images'])) {
-            $evidenceMedia = $evidenceSnapshot['images'];
+            $evidenceCandidates = $evidenceSnapshot['images'];
         }
+
+        $evidenceMedia = array_values(array_filter(array_map(function ($item) {
+            if (is_string($item)) {
+                return trim($item);
+            }
+
+            if (!is_array($item)) {
+                return null;
+            }
+
+            $candidate = (string) ($item['url'] ?? $item['path'] ?? $item['src'] ?? '');
+            return trim($candidate) !== '' ? trim($candidate) : null;
+        }, $evidenceCandidates), fn ($item) => is_string($item) && $item !== ''));
 
         return [
             'id' => (int) $refund->id,
@@ -343,7 +359,7 @@ class RepairRefundWorkflowController extends Controller
             'refundExecutedAt' => optional($refund->executed_at)->toDateTimeString(),
             'refundedAt' => optional($refund->executed_at)->toDateTimeString(),
             'rejectionReason' => (string) ($refund->failure_reason ?? ''),
-            'media' => array_values(array_filter($evidenceMedia, fn ($item) => is_string($item) && trim($item) !== '')),
+            'media' => $evidenceMedia,
             'financeExecution' => [
                 'execution_channel' => (string) ($refund->execution_channel ?? ''),
                 'execution_reference' => (string) ($refund->execution_reference ?? ''),

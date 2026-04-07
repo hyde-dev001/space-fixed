@@ -382,7 +382,7 @@ export default function RefundApproval() {
 	const [selectedRequest, setSelectedRequest] = useState<RefundRequest | null>(null);
 	const [activeImage, setActiveImage] = useState<string | null>(null);
 	const [searchQuery, setSearchQuery] = useState("");
-	const [statusFilter, setStatusFilter] = useState("Pending");
+	const [statusFilter, setStatusFilter] = useState("All");
 	const [isActionProcessing, setIsActionProcessing] = useState(false);
 	const [isLoading, setIsLoading] = useState(false);
 
@@ -394,7 +394,9 @@ export default function RefundApproval() {
 		setIsLoading(true);
 		try {
 			const params = new URLSearchParams();
-			params.append("status", statusFilter);
+			if (statusFilter !== "All") {
+				params.append("status", statusFilter);
+			}
 			if (searchQuery.trim()) {
 				params.append("search", searchQuery.trim());
 			}
@@ -553,7 +555,6 @@ export default function RefundApproval() {
 			title: "Approve Refund?",
 			html: `
 				<div style="text-align: left; margin-top: 1rem;">
-					<p style="margin-bottom: 0.5rem;"><strong>Order:</strong> ${request.orderNumber}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Customer:</strong> ${request.customerName}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Amount:</strong> ${request.refundAmount}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Method:</strong> ${request.refundMethod}</p>
@@ -620,7 +621,6 @@ export default function RefundApproval() {
 			title: "Reject Refund",
 			html: `
 				<div style="text-align: left; margin-bottom: 1rem;">
-					<p style="margin-bottom: 0.5rem;"><strong>Order:</strong> ${request.orderNumber}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Amount:</strong> ${request.refundAmount}</p>
 				</div>
 			`,
@@ -716,7 +716,6 @@ export default function RefundApproval() {
 			title: "Execute Refund Payout?",
 			html: `
 				<div style="text-align: left; margin-top: 1rem;">
-					<p style="margin-bottom: 0.5rem;"><strong>Order:</strong> ${request.orderNumber}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Customer:</strong> ${request.customerName}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Amount:</strong> ${request.refundAmount}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Method:</strong> ${request.refundMethod}</p>
@@ -868,7 +867,6 @@ export default function RefundApproval() {
 						<table className="w-full text-sm">
 							<thead className="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-800">
 								<tr>
-									<th className="pb-3 font-medium">Order</th>
 									<th className="pb-3 font-medium">Customer</th>
 									<th className="pb-3 font-medium">Amount</th>
 									<th className="pb-3 font-medium">Method</th>
@@ -881,9 +879,6 @@ export default function RefundApproval() {
 							<tbody className="divide-y divide-gray-100 dark:divide-gray-800">
 								{paginatedRequests.map((request) => (
 									<tr key={`${request.refundType || "order"}-${request.id}`} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
-										<td className="py-4">
-											<p className="font-medium text-gray-900 dark:text-white">{request.orderNumber}</p>
-										</td>
 										<td className="py-4 text-gray-700 dark:text-gray-300">{request.customerName}</td>
 										<td className="py-4 text-gray-700 dark:text-gray-300">{request.refundAmount}</td>
 										<td className="py-4 text-gray-700 dark:text-gray-300">{request.refundMethod}</td>
@@ -920,7 +915,7 @@ export default function RefundApproval() {
 								))}
 								{paginatedRequests.length === 0 && (
 									<tr>
-									<td colSpan={8} className="py-10 text-center text-sm text-gray-500 dark:text-gray-400">
+									<td colSpan={7} className="py-10 text-center text-sm text-gray-500 dark:text-gray-400">
 											{isLoading ? "Loading refund requests..." : "No refund requests found."}
 										</td>
 									</tr>
@@ -1003,7 +998,7 @@ export default function RefundApproval() {
 								</div>
 								<div>
 									<h3 className="text-lg font-semibold text-gray-900 dark:text-white">Refund Request Details</h3>
-									<p className="text-sm text-gray-500 dark:text-gray-400">{selectedRequest.orderNumber}</p>
+									<p className="text-sm text-gray-500 dark:text-gray-400">Request #{selectedRequest.id}</p>
 								</div>
 							</div>
 							<button
