@@ -464,6 +464,7 @@ class RepairPosController extends Controller
                 'failure_reason' => $refund->failure_reason,
                 'execution_channel' => $refund->execution_channel,
                 'execution_reference_masked' => $maskedReference,
+                'execution_proof_urls' => is_array($refund->execution_proof_urls) ? $refund->execution_proof_urls : [],
                 'executed_at' => optional($refund->executed_at)->toDateTimeString(),
             ];
         })->values();

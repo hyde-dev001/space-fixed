@@ -113,6 +113,10 @@ export function useUnreadCount(basePath: string = DEFAULT_NOTIFICATION_API_BASE)
                 credentials: 'include',
             });
 
+            if (response.status === 429) {
+                return 0;
+            }
+
             if (!response.ok) {
                 throw new Error('Failed to fetch unread count');
             }
@@ -120,7 +124,7 @@ export function useUnreadCount(basePath: string = DEFAULT_NOTIFICATION_API_BASE)
             const data = await response.json();
             return data.count;
         },
-        refetchInterval: 5000, // Refresh every 5 seconds for real-time updates
+        refetchInterval: 15000, // Refresh every 15 seconds to reduce API throttling
     });
 }
 
@@ -140,13 +144,17 @@ export function useRecentNotifications(
                 credentials: 'include',
             });
 
+            if (response.status === 429) {
+                return [] as Notification[];
+            }
+
             if (!response.ok) {
                 throw new Error('Failed to fetch recent notifications');
             }
 
             return response.json() as Promise<Notification[]>;
         },
-        refetchInterval: 5000, // Refresh every 5 seconds for real-time updates
+        refetchInterval: 15000, // Refresh every 15 seconds to reduce API throttling
     });
 }
 

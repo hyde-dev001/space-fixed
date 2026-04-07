@@ -206,8 +206,9 @@ export default function ProductManagement() {
   const allowed3DModelExtensions = ['jpg', 'jpeg', 'png', 'webp'];
   const accepted3DModelsInput = '.jpg,.jpeg,.png,.webp';
   const MAX_SHOWROOM_360_FILES = 120;
-  const IMAGE_UPLOAD_CONCURRENCY = 4;
-  const SHOWROOM_FRAME_UPLOAD_CONCURRENCY = 3;
+  const IMAGE_UPLOAD_CONCURRENCY = 2;
+  const SHOWROOM_FRAME_UPLOAD_CONCURRENCY = 2;
+  const RATE_LIMIT_MAX_RETRIES = 4;
 
   const runWithConcurrency = async <T, R>(
     items: T[],
@@ -238,10 +239,34 @@ export default function ProductManagement() {
     return Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 10;
   };
 
+  const sleep = (ms: number) =>
+    new Promise<void>((resolve) => {
+      window.setTimeout(resolve, ms);
+    });
+
+  const fetchWith429Retry = async (
+    input: RequestInfo | URL,
+    init?: RequestInit,
+    maxRetries: number = RATE_LIMIT_MAX_RETRIES
+  ): Promise<Response> => {
+    let attempt = 0;
+
+    while (true) {
+      const response = await fetch(input, init);
+      if (response.status !== 429 || attempt >= maxRetries) {
+        return response;
+      }
+
+      const retryAfterMs = getRetryAfterSeconds(response) * 1000;
+      const jitterMs = Math.floor(Math.random() * 400);
+      await sleep(retryAfterMs + jitterMs);
+      attempt += 1;
+    }
+  };
+
   const readApiErrorMessage = async (response: Response, fallback: string) => {
     if (response.status === 429) {
-      const waitSeconds = getRetryAfterSeconds(response);
-      return `Too many attempts. Please wait ${waitSeconds} second${waitSeconds === 1 ? '' : 's'} and try again.`;
+      return 'The server is busy right now. Please try again shortly.';
     }
 
     try {
@@ -416,7 +441,7 @@ export default function ProductManagement() {
   const fetchProducts = async () => {
     try {
       setLoading(true);
-      const productsResponse = await fetch(`/api/products/my/products?ts=${Date.now()}`, {
+      const productsResponse = await fetchWith429Retry(`/api/products/my/products?ts=${Date.now()}`, {
         credentials: 'include',
         cache: 'no-store',
         headers: {
@@ -425,6 +450,12 @@ export default function ProductManagement() {
           'Pragma': 'no-cache',
         }
       });
+
+      if (productsResponse.status === 429) {
+        console.warn('Product list request was rate-limited; keeping the page usable.');
+        setProducts([]);
+        return;
+      }
 
       if (!productsResponse.ok) {
         const message = await readApiErrorMessage(productsResponse, 'Failed to fetch products');
@@ -435,12 +466,14 @@ export default function ProductManagement() {
       setProducts(productsData.products || []);
     } catch (error) {
       console.error('Error fetching products:', error);
-      Swal.fire({
-        title: 'Error',
-        text: error instanceof Error ? error.message : 'Failed to load products',
-        icon: 'error',
-        confirmButtonColor: '#000000',
-      });
+      if (!(error instanceof Error && error.message.includes('rate-limited'))) {
+        Swal.fire({
+          title: 'Error',
+          text: error instanceof Error ? error.message : 'Failed to load products',
+          icon: 'error',
+          confirmButtonColor: '#000000',
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -450,10 +483,15 @@ export default function ProductManagement() {
     try {
       setLoadingShowroomEntitlement(true);
       const query = productId ? `?product_id=${productId}` : '';
-      const response = await fetch(`/api/products/meta/showroom-entitlement${query}`, {
+      const response = await fetchWith429Retry(`/api/products/meta/showroom-entitlement${query}`, {
         credentials: 'include',
         headers: { 'Accept': 'application/json' },
       });
+
+      if (response.status === 429) {
+        setShowroomEntitlement(null);
+        return;
+      }
 
       const data = await response.json();
 
@@ -1175,10 +1213,14 @@ export default function ProductManagement() {
     let existingColorImagesCount = 0;
 
     try {
-      const colorVariantsResponse = await fetch(`/api/products/${productId}/color-variants`, {
+      const colorVariantsResponse = await fetchWith429Retry(`/api/products/${productId}/color-variants`, {
         credentials: 'include',
         headers: { 'Accept': 'application/json' },
       });
+
+      if (colorVariantsResponse.status === 429) {
+        return;
+      }
 
       if (colorVariantsResponse.ok) {
         const colorVariantsData = await colorVariantsResponse.json();
@@ -1214,7 +1256,7 @@ export default function ProductManagement() {
         formData.append('assign_to_showroom', '1');
         formData.append('sort_order', String(frameIndex));
 
-        const response = await fetch(`/api/products/${productId}/color-variants/${colorVariantId}/images`, {
+        const response = await fetchWith429Retry(`/api/products/${productId}/color-variants/${colorVariantId}/images`, {
           method: 'POST',
           credentials: 'include',
           headers: {
@@ -1224,10 +1266,12 @@ export default function ProductManagement() {
           body: formData,
         });
 
-        const data = await response.json();
         if (!response.ok) {
-          throw new Error(data.message || `Failed to upload Shoe Spin Viewer frame ${frameIndex + 1}`);
+          const message = await readApiErrorMessage(response, `Failed to upload Shoe Spin Viewer frame ${frameIndex + 1}`);
+          throw new Error(message);
         }
+
+        const data = await response.json();
 
         return data;
       }

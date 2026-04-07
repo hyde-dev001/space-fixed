@@ -170,13 +170,23 @@ const ProductShow: React.FC = () => {
   const [selectedColorVariant, setSelectedColorVariant] = useState<ColorVariant | null>(
     hasColorVariants ? product.colorVariants[0] : null
   );
+
+  const getVariantImagePathsForGallery = (variant: ColorVariant | null): string[] => {
+    if (!variant?.images || !Array.isArray(variant.images)) return [];
+
+    const sortedImages = [...variant.images].sort((a, b) => a.sort_order - b.sort_order);
+    const nonThumbnailImages = sortedImages.filter((img) => !img.is_thumbnail);
+    const prioritized = nonThumbnailImages.length > 0 ? nonThumbnailImages : sortedImages;
+
+    return prioritized
+      .map((img) => img.image_path)
+      .filter((path) => typeof path === 'string' && path.trim().length > 0);
+  };
   
   // Get images from color variant or fallback to legacy
   const getProductImages = (): string[] => {
     if (hasColorVariants && selectedColorVariant) {
-      return selectedColorVariant.images
-        .sort((a, b) => a.sort_order - b.sort_order)
-        .map(img => img.image_path);
+      return getVariantImagePathsForGallery(selectedColorVariant);
     }
     // Fallback to legacy images
     return (product.images && Array.isArray(product.images) && product.images.length > 0) 
@@ -299,15 +309,26 @@ const ProductShow: React.FC = () => {
       );
       if (colorVariant) {
         setSelectedColorVariant(colorVariant);
-        const newImages = colorVariant.images
-          .sort((a, b) => a.sort_order - b.sort_order)
-          .map(img => img.image_path);
+        const newImages = getVariantImagePathsForGallery(colorVariant);
         if (newImages.length > 0) {
           setSelectedImage(newImages[0]);
         }
       }
     }
   }, [selectedColor, hasColorVariants]);
+
+  useEffect(() => {
+    if (images.length === 0) {
+      if (product.primary) {
+        setSelectedImage(product.primary);
+      }
+      return;
+    }
+
+    if (!selectedImage || !images.includes(selectedImage)) {
+      setSelectedImage(images[0]);
+    }
+  }, [images, selectedImage, product.primary]);
 
   useEffect(() => {
     if (sizeOptions.length === 0) {
@@ -1031,7 +1052,11 @@ const ProductShow: React.FC = () => {
           <div className="flex flex-col xl:grid xl:grid-cols-[minmax(0,1fr)_420px] gap-0 xl:gap-10">
             <div className="flex-1">
               <div className="bg-white">
-                <div className="xl:grid xl:grid-cols-[72px_minmax(0,1fr)] xl:items-start xl:gap-4">
+                <div
+                  className={`xl:grid xl:items-start ${
+                    images.length > 1 ? 'xl:grid-cols-[72px_minmax(0,1fr)] xl:gap-4' : 'xl:grid-cols-1'
+                  }`}
+                >
                   {images.length > 1 && (
                     <div className="hidden xl:flex flex-col gap-2 max-h-[620px] overflow-y-auto pr-1">
                       {images.map((img: string, idx: number) => {
@@ -1053,7 +1078,11 @@ const ProductShow: React.FC = () => {
                     </div>
                   )}
 
-                  <div className="relative bg-gray-100 aspect-square flex items-center justify-center group overflow-hidden xl:rounded-md">
+                  <div
+                    className={`relative bg-gray-100 aspect-square flex items-center justify-center group overflow-hidden xl:rounded-md ${
+                      images.length === 1 ? 'xl:max-w-[720px] xl:mx-auto w-full' : ''
+                    }`}
+                  >
                     {!slideTransition && (
                       <img
                         src={selectedImage}

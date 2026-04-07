@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Spatie\QueryBuilder\QueryBuilder;
 use Spatie\QueryBuilder\AllowedFilter;
 
@@ -571,7 +572,7 @@ class ProductController extends Controller
                 'price' => 'required|numeric|min:0|max:999999.99',
                 'compare_at_price' => 'nullable|numeric|min:0|max:999999.99',
                 'brand' => 'nullable|string|max:100',
-                'category' => 'nullable|string|max:50',
+                'category' => 'nullable|string|max:255',
                 'stock_quantity' => 'required|integer|min:0',
                 'inventory_item_id' => 'nullable|integer|exists:inventory_items,id',
                 'is_featured' => 'sometimes|boolean',
@@ -582,7 +583,7 @@ class ProductController extends Controller
                 'main_image' => 'nullable|string',
                 'additional_images' => 'nullable|array',
                 'variants' => 'nullable|array',
-                'variants.*.size' => 'required|string',
+                'variants.*.size' => 'required',
                 'variants.*.color' => 'required|string',
                 'variants.*.quantity' => 'required|integer|min:0',
                 'variants.*.image' => 'nullable|string',
@@ -726,6 +727,12 @@ class ProductController extends Controller
                 DB::rollBack();
                 throw $e;
             }
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->validator->errors()->first() ?: 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422);
         } catch (\Exception $e) {
             Log::error('Error creating product', [
                 'error' => $e->getMessage(),

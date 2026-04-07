@@ -178,8 +178,9 @@ export default function ProductManagement() {
   const allowed3DModelExtensions = ['jpg', 'jpeg', 'png', 'webp'];
   const accepted3DModelsInput = '.jpg,.jpeg,.png,.webp';
   const MAX_SHOWROOM_360_FILES = 120;
-  const IMAGE_UPLOAD_CONCURRENCY = 4;
-  const SHOWROOM_FRAME_UPLOAD_CONCURRENCY = 3;
+  const IMAGE_UPLOAD_CONCURRENCY = 2;
+  const SHOWROOM_FRAME_UPLOAD_CONCURRENCY = 2;
+  const RATE_LIMIT_MAX_RETRIES = 4;
   const allowedProductImageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
 
   const isAllowedProductImageFile = (file: File) => {
@@ -219,16 +220,48 @@ export default function ProductManagement() {
     return Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 10;
   };
 
+  const sleep = (ms: number) =>
+    new Promise<void>((resolve) => {
+      window.setTimeout(resolve, ms);
+    });
+
+  const fetchWith429Retry = async (
+    input: RequestInfo | URL,
+    init?: RequestInit,
+    maxRetries: number = RATE_LIMIT_MAX_RETRIES
+  ): Promise<Response> => {
+    let attempt = 0;
+
+    while (true) {
+      const response = await fetch(input, init);
+      if (response.status !== 429 || attempt >= maxRetries) {
+        return response;
+      }
+
+      const retryAfterMs = getRetryAfterSeconds(response) * 1000;
+      const jitterMs = Math.floor(Math.random() * 400);
+      await sleep(retryAfterMs + jitterMs);
+      attempt += 1;
+    }
+  };
+
   const readApiErrorMessage = async (response: Response, fallback: string) => {
     if (response.status === 429) {
-      const waitSeconds = getRetryAfterSeconds(response);
-      return `Too many attempts. Please wait ${waitSeconds} second${waitSeconds === 1 ? '' : 's'} and try again.`;
+      return 'The server is busy right now. Please try again shortly.';
     }
 
     try {
       const data = await response.clone().json();
-      if (data?.message) return String(data.message);
+      const message = data?.message ? String(data.message) : '';
+      const normalizedMessage = message.toLowerCase();
+      const isGenericFailureMessage = normalizedMessage.startsWith('failed to ')
+        || normalizedMessage === fallback.toLowerCase();
+
+      if (message && !isGenericFailureMessage) {
+        return message;
+      }
       if (data?.error) return String(data.error);
+      if (message) return message;
     } catch {
       // Fall through to text parsing.
     }
@@ -338,10 +371,16 @@ export default function ProductManagement() {
   const fetchProducts = async () => {
     try {
       setLoading(true);
-      const productsResponse = await fetch('/api/shop-owner/products', {
+      const productsResponse = await fetchWith429Retry('/api/shop-owner/products', {
         credentials: 'include',
         headers: { 'Accept': 'application/json' }
       });
+
+      if (productsResponse.status === 429) {
+        console.warn('Product list request was rate-limited; skipping modal and keeping the page usable.');
+        setProducts([]);
+        return;
+      }
 
       if (!productsResponse.ok) {
         const message = await readApiErrorMessage(productsResponse, 'Failed to fetch products');
@@ -352,12 +391,14 @@ export default function ProductManagement() {
       setProducts(productsData.products || []);
     } catch (error) {
       console.error('Error fetching products:', error);
-      Swal.fire({
-        title: 'Error',
-        text: error instanceof Error ? error.message : 'Failed to load products',
-        icon: 'error',
-        confirmButtonColor: '#000000',
-      });
+      if (!(error instanceof Error && error.message.includes('rate-limited'))) {
+        Swal.fire({
+          title: 'Error',
+          text: error instanceof Error ? error.message : 'Failed to load products',
+          icon: 'error',
+          confirmButtonColor: '#000000',
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -367,10 +408,15 @@ export default function ProductManagement() {
     try {
       setLoadingShowroomEntitlement(true);
       const query = productId ? `?product_id=${productId}` : '';
-      const response = await fetch(`/api/shop-owner/products/meta/showroom-entitlement${query}`, {
+      const response = await fetchWith429Retry(`/api/shop-owner/products/meta/showroom-entitlement${query}`, {
         credentials: 'include',
         headers: { 'Accept': 'application/json' },
       });
+
+      if (response.status === 429) {
+        setShowroomEntitlement(null);
+        return;
+      }
 
       const data = await response.json();
 
@@ -428,10 +474,17 @@ export default function ProductManagement() {
       
       // Load color variants for this product
       try {
-        const colorVariantsResponse = await fetch(`/api/shop-owner/products/${product.id}/color-variants`, {
+        const colorVariantsResponse = await fetchWith429Retry(`/api/shop-owner/products/${product.id}/color-variants`, {
           credentials: 'include',
           headers: { 'Accept': 'application/json' }
         });
+
+        if (colorVariantsResponse.status === 429) {
+          setVariantMode('legacy');
+          await loadLegacyVariants(product.id);
+          setIsModalOpen(true);
+          return;
+        }
         
         if (colorVariantsResponse.ok) {
           const colorVariantsData = await colorVariantsResponse.json();
@@ -762,7 +815,7 @@ export default function ProductManagement() {
             const uploadData = new FormData();
             uploadData.append('image', group.file);
 
-            const response = await fetch('/api/shop-owner/products/upload-image', {
+            const response = await fetchWith429Retry('/api/shop-owner/products/upload-image', {
               method: 'POST',
               credentials: 'include',
               headers: {
@@ -807,7 +860,7 @@ export default function ProductManagement() {
     // If editing, only delete colors removed from the form. Keep existing colors/images intact.
     if (editingProduct) {
       try {
-        const existingResponse = await fetch(`/api/shop-owner/products/${productId}/color-variants`, {
+        const existingResponse = await fetchWith429Retry(`/api/shop-owner/products/${productId}/color-variants`, {
           credentials: 'include',
           headers: { 'Accept': 'application/json' }
         });
@@ -824,7 +877,7 @@ export default function ProductManagement() {
             const shouldDelete = !!variant.id && variantColorName && !keptColorNames.has(variantColorName);
 
             if (shouldDelete) {
-              await fetch(`/api/shop-owner/products/${productId}/color-variants/${variant.id}`, {
+              await fetchWith429Retry(`/api/shop-owner/products/${productId}/color-variants/${variant.id}`, {
                 method: 'DELETE',
                 credentials: 'include',
                 headers: {
@@ -864,7 +917,7 @@ export default function ProductManagement() {
             const uploadData = new FormData();
             uploadData.append('image', image.file as File);
 
-            const response = await fetch('/api/shop-owner/products/upload-image', {
+            const response = await fetchWith429Retry('/api/shop-owner/products/upload-image', {
               method: 'POST',
               credentials: 'include',
               headers: {
@@ -969,7 +1022,7 @@ export default function ProductManagement() {
           images: uploadedImages,
         };
 
-        const cvResponse = await fetch(`/api/shop-owner/products/${productId}/color-variants`, {
+        const cvResponse = await fetchWith429Retry(`/api/shop-owner/products/${productId}/color-variants`, {
           method: 'POST',
           credentials: 'include',
           headers: {
@@ -980,11 +1033,14 @@ export default function ProductManagement() {
           body: JSON.stringify(colorVariantData),
         });
 
-        const cvResponseData = await cvResponse.json();
-
         if (!cvResponse.ok) {
-          console.error(`Failed to create color variant: ${cvResponseData.message || 'Unknown error'}`);
-        } else if (!uploadResult.firstColorVariantId && cvResponseData?.color_variant?.id) {
+          const message = await readApiErrorMessage(cvResponse, 'Failed to create color variant');
+          console.error(`Failed to create color variant: ${message}`);
+          continue;
+        }
+
+        const cvResponseData = await cvResponse.json();
+        if (!uploadResult.firstColorVariantId && cvResponseData?.color_variant?.id) {
           uploadResult.firstColorVariantId = cvResponseData.color_variant.id;
           uploadResult.firstColorVariantImageCount = Array.isArray(cvResponseData?.color_variant?.images)
             ? cvResponseData.color_variant.images.length
@@ -1012,7 +1068,7 @@ export default function ProductManagement() {
     // Update product main_image with the first color's first image (or thumbnail if marked)
     if (firstColorFirstImage) {
       try {
-        await fetch(`/api/shop-owner/products/${productId}`, {
+        await fetchWith429Retry(`/api/shop-owner/products/${productId}`, {
           method: 'PUT',
           credentials: 'include',
           headers: {
@@ -1059,7 +1115,7 @@ export default function ProductManagement() {
         formData.append('assign_to_showroom', '1');
         formData.append('sort_order', String(frameIndex));
 
-        const response = await fetch(`/api/shop-owner/products/${productId}/color-variants/${colorVariantId}/images`, {
+        const response = await fetchWith429Retry(`/api/shop-owner/products/${productId}/color-variants/${colorVariantId}/images`, {
           method: 'POST',
           credentials: 'include',
           headers: {
@@ -1069,10 +1125,15 @@ export default function ProductManagement() {
           body: formData,
         });
 
-        const data = await response.json();
         if (!response.ok) {
-          throw new Error(data.message || `Failed to upload Shoe Spin Viewer frame ${frameIndex + 1}`);
+          const message = await readApiErrorMessage(
+            response,
+            `Failed to upload Shoe Spin Viewer frame ${frameIndex + 1}`,
+          );
+          throw new Error(message);
         }
+
+        const data = await response.json();
 
         return data;
       }
@@ -1140,6 +1201,19 @@ export default function ProductManagement() {
       Swal.fire({
         title: 'Missing Sizes',
         text: 'Each color must have at least one size with quantity',
+        icon: 'warning',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
+    const hasInvalidSizeValue = colorVariants.some((cv) =>
+      cv.sizes.some((size: any) => String(size.size || '').trim() === '')
+    );
+    if (hasInvalidSizeValue) {
+      Swal.fire({
+        title: 'Invalid Size',
+        text: 'Please select a valid size for every size row.',
         icon: 'warning',
         confirmButtonColor: '#000000',
       });
@@ -1218,7 +1292,7 @@ export default function ProductManagement() {
       const method = editingProduct ? 'PUT' : 'POST';
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
 
-      const response = await fetch(url, {
+      const response = await fetchWith429Retry(url, {
         method,
         credentials: 'include',
         headers: {
@@ -1230,8 +1304,8 @@ export default function ProductManagement() {
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to save product');
+        const message = await readApiErrorMessage(response, 'Failed to save product');
+        throw new Error(message);
       }
 
       const result = await response.json();

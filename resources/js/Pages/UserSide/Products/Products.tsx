@@ -10,6 +10,7 @@ type Product = {
   id: number;
   name: string;
   price: number;
+  sales_count?: number;
   compare_at_price?: number | null;
   slug: string;
   main_image: string | null;
@@ -248,6 +249,11 @@ const Products: React.FC<Props> = () => {
         params.append('sort', '-created_at');
         params.append('page', '1');
         params.append('per_page', '1000');
+      } else if (sortBy === 'best_selling') {
+        // Fetch more items so unrated products can be removed before display
+        params.append('sort', '-sales_count');
+        params.append('page', '1');
+        params.append('per_page', '1000');
       } else {
         // Sorting (use - prefix for descending)
         if (sortBy === 'featured') {
@@ -289,7 +295,26 @@ const Products: React.FC<Props> = () => {
       if (!response.ok) throw new Error('Failed to fetch products');
 
       const data = await response.json();
-      setProducts(data.products.data || []);
+      let productsData = data.products.data || [];
+
+      if (sortBy === 'best_selling') {
+        productsData = productsData
+          .filter((product) => Number(product.average_rating ?? 0) > 0)
+          .sort((a, b) => {
+            const ratingA = Number(a.average_rating ?? 0);
+            const ratingB = Number(b.average_rating ?? 0);
+            const salesA = Number(a.sales_count ?? 0);
+            const salesB = Number(b.sales_count ?? 0);
+
+            if (ratingB !== ratingA) {
+              return ratingB - ratingA;
+            }
+
+            return salesB - salesA;
+          });
+      }
+
+      setProducts(productsData);
       setCurrentPage(data.products.current_page || 1);
       setLastPage(data.products.last_page || 1);
       setTotal(data.products.total || 0);
@@ -420,15 +445,35 @@ const Products: React.FC<Props> = () => {
   const isShowroomSearch = searchQuery.trim().toLowerCase().includes('showroom');
   const displayProducts = useMemo(() => {
     const query = mobileSearchQuery.trim().toLowerCase();
-    if (!query) return sortedProducts;
+    let baseProducts = sortedProducts;
 
-    return sortedProducts.filter((product) => {
+    // Safety net: best selling should only show rated products, highest rated first.
+    if (sortBy === 'best_selling') {
+      baseProducts = [...sortedProducts]
+        .filter((product) => Number(product.average_rating ?? 0) > 0)
+        .sort((a, b) => {
+          const ratingA = Number(a.average_rating ?? 0);
+          const ratingB = Number(b.average_rating ?? 0);
+          const salesA = Number(a.sales_count ?? 0);
+          const salesB = Number(b.sales_count ?? 0);
+
+          if (ratingB !== ratingA) {
+            return ratingB - ratingA;
+          }
+
+          return salesB - salesA;
+        });
+    }
+
+    if (!query) return baseProducts;
+
+    return baseProducts.filter((product) => {
       const name = (product.name || '').toLowerCase();
       const brand = (product.brand || '').toLowerCase();
       const shopName = (product.shop_owner?.business_name || product.shop_owner?.name || '').toLowerCase();
       return name.includes(query) || brand.includes(query) || shopName.includes(query);
     });
-  }, [sortedProducts, mobileSearchQuery]);
+  }, [sortedProducts, mobileSearchQuery, sortBy]);
   const buttonBaseClass =
     'group inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2';
   const buttonDarkClass =
@@ -901,17 +946,18 @@ const Products: React.FC<Props> = () => {
                     </div>
 
                     <div className="flex min-h-36 flex-col border-t border-gray-200 p-2.5 xl:min-h-48.5 xl:p-3.5">
-                      <h3 className="mb-1 min-h-8 line-clamp-2 text-xs font-bold uppercase tracking-[0.06em] text-black xl:mb-1.5 xl:min-h-10 xl:text-sm">{p.name}</h3>
+                      <div className="flex items-start justify-between gap-2 mb-1">
+                        <h3 className="mb-1 min-h-8 line-clamp-2 text-xs font-bold uppercase tracking-[0.06em] text-black flex-1 xl:mb-1.5 xl:min-h-10 xl:text-sm">{p.name}</h3>
+                        <div className="shrink-0">
+                          {p.average_rating !== undefined && (
+                            <StarRating rating={p.average_rating} size="sm" />
+                          )}
+                        </div>
+                      </div>
                       
                       <div className="mb-1 min-h-4 xl:mb-1.5 xl:min-h-[1.1rem]">
                         {p.brand && (
                           <p className="text-[10px] uppercase tracking-[0.12em] text-black/55 xl:text-xs">{p.brand}</p>
-                        )}
-                      </div>
-
-                      <div className="mb-2 xl:mb-2.5">
-                        {p.average_rating !== undefined && (
-                          <StarRating rating={p.average_rating} size="sm" />
                         )}
                       </div>
                       

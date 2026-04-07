@@ -127,6 +127,10 @@ type RepairRefundStatus = {
   approved_amount?: number | null;
   requested_at?: string | null;
   failure_reason?: string | null;
+  execution_channel?: string | null;
+  execution_reference_masked?: string | null;
+  execution_proof_urls?: string[];
+  executed_at?: string | null;
 };
 
 type ConversationShop = {
@@ -831,9 +835,11 @@ const MyRepairs: React.FC = () => {
           refundRows.forEach((refund: any) => {
             const repairId = Number(refund?.module_reference_id || 0);
             if (!Number.isFinite(repairId) || repairId <= 0) return;
-            if (nextMap[repairId]) return;
+            const normalizedProofUrls = Array.isArray(refund?.execution_proof_urls)
+              ? refund.execution_proof_urls.filter((entry: unknown) => typeof entry === 'string' && entry.trim().length > 0)
+              : [];
 
-            nextMap[repairId] = {
+            const mappedRefund: RepairRefundStatus = {
               id: Number(refund?.id || 0),
               status: String(refund?.status || 'requested'),
               repairer_status: refund?.repairer_status ? String(refund.repairer_status) : null,
@@ -844,7 +850,25 @@ const MyRepairs: React.FC = () => {
               approved_amount: refund?.approved_amount == null ? null : Number(refund.approved_amount),
               requested_at: refund?.requested_at || null,
               failure_reason: refund?.failure_reason || null,
+              execution_channel: refund?.execution_channel ? String(refund.execution_channel) : null,
+              execution_reference_masked: refund?.execution_reference_masked ? String(refund.execution_reference_masked) : null,
+              execution_proof_urls: normalizedProofUrls,
+              executed_at: refund?.executed_at || null,
             };
+
+            if (!nextMap[repairId]) {
+              nextMap[repairId] = mappedRefund;
+              return;
+            }
+
+            // Keep latest row for status, but backfill proof details from related rows when needed.
+            if (!nextMap[repairId].execution_reference_masked && mappedRefund.execution_reference_masked) {
+              nextMap[repairId].execution_reference_masked = mappedRefund.execution_reference_masked;
+            }
+
+            if ((nextMap[repairId].execution_proof_urls?.length ?? 0) === 0 && normalizedProofUrls.length > 0) {
+              nextMap[repairId].execution_proof_urls = normalizedProofUrls;
+            }
           });
 
           setLatestRefundByRepairId(nextMap);
@@ -1623,7 +1647,23 @@ const MyRepairs: React.FC = () => {
     }
   };
 
-  const getStatusColor = (status: RepairStatus) => {
+  const getStatusColor = (order: RepairOrder) => {
+    const activeRefund = latestRefundByRepairId[order.id];
+    const refundStatus = String(activeRefund?.status || '').toLowerCase();
+
+    if (['requested', 'approved', 'processing'].includes(refundStatus)) {
+      return 'text-blue-700';
+    }
+
+    if (refundStatus === 'succeeded') {
+      return 'text-green-700';
+    }
+
+    if (refundStatus === 'failed' || refundStatus === 'rejected') {
+      return 'text-red-700';
+    }
+
+    const status = order.status;
     switch (status) {
       case 'cancelled':
       case 'rejected':
@@ -1654,6 +1694,25 @@ const MyRepairs: React.FC = () => {
   };
 
   const getStatusText = (order: RepairOrder) => {
+    const activeRefund = latestRefundByRepairId[order.id];
+    const refundStatus = String(activeRefund?.status || '').toLowerCase();
+
+    if (['requested', 'approved', 'processing'].includes(refundStatus)) {
+      return 'Refund Processing';
+    }
+
+    if (refundStatus === 'succeeded') {
+      return 'Refunded';
+    }
+
+    if (refundStatus === 'rejected') {
+      return 'Refund Rejected';
+    }
+
+    if (refundStatus === 'failed') {
+      return 'Refund Failed';
+    }
+
     const isPaymentSettled = order.payment_status === 'paid' || order.payment_status === 'completed';
 
     if (
@@ -2123,7 +2182,7 @@ const MyRepairs: React.FC = () => {
                       <div className="ml-auto shrink-0 flex items-end gap-1.5">
                         <span
                           className={`inline-flex items-center justify-end px-3 py-1 text-[9px] font-semibold tracking-[0.12em] uppercase sm:px-4 sm:py-1.5 sm:text-xs whitespace-nowrap ${getStatusColor(
-                            order.status
+                            order
                           )}`}
                           title={getStatusText(order)}
                         >
@@ -2582,6 +2641,26 @@ const MyRepairs: React.FC = () => {
                             {formatCurrency((latestRefundByRepairId[order.id].approved_amount ?? latestRefundByRepairId[order.id].requested_amount) || 0)}
                             {latestRefundByRepairId[order.id].failure_reason ? ` • ${latestRefundByRepairId[order.id].failure_reason}` : ''}
                           </p>
+                          {latestRefundByRepairId[order.id].execution_reference_masked && (
+                            <p className="text-[11px] text-gray-500">
+                              Ref: {latestRefundByRepairId[order.id].execution_reference_masked}
+                            </p>
+                          )}
+                          {!!latestRefundByRepairId[order.id].execution_proof_urls?.length && (
+                            <div className="mt-1 flex flex-wrap items-center gap-2">
+                              {latestRefundByRepairId[order.id].execution_proof_urls?.map((proofUrl, proofIndex) => (
+                                <a
+                                  key={`refund-proof-${order.id}-${proofIndex}`}
+                                  href={proofUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="underline text-gray-700 hover:text-black"
+                                >
+                                  Proof {proofIndex + 1}
+                                </a>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       )}
                       {/* Chat with Repairer and Pay Now - For All Delivery Methods */}

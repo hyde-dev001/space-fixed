@@ -459,6 +459,14 @@ export default function RefundApproval() {
 	const [statusFilter, setStatusFilter] = useState("All");
 	const [isActionProcessing, setIsActionProcessing] = useState(false);
 	const [isLoading, setIsLoading] = useState(false);
+	const [executeModalOpen, setExecuteModalOpen] = useState(false);
+	const [executeRequest, setExecuteRequest] = useState<RefundRequest | null>(null);
+	const [executeMode, setExecuteMode] = useState<"manual" | "gateway">("manual");
+	const [executeChannel, setExecuteChannel] = useState<RepairExecutionChannel>("gcash");
+	const [executeAmount, setExecuteAmount] = useState(0);
+	const [executeReference, setExecuteReference] = useState("");
+	const [executeProofUrlsText, setExecuteProofUrlsText] = useState("");
+	const [executeError, setExecuteError] = useState("");
 	const hasAppliedFocusOrder = useRef(false);
 
 	useEffect(() => {
@@ -904,161 +912,70 @@ export default function RefundApproval() {
 		return "Execute Manual Payout";
 	};
 
-	const handleExecuteGatewayRefund = async (request: RefundRequest) => {
-		let payload: Record<string, unknown> = {};
-
-		if (request.refundType === "repair") {
-			const paymentType = resolveRepairRefundPaymentType(request);
-
-			if (paymentType === "pure_online") {
-				const confirmGateway = await Swal.fire({
-					title: "Execute PayMongo Refund?",
-					html: `
-						<div style="text-align: left; margin-top: 1rem;">
-							<p style="margin-bottom: 0.5rem;"><strong>Order:</strong> ${request.orderNumber}</p>
-							<p style="margin-bottom: 0.5rem;"><strong>Customer:</strong> ${request.customerName}</p>
-							<p style="margin-bottom: 0.5rem;"><strong>Amount:</strong> ${request.refundAmount}</p>
-							<p style="margin-bottom: 0;"><strong>Flow:</strong> Original payment method (PayMongo)</p>
-						</div>
-					`,
-					icon: "question",
-					showCancelButton: true,
-					confirmButtonColor: "#10b981",
-					cancelButtonColor: "#6b7280",
-					confirmButtonText: "Execute Gateway Refund",
-					cancelButtonText: "Cancel",
-				});
-
-				if (!confirmGateway.isConfirmed) {
-					return;
-				}
-
-				payload = buildRepairRefundExecutionPayload({
-					executionMode: "gateway",
-				});
-			} else {
-				const defaultAmount = request.financeExecution?.execution_amount ?? parseCurrencyToNumber(request.refundAmount);
-				const preferredChannel = String(request.preferredReturnChannel || "").toLowerCase();
-				const defaultChannel: RepairExecutionChannel =
-					(request.financeExecution?.execution_channel as RepairExecutionChannel | undefined)
-					|| (preferredChannel === "gcash" || preferredChannel === "card" || preferredChannel === "bank_transfer" || preferredChannel === "manual_cash"
-						? (preferredChannel as RepairExecutionChannel)
-						: "gcash");
-				const defaultReference = request.financeExecution?.execution_reference || request.preferredReturnAccountRef || "";
-				const proofDefaults = Array.isArray(request.financeExecution?.execution_proof_urls)
-					? request.financeExecution?.execution_proof_urls ?? []
-					: [];
-
-				const executeInput = await Swal.fire({
-					title: "Execute Repair Refund Payout",
-					html: `
-						<div style="text-align: left; margin-top: 1rem; display: grid; gap: 0.75rem;">
-							<p style="margin: 0;"><strong>Order:</strong> ${request.orderNumber}</p>
-							<p style="margin: 0;"><strong>Customer:</strong> ${request.customerName}</p>
-							<p style="margin: 0;"><strong>Amount:</strong> ${request.refundAmount}</p>
-							<p style="margin: 0;"><strong>Flow:</strong> Manual payout execution (${paymentType === "mixed" ? "POS-paid portion" : "walk-in POS payment"})</p>
-								<p style="margin: 0;"><strong>Customer Destination:</strong> ${escapeSwalText(formatPayoutChannelLabel(request.preferredReturnChannel))} ${request.preferredReturnAccountRef ? `(${escapeSwalText(request.preferredReturnAccountRef)})` : ""}</p>
-							<label style="display: grid; gap: 0.25rem;">
-								<span style="font-weight: 600;">Execution Channel</span>
-								<select id="repair-execution-channel" class="swal2-input" style="margin: 0; width: 100%;">
-									<option value="gcash">GCash</option>
-									<option value="card">Card</option>
-									<option value="bank_transfer">Bank Transfer</option>
-									<option value="manual_cash">Manual Cash</option>
-								</select>
-							</label>
-							<label style="display: grid; gap: 0.25rem;">
-								<span style="font-weight: 600;">Execution Reference</span>
-									<input id="repair-execution-reference" class="swal2-input" style="margin: 0; width: 100%;" placeholder="Reference / auth code" value="${escapeSwalText(defaultReference)}" />
-							</label>
-							<label style="display: grid; gap: 0.25rem;">
-								<span style="font-weight: 600;">Execution Amount</span>
-								<input id="repair-execution-amount" type="number" min="0.01" step="0.01" class="swal2-input" style="margin: 0; width: 100%;" value="${defaultAmount > 0 ? defaultAmount : ""}" />
-							</label>
-							<label style="display: grid; gap: 0.25rem;">
-								<span style="font-weight: 600;">Proof URLs (one per line)</span>
-								<textarea id="repair-execution-proof-urls" class="swal2-textarea" style="margin: 0; width: 100%; min-height: 96px;" placeholder="https://...">${proofDefaults.join("\n")}</textarea>
-							</label>
-						</div>
-					`,
-					icon: "question",
-					showCancelButton: true,
-					confirmButtonColor: "#10b981",
-					cancelButtonColor: "#6b7280",
-					confirmButtonText: "Execute",
-					cancelButtonText: "Cancel",
-					didOpen: () => {
-						const select = document.getElementById("repair-execution-channel") as HTMLSelectElement | null;
-						if (select) {
-							select.value = defaultChannel;
-						}
-					},
-					preConfirm: () => {
-						const channel = (document.getElementById("repair-execution-channel") as HTMLSelectElement | null)?.value as RepairExecutionChannel | undefined;
-						const reference = (document.getElementById("repair-execution-reference") as HTMLInputElement | null)?.value?.trim() ?? "";
-						const amountRaw = (document.getElementById("repair-execution-amount") as HTMLInputElement | null)?.value ?? "";
-						const proofRaw = (document.getElementById("repair-execution-proof-urls") as HTMLTextAreaElement | null)?.value ?? "";
-
-						if (!reference) {
-							Swal.showValidationMessage("Execution reference is required for manual POS refund execution");
-							return;
-						}
-
-						const executionAmount = Number(amountRaw);
-						if (!Number.isFinite(executionAmount) || executionAmount <= 0) {
-							Swal.showValidationMessage("Execution amount must be greater than zero");
-							return;
-						}
-
-						const executionProofUrls = proofRaw
-							.split(/\r?\n|,/)
-							.map((item) => item.trim())
-							.filter(Boolean);
-
-						if (executionProofUrls.length === 0) {
-							Swal.showValidationMessage("At least one execution proof is required for manual POS refund execution");
-							return;
-						}
-
-						return {
-							executionMode: "manual" as const,
-							executionChannel: channel,
-							executionReference: reference,
-							executionAmount,
-							executionProofUrls,
-						};
-					},
-				});
-
-				if (!executeInput.isConfirmed || !executeInput.value) {
-					return;
-				}
-
-				payload = buildRepairRefundExecutionPayload(executeInput.value);
-			}
-		} else {
-			const result = await Swal.fire({
-				title: "Execute Refund Payout?",
-				html: `
-					<div style="text-align: left; margin-top: 1rem;">
-						<p style="margin-bottom: 0.5rem;"><strong>Customer:</strong> ${request.customerName}</p>
-						<p style="margin-bottom: 0.5rem;"><strong>Amount:</strong> ${request.refundAmount}</p>
-						<p style="margin-bottom: 0.5rem;"><strong>Method:</strong> ${request.refundMethod}</p>
-					</div>
-				`,
-				icon: "question",
-				showCancelButton: true,
-				confirmButtonColor: "#10b981",
-				cancelButtonColor: "#6b7280",
-				confirmButtonText: "Execute",
-				cancelButtonText: "Cancel",
-			});
-
-			if (!result.isConfirmed) {
-				return;
-			}
+	const resolveExecutionChannel = (request: RefundRequest): RepairExecutionChannel => {
+		const preferred = String(request.preferredReturnChannel || "").toLowerCase();
+		if (preferred === "gcash" || preferred === "card" || preferred === "bank_transfer" || preferred === "manual_cash") {
+			return preferred as RepairExecutionChannel;
 		}
 
+		const financeChannel = String(request.financeExecution?.execution_channel || "").toLowerCase();
+		if (financeChannel === "gcash" || financeChannel === "card" || financeChannel === "bank_transfer" || financeChannel === "manual_cash") {
+			return financeChannel as RepairExecutionChannel;
+		}
+
+		return "gcash";
+	};
+
+	const resolveFixedExecutionAmount = (request: RefundRequest): number => {
+		const fromExecution = Number(request.financeExecution?.execution_amount);
+		if (Number.isFinite(fromExecution) && fromExecution > 0) {
+			return Math.round(fromExecution * 100) / 100;
+		}
+
+		const parsed = parseCurrencyToNumber(request.refundAmount);
+		return Math.round(parsed * 100) / 100;
+	};
+
+	const closeExecuteModal = () => {
+		if (isActionProcessing) {
+			return;
+		}
+
+		setExecuteModalOpen(false);
+		setExecuteRequest(null);
+		setExecuteMode("manual");
+		setExecuteChannel("gcash");
+		setExecuteAmount(0);
+		setExecuteReference("");
+		setExecuteProofUrlsText("");
+		setExecuteError("");
+	};
+
+	const openExecuteModal = (request: RefundRequest) => {
+		if (request.refundType !== "repair") {
+			return;
+		}
+
+		const paymentType = resolveRepairRefundPaymentType(request);
+		const mode: "manual" | "gateway" = paymentType === "pure_online" ? "gateway" : "manual";
+		const channel = resolveExecutionChannel(request);
+		const amount = resolveFixedExecutionAmount(request);
+		const reference = request.financeExecution?.execution_reference || request.preferredReturnAccountRef || "";
+		const proofText = Array.isArray(request.financeExecution?.execution_proof_urls)
+			? (request.financeExecution?.execution_proof_urls ?? []).join("\n")
+			: "";
+
+		setExecuteRequest(request);
+		setExecuteMode(mode);
+		setExecuteChannel(channel);
+		setExecuteAmount(amount);
+		setExecuteReference(reference);
+		setExecuteProofUrlsText(proofText);
+		setExecuteError("");
+		setExecuteModalOpen(true);
+	};
+
+	const submitExecuteRequest = async (request: RefundRequest, payload: Record<string, unknown>): Promise<boolean> => {
 		setIsActionProcessing(true);
 		try {
 			const response = await fetch(
@@ -1088,7 +1005,7 @@ export default function RefundApproval() {
 						icon: "info",
 						confirmButtonColor: "#2563eb",
 					});
-					return;
+					return false;
 				}
 
 				throw new Error(data?.message || "Failed to execute refund payout.");
@@ -1104,6 +1021,7 @@ export default function RefundApproval() {
 			});
 
 			await fetchRefundRequests();
+			return true;
 		} catch (error) {
 			Swal.fire({
 				title: "Failed",
@@ -1111,9 +1029,89 @@ export default function RefundApproval() {
 				icon: "error",
 				confirmButtonColor: "#2563eb",
 			});
+			return false;
 		} finally {
 			setIsActionProcessing(false);
 		}
+	};
+
+	const handleSubmitExecuteModal = async () => {
+		if (!executeRequest) {
+			return;
+		}
+
+		setExecuteError("");
+
+		let payload: Record<string, unknown>;
+		if (executeMode === "gateway") {
+			payload = buildRepairRefundExecutionPayload({ executionMode: "gateway" });
+		} else {
+			const reference = executeReference.trim();
+			if (!reference) {
+				setExecuteError("Execution reference is required for manual refund execution.");
+				return;
+			}
+
+			if (!Number.isFinite(executeAmount) || executeAmount <= 0) {
+				setExecuteError("Execution amount must be greater than zero.");
+				return;
+			}
+
+			const executionProofUrls = executeProofUrlsText
+				.split(/\r?\n|,/)
+				.map((item) => item.trim())
+				.filter(Boolean);
+
+			if (executionProofUrls.length === 0) {
+				setExecuteError("At least one proof URL is required for manual refund execution.");
+				return;
+			}
+
+			payload = buildRepairRefundExecutionPayload({
+				executionMode: "manual",
+				executionChannel: executeChannel,
+				executionReference: reference,
+				executionAmount: executeAmount,
+				executionProofUrls,
+			});
+		}
+
+		const succeeded = await submitExecuteRequest(executeRequest, payload);
+		if (succeeded) {
+			closeExecuteModal();
+		}
+	};
+
+	const handleExecuteGatewayRefund = async (request: RefundRequest) => {
+		if (request.refundType === "repair") {
+			openExecuteModal(request);
+			return;
+		}
+
+		{
+			const result = await Swal.fire({
+				title: "Execute Refund Payout?",
+				html: `
+					<div style="text-align: left; margin-top: 1rem;">
+						<p style="margin-bottom: 0.5rem;"><strong>Customer:</strong> ${request.customerName}</p>
+						<p style="margin-bottom: 0.5rem;"><strong>Amount:</strong> ${request.refundAmount}</p>
+						<p style="margin-bottom: 0.5rem;"><strong>Method:</strong> ${request.refundMethod}</p>
+					</div>
+				`,
+				icon: "question",
+				showCancelButton: true,
+				confirmButtonColor: "#10b981",
+				cancelButtonColor: "#6b7280",
+				confirmButtonText: "Execute",
+				cancelButtonText: "Cancel",
+			});
+
+			if (!result.isConfirmed) {
+				return;
+			}
+		}
+
+		await submitExecuteRequest(request, {});
 	};
 
 	return (
@@ -1474,6 +1472,112 @@ export default function RefundApproval() {
 									Reject
 								</button>
 							)}
+						</div>
+					</div>
+				</div>
+			)}
+
+			{executeModalOpen && executeRequest && (
+				<div className="fixed inset-0 z-[1000001] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+					<div className="absolute inset-0" onClick={closeExecuteModal} />
+					<div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden">
+						<div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
+							<div>
+								<h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+									{executeMode === "gateway" ? "Execute PayMongo Refund" : "Execute Repair Refund Payout"}
+								</h3>
+								<p className="text-sm text-gray-500 dark:text-gray-400">Request #{executeRequest.id}</p>
+							</div>
+							<button
+								onClick={closeExecuteModal}
+								disabled={isActionProcessing}
+								aria-label="Close execute modal"
+								title="Close"
+								className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 disabled:opacity-50"
+							>
+								<XIcon className="size-5" />
+							</button>
+						</div>
+
+						<div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
+							<div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/40 p-4 text-sm text-gray-700 dark:text-gray-200 space-y-1.5">
+								<p><span className="font-semibold">Order:</span> {executeRequest.orderNumber}</p>
+								<p><span className="font-semibold">Customer:</span> {executeRequest.customerName}</p>
+								<p><span className="font-semibold">Amount:</span> {executeRequest.refundAmount}</p>
+								{executeMode === "manual" ? (
+									<>
+										<p><span className="font-semibold">Flow:</span> Manual payout execution ({resolveRepairRefundPaymentType(executeRequest) === "mixed" ? "POS-paid portion" : "walk-in POS payment"})</p>
+										<p><span className="font-semibold">Customer Destination:</span> {formatPayoutChannelLabel(executeRequest.preferredReturnChannel)}{executeRequest.preferredReturnAccountRef ? ` (${executeRequest.preferredReturnAccountRef})` : ""}</p>
+									</>
+								) : (
+									<p><span className="font-semibold">Flow:</span> Original payment method (PayMongo)</p>
+								)}
+							</div>
+
+							{executeMode === "manual" && (
+								<div className="space-y-4">
+									<div>
+										<label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Execution Channel</label>
+										<div className="w-full rounded-lg border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+											{formatPayoutChannelLabel(executeChannel)}
+										</div>
+										<p className="mt-1 text-xs text-gray-500">Channel is locked to the customer-selected payout destination.</p>
+									</div>
+
+									<div>
+										<label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Execution Reference</label>
+										<input
+											type="text"
+											value={executeReference}
+											onChange={(event) => setExecuteReference(event.target.value)}
+											placeholder="Reference / auth code"
+											className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+										/>
+									</div>
+
+									<div>
+										<label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Execution Amount</label>
+										<div className="w-full rounded-lg border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+											₱{executeAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+										</div>
+										<p className="mt-1 text-xs text-gray-500">Amount is fixed based on the approved refund amount.</p>
+									</div>
+
+									<div>
+										<label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Proof URLs (one per line)</label>
+										<textarea
+											value={executeProofUrlsText}
+											onChange={(event) => setExecuteProofUrlsText(event.target.value)}
+											placeholder="https://..."
+											rows={4}
+											className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+										/>
+									</div>
+								</div>
+							)}
+
+							{executeError && (
+								<div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
+									{executeError}
+								</div>
+							)}
+						</div>
+
+						<div className="px-6 py-4 border-t border-gray-200 dark:border-gray-800 flex items-center justify-end gap-3">
+							<button
+								onClick={closeExecuteModal}
+								disabled={isActionProcessing}
+								className="px-4 py-2 rounded-lg border border-gray-300 text-sm font-semibold text-gray-700 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 disabled:opacity-50"
+							>
+								Cancel
+							</button>
+							<button
+								onClick={() => { void handleSubmitExecuteModal(); }}
+								disabled={isActionProcessing}
+								className="px-4 py-2 rounded-lg bg-emerald-600 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+							>
+								{isActionProcessing ? "Executing..." : "Execute"}
+							</button>
 						</div>
 					</div>
 				</div>
