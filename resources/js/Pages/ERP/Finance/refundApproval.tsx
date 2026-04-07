@@ -266,7 +266,15 @@ const ReceiptIcon = ({ className }: { className?: string }) => (
 interface RefundRequest {
 	id: number;
 	refundType?: "order" | "repair";
+	workflowSource?: string;
+	repairerStatus?: string;
+	preferredReturnChannel?: string;
+	preferredReturnAccountName?: string;
+	preferredReturnAccountRef?: string;
+	customerPayoutConsent?: boolean;
 	refundPaymentType?: "manual_only" | "mixed" | "pure_online";
+	hasGatewayLeg?: boolean;
+	hasPosManualLeg?: boolean;
 	orderNumber: string;
 	customerName: string;
 	orderTotal?: string;
@@ -324,6 +332,35 @@ const formatPayoutChannelLabel = (channel?: string): string => {
 	}
 };
 
+const resolveRepairRefundPaymentType = (request: RefundRequest): "pure_online" | "mixed" | "manual_only" => {
+	if (request.hasGatewayLeg && request.hasPosManualLeg) {
+		return "mixed";
+	}
+
+	if (request.hasGatewayLeg && !request.hasPosManualLeg) {
+		return "pure_online";
+	}
+
+	if (!request.hasGatewayLeg && request.hasPosManualLeg) {
+		return "manual_only";
+	}
+
+	const declaredType = String(request.refundPaymentType || "").toLowerCase();
+	if (declaredType === "pure_online" || declaredType === "mixed" || declaredType === "manual_only") {
+		return declaredType;
+	}
+
+	if (request.hasGatewayLeg && request.hasPosManualLeg) {
+		return "mixed";
+	}
+
+	if (request.hasGatewayLeg && !request.hasPosManualLeg) {
+		return "pure_online";
+	}
+
+	return "manual_only";
+};
+
 const resolveExecutionChannel = (request: RefundRequest): RepairExecutionChannel => {
 	const preferred = String((request as any)?.preferredReturnChannel || "").toLowerCase();
 	if (preferred === "gcash" || preferred === "card" || preferred === "bank_transfer" || preferred === "manual_cash") {
@@ -352,19 +389,6 @@ const resolveFixedExecutionAmount = (request: RefundRequest): number => {
 
 	const parsed = parseCurrencyToNumber(request.refundAmount);
 	return Math.round(parsed * 100) / 100;
-};
-
-const isPureOnlineRepairRefund = (request: RefundRequest): boolean => {
-	if (request.refundType !== "repair") {
-		return false;
-	}
-
-	if (request.refundPaymentType === "pure_online") {
-		return true;
-	}
-
-	const fallbackPaymentType = String((request as any)?.refundPaymentType || "").toLowerCase();
-	return fallbackPaymentType === "pure_online";
 };
 
 const refundReasonOptions = [
@@ -456,6 +480,7 @@ export default function RefundApproval() {
 	const [isLoading, setIsLoading] = useState(false);
 	const [executeModalOpen, setExecuteModalOpen] = useState(false);
 	const [executeRequest, setExecuteRequest] = useState<RefundRequest | null>(null);
+	const [executeMode, setExecuteMode] = useState<"manual" | "gateway">("manual");
 	const [executeChannel, setExecuteChannel] = useState<RepairExecutionChannel>("gcash");
 	const [executeAmount, setExecuteAmount] = useState(0);
 	const [executeReference, setExecuteReference] = useState("");
@@ -783,6 +808,23 @@ export default function RefundApproval() {
 			&& !["processing", "succeeded", "failed", "rejected"].includes(rawStatus);
 	};
 
+	const getExecuteActionLabel = (request: RefundRequest): string => {
+		if (request.refundType !== "repair") {
+			return "Execute Payout";
+		}
+
+		const paymentType = resolveRepairRefundPaymentType(request);
+		if (paymentType === "pure_online") {
+			return "Execute PayMongo Refund";
+		}
+
+		if (paymentType === "mixed") {
+			return "Execute Mixed Refund";
+		}
+
+		return "Execute Manual Payout";
+	};
+
 	const closeExecuteModal = () => {
 		if (isActionProcessing) {
 			return;
@@ -790,6 +832,7 @@ export default function RefundApproval() {
 
 		setExecuteModalOpen(false);
 		setExecuteRequest(null);
+		setExecuteMode("manual");
 		setExecuteChannel("gcash");
 		setExecuteAmount(0);
 		setExecuteReference("");
@@ -798,15 +841,25 @@ export default function RefundApproval() {
 	};
 
 	const openExecuteModal = (request: RefundRequest) => {
+		if (request.refundType !== "repair") {
+			return;
+		}
+
+		const paymentType = resolveRepairRefundPaymentType(request);
+		const mode: "manual" | "gateway" = paymentType === "pure_online" ? "gateway" : "manual";
+		const channel = resolveExecutionChannel(request);
+		const amount = resolveFixedExecutionAmount(request);
+		const reference = request.financeExecution?.execution_reference || request.preferredReturnAccountRef || "";
+		const proofText = Array.isArray(request.financeExecution?.execution_proof_urls)
+			? (request.financeExecution?.execution_proof_urls ?? []).join("\n")
+			: "";
+
 		setExecuteRequest(request);
-		setExecuteChannel(resolveExecutionChannel(request));
-		setExecuteAmount(resolveFixedExecutionAmount(request));
-		setExecuteReference(request.financeExecution?.execution_reference || "");
-		setExecuteProofUrlsText(
-			Array.isArray(request.financeExecution?.execution_proof_urls)
-				? (request.financeExecution?.execution_proof_urls ?? []).join("\n")
-				: "",
-		);
+		setExecuteMode(mode);
+		setExecuteChannel(channel);
+		setExecuteAmount(amount);
+		setExecuteReference(reference);
+		setExecuteProofUrlsText(proofText);
 		setExecuteError("");
 		setExecuteModalOpen(true);
 	};
@@ -816,36 +869,42 @@ export default function RefundApproval() {
 			return;
 		}
 
-		const reference = executeReference.trim();
-		if (!reference) {
-			setExecuteError("Execution reference is required for manual POS refund execution.");
-			return;
-		}
-
-		if (!Number.isFinite(executeAmount) || executeAmount <= 0) {
-			setExecuteError("Execution amount is invalid. Please refresh and try again.");
-			return;
-		}
-
-		const executionProofUrls = executeProofUrlsText
-			.split(/\r?\n|,/)
-			.map((item) => item.trim())
-			.filter(Boolean);
-
-		if (executionProofUrls.length === 0) {
-			setExecuteError("At least one execution proof is required for manual POS refund execution.");
-			return;
-		}
-
-		const payload = buildRepairRefundExecutionPayload({
-			executionMode: "manual",
-			executionChannel: executeChannel,
-			executionReference: reference,
-			executionAmount: executeAmount,
-			executionProofUrls,
-		});
-
 		setExecuteError("");
+
+		let payload: Record<string, unknown>;
+		if (executeMode === "gateway") {
+			payload = buildRepairRefundExecutionPayload({ executionMode: "gateway" });
+		} else {
+			const reference = executeReference.trim();
+			if (!reference) {
+				setExecuteError("Execution reference is required for manual refund execution.");
+				return;
+			}
+
+			if (!Number.isFinite(executeAmount) || executeAmount <= 0) {
+				setExecuteError("Execution amount must be greater than zero.");
+				return;
+			}
+
+			const executionProofUrls = executeProofUrlsText
+				.split(/\r?\n|,/)
+				.map((item) => item.trim())
+				.filter(Boolean);
+
+			if (executionProofUrls.length === 0) {
+				setExecuteError("At least one proof URL is required for manual refund execution.");
+				return;
+			}
+
+			payload = buildRepairRefundExecutionPayload({
+				executionMode: "manual",
+				executionChannel: executeChannel,
+				executionReference: reference,
+				executionAmount: executeAmount,
+				executionProofUrls,
+			});
+		}
+
 		setIsActionProcessing(true);
 
 		try {
@@ -898,7 +957,7 @@ export default function RefundApproval() {
 	};
 
 	const handleExecuteGatewayRefund = async (request: RefundRequest) => {
-		if (request.refundType === "repair" && !isPureOnlineRepairRefund(request)) {
+		if (request.refundType === "repair") {
 			openExecuteModal(request);
 			return;
 		}
@@ -940,9 +999,7 @@ export default function RefundApproval() {
 					"X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "",
 				},
 				body: JSON.stringify(
-					request.refundType === "repair" && isPureOnlineRepairRefund(request)
-						? { execution_mode: "gateway" }
-						: {},
+					{},
 				),
 			},
 			);
@@ -1237,6 +1294,26 @@ export default function RefundApproval() {
 									</div>
 								</div>
 
+								{selectedRequest.refundType === "repair" && resolveRepairRefundPaymentType(selectedRequest) !== "pure_online" && (
+									<div>
+										<p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Customer Payout Destination</p>
+										<div className="border border-gray-200 dark:border-gray-800 rounded-lg p-4 text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-900 grid grid-cols-1 sm:grid-cols-3 gap-3">
+											<div>
+												<p className="text-xs uppercase tracking-wide text-gray-500">Channel</p>
+												<p className="font-semibold text-gray-900 dark:text-gray-100">{formatPayoutChannelLabel(selectedRequest.preferredReturnChannel)}</p>
+											</div>
+											<div>
+												<p className="text-xs uppercase tracking-wide text-gray-500">Account Name</p>
+												<p className="font-semibold text-gray-900 dark:text-gray-100">{selectedRequest.preferredReturnAccountName || "Not provided"}</p>
+											</div>
+											<div>
+												<p className="text-xs uppercase tracking-wide text-gray-500">Account Ref / Number</p>
+												<p className="font-semibold text-gray-900 dark:text-gray-100">{selectedRequest.preferredReturnAccountRef || "Not provided"}</p>
+											</div>
+										</div>
+									</div>
+								)}
+
 								<div>
 									<p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Refund Evidence</p>
 									{selectedRequest.media && selectedRequest.media.length > 0 ? (
@@ -1294,7 +1371,7 @@ export default function RefundApproval() {
 								disabled={!canExecuteGatewayRefund(selectedRequest) || isActionProcessing}
 								className="px-5 py-2.5 text-sm font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
 							>
-								Execute Payout
+								{getExecuteActionLabel(selectedRequest)}
 							</button>
 							{canFinanceReject(selectedRequest) && (
 								<button
@@ -1316,7 +1393,9 @@ export default function RefundApproval() {
 					<div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden">
 						<div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
 							<div>
-								<h3 className="text-lg font-semibold text-gray-900 dark:text-white">Execute Repair Refund Payout</h3>
+								<h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+									{executeMode === "gateway" ? "Execute PayMongo Refund" : "Execute Repair Refund Payout"}
+								</h3>
 								<p className="text-sm text-gray-500 dark:text-gray-400">Request #{executeRequest.id}</p>
 							</div>
 							<button
@@ -1335,15 +1414,24 @@ export default function RefundApproval() {
 								<p><span className="font-semibold">Order:</span> {executeRequest.orderNumber}</p>
 								<p><span className="font-semibold">Customer:</span> {executeRequest.customerName}</p>
 								<p><span className="font-semibold">Amount:</span> {executeRequest.refundAmount}</p>
+								{executeMode === "manual" ? (
+									<>
+										<p><span className="font-semibold">Flow:</span> Manual payout execution ({resolveRepairRefundPaymentType(executeRequest) === "mixed" ? "POS-paid portion" : "walk-in POS payment"})</p>
+										<p><span className="font-semibold">Customer Destination:</span> {formatPayoutChannelLabel(executeRequest.preferredReturnChannel)}{executeRequest.preferredReturnAccountRef ? ` (${executeRequest.preferredReturnAccountRef})` : ""}</p>
+									</>
+								) : (
+									<p><span className="font-semibold">Flow:</span> Original payment method (PayMongo)</p>
+								)}
 							</div>
 
+							{executeMode === "manual" && (
 							<div className="space-y-4">
 								<div>
 									<label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Execution Channel</label>
 									<div className="w-full rounded-lg border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
 										{formatPayoutChannelLabel(executeChannel)}
 									</div>
-									<p className="mt-1 text-xs text-gray-500">Channel is fixed based on the approved payout destination.</p>
+									<p className="mt-1 text-xs text-gray-500">Channel is locked to the customer-selected payout destination.</p>
 								</div>
 
 								<div>
@@ -1362,7 +1450,7 @@ export default function RefundApproval() {
 									<div className="w-full rounded-lg border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
 										₱{executeAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
 									</div>
-									<p className="mt-1 text-xs text-gray-500">Amount is fixed based on approved refund value.</p>
+									<p className="mt-1 text-xs text-gray-500">Amount is fixed based on the approved refund amount.</p>
 								</div>
 
 								<div>
@@ -1376,6 +1464,7 @@ export default function RefundApproval() {
 									/>
 								</div>
 							</div>
+							)}
 
 							{executeError && (
 								<div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
