@@ -791,14 +791,14 @@ export default function JobOrdersRepair() {
     }));
   }, [isViewModalOpen, materialForm.inventory_item_id, materialPlanItems, viewOrder]);
 
-  const parsePositiveWholeQuantity = (rawValue: string): number | null => {
+  const parseWholeQuantity = (rawValue: string, minValue: number): number | null => {
     const trimmed = String(rawValue ?? "").trim();
     if (!trimmed) {
       return null;
     }
 
     const parsed = Number(trimmed);
-    if (!Number.isFinite(parsed) || parsed < 1 || !Number.isInteger(parsed)) {
+    if (!Number.isFinite(parsed) || parsed < minValue || !Number.isInteger(parsed)) {
       return null;
     }
 
@@ -820,11 +820,21 @@ export default function JobOrdersRepair() {
       return;
     }
 
-    const quantityUsed = parsePositiveWholeQuantity(materialForm.quantity_used);
+    const quantityUsed = parseWholeQuantity(materialForm.quantity_used, 0);
     if (!materialForm.inventory_item_id || quantityUsed === null) {
       await Swal.fire({
         title: "Missing details",
-        text: "Please select a material and enter a whole-number quantity (1, 2, 3...).",
+        text: "Please select a material and enter a whole-number quantity (0, 1, 2...).",
+        icon: "warning",
+        confirmButtonColor: "#2563eb",
+      });
+      return;
+    }
+
+    if (quantityUsed === 0 && !String(materialForm.notes ?? "").trim()) {
+      await Swal.fire({
+        title: "Note required for zero quantity",
+        text: "Add a note explaining why quantity is 0 (for example: used carry-over material from previous repair).",
         icon: "warning",
         confirmButtonColor: "#2563eb",
       });
@@ -1419,6 +1429,17 @@ export default function JobOrdersRepair() {
         return;
       }
 
+      if (error?.response?.status === 422 && (error?.response?.data?.requires_variance_review
+        || error?.response?.data?.data?.readiness_state === 'variance_review_needed')) {
+        await Swal.fire({
+          title: 'Completion blocked',
+          text: error?.response?.data?.message || 'Resolve material variance note/review first.',
+          icon: 'warning',
+          confirmButtonColor: '#2563eb',
+        });
+        return;
+      }
+
       await Swal.fire({
         title: 'Error',
         text: error.response?.data?.message || 'Failed to mark as completed',
@@ -1498,6 +1519,17 @@ export default function JobOrdersRepair() {
           });
         }
 
+        return;
+      }
+
+      if (error?.response?.status === 422 && (error?.response?.data?.requires_variance_review
+        || error?.response?.data?.data?.readiness_state === 'variance_review_needed')) {
+        await Swal.fire({
+          title: 'Completion blocked',
+          text: error?.response?.data?.message || 'Resolve material variance note/review first.',
+          icon: 'warning',
+          confirmButtonColor: '#2563eb',
+        });
         return;
       }
 
@@ -2975,7 +3007,7 @@ export default function JobOrdersRepair() {
 
                       <input
                         type="number"
-                        min={1}
+                        min={0}
                         step={1}
                         placeholder="Qty"
                         value={materialForm.quantity_used}

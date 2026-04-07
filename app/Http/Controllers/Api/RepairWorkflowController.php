@@ -1751,6 +1751,11 @@ class RepairWorkflowController extends Controller
                     return $materialGateResponse;
                 }
 
+                $completionGateResponse = $this->validateMaterialCompletionGateForTransition($repairRequest);
+                if ($completionGateResponse) {
+                    return $completionGateResponse;
+                }
+
                 // Shop owner can mark any repair for their shop as completed
                 DB::beginTransaction();
                 
@@ -1852,6 +1857,11 @@ class RepairWorkflowController extends Controller
                     );
                     if ($materialGateResponse) {
                         return $materialGateResponse;
+                    }
+
+                    $completionGateResponse = $this->validateMaterialCompletionGateForTransition($repairRequest);
+                    if ($completionGateResponse) {
+                        return $completionGateResponse;
                     }
                 }
 
@@ -3450,7 +3460,7 @@ class RepairWorkflowController extends Controller
     {
         $validated = $request->validate([
             'inventory_item_id' => 'required|exists:inventory_items,id',
-            'quantity_used' => 'required|integer|min:1',
+            'quantity_used' => 'required|integer|min:0',
             'notes' => 'nullable|string|max:500',
         ]);
 
@@ -3509,8 +3519,16 @@ class RepairWorkflowController extends Controller
             }
 
             $quantityUsed = (int) $validated['quantity_used'];
+            $usageNotes = trim((string) ($validated['notes'] ?? ''));
 
-            if ((int) $inventoryItem->available_quantity <= 0) {
+            if ($quantityUsed === 0 && $usageNotes === '') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Add a note when logging zero quantity so inventory can track carry-over usage context.',
+                ], 422);
+            }
+
+            if ($quantityUsed > 0 && (int) $inventoryItem->available_quantity <= 0) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Selected material is out of stock. Please request replenishment first.',
@@ -3518,7 +3536,7 @@ class RepairWorkflowController extends Controller
                 ], 422);
             }
 
-            if ((int) $inventoryItem->available_quantity < $quantityUsed) {
+            if ($quantityUsed > 0 && (int) $inventoryItem->available_quantity < $quantityUsed) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Insufficient stock for selected material.',
@@ -3548,28 +3566,47 @@ class RepairWorkflowController extends Controller
                 &$pricingTotals,
                 $inventoryItem,
                 $quantityUsed,
-                $validated,
+                $usageNotes,
                 $repairRequest,
                 $shopOwnerId,
                 $actorUserId
             ) {
-                $movement = $inventoryItem->decrementStock(
-                    $quantityUsed,
-                    'repair_usage',
-                    $validated['notes'] ?? "Material used for repair {$repairRequest->request_id}",
-                    $actorUserId > 0 ? $actorUserId : null
-                );
+                $movementNote = $usageNotes !== ''
+                    ? $usageNotes
+                    : "Material used for repair {$repairRequest->request_id}";
 
-                $movement->update([
-                    'reference_type' => 'repair_request',
-                    'reference_id' => $repairRequest->id,
-                ]);
+                if ($quantityUsed > 0) {
+                    $movement = $inventoryItem->decrementStock(
+                        $quantityUsed,
+                        'repair_usage',
+                        $movementNote,
+                        $actorUserId > 0 ? $actorUserId : null
+                    );
+
+                    $movement->update([
+                        'reference_type' => 'repair_request',
+                        'reference_id' => $repairRequest->id,
+                    ]);
+                } else {
+                    $quantityBefore = (int) $inventoryItem->available_quantity;
+                    $movement = $inventoryItem->stockMovements()->create([
+                        'movement_type' => 'repair_usage',
+                        'quantity_change' => 0,
+                        'quantity_before' => $quantityBefore,
+                        'quantity_after' => $quantityBefore,
+                        'reference_type' => 'repair_request',
+                        'reference_id' => $repairRequest->id,
+                        'notes' => $movementNote,
+                        'performed_by' => $actorUserId > 0 ? $actorUserId : null,
+                        'performed_at' => now(),
+                    ]);
+                }
 
                 $usage = RepairMaterialUsage::create([
                     'repair_request_id' => $repairRequest->id,
                     'inventory_item_id' => $inventoryItem->id,
                     'quantity_used' => $quantityUsed,
-                    'notes' => $validated['notes'] ?? null,
+                    'notes' => $usageNotes !== '' ? $usageNotes : null,
                     'used_by' => $actorUserId > 0 ? $actorUserId : null,
                     'used_at' => now(),
                     'stock_movement_id' => $movement->id,
@@ -3589,17 +3626,19 @@ class RepairWorkflowController extends Controller
                 $remainingQuantity = (int) $inventoryItem->available_quantity;
                 $reorderLevel = max(0, (int) ($inventoryItem->reorder_level ?? 0));
 
-                if ($remainingQuantity <= 0) {
-                    $stockStatus = 'out_of_stock';
-                    $warnings[] = "{$inventoryItem->name} is now out of stock.";
-                    $shouldDispatchLowStockAlert = true;
-                } elseif ($reorderLevel > 0 && $remainingQuantity <= $reorderLevel) {
-                    $stockStatus = 'low_stock';
-                    $warnings[] = "{$inventoryItem->name} is low on stock ({$remainingQuantity} left, reorder level {$reorderLevel}).";
-                    $shouldDispatchLowStockAlert = true;
+                if ($quantityUsed > 0) {
+                    if ($remainingQuantity <= 0) {
+                        $stockStatus = 'out_of_stock';
+                        $warnings[] = "{$inventoryItem->name} is now out of stock.";
+                        $shouldDispatchLowStockAlert = true;
+                    } elseif ($reorderLevel > 0 && $remainingQuantity <= $reorderLevel) {
+                        $stockStatus = 'low_stock';
+                        $warnings[] = "{$inventoryItem->name} is low on stock ({$remainingQuantity} left, reorder level {$reorderLevel}).";
+                        $shouldDispatchLowStockAlert = true;
+                    }
                 }
 
-                if ($reorderLevel > 0 && $remainingQuantity <= $reorderLevel) {
+                if ($quantityUsed > 0 && $reorderLevel > 0 && $remainingQuantity <= $reorderLevel) {
                     $existingPendingRepairRequest = StockRequestApproval::query()
                         ->where('shop_owner_id', $shopOwnerId)
                         ->where('inventory_item_id', $inventoryItem->id)
@@ -3705,7 +3744,9 @@ class RepairWorkflowController extends Controller
                 }
             }
 
-            $message = 'Material usage logged successfully.';
+            $message = $quantityUsed === 0
+                ? 'Material usage note logged successfully. Stock was not deducted.'
+                : 'Material usage logged successfully.';
 
             if (!empty($warnings)) {
                 $message .= ' ' . implode(' ', array_values(array_unique($warnings)));
@@ -4287,6 +4328,26 @@ class RepairWorkflowController extends Controller
         }
 
         return null;
+    }
+
+    private function validateMaterialCompletionGateForTransition(RepairRequest $repairRequest)
+    {
+        $this->ensureRepairMaterialPlanItems($repairRequest);
+        $repairRequest->load('materialPlanItems');
+
+        $planner = app(RepairMaterialPlanningService::class);
+        $readiness = $planner->validateCompletionReadiness($repairRequest);
+
+        if (($readiness['readiness_state'] ?? 'ready') === 'ready') {
+            return null;
+        }
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Resolve material variance note/review first before moving this repair forward.',
+            'requires_variance_review' => true,
+            'data' => $readiness,
+        ], 422);
     }
 
     private function generateStockRequestNumber(): string

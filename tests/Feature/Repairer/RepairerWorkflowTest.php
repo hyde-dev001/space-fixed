@@ -522,6 +522,137 @@ class RepairerWorkflowTest extends TestCase
             ->assertJsonCount(1, 'data');
     }
 
+    public function test_repairer_can_log_zero_quantity_material_usage_with_note_without_deducting_stock(): void
+    {
+        $shopOwner = $this->createRepairShop();
+        $customer = $this->createCustomer([
+            'email' => 'repair-zero-qty@example.com',
+        ]);
+        $repairer = $this->createRepairer($shopOwner, ['access-repair-stocks']);
+        $service = $this->createService($shopOwner, [
+            'name' => 'Carry-over Materials Case',
+            'price' => 500,
+        ]);
+
+        $repairRequest = $this->createAssignedRepairRequest(
+            $shopOwner,
+            $customer,
+            $repairer,
+            [$service->id],
+            [
+                'status' => 'in_progress',
+                'total' => 500,
+                'final_total' => 500,
+            ]
+        );
+
+        $material = InventoryItem::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'category' => 'repair_materials',
+            'name' => 'Carry-over Adhesive',
+            'sku' => 'MAT-CARRY-001',
+            'available_quantity' => 10,
+            'reserved_quantity' => 0,
+            'reorder_level' => 3,
+            'unit' => 'pcs',
+            'is_active' => true,
+            'price' => 100,
+            'cost_price' => 70,
+        ]);
+
+        $response = $this->actingAs($repairer, 'user')->postJson(
+            "/api/repairer/repairs/{$repairRequest->id}/materials",
+            [
+                'inventory_item_id' => $material->id,
+                'quantity_used' => 0,
+                'notes' => 'Used leftover material from previous repair.',
+            ]
+        );
+
+        $response->assertStatus(201)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.quantity_used', 0);
+
+        $material->refresh();
+        $this->assertSame(10, $material->available_quantity);
+
+        $usageId = (int) $response->json('data.id');
+
+        $this->assertDatabaseHas('repair_material_usages', [
+            'id' => $usageId,
+            'repair_request_id' => $repairRequest->id,
+            'inventory_item_id' => $material->id,
+            'quantity_used' => 0,
+            'notes' => 'Used leftover material from previous repair.',
+            'used_by' => $repairer->id,
+        ]);
+
+        $this->assertDatabaseHas('stock_movements', [
+            'inventory_item_id' => $material->id,
+            'movement_type' => 'repair_usage',
+            'quantity_change' => 0,
+            'reference_type' => 'repair_request',
+            'reference_id' => $repairRequest->id,
+            'performed_by' => $repairer->id,
+            'notes' => 'Used leftover material from previous repair.',
+        ]);
+    }
+
+    public function test_repairer_cannot_log_zero_quantity_material_usage_without_note(): void
+    {
+        $shopOwner = $this->createRepairShop();
+        $customer = $this->createCustomer([
+            'email' => 'repair-zero-qty-no-note@example.com',
+        ]);
+        $repairer = $this->createRepairer($shopOwner, ['access-repair-stocks']);
+        $service = $this->createService($shopOwner, [
+            'name' => 'Zero Quantity Validation',
+            'price' => 450,
+        ]);
+
+        $repairRequest = $this->createAssignedRepairRequest(
+            $shopOwner,
+            $customer,
+            $repairer,
+            [$service->id],
+            [
+                'status' => 'in_progress',
+                'total' => 450,
+                'final_total' => 450,
+            ]
+        );
+
+        $material = InventoryItem::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'category' => 'repair_materials',
+            'name' => 'Zero Note Required Material',
+            'sku' => 'MAT-ZERO-NOTE',
+            'available_quantity' => 12,
+            'reserved_quantity' => 0,
+            'reorder_level' => 3,
+            'unit' => 'pcs',
+            'is_active' => true,
+            'price' => 95,
+            'cost_price' => 60,
+        ]);
+
+        $response = $this->actingAs($repairer, 'user')->postJson(
+            "/api/repairer/repairs/{$repairRequest->id}/materials",
+            [
+                'inventory_item_id' => $material->id,
+                'quantity_used' => 0,
+                'notes' => '   ',
+            ]
+        );
+
+        $response->assertStatus(422)
+            ->assertJsonPath('success', false);
+
+        $material->refresh();
+        $this->assertSame(12, $material->available_quantity);
+        $this->assertDatabaseCount('repair_material_usages', 0);
+    }
+
     public function test_repairer_cannot_log_fractional_material_usage_quantity(): void
     {
         $shopOwner = $this->createRepairShop();

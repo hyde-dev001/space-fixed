@@ -78,6 +78,7 @@ type RepairRefundQueueItem = {
   reason_notes: string | null;
   requested_at: string | null;
   repairer_status: string;
+  evidence_media: string[];
 };
 
 type MetricCardProps = {
@@ -345,6 +346,51 @@ const escapeHtml = (value: unknown): string => {
     .replace(/'/g, '&#39;');
 };
 
+const extractRefundEvidenceMedia = (refund: any): string[] => {
+  const normalizeUrl = (raw: string): string | null => {
+    const value = String(raw ?? '').trim();
+    if (!value) return null;
+
+    if (value.startsWith('http://') || value.startsWith('https://') || value.startsWith('/')) {
+      return value;
+    }
+
+    return `/storage/${value.replace(/^\/+/, '')}`;
+  };
+
+  const mediaCandidates: unknown[] = [];
+
+  if (Array.isArray(refund?.media)) {
+    mediaCandidates.push(...refund.media);
+  }
+
+  const snapshot = refund?.evidence_snapshot;
+  if (Array.isArray(snapshot)) {
+    mediaCandidates.push(...snapshot);
+  } else if (snapshot && typeof snapshot === 'object') {
+    if (Array.isArray(snapshot.media)) {
+      mediaCandidates.push(...snapshot.media);
+    }
+    if (Array.isArray(snapshot.images)) {
+      mediaCandidates.push(...snapshot.images);
+    }
+  }
+
+  const mapped = mediaCandidates.map((item) => {
+    if (typeof item === 'string') {
+      return normalizeUrl(item);
+    }
+
+    if (!item || typeof item !== 'object') {
+      return null;
+    }
+
+    return normalizeUrl(String((item as any).url ?? (item as any).path ?? (item as any).src ?? ''));
+  });
+
+  return Array.from(new Set(mapped.filter((url): url is string => Boolean(url))));
+};
+
 // Icons
 const WrenchIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -520,6 +566,14 @@ export default function JobOrdersRepair() {
   const [isRejectionModalOpen, setIsRejectionModalOpen] = useState(false);
   const [selectedRejectionReason, setSelectedRejectionReason] = useState("");
   const [rejectionReason, setRejectionReason] = useState("");
+  const [isRefundReviewModalOpen, setIsRefundReviewModalOpen] = useState(false);
+  const [refundReviewOrder, setRefundReviewOrder] = useState<RepairOrder | null>(null);
+  const [refundReviewItem, setRefundReviewItem] = useState<RepairRefundQueueItem | null>(null);
+  const [refundReviewMode, setRefundReviewMode] = useState<"approve" | "reject">("approve");
+  const [refundApprovedAmountInput, setRefundApprovedAmountInput] = useState("");
+  const [refundAssessmentNoteInput, setRefundAssessmentNoteInput] = useState("");
+  const [refundRejectionReasonInput, setRefundRejectionReasonInput] = useState("");
+  const [isRefundReviewSubmitting, setIsRefundReviewSubmitting] = useState(false);
   const [highlightRepairToken, setHighlightRepairToken] = useState<string | null>(null);
   const [deliveryMethodOverrides, setDeliveryMethodOverrides] = useState<Record<string, DeliveryMethodOverride>>({});
   const [materialUsages, setMaterialUsages] = useState<RepairMaterialUsage[]>([]);
@@ -817,6 +871,7 @@ export default function JobOrdersRepair() {
             reason_notes: refund?.reason_notes ? String(refund.reason_notes) : null,
             requested_at: refund?.requested_at ? String(refund.requested_at) : null,
             repairer_status: String(refund?.repairer_status ?? ''),
+            evidence_media: extractRefundEvidenceMedia(refund),
           };
         })
         .filter((refund: RepairRefundQueueItem | null): refund is RepairRefundQueueItem => {
@@ -923,14 +978,14 @@ export default function JobOrdersRepair() {
     }));
   }, [isViewModalOpen, materialForm.inventory_item_id, materialPlanItems, viewOrder]);
 
-  const parsePositiveWholeQuantity = (rawValue: string): number | null => {
+  const parseWholeQuantity = (rawValue: string, minValue: number): number | null => {
     const trimmed = String(rawValue ?? "").trim();
     if (!trimmed) {
       return null;
     }
 
     const parsed = Number(trimmed);
-    if (!Number.isFinite(parsed) || parsed < 1 || !Number.isInteger(parsed)) {
+    if (!Number.isFinite(parsed) || parsed < minValue || !Number.isInteger(parsed)) {
       return null;
     }
 
@@ -952,11 +1007,21 @@ export default function JobOrdersRepair() {
       return;
     }
 
-    const quantityUsed = parsePositiveWholeQuantity(materialForm.quantity_used);
+    const quantityUsed = parseWholeQuantity(materialForm.quantity_used, 0);
     if (!materialForm.inventory_item_id || quantityUsed === null) {
       await Swal.fire({
         title: "Missing details",
-        text: "Please select a material and enter a whole-number quantity (1, 2, 3...).",
+        text: "Please select a material and enter a whole-number quantity (0, 1, 2...).",
+        icon: "warning",
+        confirmButtonColor: "#2563eb",
+      });
+      return;
+    }
+
+    if (quantityUsed === 0 && !String(materialForm.notes ?? "").trim()) {
+      await Swal.fire({
+        title: "Note required for zero quantity",
+        text: "Add a note explaining why quantity is 0 (for example: used carry-over material from previous repair).",
         icon: "warning",
         confirmButtonColor: "#2563eb",
       });
@@ -1043,11 +1108,11 @@ export default function JobOrdersRepair() {
   const handleRequestMaterialFromOrder = async () => {
     if (!viewOrder) return;
 
-    const quantityNeeded = parsePositiveWholeQuantity(materialForm.quantity_used);
+    const quantityNeeded = parseWholeQuantity(materialForm.quantity_used, 1);
     if (!materialForm.inventory_item_id || quantityNeeded === null) {
       await Swal.fire({
         title: "Missing details",
-        text: "Please select a material and enter a whole-number quantity before requesting.",
+        text: "Please select a material and enter a whole-number quantity (minimum 1) before requesting.",
         icon: "warning",
         confirmButtonColor: "#2563eb",
       });
@@ -2401,147 +2466,101 @@ export default function JobOrdersRepair() {
     });
   };
 
+  const closeRefundReviewModal = () => {
+    setIsRefundReviewModalOpen(false);
+    setRefundReviewOrder(null);
+    setRefundReviewItem(null);
+    setRefundReviewMode("approve");
+    setRefundApprovedAmountInput("");
+    setRefundAssessmentNoteInput("");
+    setRefundRejectionReasonInput("");
+    setIsRefundReviewSubmitting(false);
+  };
+
   const handleRefundReview = async (order: RepairOrder, refund: RepairRefundQueueItem) => {
     const requestedAmount = toNumber(refund.requested_amount) ?? 0;
-    const refundLabel = escapeHtml(refund.refund_no || `Refund #${refund.id}`);
-    const repairLabel = escapeHtml(order.id);
-    const amountLabel = escapeHtml(formatPesoAmount(requestedAmount) ?? '₱0.00');
-    const reasonLabel = escapeHtml(humanizeReasonCode(refund.reason_code));
-    const actionPrompt = await Swal.fire({
-      title: 'Review refund request',
-      html: `
-        <div class="text-left space-y-2">
-          <p><strong>${refundLabel}</strong></p>
-          <p>Repair: ${repairLabel}</p>
-          <p>Requested amount: ${amountLabel}</p>
-          <p>Reason: ${reasonLabel}</p>
-        </div>
-      `,
-      icon: 'question',
-      showCancelButton: true,
-      showDenyButton: true,
-      confirmButtonText: 'Approve',
-      denyButtonText: 'Reject',
-      cancelButtonText: 'Close',
-      confirmButtonColor: '#059669',
-      denyButtonColor: '#dc2626',
-    });
+    setRefundReviewOrder(order);
+    setRefundReviewItem(refund);
+    setRefundReviewMode("approve");
+    setRefundApprovedAmountInput(requestedAmount > 0 ? requestedAmount.toFixed(2) : "");
+    setRefundAssessmentNoteInput("");
+    setRefundRejectionReasonInput("");
+    setIsRefundReviewModalOpen(true);
+  };
 
-    if (actionPrompt.isConfirmed) {
-      const approvalForm = await Swal.fire({
-        title: 'Approve and endorse to finance',
-        html: `
-          <input id="swal-refund-amount" type="number" min="0.01" step="0.01" class="swal2-input" placeholder="Approved amount" value="${requestedAmount.toFixed(2)}" />
-          <textarea id="swal-refund-note" class="swal2-textarea" placeholder="Assessment note (required)"></textarea>
-        `,
-        showCancelButton: true,
-        confirmButtonText: 'Submit endorsement',
-        confirmButtonColor: '#059669',
-        focusConfirm: false,
-        preConfirm: () => {
-          const popup = Swal.getPopup();
-          const amountValue = popup?.querySelector<HTMLInputElement>('#swal-refund-amount')?.value ?? '';
-          const noteValue = popup?.querySelector<HTMLTextAreaElement>('#swal-refund-note')?.value ?? '';
-          const approvedAmount = Number(amountValue);
+  const submitRefundReview = async () => {
+    if (!refundReviewItem) {
+      return;
+    }
 
-          if (!Number.isFinite(approvedAmount) || approvedAmount <= 0) {
-            Swal.showValidationMessage('Enter a valid approved amount.');
-            return null;
-          }
-
-          if (!noteValue.trim()) {
-            Swal.showValidationMessage('Assessment note is required.');
-            return null;
-          }
-
-          return {
-            approvedAmount,
-            assessmentNote: noteValue.trim(),
-          };
-        },
+    const assessmentNote = refundAssessmentNoteInput.trim();
+    if (!assessmentNote) {
+      await Swal.fire({
+        title: 'Assessment note required',
+        text: 'Please add an assessment note before submitting.',
+        icon: 'warning',
+        confirmButtonColor: '#2563eb',
       });
+      return;
+    }
 
-      if (!approvalForm.isConfirmed || !approvalForm.value) {
-        return;
-      }
+    setIsRefundReviewSubmitting(true);
 
-      try {
-        await endorseRefundForFinance(refund.id, approvalForm.value.assessmentNote, approvalForm.value.approvedAmount);
+    try {
+      if (refundReviewMode === 'approve') {
+        const approvedAmount = Number(refundApprovedAmountInput);
+        if (!Number.isFinite(approvedAmount) || approvedAmount <= 0) {
+          await Swal.fire({
+            title: 'Invalid amount',
+            text: 'Enter a valid approved amount.',
+            icon: 'warning',
+            confirmButtonColor: '#2563eb',
+          });
+          setIsRefundReviewSubmitting(false);
+          return;
+        }
+
+        await endorseRefundForFinance(refundReviewItem.id, assessmentNote, approvedAmount);
         await Promise.all([fetchOrders(), fetchRepairerRefundQueue()]);
+        closeRefundReviewModal();
         await Swal.fire({
           title: 'Refund endorsed',
           text: 'Finance can now continue with review and execution.',
           icon: 'success',
           confirmButtonColor: '#2563eb',
         });
-      } catch (reviewError: any) {
+      } else {
+        const rejectionReason = refundRejectionReasonInput.trim();
+        if (!rejectionReason) {
+          await Swal.fire({
+            title: 'Rejection reason required',
+            text: 'Please provide a rejection reason before submitting.',
+            icon: 'warning',
+            confirmButtonColor: '#2563eb',
+          });
+          setIsRefundReviewSubmitting(false);
+          return;
+        }
+
+        await rejectRefundForRepairer(refundReviewItem.id, assessmentNote, rejectionReason);
+        await Promise.all([fetchOrders(), fetchRepairerRefundQueue()]);
+        closeRefundReviewModal();
         await Swal.fire({
-          title: 'Unable to endorse refund',
-          text: reviewError?.response?.data?.message || 'Please try again.',
-          icon: 'error',
+          title: 'Refund request rejected',
+          text: 'The customer will see that this refund request was declined.',
+          icon: 'success',
           confirmButtonColor: '#2563eb',
         });
       }
-
-      return;
-    }
-
-    if (!actionPrompt.isDenied) {
-      return;
-    }
-
-    const rejectionForm = await Swal.fire({
-      title: 'Reject refund request',
-      html: `
-        <textarea id="swal-refund-reason" class="swal2-textarea" placeholder="Rejection reason (required)"></textarea>
-        <textarea id="swal-refund-reject-note" class="swal2-textarea" placeholder="Assessment note (required)"></textarea>
-      `,
-      showCancelButton: true,
-      confirmButtonText: 'Reject request',
-      confirmButtonColor: '#dc2626',
-      focusConfirm: false,
-      preConfirm: () => {
-        const popup = Swal.getPopup();
-        const reasonValue = popup?.querySelector<HTMLTextAreaElement>('#swal-refund-reason')?.value ?? '';
-        const noteValue = popup?.querySelector<HTMLTextAreaElement>('#swal-refund-reject-note')?.value ?? '';
-
-        if (!reasonValue.trim()) {
-          Swal.showValidationMessage('Rejection reason is required.');
-          return null;
-        }
-
-        if (!noteValue.trim()) {
-          Swal.showValidationMessage('Assessment note is required.');
-          return null;
-        }
-
-        return {
-          reason: reasonValue.trim(),
-          assessmentNote: noteValue.trim(),
-        };
-      },
-    });
-
-    if (!rejectionForm.isConfirmed || !rejectionForm.value) {
-      return;
-    }
-
-    try {
-      await rejectRefundForRepairer(refund.id, rejectionForm.value.assessmentNote, rejectionForm.value.reason);
-      await Promise.all([fetchOrders(), fetchRepairerRefundQueue()]);
-      await Swal.fire({
-        title: 'Refund request rejected',
-        text: 'The customer will see that this refund request was declined.',
-        icon: 'success',
-        confirmButtonColor: '#2563eb',
-      });
     } catch (reviewError: any) {
       await Swal.fire({
-        title: 'Unable to reject refund',
+        title: refundReviewMode === 'approve' ? 'Unable to endorse refund' : 'Unable to reject refund',
         text: reviewError?.response?.data?.message || 'Please try again.',
         icon: 'error',
         confirmButtonColor: '#2563eb',
       });
+    } finally {
+      setIsRefundReviewSubmitting(false);
     }
   };
 
@@ -3440,7 +3459,7 @@ export default function JobOrdersRepair() {
 
                       <input
                         type="number"
-                        min={1}
+                        min={0}
                         step={1}
                         placeholder="Qty"
                         value={materialForm.quantity_used}
@@ -3937,6 +3956,175 @@ export default function JobOrdersRepair() {
                   className="px-4 py-2 text-white bg-red-600 hover:bg-red-700 rounded-lg font-medium transition-colors"
                 >
                   Confirm Rejection
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Refund Review Modal */}
+        {isRefundReviewModalOpen && refundReviewItem && refundReviewOrder && (
+          <div className="fixed inset-0 z-[999999] bg-gray-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="w-full max-w-3xl bg-white dark:bg-gray-800 rounded-2xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 shrink-0">
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Review Refund Request</h2>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Assess and endorse or reject this request with full context.</p>
+              </div>
+
+              <div className="px-6 py-5 overflow-y-auto flex-1 space-y-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-3">
+                    <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Refund No</p>
+                    <p className="font-semibold text-gray-900 dark:text-white mt-1">{refundReviewItem.refund_no || `#${refundReviewItem.id}`}</p>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-3">
+                    <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Repair</p>
+                    <p className="font-semibold text-gray-900 dark:text-white mt-1">{refundReviewOrder.id}</p>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-3">
+                    <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Requested Amount</p>
+                    <p className="font-semibold text-gray-900 dark:text-white mt-1">{formatPesoAmount(refundReviewItem.requested_amount) ?? '₱0.00'}</p>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-3">
+                    <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Reason</p>
+                    <p className="font-semibold text-gray-900 dark:text-white mt-1">{humanizeReasonCode(refundReviewItem.reason_code)}</p>
+                  </div>
+                </div>
+
+                {refundReviewItem.reason_notes && (
+                  <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/70 dark:bg-amber-900/20 p-3">
+                    <p className="text-xs uppercase tracking-wide text-amber-700 dark:text-amber-300">Customer Notes</p>
+                    <p className="text-sm text-amber-900 dark:text-amber-100 mt-1 whitespace-pre-wrap">{refundReviewItem.reason_notes}</p>
+                  </div>
+                )}
+
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">Evidence</p>
+                  {refundReviewItem.evidence_media.length > 0 ? (
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {refundReviewItem.evidence_media.map((mediaUrl, index) => (
+                        <a
+                          key={`${mediaUrl}-${index}`}
+                          href={mediaUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="group relative rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-900"
+                          title="Open evidence"
+                        >
+                          <img
+                            src={mediaUrl}
+                            alt={`Refund evidence ${index + 1}`}
+                            className="h-28 w-full object-cover group-hover:scale-105 transition-transform"
+                            onError={(event) => {
+                              const target = event.currentTarget;
+                              target.style.display = 'none';
+                              const fallback = target.nextElementSibling as HTMLElement | null;
+                              if (fallback) fallback.style.display = 'flex';
+                            }}
+                          />
+                          <div className="hidden h-28 w-full items-center justify-center px-2 text-xs text-gray-700 dark:text-gray-300 text-center">
+                            Open Attachment
+                          </div>
+                        </a>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 px-4 py-5 text-sm text-gray-500 dark:text-gray-400">
+                      No evidence attached to this refund request.
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+                  <div className="inline-flex rounded-lg p-1 bg-gray-100 dark:bg-gray-900">
+                    <button
+                      type="button"
+                      onClick={() => setRefundReviewMode('approve')}
+                      className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${refundReviewMode === 'approve' ? 'bg-emerald-600 text-white' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-800'}`}
+                    >
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRefundReviewMode('reject')}
+                      className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${refundReviewMode === 'reject' ? 'bg-red-600 text-white' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-800'}`}
+                    >
+                      Reject
+                    </button>
+                  </div>
+
+                  {refundReviewMode === 'approve' ? (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Approved Amount *</label>
+                        <input
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          value={refundApprovedAmountInput}
+                          onChange={(event) => setRefundApprovedAmountInput(event.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                          placeholder="Enter approved amount"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Assessment Note *</label>
+                        <textarea
+                          value={refundAssessmentNoteInput}
+                          onChange={(event) => setRefundAssessmentNoteInput(event.target.value)}
+                          rows={4}
+                          className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white resize-none"
+                          placeholder="Explain your assessment before endorsing to finance"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Rejection Reason *</label>
+                        <textarea
+                          value={refundRejectionReasonInput}
+                          onChange={(event) => setRefundRejectionReasonInput(event.target.value)}
+                          rows={3}
+                          className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white resize-none"
+                          placeholder="State why this refund request is being rejected"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Assessment Note *</label>
+                        <textarea
+                          value={refundAssessmentNoteInput}
+                          onChange={(event) => setRefundAssessmentNoteInput(event.target.value)}
+                          rows={4}
+                          className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white resize-none"
+                          placeholder="Add internal assessment context"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30 shrink-0 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={closeRefundReviewModal}
+                  disabled={isRefundReviewSubmitting}
+                  className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-medium"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={submitRefundReview}
+                  disabled={isRefundReviewSubmitting}
+                  className={`px-4 py-2 rounded-lg text-white font-medium ${refundReviewMode === 'approve' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'} disabled:opacity-60 disabled:cursor-not-allowed`}
+                >
+                  {isRefundReviewSubmitting
+                    ? 'Submitting...'
+                    : refundReviewMode === 'approve'
+                      ? 'Approve and Endorse'
+                      : 'Reject Request'}
                 </button>
               </div>
             </div>

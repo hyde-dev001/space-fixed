@@ -13,6 +13,7 @@ interface StockMovementItem {
 	time: string;
 	product: string;
 	variantDetails: string;
+	remarks: string;
 	actionType: MovementTrack;
 	quantityChange: number;
 	updatedBy: string;
@@ -61,6 +62,7 @@ const mapApiMovement = (m: ApiStockMovement): StockMovementItem => {
 		time,
 		product: m.inventory_item?.name ?? m.product?.name ?? "Unknown",
 		variantDetails: extractVariantDetails(m.notes, m.reference_type),
+		remarks: (m.notes ?? "").trim() || "—",
 		actionType: movementTypeMap[m.movement_type] ?? "Adjustments",
 		quantityChange: m.quantity_change,
 		updatedBy: m.performer?.name ?? "System",
@@ -166,6 +168,7 @@ export default function StockMovement() {
 			const matchesSearch =
 				item.product.toLowerCase().includes(searchQuery.toLowerCase()) ||
 				item.variantDetails.toLowerCase().includes(searchQuery.toLowerCase()) ||
+				item.remarks.toLowerCase().includes(searchQuery.toLowerCase()) ||
 				item.updatedBy.toLowerCase().includes(searchQuery.toLowerCase());
 			const matchesTrack = trackFilter === "All" || item.actionType === trackFilter;
 			return matchesSearch && matchesTrack;
@@ -259,6 +262,7 @@ export default function StockMovement() {
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Time</th>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Product</th>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Variant details</th>
+									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Remarks</th>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Action type</th>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Quantity change</th>
 									<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">User who updated</th>
@@ -266,10 +270,10 @@ export default function StockMovement() {
 							</thead>
 							<tbody className="divide-y divide-gray-200 dark:divide-gray-700">
 						{loading ? (
-							<tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-500">Loading stock movements...</td></tr>
+							<tr><td colSpan={8} className="px-4 py-10 text-center text-sm text-gray-500">Loading stock movements...</td></tr>
 						) : loadError ? (
 							<tr>
-								<td colSpan={7} className="px-4 py-10 text-center text-sm text-red-500">
+								<td colSpan={8} className="px-4 py-10 text-center text-sm text-red-500">
 									<p>{loadError}</p>
 									<button
 										type="button"
@@ -289,6 +293,7 @@ export default function StockMovement() {
 											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{movement.time}</td>
 											<td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">{movement.product}</td>
 											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{movement.variantDetails}</td>
+											<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300 max-w-xs truncate" title={movement.remarks}>{movement.remarks}</td>
 											<td className="px-4 py-3">
 												<span className="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200">
 													{movement.actionType}
@@ -308,7 +313,7 @@ export default function StockMovement() {
 									))
 								) : (
 									<tr>
-										<td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-500">
+										<td colSpan={8} className="px-4 py-10 text-center text-sm text-gray-500">
 											No stock movement records found.
 										</td>
 									</tr>

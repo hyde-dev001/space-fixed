@@ -102,6 +102,159 @@ class RepairMaterialUsageApiTest extends TestCase
     }
 
     #[Test]
+    public function shop_owner_can_log_zero_quantity_material_usage_with_note_without_deducting_stock(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'individual',
+        ]);
+
+        $repair = RepairRequest::create([
+            'request_id' => 'REP-SHOP-MAT-ZERO-0001',
+            'customer_name' => 'Zero Qty Customer',
+            'email' => 'shopowner-zero-qty@example.test',
+            'phone' => '09170000123',
+            'shoe_type' => 'Sneakers',
+            'description' => 'Zero quantity material usage test',
+            'shop_owner_id' => $shopOwner->id,
+            'assigned_repairer_id' => null,
+            'status' => 'in_progress',
+            'images' => [],
+            'total' => 700,
+            'final_total' => 700,
+            'payment_policy' => 'deposit_50',
+            'payment_policy_snapshot' => 'deposit_50',
+            'payment_status' => 'unpaid',
+            'payment_status_derived' => 'unpaid',
+            'total_paid_amount' => 0,
+            'total_refunded_amount' => 0,
+            'delivery_method' => 'walk_in',
+        ]);
+
+        $material = InventoryItem::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'category' => 'repair_materials',
+            'name' => 'Carry-over Material',
+            'sku' => 'MAT-CARRY-OWNER',
+            'available_quantity' => 10,
+            'reserved_quantity' => 0,
+            'reorder_level' => 2,
+            'is_active' => true,
+            'price' => 100,
+            'cost_price' => 60,
+        ]);
+
+        $logResponse = $this->actingAs($shopOwner, 'shop_owner')->postJson(
+            "/api/shop-owner/repairs/{$repair->id}/materials",
+            [
+                'inventory_item_id' => $material->id,
+                'quantity_used' => 0,
+                'notes' => 'Used remaining material from previous repair.',
+            ]
+        );
+
+        $logResponse->assertStatus(201)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.quantity_used', 0);
+
+        $this->assertSame(10, (int) $material->fresh()->available_quantity);
+
+        $this->assertDatabaseHas('repair_material_usages', [
+            'repair_request_id' => $repair->id,
+            'inventory_item_id' => $material->id,
+            'quantity_used' => 0,
+            'notes' => 'Used remaining material from previous repair.',
+        ]);
+
+        $this->assertDatabaseHas('stock_movements', [
+            'inventory_item_id' => $material->id,
+            'movement_type' => 'repair_usage',
+            'quantity_change' => 0,
+            'reference_type' => 'repair_request',
+            'reference_id' => $repair->id,
+            'notes' => 'Used remaining material from previous repair.',
+        ]);
+    }
+
+    #[Test]
+    public function shop_owner_mark_ready_is_blocked_when_material_variance_requires_review(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'individual',
+        ]);
+
+        $repair = RepairRequest::create([
+            'request_id' => 'REP-SHOP-MAT-VAR-0001',
+            'customer_name' => 'Variance Customer',
+            'email' => 'shopowner-variance@example.test',
+            'phone' => '09170000444',
+            'shoe_type' => 'Boots',
+            'description' => 'Variance gate test',
+            'shop_owner_id' => $shopOwner->id,
+            'assigned_repairer_id' => null,
+            'status' => 'in_progress',
+            'images' => [],
+            'total' => 900,
+            'final_total' => 900,
+            'payment_policy' => 'deposit_50',
+            'payment_policy_snapshot' => 'deposit_50',
+            'payment_status' => 'unpaid',
+            'payment_status_derived' => 'unpaid',
+            'total_paid_amount' => 0,
+            'total_refunded_amount' => 0,
+            'delivery_method' => 'walk_in',
+        ]);
+
+        $material = InventoryItem::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'category' => 'repair_materials',
+            'name' => 'Variance Material',
+            'sku' => 'MAT-VAR-OWNER',
+            'available_quantity' => 20,
+            'reserved_quantity' => 0,
+            'reorder_level' => 3,
+            'is_active' => true,
+            'price' => 120,
+            'cost_price' => 70,
+        ]);
+
+        $repair->materialPlanItems()->create([
+            'inventory_item_id' => $material->id,
+            'planned_quantity' => 5,
+            'actual_quantity' => 0,
+            'is_critical' => true,
+            'tolerance_percent' => 20,
+            'variance_status' => 'within_tolerance',
+            'variance_note' => null,
+        ]);
+
+        $this->actingAs($shopOwner, 'shop_owner')->postJson(
+            "/api/shop-owner/repairs/{$repair->id}/materials",
+            [
+                'inventory_item_id' => $material->id,
+                'quantity_used' => 1,
+                'notes' => 'Initial usage.',
+            ]
+        )->assertStatus(201);
+
+        $markReadyResponse = $this->actingAs($shopOwner, 'shop_owner')->postJson(
+            "/api/shop-owner/repairs/{$repair->id}/mark-ready",
+            [
+                'pickup_instructions' => 'Pickup after 5PM.',
+            ]
+        );
+
+        $markReadyResponse->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('requires_variance_review', true)
+            ->assertJsonPath('data.readiness_state', 'variance_review_needed');
+
+        $repair->refresh();
+        $this->assertSame('in_progress', $repair->status);
+    }
+
+    #[Test]
     public function shop_owner_cannot_access_material_usage_of_another_shop(): void
     {
         $ownerA = ShopOwner::factory()->approved()->create([
