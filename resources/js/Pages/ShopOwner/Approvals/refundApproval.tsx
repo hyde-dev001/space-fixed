@@ -1453,10 +1453,13 @@ export default function RefundApproval() {
 									Approve
 								</button>
 							)}
-							{isIndividualRegistration && (
+							{isIndividualRegistration
+								&& canExecuteGatewayRefund(selectedRequest)
+								&& !canShopOwnerApprove(selectedRequest)
+								&& !canShopOwnerReject(selectedRequest) && (
 								<button
 									onClick={() => handleExecuteGatewayRefund(selectedRequest)}
-									disabled={!canExecuteGatewayRefund(selectedRequest) || isActionProcessing}
+									disabled={isActionProcessing}
 									className="px-5 py-2.5 text-sm font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
 								>
 									{getExecuteActionLabel(selectedRequest)}
