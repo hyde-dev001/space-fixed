@@ -1,4 +1,4 @@
-import { Head } from "@inertiajs/react";
+import { Head, router } from "@inertiajs/react";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
 import { useState, useRef, useEffect } from "react";
 import axios from "axios";
@@ -505,6 +505,14 @@ export default function CustomerSupport() {
     }
   };
 
+  const goToRetailJobOrders = () => {
+    router.visit('/shop-owner/job-orders-retail');
+  };
+
+  const goToRepairJobOrders = () => {
+    router.visit('/shop-owner/job-orders-repair');
+  };
+
   return (
     <AppLayoutShopOwner fullBleed>
       <Head title="Customer Support" />
@@ -691,16 +699,6 @@ export default function CustomerSupport() {
                   </div>
                 </div>
                 
-                {/* Transfer Button */}
-                <button
-                  onClick={() => setShowTransferModal(true)}
-                  className="p-1.5 bg-white border-2 border-black hover:bg-gray-50 rounded-lg transition-colors"
-                  title="Transfer to Repairer"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="black" strokeWidth={2} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                  </svg>
-                </button>
               </div>
 
               {/* Messages */}
@@ -843,6 +841,7 @@ export default function CustomerSupport() {
 
                               <button
                                 type="button"
+                                onClick={goToRepairJobOrders}
                                 className="w-full bg-white hover:bg-gray-50 text-black border border-gray-300 font-semibold py-2.5 px-4 rounded-lg transition-all duration-200 text-sm shadow-sm hover:shadow-md"
                               >
                                 View Full Details
@@ -1013,6 +1012,7 @@ export default function CustomerSupport() {
                               {/* View Button */}
                               <button
                                 type="button"
+                                onClick={goToRetailJobOrders}
                                 className="w-full bg-white hover:bg-gray-50 text-black border border-gray-300 font-semibold py-2.5 px-4 rounded-lg transition-all duration-200 text-sm shadow-sm hover:shadow-md"
                               >
                                 View Full Details
