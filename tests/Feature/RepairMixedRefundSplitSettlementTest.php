@@ -379,7 +379,7 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
     }
 
     #[Test]
-    public function myrepair_submit_for_walk_in_only_payment_forces_manual_cash_channel(): void
+    public function myrepair_submit_for_walk_in_only_payment_forces_gcash_destination_channel(): void
     {
         /** @var User $customer */
         $customer = User::factory()->create();
@@ -441,10 +441,10 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
         $response->assertOk()->assertJsonPath('success', true);
 
         $refund = PosRefund::query()->latest('id')->firstOrFail();
-        $this->assertSame('manual_cash', (string) $refund->preferred_return_channel);
-        $this->assertNull($refund->preferred_return_account_name);
-        $this->assertNull($refund->preferred_return_account_ref);
-        $this->assertFalse((bool) $refund->customer_payout_consent);
+        $this->assertSame('gcash', (string) $refund->preferred_return_channel);
+        $this->assertSame('Should be ignored', (string) $refund->preferred_return_account_name);
+        $this->assertSame('09170000000', (string) $refund->preferred_return_account_ref);
+        $this->assertTrue((bool) $refund->customer_payout_consent);
     }
 
     #[Test]

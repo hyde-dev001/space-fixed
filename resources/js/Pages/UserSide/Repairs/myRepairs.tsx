@@ -1114,12 +1114,12 @@ const MyRepairs: React.FC = () => {
       return;
     }
 
-    if (requiresPayoutDestination && refundMethod !== 'manual_cash') {
+    if (requiresPayoutDestination) {
       if (!refundAccountName.trim() || !refundAccountRef.trim()) {
         Swal.fire({
           icon: 'warning',
           title: 'Incomplete Payout Details',
-          text: 'Please provide account name and account reference for manual payout processing.',
+          text: 'Please provide payout account name and account reference/number.',
           confirmButtonColor: '#000000',
         });
         return;
@@ -1181,9 +1181,9 @@ const MyRepairs: React.FC = () => {
         reasonCode: reasonCode,
         reasonNotes: reasonNotes,
         preferredReturnChannel,
-        preferredReturnAccountName: (requiresPayoutDestination && refundMethod !== 'manual_cash') ? refundAccountName.trim() : '',
-        preferredReturnAccountRef: (requiresPayoutDestination && refundMethod !== 'manual_cash') ? refundAccountRef.trim() : '',
-        customerPayoutConsent: (requiresPayoutDestination && refundMethod !== 'manual_cash') ? refundPayoutConsent : false,
+        preferredReturnAccountName: requiresPayoutDestination ? refundAccountName.trim() : '',
+        preferredReturnAccountRef: requiresPayoutDestination ? refundAccountRef.trim() : '',
+        customerPayoutConsent: requiresPayoutDestination ? refundPayoutConsent : false,
         evidence,
       });
 
@@ -1787,20 +1787,19 @@ const MyRepairs: React.FC = () => {
   const refundRequiresPayoutDestination = refundOrder ? (refundOrder.refund_requires_payout_destination !== false) : true;
   const refundOriginalMethodOnly = refundOrder ? Boolean(refundOrder.refund_original_method_only) : false;
   const refundMethodOptions = refundPaymentType === 'manual_only'
-    ? [{ value: 'manual_cash', label: 'Manual Cash' }]
+    ? [{ value: 'gcash', label: 'GCash' }]
     : refundPaymentType === 'mixed'
       ? [
           { value: 'gcash', label: 'GCash' },
+          { value: 'card', label: 'Card' },
           { value: 'bank_transfer', label: 'Bank Transfer' },
-          { value: 'manual_cash', label: 'Manual Cash' },
         ]
       : [
           { value: 'gcash', label: 'GCash' },
           { value: 'card', label: 'Card' },
           { value: 'bank_transfer', label: 'Bank Transfer' },
-          { value: 'manual_cash', label: 'Manual Cash' },
         ];
-  const showPayoutAccountFields = refundRequiresPayoutDestination && refundMethod !== 'manual_cash';
+  const showPayoutAccountFields = refundRequiresPayoutDestination;
   const tabButtonBaseClass =
     'relative inline-flex min-w-[112px] shrink-0 items-center justify-center gap-2 rounded-2xl border px-3 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 xl:min-w-0 xl:flex-1 xl:rounded-full xl:px-4 xl:text-[11px] xl:tracking-[0.16em]';
   const tabBadgeClass =
@@ -2675,7 +2674,7 @@ const MyRepairs: React.FC = () => {
                               setRefundStep(1);
                               setRefundReason('');
                               setRefundMedia([]);
-                              setRefundMethod(order.refund_payment_type === 'manual_only' ? 'manual_cash' : 'gcash');
+                              setRefundMethod('gcash');
                               setRefundAccountName('');
                               setRefundAccountRef('');
                               setRefundPayoutConsent(false);
@@ -2917,7 +2916,9 @@ const MyRepairs: React.FC = () => {
                       <>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-3">
-                            Select Refund Method <span className="text-red-500">*</span>
+                            {refundPaymentType === 'manual_only'
+                              ? 'Walk-in POS Refund Destination'
+                              : 'POS-paid Portion Refund Destination'} <span className="text-red-500">*</span>
                           </label>
 
                           <div className="border border-gray-300 rounded-lg p-6 bg-white">
@@ -2931,8 +2932,8 @@ const MyRepairs: React.FC = () => {
                             </div>
                             <p className="text-sm text-gray-700 text-center">
                               {refundPaymentType === 'manual_only'
-                                ? 'This refund came from walk-in POS payment. PayMongo refund is not available, so refund will be processed as manual cash payout after approval.'
-                                : 'This refund includes non-online payment. Please provide payout destination details for manual disbursement after approval.'}
+                                ? 'This refund came from pure walk-in POS payment. PayMongo refund is not available. Provide your GCash destination details so Finance/Shop Owner can execute the refund manually.'
+                                : 'This is a mixed payment refund. The online-paid portion will return to the original PayMongo payment method, while the POS-paid portion will be refunded to the destination you provide below.'}
                             </p>
                           </div>
 

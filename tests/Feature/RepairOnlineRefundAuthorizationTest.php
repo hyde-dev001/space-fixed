@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\PosTransaction;
+use App\Models\PosPaymentLine;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\User;
@@ -52,6 +53,15 @@ class RepairOnlineRefundAuthorizationTest extends TestCase
             'discount_amount' => 0,
             'total_amount' => 500,
             'paid_amount' => 500,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        PosPaymentLine::create([
+            'pos_transaction_id' => $source->id,
+            'tender_type' => 'paymongo_wallet',
+            'provider_reference' => 'pmw_tdd_auth_001',
+            'amount' => 500,
             'status' => 'paid',
             'paid_at' => now(),
         ]);

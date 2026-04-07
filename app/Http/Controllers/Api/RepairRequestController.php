@@ -871,15 +871,53 @@ class RepairRequestController extends Controller
             $resolvedPreferredReturnAccountRef = null;
             $resolvedCustomerPayoutConsent = false;
         } elseif ($paymentType === 'manual_only') {
-            // Walk-in/manual-only refunds are processed outside PayMongo.
-            $resolvedPreferredReturnChannel = 'manual_cash';
-            $resolvedPreferredReturnAccountName = null;
-            $resolvedPreferredReturnAccountRef = null;
-            $resolvedCustomerPayoutConsent = false;
-        } elseif ($paymentType === 'mixed' && (string) ($resolvedPreferredReturnChannel ?? '') === 'card') {
-            throw \Illuminate\Validation\ValidationException::withMessages([
-                'preferred_return_channel' => ['Card payout is not available for mixed payment refunds. Use GCash, bank transfer, or manual cash.'],
-            ]);
+            // Pure walk-in refunds are not PayMongo-connected.
+            // Force payout channel to GCash and require destination details.
+            $resolvedPreferredReturnChannel = 'gcash';
+
+            if (trim((string) $resolvedPreferredReturnAccountRef) === '') {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'preferred_return_account_ref' => ['GCash number or reference is required for walk-in payment refunds.'],
+                ]);
+            }
+
+            if (trim((string) $resolvedPreferredReturnAccountName) === '') {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'preferred_return_account_name' => ['Account name is required for walk-in payment refunds.'],
+                ]);
+            }
+
+            if (!$resolvedCustomerPayoutConsent) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'customer_payout_consent' => ['Please confirm payout destination details for walk-in payment refunds.'],
+                ]);
+            }
+        } elseif ($paymentType === 'mixed') {
+            $allowedMixedChannels = ['gcash', 'card', 'bank_transfer'];
+
+            if (!in_array((string) ($resolvedPreferredReturnChannel ?? ''), $allowedMixedChannels, true)) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'preferred_return_channel' => ['Choose a payout channel (GCash, Card, or Bank Transfer) for the POS-paid portion of mixed refunds.'],
+                ]);
+            }
+
+            if (trim((string) $resolvedPreferredReturnAccountRef) === '') {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'preferred_return_account_ref' => ['Account reference/number is required for the POS-paid portion of mixed refunds.'],
+                ]);
+            }
+
+            if (trim((string) $resolvedPreferredReturnAccountName) === '') {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'preferred_return_account_name' => ['Account name is required for the POS-paid portion of mixed refunds.'],
+                ]);
+            }
+
+            if (!$resolvedCustomerPayoutConsent) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'customer_payout_consent' => ['Please confirm payout destination details for the POS-paid portion of mixed refunds.'],
+                ]);
+            }
         }
 
         $refund = DB::transaction(function () use (
