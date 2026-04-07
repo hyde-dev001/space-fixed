@@ -2670,20 +2670,22 @@ const MyRepairs: React.FC = () => {
                           )}
                         </div>
                       )}
-                      {/* Chat with Repairer and Pay Now - For All Delivery Methods */}
+                      {/* Chat with Repairer actions */}
                       {order.status === 'repairer_accepted' && order.conversation_id && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (
                         <>
-                          <button
-                            onClick={() => handlePayNow(order.id)}
-                            disabled={!order.payment_enabled || processingPayment}
-                            className={`${actionButtonBaseClass} ${
-                              order.payment_enabled && !processingPayment
-                                ? actionButtonPrimaryClass
-                                : actionButtonDisabledClass
-                            }`}
-                          >
-                            {processingPayment ? 'PROCESSING...' : 'PAY NOW'}
-                          </button>
+                          {getIntakeMethod(order) !== 'walk_in' && (
+                            <button
+                              onClick={() => handlePayNow(order.id)}
+                              disabled={!order.payment_enabled || processingPayment}
+                              className={`${actionButtonBaseClass} ${
+                                order.payment_enabled && !processingPayment
+                                  ? actionButtonPrimaryClass
+                                  : actionButtonDisabledClass
+                              }`}
+                            >
+                              {processingPayment ? 'PROCESSING...' : 'PAY NOW'}
+                            </button>
+                          )}
                           <button
                             onClick={() => {
                               setCancelTargetOrderId(order.id);
@@ -2713,17 +2715,19 @@ const MyRepairs: React.FC = () => {
                       
                       {order.status === 'pending' && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (
                         <>
-                          <button
-                            onClick={() => handlePayNow(order.id)}
-                            disabled={!order.payment_enabled || processingPayment}
-                            className={`${actionButtonBaseClass} ${
-                              order.payment_enabled && !processingPayment
-                                ? actionButtonPrimaryClass
-                                : actionButtonDisabledClass
-                            }`}
-                          >
-                            {processingPayment ? 'PROCESSING...' : 'PAY NOW'}
-                          </button>
+                          {getIntakeMethod(order) !== 'walk_in' && (
+                            <button
+                              onClick={() => handlePayNow(order.id)}
+                              disabled={!order.payment_enabled || processingPayment}
+                              className={`${actionButtonBaseClass} ${
+                                order.payment_enabled && !processingPayment
+                                  ? actionButtonPrimaryClass
+                                  : actionButtonDisabledClass
+                              }`}
+                            >
+                              {processingPayment ? 'PROCESSING...' : 'PAY NOW'}
+                            </button>
+                          )}
                           <button
                             onClick={() => {
                               setCancelTargetOrderId(order.id);
@@ -2741,7 +2745,7 @@ const MyRepairs: React.FC = () => {
                       {(order.status === 'ready_for_pickup' || order.status === 'shipped') && (
                         <>
                           {/* For deposit_50 only — full_upfront is already paid */}
-                          {order.status === 'ready_for_pickup' && (order.payment_policy ?? 'deposit_50') !== 'full_upfront' && order.payment_status !== 'completed' && (
+                          {order.status === 'ready_for_pickup' && getIntakeMethod(order) !== 'walk_in' && (order.payment_policy ?? 'deposit_50') !== 'full_upfront' && order.payment_status !== 'completed' && (
                             <button
                               onClick={() => handlePayNow(order.id)}
                               disabled={!order.payment_enabled || processingPayment}

@@ -47,6 +47,7 @@ type RepairOrder = {
   paymongo_payment_id?: string | null;
   payment_policy?: 'deposit_50' | 'full_upfront';
   totalPaidAmount?: number | string | null;
+  totalRefundedAmount?: number | string | null;
   pickup_enabled?: boolean;
   pickup_enabled_at?: string | null;
   repairPackageId?: number | null;
@@ -657,6 +658,7 @@ export default function JobOrdersRepair() {
           payment_enabled: repair.payment_enabled || false,
           payment_status: repair.payment_status || 'pending',
           totalPaidAmount: toNumber(repair.total_paid_amount),
+          totalRefundedAmount: toNumber(repair.total_refunded_amount),
           paymongo_payment_id: repair.paymongo_payment_id || null,
           payment_policy: repair.payment_policy || 'deposit_50',
           pickup_enabled: repair.pickup_enabled || false,
@@ -959,7 +961,32 @@ export default function JobOrdersRepair() {
     const cancelled = orders.filter(o => o.status === "cancelled").length;
     const totalRevenue = orders
       .filter(o => o.status !== "cancelled" && !isRejectedWorkflowStatus(o.status))
-      .reduce((sum, o) => sum + (toNumber(o.finalPrice ?? o.total) ?? 0), 0);
+      .reduce((sum, o) => {
+        const paymentStatus = String(o.payment_status ?? '').toLowerCase();
+        const billedNetAmount = toNumber(o.finalPrice ?? o.total) ?? 0;
+
+        // Fully refunded repairs must not contribute to recognized service revenue.
+        if (paymentStatus === 'refunded') {
+          return sum;
+        }
+
+        if (billedNetAmount <= 0) {
+          return sum;
+        }
+
+        const refundedGrossAmount = toNumber(o.totalRefundedAmount) ?? 0;
+        if (refundedGrossAmount <= 0) {
+          return sum + billedNetAmount;
+        }
+
+        const vatRate = Number.isFinite(Number(o.vatRate)) && Number(o.vatRate) > 0
+          ? Number(o.vatRate)
+          : REPAIR_VAT_RATE_PERCENT;
+        const refundedNetAmount = refundedGrossAmount / (1 + (vatRate / 100));
+        const recognizedNetAmount = Math.max(0, billedNetAmount - refundedNetAmount);
+
+        return sum + recognizedNetAmount;
+      }, 0);
     return { total, underReview, pending, received, inProgress, workCompleted, readyForPickup, pickedUp, completedAll, rejected, cancelled, totalRevenue };
   }, [orders]);
 
@@ -2335,15 +2362,54 @@ export default function JobOrdersRepair() {
                           <span className={`px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs leading-5 font-semibold rounded-full ${getStatusColor(order.status)}`}>
                             {getRepairStatusLabel(order.status)}
                           </span>
-                          {order.payment_enabled && (
-                            <span className={`px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs leading-5 font-semibold rounded-full ${
-                              order.payment_status === 'completed' 
-                                ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' 
-                                : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300'
-                            }`}>
-                              {order.payment_status === 'completed' ? 'Paid' : 'Awaiting Payment'}
-                            </span>
-                          )}
+                          {(() => {
+                            const paymentStatus = String(order.payment_status ?? '').toLowerCase();
+                            const shouldShowPaymentBadge =
+                              Boolean(order.payment_enabled)
+                              || ['paid', 'completed', 'partially_paid', 'refunded', 'partially_refunded'].includes(paymentStatus);
+
+                            if (!shouldShowPaymentBadge) {
+                              return null;
+                            }
+
+                            if (paymentStatus === 'refunded') {
+                              return (
+                                <span className="px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs leading-5 font-semibold rounded-full bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300">
+                                  Refunded
+                                </span>
+                              );
+                            }
+
+                            if (paymentStatus === 'partially_refunded') {
+                              return (
+                                <span className="px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs leading-5 font-semibold rounded-full bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300">
+                                  Partially Refunded
+                                </span>
+                              );
+                            }
+
+                            if (paymentStatus === 'partially_paid') {
+                              return (
+                                <span className="px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs leading-5 font-semibold rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                                  Partially Paid
+                                </span>
+                              );
+                            }
+
+                            if (paymentStatus === 'completed' || paymentStatus === 'paid') {
+                              return (
+                                <span className="px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">
+                                  Paid
+                                </span>
+                              );
+                            }
+
+                            return (
+                              <span className="px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300">
+                                Awaiting Payment
+                              </span>
+                            );
+                          })()}
                           {isInShopPaymentRecorded(order) && (
                             <span className="px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs leading-5 font-semibold rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
                               In-Shop Payment
