@@ -308,6 +308,51 @@ const parseCurrencyToNumber = (value: string): number => {
 	return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const formatPayoutChannelLabel = (channel?: string): string => {
+	switch (String(channel || "").toLowerCase()) {
+		case "gcash":
+			return "GCash";
+		case "card":
+			return "Card";
+		case "bank_transfer":
+			return "Bank Transfer";
+		case "manual_cash":
+			return "Manual Cash";
+		default:
+			return "Not specified";
+	}
+};
+
+const resolveExecutionChannel = (request: RefundRequest): RepairExecutionChannel => {
+	const preferred = String((request as any)?.preferredReturnChannel || "").toLowerCase();
+	if (preferred === "gcash" || preferred === "card" || preferred === "bank_transfer" || preferred === "manual_cash") {
+		return preferred as RepairExecutionChannel;
+	}
+
+	const fromExecution = String(request.financeExecution?.execution_channel || "").toLowerCase();
+	if (fromExecution === "gcash" || fromExecution === "card" || fromExecution === "bank_transfer" || fromExecution === "manual_cash") {
+		return fromExecution as RepairExecutionChannel;
+	}
+
+	const fromMethod = String(request.refundMethod || "").toLowerCase();
+	if (fromMethod.includes("gcash")) return "gcash";
+	if (fromMethod.includes("bank")) return "bank_transfer";
+	if (fromMethod.includes("cash")) return "manual_cash";
+	if (fromMethod.includes("card")) return "card";
+
+	return "gcash";
+};
+
+const resolveFixedExecutionAmount = (request: RefundRequest): number => {
+	const fromExecution = Number(request.financeExecution?.execution_amount);
+	if (Number.isFinite(fromExecution) && fromExecution > 0) {
+		return Math.round(fromExecution * 100) / 100;
+	}
+
+	const parsed = parseCurrencyToNumber(request.refundAmount);
+	return Math.round(parsed * 100) / 100;
+};
+
 const refundReasonOptions = [
 	"Product defective or damaged",
 	"Wrong item received",
@@ -740,11 +785,8 @@ export default function RefundApproval() {
 
 	const openExecuteModal = (request: RefundRequest) => {
 		setExecuteRequest(request);
-		setExecuteChannel((request.financeExecution?.execution_channel as RepairExecutionChannel) || "gcash");
-		setExecuteAmount(
-			request.financeExecution?.execution_amount
-				?? parseCurrencyToNumber(request.refundAmount),
-		);
+		setExecuteChannel(resolveExecutionChannel(request));
+		setExecuteAmount(resolveFixedExecutionAmount(request));
 		setExecuteReference(request.financeExecution?.execution_reference || "");
 		setExecuteProofUrlsText(
 			Array.isArray(request.financeExecution?.execution_proof_urls)
@@ -767,7 +809,7 @@ export default function RefundApproval() {
 		}
 
 		if (!Number.isFinite(executeAmount) || executeAmount <= 0) {
-			setExecuteError("Execution amount must be greater than zero.");
+			setExecuteError("Execution amount is invalid. Please refresh and try again.");
 			return;
 		}
 
@@ -1280,18 +1322,10 @@ export default function RefundApproval() {
 							<div className="space-y-4">
 								<div>
 									<label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Execution Channel</label>
-									<select
-										value={executeChannel}
-										onChange={(event) => setExecuteChannel(event.target.value as RepairExecutionChannel)}
-										title="Execution Channel"
-										aria-label="Execution Channel"
-										className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-									>
-										<option value="gcash">GCash</option>
-										<option value="card">Card</option>
-										<option value="bank_transfer">Bank Transfer</option>
-										<option value="manual_cash">Manual Cash</option>
-									</select>
+									<div className="w-full rounded-lg border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+										{formatPayoutChannelLabel(executeChannel)}
+									</div>
+									<p className="mt-1 text-xs text-gray-500">Channel is fixed based on the approved payout destination.</p>
 								</div>
 
 								<div>
@@ -1307,17 +1341,10 @@ export default function RefundApproval() {
 
 								<div>
 									<label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Execution Amount</label>
-									<input
-										type="number"
-										min={0.01}
-										step={0.01}
-										value={Number.isFinite(executeAmount) ? executeAmount : ""}
-										onChange={(event) => setExecuteAmount(Number(event.target.value))}
-										title="Execution Amount"
-										aria-label="Execution Amount"
-										placeholder="0.00"
-										className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-									/>
+									<div className="w-full rounded-lg border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+										₱{executeAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+									</div>
+									<p className="mt-1 text-xs text-gray-500">Amount is fixed based on approved refund value.</p>
 								</div>
 
 								<div>
