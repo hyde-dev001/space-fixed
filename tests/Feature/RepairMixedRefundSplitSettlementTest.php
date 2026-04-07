@@ -112,6 +112,78 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
     }
 
     #[Test]
+    public function myrepair_submit_allows_repair_wide_refund_when_online_payment_not_in_pos_ledger(): void
+    {
+        /** @var User $customer */
+        $customer = User::factory()->create();
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+
+        $repair = $this->createRepairRequest($shopOwner, $customer, [
+            'total' => 2734,
+            'final_total' => 2734,
+            'payment_policy' => 'deposit_50',
+            'payment_policy_snapshot' => 'deposit_50',
+            'payment_status' => 'completed',
+            'total_paid_amount' => 874.50,
+            'total_refunded_amount' => 0,
+            'paymongo_payment_id' => 'pay_repair_balance_123',
+            'latest_pos_transaction_id' => null,
+        ]);
+
+        $source = PosTransaction::create([
+            'transaction_no' => 'POS-MIX-ONLINE-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'due_type' => 'deposit',
+            'subtotal' => 780.80,
+            'tax_amount' => 93.70,
+            'discount_amount' => 0,
+            'total_amount' => 874.50,
+            'paid_amount' => 874.50,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        PosPaymentLine::create([
+            'pos_transaction_id' => $source->id,
+            'tender_type' => 'cash',
+            'amount' => 874.50,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $response = $this->actingAs($customer, 'user')->postJson("/api/customer/repairs/{$repair->id}/refunds", [
+            'source_transaction_id' => $source->id,
+            'request_type' => 'full',
+            'requested_amount' => 2734,
+            'reason_code' => 'service_issue_after_pickup',
+            'reason_notes' => 'Customer requested full mixed refund after pickup.',
+            'evidence' => [['type' => 'photo', 'url' => 'https://evidence.local/mixed-online.jpg']],
+            'preferred_return_channel' => 'gcash',
+            'preferred_return_account_name' => 'Juan Dela Cruz',
+            'preferred_return_account_ref' => '09171234567',
+            'customer_payout_consent' => true,
+        ]);
+
+        $response->assertOk()->assertJsonPath('success', true);
+
+        $refund = PosRefund::query()->latest('id')->firstOrFail()->load('legs');
+        $this->assertSame('online_myrepair', (string) $refund->workflow_source);
+        $this->assertSame('pay_repair_balance_123', (string) $refund->paymongo_payment_id);
+
+        $gatewayLeg = $refund->legs->firstWhere('leg_type', 'gateway');
+        $manualLeg = $refund->legs->firstWhere('leg_type', 'pos_manual');
+
+        $this->assertNotNull($gatewayLeg);
+        $this->assertNotNull($manualLeg);
+        $this->assertEqualsWithDelta(1859.50, (float) $gatewayLeg->requested_amount, 0.01);
+        $this->assertEqualsWithDelta(874.50, (float) $manualLeg->requested_amount, 0.01);
+    }
+
+    #[Test]
     public function finance_execute_rejects_pos_manual_leg_without_execution_proof(): void
     {
         $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);

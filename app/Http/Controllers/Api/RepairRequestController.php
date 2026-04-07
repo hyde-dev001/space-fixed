@@ -829,13 +829,14 @@ class RepairRequestController extends Controller
             ], 422);
         }
 
-        $refund = DB::transaction(function () use ($refundService, $sourceTransaction, $validated, $user) {
+        $refund = DB::transaction(function () use ($refundService, $sourceTransaction, $validated, $user, $repair) {
             $refund = $refundService->createRefundWithSplitLegs($sourceTransaction, [
                 'workflow_source' => 'online_myrepair',
                 'request_type' => $validated['request_type'],
                 'requested_amount' => (float) $validated['requested_amount'],
                 'reason_code' => $validated['reason_code'],
                 'reason_notes' => $validated['reason_notes'] ?? null,
+                'paymongo_payment_id' => $repair->paymongo_payment_id,
                 'preferred_return_channel' => $validated['preferred_return_channel'] ?? null,
                 'preferred_return_account_name' => $validated['preferred_return_account_name'] ?? null,
                 'preferred_return_account_ref' => $validated['preferred_return_account_ref'] ?? null,

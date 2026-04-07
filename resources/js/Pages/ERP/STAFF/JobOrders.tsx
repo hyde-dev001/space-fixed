@@ -1134,6 +1134,17 @@ export default function JobOrdersPage() {
       return;
     }
 
+    const normalizedCarrierPhone = carrierPhone.trim();
+    if (!/^\d{11}$/.test(normalizedCarrierPhone)) {
+      await Swal.fire({
+        title: "Invalid Carrier Phone",
+        text: "Carrier phone number must be exactly 11 digits.",
+        icon: "warning",
+        confirmButtonColor: "#2563eb",
+      });
+      return;
+    }
+
     const normalizedTrackingNumber = trackingNumber.trim();
 
     if (!normalizedTrackingNumber) {

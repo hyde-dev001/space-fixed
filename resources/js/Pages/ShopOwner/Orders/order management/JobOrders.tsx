@@ -1138,6 +1138,17 @@ export default function JobOrdersPage() {
       return;
     }
 
+    const normalizedCarrierPhone = carrierPhone.trim();
+    if (!/^\d{11}$/.test(normalizedCarrierPhone)) {
+      await Swal.fire({
+        title: "Invalid Carrier Phone",
+        text: "Carrier phone number must be exactly 11 digits.",
+        icon: "warning",
+        confirmButtonColor: "#2563eb",
+      });
+      return;
+    }
+
     const normalizedTrackingNumber = trackingNumber.trim();
 
     if (!normalizedTrackingNumber) {
@@ -2062,18 +2073,18 @@ export default function JobOrdersPage() {
         {/* View Order Modal */}
         {isViewModalOpen && viewOrder && (
           <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4">
-            <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-lg w-full p-6">
-              <div className="flex items-start justify-between mb-4">
+            <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+              <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-700 flex items-start justify-between flex-shrink-0">
                 <div>
                   <h2 className="text-xl font-bold text-gray-900 dark:text-white">Order Details</h2>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">{viewOrder.id}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">#{viewOrder.order_number} • ID {viewOrder.id}</p>
                 </div>
                 <button
                   onClick={() => {
                     setIsViewModalOpen(false);
                     setViewOrder(null);
                   }}
-                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors flex-shrink-0"
                   aria-label="Close"
                 >
                   <svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -2082,7 +2093,7 @@ export default function JobOrdersPage() {
                 </button>
               </div>
 
-              <div className="space-y-4">
+              <div className="px-6 py-4 overflow-y-auto flex-1 space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Full Name</p>
@@ -2290,7 +2301,7 @@ export default function JobOrdersPage() {
                 )}
               </div>
 
-              <div className="mt-6 flex gap-3">
+              <div className="mt-6 px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex gap-3 flex-shrink-0">
                 {canConfirmReturnReceived(viewOrder) && (
                   <button
                     type="button"

@@ -16,11 +16,7 @@ class RepairPosRefundService
 
     public function computeRepairRefundableAmount(int $repairId): float
     {
-        $paid = (float) PosTransaction::query()
-            ->where('module_type', 'repair')
-            ->where('module_reference_id', $repairId)
-            ->whereIn('status', ['paid', 'partially_refunded', 'refunded'])
-            ->sum('paid_amount');
+        $paid = $this->resolveRepairPaidAmount($repairId);
 
         $refunded = (float) PosRefund::query()
             ->where('module_type', 'repair')
@@ -35,6 +31,7 @@ class RepairPosRefundService
     {
         $requested = (float) $payload['requested_amount'];
         $reasonCode = (string) ($payload['reason_code'] ?? '');
+        $workflowSource = strtolower(trim((string) ($payload['workflow_source'] ?? 'pos')));
 
         $activeRequest = PosRefund::query()
             ->where('source_transaction_id', $source->id)
@@ -48,7 +45,7 @@ class RepairPosRefundService
             ]);
         }
 
-        if ($reasonCode === 'customer_cancelled_repair' && (string) $source->module_type === 'repair') {
+        if ($this->shouldUseRepairWideLimit($source, $workflowSource, $reasonCode)) {
             $maxRefundable = $this->computeRepairRefundableAmount((int) $source->module_reference_id);
         } else {
             $alreadyRefunded = (float) PosRefund::query()
@@ -71,11 +68,12 @@ class RepairPosRefundService
             'source_transaction_id' => $source->id,
             'module_type' => 'repair',
             'module_reference_id' => $source->module_reference_id,
-            'workflow_source' => (string) ($payload['workflow_source'] ?? 'pos'),
+            'workflow_source' => $workflowSource,
             'request_type' => $payload['request_type'],
             'requested_amount' => $requested,
             'reason_code' => $payload['reason_code'],
             'reason_notes' => $payload['reason_notes'] ?? null,
+            'paymongo_payment_id' => $payload['paymongo_payment_id'] ?? null,
             'status' => 'requested',
             'finance_status' => 'pending',
             'shop_owner_status' => 'pending',
@@ -87,12 +85,21 @@ class RepairPosRefundService
     public function createRefundWithSplitLegs(PosTransaction $source, array $payload, int $actorId): PosRefund
     {
         $refund = $this->requestRefund($source, $payload, $actorId);
+        $workflowSource = strtolower(trim((string) ($refund->workflow_source ?? $payload['workflow_source'] ?? 'pos')));
+
+        $paymongoPaymentId = trim((string) ($payload['paymongo_payment_id'] ?? ''));
+        if ($paymongoPaymentId === '' && $workflowSource === 'online_myrepair') {
+            $paymongoPaymentId = trim((string) (RepairRequest::query()
+                ->whereKey((int) $source->module_reference_id)
+                ->value('paymongo_payment_id') ?? ''));
+        }
 
         $refund->update([
             'preferred_return_channel' => $payload['preferred_return_channel'] ?? null,
             'preferred_return_account_name' => $payload['preferred_return_account_name'] ?? null,
             'preferred_return_account_ref' => $payload['preferred_return_account_ref'] ?? null,
             'customer_payout_consent' => (bool) ($payload['customer_payout_consent'] ?? false),
+            'paymongo_payment_id' => $paymongoPaymentId !== '' ? $paymongoPaymentId : null,
         ]);
 
         if (!config('orders.repair_split_refund_enabled', true)) {
@@ -106,7 +113,7 @@ class RepairPosRefundService
 
         $gatewayAmount = array_key_exists('gateway_amount', $payload)
             ? round((float) $payload['gateway_amount'], 2)
-            : $this->inferGatewayAmount($source, $requestedAmount);
+            : $this->inferGatewayAmount($source, $requestedAmount, $workflowSource);
 
         $gatewayAmount = max(0.0, min($requestedAmount, $gatewayAmount));
         $posAmount = max(0.0, round($requestedAmount - $gatewayAmount, 2));
@@ -136,14 +143,27 @@ class RepairPosRefundService
         return $refund->fresh('legs');
     }
 
-    private function inferGatewayAmount(PosTransaction $source, float $requestedAmount): float
+    private function inferGatewayAmount(PosTransaction $source, float $requestedAmount, string $workflowSource = 'pos'): float
     {
-        $gatewayPaid = (float) $source->paymentLines()
+        $sourceGatewayPaid = (float) $source->paymentLines()
             ->whereIn('tender_type', ['paymongo_card', 'paymongo_wallet'])
             ->where('status', 'paid')
             ->sum('amount');
 
-        return max(0.0, min($requestedAmount, round($gatewayPaid, 2)));
+        if ($workflowSource === 'online_myrepair' && (string) $source->module_type === 'repair') {
+            if ($sourceGatewayPaid > 0) {
+                return max(0.0, min($requestedAmount, round($sourceGatewayPaid, 2)));
+            }
+
+            $repairId = (int) $source->module_reference_id;
+            $repairPaid = $this->resolveRepairPaidAmount($repairId);
+            $posPaid = $this->sumRepairPosPaidAmount($repairId);
+            $gatewayPaid = max(0.0, round($repairPaid - $posPaid, 2));
+
+            return max(0.0, min($requestedAmount, $gatewayPaid));
+        }
+
+        return max(0.0, min($requestedAmount, round($sourceGatewayPaid, 2)));
     }
 
     public function approve(
@@ -168,13 +188,27 @@ class RepairPosRefundService
             ]);
         }
 
-        $alreadyCommitted = (float) PosRefund::query()
-            ->where('source_transaction_id', $source->id)
-            ->where('id', '!=', $refund->id)
-            ->whereIn('status', ['approved', 'processing', 'succeeded'])
-            ->sum('approved_amount');
+        $alreadyCommittedQuery = PosRefund::query()
+            ->where('id', '!=', $refund->id);
 
-        $maxRefundable = max(0, (float) $source->paid_amount - $alreadyCommitted);
+        $workflowSource = strtolower((string) ($refund->workflow_source ?? 'pos'));
+        if ($this->shouldUseRepairWideLimit($source, $workflowSource, (string) ($refund->reason_code ?? ''))) {
+            $alreadyCommitted = (float) $alreadyCommittedQuery
+                ->where('module_type', 'repair')
+                ->where('module_reference_id', (int) $source->module_reference_id)
+                ->whereIn('status', ['approved', 'processing'])
+                ->sum('approved_amount');
+
+            $maxRefundable = max(0, $this->computeRepairRefundableAmount((int) $source->module_reference_id) - $alreadyCommitted);
+        } else {
+            $alreadyCommitted = (float) $alreadyCommittedQuery
+                ->where('source_transaction_id', $source->id)
+                ->whereIn('status', ['approved', 'processing', 'succeeded'])
+                ->sum('approved_amount');
+
+            $maxRefundable = max(0, (float) $source->paid_amount - $alreadyCommitted);
+        }
+
         if ($amountToApprove > $maxRefundable) {
             throw ValidationException::withMessages([
                 'approved_amount' => ['Approved amount exceeds refundable balance.'],
@@ -509,5 +543,54 @@ class RepairPosRefundService
         ]);
 
         return $refund->fresh();
+    }
+
+    private function shouldUseRepairWideLimit(PosTransaction $source, string $workflowSource, string $reasonCode): bool
+    {
+        if ((string) $source->module_type !== 'repair') {
+            return false;
+        }
+
+        if ($workflowSource === 'online_myrepair') {
+            return true;
+        }
+
+        return $reasonCode === 'customer_cancelled_repair';
+    }
+
+    private function sumRepairPosPaidAmount(int $repairId): float
+    {
+        return round((float) PosTransaction::query()
+            ->where('module_type', 'repair')
+            ->where('module_reference_id', $repairId)
+            ->whereIn('status', ['paid', 'partially_refunded', 'refunded'])
+            ->sum('paid_amount'), 2);
+    }
+
+    private function resolveRepairPaidAmount(int $repairId): float
+    {
+        $posPaid = $this->sumRepairPosPaidAmount($repairId);
+        $repair = RepairRequest::query()->find($repairId);
+
+        if (!$repair) {
+            return max(0.0, $posPaid);
+        }
+
+        $storedPaid = round((float) ($repair->total_paid_amount ?? 0), 2);
+        $paymentStatus = strtolower(trim((string) ($repair->payment_status ?? 'pending')));
+        $policy = app(PaymentSettlementService::class)->normalizeRepairPaymentPolicy((string) ($repair->payment_policy ?? 'deposit_50'));
+        $repairTotal = round(max((float) ($repair->total ?? 0), (float) ($repair->final_total ?? 0)), 2);
+
+        $resolved = max(0.0, $storedPaid, $posPaid);
+
+        if ($paymentStatus === 'completed' || ($policy === 'full_upfront' && $paymentStatus === 'paid')) {
+            return round(max($resolved, $repairTotal), 2);
+        }
+
+        if ($paymentStatus === 'paid' && $policy === 'deposit_50') {
+            return round(max($resolved, round($repairTotal * 0.5, 2)), 2);
+        }
+
+        return round($resolved, 2);
     }
 }

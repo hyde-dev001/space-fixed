@@ -43,7 +43,7 @@ export default function CustomerSupport() {
   const [loading, setLoading] = useState(true);
   const [initialLoad, setInitialLoad] = useState(true);
   const [sendingMessage, setSendingMessage] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [transferNote, setTransferNote] = useState("");
   const [isTransferring, setIsTransferring] = useState(false);
@@ -66,12 +66,12 @@ export default function CustomerSupport() {
     }, 3000);
     
     return () => clearInterval(conversationInterval);
-  }, [statusFilter]);
+  }, [categoryFilter]);
 
   const fetchConversations = async (isBackgroundPoll = false) => {
     try {
       if (!isBackgroundPoll) setLoading(true);
-      const params = statusFilter !== "all" ? { status: statusFilter } : {};
+      const params = categoryFilter !== "all" ? { category: categoryFilter } : {};
       const response = await axios.get("/api/shop-owner/conversations", { params });
       
       // Handle both paginated and direct array responses
@@ -491,63 +491,42 @@ export default function CustomerSupport() {
           <div className="w-80 bg-white border-r border-gray-200 flex flex-col overflow-hidden">
             {/* Header */}
             <div className="border-b border-gray-200 px-6 py-4 relative z-20">
-              <h1 className="text-2xl font-bold text-black mb-4">Chat</h1>
+              <h1 className="text-2xl font-bold text-black mb-4">Shop Messages</h1>
               
-              {/* Search and Filter Menu */}
+              {/* Search Box */}
+              <div className="relative mb-4">
+                <svg
+                  className="absolute left-3 top-3 w-5 h-5 text-gray-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  type="text"
+                  placeholder="Search shops..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-black transition-colors"
+                />
+              </div>
+              
+              {/* Category Filters */}
               <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <svg
-                    className="absolute left-3 top-3 w-5 h-5 text-gray-400"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                  <input
-                    type="text"
-                    placeholder="Search..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-black transition-colors"
-                  />
-                </div>
-                
-                {/* Filter Menu Button - Hover Dropdown */}
-                <div className="relative group">
+                {["all", "repairs", "products", "general"].map((category) => (
                   <button
-                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-600 hover:text-gray-800"
-                    title="Filter by status"
+                    key={category}
+                    onClick={() => setCategoryFilter(category)}
+                    className={`px-3 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap ${
+                      categoryFilter === category
+                        ? "bg-black text-white"
+                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}
                   >
-                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
-                    </svg>
+                    {category.charAt(0).toUpperCase() + category.slice(1)}
                   </button>
-                  
-                  {/* Dropdown Menu - Hidden by default, visible on group hover */}
-                  <div className="hidden group-hover:block absolute right-0 top-full mt-2 bg-white border border-gray-200 rounded-lg shadow-xl z-50 py-2 whitespace-nowrap">
-                    {["all", "open", "in_progress", "resolved"].map((status) => (
-                      <button
-                        key={status}
-                        onClick={() => {
-                          setStatusFilter(status);
-                        }}
-                        className={`flex items-center gap-3 w-full px-6 py-2 text-sm text-left transition-colors ${
-                          statusFilter === status
-                            ? "bg-blue-50 text-blue-600"
-                            : "text-gray-700 hover:bg-gray-50"
-                        }`}
-                      >
-                        <span className={`w-2 h-2 rounded-full shrink-0 ${
-                          statusFilter === status
-                            ? "bg-blue-600"
-                            : "bg-gray-400"
-                        }`}></span>
-                        {status.replace("_", " ").toUpperCase()}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                ))}
               </div>
             </div>
 
