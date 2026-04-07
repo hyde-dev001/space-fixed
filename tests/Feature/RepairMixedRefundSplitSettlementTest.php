@@ -8,6 +8,7 @@ use App\Models\PosTransaction;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Services\PaymongoRefundService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\Test;
@@ -801,6 +802,100 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
             ])
             ->assertStatus(200)
             ->assertJsonPath('success', true);
+    }
+
+    #[Test]
+    public function finance_execute_gateway_clamps_amount_to_gateway_paid_cap(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'paymongo_secret_key' => 'sk_test_clamp_amount',
+        ]);
+        /** @var User $finance */
+        $finance = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+
+        Permission::findOrCreate('access-refund-approval', 'user');
+        $finance->givePermissionTo('access-refund-approval');
+
+        $source = PosTransaction::create([
+            'transaction_no' => 'POS-MIX-EXEC-GW-CLAMP-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 1002,
+            'customer_type' => 'registered',
+            'customer_id' => $finance->id,
+            'due_type' => 'full',
+            'subtotal' => 475,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 475,
+            'paid_amount' => 475,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        PosPaymentLine::create([
+            'pos_transaction_id' => $source->id,
+            'tender_type' => 'paymongo_wallet',
+            'provider_reference' => 'pmw_exec_gateway_clamp_001',
+            'amount' => 475,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $refund = PosRefund::create([
+            'refund_no' => 'RFD-MIX-EXEC-GW-CLAMP-001',
+            'shop_owner_id' => $shopOwner->id,
+            'source_transaction_id' => $source->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 1002,
+            'status' => 'approved',
+            'finance_status' => 'approved',
+            'shop_owner_status' => 'skipped',
+            'request_type' => 'full',
+            'requested_amount' => 950,
+            'approved_amount' => 950,
+            'reason_code' => 'pure_online_refund',
+            'paymongo_payment_id' => 'pay_exec_gateway_clamp_001',
+            'requested_at' => now(),
+        ]);
+
+        $capturedAmount = null;
+        app()->instance(PaymongoRefundService::class, new class($capturedAmount) extends PaymongoRefundService {
+            public ?int $captured = null;
+
+            public function __construct(?int &$captured)
+            {
+                $this->captured = null;
+            }
+
+            public function getPaymentAmountInCentavos(string $secretKey, string $paymentId): ?int
+            {
+                return 47500;
+            }
+
+            public function createRefund(string $secretKey, string $paymentId, int $amountInCentavos, string $reason = 'requested_by_customer'): array
+            {
+                $this->captured = $amountInCentavos;
+                return [
+                    'success' => true,
+                    'message' => 'ok',
+                    'status' => 'succeeded',
+                    'refund_id' => 're_mock_1',
+                ];
+            }
+        });
+
+        $response = $this->actingAs($finance, 'user')
+            ->postJson("/api/finance/repair-refunds/{$refund->id}/execute", [
+                'execution_mode' => 'gateway',
+            ]);
+
+        $response->assertStatus(200)->assertJsonPath('success', true);
+
+        $updated = $refund->fresh();
+        $this->assertSame('succeeded', (string) $updated->status);
+        $this->assertEqualsWithDelta(475.00, (float) $updated->approved_amount, 0.01);
     }
 
     #[Test]

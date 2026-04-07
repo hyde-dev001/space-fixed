@@ -462,6 +462,35 @@ class RepairPosRefundService
             return $this->markRefundFailed($refund, $actorId, 'Unable to resolve payment reference for gateway refund.', $executionNote);
         }
 
+        $gatewayAmountToRefund = $approvedAmount;
+        $gatewayAmountCandidates = [];
+
+        $refund->loadMissing('legs');
+        $gatewayLegAmount = round((float) collect($refund->legs)
+            ->filter(fn ($leg) => (string) ($leg->leg_type ?? '') === 'gateway')
+            ->sum(fn ($leg) => (float) ($leg->approved_amount ?? $leg->requested_amount ?? 0)), 2);
+        if ($gatewayLegAmount > 0) {
+            $gatewayAmountCandidates[] = $gatewayLegAmount;
+        }
+
+        $sourceGatewayPaid = $this->sumTrustedGatewayPaid($source, $paymentReference);
+        if ($sourceGatewayPaid > 0) {
+            $gatewayAmountCandidates[] = $sourceGatewayPaid;
+        }
+
+        $paymongoAmountInCentavos = app(PaymongoRefundService::class)->getPaymentAmountInCentavos($secretKey, $paymentReference);
+        if (is_int($paymongoAmountInCentavos) && $paymongoAmountInCentavos > 0) {
+            $gatewayAmountCandidates[] = round($paymongoAmountInCentavos / 100, 2);
+        }
+
+        if (!empty($gatewayAmountCandidates)) {
+            $gatewayAmountToRefund = round(min($approvedAmount, ...$gatewayAmountCandidates), 2);
+        }
+
+        if ($gatewayAmountToRefund <= 0) {
+            return $this->markRefundFailed($refund, $actorId, 'Resolved gateway refund amount is invalid.', $executionNote);
+        }
+
         $refund->update([
             'status' => 'processing',
             'execution_mode' => 'gateway',
@@ -476,7 +505,7 @@ class RepairPosRefundService
         $gatewayResult = app(PaymongoRefundService::class)->createRefund(
             secretKey: $secretKey,
             paymentId: $paymentReference,
-            amountInCentavos: (int) round($approvedAmount * 100),
+            amountInCentavos: (int) round($gatewayAmountToRefund * 100),
             reason: 'requested_by_customer'
         );
 
@@ -488,7 +517,7 @@ class RepairPosRefundService
         $refundId = trim((string) ($gatewayResult['refund_id'] ?? ''));
 
         if (in_array($gatewayStatus, ['succeeded', 'completed', 'paid'], true)) {
-            return $this->markRefundSucceeded($refund->fresh(), $source, $actorId, $approvedAmount, 'gateway', $executionNote, $paymentReference, $refundId !== '' ? $refundId : null);
+            return $this->markRefundSucceeded($refund->fresh(), $source, $actorId, $gatewayAmountToRefund, 'gateway', $executionNote, $paymentReference, $refundId !== '' ? $refundId : null);
         }
 
         $refund->update([
