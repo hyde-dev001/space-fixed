@@ -7,6 +7,7 @@ use App\Models\PosTransaction;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Services\ShopOwnerApprovalPolicyService;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -471,8 +472,8 @@ class RepairPosRefundService
             return $refund;
         }
 
-        $secretKey = trim((string) (ShopOwner::query()->whereKey((int) $source->shop_owner_id)->value('paymongo_secret_key') ?? ''));
-        if ($secretKey === '') {
+        $secretKeyCandidates = $this->resolvePaymongoSecretKeyCandidates((int) ($source->shop_owner_id ?? 0));
+        if (empty($secretKeyCandidates)) {
             return $refund;
         }
 
@@ -487,8 +488,14 @@ class RepairPosRefundService
 
         $statuses = [];
         foreach ($refundIds as $refundId) {
-            $gateway = app(PaymongoRefundService::class)->getRefundStatus($secretKey, $refundId);
+            $gateway = $this->fetchRefundStatusUsingAnySecret($secretKeyCandidates, $refundId);
             if (!($gateway['success'] ?? false)) {
+                Log::warning('PayMongo refund status reconciliation skipped due status lookup failure', [
+                    'refund_id' => $refund->id,
+                    'paymongo_refund_id' => $refundId,
+                    'shop_owner_id' => (int) ($source->shop_owner_id ?? 0),
+                    'message' => (string) ($gateway['message'] ?? 'Refund status lookup failed'),
+                ]);
                 return $refund;
             }
 
@@ -545,8 +552,8 @@ class RepairPosRefundService
 
     private function executeViaGateway(PosRefund $refund, PosTransaction $source, int $actorId, float $approvedAmount, ?string $executionNote): PosRefund
     {
-        $shopOwner = ShopOwner::query()->find((int) $source->shop_owner_id);
-        $secretKey = trim((string) ($shopOwner?->paymongo_secret_key ?? ''));
+        $secretKeyCandidates = $this->resolvePaymongoSecretKeyCandidates((int) ($source->shop_owner_id ?? 0));
+        $secretKey = $secretKeyCandidates[0] ?? '';
         if ($secretKey === '') {
             return $this->markRefundFailed($refund, $actorId, 'Payment gateway is not configured for this shop.', $executionNote);
         }
@@ -965,6 +972,40 @@ class RepairPosRefundService
         $resolvedCap = count($candidates) === 1 ? $candidates[0] : min(...$candidates);
 
         return round((float) $resolvedCap, 2);
+    }
+
+    private function resolvePaymongoSecretKeyCandidates(int $shopOwnerId): array
+    {
+        $shopKey = trim((string) (ShopOwner::query()->whereKey($shopOwnerId)->value('paymongo_secret_key') ?? ''));
+        $globalKey = trim((string) (config('services.paymongo.secret_key') ?? ''));
+
+        return collect([$shopKey, $globalKey])
+            ->filter(fn ($value) => $value !== '')
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function fetchRefundStatusUsingAnySecret(array $secretKeys, string $refundId): array
+    {
+        $lastFailure = [
+            'success' => false,
+            'message' => 'No PayMongo secret key available for refund status lookup.',
+            'status' => null,
+            'refund_id' => $refundId,
+            'raw' => null,
+        ];
+
+        foreach ($secretKeys as $secretKey) {
+            $result = app(PaymongoRefundService::class)->getRefundStatus((string) $secretKey, $refundId);
+            if ($result['success'] ?? false) {
+                return $result;
+            }
+
+            $lastFailure = $result;
+        }
+
+        return $lastFailure;
     }
 
     private function sumTrustedGatewayPaidForReference(PosTransaction $source, string $paymentReference): float

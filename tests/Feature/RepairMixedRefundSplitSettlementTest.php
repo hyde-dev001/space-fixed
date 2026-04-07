@@ -1139,6 +1139,98 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
     }
 
     #[Test]
+    public function customer_refund_list_reconcile_uses_global_secret_fallback_when_shop_secret_missing(): void
+    {
+        config()->set('services.paymongo.secret_key', 'sk_test_global_fallback_repair_refund');
+
+        /** @var User $customer */
+        $customer = User::factory()->create();
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'paymongo_secret_key' => null,
+        ]);
+
+        $repair = $this->createRepairRequest($shopOwner, $customer, [
+            'total' => 600,
+            'final_total' => 600,
+            'payment_policy' => 'full_upfront',
+            'payment_policy_snapshot' => 'full_upfront',
+            'payment_status' => 'completed',
+            'total_paid_amount' => 600,
+            'total_refunded_amount' => 0,
+        ]);
+
+        $source = PosTransaction::create([
+            'transaction_no' => 'POS-RECON-MINE-FALLBACK-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'due_type' => 'full',
+            'subtotal' => 600,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 600,
+            'paid_amount' => 600,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $refund = PosRefund::create([
+            'refund_no' => 'RFD-RECON-MINE-FALLBACK-001',
+            'shop_owner_id' => $shopOwner->id,
+            'source_transaction_id' => $source->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'request_type' => 'full',
+            'requested_amount' => 600,
+            'approved_amount' => 600,
+            'reason_code' => 'pure_online_refund',
+            'status' => 'processing',
+            'finance_status' => 'approved',
+            'shop_owner_status' => 'skipped',
+            'execution_mode' => 'gateway',
+            'paymongo_payment_id' => 'pay_recon_fallback_001',
+            'paymongo_refund_id' => 're_recon_fallback_001',
+            'requested_at' => now()->subMinutes(5),
+            'approved_at' => now()->subMinutes(4),
+            'executed_at' => now()->subMinutes(3),
+        ]);
+
+        app()->instance(PaymongoRefundService::class, new class extends PaymongoRefundService {
+            public function getRefundStatus(string $secretKey, string $refundId): array
+            {
+                if ($secretKey !== 'sk_test_global_fallback_repair_refund') {
+                    return [
+                        'success' => false,
+                        'message' => 'invalid secret for this refund',
+                        'status' => null,
+                        'refund_id' => $refundId,
+                        'raw' => [],
+                    ];
+                }
+
+                return [
+                    'success' => true,
+                    'message' => 'ok',
+                    'status' => 'succeeded',
+                    'refund_id' => $refundId,
+                    'raw' => [],
+                ];
+            }
+        });
+
+        $this->actingAs($customer, 'user')
+            ->getJson('/api/repair-pos/refunds/mine')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $refund->id)
+            ->assertJsonPath('data.0.status', 'succeeded');
+
+        $this->assertSame('succeeded', (string) $refund->fresh()->status);
+    }
+
+    #[Test]
     public function split_leg_creation_applies_only_when_feature_flag_enabled(): void
     {
         config()->set('orders.repair_split_refund_enabled', false);
