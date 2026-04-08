@@ -955,11 +955,12 @@ const AppSidebar_ERP: React.FC = () => {
     [isActive]
   );
 
-  type AttendanceSectionKey = "staff" | "repair" | "manager" | "inventory" | "procurement" | "hr" | "finance" | "crm" | null;
+  type AttendanceSectionKey = "staff" | "repair" | "cashier" | "manager" | "inventory" | "procurement" | "hr" | "finance" | "crm" | null;
 
   const getAttendanceSection = (): AttendanceSectionKey => {
     if (hasStaffAccess()) return "staff";
     if (hasRepairerAccess()) return "repair";
+    if (hasCashierAccess()) return "cashier";
     if (hasManagerAccess()) return "manager";
     if (hasInventoryAccess()) return "inventory";
     if (hasProcurementAccess()) return "procurement";
@@ -993,7 +994,7 @@ const AppSidebar_ERP: React.FC = () => {
     }
 
     if (hasCashierAccess()) {
-      menuGroups.push({ menuType: "cashier", items: [...cashierItems] });
+      menuGroups.push({ menuType: "cashier", items: withAttendanceForSection("cashier", [...cashierItems, myPayslipsItem]) });
     }
 
     if (hasManagerAccess()) {

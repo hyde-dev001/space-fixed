@@ -11,9 +11,10 @@ type AddToCartButtonProps = {
   className?: string;
   disabled?: boolean;
   buyNow?: boolean;
+  stockQuantity?: number;
 };
 
-export const AddToCartButton: React.FC<AddToCartButtonProps> = ({ productId, product, label = 'Add to cart', onAdded, className, disabled, buyNow = false }) => {
+export const AddToCartButton: React.FC<AddToCartButtonProps> = ({ productId, product, label = 'Add to cart', onAdded, className, disabled, buyNow = false, stockQuantity }) => {
   const { auth } = usePage().props as any;
   const [isLoading, setIsLoading] = React.useState(false);
   const isProcessingRef = React.useRef(false); // Use ref for immediate synchronous check
@@ -59,6 +60,18 @@ export const AddToCartButton: React.FC<AddToCartButtonProps> = ({ productId, pro
     // CRITICAL: Check ref FIRST before any state updates - this is synchronous and immediate
     if (disabled || isLoading || isProcessingRef.current) {
       console.log('[CartActions] Click blocked - already processing');
+      return;
+    }
+
+    if (typeof stockQuantity === 'number' && stockQuantity <= 0) {
+      await Swal.fire({
+        icon: 'warning',
+        title: 'Out of stock',
+        text: 'This product is currently out of stock. Please check back later or choose another item.',
+        confirmButtonText: 'OK',
+        showConfirmButton: true,
+        ...modalTheme,
+      });
       return;
     }
     

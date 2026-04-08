@@ -310,6 +310,7 @@ const parseLinkedUserId = (linkedUser?: string) => {
 };
 
 const isRepairerRole = (roleValue?: string) => (roleValue || '').trim().toLowerCase() === 'repairer';
+const isCashierRole = (roleValue?: string) => (roleValue || '').trim().toLowerCase() === 'cashier';
 
 // Transform snake_case API response to camelCase for frontend
 const transformEmployeeFromApi = (apiEmployee: any): Employee => {
@@ -378,6 +379,7 @@ export const EmployeeManagement: React.FC<{
           : rawBusinessType;
   const isRepairCapableBusiness = normalizedBusinessType === 'repair' || normalizedBusinessType === 'both';
   const isRetailCapableBusiness = normalizedBusinessType === 'retail' || normalizedBusinessType === 'both';
+  const isCashierCapableBusiness = isRepairCapableBusiness || isRetailCapableBusiness;
   const currentUserId = Number(auth?.user?.id ?? 0);
   const currentUserEmail = String(auth?.user?.email ?? '').trim().toLowerCase();
   
@@ -595,6 +597,7 @@ export const EmployeeManagement: React.FC<{
       hr: string[];
       crm: string[];
       manager: string[];
+      cashier: string[];
       repairer: string[];
       inventory: string[];
       procurement: string[];
@@ -612,6 +615,7 @@ export const EmployeeManagement: React.FC<{
     hr: boolean;
     crm: boolean;
     manager: boolean;
+    cashier: boolean;
     repairer: boolean;
     inventory: boolean;
     procurement: boolean;
@@ -621,6 +625,7 @@ export const EmployeeManagement: React.FC<{
     hr: true,
     crm: true,
     manager: false,
+    cashier: false,
     repairer: false,
     inventory: false,
     procurement: false,
@@ -863,7 +868,30 @@ export const EmployeeManagement: React.FC<{
         
         if (response.ok) {
           const data = await response.json();
-          setAvailablePermissions(data);
+          const allPermissions = Array.isArray(data?.all)
+            ? data.all.filter((permission: unknown): permission is string => typeof permission === 'string')
+            : [];
+
+          const groupedCashier = Array.isArray(data?.grouped?.cashier)
+            ? data.grouped.cashier.filter((permission: unknown): permission is string => typeof permission === 'string')
+            : [];
+
+          const derivedCashier = allPermissions.filter(
+            (permission: string) =>
+              permission.startsWith('access-cashier-')
+              || permission.includes('unified-pos')
+              || permission.includes('unified_pos')
+          );
+
+          const normalizedPermissions = {
+            ...data,
+            grouped: {
+              ...(data?.grouped || {}),
+              cashier: groupedCashier.length > 0 ? groupedCashier : derivedCashier,
+            },
+          };
+
+          setAvailablePermissions(normalizedPermissions);
           if (data.roles) {
             setAvailableRoles(data.roles);
           }
@@ -1306,7 +1334,7 @@ export const EmployeeManagement: React.FC<{
     });
   };
 
-  const toggleCategory = (category: 'finance' | 'hr' | 'crm' | 'manager' | 'repairer' | 'inventory' | 'procurement' | 'staff') => {
+  const toggleCategory = (category: 'finance' | 'hr' | 'crm' | 'manager' | 'cashier' | 'repairer' | 'inventory' | 'procurement' | 'staff') => {
     setExpandedCategories(prev => ({
       ...prev,
       [category]: !prev[category]
@@ -1319,6 +1347,7 @@ export const EmployeeManagement: React.FC<{
       hr: true,
       crm: true,
       manager: true,
+      cashier: true,
       repairer: true,
       inventory: true,
       procurement: true,
@@ -1332,6 +1361,7 @@ export const EmployeeManagement: React.FC<{
       hr: false,
       crm: false,
       manager: false,
+      cashier: false,
       repairer: false,
       inventory: false,
       procurement: false,
@@ -1348,6 +1378,7 @@ export const EmployeeManagement: React.FC<{
       ...(availablePermissions.grouped.hr || []),
       ...(availablePermissions.grouped.crm || []),
       ...(availablePermissions.grouped.manager || []),
+      ...(isCashierCapableBusiness ? (availablePermissions.grouped.cashier || []) : []),
       ...(availablePermissions.grouped.inventory || []),
       ...(availablePermissions.grouped.procurement || []),
       ...(isRepairCapableBusiness ? (availablePermissions.grouped.repairer || []) : []),
@@ -1513,7 +1544,7 @@ export const EmployeeManagement: React.FC<{
   };
 
   // View/Resend Invitation Link
-  const addRolePermissions = (roleKey: 'finance' | 'hr' | 'crm' | 'manager' | 'repairer' | 'inventory' | 'procurement' | 'staff') => {
+  const addRolePermissions = (roleKey: 'finance' | 'hr' | 'crm' | 'manager' | 'cashier' | 'repairer' | 'inventory' | 'procurement' | 'staff') => {
     if (!availablePermissions || !availablePermissions.grouped[roleKey]) return;
     const inheritedPermissions = new Set(((selectedEmployeeForPermissions as any)?.rolePermissions || []) as string[]);
     const rolePermissions = availablePermissions.grouped[roleKey].filter((permission) => !inheritedPermissions.has(permission));
@@ -1521,7 +1552,7 @@ export const EmployeeManagement: React.FC<{
     setSelectedPermissions(newPermissions);
   };
 
-  const clearRolePermissions = (roleKey: 'finance' | 'hr' | 'crm' | 'manager' | 'repairer' | 'inventory' | 'procurement' | 'staff') => {
+  const clearRolePermissions = (roleKey: 'finance' | 'hr' | 'crm' | 'manager' | 'cashier' | 'repairer' | 'inventory' | 'procurement' | 'staff') => {
     if (!availablePermissions || !availablePermissions.grouped[roleKey]) return;
     const inheritedPermissions = new Set(((selectedEmployeeForPermissions as any)?.rolePermissions || []) as string[]);
     const rolePermissions = availablePermissions.grouped[roleKey].filter((permission) => !inheritedPermissions.has(permission));
@@ -1717,6 +1748,16 @@ export const EmployeeManagement: React.FC<{
         icon: 'warning',
         title: 'Role Not Allowed',
         text: 'Staff accounts are only available for retail-capable businesses.',
+        confirmButtonColor: '#f59e0b'
+      });
+      return;
+    }
+
+    if (!isCashierCapableBusiness && isCashierRole(addEmployeeForm.department)) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Role Not Allowed',
+        text: 'Cashier accounts are only available for retail or repair-capable businesses.',
         confirmButtonColor: '#f59e0b'
       });
       return;
@@ -1948,6 +1989,16 @@ export const EmployeeManagement: React.FC<{
         </svg>
       ),
       show: true,
+    },
+    {
+      key: 'cashier',
+      label: 'Cashier Permissions',
+      icon: (
+        <svg className="w-5 h-5 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2v6a3 3 0 003 3h4a3 3 0 003-3v-6a2 2 0 00-2-2h-1m-8 0h8m-8 0V6a3 3 0 016 0v2" />
+        </svg>
+      ),
+      show: isCashierCapableBusiness,
     },
     {
       key: 'inventory',
@@ -2646,6 +2697,7 @@ export const EmployeeManagement: React.FC<{
                                 ...addEmployeeForm,
                                 department: (!isRepairCapableBusiness && isRepairerRole(e.target.value))
                                   || (!isRetailCapableBusiness && (e.target.value || '').trim().toLowerCase() === 'staff')
+                                  || (!isCashierCapableBusiness && isCashierRole(e.target.value))
                                   ? ''
                                   : e.target.value,
                               })
@@ -2658,6 +2710,7 @@ export const EmployeeManagement: React.FC<{
                             <option value="Finance">Finance</option>
                             <option value="HR">Human Resources</option>
                             <option value="CRM">Customer Relationship Management</option>
+                            {isCashierCapableBusiness && <option value="Cashier">Cashier</option>}
                             {isRepairCapableBusiness && <option value="Repairer">Repairer</option>}
                             <option value="Inventory">Inventory</option>
                             <option value="Procurement">Procurement</option>

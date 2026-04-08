@@ -25,14 +25,28 @@ router.on('navigate', (event) => {
 createInertiaApp({
     title: (title) => `${title} - ${appName}`,
     resolve: async (name) => {
+        const appPages = import.meta.glob([
+            './Pages/**/*.tsx',
+            '!./Pages/**/__tests__/**',
+            '!./Pages/**/*.test.tsx',
+            '!./Pages/**/*.spec.tsx',
+        ]);
+
+        const erpPages = import.meta.glob([
+            './Pages/ERP/**/*.tsx',
+            '!./Pages/ERP/**/__tests__/**',
+            '!./Pages/ERP/**/*.test.tsx',
+            '!./Pages/ERP/**/*.spec.tsx',
+        ]);
+
         // Try Pages directory first
         try {
-            return await resolvePageComponent(`./Pages/${name}.tsx`, import.meta.glob('./Pages/**/*.tsx'));
+            return await resolvePageComponent(`./Pages/${name}.tsx`, appPages);
         } catch (error) {
             // Fall back to Pages/ERP for legacy ERP pages
             if (name.startsWith('ERP/')) {
                 const erpName = name.replace(/^ERP\//, '');
-                return resolvePageComponent(`./Pages/ERP/${erpName}.tsx`, import.meta.glob('./Pages/ERP/**/*.tsx'));
+                return resolvePageComponent(`./Pages/ERP/${erpName}.tsx`, erpPages);
             }
             throw error;
         }

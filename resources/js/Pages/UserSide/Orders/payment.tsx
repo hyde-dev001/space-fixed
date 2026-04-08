@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Head, Link, usePage, router } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import Swal from '@/Pages/UserSide/Shared/UserModal';
@@ -61,6 +61,38 @@ interface ShippingEstimateData {
   pay_after_order_notice?: string;
 }
 
+interface AppliedVoucherSummary {
+  id: number;
+  name: string;
+  code?: string | null;
+  scope: 'shop_wide' | 'product_specific';
+  discount_mode: 'percentage' | 'fixed';
+  value: number;
+}
+
+interface AvailableVoucherOption {
+  id: number;
+  name: string;
+  code?: string | null;
+  discount_mode: 'percentage' | 'fixed';
+  value: number;
+  min_spend: number;
+}
+
+interface PromoPreviewData {
+  shop_owner_id: number;
+  sale_adjusted_subtotal: number;
+  voucher_discount: number;
+  final_subtotal: number;
+  net_subtotal: number;
+  vat_amount: number;
+  vat_rate: number;
+  applied_voucher?: AppliedVoucherSummary | null;
+  available_vouchers?: AvailableVoucherOption[];
+  voucher_code_suggestions?: AvailableVoucherOption[];
+  voucher_error?: string | null;
+}
+
 type PaymentMethod = 'paymongo';
 
 const DEFAULT_SHIPPING_REGION = 'Cavite';
@@ -79,6 +111,21 @@ const normalizeCitySelection = (city?: string | null) => {
   const trimmedCity = (city || '').trim();
   if (!trimmedCity) return '';
   return PH_CITY_OPTIONS.find((option) => option.toLowerCase() === trimmedCity.toLowerCase()) || '';
+};
+
+const toFiniteNumber = (value: unknown, fallback = 0): number => {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : fallback;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.replace(/[^0-9.-]+/g, '');
+    const parsed = Number.parseFloat(normalized);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
 };
 
 const Payment: React.FC = () => {
@@ -121,12 +168,100 @@ const Payment: React.FC = () => {
   const [shippingEstimate, setShippingEstimate] = useState<ShippingEstimateData | null>(null);
   const [isShippingEstimateLoading, setIsShippingEstimateLoading] = useState(false);
   const [shippingEstimateReason, setShippingEstimateReason] = useState<string | null>(null);
+  const [promoPreview, setPromoPreview] = useState<PromoPreviewData | null>(null);
+  const [isPromoPreviewLoading, setIsPromoPreviewLoading] = useState(false);
+  const [selectedVoucherCampaignId, setSelectedVoucherCampaignId] = useState<number | null>(null);
+  const [voucherCodeInput, setVoucherCodeInput] = useState('');
+  const [appliedVoucherCode, setAppliedVoucherCode] = useState('');
+  const [isVoucherSelectionEnabled, setIsVoucherSelectionEnabled] = useState(true);
+  const [isVoucherSuggestionOpen, setIsVoucherSuggestionOpen] = useState(false);
+  const [hasVoucherInputInteraction, setHasVoucherInputInteraction] = useState(false);
+  const voucherInputContainerRef = useRef<HTMLDivElement | null>(null);
   const [paymentRecovery, setPaymentRecovery] = useState<{
     scope: 'order' | 'repair';
     id: number;
     reason: 'expired' | 'failed' | 'invalid_state';
   } | null>(null);
   const [isRecoveryCreating, setIsRecoveryCreating] = useState(false);
+
+  const normalizeCheckoutPayload = (rawData: any): CheckoutData | null => {
+    if (!rawData || !Array.isArray(rawData.items) || rawData.items.length === 0) {
+      return null;
+    }
+
+    const normalizedItems: CartItem[] = rawData.items
+      .map((item: any) => ({
+        id: String(item?.id ?? ''),
+        pid: Math.trunc(toFiniteNumber(item?.pid, 0)),
+        name: String(item?.name ?? ''),
+        price: Math.max(0, toFiniteNumber(item?.price, 0)),
+        qty: Math.max(1, Math.trunc(toFiniteNumber(item?.qty, 1))),
+        size: item?.size ? String(item.size) : undefined,
+        color: item?.color ? String(item.color) : undefined,
+        image: item?.image ? String(item.image) : undefined,
+      }))
+      .filter((item: CartItem) => item.id && item.pid > 0);
+
+    if (normalizedItems.length === 0) {
+      return null;
+    }
+
+    const recomputedTotalAmount = normalizedItems.reduce((sum: number, item: CartItem) => sum + (item.price * item.qty), 0);
+    const parsedTotalAmount = Math.max(0, toFiniteNumber(rawData.total_amount, recomputedTotalAmount));
+
+    return {
+      items: normalizedItems,
+      total_amount: parsedTotalAmount,
+      shipping_fee: Math.max(0, toFiniteNumber(rawData.shipping_fee, 0)),
+      vat_amount: rawData.vat_amount === undefined || rawData.vat_amount === null
+        ? undefined
+        : Math.max(0, toFiniteNumber(rawData.vat_amount, 0)),
+      vat_rate: rawData.vat_rate === undefined || rawData.vat_rate === null
+        ? undefined
+        : Math.max(0, toFiniteNumber(rawData.vat_rate, 12)),
+      grand_total: rawData.grand_total === undefined || rawData.grand_total === null
+        ? undefined
+        : Math.max(0, toFiniteNumber(rawData.grand_total, parsedTotalAmount)),
+      customer_name: String(rawData.customer_name || user?.name || ''),
+      customer_email: String(rawData.customer_email || user?.email || ''),
+      customer_phone: String(rawData.customer_phone || user?.phone || ''),
+      shipping_address: String(rawData.shipping_address || ''),
+      address_id: rawData.address_id ?? null,
+      shipping_region: rawData.shipping_region ?? null,
+      shipping_province: rawData.shipping_province ?? null,
+      shipping_city: rawData.shipping_city ?? null,
+      shipping_barangay: rawData.shipping_barangay ?? null,
+      shipping_postal_code: rawData.shipping_postal_code ?? null,
+      shipping_address_line: rawData.shipping_address_line ?? null,
+      payment_method: String(rawData.payment_method || 'paymongo'),
+    };
+  };
+
+  const normalizeVoucherCode = (value: string) => value.trim().toUpperCase();
+
+  const handleApplyVoucherCode = () => {
+    const normalizedCode = normalizeVoucherCode(voucherCodeInput);
+    if (!normalizedCode) {
+      setAppliedVoucherCode('');
+      setIsVoucherSuggestionOpen(false);
+      return;
+    }
+
+    setIsVoucherSelectionEnabled(true);
+    setSelectedVoucherCampaignId(null);
+    setAppliedVoucherCode(normalizedCode);
+    setHasVoucherInputInteraction(true);
+    setIsVoucherSuggestionOpen(false);
+  };
+
+  const handleClearVoucherSelection = () => {
+    setIsVoucherSelectionEnabled(false);
+    setSelectedVoucherCampaignId(null);
+    setAppliedVoucherCode('');
+    setVoucherCodeInput('');
+    setHasVoucherInputInteraction(true);
+    setIsVoucherSuggestionOpen(false);
+  };
 
   const handleCityChange = (city: string) => {
     const selectedCity = normalizeCitySelection(city);
@@ -430,7 +565,11 @@ const Payment: React.FC = () => {
       const stored = sessionStorage.getItem('checkoutData');
       if (stored) {
         try {
-          const data = JSON.parse(stored);
+          const parsed = JSON.parse(stored);
+          const data = normalizeCheckoutPayload(parsed);
+          if (!data) {
+            throw new Error('Invalid checkout payload');
+          }
           setCheckoutData(data);
           setSelectedPaymentMethod('paymongo');
           // Sync local state with loaded data
@@ -462,12 +601,12 @@ const Payment: React.FC = () => {
               const options = item.options ? (typeof item.options === 'string' ? JSON.parse(item.options) : item.options) : {};
               return {
                 id: String(item.id),
-                pid: item.pid || item.product_id,
+                pid: Math.trunc(toFiniteNumber(item.pid ?? item.product_id, 0)),
                 name: item.name || '',
-                price: item.price || 0,
+                price: Math.max(0, toFiniteNumber(item.price, 0)),
                 size: item.size,
                 color: options.color || undefined,
-                qty: item.quantity || item.qty || 1,
+                qty: Math.max(1, Math.trunc(toFiniteNumber(item.quantity ?? item.qty, 1))),
                 image: item.image,
               };
             });
@@ -482,12 +621,12 @@ const Payment: React.FC = () => {
               const price = (typeof c.price === 'number') ? c.price : (parseFloat(String(c.price).replace(/[^0-9.-]+/g, '')) || 0);
               return {
                 id: String(c.id),
-                pid: c.pid || c.product_id || parseInt(c.id),
+                pid: Math.trunc(toFiniteNumber(c.pid ?? c.product_id ?? c.id, 0)),
                 name: c.name || '',
                 price,
                 size: c.size || undefined,
                 color: c.color || undefined,
-                qty: Number(c.qty || 1),
+                qty: Math.max(1, Math.trunc(toFiniteNumber(c.qty, 1))),
                 image: c.image || undefined,
               };
             });
@@ -828,10 +967,165 @@ const Payment: React.FC = () => {
   ]);
 
   useEffect(() => {
+    if (!checkoutData || isPremiumPayment || isRepairPayment) {
+      setPromoPreview(null);
+      setIsPromoPreviewLoading(false);
+      return;
+    }
+
+    if (!checkoutData.items || checkoutData.items.length === 0) {
+      setPromoPreview(null);
+      setIsPromoPreviewLoading(false);
+      return;
+    }
+
+    const promoPreviewItems = checkoutData.items
+      .map((item) => ({
+        pid: Math.trunc(toFiniteNumber(item.pid, 0)),
+        qty: Math.max(1, Math.trunc(toFiniteNumber(item.qty, 1))),
+        price: Math.max(0, toFiniteNumber(item.price, 0)),
+      }))
+      .filter((item) => item.pid > 0);
+
+    if (promoPreviewItems.length === 0) {
+      setPromoPreview(null);
+      setIsPromoPreviewLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      try {
+        setIsPromoPreviewLoading(true);
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+        const promoPayload: any = {
+          items: promoPreviewItems,
+          disable_voucher: !isVoucherSelectionEnabled,
+        };
+
+        if (selectedVoucherCampaignId !== null && selectedVoucherCampaignId > 0) {
+          promoPayload.voucher_campaign_id = selectedVoucherCampaignId;
+        }
+
+        if (appliedVoucherCode.trim()) {
+          promoPayload.voucher_code = appliedVoucherCode.trim();
+        }
+
+        const response = await fetch('/api/checkout/promo-preview', {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': csrfToken,
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          body: JSON.stringify(promoPayload),
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          setPromoPreview(null);
+          return;
+        }
+
+        const payload = await response.json();
+        setPromoPreview(payload?.data || null);
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setPromoPreview(null);
+          console.warn('Promo preview lookup failed:', error);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsPromoPreviewLoading(false);
+        }
+      }
+    }, 300);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [checkoutData, isPremiumPayment, isRepairPayment, selectedVoucherCampaignId, appliedVoucherCode, isVoucherSelectionEnabled]);
+
+  useEffect(() => {
     if (normalizeCitySelection(shippingCity) && !shippingRegion.trim()) {
       setShippingRegion(DEFAULT_SHIPPING_REGION);
     }
   }, [shippingCity, shippingRegion]);
+
+  useEffect(() => {
+    if (selectedVoucherCampaignId === null) {
+      return;
+    }
+
+    const availableVoucherIds = (promoPreview?.available_vouchers || []).map((voucher) => voucher.id);
+    if (!availableVoucherIds.includes(selectedVoucherCampaignId)) {
+      setSelectedVoucherCampaignId(null);
+    }
+  }, [promoPreview, selectedVoucherCampaignId]);
+
+  useEffect(() => {
+    const handleClickOutsideVoucherInput = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node | null;
+      if (!target) {
+        return;
+      }
+
+      if (voucherInputContainerRef.current && !voucherInputContainerRef.current.contains(target)) {
+        setIsVoucherSuggestionOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutsideVoucherInput);
+    document.addEventListener('touchstart', handleClickOutsideVoucherInput);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutsideVoucherInput);
+      document.removeEventListener('touchstart', handleClickOutsideVoucherInput);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isPremiumPayment || isRepairPayment) {
+      return;
+    }
+
+    if (!isVoucherSelectionEnabled) {
+      return;
+    }
+
+    const hasManualVoucherSelection = selectedVoucherCampaignId !== null || normalizeVoucherCode(appliedVoucherCode) !== '';
+    if (hasManualVoucherSelection || hasVoucherInputInteraction) {
+      return;
+    }
+
+    const suggestedVoucher = promoPreview?.applied_voucher
+      || promoPreview?.available_vouchers?.[0]
+      || null;
+
+    const suggestedLabel = normalizeVoucherCode(String(suggestedVoucher?.code || suggestedVoucher?.name || ''));
+    if (!suggestedLabel) {
+      return;
+    }
+
+    if (normalizeVoucherCode(voucherCodeInput) === suggestedLabel) {
+      return;
+    }
+
+    setVoucherCodeInput(suggestedLabel);
+  }, [
+    promoPreview,
+    isPremiumPayment,
+    isRepairPayment,
+    isVoucherSelectionEnabled,
+    selectedVoucherCampaignId,
+    appliedVoucherCode,
+    hasVoucherInputInteraction,
+    voucherCodeInput,
+  ]);
 
   // Validate postal code - only integers, no "e" or special characters
   const handlePostalCodeChange = (value: string, setter: (val: string) => void) => {
@@ -901,7 +1195,7 @@ const Payment: React.FC = () => {
             shipping_fee: !isPremiumPayment && !isRepairPayment
               ? Math.max(0, Number(shippingEstimate?.max_fee ?? checkoutData?.shipping_fee ?? 0))
               : 0,
-            subtotal_amount: Number(checkoutData?.total_amount ?? 0),
+            subtotal_amount: Number(promoPreview?.final_subtotal ?? checkoutData?.total_amount ?? 0),
           };
 
       const response = await fetch(endpoint, {
@@ -955,9 +1249,30 @@ const Payment: React.FC = () => {
   const handlePayNow = async () => {
     if (!checkoutData) return;
 
+    const normalizedOrderItems = checkoutData.items
+      .map((item: any) => ({
+        ...item,
+        pid: Math.trunc(toFiniteNumber(item?.pid, 0)),
+        qty: Math.max(1, Math.trunc(toFiniteNumber(item?.qty, 1))),
+        price: Math.max(0, toFiniteNumber(item?.price, 0)),
+      }))
+      .filter((item: any) => item.pid > 0);
+
+    if (normalizedOrderItems.length === 0) {
+      setPayError('Unable to process checkout items. Please go back to cart and try again.');
+      Swal.fire({
+        icon: 'error',
+        title: 'Invalid Cart Data',
+        text: 'Some checkout items are invalid. Please go back to cart and try again.',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
     const computedShippingFee = !isPremiumPayment && !isRepairPayment
       ? Math.max(0, Number(shippingEstimate?.max_fee ?? 0))
       : 0;
+    const normalizedSubtotalAmount = Math.max(0, toFiniteNumber(promoPreview?.final_subtotal, checkoutData.total_amount));
 
     // Validate required fields
     if (!customerEmail || !customerName || !customerPhone) {
@@ -1015,8 +1330,8 @@ const Payment: React.FC = () => {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
       
       const orderData = {
-        items: checkoutData.items,
-        total_amount: checkoutData.total_amount,
+        items: normalizedOrderItems,
+        total_amount: normalizedSubtotalAmount,
         shipping_fee: computedShippingFee,
         customer_name: customerName,
         customer_email: customerEmail,
@@ -1030,6 +1345,9 @@ const Payment: React.FC = () => {
         shipping_postal_code: shippingPostalCode,
         shipping_address_line: shippingAddressLine,
         payment_method: selectedPaymentMethod,
+        disable_voucher: !isVoucherSelectionEnabled,
+        voucher_campaign_id: selectedVoucherCampaignId,
+        voucher_code: appliedVoucherCode.trim() || null,
       };
 
       console.log('Creating order with data:', orderData);
@@ -1070,7 +1388,7 @@ const Payment: React.FC = () => {
         },
         body: JSON.stringify({
           shipping_fee: computedShippingFee,
-          subtotal_amount: Number(checkoutData.total_amount ?? 0),
+          subtotal_amount: normalizedSubtotalAmount,
         }),
       });
 
@@ -1110,43 +1428,77 @@ const Payment: React.FC = () => {
     return <div>Loading...</div>;
   }
 
-  const rawSubtotal = Number(checkoutData.total_amount ?? 0);
-  const checkoutShipping = Number(checkoutData.shipping_fee);
+  const rawSubtotal = Math.max(0, toFiniteNumber(promoPreview?.final_subtotal, checkoutData.total_amount));
+  const checkoutShipping = Math.max(0, toFiniteNumber(checkoutData.shipping_fee, 0));
   const selectedCity = normalizeCitySelection(shippingCity);
   const hasSelectedCity = Boolean(selectedCity);
   const shipping = !isPremiumPayment && !isRepairPayment
     ? (hasSelectedCity
-      ? (Number.isFinite(checkoutShipping)
-        ? Math.max(0, checkoutShipping)
-        : Math.max(0, Number(shippingEstimate?.max_fee ?? 0)))
+      ? Math.max(0, Number(shippingEstimate?.max_fee ?? checkoutShipping ?? 0))
       : 0)
     : 0;
-  const parsedVatRate = Number(checkoutData.vat_rate);
+  const parsedVatRate = toFiniteNumber(promoPreview?.vat_rate, toFiniteNumber(checkoutData.vat_rate, 12));
   const vatRatePercent = Number.isFinite(parsedVatRate) && parsedVatRate >= 0 ? parsedVatRate : 12;
-  const hasStoredVat = checkoutData.vat_amount !== undefined && checkoutData.vat_amount !== null;
-  const parsedVatAmount = Number(checkoutData.vat_amount);
+  const hasStoredVat = (promoPreview?.vat_amount !== undefined && promoPreview?.vat_amount !== null)
+    || (checkoutData.vat_amount !== undefined && checkoutData.vat_amount !== null);
+  const parsedVatAmount = toFiniteNumber(promoPreview?.vat_amount, toFiniteNumber(checkoutData.vat_amount, 0));
   const normalizedRawSubtotal = Number.isFinite(rawSubtotal) ? Math.max(0, rawSubtotal) : 0;
   const safeVatRatePercent = Math.max(0, vatRatePercent);
   const derivedInclusiveVatAmount = safeVatRatePercent > 0
     ? (normalizedRawSubtotal * (safeVatRatePercent / (100 + safeVatRatePercent)))
     : 0;
+  const promoNetSubtotal = toFiniteNumber(promoPreview?.net_subtotal, Number.NaN);
   const vatAmount = !isPremiumPayment && !isRepairPayment
     ? (hasStoredVat && Number.isFinite(parsedVatAmount) && parsedVatAmount >= 0
       ? parsedVatAmount
       : derivedInclusiveVatAmount)
     : 0;
   const subtotal = !isPremiumPayment && !isRepairPayment
-    ? (hasStoredVat ? normalizedRawSubtotal : Math.max(0, normalizedRawSubtotal - vatAmount))
+    ? (Number.isFinite(promoNetSubtotal) && promoNetSubtotal >= 0
+      ? promoNetSubtotal
+      : (hasStoredVat ? normalizedRawSubtotal : Math.max(0, normalizedRawSubtotal - vatAmount)))
     : normalizedRawSubtotal;
   const productTotalInclusive = !isPremiumPayment && !isRepairPayment
-    ? (hasStoredVat ? subtotal + vatAmount : normalizedRawSubtotal)
+    ? normalizedRawSubtotal
     : subtotal;
   const total = !isPremiumPayment && !isRepairPayment
     ? productTotalInclusive + shipping
     : subtotal + shipping;
   const vatLabel = `VAT (${vatRatePercent}%)`;
   const vatDisplay = `₱${vatAmount.toLocaleString()}`;
-  const itemCount = checkoutData.items.reduce((sum, item) => sum + item.qty, 0);
+  const voucherDiscountAmount = !isPremiumPayment && !isRepairPayment
+    ? Math.max(0, toFiniteNumber(promoPreview?.voucher_discount, 0))
+    : 0;
+  const appliedVoucherLabel = promoPreview?.applied_voucher?.name
+    || promoPreview?.applied_voucher?.code
+    || 'Voucher';
+  const availableVouchers = promoPreview?.available_vouchers || [];
+  const voucherCodeSuggestions = promoPreview?.voucher_code_suggestions || [];
+  const voucherSuggestionMap = new Map<number, AvailableVoucherOption>();
+  [...availableVouchers, ...voucherCodeSuggestions].forEach((voucher) => {
+    if (!voucherSuggestionMap.has(voucher.id)) {
+      voucherSuggestionMap.set(voucher.id, voucher);
+    }
+  });
+  const voucherSuggestions = Array.from(voucherSuggestionMap.values());
+  const voucherSearchTerm = normalizeVoucherCode(voucherCodeInput);
+  const filteredVoucherCodeSuggestions = voucherSuggestions.filter((voucher) => {
+    const code = normalizeVoucherCode(voucher.code || '');
+    const name = normalizeVoucherCode(voucher.name || '');
+
+    if (!voucherSearchTerm) {
+      return true;
+    }
+
+    return code.includes(voucherSearchTerm) || name.includes(voucherSearchTerm);
+  });
+  const hasExactVoucherSuggestionMatch = voucherSuggestions.some((voucher) => {
+    const candidateCode = normalizeVoucherCode(String(voucher.code || voucher.name || ''));
+    return candidateCode !== '' && candidateCode === normalizeVoucherCode(voucherCodeInput);
+  });
+  const voucherErrorMessage = promoPreview?.voucher_error || null;
+  const showVoucherSuggestionDropdown = isVoucherSuggestionOpen && !hasExactVoucherSuggestionMatch;
+  const itemCount = checkoutData.items.reduce((sum, item) => sum + Math.max(1, Math.trunc(toFiniteNumber(item.qty, 1))), 0);
   const hasShippingEstimate = Boolean(shippingEstimate) && hasSelectedCity;
   const shippingSummaryValue = hasSelectedCity
     ? (hasShippingEstimate ? `₱${shipping.toLocaleString()}` : (isShippingEstimateLoading ? 'Calculating...' : 'Unavailable'))
@@ -1171,6 +1523,18 @@ const Payment: React.FC = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
+      <style>{`
+        .voucher-suggestion-scroll {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+
+        .voucher-suggestion-scroll::-webkit-scrollbar {
+          width: 0;
+          height: 0;
+          display: none;
+        }
+      `}</style>
       <Head title="Payment" />
 
       {!isPremiumPayment && <div className="hidden xl:block"><Navigation /></div>}
@@ -1297,6 +1661,18 @@ const Payment: React.FC = () => {
                   <span className="text-gray-600">Product total (VAT-inclusive)</span>
                   <span className="text-gray-600">₱{productTotalInclusive.toLocaleString()}</span>
                 </div>
+                {isPromoPreviewLoading && (
+                  <div className="flex items-center justify-between pl-3 text-xs md:text-sm">
+                    <span className="text-gray-500">Voucher check</span>
+                    <span className="text-gray-500">Checking claimed vouchers...</span>
+                  </div>
+                )}
+                {!isPromoPreviewLoading && voucherDiscountAmount > 0 && (
+                  <div className="flex items-center justify-between pl-3 text-xs md:text-sm">
+                    <span className="text-emerald-700 font-semibold">{appliedVoucherLabel}</span>
+                    <span className="font-semibold text-emerald-700">-₱{voucherDiscountAmount.toLocaleString()}</span>
+                  </div>
+                )}
 
                 <div className="pt-2">
                   <div className="flex items-start justify-between gap-3">
@@ -1704,7 +2080,7 @@ const Payment: React.FC = () => {
                     value="paymongo"
                     checked={selectedPaymentMethod === 'paymongo'}
                     onChange={() => setSelectedPaymentMethod('paymongo')}
-                    className="w-5 h-5 flex-shrink-0"
+                    className="w-5 h-5 shrink-0"
                   />
                   <div className="flex-1">
                     <span className="text-base font-semibold text-black block">Online Payment</span>
@@ -1797,16 +2173,112 @@ const Payment: React.FC = () => {
                   ))}
                 </div>
 
-                {/* Discount Code */}
-                <div className="flex gap-2 mb-4">
-                  <input
-                    type="text"
-                    placeholder="Discount code or gift card"
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded text-sm text-black placeholder-gray-400"
-                  />
-                  <button className="px-4 py-2 text-sm text-black border border-gray-300 rounded hover:bg-gray-50">
-                    Apply
-                  </button>
+                {/* Auto-applied voucher */}
+                <div className="mb-4 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
+                  {isPromoPreviewLoading ? (
+                    <p className="text-gray-600">Checking claimed vouchers...</p>
+                  ) : (
+                    <div className="space-y-2">
+                      <label className="block text-xs font-semibold uppercase tracking-wide text-gray-700">
+                        Voucher
+                      </label>
+                      <p className="text-xs text-gray-600">Type a voucher code or choose from suggestions.</p>
+                      <div className="flex items-center gap-2">
+                        <div ref={voucherInputContainerRef} className="relative flex-1">
+                          <input
+                            type="text"
+                            aria-label="Voucher code"
+                            value={voucherCodeInput}
+                            onFocus={() => setIsVoucherSuggestionOpen(true)}
+                            onClick={() => setIsVoucherSuggestionOpen(true)}
+                            onChange={(e) => {
+                              const nextVoucherCode = e.target.value.toUpperCase();
+                              const normalizedNextVoucherCode = normalizeVoucherCode(nextVoucherCode);
+
+                              setSelectedVoucherCampaignId(null);
+                              setHasVoucherInputInteraction(true);
+                              setVoucherCodeInput(nextVoucherCode);
+
+                              if (normalizedNextVoucherCode === '') {
+                                setAppliedVoucherCode('');
+                                setIsVoucherSelectionEnabled(false);
+                              }
+
+                              setIsVoucherSuggestionOpen(true);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleApplyVoucherCode();
+                              }
+
+                              if (e.key === 'Escape') {
+                                setIsVoucherSuggestionOpen(false);
+                              }
+                            }}
+                            placeholder="Enter voucher code"
+                            className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
+                          />
+                          {showVoucherSuggestionDropdown && (
+                            <div className="voucher-suggestion-scroll absolute z-30 mt-1 max-h-44 w-full overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg">
+                              {filteredVoucherCodeSuggestions.length > 0 ? (
+                                filteredVoucherCodeSuggestions.map((voucher) => {
+                                  const displayName = voucher.name || voucher.code || 'Voucher';
+                                  const displayCode = normalizeVoucherCode(String(voucher.code || voucher.name || ''));
+
+                                  return (
+                                    <button
+                                      key={voucher.id}
+                                      type="button"
+                                      onMouseDown={(e) => {
+                                        e.preventDefault();
+                                        const normalizedCode = normalizeVoucherCode(displayCode);
+                                        setIsVoucherSelectionEnabled(true);
+                                        setSelectedVoucherCampaignId(voucher.id);
+                                        setHasVoucherInputInteraction(true);
+                                        setVoucherCodeInput(normalizedCode);
+                                        setAppliedVoucherCode(normalizedCode);
+                                        setIsVoucherSuggestionOpen(false);
+                                      }}
+                                      className="w-full border-b border-gray-100 px-3 py-2 text-left text-sm text-black hover:bg-gray-50 last:border-b-0"
+                                    >
+                                      <span className="block font-medium text-black">{displayName}</span>
+                                      {voucher.code && voucher.name && normalizeVoucherCode(voucher.code) !== normalizeVoucherCode(voucher.name) && (
+                                        <span className="block text-xs text-gray-500">{normalizeVoucherCode(voucher.code)}</span>
+                                      )}
+                                    </button>
+                                  );
+                                })
+                              ) : (
+                                <div className="px-3 py-2 text-sm text-gray-500">No available vouchers</div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleApplyVoucherCode}
+                          className="rounded-md bg-gray-900 px-3 py-2 text-xs font-semibold text-white hover:bg-black"
+                        >
+                          Apply
+                        </button>
+                      </div>
+
+                      {(selectedVoucherCampaignId !== null || appliedVoucherCode) && (
+                        <button
+                          type="button"
+                          onClick={handleClearVoucherSelection}
+                          className="text-xs font-medium text-gray-700 underline hover:text-black"
+                        >
+                          Clear voucher selection
+                        </button>
+                      )}
+
+                      {voucherErrorMessage && (
+                        <p className="text-xs font-medium text-red-600">{voucherErrorMessage}</p>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Summary */}
@@ -1815,6 +2287,18 @@ const Payment: React.FC = () => {
                     <span className="text-gray-600">Subtotal (Before VAT)</span>
                     <span className="text-black font-medium">₱{subtotal.toLocaleString()}</span>
                   </div>
+                  {isPromoPreviewLoading && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Voucher check</span>
+                      <span className="text-gray-500">Checking claimed vouchers...</span>
+                    </div>
+                  )}
+                  {!isPromoPreviewLoading && voucherDiscountAmount > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-emerald-700 font-semibold">{appliedVoucherLabel}</span>
+                      <span className="text-emerald-700 font-medium">-₱{voucherDiscountAmount.toLocaleString()}</span>
+                    </div>
+                  )}
                   <div className="text-sm">
                     <div className="flex items-start justify-between gap-3">
                       <span className="text-gray-600">Shipping</span>

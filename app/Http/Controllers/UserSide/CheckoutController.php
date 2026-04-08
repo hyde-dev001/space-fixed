@@ -10,16 +10,20 @@ use App\Models\InventoryItem;
 use App\Models\InventorySize;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Models\PromoCampaign;
 use App\Models\ShopOwner;
 use App\Models\StockMovement;
 use App\Models\User;
+use App\Models\VoucherClaim;
 use App\Models\Finance\Invoice;
 use App\Models\Finance\InvoiceItem;
 use App\Models\AuditLog;
 use App\Services\NotificationService;
 use App\Services\PaymentSettlementService;
+use App\Services\PromoPricingService;
 use App\Support\Tax\VatInclusiveCalculator;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -28,10 +32,12 @@ use Illuminate\Support\Facades\Schema;
 class CheckoutController extends Controller
 {
     protected NotificationService $notificationService;
+    protected PromoPricingService $promoPricingService;
 
-    public function __construct(NotificationService $notificationService)
+    public function __construct(NotificationService $notificationService, PromoPricingService $promoPricingService)
     {
         $this->notificationService = $notificationService;
+        $this->promoPricingService = $promoPricingService;
     }
 
     private function normalizeSizeSystem(?string $rawSystem): string
@@ -325,6 +331,386 @@ class CheckoutController extends Controller
     }
 
     /**
+     * @param array<int, array{item:array<string, mixed>, product:Product}> $shopItems
+     * @return array<int, array{product_id:int, price:float, qty:int}>
+     */
+    private function buildPromoLineItems(array $shopItems): array
+    {
+        return collect($shopItems)
+            ->map(function (array $shopItem): array {
+                $item = $shopItem['item'];
+                /** @var Product $product */
+                $product = $shopItem['product'];
+
+                return [
+                    'product_id' => (int) $product->id,
+                    'price' => max(0.0, (float) ($item['price'] ?? 0)),
+                    'qty' => max(1, (int) ($item['qty'] ?? 1)),
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    private function promoTablesReady(): bool
+    {
+        return Schema::hasTable('promo_campaigns')
+            && Schema::hasTable('promo_campaign_products')
+            && Schema::hasTable('voucher_claims');
+    }
+
+    private function activeCampaignsForShop(int $shopOwnerId, string $kind): Collection
+    {
+        if (!$this->promoTablesReady()) {
+            return collect();
+        }
+
+        return PromoCampaign::query()
+            ->with('products:id')
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where('kind', $kind)
+            ->where('status', 'active')
+            ->where('start_at', '<=', now())
+            ->where('end_at', '>=', now())
+            ->where(function ($query) {
+                $query->whereNull('usage_limit')
+                    ->orWhereColumn('used_count', '<', 'usage_limit');
+            })
+            ->get();
+    }
+
+    private function claimedVoucherCampaignsForShop(int $shopOwnerId, int $userId): Collection
+    {
+        if (!$this->promoTablesReady()) {
+            return collect();
+        }
+
+        return PromoCampaign::query()
+            ->with('products:id')
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where('kind', 'voucher')
+            ->where('status', 'active')
+            ->where('start_at', '<=', now())
+            ->where('end_at', '>=', now())
+            ->where(function ($query) {
+                $query->whereNull('usage_limit')
+                    ->orWhereColumn('used_count', '<', 'usage_limit');
+            })
+            ->whereHas('claims', function ($query) use ($shopOwnerId, $userId) {
+                $query->where('shop_owner_id', $shopOwnerId)
+                    ->where('user_id', $userId)
+                    ->where('status', 'claimed');
+            })
+            ->get();
+    }
+
+    private function normalizeVoucherCode(?string $voucherCode): ?string
+    {
+        $normalized = trim((string) $voucherCode);
+        return $normalized !== '' ? $normalized : null;
+    }
+
+    private function hasVoucherSelectionIntent(?int $voucherCampaignId, ?string $voucherCode): bool
+    {
+        return ($voucherCampaignId !== null && $voucherCampaignId > 0)
+            || $this->normalizeVoucherCode($voucherCode) !== null;
+    }
+
+    private function voucherByCodeForCheckout(int $shopOwnerId, int $userId, ?string $voucherCode): ?PromoCampaign
+    {
+        $normalizedCode = $this->normalizeVoucherCode($voucherCode);
+
+        if ($normalizedCode === null || !$this->promoTablesReady()) {
+            return null;
+        }
+
+        $campaign = PromoCampaign::query()
+            ->with('products:id')
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where('kind', 'voucher')
+            ->where('status', 'active')
+            ->where('start_at', '<=', now())
+            ->where('end_at', '>=', now())
+            ->whereRaw('LOWER(code) = ?', [strtolower($normalizedCode)])
+            ->where(function ($query) {
+                $query->whereNull('usage_limit')
+                    ->orWhereColumn('used_count', '<', 'usage_limit');
+            })
+            ->first();
+
+        if (!$campaign) {
+            return null;
+        }
+
+        $alreadyRedeemed = VoucherClaim::query()
+            ->where('promo_campaign_id', (int) $campaign->id)
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where('user_id', $userId)
+            ->where('status', 'redeemed')
+            ->exists();
+
+        return $alreadyRedeemed ? null : $campaign;
+    }
+
+    private function availableVoucherCampaignsForCheckout(int $shopOwnerId, int $userId, ?string $voucherCode = null): Collection
+    {
+        $claimedVouchers = $this->claimedVoucherCampaignsForShop($shopOwnerId, $userId);
+        $manualVoucher = $this->voucherByCodeForCheckout($shopOwnerId, $userId, $voucherCode);
+
+        if (!$manualVoucher) {
+            return $claimedVouchers->values();
+        }
+
+        return $claimedVouchers
+            ->concat(collect([$manualVoucher]))
+            ->unique('id')
+            ->values();
+    }
+
+    private function pickRequestedVoucher(Collection $availableVouchers, ?int $voucherCampaignId, ?string $voucherCode): ?PromoCampaign
+    {
+        if ($voucherCampaignId !== null && $voucherCampaignId > 0) {
+            /** @var PromoCampaign|null $campaign */
+            $campaign = $availableVouchers
+                ->first(fn (PromoCampaign $candidate) => (int) $candidate->id === (int) $voucherCampaignId);
+
+            return $campaign;
+        }
+
+        $normalizedCode = $this->normalizeVoucherCode($voucherCode);
+        if ($normalizedCode === null) {
+            return null;
+        }
+
+        /** @var PromoCampaign|null $campaign */
+        $campaign = $availableVouchers
+            ->first(fn (PromoCampaign $candidate) => strtolower((string) $candidate->code) === strtolower($normalizedCode));
+
+        return $campaign;
+    }
+
+    private function summarizeAvailableVoucher(PromoCampaign $campaign): array
+    {
+        return [
+            'id' => (int) $campaign->id,
+            'name' => (string) $campaign->name,
+            'code' => $campaign->code,
+            'discount_mode' => (string) $campaign->discount_mode,
+            'value' => (float) $campaign->value,
+            'min_spend' => (float) $campaign->min_spend,
+        ];
+    }
+
+    private function summarizeAvailableVouchers(Collection $campaigns): array
+    {
+        return $campaigns
+            ->map(fn (PromoCampaign $campaign) => $this->summarizeAvailableVoucher($campaign))
+            ->values()
+            ->all();
+    }
+
+    private function voucherCodeSuggestionCampaignsForCheckout(int $shopOwnerId, int $userId): Collection
+    {
+        if (!$this->promoTablesReady()) {
+            return collect();
+        }
+
+        $redeemedCampaignIds = VoucherClaim::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where('user_id', $userId)
+            ->where('status', 'redeemed')
+            ->pluck('promo_campaign_id');
+
+        return PromoCampaign::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where('kind', 'voucher')
+            ->where('status', 'active')
+            ->where('start_at', '<=', now())
+            ->where('end_at', '>=', now())
+            ->whereNotNull('code')
+            ->where('code', '!=', '')
+            ->where(function ($query) {
+                $query->whereNull('usage_limit')
+                    ->orWhereColumn('used_count', '<', 'usage_limit');
+            })
+            ->when($redeemedCampaignIds->isNotEmpty(), function ($query) use ($redeemedCampaignIds) {
+                $query->whereNotIn('id', $redeemedCampaignIds);
+            })
+            ->orderBy('code')
+            ->get();
+    }
+
+    private function summarizeAppliedVoucher(?PromoCampaign $campaign): ?array
+    {
+        if (!$campaign) {
+            return null;
+        }
+
+        return [
+            'id' => (int) $campaign->id,
+            'name' => (string) $campaign->name,
+            'code' => $campaign->code,
+            'scope' => (string) $campaign->scope,
+            'discount_mode' => (string) $campaign->discount_mode,
+            'value' => (float) $campaign->value,
+        ];
+    }
+
+    /**
+     * Preview promo-adjusted checkout totals for the current cart.
+     */
+    public function previewPromoPricing(Request $request)
+    {
+        $user = Auth::guard('user')->user();
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Please log in to continue.',
+            ], 401);
+        }
+
+        $validated = $request->validate([
+            'items' => 'required|array|min:1',
+            'items.*.pid' => 'required|integer',
+            'items.*.qty' => 'required|integer|min:1',
+            'items.*.price' => 'required|numeric|min:0',
+            'disable_voucher' => 'nullable|boolean',
+            'voucher_campaign_id' => 'nullable|integer',
+            'voucher_code' => 'nullable|string|max:100',
+        ]);
+
+        $disableVoucher = (bool) ($validated['disable_voucher'] ?? false);
+        $requestedVoucherCampaignId = isset($validated['voucher_campaign_id'])
+            ? (int) $validated['voucher_campaign_id']
+            : null;
+        $requestedVoucherCode = $this->normalizeVoucherCode($validated['voucher_code'] ?? null);
+        $hasVoucherSelectionIntent = $this->hasVoucherSelectionIntent($requestedVoucherCampaignId, $requestedVoucherCode);
+
+        $requestedItems = collect($validated['items']);
+        $productIds = $requestedItems
+            ->map(fn ($item) => (int) ($item['pid'] ?? 0))
+            ->filter(fn ($pid) => $pid > 0)
+            ->unique()
+            ->values();
+
+        $products = Product::query()
+            ->whereIn('id', $productIds)
+            ->get(['id', 'shop_owner_id'])
+            ->keyBy('id');
+
+        if ($products->count() !== $productIds->count()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'One or more products are no longer available.',
+            ], 404);
+        }
+
+        $shopOwnerIds = $products
+            ->pluck('shop_owner_id')
+            ->filter(fn ($shopOwnerId) => !is_null($shopOwnerId))
+            ->unique()
+            ->values();
+
+        if ($shopOwnerIds->count() > 1) {
+            return response()->json([
+                'success' => false,
+                'error' => 'mixed_shop_checkout_not_allowed',
+                'message' => 'You can only checkout products from one shop at a time.',
+            ], 422);
+        }
+
+        $shopOwnerId = (int) $shopOwnerIds->first();
+
+        if (!$this->promoTablesReady()) {
+            $fallbackSubtotal = round(max(0.0, (float) $requestedItems->sum(fn ($item) => ((float) ($item['price'] ?? 0)) * ((int) ($item['qty'] ?? 1)))), 2);
+            $vatRatePercent = 12.0;
+            $vatBreakdown = VatInclusiveCalculator::extract($fallbackSubtotal, $vatRatePercent);
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'shop_owner_id' => $shopOwnerId,
+                    'sale_adjusted_subtotal' => $fallbackSubtotal,
+                    'voucher_discount' => 0,
+                    'final_subtotal' => $fallbackSubtotal,
+                    'net_subtotal' => round((float) ($vatBreakdown['net'] ?? 0), 2),
+                    'vat_amount' => round((float) ($vatBreakdown['vat'] ?? 0), 2),
+                    'vat_rate' => $vatRatePercent,
+                    'applied_voucher' => null,
+                    'available_vouchers' => [],
+                    'voucher_code_suggestions' => [],
+                    'voucher_error' => $hasVoucherSelectionIntent ? 'Voucher feature is not available right now.' : null,
+                ],
+            ]);
+        }
+
+        $shopItems = $requestedItems
+            ->map(function ($item) use ($products): array {
+                /** @var Product|null $product */
+                $product = $products->get((int) ($item['pid'] ?? 0));
+
+                return [
+                    'item' => [
+                        'price' => (float) ($item['price'] ?? 0),
+                        'qty' => (int) ($item['qty'] ?? 1),
+                    ],
+                    'product' => $product,
+                ];
+            })
+            ->filter(fn (array $shopItem) => $shopItem['product'] instanceof Product)
+            ->values()
+            ->all();
+
+        $pricingLineItems = $this->buildPromoLineItems($shopItems);
+        $activeSales = $disableVoucher
+            ? collect()
+            : $this->activeCampaignsForShop($shopOwnerId, 'sale');
+        $availableVouchers = $this->availableVoucherCampaignsForCheckout($shopOwnerId, (int) $user->id, $requestedVoucherCode);
+        $voucherCodeSuggestions = $this->voucherCodeSuggestionCampaignsForCheckout($shopOwnerId, (int) $user->id);
+        $selectedVoucher = $this->pickRequestedVoucher($availableVouchers, $requestedVoucherCampaignId, $requestedVoucherCode);
+
+        if ($disableVoucher) {
+            $voucherCandidates = collect();
+        } else {
+            $voucherCandidates = $hasVoucherSelectionIntent
+                ? ($selectedVoucher ? collect([$selectedVoucher]) : collect())
+                : $availableVouchers;
+        }
+
+        $pricing = $this->promoPricingService->applySaleThenVoucher($pricingLineItems, $activeSales, $voucherCandidates);
+
+        $appliedVoucher = $pricing['applied_voucher'] ?? null;
+        $voucherError = null;
+
+        if (!$disableVoucher && $hasVoucherSelectionIntent && !($appliedVoucher instanceof PromoCampaign)) {
+            $voucherError = $selectedVoucher
+                ? 'Selected voucher is not eligible for this checkout.'
+                : 'Voucher code is invalid, unavailable, or already redeemed.';
+        }
+
+        $vatRatePercent = 12.0;
+        $vatBreakdown = VatInclusiveCalculator::extract((float) $pricing['final_subtotal'], $vatRatePercent);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'shop_owner_id' => $shopOwnerId,
+                'sale_adjusted_subtotal' => round((float) $pricing['sale_adjusted_subtotal'], 2),
+                'voucher_discount' => round((float) $pricing['voucher_discount'], 2),
+                'final_subtotal' => round((float) $pricing['final_subtotal'], 2),
+                'net_subtotal' => round((float) ($vatBreakdown['net'] ?? 0), 2),
+                'vat_amount' => round((float) ($vatBreakdown['vat'] ?? 0), 2),
+                'vat_rate' => $vatRatePercent,
+                'applied_voucher' => $this->summarizeAppliedVoucher($appliedVoucher),
+                'available_vouchers' => $this->summarizeAvailableVouchers($availableVouchers),
+                'voucher_code_suggestions' => $this->summarizeAvailableVouchers($voucherCodeSuggestions),
+                'voucher_error' => $voucherError,
+            ],
+        ]);
+    }
+
+    /**
      * Create order from cart items
      */
     public function createOrder(Request $request)
@@ -365,10 +751,19 @@ class CheckoutController extends Controller
                 'shipping_barangay' => 'nullable|string|max:100',
                 'shipping_postal_code' => 'nullable|string|max:10',
                 'shipping_address_line' => 'nullable|string|max:255',
+                'disable_voucher' => 'nullable|boolean',
+                'voucher_campaign_id' => 'nullable|integer',
+                'voucher_code' => 'nullable|string|max:100',
             ]);
 
             $customerId = $user->id;
             $requestedShippingFee = max(0.0, round((float) ($validated['shipping_fee'] ?? 0), 2));
+            $disableVoucher = (bool) ($validated['disable_voucher'] ?? false);
+            $requestedVoucherCampaignId = isset($validated['voucher_campaign_id'])
+                ? (int) $validated['voucher_campaign_id']
+                : null;
+            $requestedVoucherCode = $this->normalizeVoucherCode($validated['voucher_code'] ?? null);
+            $hasVoucherSelectionIntent = $this->hasVoucherSelectionIntent($requestedVoucherCampaignId, $requestedVoucherCode);
 
             // Enforce single-shop checkout to avoid cross-shop shipping/payment conflicts.
             $selectedShopOwnerIds = collect($validated['items'])
@@ -528,10 +923,38 @@ class CheckoutController extends Controller
             try {
                 // Create separate order for each shop owner
                 foreach ($itemsByShop as $shopOwnerId => $shopItems) {
-                    $orderTotal = 0;
+                    $pricingLineItems = $this->buildPromoLineItems($shopItems);
+                    $activeSales = $disableVoucher
+                        ? collect()
+                        : $this->activeCampaignsForShop((int) $shopOwnerId, 'sale');
+                    $availableVouchers = $this->availableVoucherCampaignsForCheckout((int) $shopOwnerId, (int) $customerId, $requestedVoucherCode);
+                    $selectedVoucher = $this->pickRequestedVoucher($availableVouchers, $requestedVoucherCampaignId, $requestedVoucherCode);
 
-                    // Calculate expected total for duplicate check
-                    $expectedTotal = collect($shopItems)->sum(fn($si) => $si['item']['price'] * $si['item']['qty']);
+                    if ($disableVoucher) {
+                        $voucherCandidates = collect();
+                    } else {
+                        $voucherCandidates = $hasVoucherSelectionIntent
+                            ? ($selectedVoucher ? collect([$selectedVoucher]) : collect())
+                            : $availableVouchers;
+                    }
+
+                    $pricingResult = $this->promoPricingService->applySaleThenVoucher($pricingLineItems, $activeSales, $voucherCandidates);
+
+                    $selectedPricingVoucher = $pricingResult['applied_voucher'] ?? null;
+
+                    if (!$disableVoucher && $hasVoucherSelectionIntent && !($selectedPricingVoucher instanceof PromoCampaign)) {
+                        throw new \RuntimeException($selectedVoucher
+                            ? 'Selected voucher is not eligible for this checkout.'
+                            : 'Voucher code is invalid, unavailable, or already redeemed.');
+                    }
+
+                    $expectedRawTotal = collect($shopItems)->sum(fn ($si) => ((float) $si['item']['price']) * ((int) $si['item']['qty']));
+                    $expectedItemInclusiveTotal = round(max(0.0, (float) ($pricingResult['final_subtotal'] ?? 0)), 2);
+                    $expectedVatBreakdown = VatInclusiveCalculator::extract($expectedItemInclusiveTotal, $vatRatePercent);
+                    $expectedOrderNetSubtotal = (float) ($expectedVatBreakdown['net'] ?? 0);
+                    /** @var PromoCampaign|null $appliedVoucher */
+                    $appliedVoucher = $pricingResult['applied_voucher'] ?? null;
+                    $appliedVoucherDiscount = round((float) ($pricingResult['voucher_discount'] ?? 0), 2);
                     $shopIndex++;
 
                     if ($requestedShippingFee <= 0) {
@@ -541,7 +964,7 @@ class CheckoutController extends Controller
                     } elseif ($shopIndex === $totalShops) {
                         $shippingFeeForOrder = max(0.0, round($requestedShippingFee - $allocatedShippingFee, 2));
                     } else {
-                        $shippingFeeForOrder = round(($expectedTotal / $cartSubtotal) * $requestedShippingFee, 2);
+                        $shippingFeeForOrder = round(($expectedRawTotal / $cartSubtotal) * $requestedShippingFee, 2);
                     }
                     $allocatedShippingFee = round($allocatedShippingFee + $shippingFeeForOrder, 2);
 
@@ -550,7 +973,7 @@ class CheckoutController extends Controller
                     // creating a new one (prevents double-orders on retry after 500 errors).
                     $existingOrderQuery = Order::where('customer_id', $customerId)
                         ->where('shop_owner_id', $shopOwnerId)
-                        ->where('total_amount', $expectedTotal)
+                        ->where('total_amount', $expectedOrderNetSubtotal)
                         ->where('status', 'pending')
                         ->where('payment_status', 'pending')
                         ->whereRaw('LOWER(COALESCE(payment_method, ?)) = ?', ['paymongo', $requestedPaymentMethod])
@@ -630,7 +1053,6 @@ class CheckoutController extends Controller
                         $product = $shopItem['product'];
 
                         $subtotal = $item['price'] * $item['qty'];
-                        $orderTotal += $subtotal;
 
                         // Extract options for color and image
                         $options = isset($item['options']) ? (is_string($item['options']) ? json_decode($item['options'], true) : $item['options']) : [];
@@ -741,8 +1163,8 @@ class CheckoutController extends Controller
                     }
 
                     // Product pricing is VAT-inclusive: extract net + VAT from item total.
-                    $itemInclusiveTotal = round(max(0.0, (float) $orderTotal), 2);
-                    $vatBreakdown = VatInclusiveCalculator::extract($itemInclusiveTotal, $vatRatePercent);
+                    $itemInclusiveTotal = $expectedItemInclusiveTotal;
+                    $vatBreakdown = $expectedVatBreakdown;
                     $orderNetSubtotal = (float) $vatBreakdown['net'];
                     $orderVatAmount = (float) $vatBreakdown['vat'];
                     $orderGrandTotal = round(((float) $vatBreakdown['total']) + $shippingFeeForOrder, 2);
@@ -754,11 +1176,46 @@ class CheckoutController extends Controller
                         'total' => $orderGrandTotal,
                     ]));
 
+                    if ($appliedVoucher instanceof PromoCampaign) {
+                        $claimToRedeem = VoucherClaim::query()
+                            ->where('promo_campaign_id', (int) $appliedVoucher->id)
+                            ->where('shop_owner_id', (int) $shopOwnerId)
+                            ->where('user_id', (int) $customerId)
+                            ->orderBy('id')
+                            ->first();
+
+                        if ($claimToRedeem && $claimToRedeem->status === 'claimed') {
+                            $claimToRedeem->update([
+                                'status' => 'redeemed',
+                                'redeemed_at' => now(),
+                            ]);
+
+                            PromoCampaign::query()
+                                ->where('id', (int) $appliedVoucher->id)
+                                ->increment('used_count');
+                        } elseif (!$claimToRedeem) {
+                            VoucherClaim::query()->create([
+                                'promo_campaign_id' => (int) $appliedVoucher->id,
+                                'shop_owner_id' => (int) $shopOwnerId,
+                                'user_id' => (int) $customerId,
+                                'status' => 'redeemed',
+                                'claimed_at' => now(),
+                                'redeemed_at' => now(),
+                            ]);
+
+                            PromoCampaign::query()
+                                ->where('id', (int) $appliedVoucher->id)
+                                ->increment('used_count');
+                        }
+                    }
+
                     $createdOrders[] = [
                         'id' => $order->id,
                         'order_number' => $order->order_number,
                         'total' => $orderGrandTotal,
                         'items_count' => count($shopItems),
+                        'voucher_discount' => $appliedVoucherDiscount,
+                        'applied_voucher' => $this->summarizeAppliedVoucher($appliedVoucher),
                     ];
 
                     Log::info('Order created', [
@@ -772,6 +1229,8 @@ class CheckoutController extends Controller
                         'shipping_fee' => $shippingFeeForOrder,
                         'vat_amount' => $orderVatAmount,
                         'vat_rate' => $vatRatePercent,
+                        'voucher_discount' => $appliedVoucherDiscount,
+                        'applied_voucher_id' => $appliedVoucher?->id,
                     ]);
 
                     // Create or find conversation and send automatic message to customer

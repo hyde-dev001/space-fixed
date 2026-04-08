@@ -60,90 +60,23 @@ interface RepairProcessPageProps {
   };
 }
 
-const REGION_OPTIONS = [
-  'Abra',
-  'Agusan del Norte',
-  'Agusan del Sur',
-  'Aklan',
-  'Albay',
-  'Antique',
-  'Apayao',
-  'Aurora',
-  'Basilan',
-  'Bataan',
-  'Batanes',
-  'Batangas',
-  'Benguet',
-  'Biliran',
-  'Bohol',
-  'Bukidnon',
-  'Bulacan',
-  'Cagayan',
-  'Camarines Norte',
-  'Camarines Sur',
-  'Camiguin',
-  'Capiz',
-  'Catanduanes',
-  'Cavite',
-  'Cebu',
-  'Cotabato',
-  'Compostela Valley',
-  'Davao del Norte',
-  'Davao del Sur',
-  'Davao Occidental',
-  'Davao Oriental',
-  'Dinagat Islands',
-  'Eastern Samar',
-  'Guimaras',
-  'Ifugao',
-  'Ilocos Norte',
-  'Ilocos Sur',
-  'Iloilo',
-  'Isabela',
-  'Kalinga',
-  'La Union',
-  'Laguna',
-  'Lanao del Norte',
-  'Lanao del Sur',
-  'Leyte',
-  'Maguindanao',
-  'Marinduque',
-  'Masbate',
-  'Metro Manila',
-  'Misamis Occidental',
-  'Misamis Oriental',
-  'Mountain Province',
-  'Negros Occidental',
-  'Negros Oriental',
-  'Northern Samar',
-  'Nueva Ecija',
-  'Nueva Vizcaya',
-  'Occidental Mindoro',
-  'Oriental Mindoro',
-  'Palawan',
-  'Pampanga',
-  'Pangasinan',
-  'Quezon',
-  'Quirino',
-  'Rizal',
-  'Romblon',
-  'Samar',
-  'Sarangani',
-  'Siquijor',
-  'Sorsogon',
-  'South Cotabato',
-  'Southern Leyte',
-  'Sultan Kudarat',
-  'Sulu',
-  'Surigao del Norte',
-  'Surigao del Sur',
-  'Tarlac',
-  'Tawi-Tawi',
-  'Zambales',
-  'Zamboanga del Norte',
-  'Zamboanga del Sur',
-  'Zamboanga Sibugay',
+const DEFAULT_SHIPPING_REGION = 'Cavite';
+
+const PH_CITY_OPTIONS = [
+  'Bacoor',
+  'Imus',
+  'Dasmariñas',
+  'General Trias',
+  'Trece Martires',
+  'Tagaytay',
+  'City of Cavite',
 ];
+
+const normalizeCitySelection = (city?: string | null): string => {
+  const trimmedCity = (city || '').trim();
+  if (!trimmedCity) return '';
+  return PH_CITY_OPTIONS.find((option) => option.toLowerCase() === trimmedCity.toLowerCase()) || '';
+};
 
 const getEffectivePackagePrice = (pkg: RepairPackage): number => {
   const effective = Number((pkg as any).effective_package_price);
@@ -317,10 +250,8 @@ const RepairProcess: React.FC = () => {
   const [selectedServiceIds, setSelectedServiceIds] = useState<number[]>([]);
   const [selectedAddOnServiceIds, setSelectedAddOnServiceIds] = useState<number[]>([]);
   const [isShoeTypeOpen, setIsShoeTypeOpen] = useState(false);
-  const [isPickupRegionOpen, setIsPickupRegionOpen] = useState(false);
   const [saveInfoForCheckout, setSaveInfoForCheckout] = useState(false);
   const shoeTypeDropdownRef = useRef<HTMLDivElement | null>(null);
-  const pickupRegionDropdownRef = useRef<HTMLDivElement | null>(null);
 
   // Set selected services once repair services are loaded
   useEffect(() => {
@@ -346,9 +277,6 @@ const RepairProcess: React.FC = () => {
     const handleClickOutside = (event: MouseEvent) => {
       if (shoeTypeDropdownRef.current && !shoeTypeDropdownRef.current.contains(event.target as Node)) {
         setIsShoeTypeOpen(false);
-      }
-      if (pickupRegionDropdownRef.current && !pickupRegionDropdownRef.current.contains(event.target as Node)) {
-        setIsPickupRegionOpen(false);
       }
     };
 
@@ -379,6 +307,7 @@ const RepairProcess: React.FC = () => {
 
     try {
       const parsed = JSON.parse(savedCheckoutInfo) as Partial<typeof formData>;
+      const savedReturnCity = normalizeCitySelection(parsed.returnCity);
       setFormData((prev) => ({
         ...prev,
         customerName: parsed.customerName || '',
@@ -390,12 +319,12 @@ const RepairProcess: React.FC = () => {
         pickupBarangay: parsed.pickupBarangay || '',
         pickupCity: parsed.pickupCity || '',
         pickupRegion: parsed.pickupRegion || '',
-        pickupPostalCode: parsed.pickupPostalCode || '',
+        pickupPostalCode: (parsed.pickupPostalCode || '').replace(/\D/g, ''),
         returnAddressLine: parsed.returnAddressLine || '',
         returnBarangay: parsed.returnBarangay || '',
-        returnCity: parsed.returnCity || '',
-        returnRegion: parsed.returnRegion || '',
-        returnPostalCode: parsed.returnPostalCode || '',
+        returnCity: savedReturnCity,
+        returnRegion: parsed.returnRegion || (savedReturnCity ? DEFAULT_SHIPPING_REGION : ''),
+        returnPostalCode: (parsed.returnPostalCode || '').replace(/\D/g, ''),
       }));
       setSaveInfoForCheckout(true);
     } catch {
@@ -603,8 +532,21 @@ const RepairProcess: React.FC = () => {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
+    const nextValue =
+      name === 'pickupPostalCode' || name === 'returnPostalCode'
+        ? value.replace(/\D/g, '')
+        : value;
 
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData(prev => ({ ...prev, [name]: nextValue }));
+  };
+
+  const handleReturnCityChange = (city: string) => {
+    const selectedCity = normalizeCitySelection(city);
+    setFormData((prev) => ({
+      ...prev,
+      returnCity: selectedCity,
+      returnRegion: selectedCity ? DEFAULT_SHIPPING_REGION : '',
+    }));
   };
 
   const handleServiceToggle = (serviceId: number) => {
@@ -797,12 +739,12 @@ const RepairProcess: React.FC = () => {
     }
 
     if (formData.returnDeliveryMethod !== 'walk_in') {
+      const normalizedReturnPostalCode = formData.returnPostalCode.replace(/\D/g, '');
       const missingReturnFields =
         !formData.returnAddressLine ||
         !formData.returnBarangay ||
         !formData.returnCity ||
-        !formData.returnRegion ||
-        !formData.returnPostalCode;
+        !normalizedReturnPostalCode;
 
       if (missingReturnFields) {
         Swal.fire({
@@ -874,11 +816,15 @@ const RepairProcess: React.FC = () => {
       }
       
       if (formData.returnDeliveryMethod !== 'walk_in') {
+        const selectedReturnCity = normalizeCitySelection(formData.returnCity);
+        const returnRegion = formData.returnRegion || (selectedReturnCity ? DEFAULT_SHIPPING_REGION : '');
+        const normalizedReturnPostalCode = formData.returnPostalCode.replace(/\D/g, '');
+
         submitFormData.append('return_address_line', formData.returnAddressLine);
         submitFormData.append('return_barangay', formData.returnBarangay);
-        submitFormData.append('return_city', formData.returnCity);
-        submitFormData.append('return_region', formData.returnRegion);
-        submitFormData.append('return_postal_code', formData.returnPostalCode);
+        submitFormData.append('return_city', selectedReturnCity || formData.returnCity);
+        submitFormData.append('return_region', returnRegion);
+        submitFormData.append('return_postal_code', normalizedReturnPostalCode);
       }
       
       // Add selected service IDs
@@ -1282,31 +1228,22 @@ const RepairProcess: React.FC = () => {
                             required
                           />
                         </div>
-                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                          <div>
-                            <label className="block text-sm font-medium text-black mb-2">City</label>
-                            <input
-                              type="text"
-                              name="returnCity"
-                              value={formData.returnCity}
-                              onChange={handleInputChange}
-                              className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
-                              placeholder="City"
-                              required
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-black mb-2">Region</label>
-                            <input
-                              type="text"
-                              name="returnRegion"
-                              value={formData.returnRegion}
-                              onChange={handleInputChange}
-                              className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
-                              placeholder="Region"
-                              required
-                            />
-                          </div>
+                        <div>
+                          <label className="block text-sm font-medium text-black mb-2">City</label>
+                          <select
+                            name="returnCity"
+                            value={formData.returnCity}
+                            onChange={(e) => handleReturnCityChange(e.target.value)}
+                            className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                            title="City"
+                            aria-label="City"
+                            required
+                          >
+                            <option value="">Select City</option>
+                            {PH_CITY_OPTIONS.map((city) => (
+                              <option key={city} value={city}>{city}</option>
+                            ))}
+                          </select>
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-black mb-2">Postal code</label>
@@ -1315,6 +1252,8 @@ const RepairProcess: React.FC = () => {
                             name="returnPostalCode"
                             value={formData.returnPostalCode}
                             onChange={handleInputChange}
+                            inputMode="numeric"
+                            pattern="[0-9]*"
                             className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
                             placeholder="Postal code"
                             required

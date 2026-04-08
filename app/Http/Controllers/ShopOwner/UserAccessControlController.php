@@ -94,6 +94,13 @@ class UserAccessControlController extends Controller
             || str_contains($permission, 'upload-service');
     }
 
+    protected function isCashierPermission(string $permission): bool
+    {
+        return str_starts_with($permission, 'access-cashier-')
+            || str_contains($permission, 'unified-pos')
+            || str_contains($permission, 'unified_pos');
+    }
+
     protected function partitionPermissionsByBusinessType(array $permissions, ?ShopOwner $shopOwner): array
     {
         if (!$shopOwner) {
@@ -116,6 +123,11 @@ class UserAccessControlController extends Controller
             }
 
             if (!$canAccessRepair && $this->isRepairerPermission($permission)) {
+                $blocked[] = $permission;
+                continue;
+            }
+
+            if (!$canAccessRetail && !$canAccessRepair && $this->isCashierPermission($permission)) {
                 $blocked[] = $permission;
                 continue;
             }
@@ -482,6 +494,7 @@ class UserAccessControlController extends Controller
             'hr' => [],
             'crm' => [],
             'manager' => [],
+            'cashier' => [],
             'repairer' => [],
             'inventory' => [],
             'procurement' => [],
@@ -524,6 +537,12 @@ class UserAccessControlController extends Controller
                     str_contains($permission, 'repair-reject-review') ||
                     str_contains($permission, 'suspend-account')) {
                 $grouped['manager'][] = $permission;
+            }
+            // Cashier Module: unified cashier POS permissions
+            elseif (str_starts_with($permission, 'access-cashier-') ||
+                    str_contains($permission, 'unified-pos') ||
+                    str_contains($permission, 'unified_pos')) {
+                $grouped['cashier'][] = $permission;
             }
             // Repairer Module: access-repairer-* permissions
             elseif (str_starts_with($permission, 'access-repairer-') ||

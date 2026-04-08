@@ -291,6 +291,7 @@ Route::middleware('auth:user')->prefix('api/user/addresses')->group(function () 
 
 // Checkout & Order Routes
 Route::post('/api/checkout/create-order', [CheckoutController::class, 'createOrder'])->middleware('auth:user')->name('checkout.create-order');
+Route::post('/api/checkout/promo-preview', [CheckoutController::class, 'previewPromoPricing'])->middleware('auth:user')->name('checkout.promo-preview');
 Route::get('/api/my-orders', [CheckoutController::class, 'myOrders'])->middleware('auth:user')->name('api.my-orders');
 
 // User Login Page
@@ -828,6 +829,9 @@ Route::prefix('api/products')->group(function () {
     // Public routes (customers)
     Route::get('/', [\App\Http\Controllers\Api\ProductController::class, 'index']);
     Route::get('{slug}', [\App\Http\Controllers\Api\ProductController::class, 'show']);
+    Route::post('{productId}/vouchers/{campaignId}/claim', [\App\Http\Controllers\UserSide\ProductVoucherController::class, 'claim'])
+        ->middleware(['auth:user', 'customer.account'])
+        ->name('api.products.vouchers.claim');
 
     // Variant stock check (public)
     Route::post('{id}/variant-stock', [\App\Http\Controllers\Api\ProductController::class, 'getVariantStock']);

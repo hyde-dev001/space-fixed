@@ -22,6 +22,7 @@ use App\Http\Controllers\ShopOwner\SuspensionFinalApprovalController;
 use App\Http\Controllers\ShopOwner\PurchaseRequestController as ShopOwnerPurchaseRequestController;
 use App\Http\Controllers\ShopOwner\ExpenseController as ShopOwnerExpenseController;
 use App\Http\Controllers\ShopOwner\PremiumCheckoutController;
+use App\Http\Controllers\ShopOwner\PromoCampaignController;
 use App\Http\Controllers\Api\RefundApprovalController;
 use App\Http\Controllers\Erp\UploadInventoryController;
 
@@ -145,6 +146,18 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
 
     // Additional shop owner specific endpoints can be added here
     // e.g., shop settings, business metrics, subscription management, etc.
+
+    // ============================================
+    // PROMO CAMPAIGNS (Shop Owner Retail)
+    // ============================================
+    Route::prefix('promos')->middleware('check.business.type:retail,both')->group(function () {
+        Route::get('/', [PromoCampaignController::class, 'index'])->name('shop_owner.promos.index');
+        Route::post('/', [PromoCampaignController::class, 'store'])->name('shop_owner.promos.store');
+        Route::put('/{id}', [PromoCampaignController::class, 'update'])->name('shop_owner.promos.update');
+        Route::patch('/{id}/status', [PromoCampaignController::class, 'updateStatus'])->name('shop_owner.promos.update-status');
+        Route::delete('/{id}', [PromoCampaignController::class, 'destroy'])->name('shop_owner.promos.destroy');
+        Route::get('/products', [PromoCampaignController::class, 'products'])->name('shop_owner.promos.products');
+    });
 
     // ============================================
     // PRODUCT MANAGEMENT (Shop Owner)

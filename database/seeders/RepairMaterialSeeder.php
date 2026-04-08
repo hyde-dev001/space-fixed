@@ -97,25 +97,27 @@ class RepairMaterialSeeder extends Seeder
 
         foreach ($eligibleShops as $shop) {
             foreach ($materialBlueprints as $blueprint) {
-                InventoryItem::updateOrCreate(
-                    [
-                        'sku' => $this->buildShopScopedSku((int) $shop->id, (string) $blueprint['sku_suffix']),
-                    ],
-                    [
-                        'shop_owner_id' => $shop->id,
-                        'name' => $blueprint['name'],
-                        'category' => 'repair_materials',
-                        'description' => $blueprint['description'],
-                        'unit' => $blueprint['unit'],
-                        'available_quantity' => $blueprint['available_quantity'],
-                        'reserved_quantity' => 0,
-                        'reorder_level' => $blueprint['reorder_level'],
-                        'reorder_quantity' => $blueprint['reorder_quantity'],
-                        'price' => $blueprint['price'],
-                        'cost_price' => $blueprint['cost_price'],
-                        'is_active' => true,
-                    ]
-                );
+                $sku = $this->buildShopScopedSku((int) $shop->id, (string) $blueprint['sku_suffix']);
+
+                // Include soft-deleted rows so rerunning the seeder does not violate unique SKU constraints.
+                $item = InventoryItem::withTrashed()->firstOrNew(['sku' => $sku]);
+                $item->fill([
+                    'shop_owner_id' => $shop->id,
+                    'name' => $blueprint['name'],
+                    'sku' => $sku,
+                    'category' => 'repair_materials',
+                    'description' => $blueprint['description'],
+                    'unit' => $blueprint['unit'],
+                    'available_quantity' => $blueprint['available_quantity'],
+                    'reserved_quantity' => 0,
+                    'reorder_level' => $blueprint['reorder_level'],
+                    'reorder_quantity' => $blueprint['reorder_quantity'],
+                    'price' => $blueprint['price'],
+                    'cost_price' => $blueprint['cost_price'],
+                    'is_active' => true,
+                ]);
+                $item->deleted_at = null;
+                $item->save();
 
                 $seededCount++;
             }

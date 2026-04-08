@@ -75,3 +75,9 @@ Schedule::command('subscriptions:process-premium-renewals')
     ->withoutOverlapping()
     ->onOneServer();
 
+// Product discount schedule lifecycle: apply start dates and auto-revert after end dates.
+Schedule::command('products:process-discount-schedules')
+    ->everyTenMinutes()
+    ->withoutOverlapping()
+    ->onOneServer();
+

@@ -6,12 +6,16 @@ use App\Http\Controllers\Controller;
 use App\Models\InventoryItem;
 use App\Models\OrderItem;
 use App\Models\Product;
+use App\Models\PromoCampaign;
 use App\Models\RepairPackage;
 use App\Models\RepairService;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerSubscription;
+use App\Models\VoucherClaim;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -405,6 +409,57 @@ class LandingPageController extends Controller
 
         $displaySalesCount = max((int) $product->sales_count, $computedSalesCount);
 
+        $promoTablesReady = Schema::hasTable('promo_campaigns')
+            && Schema::hasTable('promo_campaign_products')
+            && Schema::hasTable('voucher_claims');
+
+        $activeCampaigns = $promoTablesReady
+            ? PromoCampaign::query()
+                ->with('products:id')
+                ->where('shop_owner_id', $product->shop_owner_id)
+                ->where('status', 'active')
+                ->where('start_at', '<=', now())
+                ->where('end_at', '>=', now())
+                ->where(function ($query) use ($product) {
+                    $query->where('scope', 'shop_wide')
+                        ->orWhereHas('products', function ($productQuery) use ($product) {
+                            $productQuery->where('products.id', $product->id);
+                        });
+                })
+                ->get()
+            : collect();
+
+        $customerId = Auth::guard('user')->id();
+        $campaignIds = $activeCampaigns->pluck('id');
+
+        $claimedCampaignIds = ($promoTablesReady && $customerId)
+            ? VoucherClaim::query()
+                ->where('user_id', $customerId)
+                ->whereIn('promo_campaign_id', $campaignIds)
+                ->pluck('promo_campaign_id')
+                ->map(fn ($id) => (int) $id)
+                ->values()
+                ->all()
+            : [];
+
+        $campaignPayload = $activeCampaigns
+            ->map(function (PromoCampaign $campaign) {
+                return [
+                    'id' => (int) $campaign->id,
+                    'kind' => (string) $campaign->kind,
+                    'name' => (string) $campaign->name,
+                    'code' => $campaign->code,
+                    'scope' => (string) $campaign->scope,
+                    'discount_mode' => (string) $campaign->discount_mode,
+                    'value' => (float) $campaign->value,
+                    'min_spend' => (float) $campaign->min_spend,
+                    'start_at' => optional($campaign->start_at)->toISOString(),
+                    'end_at' => optional($campaign->end_at)->toISOString(),
+                ];
+            })
+            ->values()
+            ->all();
+
         return Inertia::render('UserSide/Products/ProductShow', [
             'product' => [
                 'id' => $product->id,
@@ -534,6 +589,10 @@ class LandingPageController extends Controller
                     ];
                 })->toArray() : [],
                 'showroom_360_frames' => $showroom360Frames,
+                'promo_context' => [
+                    'campaigns' => $campaignPayload,
+                    'claimed_campaign_ids' => $claimedCampaignIds,
+                ],
             ],
         ]);
     }

@@ -110,6 +110,9 @@ const MyOrders: React.FC = () => {
   const [refundStep, setRefundStep] = useState<number>(1);
   const [refundReason, setRefundReason] = useState<string>('');
   const [refundMedia, setRefundMedia] = useState<File[]>([]);
+  const [refundRequestType, setRefundRequestType] = useState<'full' | 'partial'>('full');
+  const [refundSelectedItemIds, setRefundSelectedItemIds] = useState<number[]>([]);
+  const [refundRequestedAmountInput, setRefundRequestedAmountInput] = useState<string>('');
   const [refundMethod, setRefundMethod] = useState<string>('original_payment_method');
   const [refundNote, setRefundNote] = useState<string>('');
   const [refundOtherReasonNote, setRefundOtherReasonNote] = useState<string>('');
@@ -820,6 +823,16 @@ const MyOrders: React.FC = () => {
       return;
     }
 
+    if (!isPartialRefundSelectionValid) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Invalid Partial Refund Details',
+        text: 'For partial refunds, select at least one item and keep the amount less than the full order total.',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
     // Show confirmation before submitting
     const result = await Swal.fire({
       title: 'Submit Refund Request?',
@@ -841,6 +854,13 @@ const MyOrders: React.FC = () => {
       formData.append('order_id', refundOrderId.toString());
       formData.append('reason', refundReason);
       formData.append('refund_method', refundMethod || 'original_payment_method');
+      formData.append('request_type', refundRequestType);
+      if (refundRequestType === 'partial') {
+        formData.append('requested_amount', refundAmountToRequest.toFixed(2));
+        refundSelectedItemIds.forEach((itemId) => {
+          formData.append('requested_item_ids[]', String(itemId));
+        });
+      }
       formData.append('note', refundNote);
       formData.append('other_reason_note', refundOtherReasonNote);
       
@@ -885,6 +905,9 @@ const MyOrders: React.FC = () => {
       setRefundStep(1);
       setRefundReason('');
       setRefundMedia([]);
+      setRefundRequestType('full');
+      setRefundSelectedItemIds([]);
+      setRefundRequestedAmountInput('');
       setRefundNote('');
       setRefundOtherReasonNote('');
 
@@ -1000,6 +1023,14 @@ const MyOrders: React.FC = () => {
     setRefundMedia(prev => prev.filter((_, i) => i !== index));
   };
 
+  const toggleRefundItemSelection = (itemId: number) => {
+    setRefundSelectedItemIds((prev) => (
+      prev.includes(itemId)
+        ? prev.filter((id) => id !== itemId)
+        : [...prev, itemId]
+    ));
+  };
+
   const isVideoFile = (file: File) => {
     return file.type.startsWith('video/');
   };
@@ -1024,6 +1055,32 @@ const MyOrders: React.FC = () => {
     'border-red-600 bg-red-600 text-white hover:-translate-y-0.5 hover:bg-red-700 focus-visible:ring-red-300';
   const actionButtonDisabledClass = 'border-gray-300 bg-gray-200 text-gray-500 cursor-not-allowed';
   const refundTargetOrder = refundOrderId ? orders.find((order) => order.id === refundOrderId) : null;
+  const refundTargetOrderTotal = refundTargetOrder ? resolveOrderGrandTotal(refundTargetOrder) : 0;
+  const refundSelectedItems = refundTargetOrder
+    ? (refundTargetOrder.items || []).filter((item) => refundSelectedItemIds.includes(item.id))
+    : [];
+  const refundSelectedItemsTotal = refundSelectedItems.reduce((sum, item) => sum + parseAmount(item.subtotal), 0);
+  const parsedRequestedPartialAmount = parseAmount(refundRequestedAmountInput);
+  const resolvedPartialRefundAmount = parsedRequestedPartialAmount > 0
+    ? parsedRequestedPartialAmount
+    : refundSelectedItemsTotal;
+  const refundAmountToRequest = refundRequestType === 'full'
+    ? refundTargetOrderTotal
+    : Math.min(resolvedPartialRefundAmount, refundTargetOrderTotal);
+  const isPartialRefundSelectionValid = refundRequestType !== 'partial'
+    ? true
+    : (
+      refundSelectedItemIds.length > 0
+      && refundSelectedItemsTotal > 0
+      && refundAmountToRequest > 0
+      && refundAmountToRequest <= refundSelectedItemsTotal
+      && refundAmountToRequest < refundTargetOrderTotal
+    );
+  const isRefundSubmissionReady =
+    !!refundReason
+    && (!isOtherReason(refundReason) || !!refundOtherReasonNote.trim())
+    && isMediaRequirementMet()
+    && isPartialRefundSelectionValid;
   const mobileHeroFilterButtonBaseClass =
     'relative inline-flex min-w-[96px] shrink-0 flex-col items-center justify-center gap-1.5 overflow-visible rounded-2xl border pl-3 pr-5 py-3 text-[10px] font-semibold tracking-[0.01em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2';
 
@@ -1595,6 +1652,9 @@ const MyOrders: React.FC = () => {
                                   setRefundStep(1);
                                   setRefundReason('');
                                   setRefundMedia([]);
+                                  setRefundRequestType('full');
+                                  setRefundSelectedItemIds((order.items || []).map((item) => item.id));
+                                  setRefundRequestedAmountInput('');
                                   setRefundNote('');
                                   setRefundOtherReasonNote('');
                                   setShowRefundModal(true);
@@ -1823,6 +1883,9 @@ const MyOrders: React.FC = () => {
                 setRefundStep(1);
                 setRefundReason('');
                 setRefundMedia([]);
+                setRefundRequestType('full');
+                setRefundSelectedItemIds([]);
+                setRefundRequestedAmountInput('');
                 setRefundNote('');
                 setRefundOtherReasonNote('');
               }}
@@ -1882,6 +1945,107 @@ const MyOrders: React.FC = () => {
                         />
                       </div>
                     )}
+
+                    <div className="rounded-lg border border-gray-200 p-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-3">
+                        Refund Scope <span className="text-red-500">*</span>
+                      </label>
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <label className="flex items-center gap-3 rounded-lg border border-gray-200 p-3">
+                          <input
+                            type="radio"
+                            name="refund_scope"
+                            value="full"
+                            checked={refundRequestType === 'full'}
+                            onChange={() => {
+                              setRefundRequestType('full');
+                              setRefundRequestedAmountInput('');
+                            }}
+                            className="form-radio h-4 w-4 text-black"
+                          />
+                          <div>
+                            <p className="text-sm font-semibold text-gray-900">Full Refund</p>
+                            <p className="text-xs text-gray-500">Refund whole order amount.</p>
+                          </div>
+                        </label>
+                        <label className="flex items-center gap-3 rounded-lg border border-gray-200 p-3">
+                          <input
+                            type="radio"
+                            name="refund_scope"
+                            value="partial"
+                            checked={refundRequestType === 'partial'}
+                            onChange={() => {
+                              setRefundRequestType('partial');
+                              if (refundTargetOrder && refundSelectedItemIds.length === 0) {
+                                setRefundSelectedItemIds((refundTargetOrder.items || []).map((item) => item.id));
+                              }
+                              setRefundRequestedAmountInput(refundSelectedItemsTotal > 0 ? refundSelectedItemsTotal.toFixed(2) : '');
+                            }}
+                            className="form-radio h-4 w-4 text-black"
+                          />
+                          <div>
+                            <p className="text-sm font-semibold text-gray-900">Partial Refund</p>
+                            <p className="text-xs text-gray-500">Select affected item(s) and amount.</p>
+                          </div>
+                        </label>
+                      </div>
+
+                      {refundRequestType === 'partial' && (
+                        <div className="mt-4 space-y-4">
+                          <div>
+                            <p className="mb-2 text-sm font-medium text-gray-700">Affected Item(s)</p>
+                            <div className="max-h-48 space-y-2 overflow-y-auto rounded-lg border border-gray-200 p-3">
+                              {(refundTargetOrder?.items || []).map((item) => (
+                                <label key={item.id} className="flex items-start justify-between gap-3 rounded-lg border border-gray-100 px-3 py-2">
+                                  <div className="flex items-start gap-3">
+                                    <input
+                                      type="checkbox"
+                                      checked={refundSelectedItemIds.includes(item.id)}
+                                      onChange={() => toggleRefundItemSelection(item.id)}
+                                      className="mt-1 h-4 w-4 rounded border-gray-300 text-black"
+                                    />
+                                    <div>
+                                      <p className="text-sm font-medium text-gray-900">{item.product_name}</p>
+                                      <p className="text-xs text-gray-500">Qty: {item.quantity}</p>
+                                    </div>
+                                  </div>
+                                  <p className="text-sm font-semibold text-gray-900">{formatPeso(item.subtotal)}</p>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Selected Item Total
+                              </label>
+                              <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-900">
+                                {formatPeso(refundSelectedItemsTotal)}
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Refund Amount (Partial)
+                              </label>
+                              <input
+                                type="number"
+                                min="0.01"
+                                step="0.01"
+                                max={refundSelectedItemsTotal > 0 ? refundSelectedItemsTotal : undefined}
+                                value={refundRequestedAmountInput}
+                                onChange={(event) => setRefundRequestedAmountInput(event.target.value)}
+                                placeholder={refundSelectedItemsTotal > 0 ? refundSelectedItemsTotal.toFixed(2) : '0.00'}
+                                className="w-full rounded-lg border-2 border-gray-200 px-3 py-2 text-sm focus:border-gray-400 focus:outline-none"
+                              />
+                              <p className="mt-1 text-xs text-gray-500">
+                                Must be greater than 0 and less than full order total.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
 
                     {/* Media Upload (Photos & Videos) */}
                     <div>
@@ -1959,11 +2123,21 @@ const MyOrders: React.FC = () => {
                       <div className="space-y-3">
                         <div className="flex justify-between items-center">
                           <span className="text-sm text-gray-700">Order Total:</span>
-                          <span className="text-sm text-gray-900">{refundTargetOrder ? formatPeso(resolveOrderGrandTotal(refundTargetOrder)) : formatPeso(0)}</span>
+                          <span className="text-sm text-gray-900">{formatPeso(refundTargetOrderTotal)}</span>
                         </div>
+                        {refundRequestType === 'partial' && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-700">Selected Item Total:</span>
+                            <span className="text-sm text-gray-900">{formatPeso(refundSelectedItemsTotal)}</span>
+                          </div>
+                        )}
                         <div className="flex justify-between items-center">
                           <span className="text-sm font-bold text-gray-900">Refund Amount:</span>
-                          <span className="text-sm font-bold text-green-600">{refundTargetOrder ? formatPeso(resolveOrderGrandTotal(refundTargetOrder)) : formatPeso(0)}</span>
+                          <span className="text-sm font-bold text-green-600">{formatPeso(refundAmountToRequest)}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-gray-700">Refund Type:</span>
+                          <span className="text-sm text-gray-900 uppercase">{refundRequestType}</span>
                         </div>
                       </div>
                     </div>
@@ -2025,6 +2199,9 @@ const MyOrders: React.FC = () => {
                         setRefundStep(1);
                         setRefundReason('');
                         setRefundMedia([]);
+                        setRefundRequestType('full');
+                        setRefundSelectedItemIds([]);
+                        setRefundRequestedAmountInput('');
                         setRefundNote('');
                         setRefundOtherReasonNote('');
                       }}
@@ -2055,11 +2232,20 @@ const MyOrders: React.FC = () => {
                           });
                           return;
                         }
+                        if (!isPartialRefundSelectionValid) {
+                          Swal.fire({
+                            icon: 'warning',
+                            title: 'Invalid Partial Refund Details',
+                            text: 'Select at least one item and use an amount less than full order total.',
+                            confirmButtonColor: '#000000',
+                          });
+                          return;
+                        }
                         setRefundStep(2);
                       }}
-                      disabled={!refundReason || (isOtherReason(refundReason) && !refundOtherReasonNote.trim()) || !isMediaRequirementMet()}
+                      disabled={!isRefundSubmissionReady}
                       className={`${actionButtonBaseClass} ${
-                        refundReason && (!isOtherReason(refundReason) || !!refundOtherReasonNote.trim()) && isMediaRequirementMet()
+                        isRefundSubmissionReady
                           ? actionButtonPrimaryClass
                           : actionButtonDisabledClass
                       }`}
@@ -2069,9 +2255,9 @@ const MyOrders: React.FC = () => {
                   ) : (
                     <button
                       onClick={handleSubmitRefund}
-                      disabled={!refundReason || (isOtherReason(refundReason) && !refundOtherReasonNote.trim()) || !isMediaRequirementMet() || isSubmittingRefund}
+                      disabled={!isRefundSubmissionReady || isSubmittingRefund}
                       className={`${actionButtonBaseClass} ${
-                        refundReason && (!isOtherReason(refundReason) || !!refundOtherReasonNote.trim()) && isMediaRequirementMet() && !isSubmittingRefund
+                        isRefundSubmissionReady && !isSubmittingRefund
                           ? actionButtonPrimaryClass
                           : actionButtonDisabledClass
                       }`}

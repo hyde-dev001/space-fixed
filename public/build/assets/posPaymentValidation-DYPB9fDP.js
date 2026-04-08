@@ -1,1 +1,0 @@
-const r=e=>e.length===11,a=e=>{const t=e.itemsCount>0,s=e.customerName.trim().length>0;return e.paymentMethod==="cash"?t&&s&&r(e.customerPhone)&&e.cashReceivedInput.trim().length>0&&!e.hasInsufficientCash:t&&s&&e.proofReference.trim().length>0},n=(e,t)=>e!=="cash"&&t.trim().length===0?"N/A":t.trim();export{a as c,n as g};

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\PosRefund;
 use App\Models\PosTransaction;
+use App\Models\Product;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\RetailPosPaymentService;
@@ -16,6 +17,35 @@ use Illuminate\Validation\ValidationException;
 
 class RetailPosController extends Controller
 {
+    public function listProducts(Request $request)
+    {
+        $shopOwnerId = $this->resolveActorShopOwnerId($this->resolveActor());
+        $this->assertRetailOrBoth($shopOwnerId);
+
+        $query = trim((string) $request->query('q', ''));
+
+        $products = Product::query()
+            ->with(['variants' => function ($query) {
+                $query->where('is_active', true)
+                    ->orderBy('size')
+                    ->orderBy('color')
+                    ->select(['id', 'product_id', 'size', 'color', 'image', 'quantity']);
+            }])
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where('is_active', true)
+            ->when($query !== '', function ($builder) use ($query) {
+                $builder->where('name', 'like', "%{$query}%");
+            })
+            ->orderBy('name')
+            ->limit(250)
+            ->get(['id', 'name', 'slug', 'price', 'stock_quantity', 'main_image']);
+
+        return response()->json([
+            'success' => true,
+            'data' => $products,
+        ]);
+    }
+
     public function checkout(Request $request, RetailPosPaymentService $service)
     {
         $validated = $request->validate([

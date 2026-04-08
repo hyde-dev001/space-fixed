@@ -243,6 +243,7 @@ Route::middleware(['web', 'auth:user,shop_owner'])->prefix('repair-pos')->group(
 });
 
 Route::middleware(['web', 'auth:user,shop_owner'])->prefix('retail-pos')->group(function () {
+    Route::get('/products', [\App\Http\Controllers\Api\RetailPosController::class, 'listProducts']);
     Route::post('/checkout', [\App\Http\Controllers\Api\RetailPosController::class, 'checkout']);
     Route::get('/transactions', [\App\Http\Controllers\Api\RetailPosController::class, 'listTransactions']);
     Route::get('/transactions/{transaction}/receipt', [\App\Http\Controllers\Api\RetailPosController::class, 'showReceipt']);

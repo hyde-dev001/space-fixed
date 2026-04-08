@@ -1,5 +1,5 @@
 import { Head } from "@inertiajs/react";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
 
@@ -8,11 +8,15 @@ type DiscountMode = "percentage" | "fixed";
 type CampaignStatus = "draft" | "scheduled" | "active" | "expired";
 
 type ProductOption = {
-	id: string;
+	id: number;
 	name: string;
 	category: string;
 	stock: number;
 	price: number;
+	compareAtPrice: number | null;
+	scheduledSalePrice: number | null;
+	saleStartsAt: string | null;
+	saleEndsAt: string | null;
 };
 
 type Campaign = {
@@ -32,11 +36,29 @@ type Campaign = {
 	status: CampaignStatus;
 };
 
+type ApiCampaign = {
+	id: number;
+	kind: "voucher" | "sale";
+	name: string;
+	code: string | null;
+	scope: "shop_wide" | "product_specific";
+	discount_mode: DiscountMode;
+	value: number;
+	min_spend: number;
+	usage_limit: number | null;
+	used_count: number;
+	start_at: string;
+	end_at: string;
+	status: CampaignStatus;
+	products?: Array<{ id: number; name: string }>;
+};
+
 type PromoFormState = {
 	kind: PromoKind;
 	name: string;
 	code: string;
 	productId: string;
+	discountScheduleEnabled: boolean;
 	discountMode: DiscountMode;
 	value: string;
 	minSpend: string;
@@ -45,65 +67,7 @@ type PromoFormState = {
 	endDate: string;
 };
 
-const products: ProductOption[] = [
-	{ id: "sku-urban-kicks", name: "Urban Kicks Pro", category: "Sneakers", stock: 32, price: 3299 },
-	{ id: "sku-classic-loafer", name: "Classic Loafer", category: "Formal", stock: 18, price: 2890 },
-	{ id: "sku-runner-lite", name: "Runner Lite", category: "Performance", stock: 41, price: 2599 },
-	{ id: "sku-street-high", name: "Street High", category: "Lifestyle", stock: 12, price: 3499 },
-];
-
-const initialCampaigns: Campaign[] = [
-	{
-		id: 1,
-		kind: "voucher",
-		name: "Weekend Drop",
-		code: "WEEKEND10",
-		productId: "sku-urban-kicks",
-		productName: "Urban Kicks Pro",
-		discountMode: "percentage",
-		value: 10,
-		minSpend: 2000,
-		usageLimit: 80,
-		usedCount: 26,
-		startDate: "2026-03-15",
-		endDate: "2026-03-28",
-		status: "active",
-	},
-	{
-		id: 2,
-		kind: "discount",
-		name: "Formal Shoe Markdown",
-		code: "AUTO-FORMAL",
-		productId: "sku-classic-loafer",
-		productName: "Classic Loafer",
-		discountMode: "fixed",
-		value: 350,
-		minSpend: 0,
-		usageLimit: 50,
-		usedCount: 9,
-		startDate: "2026-03-20",
-		endDate: "2026-04-05",
-		status: "scheduled",
-	},
-	{
-		id: 3,
-		kind: "voucher",
-		name: "Flash Sale Recovery",
-		code: "FLASHBACK",
-		productId: "sku-runner-lite",
-		productName: "Runner Lite",
-		discountMode: "percentage",
-		value: 15,
-		minSpend: 2500,
-		usageLimit: 40,
-		usedCount: 40,
-		startDate: "2026-03-01",
-		endDate: "2026-03-10",
-		status: "expired",
-	},
-];
-
-const buildInitialForm = (): PromoFormState => {
+const buildInitialForm = (firstProductId: string = ""): PromoFormState => {
 	const today = new Date();
 	const nextWeek = new Date(today);
 	nextWeek.setDate(today.getDate() + 7);
@@ -112,7 +76,8 @@ const buildInitialForm = (): PromoFormState => {
 		kind: "voucher",
 		name: "",
 		code: "",
-		productId: products[0]?.id ?? "",
+		productId: firstProductId,
+		discountScheduleEnabled: false,
 		discountMode: "percentage",
 		value: "",
 		minSpend: "",
@@ -174,14 +139,241 @@ const ChartIcon = ({ className = "" }: { className?: string }) => (
 );
 
 export default function VouchersDiscountPage() {
-	const [campaigns, setCampaigns] = useState<Campaign[]>(initialCampaigns);
-	const [form, setForm] = useState<PromoFormState>(buildInitialForm);
+	const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+	const [products, setProducts] = useState<ProductOption[]>([]);
+	const [isLoading, setIsLoading] = useState(false);
+	const [isSaving, setIsSaving] = useState(false);
+	const [isUndoing, setIsUndoing] = useState(false);
+	const [form, setForm] = useState<PromoFormState>(buildInitialForm());
 	const [filter, setFilter] = useState<"all" | PromoKind>("all");
 
+	const mapApiCampaignToUi = (campaign: ApiCampaign): Campaign => {
+		const scopedProducts = Array.isArray(campaign.products) ? campaign.products : [];
+		const firstProduct = scopedProducts[0];
+		const isVoucher = campaign.kind === "voucher";
+
+		return {
+			id: Number(campaign.id),
+			kind: isVoucher ? "voucher" : "discount",
+			name: campaign.name,
+			code: campaign.code || (isVoucher ? "" : "AUTO-DISCOUNT"),
+			productId: firstProduct ? String(firstProduct.id) : "",
+			productName: scopedProducts.length > 0
+				? scopedProducts.map((product) => product.name).join(", ")
+				: "All products",
+			discountMode: campaign.discount_mode,
+			value: Number(campaign.value || 0),
+			minSpend: Number(campaign.min_spend || 0),
+			usageLimit: campaign.usage_limit === null ? 0 : Number(campaign.usage_limit || 0),
+			usedCount: Number(campaign.used_count || 0),
+			startDate: String(campaign.start_at || "").slice(0, 10),
+			endDate: String(campaign.end_at || "").slice(0, 10),
+			status: campaign.status,
+		};
+	};
+
+	const fetchProducts = async (): Promise<ProductOption[]> => {
+		const response = await fetch("/api/shop-owner/promos/products", {
+			credentials: "include",
+			headers: {
+				Accept: "application/json",
+			},
+		});
+
+		if (!response.ok) {
+			throw new Error("Failed to load products");
+		}
+
+		const data = await response.json();
+		const list = Array.isArray(data?.data) ? data.data : [];
+
+		const mapped = list.map((product: any) => ({
+			id: Number(product.id),
+			name: String(product.name || ""),
+			category: String(product.category || "Uncategorized"),
+			stock: Number(product.stock_quantity || 0),
+			price: Number(product.price || 0),
+			compareAtPrice: product.compare_at_price === null || product.compare_at_price === undefined
+				? null
+				: Number(product.compare_at_price || 0),
+			scheduledSalePrice: product.scheduled_sale_price === null || product.scheduled_sale_price === undefined
+				? null
+				: Number(product.scheduled_sale_price || 0),
+			saleStartsAt: product.sale_starts_at ? String(product.sale_starts_at) : null,
+			saleEndsAt: product.sale_ends_at ? String(product.sale_ends_at) : null,
+		}));
+
+		setProducts(mapped);
+		return mapped;
+	};
+
+	const fetchCampaigns = async () => {
+		const response = await fetch("/api/shop-owner/promos", {
+			credentials: "include",
+			headers: {
+				Accept: "application/json",
+			},
+		});
+
+		if (!response.ok) {
+			throw new Error("Failed to load campaigns");
+		}
+
+		const data = await response.json();
+		const list: ApiCampaign[] = Array.isArray(data?.data) ? data.data : [];
+		setCampaigns(list.map(mapApiCampaignToUi));
+	};
+
+	useEffect(() => {
+		let cancelled = false;
+
+		const loadData = async () => {
+			setIsLoading(true);
+			try {
+				const loadedProducts = await fetchProducts();
+				await fetchCampaigns();
+
+				if (!cancelled && loadedProducts.length > 0) {
+					setForm((current) => ({
+						...current,
+						productId: current.productId || String(loadedProducts[0].id),
+					}));
+				}
+			} catch (error) {
+				console.error("Failed to load promo management data:", error);
+				await Swal.fire({
+					icon: "error",
+					title: "Load failed",
+					text: "Unable to load promo data. Please refresh and try again.",
+					confirmButtonColor: "#111827",
+				});
+			} finally {
+				if (!cancelled) {
+					setIsLoading(false);
+				}
+			}
+		};
+
+		void loadData();
+
+		return () => {
+			cancelled = true;
+		};
+	}, []);
+
 	const selectedProduct = useMemo(
-		() => products.find((product) => product.id === form.productId) ?? products[0],
-		[form.productId]
+		() => products.find((product) => product.id === Number(form.productId)) ?? products[0],
+		[form.productId, products]
 	);
+
+	const isProductDiscountMode = form.kind === "discount";
+	const parsedFormValue = form.value.trim() === "" ? Number.NaN : Number(form.value);
+	const currentProductPrice = Number(selectedProduct?.price || 0);
+	const baselineOriginalPrice = selectedProduct && selectedProduct.compareAtPrice !== null && selectedProduct.compareAtPrice > selectedProduct.price
+		? Number(selectedProduct.compareAtPrice)
+		: currentProductPrice;
+	const hasScheduledDiscount = Boolean(
+		selectedProduct
+		&& selectedProduct.scheduledSalePrice !== null
+		&& selectedProduct.saleStartsAt
+		&& selectedProduct.saleEndsAt
+	);
+	const canUndoSale = Boolean(
+		isProductDiscountMode
+		&& selectedProduct
+		&& selectedProduct.compareAtPrice !== null
+		&& (
+			Number(selectedProduct.compareAtPrice) > Number(selectedProduct.price)
+			|| hasScheduledDiscount
+		)
+	);
+	const saleSavings = isProductDiscountMode && Number.isFinite(parsedFormValue)
+		? Math.max(0, baselineOriginalPrice - parsedFormValue)
+		: 0;
+	const saleSavingsPercent = isProductDiscountMode && currentProductPrice > 0
+		? Math.round((saleSavings / baselineOriginalPrice) * 100)
+		: 0;
+	const previewTitle = form.name || (isProductDiscountMode ? `${selectedProduct?.name ?? "Selected product"} sale` : "Untitled promo");
+
+	const handleUndoSalePrice = async () => {
+		if (!selectedProduct || selectedProduct.compareAtPrice === null) {
+			return;
+		}
+
+		const originalPrice = Number(selectedProduct.compareAtPrice);
+		if (!Number.isFinite(originalPrice) || originalPrice <= 0) {
+			return;
+		}
+
+		const confirmation = await Swal.fire({
+			title: "Undo sale price?",
+			text: `Restore ${selectedProduct.name} from ${formatCurrency(selectedProduct.price)} back to ${formatCurrency(originalPrice)}?`,
+			icon: "question",
+			showCancelButton: true,
+			confirmButtonColor: "#111827",
+			cancelButtonColor: "#9CA3AF",
+			confirmButtonText: "Yes, restore",
+			cancelButtonText: "Cancel",
+		});
+
+		if (!confirmation.isConfirmed) {
+			return;
+		}
+
+		setIsUndoing(true);
+
+		try {
+			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
+
+			const response = await fetch(`/api/shop-owner/products/${selectedProduct.id}`, {
+				method: "PUT",
+				credentials: "include",
+				headers: {
+					"Content-Type": "application/json",
+					Accept: "application/json",
+					"X-CSRF-TOKEN": csrfToken,
+				},
+				body: JSON.stringify({
+					price: originalPrice,
+					compare_at_price: null,
+					scheduled_sale_price: null,
+					sale_starts_at: null,
+					sale_ends_at: null,
+				}),
+			});
+
+			const result = await response.json().catch(() => ({}));
+			if (!response.ok) {
+				throw new Error(result?.message || "Failed to restore original price");
+			}
+
+			const refreshedProducts = await fetchProducts();
+			await fetchCampaigns();
+
+			setForm((current) => ({
+				...current,
+				value: "",
+				discountScheduleEnabled: false,
+				productId: current.productId || String(refreshedProducts[0]?.id || ""),
+			}));
+
+			await Swal.fire({
+				title: "Sale undone",
+				text: `${selectedProduct.name} price is restored to ${formatCurrency(originalPrice)}.`,
+				icon: "success",
+				confirmButtonColor: "#111827",
+			});
+		} catch (error: any) {
+			await Swal.fire({
+				title: "Undo failed",
+				text: error?.message || "Unable to restore original price.",
+				icon: "error",
+				confirmButtonColor: "#111827",
+			});
+		} finally {
+			setIsUndoing(false);
+		}
+	};
 
 	const visibleCampaigns = useMemo(() => {
 		if (filter === "all") {
@@ -202,7 +394,7 @@ export default function VouchersDiscountPage() {
 		return { active, scheduled, totalRedemptions, averageDiscount };
 	}, [campaigns]);
 
-	const handleChange = (field: keyof PromoFormState, value: string) => {
+	const handleChange = (field: keyof Omit<PromoFormState, "discountScheduleEnabled">, value: string) => {
 		setForm((current) => {
 			const next = { ...current, [field]: value };
 
@@ -212,6 +404,7 @@ export default function VouchersDiscountPage() {
 
 			if (field === "kind" && value === "voucher" && current.code === "AUTO-DISCOUNT") {
 				next.code = "";
+				next.discountScheduleEnabled = false;
 			}
 
 			return next;
@@ -221,17 +414,100 @@ export default function VouchersDiscountPage() {
 	const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
 
-		if (!form.name.trim() || !form.productId || !form.value || !form.startDate || !form.endDate) {
+		if (isProductDiscountMode) {
+			if (!form.productId) {
+				await Swal.fire({
+					title: "Select a product",
+					text: "Product Discount requires one selected product.",
+					icon: "warning",
+					confirmButtonColor: "#111827",
+				});
+				return;
+			}
+
+			if (!form.value) {
+				await Swal.fire({
+					title: "Sale price required",
+					text: "Enter the new sale price for the selected product.",
+					icon: "warning",
+					confirmButtonColor: "#111827",
+				});
+				return;
+			}
+
+			if (!selectedProduct) {
+				await Swal.fire({
+					title: "Product not found",
+					text: "Please reselect a valid product.",
+					icon: "error",
+					confirmButtonColor: "#111827",
+				});
+				return;
+			}
+
+			const proposedPrice = Number(form.value);
+			if (!Number.isFinite(proposedPrice) || proposedPrice <= 0) {
+				await Swal.fire({
+					title: "Invalid sale price",
+					text: "Sale price must be greater than 0.",
+					icon: "warning",
+					confirmButtonColor: "#111827",
+				});
+				return;
+			}
+
+			if (proposedPrice >= baselineOriginalPrice) {
+				await Swal.fire({
+					title: "Not a sale price",
+					text: `New price must be lower than original price (${formatCurrency(baselineOriginalPrice)}).`,
+					icon: "warning",
+					confirmButtonColor: "#111827",
+				});
+				return;
+			}
+
+			if (form.discountScheduleEnabled) {
+				if (!form.startDate || !form.endDate) {
+					await Swal.fire({
+						title: "Schedule required",
+						text: "Please set both start and end date for scheduled discount.",
+						icon: "warning",
+						confirmButtonColor: "#111827",
+					});
+					return;
+				}
+
+				if (new Date(form.endDate) < new Date(form.startDate)) {
+					await Swal.fire({
+						title: "Invalid schedule",
+						text: "End date must be later than the start date.",
+						icon: "error",
+						confirmButtonColor: "#111827",
+					});
+					return;
+				}
+			}
+		} else if (!form.name.trim() || !form.value || !form.startDate || !form.endDate) {
 			await Swal.fire({
 				title: "Incomplete details",
-				text: "Fill in the promo name, product, value, and schedule before saving.",
+				text: "Fill in the promo name, value, and schedule before saving.",
 				icon: "warning",
 				confirmButtonColor: "#111827",
 			});
 			return;
 		}
 
-		if (new Date(form.endDate) < new Date(form.startDate)) {
+		if (form.kind === "voucher" && !form.code.trim()) {
+			await Swal.fire({
+				title: "Voucher code required",
+				text: "Please provide a promo code for voucher campaigns.",
+				icon: "warning",
+				confirmButtonColor: "#111827",
+			});
+			return;
+		}
+
+		if ((!isProductDiscountMode || form.discountScheduleEnabled) && new Date(form.endDate) < new Date(form.startDate)) {
 			await Swal.fire({
 				title: "Invalid schedule",
 				text: "End date must be later than the start date.",
@@ -241,47 +517,126 @@ export default function VouchersDiscountPage() {
 			return;
 		}
 
-		const product = products.find((item) => item.id === form.productId);
-		if (!product) {
-			return;
+		setIsSaving(true);
+
+		try {
+			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
+
+			if (isProductDiscountMode) {
+				const productId = Number(form.productId);
+				const proposedPrice = Number(form.value);
+				const shouldScheduleDiscount = form.discountScheduleEnabled;
+				const startsAtDate = form.startDate ? new Date(form.startDate) : null;
+				const shouldApplyImmediately = Boolean(
+					shouldScheduleDiscount
+					&& startsAtDate
+					&& startsAtDate <= new Date()
+				);
+
+				const response = await fetch(`/api/shop-owner/products/${productId}`, {
+					method: "PUT",
+					credentials: "include",
+					headers: {
+						"Content-Type": "application/json",
+						Accept: "application/json",
+						"X-CSRF-TOKEN": csrfToken,
+					},
+					body: JSON.stringify({
+						price: shouldScheduleDiscount
+							? selectedProduct?.price
+							: proposedPrice,
+						compare_at_price: selectedProduct?.compareAtPrice && selectedProduct.compareAtPrice > 0
+							? selectedProduct.compareAtPrice
+							: selectedProduct?.price,
+						scheduled_sale_price: shouldScheduleDiscount ? proposedPrice : null,
+						sale_starts_at: shouldScheduleDiscount ? form.startDate : null,
+						sale_ends_at: shouldScheduleDiscount ? form.endDate : null,
+					}),
+				});
+
+				const result = await response.json().catch(() => ({}));
+
+				if (!response.ok) {
+					throw new Error(result?.message || "Failed to update sale price");
+				}
+
+				const refreshedProducts = await fetchProducts();
+				await fetchCampaigns();
+
+				setForm((current) => ({
+					...current,
+					value: "",
+					code: "AUTO-DISCOUNT",
+					discountScheduleEnabled: false,
+					productId: current.productId || String(refreshedProducts[0]?.id || ""),
+				}));
+
+				await Swal.fire({
+					title: shouldScheduleDiscount ? "Discount schedule saved" : "Sale price updated",
+					text: shouldScheduleDiscount
+						? (
+							shouldApplyImmediately
+								? `${selectedProduct?.name || "Product"} is on sale at ${formatCurrency(proposedPrice)} until ${form.endDate}.`
+								: `${selectedProduct?.name || "Product"} discount is scheduled from ${form.startDate} to ${form.endDate}.`
+						)
+						: `${selectedProduct?.name || "Product"} is now on sale at ${formatCurrency(proposedPrice)}.`,
+					icon: "success",
+					confirmButtonColor: "#111827",
+				});
+
+				return;
+			}
+
+			const payload = {
+				kind: form.kind === "discount" ? "sale" : "voucher",
+				scope: form.productId ? "product_specific" : "shop_wide",
+				product_ids: form.productId ? [Number(form.productId)] : [],
+				name: form.name.trim(),
+				code: form.kind === "voucher" ? form.code.trim().toUpperCase() : null,
+				discount_mode: form.discountMode,
+				value: Number(form.value),
+				min_spend: Number(form.minSpend || 0),
+				usage_limit: Number(form.usageLimit || 0) || null,
+				start_at: form.startDate,
+				end_at: form.endDate,
+			};
+
+			const response = await fetch("/api/shop-owner/promos", {
+				method: "POST",
+				credentials: "include",
+				headers: {
+					"Content-Type": "application/json",
+					Accept: "application/json",
+					"X-CSRF-TOKEN": csrfToken,
+				},
+				body: JSON.stringify(payload),
+			});
+
+			const result = await response.json().catch(() => ({}));
+
+			if (!response.ok) {
+				throw new Error(result?.message || "Failed to save campaign");
+			}
+
+			await fetchCampaigns();
+			setForm(buildInitialForm(products[0] ? String(products[0].id) : ""));
+
+			await Swal.fire({
+				title: "Campaign created",
+				text: `${payload.name} is ready for ${form.productId ? selectedProduct?.name || "selected product" : "all products"}.`,
+				icon: "success",
+				confirmButtonColor: "#111827",
+			});
+		} catch (error: any) {
+			await Swal.fire({
+				title: "Save failed",
+				text: error?.message || "Unable to create campaign.",
+				icon: "error",
+				confirmButtonColor: "#111827",
+			});
+		} finally {
+			setIsSaving(false);
 		}
-
-		const today = new Date().toISOString().slice(0, 10);
-		let status: CampaignStatus = "draft";
-		if (form.startDate > today) {
-			status = "scheduled";
-		} else if (form.endDate >= today) {
-			status = "active";
-		} else {
-			status = "expired";
-		}
-
-		const nextCampaign: Campaign = {
-			id: Date.now(),
-			kind: form.kind,
-			name: form.name.trim(),
-			code: form.kind === "voucher" ? form.code.trim().toUpperCase() : "AUTO-DISCOUNT",
-			productId: product.id,
-			productName: product.name,
-			discountMode: form.discountMode,
-			value: Number(form.value),
-			minSpend: Number(form.minSpend || 0),
-			usageLimit: Number(form.usageLimit || 0),
-			usedCount: 0,
-			startDate: form.startDate,
-			endDate: form.endDate,
-			status,
-		};
-
-		setCampaigns((current) => [nextCampaign, ...current]);
-		setForm(buildInitialForm());
-
-		await Swal.fire({
-			title: "Campaign created",
-			text: `${nextCampaign.name} is ready for ${nextCampaign.productName}.`,
-			icon: "success",
-			confirmButtonColor: "#111827",
-		});
 	};
 
 	return (
@@ -342,8 +697,13 @@ export default function VouchersDiscountPage() {
 					</div>
 				</section>
 
-				<section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_420px]">
+				<section className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.2fr)_420px]">
 					<div className="rounded-[26px] border border-slate-200 bg-white p-6 shadow-sm">
+						{isLoading && (
+							<div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+								Loading products and campaigns...
+							</div>
+						)}
 						<div className="flex flex-col gap-3 border-b border-slate-200 pb-5 md:flex-row md:items-center md:justify-between">
 							<div>
 								<h2 className="text-xl font-semibold text-slate-900">Create a new campaign</h2>
@@ -365,15 +725,17 @@ export default function VouchersDiscountPage() {
 
 						<form className="mt-6 space-y-5" onSubmit={handleSubmit}>
 							<div className="grid gap-5 md:grid-cols-2">
-								<label className="space-y-2 text-sm text-slate-600">
-									<span className="font-medium text-slate-800">Campaign name</span>
-									<input
-										value={form.name}
-										onChange={(event) => handleChange("name", event.target.value)}
-										placeholder="Example: Payday Boost"
-										className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-200"
-									/>
-								</label>
+								{!isProductDiscountMode && (
+									<label className="space-y-2 text-sm text-slate-600">
+										<span className="font-medium text-slate-800">Campaign name</span>
+										<input
+											value={form.name}
+											onChange={(event) => handleChange("name", event.target.value)}
+											placeholder="Example: Payday Boost"
+											className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-200"
+										/>
+									</label>
+								)}
 
 								<label className="space-y-2 text-sm text-slate-600">
 									<span className="font-medium text-slate-800">Promo code</span>
@@ -393,43 +755,81 @@ export default function VouchersDiscountPage() {
 										onChange={(event) => handleChange("productId", event.target.value)}
 										className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-200"
 									>
+										{!isProductDiscountMode && <option value="">All products (Shop-wide)</option>}
 										{products.map((product) => (
-											<option key={product.id} value={product.id}>
+											<option key={product.id} value={String(product.id)}>
 												{product.name} · {product.category}
 											</option>
 										))}
 									</select>
 								</label>
 
-								<label className="space-y-2 text-sm text-slate-600">
-									<span className="font-medium text-slate-800">Discount type</span>
-									<select
-										value={form.discountMode}
-										onChange={(event) => handleChange("discountMode", event.target.value)}
-										className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-200"
-									>
-										<option value="percentage">Percentage off</option>
-										<option value="fixed">Fixed peso off</option>
-									</select>
-								</label>
+								{!isProductDiscountMode ? (
+									<label className="space-y-2 text-sm text-slate-600">
+										<span className="font-medium text-slate-800">Discount type</span>
+										<select
+											value={form.discountMode}
+											onChange={(event) => handleChange("discountMode", event.target.value)}
+											className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-200"
+										>
+											<option value="percentage">Percentage off</option>
+											<option value="fixed">Fixed peso off</option>
+										</select>
+									</label>
+								) : (
+									<label className="space-y-2 text-sm text-slate-600">
+										<span className="font-medium text-slate-800">Current price</span>
+										<input
+											value={formatCurrency(currentProductPrice)}
+											disabled
+											className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-slate-700 outline-none disabled:cursor-not-allowed"
+										/>
+									</label>
+								)}
 
 								<label className="space-y-2 text-sm text-slate-600">
-									<span className="font-medium text-slate-800">Promo value</span>
+									<span className="font-medium text-slate-800">{isProductDiscountMode ? "New sale price" : "Promo value"}</span>
 									<div className="relative">
 										<span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm font-medium text-slate-400">
-											{form.discountMode === "percentage" ? "%" : "PHP"}
+											{isProductDiscountMode ? "PHP" : (form.discountMode === "percentage" ? "%" : "PHP")}
 										</span>
 										<input
 											type="number"
 											min="0"
 											value={form.value}
 											onChange={(event) => handleChange("value", event.target.value)}
-											placeholder={form.discountMode === "percentage" ? "10" : "300"}
+											placeholder={isProductDiscountMode ? "Enter sale price" : (form.discountMode === "percentage" ? "10" : "300")}
 											className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-14 pr-4 text-slate-900 outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-200"
 										/>
 									</div>
+									{isProductDiscountMode && selectedProduct && (
+										<p className="text-xs text-slate-500">
+											Set a price lower than {formatCurrency(baselineOriginalPrice)} to mark this product on sale.
+										</p>
+									)}
 								</label>
 
+								{isProductDiscountMode && (
+									<label className="space-y-2 text-sm text-slate-600 md:col-span-2">
+										<span className="font-medium text-slate-800">Discount duration</span>
+										<div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+											<label className="inline-flex items-center gap-2 text-sm text-slate-700">
+												<input
+													type="checkbox"
+													checked={form.discountScheduleEnabled}
+													onChange={(event) => setForm((current) => ({
+														...current,
+														discountScheduleEnabled: event.target.checked,
+													}))}
+													className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+												/>
+												<span>Set start and end date (auto-restore to original price after end date)</span>
+											</label>
+										</div>
+									</label>
+								)}
+
+								{!isProductDiscountMode && (
 								<label className="space-y-2 text-sm text-slate-600">
 									<span className="font-medium text-slate-800">Minimum spend</span>
 									<div className="relative">
@@ -444,7 +844,9 @@ export default function VouchersDiscountPage() {
 										/>
 									</div>
 								</label>
+								)}
 
+								{(!isProductDiscountMode || form.discountScheduleEnabled) && (
 								<label className="space-y-2 text-sm text-slate-600">
 									<span className="font-medium text-slate-800">Start date</span>
 									<input
@@ -454,7 +856,9 @@ export default function VouchersDiscountPage() {
 										className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-200"
 									/>
 								</label>
+								)}
 
+								{(!isProductDiscountMode || form.discountScheduleEnabled) && (
 								<label className="space-y-2 text-sm text-slate-600">
 									<span className="font-medium text-slate-800">End date</span>
 									<input
@@ -464,7 +868,9 @@ export default function VouchersDiscountPage() {
 										className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-200"
 									/>
 								</label>
+								)}
 
+								{!isProductDiscountMode && (
 								<label className="space-y-2 text-sm text-slate-600 md:col-span-2">
 									<span className="font-medium text-slate-800">Usage limit</span>
 									<input
@@ -476,21 +882,33 @@ export default function VouchersDiscountPage() {
 										className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-200"
 									/>
 								</label>
+								)}
 							</div>
 
 							<div className="flex flex-col gap-3 border-t border-slate-200 pt-5 sm:flex-row sm:items-center sm:justify-end">
 								<button
 									type="button"
-									onClick={() => setForm(buildInitialForm())}
+									onClick={() => setForm(buildInitialForm(products[0] ? String(products[0].id) : ""))}
 									className="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
 								>
 									Reset form
 								</button>
+								{isProductDiscountMode && canUndoSale && (
+									<button
+										type="button"
+										onClick={handleUndoSalePrice}
+										disabled={isUndoing}
+										className="rounded-2xl border border-amber-300 bg-amber-50 px-5 py-3 text-sm font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+									>
+										{isUndoing ? "Undoing..." : "Undo sale"}
+									</button>
+								)}
 								<button
 									type="submit"
-									className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+									disabled={isSaving}
+									className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
 								>
-									Save campaign
+									{isSaving ? "Saving..." : "Save campaign"}
 								</button>
 							</div>
 						</form>
@@ -508,7 +926,7 @@ export default function VouchersDiscountPage() {
 								<div className="flex items-start justify-between gap-4">
 									<div>
 										<p className="text-xs uppercase tracking-[0.24em] text-slate-400">Offer Summary</p>
-										<h3 className="mt-3 text-2xl font-semibold">{form.name || "Untitled promo"}</h3>
+										<h3 className="mt-3 text-2xl font-semibold">{previewTitle}</h3>
 									</div>
 									<TicketIcon className="h-10 w-10 text-slate-300" />
 								</div>
@@ -518,9 +936,11 @@ export default function VouchersDiscountPage() {
 										<p className="text-xs uppercase tracking-wide text-slate-400">Discount</p>
 										<p className="mt-2 text-xl font-semibold">
 											{form.value
-												? form.discountMode === "percentage"
-													? `${form.value}% off`
-													: `${formatCurrency(Number(form.value))} off`
+												? isProductDiscountMode
+													? formatCurrency(Number(form.value))
+													: (form.discountMode === "percentage"
+														? `${form.value}% off`
+														: `${formatCurrency(Number(form.value))} off`)
 												: "Set value"}
 										</p>
 									</div>
@@ -535,41 +955,25 @@ export default function VouchersDiscountPage() {
 								<div className="mt-6 space-y-3 text-sm text-slate-300">
 									<div className="flex items-center justify-between gap-4">
 										<span>Product</span>
-										<span className="font-medium text-white">{selectedProduct?.name ?? "Select product"}</span>
+										<span className="font-medium text-white">{selectedProduct?.name ?? "All products"}</span>
 									</div>
 									<div className="flex items-center justify-between gap-4">
 										<span>Schedule</span>
-										<span className="font-medium text-white">{form.startDate} to {form.endDate}</span>
+										<span className="font-medium text-white">
+											{isProductDiscountMode
+												? (form.discountScheduleEnabled ? `${form.startDate} to ${form.endDate}` : "Apply immediately")
+												: `${form.startDate} to ${form.endDate}`}
+										</span>
 									</div>
 									<div className="flex items-center justify-between gap-4">
-										<span>Minimum spend</span>
-										<span className="font-medium text-white">{formatCurrency(Number(form.minSpend || 0))}</span>
+										<span>{isProductDiscountMode ? "Savings" : "Minimum spend"}</span>
+										<span className="font-medium text-white">
+											{isProductDiscountMode
+												? `${formatCurrency(saleSavings)}${saleSavingsPercent > 0 ? ` (${saleSavingsPercent}% off)` : ""}`
+												: formatCurrency(Number(form.minSpend || 0))}
+										</span>
 									</div>
 								</div>
-							</div>
-						</div>
-
-						<div className="rounded-[26px] border border-slate-200 bg-white p-6 shadow-sm">
-							<h2 className="text-lg font-semibold text-slate-900">Selected product snapshot</h2>
-							<div className="mt-5 space-y-4">
-								<div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-									<p className="text-xs uppercase tracking-wide text-slate-500">Product</p>
-									<p className="mt-2 text-lg font-semibold text-slate-900">{selectedProduct?.name}</p>
-									<p className="mt-1 text-sm text-slate-500">{selectedProduct?.category}</p>
-								</div>
-								<div className="grid grid-cols-2 gap-3">
-									<div className="rounded-2xl border border-slate-200 p-4">
-										<p className="text-xs uppercase tracking-wide text-slate-500">Price</p>
-										<p className="mt-2 text-lg font-semibold text-slate-900">{formatCurrency(selectedProduct?.price ?? 0)}</p>
-									</div>
-									<div className="rounded-2xl border border-slate-200 p-4">
-										<p className="text-xs uppercase tracking-wide text-slate-500">Stock</p>
-										<p className="mt-2 text-lg font-semibold text-slate-900">{selectedProduct?.stock ?? 0} units</p>
-									</div>
-								</div>
-								<p className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700 ring-1 ring-inset ring-emerald-200">
-									Tip: Use vouchers for urgency-based campaigns and auto discounts for evergreen promos on fast-moving products.
-								</p>
 							</div>
 						</div>
 					</aside>

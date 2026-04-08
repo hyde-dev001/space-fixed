@@ -424,6 +424,10 @@ class OrderController extends Controller
                 'order_id' => 'required|integer',
                 'reason' => 'required|string|max:255',
                 'refund_method' => 'nullable|string|max:100',
+                'request_type' => 'nullable|string|in:full,partial',
+                'requested_amount' => 'nullable|numeric|min:0.01',
+                'requested_item_ids' => 'nullable|array|min:1',
+                'requested_item_ids.*' => 'integer|min:1',
                 'note' => 'nullable|string|max:1000',
                 'other_reason_note' => 'nullable|string|max:1000',
                 'media' => 'required|array|size:6',
@@ -442,6 +446,7 @@ class OrderController extends Controller
             }
 
             $order = Order::query()
+                ->with('items')
                 ->where('id', (int) $validated['order_id'])
                 ->where('customer_id', (int) $user->id)
                 ->first();
@@ -537,20 +542,124 @@ class OrderController extends Controller
                 $storedMedia[] = Storage::url($path);
             }
 
-            $amount = (float) ($order->total_amount ?? 0) + max(0, (float) ($order->shipping_fee ?? 0));
-            if ($amount <= 0) {
-                $amount = max((float) ($order->total ?? 0), (float) ($order->total_amount ?? 0));
+            $fullRefundAmount = (float) ($order->total_amount ?? 0) + max(0, (float) ($order->shipping_fee ?? 0));
+            if ($fullRefundAmount <= 0) {
+                $fullRefundAmount = max((float) ($order->total ?? 0), (float) ($order->total_amount ?? 0));
             }
 
-            if ($amount <= 0) {
+            if ($fullRefundAmount <= 0) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Refund amount could not be determined for this order.',
                 ], 422);
             }
 
+            $requestType = strtolower(trim((string) ($validated['request_type'] ?? 'full')));
+            $requestType = in_array($requestType, ['full', 'partial'], true) ? $requestType : 'full';
+
+            $requestedItemIds = collect((array) ($validated['requested_item_ids'] ?? []))
+                ->map(fn ($id) => (int) $id)
+                ->filter(fn ($id) => $id > 0)
+                ->unique()
+                ->values()
+                ->all();
+
+            $selectedItemsAmount = 0.0;
+            $selectedItemsSummary = [];
+            if (!empty($requestedItemIds)) {
+                $orderItemsById = $order->items->keyBy('id');
+                $invalidItemIds = array_values(array_filter(
+                    $requestedItemIds,
+                    fn (int $itemId) => !$orderItemsById->has($itemId)
+                ));
+
+                if (!empty($invalidItemIds)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'One or more selected refund items do not belong to this order.',
+                    ], 422);
+                }
+
+                foreach ($requestedItemIds as $itemId) {
+                    $orderItem = $orderItemsById->get($itemId);
+                    if (!$orderItem) {
+                        continue;
+                    }
+
+                    $lineSubtotal = (float) ($orderItem->subtotal ?? 0);
+                    if ($lineSubtotal <= 0) {
+                        $lineSubtotal = round((float) ($orderItem->price ?? 0) * max(1, (int) ($orderItem->quantity ?? 1)), 2);
+                    }
+
+                    $selectedItemsAmount += $lineSubtotal;
+                    $selectedItemsSummary[] = sprintf(
+                        '%s x%d (%.2f)',
+                        (string) ($orderItem->product_name ?? 'Item'),
+                        (int) ($orderItem->quantity ?? 1),
+                        round($lineSubtotal, 2)
+                    );
+                }
+
+                $selectedItemsAmount = round($selectedItemsAmount, 2);
+            }
+
+            $amount = round($fullRefundAmount, 2);
+            if ($requestType === 'partial') {
+                $hasRequestedAmount = array_key_exists('requested_amount', $validated) && $validated['requested_amount'] !== null;
+                if (!$hasRequestedAmount && empty($requestedItemIds)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Partial refund requires a requested amount or selected item(s).',
+                    ], 422);
+                }
+
+                $amount = $hasRequestedAmount
+                    ? round((float) $validated['requested_amount'], 2)
+                    : $selectedItemsAmount;
+
+                if ($amount <= 0) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Partial refund amount must be greater than zero.',
+                    ], 422);
+                }
+
+                if (!empty($requestedItemIds) && $selectedItemsAmount > 0 && $amount > $selectedItemsAmount) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => sprintf('Requested amount exceeds selected item total (%.2f).', $selectedItemsAmount),
+                    ], 422);
+                }
+
+                if ($amount >= round($fullRefundAmount, 2)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Requested partial amount must be less than the full order amount.',
+                    ], 422);
+                }
+            }
+
+            if ($amount > round($fullRefundAmount, 2)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Requested refund amount exceeds order refundable amount.',
+                ], 422);
+            }
+
             $reasonCode = Str::slug((string) $validated['reason'], '_');
-            $reasonNote = trim((string) (($validated['reason'] ?? '') . (!empty($validated['note']) ? "\n\n" . $validated['note'] : '')));
+            $baseReasonNote = trim((string) (($validated['reason'] ?? '') . (!empty($validated['note']) ? "\n\n" . $validated['note'] : '')));
+            $scopeNotes = [];
+            if ($requestType === 'partial') {
+                $scopeNotes[] = 'Refund scope: partial';
+                $scopeNotes[] = sprintf('Requested amount: %.2f', $amount);
+
+                if (!empty($requestedItemIds) && !empty($selectedItemsSummary)) {
+                    $scopeNotes[] = 'Selected item IDs: ' . implode(', ', $requestedItemIds);
+                    $scopeNotes[] = 'Selected items: ' . implode('; ', $selectedItemsSummary);
+                }
+            }
+
+            $reasonNote = trim(implode("\n\n", array_filter([$baseReasonNote, implode("\n", $scopeNotes)])));
 
             $refundPayload = [
                 'order_id' => $order->id,

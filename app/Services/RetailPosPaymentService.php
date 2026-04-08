@@ -7,6 +7,7 @@ use App\Models\OrderItem;
 use App\Models\PosPaymentLine;
 use App\Models\PosTransaction;
 use App\Models\Product;
+use App\Models\ProductVariant;
 use App\Support\Tax\VatInclusiveCalculator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -71,6 +72,32 @@ class RetailPosPaymentService
                     ]);
                 }
 
+                $requestedSize = isset($line['size']) ? trim((string) $line['size']) : '';
+                $requestedColor = isset($line['color']) ? trim((string) $line['color']) : '';
+                $resolvedVariant = null;
+
+                if ($requestedSize !== '' && $requestedColor !== '') {
+                    $resolvedVariant = ProductVariant::query()
+                        ->where('product_id', (int) $product->id)
+                        ->where('is_active', true)
+                        ->where('size', $requestedSize)
+                        ->where('color', $requestedColor)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if (!$resolvedVariant) {
+                        throw ValidationException::withMessages([
+                            "items.{$index}.size" => ["Variant not found for size {$requestedSize} and color {$requestedColor}."],
+                        ]);
+                    }
+
+                    if ((int) ($resolvedVariant->quantity ?? 0) < $qty) {
+                        throw ValidationException::withMessages([
+                            "items.{$index}.qty" => ["Insufficient stock for size {$requestedSize} and color {$requestedColor}."],
+                        ]);
+                    }
+                }
+
                 $lineSubtotal = round($unitPrice * $qty, 2);
                 $inclusiveSubtotal += $lineSubtotal;
 
@@ -79,9 +106,10 @@ class RetailPosPaymentService
                     'qty' => $qty,
                     'unit_price' => $unitPrice,
                     'subtotal' => $lineSubtotal,
-                    'size' => $line['size'] ?? null,
-                    'color' => $line['color'] ?? null,
+                    'size' => $resolvedVariant?->size ?? ($requestedSize !== '' ? $requestedSize : null),
+                    'color' => $resolvedVariant?->color ?? ($requestedColor !== '' ? $requestedColor : null),
                     'image' => $line['image'] ?? null,
+                    'variant' => $resolvedVariant,
                 ];
             }
 
@@ -121,6 +149,7 @@ class RetailPosPaymentService
             foreach ($normalizedItems as $item) {
                 /** @var Product $product */
                 $product = $item['product'];
+                $variant = $item['variant'] ?? null;
 
                 OrderItem::create([
                     'order_id' => $order->id,
@@ -132,11 +161,15 @@ class RetailPosPaymentService
                     'subtotal' => $item['subtotal'],
                     'size' => $item['size'],
                     'color' => $item['color'],
-                    'product_image' => $item['image'] ?? $product->main_image,
+                    'product_image' => $item['image'] ?? $variant?->image ?? $product->main_image,
                 ]);
 
                 $product->decrement('stock_quantity', $item['qty']);
                 $product->increment('sales_count', $item['qty']);
+
+                if ($variant instanceof ProductVariant) {
+                    $variant->decrement('quantity', $item['qty']);
+                }
             }
 
             $transaction = PosTransaction::create([

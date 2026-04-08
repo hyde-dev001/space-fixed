@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Carbon;
 use Illuminate\Validation\ValidationException;
 use Spatie\QueryBuilder\QueryBuilder;
 use Spatie\QueryBuilder\AllowedFilter;
@@ -853,6 +854,9 @@ class ProductController extends Controller
                 'description' => 'nullable|string',
                 'price' => 'sometimes|numeric|min:0|max:999999.99',
                 'compare_at_price' => 'nullable|numeric|min:0|max:999999.99',
+                'scheduled_sale_price' => 'nullable|numeric|min:0.01|max:999999.99',
+                'sale_starts_at' => 'nullable|date',
+                'sale_ends_at' => 'nullable|date|after_or_equal:sale_starts_at',
                 'brand' => 'nullable|string|max:100',
                 'category' => 'nullable|string|max:50',
                 'stock_quantity' => 'sometimes|integer|min:0',
@@ -871,6 +875,66 @@ class ProductController extends Controller
                 'variants.*.image' => 'nullable|string',
                 'variants.*.sku' => 'nullable|string',
             ]);
+
+            $hasDiscountScheduleInput = array_key_exists('scheduled_sale_price', $validated)
+                || array_key_exists('sale_starts_at', $validated)
+                || array_key_exists('sale_ends_at', $validated);
+
+            if ($hasDiscountScheduleInput) {
+                $scheduledSalePrice = array_key_exists('scheduled_sale_price', $validated)
+                    ? (is_null($validated['scheduled_sale_price']) ? null : (float) $validated['scheduled_sale_price'])
+                    : null;
+
+                // Clearing scheduled sale metadata is allowed by explicitly sending null scheduled_sale_price.
+                if ($scheduledSalePrice === null) {
+                    $validated['scheduled_sale_price'] = null;
+                    $validated['sale_starts_at'] = null;
+                    $validated['sale_ends_at'] = null;
+                } else {
+                    if (empty($validated['sale_starts_at']) || empty($validated['sale_ends_at'])) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Start and end date are required when scheduling a product discount.',
+                        ], 422);
+                    }
+
+                    $startsAt = Carbon::parse((string) $validated['sale_starts_at'])->startOfDay();
+                    $endsAt = Carbon::parse((string) $validated['sale_ends_at'])->endOfDay();
+
+                    if ($endsAt->lessThanOrEqualTo(now())) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'End date must be in the future for scheduled discounts.',
+                        ], 422);
+                    }
+
+                    $baselineOriginalPrice = $product->compare_at_price !== null
+                        ? (float) $product->compare_at_price
+                        : (float) $product->price;
+
+                    if ($scheduledSalePrice >= $baselineOriginalPrice) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Scheduled sale price must be lower than the original price.',
+                        ], 422);
+                    }
+
+                    // Keep the original price for future restore once schedule ends.
+                    $validated['compare_at_price'] = $baselineOriginalPrice;
+
+                    if ($startsAt->lessThanOrEqualTo(now())) {
+                        $validated['price'] = $scheduledSalePrice;
+                        $validated['scheduled_sale_price'] = null;
+                    } else {
+                        // Future schedule: keep current visible price until the start date.
+                        $validated['price'] = (float) $product->price;
+                        $validated['scheduled_sale_price'] = $scheduledSalePrice;
+                    }
+
+                    $validated['sale_starts_at'] = $startsAt->toDateTimeString();
+                    $validated['sale_ends_at'] = $endsAt->toDateTimeString();
+                }
+            }
 
             $isStaffUpdate = Auth::guard('user')->check();
 
@@ -928,19 +992,22 @@ class ProductController extends Controller
                 unset($validated['stock_quantity']);
             }
 
-            // IMPORTANT: Prevent direct price changes from STAFF members working for COMPANY-type shops
-            // Staff from company-type shops must use the price approval workflow
-            // Individual shop owners and their staff can change prices directly
-            if (Auth::guard('user')->check() && isset($validated['price'])) {
-                $currentPrice = $product->price;
-                $newPrice = $validated['price'];
+            // IMPORTANT: Prevent direct price changes from STAFF members working for COMPANY-type shops.
+            // This includes scheduled discount prices because they still modify customer-facing pricing.
+            if (Auth::guard('user')->check()) {
+                $currentPrice = (float) $product->price;
+                $nextImmediatePrice = isset($validated['price']) ? (float) $validated['price'] : null;
+                $nextScheduledPrice = array_key_exists('scheduled_sale_price', $validated) && !is_null($validated['scheduled_sale_price'])
+                    ? (float) $validated['scheduled_sale_price']
+                    : null;
 
-                // If price is different, check if approval is required
-                if ($newPrice != $currentPrice) {
-                    // Get the shop owner to check registration type
+                $isPriceMutation = ($nextImmediatePrice !== null && $nextImmediatePrice != $currentPrice)
+                    || ($nextScheduledPrice !== null && $nextScheduledPrice != $currentPrice);
+
+                if ($isPriceMutation) {
                     $shopOwner = \App\Models\ShopOwner::find($shopOwnerId);
 
-                    // Only require approval for company-type shops
+                    // Only require approval for company-type shops.
                     if ($shopOwner && $shopOwner->registration_type === 'company') {
                         return response()->json([
                             'success' => false,
@@ -948,7 +1015,6 @@ class ProductController extends Controller
                             'requires_approval' => true,
                         ], 403);
                     }
-                    // Individual shop owners and their staff can proceed with price change
                 }
             }
 
