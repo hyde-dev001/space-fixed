@@ -722,7 +722,9 @@ export default function JobOrdersRepair() {
             ?? 0;
           const rawVatRate = Number(repair.vat_rate);
           const vatRate = Number.isFinite(rawVatRate) && rawVatRate > 0 ? rawVatRate : REPAIR_VAT_RATE_PERCENT;
-          const rawTaxMode = String(repair.tax_mode ?? repair.pricing_breakdown?.tax_mode ?? 'legacy_additive').toLowerCase();
+          const pricingMode = String(repair.pricing_breakdown?.mode ?? '').toLowerCase();
+          const fallbackTaxMode = pricingMode === 'manual_pos' ? 'vat_inclusive' : 'legacy_additive';
+          const rawTaxMode = String(repair.tax_mode ?? repair.pricing_breakdown?.tax_mode ?? fallbackTaxMode).toLowerCase();
           const taxMode: RepairTaxMode = rawTaxMode === 'vat_inclusive'
             ? 'vat_inclusive'
             : (rawTaxMode === 'legacy_add_on' ? 'legacy_add_on' : 'legacy_additive');

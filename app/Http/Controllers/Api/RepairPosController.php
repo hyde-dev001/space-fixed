@@ -223,6 +223,8 @@ class RepairPosController extends Controller
             'add_on_services_snapshot' => null,
             'pricing_breakdown' => [
                 'mode' => 'manual_pos',
+                'tax_mode' => 'vat_inclusive',
+                'vat_rate' => 12.0,
                 'package_id' => $resolvedPackage ? (int) $resolvedPackage->id : null,
                 'package_name' => $resolvedPackageName,
                 'included_services_total' => $subtotal,

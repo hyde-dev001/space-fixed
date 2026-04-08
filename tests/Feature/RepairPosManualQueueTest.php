@@ -62,6 +62,9 @@ class RepairPosManualQueueTest extends TestCase
         $repair = RepairRequest::findOrFail((int) $tx->module_reference_id);
 
         $this->assertTrue((bool) $repair->manual_pos_queue_enabled);
+        $this->assertSame('manual_pos', (string) data_get($repair->pricing_breakdown, 'mode'));
+        $this->assertSame('vat_inclusive', (string) data_get($repair->pricing_breakdown, 'tax_mode'));
+        $this->assertSame('12.00', number_format((float) data_get($repair->pricing_breakdown, 'vat_rate', 0), 2, '.', ''));
     }
 
     #[Test]

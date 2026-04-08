@@ -256,6 +256,77 @@ class RepairPosPaymentFlowTest extends TestCase
         $this->assertSame((string) $repair->request_id, (string) ($entry['request_id'] ?? ''));
         $this->assertSame('paid', strtolower((string) ($entry['payment_status'] ?? '')));
         $this->assertSame('500.00', number_format((float) ($entry['total_paid_amount'] ?? 0), 2, '.', ''));
+        $this->assertSame('vat_inclusive', (string) ($entry['tax_mode'] ?? ''));
+        $this->assertSame('vat_inclusive', (string) data_get($entry, 'pricing_breakdown.tax_mode', ''));
+    }
+
+    #[Test]
+    public function repairer_can_accept_manual_pos_walk_in_without_customer_account(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create([
+            'business_type' => 'both',
+            'registration_type' => 'company',
+        ]);
+
+        $cashierRole = \Spatie\Permission\Models\Role::firstOrCreate([
+            'name' => 'Cashier',
+            'guard_name' => 'user',
+        ]);
+
+        $repairerRole = \Spatie\Permission\Models\Role::firstOrCreate([
+            'name' => 'Repairer',
+            'guard_name' => 'user',
+        ]);
+
+        /** @var \App\Models\User $cashier */
+        $cashier = \App\Models\User::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'status' => 'active',
+        ]);
+        $cashier->assignRole($cashierRole);
+
+        /** @var \App\Models\User $repairer */
+        $repairer = \App\Models\User::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'status' => 'active',
+        ]);
+        $repairer->assignRole($repairerRole);
+
+        $checkout = $this->actingAs($cashier, 'user')->postJson('/api/repair-pos/checkout', [
+            'repair_request_id' => null,
+            'due_type' => 'deposit',
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Walk-in No Account',
+            'walk_in_phone' => '09174445555',
+            'idempotency_key' => 'manual-pos-accept-no-account-001',
+            'manual_repair_subtotal' => 1000,
+            'manual_service_summary' => 'No-account acceptance test',
+            'manual_payment_policy' => 'deposit_50',
+            'payment_lines' => [
+                ['tender_type' => 'cash', 'amount' => 500],
+            ],
+        ]);
+
+        $checkout->assertOk()->assertJsonPath('success', true);
+
+        $transaction = \App\Models\PosTransaction::query()->findOrFail((int) $checkout->json('transaction_id'));
+        $repair = \App\Models\RepairRequest::query()->findOrFail((int) $transaction->module_reference_id);
+
+        $this->assertNull($repair->user_id);
+        $this->assertSame((int) $repairer->id, (int) $repair->assigned_repairer_id);
+        $this->assertSame('assigned_to_repairer', (string) $repair->status);
+
+        $acceptResponse = $this->actingAs($repairer, 'user')
+            ->postJson("/api/repairer/repairs/{$repair->id}/accept");
+
+        $acceptResponse->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('conversation_id', null);
+
+        $repair->refresh();
+        $this->assertSame('pending', (string) $repair->status);
+        $this->assertNull($repair->conversation_id);
+        $this->assertDatabaseCount('conversations', 0);
     }
 
     #[Test]

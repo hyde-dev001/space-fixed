@@ -2403,6 +2403,11 @@ class RepairRequestController extends Controller
             return $pricingTaxMode;
         }
 
+        $pricingMode = strtolower((string) data_get($repair->pricing_breakdown, 'mode', ''));
+        if ($pricingMode === 'manual_pos') {
+            return 'vat_inclusive';
+        }
+
         $latestPosTaxMode = strtolower((string) data_get($repair->latestPosTransaction?->metadata, 'tax_mode', ''));
         if (in_array($latestPosTaxMode, ['vat_inclusive', 'legacy_add_on'], true)) {
             return $latestPosTaxMode;

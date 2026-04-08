@@ -262,6 +262,7 @@ class RepairWorkflowController extends Controller
 
                 $repairs->transform(function (RepairRequest $repair): RepairRequest {
                     $repair->setAttribute('total_paid_amount', $this->resolveJobOrderTotalPaidAmount($repair));
+                    $this->normalizeRepairTaxModeForPayload($repair);
 
                     return $repair;
                 });
@@ -295,6 +296,7 @@ class RepairWorkflowController extends Controller
 
             $repairs->transform(function (RepairRequest $repair): RepairRequest {
                 $repair->setAttribute('total_paid_amount', $this->resolveJobOrderTotalPaidAmount($repair));
+                $this->normalizeRepairTaxModeForPayload($repair);
 
                 return $repair;
             });
@@ -309,6 +311,26 @@ class RepairWorkflowController extends Controller
                 'success' => false,
                 'message' => 'Failed to fetch assigned repairs: ' . $e->getMessage()
             ], 500);
+        }
+    }
+
+    private function normalizeRepairTaxModeForPayload(RepairRequest $repair): void
+    {
+        $pricingBreakdown = is_array($repair->pricing_breakdown)
+            ? $repair->pricing_breakdown
+            : [];
+
+        $pricingTaxMode = strtolower((string) ($pricingBreakdown['tax_mode'] ?? ''));
+        $pricingMode = strtolower((string) ($pricingBreakdown['mode'] ?? ''));
+
+        if (!in_array($pricingTaxMode, ['vat_inclusive', 'legacy_add_on', 'legacy_additive'], true) && $pricingMode === 'manual_pos') {
+            $pricingTaxMode = 'vat_inclusive';
+            $pricingBreakdown['tax_mode'] = 'vat_inclusive';
+            $repair->setAttribute('pricing_breakdown', $pricingBreakdown);
+        }
+
+        if (in_array($pricingTaxMode, ['vat_inclusive', 'legacy_add_on', 'legacy_additive'], true)) {
+            $repair->setAttribute('tax_mode', $pricingTaxMode);
         }
     }
 
@@ -442,26 +464,29 @@ class RepairWorkflowController extends Controller
                         'message' => "Repair workload limit reached ({$workloadLimit} active repairs). Please complete existing repairs before accepting new ones.",
                     ], 422);
                 }
-                $conversation = Conversation::firstOrCreate(
-                    [
-                        'shop_owner_id' => $repairRequest->shop_owner_id,
-                        'customer_id' => $repairRequest->user_id,
-                    ],
-                    [
+                $conversation = null;
+                if ((int) ($repairRequest->user_id ?? 0) > 0) {
+                    $conversation = Conversation::firstOrCreate(
+                        [
+                            'shop_owner_id' => $repairRequest->shop_owner_id,
+                            'customer_id' => $repairRequest->user_id,
+                        ],
+                        [
+                            'assigned_to_id' => $shopOwner->id,
+                            'assigned_to_type' => 'shop_owner',
+                            'status' => 'open',
+                            'priority' => 'medium',
+                            'last_message_at' => now(),
+                        ]
+                    );
+
+                    // Normalize assignment when reusing an existing conversation created by other channels.
+                    $conversation->update([
                         'assigned_to_id' => $shopOwner->id,
                         'assigned_to_type' => 'shop_owner',
-                        'status' => 'open',
-                        'priority' => 'medium',
                         'last_message_at' => now(),
-                    ]
-                );
-                
-                // Normalize assignment when reusing an existing conversation created by other channels.
-                $conversation->update([
-                    'assigned_to_id' => $shopOwner->id,
-                    'assigned_to_type' => 'shop_owner',
-                    'last_message_at' => now(),
-                ]);
+                    ]);
+                }
                 
                 // Determine next status based on delivery method
                 // Walk-in: Customer needs to confirm/bring item → 'pending'
@@ -473,7 +498,7 @@ class RepairWorkflowController extends Controller
                 // Update repair request
                 $repairRequest->update([
                     'status' => $nextStatus,
-                    'conversation_id' => $conversation->id,
+                    'conversation_id' => $conversation?->id,
                 ]);
                 
                 // Send automatic system message about the repair
@@ -487,15 +512,17 @@ class RepairWorkflowController extends Controller
                     ? "Please bring your item to our shop at your convenience." 
                     : "We'll pick up your item as scheduled.";
                 
-                $messageRecord = ConversationMessage::create([
-                    'conversation_id' => $conversation->id,
-                    'sender_type' => 'system',
-                    'sender_id' => $shopOwner->id,
-                    'content' => $systemMessage,
-                ]);
-                
-                // Update conversation last message time to trigger refresh
-                $conversation->update(['last_message_at' => $messageRecord->created_at]);
+                if ($conversation) {
+                    $messageRecord = ConversationMessage::create([
+                        'conversation_id' => $conversation->id,
+                        'sender_type' => 'system',
+                        'sender_id' => $shopOwner->id,
+                        'content' => $systemMessage,
+                    ]);
+
+                    // Update conversation last message time to trigger refresh
+                    $conversation->update(['last_message_at' => $messageRecord->created_at]);
+                }
                 
                 DB::commit();
 
@@ -519,7 +546,7 @@ class RepairWorkflowController extends Controller
                 return response()->json([
                     'success' => true,
                     'message' => $message,
-                    'conversation_id' => $conversation->id,
+                    'conversation_id' => $conversation?->id,
                     'repair' => $repairRequest->fresh(['user', 'services', 'conversation'])
                 ]);
             }
@@ -563,26 +590,29 @@ class RepairWorkflowController extends Controller
                     ], 422);
                 }
             }
-            $conversation = Conversation::firstOrCreate(
-                [
-                    'shop_owner_id' => $repairRequest->shop_owner_id,
-                    'customer_id' => $repairRequest->user_id,
-                ],
-                [
+            $conversation = null;
+            if ((int) ($repairRequest->user_id ?? 0) > 0) {
+                $conversation = Conversation::firstOrCreate(
+                    [
+                        'shop_owner_id' => $repairRequest->shop_owner_id,
+                        'customer_id' => $repairRequest->user_id,
+                    ],
+                    [
+                        'assigned_to_id' => $user->id,
+                        'assigned_to_type' => 'repairer',
+                        'status' => 'open',
+                        'priority' => 'medium',
+                        'last_message_at' => now(),
+                    ]
+                );
+
+                // Update conversation assignment to current repairer
+                $conversation->update([
                     'assigned_to_id' => $user->id,
                     'assigned_to_type' => 'repairer',
-                    'status' => 'open',
-                    'priority' => 'medium',
                     'last_message_at' => now(),
-                ]
-            );
-            
-            // Update conversation assignment to current repairer
-            $conversation->update([
-                'assigned_to_id' => $user->id,
-                'assigned_to_type' => 'repairer',
-                'last_message_at' => now(),
-            ]);
+                ]);
+            }
             
             // Determine next status based on delivery method
             // Walk-in: Customer needs to confirm/bring item → 'pending'
@@ -594,7 +624,7 @@ class RepairWorkflowController extends Controller
             // Update repair request
             $repairRequest->update([
                 'status' => $nextStatus,
-                'conversation_id' => $conversation->id,
+                'conversation_id' => $conversation?->id,
             ]);
             
             // Send automatic system message about the repair
@@ -609,15 +639,17 @@ class RepairWorkflowController extends Controller
                 ? "Please bring your item to our shop at your convenience." 
                 : "We'll pick up your item as scheduled.";
             
-            $messageRecord = ConversationMessage::create([
-                'conversation_id' => $conversation->id,
-                'sender_type' => 'system',
-                'sender_id' => $user->id,
-                'content' => $systemMessage,
-            ]);
-            
-            // Update conversation last message time to trigger refresh
-            $conversation->update(['last_message_at' => $messageRecord->created_at]);
+            if ($conversation) {
+                $messageRecord = ConversationMessage::create([
+                    'conversation_id' => $conversation->id,
+                    'sender_type' => 'system',
+                    'sender_id' => $user->id,
+                    'content' => $systemMessage,
+                ]);
+
+                // Update conversation last message time to trigger refresh
+                $conversation->update(['last_message_at' => $messageRecord->created_at]);
+            }
             
             DB::commit();
 
@@ -641,7 +673,7 @@ class RepairWorkflowController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => $message,
-                'conversation_id' => $conversation->id,
+                'conversation_id' => $conversation?->id,
                 'repair' => $repairRequest->fresh(['user', 'services', 'conversation'])
             ]);
             
