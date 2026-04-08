@@ -1252,15 +1252,18 @@ useEffect(() => {
 				"/api/retail-pos/checkout",
 				{
 					idempotency_key: idempotencyKey,
+					customer_type: "walk_in",
+					customer_id: null,
 					walk_in_name: retailCustomerName.trim(),
 					walk_in_phone: retailCustomerPhone.trim() || null,
 					walk_in_email: retailCustomerEmail.trim() || null,
 					items: retailCart.map((item) => ({
 						product_id: item.productId,
-						variant_id: item.variantId,
-						name: item.name,
-						quantity: item.qty,
+						qty: item.qty,
 						unit_price: Number(item.unitPrice.toFixed(2)),
+						size: item.size ?? null,
+						color: item.color ?? null,
+						image: item.image ?? null,
 					})),
 					payment_lines: [
 						{
@@ -1279,8 +1282,8 @@ useEffect(() => {
 				},
 			);
 
-			const transactionId = Number(checkoutResponse?.data?.transaction_id || 0);
-			const transactionNo = String(checkoutResponse?.data?.transaction_no || "");
+			const transactionId = Number(checkoutResponse?.data?.data?.id ?? checkoutResponse?.data?.transaction_id ?? 0);
+			const transactionNo = String(checkoutResponse?.data?.data?.transaction_no ?? checkoutResponse?.data?.transaction_no ?? "");
 
 			let receiptPayload: any = null;
 			if (transactionId > 0) {
@@ -1349,7 +1352,13 @@ useEffect(() => {
 
 			setIsReceiptModalOpen(true);
 		} catch (error: any) {
-			const message = error?.response?.data?.message || "Retail checkout failed. Please verify payment details and try again.";
+			const validationErrors = error?.response?.data?.errors || {};
+			const firstValidationError = Object.values(validationErrors).flat()[0];
+			const message = String(
+				firstValidationError
+				|| error?.response?.data?.message
+				|| "Retail checkout failed. Please verify payment details and try again.",
+			);
 			await Swal.fire({
 				icon: "error",
 				title: "Checkout Failed",
@@ -1402,6 +1411,10 @@ useEffect(() => {
 	const filteredReceiptHistory = useMemo(() => {
 		const query = historySearch.trim().toLowerCase();
 		return receiptHistory.filter((receipt) => {
+			const isRetailEntry = receipt.moduleType === "retail";
+			if (mode === "retail" && !isRetailEntry) return false;
+			if (mode === "repair" && isRetailEntry) return false;
+
 			const matchesDate = historyDate.length === 0 || toDateInputValue(receipt.createdAtISO) === historyDate;
 			if (!matchesDate) return false;
 
@@ -1421,7 +1434,7 @@ useEffect(() => {
 
 			return haystack.includes(query);
 		});
-	}, [historyDate, historySearch, receiptHistory]);
+	}, [historyDate, historySearch, mode, receiptHistory]);
 
 	const repairRefundStateById = useMemo(() => {
 		const state = new Map<number, { paidAmount: number; refundedAmount: number; hasOpenRequest: boolean }>();
@@ -1981,13 +1994,15 @@ useEffect(() => {
 						>
 							History
 						</button>
-						<button
-							type="button"
-							onClick={() => setIsOrderModalOpen(true)}
-							className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500"
-						>
-							Open Order Picker
-						</button>
+						{mode === "repair" && allowedModes.includes("repair") && (
+							<button
+								type="button"
+								onClick={() => setIsOrderModalOpen(true)}
+								className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500"
+							>
+								Open Order Picker
+							</button>
+						)}
 					</div>
 				</div>
 				)}
