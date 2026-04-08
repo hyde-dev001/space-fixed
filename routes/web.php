@@ -1920,13 +1920,6 @@ Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manage
     Route::get('/dashboard', [\App\Http\Controllers\Staff\CustomerController::class, 'index'])
         ->middleware('permission:access-staff-dashboard')
         ->name('dashboard');
-    Route::get('/point-of-sale', function () {
-        if (Auth::guard('user')->user()?->force_password_change) {
-            return redirect()->route('erp.profile');
-        }
-
-        return Inertia::render('ERP/STAFF/RetailPOS');
-    })->middleware(['permission:access-staff-job-orders', 'check.user.business.type:retail,both'])->name('point-of-sale');
     Route::get('/job-orders', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
@@ -2146,12 +2139,17 @@ Route::get('/erp/repairer/pricing-and-services', function () {
     return Inertia::render('ERP/repairer/PricingAndServices', compact('initialServices'));
 })->middleware(['auth:user', 'permission:access-pricing-services', 'check.user.business.type:repair,both'])->name('erp.repairer.pricing-services');
 
-// Repairer Point of Sale Route - frontend cashier page for in-shop payments
-Route::get('/erp/repairer/point-of-sale', function () {
+// Cashier Point of Sale Route - unified POS for cashier users
+Route::get('/erp/cashier/point-of-sale', function () {
     if (Auth::guard('user')->user()?->force_password_change) {
         return redirect()->route('erp.profile');
     }
-    return Inertia::render('ERP/repairer/POS');
+    return Inertia::render('ERP/cashier/POS');
+})->middleware(['auth:user', 'permission:access-unified-pos'])->name('erp.cashier.point-of-sale');
+
+// Repairer Point of Sale Route - frontend cashier page for in-shop payments
+Route::get('/erp/repairer/point-of-sale', function () {
+    return redirect()->route('erp.cashier.point-of-sale');
 })->middleware(['auth:user'])->name('erp.repairer.point-of-sale');
 
 // Common Routes (for testing/development)
