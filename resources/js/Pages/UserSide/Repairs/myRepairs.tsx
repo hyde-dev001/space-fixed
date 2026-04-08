@@ -261,6 +261,14 @@ const getReturnMethod = (order: RepairOrder): 'walk_in' | 'customer_pickup' | 's
   return order.delivery_method === 'walk_in' ? 'walk_in' : 'shop_delivery';
 };
 
+const isOnlineIntakeFlow = (order: RepairOrder): boolean => {
+  return getIntakeMethod(order) === 'customer_delivery';
+};
+
+const isOnlineReturnFlow = (order: RepairOrder): boolean => {
+  return getReturnMethod(order) === 'shop_delivery';
+};
+
 const getIntakeMethodLabel = (order: RepairOrder): string => {
   return getIntakeMethod(order) === 'walk_in'
     ? 'Walk-in Delivery to Shop'
@@ -1725,7 +1733,7 @@ const MyRepairs: React.FC = () => {
     if (
       order.status === 'repairer_accepted' &&
       Boolean(order.conversation_id) &&
-      getReturnMethod(order) !== 'walk_in' &&
+      isOnlineIntakeFlow(order) &&
       order.payment_status !== 'paid' &&
       order.payment_status !== 'completed' &&
       Boolean(order.payment_enabled) &&
@@ -2673,7 +2681,7 @@ const MyRepairs: React.FC = () => {
                       {/* Chat with Repairer actions */}
                       {order.status === 'repairer_accepted' && order.conversation_id && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (
                         <>
-                          {getReturnMethod(order) !== 'walk_in' && (
+                          {isOnlineIntakeFlow(order) && (
                             <button
                               onClick={() => handlePayNow(order.id)}
                               disabled={!order.payment_enabled || processingPayment}
@@ -2715,7 +2723,7 @@ const MyRepairs: React.FC = () => {
                       
                       {order.status === 'pending' && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (
                         <>
-                          {getReturnMethod(order) !== 'walk_in' && (
+                          {isOnlineIntakeFlow(order) && (
                             <button
                               onClick={() => handlePayNow(order.id)}
                               disabled={!order.payment_enabled || processingPayment}
@@ -2745,7 +2753,7 @@ const MyRepairs: React.FC = () => {
                       {(order.status === 'ready_for_pickup' || order.status === 'shipped') && (
                         <>
                           {/* For deposit_50 only — full_upfront is already paid */}
-                          {order.status === 'ready_for_pickup' && getReturnMethod(order) !== 'walk_in' && (order.payment_policy ?? 'deposit_50') !== 'full_upfront' && order.payment_status !== 'completed' && (
+                          {order.status === 'ready_for_pickup' && isOnlineReturnFlow(order) && (order.payment_policy ?? 'deposit_50') !== 'full_upfront' && order.payment_status !== 'completed' && (
                             <button
                               onClick={() => handlePayNow(order.id)}
                               disabled={!order.payment_enabled || processingPayment}
