@@ -14,6 +14,18 @@ class RepairPosAuthorizationTest extends TestCase
     use RefreshDatabase;
 
     #[Test]
+    public function repairer_without_unified_pos_permission_cannot_open_cashier_pos_route(): void
+    {
+        $repairer = User::factory()->create([
+            'role' => 'REPAIRER',
+        ]);
+
+        $this->actingAs($repairer, 'user')
+            ->get('/erp/cashier/point-of-sale')
+            ->assertStatus(403);
+    }
+
+    #[Test]
     public function checkout_rejects_user_from_different_shop(): void
     {
         $owningShop = ShopOwner::factory()->create();
