@@ -451,6 +451,88 @@ class RepairPosPaymentFlowTest extends TestCase
     }
 
     #[Test]
+    public function online_settlement_updates_total_paid_amount_for_deposit_and_remaining_balance(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var \App\Models\User $customer */
+        $customer = \App\Models\User::factory()->create();
+
+        $repair = \App\Models\RepairRequest::create([
+            'request_id' => 'REP-TDD-ONLINE-PHASES-001',
+            'customer_name' => $customer->name,
+            'email' => $customer->email,
+            'phone' => '09170000077',
+            'shoe_type' => 'Sneakers',
+            'description' => 'Online settlement should persist paid totals per phase',
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'images' => json_encode([]),
+            'total' => 1000,
+            'final_total' => 1000,
+            'status' => 'pending',
+            'payment_policy' => 'deposit_50',
+            'payment_policy_snapshot' => 'deposit_50',
+            'payment_status' => 'pending',
+            'total_paid_amount' => 0,
+        ]);
+
+        $settlementService = app(\App\Services\PaymentSettlementService::class);
+
+        $firstSettlement = $settlementService->settleRepairPaid($repair->fresh(), 'pay_online_deposit_001', true);
+        $this->assertSame('settled', $firstSettlement['result']);
+
+        $repair->refresh();
+        $this->assertSame('paid', (string) $repair->payment_status);
+        $this->assertSame('500.00', number_format((float) $repair->total_paid_amount, 2, '.', ''));
+
+        $repair->update(['status' => 'ready_for_pickup']);
+
+        $secondSettlement = $settlementService->settleRepairPaid($repair->fresh(), 'pay_online_balance_001', true);
+        $this->assertSame('settled', $secondSettlement['result']);
+
+        $repair->refresh();
+        $this->assertSame('completed', (string) $repair->payment_status);
+        $this->assertSame('1000.00', number_format((float) $repair->total_paid_amount, 2, '.', ''));
+    }
+
+    #[Test]
+    public function job_order_payload_reconciles_completed_repairs_with_stale_paid_amount(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var \App\Models\User $customer */
+        $customer = \App\Models\User::factory()->create();
+
+        $repair = \App\Models\RepairRequest::create([
+            'request_id' => 'REP-TDD-JOBORDER-RECON-001',
+            'customer_name' => $customer->name,
+            'email' => $customer->email,
+            'phone' => '09170000078',
+            'shoe_type' => 'Sneakers',
+            'description' => 'Job order payload reconciliation for stale mixed payment totals',
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'images' => json_encode([]),
+            'total' => 1000,
+            'final_total' => 1000,
+            'status' => 'completed',
+            'payment_policy' => 'deposit_50',
+            'payment_policy_snapshot' => 'deposit_50',
+            'payment_status' => 'completed',
+            'total_paid_amount' => 500,
+            'paymongo_payment_id' => 'pay_stale_mix_001',
+        ]);
+
+        $response = $this->actingAs($shopOwner, 'shop_owner')->getJson('/api/shop-owner/repairs');
+        $response->assertOk()->assertJsonPath('success', true);
+
+        $jobOrderPayload = collect($response->json('data'))
+            ->firstWhere('id', $repair->id);
+
+        $this->assertNotNull($jobOrderPayload);
+        $this->assertEqualsWithDelta(1000.00, (float) ($jobOrderPayload['total_paid_amount'] ?? 0), 0.01);
+    }
+
+    #[Test]
     public function pos_ledger_tables_exist_for_repair_module(): void
     {
         $this->assertTrue(Schema::hasTable('pos_transactions'));

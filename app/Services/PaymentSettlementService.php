@@ -61,6 +61,10 @@ class PaymentSettlementService
     {
         $policy = $this->normalizeRepairPaymentPolicy($repair->payment_policy ?? 'deposit_50');
         $resolvedPaymentId = trim((string) ($paymentId ?? ''));
+        $grandTotal = round((float) ($repair->final_total ?? $repair->total ?? 0), 2);
+        $existingPaidAmount = round((float) ($repair->total_paid_amount ?? 0), 2);
+        $currentPaymentStatus = (string) ($repair->payment_status ?? 'pending');
+        $isDepositPhase = in_array($currentPaymentStatus, ['pending', 'failed', 'expired', '', null], true);
 
         if ($this->isRepairSettled($repair, $policy)) {
             return [
@@ -101,9 +105,13 @@ class PaymentSettlementService
         ]);
 
         if ($policy === 'full_upfront') {
+            $totalPaidAmount = round(max($existingPaidAmount, $grandTotal), 2);
+
             $repair->update([
                 'payment_status' => 'completed',
                 'status' => 'pending',  // Always proceed to pending after payment
+                'total_paid_amount' => $totalPaidAmount,
+                'payment_status_derived' => 'completed',
             ]);
 
             return [
@@ -114,8 +122,17 @@ class PaymentSettlementService
             ];
         }
 
-        $isDepositPhase = in_array($repair->payment_status ?? 'pending', ['pending', null], true);
-        $repair->update(['payment_status' => $isDepositPhase ? 'paid' : 'completed']);
+        $nextPaymentStatus = $isDepositPhase ? 'paid' : 'completed';
+        $phasePaidAmount = $isDepositPhase
+            ? round($grandTotal * 0.5, 2)
+            : $grandTotal;
+        $totalPaidAmount = round(max($existingPaidAmount, $phasePaidAmount), 2);
+
+        $repair->update([
+            'payment_status' => $nextPaymentStatus,
+            'total_paid_amount' => $totalPaidAmount,
+            'payment_status_derived' => $nextPaymentStatus,
+        ]);
 
         if ($isDepositPhase) {
             // After deposit payment, always proceed to pending status

@@ -23,6 +23,7 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use App\Services\NotificationService;
+use App\Services\PaymentSettlementService;
 use App\Services\ShopOwnerApprovalPolicyService;
 
 class RepairWorkflowController extends Controller
@@ -42,7 +43,8 @@ class RepairWorkflowController extends Controller
 
     public function __construct(
         NotificationService $notificationService,
-        private ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService
+        private ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService,
+        private PaymentSettlementService $paymentSettlementService
     )
     {
         $this->notificationService = $notificationService;
@@ -249,11 +251,20 @@ class RepairWorkflowController extends Controller
             if ($shopOwner) {
                 // Shop owner sees all repairs for their shop
                 $repairs = RepairRequest::with(['user', 'services', 'shopOwner', 'repairer'])
+                    ->withSum(['posTransactions as pos_paid_amount' => function ($query) {
+                        $query->whereIn('status', ['paid', 'partially_refunded', 'refunded']);
+                    }], 'paid_amount')
                     ->where('shop_owner_id', $shopOwner->id)
                     ->where($jobOrderVisibleRepairs)
                     ->whereIn('status', ['new_request', 'assigned_to_repairer', 'repairer_accepted', 'waiting_customer_confirmation', 'owner_approval_pending', 'owner_approved', 'confirmed', 'pending', 'in_progress', 'awaiting_parts', 'completed', 'ready_for_pickup', 'shipped', 'picked_up', 'repairer_rejected', 'manager_reviewing', 'manager_rejected', 'owner_rejected', 'rejected', 'cancelled', 'received', 'under-review'])
                     ->orderBy('created_at', 'desc')
                     ->get();
+
+                $repairs->transform(function (RepairRequest $repair): RepairRequest {
+                    $repair->setAttribute('total_paid_amount', $this->resolveJobOrderTotalPaidAmount($repair));
+
+                    return $repair;
+                });
                 
                 return response()->json([
                     'success' => true,
@@ -273,11 +284,20 @@ class RepairWorkflowController extends Controller
             
             // Get repairs assigned to this repairer
             $repairs = RepairRequest::with(['user', 'services', 'shopOwner'])
+                ->withSum(['posTransactions as pos_paid_amount' => function ($query) {
+                    $query->whereIn('status', ['paid', 'partially_refunded', 'refunded']);
+                }], 'paid_amount')
                 ->forRepairer($user->id)
                 ->where($jobOrderVisibleRepairs)
                 ->whereIn('status', ['assigned_to_repairer', 'repairer_accepted', 'waiting_customer_confirmation', 'owner_approval_pending', 'owner_approved', 'confirmed', 'pending', 'in_progress', 'awaiting_parts', 'completed', 'ready_for_pickup', 'shipped', 'picked_up', 'repairer_rejected', 'manager_reviewing', 'manager_rejected', 'owner_rejected', 'rejected', 'cancelled', 'received'])
                 ->orderBy('created_at', 'desc')
                 ->get();
+
+            $repairs->transform(function (RepairRequest $repair): RepairRequest {
+                $repair->setAttribute('total_paid_amount', $this->resolveJobOrderTotalPaidAmount($repair));
+
+                return $repair;
+            });
             
             return response()->json([
                 'success' => true,
@@ -290,6 +310,31 @@ class RepairWorkflowController extends Controller
                 'message' => 'Failed to fetch assigned repairs: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    private function resolveJobOrderTotalPaidAmount(RepairRequest $repair): float
+    {
+        $grandTotal = round((float) ($repair->final_total ?? $repair->total ?? 0), 2);
+        $storedPaidAmount = round((float) ($repair->total_paid_amount ?? 0), 2);
+        $posLedgerPaidAmount = round((float) ($repair->pos_paid_amount ?? 0), 2);
+        $resolved = max(0.0, $storedPaidAmount, $posLedgerPaidAmount);
+
+        $paymentStatus = strtolower(trim((string) ($repair->payment_status ?? 'pending')));
+        $policy = $this->paymentSettlementService->normalizeRepairPaymentPolicy((string) ($repair->payment_policy ?? 'deposit_50'));
+
+        if ($paymentStatus === 'completed') {
+            return round(max($resolved, $grandTotal), 2);
+        }
+
+        if ($paymentStatus === 'paid' || $paymentStatus === 'partially_paid') {
+            $phaseAmount = $policy === 'full_upfront'
+                ? $grandTotal
+                : round($grandTotal * 0.5, 2);
+
+            return round(max($resolved, $phaseAmount), 2);
+        }
+
+        return round($resolved, 2);
     }
 
     public function validateMaterialStart($id, RepairMaterialPlanningService $planner)
