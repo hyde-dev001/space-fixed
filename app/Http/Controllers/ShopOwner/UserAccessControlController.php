@@ -258,14 +258,14 @@ class UserAccessControlController extends Controller
                 'salary' => 'nullable|numeric|min:0',
                 'hire_date' => 'nullable|date',
                 'status' => 'nullable|in:active,inactive,on_leave',
-                'role' => 'required|in:MANAGER,FINANCE,HR,CRM,STAFF,REPAIRER,Manager,Finance,Staff,Repairer',
+                'role' => 'required|in:MANAGER,FINANCE,HR,CRM,STAFF,REPAIRER,CASHIER,Manager,Finance,Staff,Repairer,Cashier',
             ], [
                 'name.required' => 'Employee name is required',
                 'email.required' => 'Email is required',
                 'email.unique' => 'This email is already registered',
                 'phone.regex' => 'Phone number must be exactly 11 digits',
                 'salary.numeric' => 'Salary must be a valid number',
-                'role.in' => 'Role must be Manager, Finance, HR, CRM, Staff, or Repairer',
+                'role.in' => 'Role must be Manager, Finance, HR, CRM, Staff, Repairer, or Cashier',
             ]);
 
             // Normalize role to uppercase to match database enum
@@ -348,6 +348,7 @@ class UserAccessControlController extends Controller
                     'HR' => 'HR',
                     'CRM' => 'CRM',
                     'REPAIRER' => 'Repairer',
+                    'CASHIER' => 'Cashier',
                     'STAFF' => 'Staff',
                 ];
                 

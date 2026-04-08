@@ -39,8 +39,8 @@ class BusinessAccessControlService
     /**
      * Role categories by business type
      */
-    const RETAIL_ROLES = ['STAFF', 'Staff', 'MANAGER', 'Manager', 'FINANCE', 'Finance', 'HR', 'CRM'];
-    const REPAIR_ROLES = ['REPAIRER', 'Repairer', 'MANAGER', 'Manager', 'FINANCE', 'Finance', 'HR', 'CRM'];
+    const RETAIL_ROLES = ['STAFF', 'Staff', 'MANAGER', 'Manager', 'FINANCE', 'Finance', 'HR', 'CRM', 'CASHIER', 'Cashier'];
+    const REPAIR_ROLES = ['REPAIRER', 'Repairer', 'MANAGER', 'Manager', 'FINANCE', 'Finance', 'HR', 'CRM', 'CASHIER', 'Cashier'];
     
     /**
      * Module-to-business-type mapping
@@ -300,7 +300,7 @@ class BusinessAccessControlService
         $allowedRoles = [];
 
         // Common roles for all business types (company only)
-        $commonRoles = ['MANAGER', 'Manager', 'FINANCE', 'Finance', 'HR', 'CRM'];
+        $commonRoles = ['MANAGER', 'Manager', 'FINANCE', 'Finance', 'HR', 'CRM', 'CASHIER', 'Cashier'];
 
         if ($businessType === self::BUSINESS_TYPE_RETAIL) {
             $allowedRoles = array_merge($commonRoles, ['STAFF', 'Staff']);

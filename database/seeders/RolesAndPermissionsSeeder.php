@@ -97,6 +97,7 @@ class RolesAndPermissionsSeeder extends Seeder
             
             // ===== RBAC & ADMIN MANAGEMENT =====
             'manage-employee-permissions',
+            'access-unified-pos',
 
             // ===== COMMON/GLOBAL =====
             'access-global-search',
@@ -265,6 +266,16 @@ class RolesAndPermissionsSeeder extends Seeder
         ]);
         $this->command->info('✓ Staff role: ' . $staff->permissions->count() . ' permissions (Staff module + Basic access)');
 
+        // 8. Cashier Role - Unified POS Access
+        $cashier = Role::firstOrCreate(['name' => 'Cashier', 'guard_name' => 'user']);
+        $cashier->syncPermissions([
+            'access-unified-pos',
+            'access-global-search',
+            'access-notification-center',
+            'access-profile',
+        ]);
+        $this->command->info('✓ Cashier role: ' . $cashier->permissions->count() . ' permissions (Unified POS access)');
+
         // ===== SHOP OWNER GUARD =====
         
         $this->command->info('Creating Shop Owner role...');
@@ -295,6 +306,7 @@ class RolesAndPermissionsSeeder extends Seeder
         $this->command->info('  6. Inventory Manager (' . $inventoryManager->permissions->count() . ' perms) - Inventory module only');
         $this->command->info('  7. Procurement Manager (' . $procurementManager->permissions->count() . ' perms) - Procurement module only');
         $this->command->info('  8. Staff (' . $staff->permissions->count() . ' perms) - Staff module + Basic access');
+        $this->command->info('  9. Cashier (' . $cashier->permissions->count() . ' perms) - Unified POS access');
         $this->command->info('');
         $this->command->info('💡 HR/Shop Owner can grant additional permissions on top of role!');
         $this->command->info('========================================');
