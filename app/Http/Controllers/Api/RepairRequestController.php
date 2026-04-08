@@ -1429,6 +1429,14 @@ class RepairRequestController extends Controller
                 ], 404);
             }
 
+            if (!(bool) $repair->pickup_enabled) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Receive confirmation is not yet activated by the shop.'
+                ], 422);
+            }
+
             $repair->update([
                 'status' => 'picked_up',
                 'picked_up_at' => now()

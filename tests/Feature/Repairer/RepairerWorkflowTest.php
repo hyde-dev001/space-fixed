@@ -853,7 +853,7 @@ class RepairerWorkflowTest extends TestCase
         $this->assertSame(2.0, (float) $planItem->actual_quantity);
     }
 
-    public function test_repairer_can_ship_pickup_repairs_and_customer_can_confirm_delivery(): void
+    public function test_repairer_must_activate_receive_before_customer_can_confirm_delivery(): void
     {
         $shopOwner = $this->createRepairShop();
         $customer = $this->createCustomer([
@@ -873,6 +873,13 @@ class RepairerWorkflowTest extends TestCase
             [
                 'status' => 'ready_for_pickup',
                 'delivery_method' => 'pickup',
+                'return_address' => [
+                    'address_line' => '123 Test Street',
+                    'barangay' => 'Barangay Uno',
+                    'city' => 'Quezon City',
+                    'region' => 'NCR',
+                    'postal_code' => '1100',
+                ],
                 'total' => 1200,
                 'final_total' => 1200,
                 'payment_policy' => 'full_upfront',
@@ -888,6 +895,7 @@ class RepairerWorkflowTest extends TestCase
                 'carrier_name' => 'Rider One',
                 'carrier_phone' => '09171234567',
                 'tracking_link' => 'https://tracker.example.com/SHIP-12345',
+                'estimated_delivery_date' => now()->addDays(2)->toDateString(),
             ]
         );
 
@@ -897,9 +905,26 @@ class RepairerWorkflowTest extends TestCase
         $repairRequest->refresh();
         $this->assertSame('shipped', $repairRequest->status);
         $this->assertNotNull($repairRequest->shipped_at);
-        $this->assertTrue((bool) $repairRequest->pickup_enabled);
+        $this->assertFalse((bool) $repairRequest->pickup_enabled);
         $this->assertSame('SHIP-12345', $repairRequest->tracking_number);
         $this->assertSame('Lalamove', $repairRequest->carrier_company);
+
+        $confirmBeforeActivation = $this->actingAs($customer, 'user')->postJson(
+            "/api/customer/repairs/{$repairRequest->id}/confirm-pickup"
+        );
+
+        $confirmBeforeActivation->assertStatus(422)
+            ->assertJsonPath('success', false);
+
+        $activateResponse = $this->actingAs($repairer, 'user')->postJson(
+            "/api/repairer/repairs/{$repairRequest->id}/activate-pickup"
+        );
+
+        $activateResponse->assertStatus(200)
+            ->assertJsonPath('success', true);
+
+        $repairRequest->refresh();
+        $this->assertTrue((bool) $repairRequest->pickup_enabled);
 
         $confirmResponse = $this->actingAs($customer, 'user')->postJson(
             "/api/customer/repairs/{$repairRequest->id}/confirm-pickup"

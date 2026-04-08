@@ -3077,14 +3077,14 @@ export default function JobOrdersRepair() {
                           {order.status === "shipped" && (
                             <button
                               onClick={() => handleActivatePickup(String(order.database_id))}
-                              disabled={Boolean(order.pickup_enabled || order.pickup_enabled_at)}
+                              disabled={Boolean(order.pickup_enabled)}
                               className={`inline-flex items-center justify-center p-2 rounded-lg transition-colors ${
-                                order.pickup_enabled || order.pickup_enabled_at
+                                order.pickup_enabled
                                   ? 'text-gray-400 cursor-not-allowed'
                                   : 'text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:text-purple-400 dark:hover:text-purple-300 dark:hover:bg-purple-900/30'
                               }`}
                               title={
-                                order.pickup_enabled || order.pickup_enabled_at
+                                order.pickup_enabled
                                   ? 'Waiting for customer receive confirmation'
                                   : 'Activate customer receive confirmation'
                               }

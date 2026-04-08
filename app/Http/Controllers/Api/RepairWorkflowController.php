@@ -2883,9 +2883,9 @@ class RepairWorkflowController extends Controller
             $repairRequest->update(array_merge($validated, [
                 'status'    => 'shipped',
                 'shipped_at' => now(),
-                'pickup_enabled' => true,
-                'pickup_enabled_at' => $repairRequest->pickup_enabled_at ?? now(),
-                'pickup_enabled_by' => $shopOwner?->id ?? $user?->id,
+                'pickup_enabled' => false,
+                'pickup_enabled_at' => null,
+                'pickup_enabled_by' => null,
             ]));
 
             return response()->json([

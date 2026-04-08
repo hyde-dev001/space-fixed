@@ -2758,19 +2758,31 @@ const MyRepairs: React.FC = () => {
                               {processingPayment ? 'PROCESSING...' : 'PAY NOW'}
                             </button>
                           )}
+                          {(() => {
+                            const canConfirmReceive = Boolean(order.pickup_enabled);
+                            const receiveTitle = canConfirmReceive
+                              ? 'Confirm you have received your item'
+                              : 'Waiting for shop to activate pickup';
+                            const receiveLabel = canConfirmReceive
+                              ? 'Confirm Received'
+                              : 'Received';
+
+                            return (
                           <button
                             type="button"
                             onClick={() => confirmPickup(order.id)}
-                            disabled={!order.pickup_enabled}
+                            disabled={!canConfirmReceive}
                             className={`${actionButtonBaseClass} ${
-                              order.pickup_enabled
+                              canConfirmReceive
                                 ? actionButtonPrimaryClass
                                 : actionButtonDisabledClass
                             }`}
-                            title={order.pickup_enabled ? 'Confirm you have received your item' : 'Waiting for shop to activate pickup'}
+                            title={receiveTitle}
                           >
-                            {order.pickup_enabled ? (order.status === 'shipped' ? 'Confirm Delivery' : 'Confirm Received') : 'Received'}
+                            {receiveLabel}
                           </button>
+                            );
+                          })()}
                         </>
                       )}
                       {order.status === 'picked_up' && !isRefundFlowLocked(latestRefundByRepairId[order.id]?.status) && (
