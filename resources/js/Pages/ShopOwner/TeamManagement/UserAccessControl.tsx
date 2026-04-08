@@ -175,6 +175,7 @@ const UserAccessControl: React.FC = () => {
     : String(rawBusinessType).trim().toLowerCase();
   const isRetailCapable = normalizedBusinessType === 'retail' || normalizedBusinessType === 'both';
   const isRepairCapable = normalizedBusinessType === 'repair' || normalizedBusinessType === 'both';
+  const isCashierCapable = isRetailCapable || isRepairCapable;
   const currentUserId = Number(auth?.user?.id ?? 0);
   const currentAccountEmail = String(auth?.user?.email ?? shopOwner?.email ?? '').trim().toLowerCase();
   
@@ -326,6 +327,7 @@ const UserAccessControl: React.FC = () => {
     Finance: 'Finance',
     HR: 'Human Resources',
     CRM: 'Customer Relationship Management',
+    Cashier: 'Cashier',
     Repairer: 'Repairer',
     Inventory: 'Inventory',
     Procurement: 'Procurement',
@@ -340,6 +342,7 @@ const UserAccessControl: React.FC = () => {
     INVENTORY_MANAGER: 'Inventory',
     PROCUREMENT_MANAGER: 'Procurement',
     STAFF: 'Staff',
+    CASHIER: 'Cashier',
   };
 
   function normalizeRoleName(role?: string | null) {
@@ -353,6 +356,7 @@ const UserAccessControl: React.FC = () => {
       FINANCE: 'Finance',
       HR: 'HR',
       CRM: 'CRM',
+      CASHIER: 'Cashier',
       REPAIRER: 'Repairer',
       INVENTORY: 'Inventory',
       PROCUREMENT: 'Procurement',
@@ -435,6 +439,7 @@ const UserAccessControl: React.FC = () => {
       hr: string[];
       crm: string[];
       manager: string[];
+      cashier: string[];
       inventory: string[];
       procurement: string[];
       repairer: string[];
@@ -451,6 +456,7 @@ const UserAccessControl: React.FC = () => {
     hr: boolean;
     crm: boolean;
     manager: boolean;
+    cashier: boolean;
     inventory: boolean;
     procurement: boolean;
     repairer: boolean;
@@ -460,13 +466,14 @@ const UserAccessControl: React.FC = () => {
     hr: true,
     crm: true,
     manager: false,
+    cashier: false,
     inventory: false,
     procurement: false,
     repairer: false,
     staff: false,
   });
 
-  const toggleCategory = (category: 'finance' | 'hr' | 'crm' | 'manager' | 'inventory' | 'procurement' | 'repairer' | 'staff') => {
+  const toggleCategory = (category: 'finance' | 'hr' | 'crm' | 'manager' | 'cashier' | 'inventory' | 'procurement' | 'repairer' | 'staff') => {
     setExpandedCategories(prev => ({
       ...prev,
       [category]: !prev[category]
@@ -479,6 +486,7 @@ const UserAccessControl: React.FC = () => {
       hr: true,
       crm: true,
       manager: true,
+      cashier: true,
       inventory: true,
       procurement: true,
       repairer: true,
@@ -492,6 +500,7 @@ const UserAccessControl: React.FC = () => {
       hr: false,
       crm: false,
       manager: false,
+      cashier: false,
       inventory: false,
       procurement: false,
       repairer: false,
@@ -506,6 +515,7 @@ const UserAccessControl: React.FC = () => {
       ...(availablePermissions.grouped.hr || []),
       ...(availablePermissions.grouped.crm || []),
       ...(availablePermissions.grouped.manager || []),
+      ...(isCashierCapable ? (availablePermissions.grouped.cashier || []) : []),
       ...(availablePermissions.grouped.inventory || []),
       ...(availablePermissions.grouped.procurement || []),
       ...(isRepairCapable ? (availablePermissions.grouped.repairer || []) : []),
@@ -536,6 +546,11 @@ const UserAccessControl: React.FC = () => {
       || permission.includes('upload-service');
   };
 
+  const isCashierPermission = (permission: string) => {
+    return permission.startsWith('access-cashier-')
+      || permission.includes('unified-pos');
+  };
+
   const filterPermissionsByBusinessType = (permissions: string[]) => {
     return permissions.filter((permission) => {
       if (!isRetailCapable && isStaffPermission(permission)) {
@@ -543,6 +558,10 @@ const UserAccessControl: React.FC = () => {
       }
 
       if (!isRepairCapable && isRepairerPermission(permission)) {
+        return false;
+      }
+
+      if (!isCashierCapable && isCashierPermission(permission)) {
         return false;
       }
 
@@ -670,6 +689,7 @@ const UserAccessControl: React.FC = () => {
       'Finance': 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-800 dark:text-green-300',
       'HR': 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300',
       'CRM': 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800 text-orange-800 dark:text-orange-300',
+      'Cashier': 'bg-cyan-50 dark:bg-cyan-900/20 border-cyan-200 dark:border-cyan-800 text-cyan-800 dark:text-cyan-300',
       'Repairer': 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 text-indigo-800 dark:text-indigo-300',
       'Inventory': 'bg-teal-50 dark:bg-teal-900/20 border-teal-200 dark:border-teal-800 text-teal-800 dark:text-teal-300',
       'Procurement': 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300',
@@ -701,6 +721,11 @@ const UserAccessControl: React.FC = () => {
         title: '🤝 Customer Relationship Management',
         description: 'Manage customers, leads, opportunities, sales, and customer support conversations',
         permissions: 21
+      },
+      'Cashier': {
+        title: '🧾 Cashier Operations',
+        description: 'Handle unified point-of-sale operations for walk-in retail and repair transactions',
+        permissions: 8
       },
       'Repairer': {
         title: '🔧 Technical Support & Repairs',
@@ -744,6 +769,7 @@ const UserAccessControl: React.FC = () => {
       { value: 'Finance', label: 'Finance' },
       { value: 'HR', label: 'Human Resources' },
       { value: 'CRM', label: 'Customer Relationship Management' },
+      { value: 'Cashier', label: 'Cashier' },
       { value: 'Repairer', label: 'Repairer' },
       { value: 'Inventory', label: 'Inventory' },
       { value: 'Procurement', label: 'Procurement' },
@@ -759,7 +785,7 @@ const UserAccessControl: React.FC = () => {
     }
 
     if (!isRetailCapable && !isRepairCapable) {
-      return allRoles.filter(role => !['Repairer', 'Staff'].includes(role.value));
+      return allRoles.filter(role => !['Repairer', 'Staff', 'Cashier'].includes(role.value));
     }
 
     return allRoles;
@@ -783,6 +809,10 @@ const UserAccessControl: React.FC = () => {
         return;
       }
 
+      if (!isCashierCapable && normalizedRole === 'Cashier') {
+        return;
+      }
+
       roleOptions.set(normalizedRole, {
         value: normalizedRole,
         label: roleLabels[normalizedRole] || normalizedRole,
@@ -790,7 +820,7 @@ const UserAccessControl: React.FC = () => {
     });
 
     return Array.from(roleOptions.values());
-  }, [employees, normalizedBusinessType, isRetailCapable, isRepairCapable]);
+  }, [employees, isRetailCapable, isRepairCapable, isCashierCapable]);
 
   const checkEmailAvailability = async (email: string): Promise<{ available: boolean; message?: string }> => {
     try {
@@ -2544,6 +2574,81 @@ const UserAccessControl: React.FC = () => {
                         <div className="p-4 bg-white dark:bg-gray-800">
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
                             {availablePermissions.grouped.manager.map((permission) => {
+                              const isFromRole = selectedEmployee.rolePermissions?.includes(permission);
+                              const isSelected = selectedPermissions.includes(permission);
+                              return (
+                                <label
+                                  key={permission}
+                                  className={`flex items-center gap-2 text-sm p-2 rounded ${isFromRole ? 'text-gray-400 dark:text-gray-500 cursor-not-allowed bg-gray-50 dark:bg-gray-900/50' : 'text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800'}`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isFromRole || isSelected}
+                                    disabled={isFromRole}
+                                    onChange={() => !isFromRole && togglePermission(permission)}
+                                    className={`h-4 w-4 rounded ${isFromRole ? 'text-gray-400 border-gray-300 cursor-not-allowed opacity-50' : 'text-gray-900 dark:text-gray-100 border-gray-300 focus:ring-gray-500'}`}
+                                  />
+                                  <span className="flex-1 truncate">{permission}</span>
+                                  {isFromRole && (
+                                    <span className="text-xs text-gray-400 italic">from role</span>
+                                  )}
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Cashier Module */}
+                  {isCashierCapable && availablePermissions.grouped.cashier && availablePermissions.grouped.cashier.length > 0 && (
+                    <div className="mb-3 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                      <button
+                        onClick={() => toggleCategory('cashier')}
+                        className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <svg className={`w-5 h-5 text-gray-700 dark:text-gray-300 transition-transform ${expandedCategories.cashier ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                            <div className="flex items-center gap-2">
+                              <svg className="w-5 h-5 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 14l6-6m-6 2h.01M15 16h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                              </svg>
+                              <span className="font-semibold text-gray-900 dark:text-white">Cashier Permissions</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="px-2.5 py-0.5 text-xs font-medium bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-full">
+                              {availablePermissions.grouped.cashier.filter(p => selectedPermissions.includes(p) || selectedEmployee.rolePermissions?.includes(p)).length} / {availablePermissions.grouped.cashier.length}
+                            </span>
+                            <div
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                addRolePermissions('cashier');
+                              }}
+                              className="text-xs px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors cursor-pointer"
+                            >
+                              Add
+                            </div>
+                            <div
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                clearRolePermissions('cashier');
+                              }}
+                              className="text-xs px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition-colors cursor-pointer"
+                            >
+                              Clear
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                      {expandedCategories.cashier && (
+                        <div className="p-4 bg-white dark:bg-gray-800">
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                            {availablePermissions.grouped.cashier.map((permission) => {
                               const isFromRole = selectedEmployee.rolePermissions?.includes(permission);
                               const isSelected = selectedPermissions.includes(permission);
                               return (
