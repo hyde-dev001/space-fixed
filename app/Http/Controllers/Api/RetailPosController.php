@@ -7,9 +7,11 @@ use App\Models\Order;
 use App\Models\Product;
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Services\RetailPosCheckoutService;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\ValidationException;
 
 class RetailPosController extends Controller
 {
@@ -39,16 +41,41 @@ class RetailPosController extends Controller
         ]);
     }
 
-    public function checkout(Request $request)
+    public function checkout(Request $request, RetailPosCheckoutService $service)
     {
+        $validated = $request->validate([
+            'idempotency_key' => ['required', 'string', 'min:8', 'max:120'],
+            'customer_name' => ['required', 'string', 'max:255'],
+            'customer_phone' => ['nullable', 'string', 'max:30'],
+            'customer_email' => ['nullable', 'email', 'max:255'],
+            'payment_method' => ['required', 'string', 'in:cash,gcash,card'],
+            'payment_reference' => ['nullable', 'string', 'max:255'],
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.product_id' => ['required', 'integer', 'exists:products,id'],
+            'items.*.qty' => ['required', 'integer', 'min:1'],
+            'items.*.unit_price' => ['required', 'numeric', 'min:0.01'],
+            'items.*.size' => ['nullable', 'string', 'max:50'],
+            'items.*.color' => ['nullable', 'string', 'max:100'],
+            'items.*.image' => ['nullable', 'string', 'max:2048'],
+        ]);
+
+        if (in_array($validated['payment_method'], ['gcash', 'card'], true)
+            && trim((string) ($validated['payment_reference'] ?? '')) === '') {
+            throw ValidationException::withMessages([
+                'payment_reference' => ['Reference is required for GCash and Card payments.'],
+            ]);
+        }
+
         $shopOwnerId = $this->resolveActorShopOwnerId($this->resolveActor());
         $this->assertRetailOrBoth($shopOwnerId);
 
+        $order = $service->checkout($shopOwnerId, $validated, $this->resolveActorAuditUserId());
+
         return response()->json([
-            'success' => false,
-            'code' => 'RETAIL_POS_NOT_IMPLEMENTED',
-            'message' => 'Retail POS checkout is not implemented yet.',
-        ], 501);
+            'success' => true,
+            'order_id' => (int) $order->id,
+            'order_number' => (string) $order->order_number,
+        ], 201);
     }
 
     public function history(Request $request)
@@ -104,6 +131,40 @@ class RetailPosController extends Controller
         }
 
         return (int) ($actor?->shop_owner_id ?? 0);
+    }
+
+    private function resolveActorAuditUserId(): int
+    {
+        if (Auth::guard('user')->check()) {
+            return (int) (Auth::guard('user')->id() ?? 0);
+        }
+
+        $shopOwner = Auth::guard('shop_owner')->user();
+        if (!$shopOwner) {
+            return 0;
+        }
+
+        $shopOwnerId = (int) ($shopOwner->id ?? 0);
+        if ($shopOwnerId <= 0) {
+            return 0;
+        }
+
+        $shopOwnerEmail = trim((string) ($shopOwner->email ?? ''));
+        if ($shopOwnerEmail !== '') {
+            $matchedByEmail = (int) (User::query()
+                ->where('shop_owner_id', $shopOwnerId)
+                ->where('email', $shopOwnerEmail)
+                ->value('id') ?? 0);
+
+            if ($matchedByEmail > 0) {
+                return $matchedByEmail;
+            }
+        }
+
+        return (int) (User::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->orderBy('id')
+            ->value('id') ?? 0);
     }
 
     private function assertRetailOrBoth(int $shopOwnerId): void
