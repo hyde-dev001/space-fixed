@@ -458,7 +458,9 @@ class RepairPosRefundService
             );
         }
 
-        if ($executionMode === 'manual' && $hasPosManualLeg) {
+        $requiresPosManualExecutionMetadata = $hasPosManualLeg && $workflowSource === 'shop_pos_repair';
+
+        if ($executionMode === 'manual' && $requiresPosManualExecutionMetadata) {
             if (empty($executionContext['execution_channel'])) {
                 throw ValidationException::withMessages([
                     'execution_channel' => ['Execution channel is required for POS manual refund execution.'],
