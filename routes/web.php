@@ -1920,6 +1920,13 @@ Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manage
     Route::get('/dashboard', [\App\Http\Controllers\Staff\CustomerController::class, 'index'])
         ->middleware('permission:access-staff-dashboard')
         ->name('dashboard');
+    Route::get('/point-of-sale', function () {
+        if (Auth::guard('user')->user()?->force_password_change) {
+            return redirect()->route('erp.profile');
+        }
+
+        return Inertia::render('ERP/STAFF/RetailPOS');
+    })->middleware(['permission:access-staff-job-orders', 'check.user.business.type:retail,both'])->name('point-of-sale');
     Route::get('/job-orders', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
