@@ -17,10 +17,10 @@ Current behavior summary:
 
 1. Support walk-in retail sales inside ERP POS using existing orders and order_items tables.
 2. Keep existing repair POS behavior unchanged.
-3. Make POS business-type aware:
-- retail shows only retail UI
-- repair shows only repair UI
-- both shows both modes
+3. Make POS role plus business-type aware:
+- staff POS shows retail UI only
+- repairer POS shows repair UI only
+- both business type enables both capabilities at shop level, but each role still sees only its assigned POS page
 4. Support payment methods for retail POS v1:
 - cash
 - gcash with reference
@@ -36,19 +36,20 @@ Current behavior summary:
 
 ## 4. Approved Approach
 
-Unified POS page with mode-based rendering and separated backend workflows.
+Role-separated POS pages with separated backend workflows.
 
 Selected approach:
-- One ERP POS page with mode system: Repair and Retail.
-- Repair mode uses existing repair POS endpoints and rules.
-- Retail mode uses dedicated retail POS endpoints but writes to existing orders and order_items data model.
+- Keep repair POS page as repair-only for repairer users.
+- Add a dedicated staff retail POS page for retail walk-in sales.
+- Repair POS continues using existing repair POS endpoints and rules.
+- Staff retail POS uses dedicated retail POS endpoints but writes to existing orders and order_items data model.
 
 Why selected:
 - Minimizes regression risk on repair flow.
 - Reuses production retail stock and order model.
-- Matches cashier usability requirement for a single POS entry point.
+- Enforces clean role boundaries and prevents mixed-role UI confusion.
 
-## 5. Business Type Visibility Rules
+## 5. Role and Business Type Visibility Rules
 
 Source of truth:
 - auth user shop owner business_type from Inertia props.
@@ -59,45 +60,47 @@ Normalized values:
 - both
 
 UI visibility:
-1. retail:
+1. staff route and page:
 - show retail POS UI only
-- hide repair-specific UI blocks
-- hide mode switch
-2. repair:
+- never render repair-specific UI blocks
+2. repairer route and page:
 - show repair POS UI only
-- hide retail-specific UI blocks
-- hide mode switch
-3. both:
-- show mode switch
-- show both modes with isolated component sections and state
+- never render retail-specific UI blocks
+3. both business type:
+- organization supports both flows
+- user still sees only the POS page allowed by role and route
 
 Safety behavior:
-- Invalid or disallowed mode parameter auto-falls back to first allowed mode.
-- Backend endpoint authorization enforces same business-type constraints.
+- Disallowed role or business-type route access returns forbidden and redirects to allowed module.
+- Backend endpoint authorization enforces the same role plus business-type constraints.
 
 ## 6. Frontend Design
 
-Primary file:
+Primary files:
 - resources/js/Pages/ERP/repairer/POS.tsx
+- resources/js/Pages/ERP/STAFF/RetailPOS.tsx
 
 Planned updates:
-1. Add posMode state: repair or retail.
-2. Derive allowed modes from normalized business type.
-3. Render repair blocks only when mode is repair and allowed.
-4. Render retail blocks only when mode is retail and allowed.
-5. Add retail catalog panel for products and variants.
-6. Reuse current order, payment, and receipt layout pattern with mode-specific totals and payload mapping.
-7. Add retail history modal filtered to retail POS orders.
+1. Keep repairer POS page repair-only.
+2. Build a dedicated staff retail POS page.
+3. Add retail catalog panel for products and variants in staff page only.
+4. Reuse current order, payment, and receipt layout pattern for retail page.
+5. Add retail history modal filtered to retail POS orders in staff page.
+6. Keep repair history and refund queues only in repairer page.
 
 Sidebar visibility alignment:
-- resources/js/layout/AppSidebar_ERP.tsx will keep POS nav visibility aligned with business type and permission checks.
+- resources/js/layout/AppSidebar_ERP.tsx will expose separate POS items by role, permission, and business type.
 
 ## 7. Backend and API Design
 
 ### 7.1 Route and Middleware
 
 Web route:
-- Keep ERP POS page route and enforce access scope for authenticated ERP users.
+- Keep repairer POS route for repairer users only.
+- Add staff retail POS route for staff users only.
+- Apply business type middleware per route:
+  - repairer POS: repair or both
+  - staff retail POS: retail or both
 
 API routes:
 - Existing repair POS endpoints remain under repair POS namespace.
@@ -107,9 +110,9 @@ API routes:
   - GET /api/retail-pos/history
   - GET /api/retail-pos/orders/{order}/receipt
 
-Business-type guards:
-- Repair POS endpoints allow repair and both.
-- Retail POS endpoints allow retail and both.
+Role and business-type guards:
+- Repair POS endpoints allow repairer flow on repair or both shops.
+- Retail POS endpoints allow staff retail flow on retail or both shops.
 - Return 403 with explicit error code for disallowed mode access.
 
 ### 7.2 Retail Checkout Persistence
@@ -183,10 +186,11 @@ History:
 
 ### 10.2 Frontend Tests
 
-1. retail business type renders retail-only UI.
-2. repair business type renders repair-only UI.
-3. both renders mode switch and both modes.
-4. invalid mode query auto-corrects to allowed mode.
+1. staff retail POS page renders retail-only UI.
+2. repairer POS page renders repair-only UI.
+3. repairer page never renders retail sections.
+4. staff retail page never renders repair sections.
+5. route guards block disallowed role plus business-type combinations.
 
 ### 10.3 Regression Tests
 
@@ -196,9 +200,10 @@ History:
 ## 11. Rollout Plan
 
 Phase 1:
-- Implement business-type aware UI gating in POS page.
+- Keep repairer POS repair-only and remove any retail rendering path there.
+- Implement staff retail POS page and route.
 - Implement retail POS product list and checkout endpoint.
-- Implement receipt rendering for retail mode.
+- Implement receipt rendering for staff retail POS.
 
 Phase 2:
 - Implement retail history endpoint and UI modal.

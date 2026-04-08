@@ -2,22 +2,25 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (- [ ]) syntax for tracking.
 
-**Goal:** Deliver a single ERP POS page that supports repair and retail walk-in sales with strict business-type-aware UI and API access rules.
+**Goal:** Deliver role-separated ERP POS pages where repairer uses repair-only POS and staff uses retail-only walk-in POS with strict business-type-aware and role-aware access rules.
 
-**Architecture:** Keep one POS UI entry point and split behavior by allowed mode derived from business type. Repair mode continues using existing repair POS backend unchanged, while retail mode uses new retail POS endpoints that persist to existing orders and order_items plus existing stock deduction patterns.
+**Architecture:** Keep the existing repairer POS page as repair-only and introduce a dedicated staff retail POS page. Repairer page continues using existing repair POS backend unchanged, while staff retail page uses new retail POS endpoints that persist to existing orders and order_items plus existing stock deduction patterns.
 
 **Tech Stack:** Laravel 11, Inertia React TypeScript, Axios, PHPUnit feature tests, Vitest React tests.
 
 ---
 
-### Task 1: Add POS Mode Gating in ERP POS UI
+### Task 1: Enforce Repair-Only UI and Create Staff Retail POS Page
 
 **Files:**
 - Modify: resources/js/Pages/ERP/repairer/POS.tsx
+- Create: resources/js/Pages/ERP/STAFF/RetailPOS.tsx
+- Modify: routes/web.php
 - Create: resources/js/services/retailPosApi.ts
-- Test: resources/js/Pages/ERP/repairer/__tests__/POS.mode-gating.test.tsx
+- Test: resources/js/Pages/ERP/repairer/__tests__/POS.repair-only.test.tsx
+- Test: resources/js/Pages/ERP/STAFF/__tests__/RetailPOS.page.test.tsx
 
-- [ ] **Step 1: Write the failing frontend test for mode visibility matrix**
+- [ ] **Step 1: Write failing frontend tests for role-separated pages**
 
 ```tsx
 import { render, screen } from "@testing-library/react";
@@ -37,70 +40,57 @@ vi.mock("@inertiajs/react", () => ({
   Head: () => null,
 }));
 
-describe("POS mode gating", () => {
-  it("shows only retail UI for retail business type", () => {
+describe("Repairer POS page", () => {
+  it("never renders retail UI blocks", () => {
     render(<PointOfSalePage />);
     expect(screen.getByText("Point of Sale")).toBeInTheDocument();
-    expect(screen.getByText("Retail Catalog")).toBeInTheDocument();
-    expect(screen.queryByText("Attach From Repair Orders")).not.toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: /repair/i })).not.toBeInTheDocument();
+    expect(screen.getByText("Attach From Repair Orders")).toBeInTheDocument();
+    expect(screen.queryByText("Retail Catalog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /retail/i })).not.toBeInTheDocument();
   });
 });
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: pnpm vitest resources/js/Pages/ERP/repairer/__tests__/POS.mode-gating.test.tsx -t "shows only retail UI"
-Expected: FAIL with missing retail section or unexpected repair section rendering.
+Run: pnpm vitest resources/js/Pages/ERP/repairer/__tests__/POS.repair-only.test.tsx resources/js/Pages/ERP/STAFF/__tests__/RetailPOS.page.test.tsx
+Expected: FAIL because staff retail page and route do not exist yet.
 
-- [ ] **Step 3: Implement mode normalization and conditional rendering in POS.tsx**
+- [ ] **Step 3: Strip retail rendering path from repairer POS page**
 
 ```tsx
-type PosMode = "repair" | "retail";
-
-const normalizeBusinessType = (raw: unknown): "retail" | "repair" | "both" => {
-  const value = String(raw || "").toLowerCase();
-  if (value.includes("both")) return "both";
-  if (value.includes("retail")) return "retail";
-  return "repair";
-};
-
-const buildAllowedModes = (businessType: "retail" | "repair" | "both"): PosMode[] => {
-  if (businessType === "both") return ["repair", "retail"];
-  return [businessType];
-};
-
 const PointOfSalePage = () => {
-  const { props } = usePage();
-  const businessType = normalizeBusinessType((props as any)?.auth?.user?.shop_owner?.business_type);
-  const allowedModes = buildAllowedModes(businessType);
-  const [posMode, setPosMode] = useState<PosMode>(allowedModes[0]);
-
-  useEffect(() => {
-    if (!allowedModes.includes(posMode)) {
-      setPosMode(allowedModes[0]);
-    }
-  }, [allowedModes, posMode]);
-
-  const showRepairMode = posMode === "repair" && allowedModes.includes("repair");
-  const showRetailMode = posMode === "retail" && allowedModes.includes("retail");
-
   return (
     <>
-      {allowedModes.length === 2 && (
-        <div role="tablist" aria-label="POS Mode">
-          <button role="tab" aria-selected={posMode === "repair"} onClick={() => setPosMode("repair")}>Repair</button>
-          <button role="tab" aria-selected={posMode === "retail"} onClick={() => setPosMode("retail")}>Retail</button>
-        </div>
-      )}
-      {showRepairMode && <section>Attach From Repair Orders</section>}
-      {showRetailMode && <section>Retail Catalog</section>}
+      <section>Attach From Repair Orders</section>
     </>
   );
 };
 ```
 
-- [ ] **Step 4: Add retail API client and wire retail mode loaders**
+- [ ] **Step 4: Create staff retail POS page and staff route**
+
+```tsx
+const RetailPOSPage = () => {
+  return (
+    <>
+      <h1>Point of Sale</h1>
+      <section>Retail Catalog</section>
+    </>
+  );
+};
+
+export default RetailPOSPage;
+```
+
+```php
+Route::get('/erp/staff/point-of-sale', function () {
+    return Inertia::render('ERP/STAFF/RetailPOS');
+})->middleware(['auth:user', 'check.user.business.type:retail,both', 'permission:access-staff-job-orders'])
+  ->name('erp.staff.point-of-sale');
+```
+
+- [ ] **Step 5: Add retail API client used by staff retail page**
 
 ```ts
 import axios from "axios";
@@ -121,19 +111,19 @@ export const retailPosApi = {
 };
 ```
 
-- [ ] **Step 5: Run frontend tests to verify pass**
+- [ ] **Step 6: Run frontend tests to verify pass**
 
-Run: pnpm vitest resources/js/Pages/ERP/repairer/__tests__/POS.mode-gating.test.tsx
-Expected: PASS for retail-only, repair-only, and both matrix tests.
+Run: pnpm vitest resources/js/Pages/ERP/repairer/__tests__/POS.repair-only.test.tsx resources/js/Pages/ERP/STAFF/__tests__/RetailPOS.page.test.tsx
+Expected: PASS for repair-only and staff-retail-only separation.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add resources/js/Pages/ERP/repairer/POS.tsx resources/js/services/retailPosApi.ts resources/js/Pages/ERP/repairer/__tests__/POS.mode-gating.test.tsx
-git commit -m "feat(pos): add business-type aware repair-retail mode gating"
+git add resources/js/Pages/ERP/repairer/POS.tsx resources/js/Pages/ERP/STAFF/RetailPOS.tsx routes/web.php resources/js/services/retailPosApi.ts resources/js/Pages/ERP/repairer/__tests__/POS.repair-only.test.tsx resources/js/Pages/ERP/STAFF/__tests__/RetailPOS.page.test.tsx
+git commit -m "feat(pos): split repairer and staff POS pages by role"
 ```
 
-### Task 2: Align Sidebar Visibility with Business Type for POS Item
+### Task 2: Align Sidebar Visibility with Role and Business Type
 
 **Files:**
 - Modify: resources/js/layout/AppSidebar_ERP.tsx
@@ -142,21 +132,21 @@ git commit -m "feat(pos): add business-type aware repair-retail mode gating"
 - [ ] **Step 1: Write failing test for POS nav visibility**
 
 ```tsx
-it("hides repair POS item for retail-only business type", () => {
+it("hides repairer POS item for staff retail-only context", () => {
   const { queryByText } = renderSidebar({ businessType: "retail", permissions: ["access-repairer-dashboard"] });
   expect(queryByText("Point of Sale")).toBeNull();
 });
 
-it("shows POS item for both business type", () => {
-  const { getByText } = renderSidebar({ businessType: "both", permissions: ["access-repairer-dashboard"] });
-  expect(getByText("Point of Sale")).toBeInTheDocument();
+it("shows staff retail POS item for both business type when staff permission exists", () => {
+  const { getByText } = renderSidebar({ businessType: "both", permissions: ["access-staff-job-orders"] });
+  expect(getByText("Retail Point of Sale")).toBeInTheDocument();
 });
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: pnpm vitest resources/js/layout/__tests__/AppSidebar_ERP.pos-visibility.test.tsx
-Expected: FAIL because POS menu currently checks permissions without strict business-type rule.
+Expected: FAIL because POS menu currently has only repairer POS item.
 
 - [ ] **Step 3: Implement POS route visibility guard in sidebar**
 
@@ -169,6 +159,15 @@ if (item.route === "erp.repairer.point-of-sale") {
 
   return permissions.includes("access-repair-job-orders") || permissions.includes("access-repairer-dashboard");
 }
+
+if (item.route === "erp.staff.point-of-sale") {
+  const hasRetailMode = normalizedBusinessType === "retail" || normalizedBusinessType === "both";
+  if (!hasRetailMode) {
+    return false;
+  }
+
+  return permissions.includes("access-staff-job-orders");
+}
 ```
 
 - [ ] **Step 4: Run sidebar test suite**
@@ -180,7 +179,7 @@ Expected: PASS with visibility matrix validated.
 
 ```bash
 git add resources/js/layout/AppSidebar_ERP.tsx resources/js/layout/__tests__/AppSidebar_ERP.pos-visibility.test.tsx
-git commit -m "fix(sidebar): gate POS visibility by business type"
+git commit -m "fix(sidebar): gate separate POS items by role and business type"
 ```
 
 ### Task 3: Add Retail POS API Routes and Business-Type Authorization
@@ -446,9 +445,9 @@ git commit -m "feat(retail-pos): implement walk-in retail checkout to orders"
 
 **Files:**
 - Modify: app/Http/Controllers/Api/RetailPosController.php
-- Modify: resources/js/Pages/ERP/repairer/POS.tsx
+- Modify: resources/js/Pages/ERP/STAFF/RetailPOS.tsx
 - Test: tests/Feature/Api/RetailPosHistoryTest.php
-- Test: resources/js/Pages/ERP/repairer/__tests__/POS.retail-history.test.tsx
+- Test: resources/js/Pages/ERP/STAFF/__tests__/RetailPOS.history.test.tsx
 
 - [ ] **Step 1: Write failing backend history test**
 
@@ -530,7 +529,7 @@ public function receipt(Order $order)
 }
 ```
 
-- [ ] **Step 3: Add retail history modal rendering in POS page**
+- [ ] **Step 3: Add retail history modal rendering in staff retail POS page**
 
 ```tsx
 const [retailHistory, setRetailHistory] = useState<any[]>([]);
@@ -543,10 +542,10 @@ const loadRetailHistory = async () => {
 };
 
 useEffect(() => {
-  if (posMode === "retail" && isRetailHistoryOpen) {
+  if (isRetailHistoryOpen) {
     loadRetailHistory();
   }
-}, [posMode, isRetailHistoryOpen]);
+}, [isRetailHistoryOpen]);
 ```
 
 - [ ] **Step 4: Run targeted tests**
@@ -554,13 +553,13 @@ useEffect(() => {
 Run: php artisan test tests/Feature/Api/RetailPosHistoryTest.php
 Expected: PASS with RPOS-only scoped history and guarded receipt.
 
-Run: pnpm vitest resources/js/Pages/ERP/repairer/__tests__/POS.retail-history.test.tsx
-Expected: PASS with retail history modal behavior.
+Run: pnpm vitest resources/js/Pages/ERP/STAFF/__tests__/RetailPOS.history.test.tsx
+Expected: PASS with staff retail history modal behavior.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add app/Http/Controllers/Api/RetailPosController.php resources/js/Pages/ERP/repairer/POS.tsx tests/Feature/Api/RetailPosHistoryTest.php resources/js/Pages/ERP/repairer/__tests__/POS.retail-history.test.tsx
+git add app/Http/Controllers/Api/RetailPosController.php resources/js/Pages/ERP/STAFF/RetailPOS.tsx tests/Feature/Api/RetailPosHistoryTest.php resources/js/Pages/ERP/STAFF/__tests__/RetailPOS.history.test.tsx
 git commit -m "feat(retail-pos): add retail history and receipt flow"
 ```
 
@@ -577,14 +576,14 @@ Expected: PASS with no repair POS regressions.
 
 - [ ] **Step 2: Run frontend regression pack**
 
-Run: pnpm vitest resources/js/Pages/ERP/repairer/__tests__/POS.*.test.tsx resources/js/layout/__tests__/AppSidebar_ERP.pos-visibility.test.tsx
-Expected: PASS for mode gating and sidebar matrix.
+Run: pnpm vitest resources/js/Pages/ERP/repairer/__tests__/POS.*.test.tsx resources/js/Pages/ERP/STAFF/__tests__/RetailPOS.*.test.tsx resources/js/layout/__tests__/AppSidebar_ERP.pos-visibility.test.tsx
+Expected: PASS for role-separated POS UI and sidebar matrix.
 
 - [ ] **Step 3: Update implementation docs**
 
 ```md
 ## ERP POS Unified Repair-Retail
-- Added business-type-aware POS mode gating.
+- Added role-separated POS pages for repairer and staff.
 - Added retail walk-in POS checkout to existing orders and order_items.
 - Added retail receipt and history endpoints.
 - Preserved repair POS flow and refund behaviors.
@@ -602,8 +601,8 @@ git commit -m "docs: record unified ERP POS repair-retail rollout"
 ## Self-Review
 
 ### 1. Spec coverage check
-- Single POS page with repair plus retail mode: covered in Task 1.
-- Business-type UI rules retail, repair, both: covered in Task 1 and Task 2.
+- Role-separated POS pages (repairer repair-only and staff retail-only): covered in Task 1.
+- Role plus business-type UI rules: covered in Task 1 and Task 2.
 - Business-type backend enforcement: covered in Task 3.
 - Retail checkout to orders plus order_items and immediate paid/completed: covered in Task 4.
 - Retail v1 no refund and includes receipt plus history: covered in Task 5.
@@ -614,6 +613,6 @@ git commit -m "docs: record unified ERP POS repair-retail rollout"
 - Each implementation step includes explicit code or explicit command.
 
 ### 3. Type and naming consistency
-- posMode values are repair and retail consistently.
+- Repairer and staff pages use separated component boundaries consistently.
 - business-type access code uses BUSINESS_TYPE_FORBIDDEN_MODE consistently.
 - retail POS history identification uses RPOS- prefix consistently.
