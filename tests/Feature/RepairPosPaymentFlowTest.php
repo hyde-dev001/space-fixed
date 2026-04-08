@@ -194,6 +194,71 @@ class RepairPosPaymentFlowTest extends TestCase
     }
 
     #[Test]
+    public function cashier_walk_in_payment_is_visible_in_repairer_job_orders_with_paid_amount(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create([
+            'business_type' => 'both',
+            'registration_type' => 'company',
+        ]);
+
+        $cashierRole = \Spatie\Permission\Models\Role::firstOrCreate([
+            'name' => 'Cashier',
+            'guard_name' => 'user',
+        ]);
+
+        $repairerRole = \Spatie\Permission\Models\Role::firstOrCreate([
+            'name' => 'Repairer',
+            'guard_name' => 'user',
+        ]);
+
+        /** @var \App\Models\User $cashier */
+        $cashier = \App\Models\User::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'status' => 'active',
+        ]);
+        $cashier->assignRole($cashierRole);
+
+        /** @var \App\Models\User $repairer */
+        $repairer = \App\Models\User::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'status' => 'active',
+        ]);
+        $repairer->assignRole($repairerRole);
+
+        $checkout = $this->actingAs($cashier, 'user')->postJson('/api/repair-pos/checkout', [
+            'repair_request_id' => null,
+            'due_type' => 'deposit',
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Cashier Walk-in Customer',
+            'walk_in_phone' => '09173330000',
+            'idempotency_key' => 'cashier-job-order-visibility-001',
+            'manual_repair_subtotal' => 1000,
+            'manual_service_summary' => 'Walk-in service from cashier',
+            'manual_payment_policy' => 'deposit_50',
+            'payment_lines' => [
+                ['tender_type' => 'cash', 'amount' => 500],
+            ],
+        ]);
+
+        $checkout->assertOk()->assertJsonPath('success', true);
+
+        $transaction = \App\Models\PosTransaction::query()->findOrFail((int) $checkout->json('transaction_id'));
+        $repair = \App\Models\RepairRequest::query()->findOrFail((int) $transaction->module_reference_id);
+
+        $this->assertNotNull($repair->assigned_repairer_id);
+        $this->assertSame((int) $repairer->id, (int) $repair->assigned_repairer_id);
+
+        $jobOrders = $this->actingAs($repairer, 'user')->getJson('/api/repairer/repairs');
+        $jobOrders->assertOk()->assertJsonPath('success', true);
+
+        $entry = collect($jobOrders->json('data'))->firstWhere('id', $repair->id);
+        $this->assertNotNull($entry);
+        $this->assertSame((string) $repair->request_id, (string) ($entry['request_id'] ?? ''));
+        $this->assertSame('paid', strtolower((string) ($entry['payment_status'] ?? '')));
+        $this->assertSame('500.00', number_format((float) ($entry['total_paid_amount'] ?? 0), 2, '.', ''));
+    }
+
+    #[Test]
     public function deposit_due_uses_inclusive_split_and_extracts_vat(): void
     {
         $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
