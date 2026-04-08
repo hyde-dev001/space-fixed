@@ -410,6 +410,7 @@ const RepairProcess: React.FC = () => {
       taxMode: 'vat_inclusive',
     });
   }, [grandTotal]);
+  const subtotalBeforeVat = pricingBreakdown.netSubtotal;
   const vatAmount = pricingBreakdown.vatAmount;
   const grandTotalWithVat = pricingBreakdown.grandTotal;
   const isSubmitDisabled = isSubmitting || (selectedServiceIds.length === 0 && selectedPackageId === null);
@@ -494,22 +495,26 @@ const RepairProcess: React.FC = () => {
         {selectedPackage ? (
           <>
             <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Package Price</span>
+              <span className="text-gray-600">Package Price (VAT Inclusive)</span>
               <span className="text-black font-medium">₱{packageTotal.toLocaleString()}</span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Add-ons</span>
+              <span className="text-gray-600">Add-ons (VAT Inclusive)</span>
               <span className="text-black font-medium">₱{addOnsTotal.toLocaleString()}</span>
             </div>
           </>
         ) : (
           <div className="flex justify-between text-sm">
-            <span className="text-gray-600">Services Subtotal</span>
+            <span className="text-gray-600">Services Total (VAT Inclusive)</span>
             <span className="text-black font-medium">₱{servicesTotal.toLocaleString()}</span>
           </div>
         )}
         <div className="flex justify-between text-sm">
-          <span className="text-gray-600">VAT ({REPAIR_VAT_RATE_PERCENT}%)</span>
+          <span className="text-gray-600">Subtotal (Before VAT)</span>
+          <span className="text-black font-medium">₱{subtotalBeforeVat.toLocaleString()}</span>
+        </div>
+        <div className="flex justify-between text-sm">
+          <span className="text-gray-600">VAT Included ({REPAIR_VAT_RATE_PERCENT}%)</span>
           <span className="text-black font-medium">₱{vatAmount.toLocaleString()}</span>
         </div>
       </div>
@@ -845,9 +850,8 @@ const RepairProcess: React.FC = () => {
         }
       });
       
-      // Calculate total
-      submitFormData.append('total', grandTotal.toString());
-  submitFormData.append('total', grandTotalWithVat.toString());
+        // Persist VAT-inclusive final total.
+        submitFormData.append('total', grandTotalWithVat.toString());
 
       const response = await fetch('/api/repair-requests', {
         method: 'POST',
