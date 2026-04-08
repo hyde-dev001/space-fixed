@@ -242,6 +242,13 @@ Route::middleware(['web', 'auth:user,shop_owner'])->prefix('repair-pos')->group(
     Route::get('/transactions/{transaction}/receipt', [\App\Http\Controllers\Api\RepairPosController::class, 'showReceipt']);
 });
 
+Route::middleware(['web', 'auth:user,shop_owner'])->prefix('retail-pos')->group(function () {
+    Route::get('/products', [\App\Http\Controllers\Api\RetailPosController::class, 'listProducts']);
+    Route::post('/checkout', [\App\Http\Controllers\Api\RetailPosController::class, 'checkout']);
+    Route::get('/history', [\App\Http\Controllers\Api\RetailPosController::class, 'history']);
+    Route::get('/orders/{order}/receipt', [\App\Http\Controllers\Api\RetailPosController::class, 'receipt']);
+});
+
 /**
  * Price Change Requests - Staff endpoints
  * MOVED TO web.php for proper session handling

@@ -21,6 +21,32 @@ class RepairPosController extends Controller
 {
     public function checkout(Request $request, RepairPosPaymentService $service)
     {
+        $actor = $this->resolveActor();
+        if (!$actor) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized.',
+            ], 401);
+        }
+
+        $actorShopOwnerId = $this->resolveActorShopOwnerId($actor);
+
+        $preValidationRepairId = (int) $request->input('repair_request_id', 0);
+        if ($preValidationRepairId > 0) {
+            $preValidationRepair = RepairRequest::find($preValidationRepairId);
+            if ($preValidationRepair && !$this->canActorCheckoutRepair($actor, $preValidationRepair, $actorShopOwnerId)) {
+                return response()->json([
+                    'success' => false,
+                    'code' => 'AUTH_FORBIDDEN_SHOP_SCOPE',
+                    'message' => 'You are not allowed to process checkout for this repair request.',
+                ], 403);
+            }
+        }
+
+        if ($forbidden = $this->forbidIfBusinessTypeDisallowsRepair($actorShopOwnerId)) {
+            return $forbidden;
+        }
+
         $validated = $request->validate([
             'repair_request_id' => ['nullable', 'integer', 'exists:repair_requests,id'],
             'due_type' => ['required', 'string', 'in:deposit,balance,full'],
@@ -52,16 +78,6 @@ class RepairPosController extends Controller
                 ]);
             }
         }
-
-        $actor = $this->resolveActor();
-        if (!$actor) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Unauthorized.',
-            ], 401);
-        }
-
-        $actorShopOwnerId = $this->resolveActorShopOwnerId($actor);
 
         $repairRequestId = (int) ($validated['repair_request_id'] ?? 0);
         if ($repairRequestId > 0) {
@@ -112,6 +128,42 @@ class RepairPosController extends Controller
                 'idempotency_replay' => (bool) $transaction->getAttribute('idempotency_replay'),
             ],
         ]);
+    }
+
+    private function forbidIfBusinessTypeDisallowsRepair(int $shopOwnerId): ?\Illuminate\Http\JsonResponse
+    {
+        $businessType = $this->normalizeBusinessType((string) ShopOwner::query()
+            ->whereKey($shopOwnerId)
+            ->value('business_type'));
+
+        if (in_array($businessType, ['repair', 'both'], true)) {
+            return null;
+        }
+
+        return response()->json([
+            'success' => false,
+            'code' => 'BUSINESS_TYPE_FORBIDDEN_MODE',
+            'message' => 'Repair POS is not available for this business type.',
+        ], 403);
+    }
+
+    private function normalizeBusinessType(string $value): string
+    {
+        $normalized = strtolower(trim($value));
+
+        if (str_contains($normalized, 'both')) {
+            return 'both';
+        }
+
+        if ($normalized === 'retail') {
+            return 'retail';
+        }
+
+        if ($normalized === 'repair') {
+            return 'repair';
+        }
+
+        return '';
     }
 
     private function createManualRepairRequestFromPos(array $payload, object $actor, int $shopOwnerId): RepairRequest
