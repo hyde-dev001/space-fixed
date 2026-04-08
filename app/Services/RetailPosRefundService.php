@@ -185,7 +185,7 @@ class RetailPosRefundService
                 }
 
                 $order->update([
-                    'status' => 'refund',
+                    'status' => 'cancelled',
                     'payment_status' => 'refunded',
                     'refunded_at' => now(),
                     'paymongo_refund_id' => (string) $refund->refund_no,

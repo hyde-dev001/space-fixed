@@ -1239,7 +1239,40 @@ useEffect(() => {
 	}, [mode]);
 
 	const canRequestRetailRefund = (receipt: ReceiptSnapshot): boolean => {
-		return false;
+		const openStatuses = new Set(["requested", "approved", "processing"]);
+		let hasOpenRequest = false;
+		let refundedAmount = 0;
+
+		receipt.refundEntries.forEach((entry) => {
+			const status = String(entry.status || "").toLowerCase();
+			if (openStatuses.has(status)) {
+				hasOpenRequest = true;
+			}
+
+			if (status === "succeeded") {
+				refundedAmount += Number(entry.approvedAmount ?? 0);
+			}
+		});
+
+		if (hasOpenRequest) {
+			return false;
+		}
+
+		const paidAmount = Math.max(0, Number(receipt.paidAmount || receipt.totalDue || 0));
+		const remaining = Math.max(0, Number((paidAmount - refundedAmount).toFixed(2)));
+		return remaining > 0;
+	};
+
+	const resolveRetailRefundRequestAmount = (receipt: ReceiptSnapshot): number => {
+		const refundedAmount = receipt.refundEntries.reduce((sum, entry) => {
+			return String(entry.status || "").toLowerCase() === "succeeded"
+				? sum + Number(entry.approvedAmount ?? 0)
+				: sum;
+		}, 0);
+
+		const paidAmount = Math.max(0, Number(receipt.paidAmount || receipt.totalDue || 0));
+		const remaining = Math.max(0, Number((paidAmount - refundedAmount).toFixed(2)));
+		return remaining > 0 ? remaining : Number(receipt.totalDue || 0);
 	};
 
 	const handleRetailPay = async () => {
@@ -1718,6 +1751,143 @@ useEffect(() => {
 	};
 
 	const handleRequestRefund = async (receipt: ReceiptSnapshot) => {
+		if (receipt.moduleType === "retail") {
+			if (!canRequestRetailRefund(receipt)) {
+				await Swal.fire({
+					icon: "info",
+					title: "Refund Already Exists",
+					text: "A retail refund is already in progress or fully completed for this receipt.",
+					confirmButtonColor: "#2563eb",
+				});
+				return;
+			}
+
+			const transactionId = Number(receipt.transactionId ?? 0);
+			if (transactionId <= 0) {
+				await Swal.fire({
+					icon: "warning",
+					title: "Refund Unavailable",
+					text: "This record has no linked transaction reference.",
+					confirmButtonColor: "#b45309",
+				});
+				return;
+			}
+
+			try {
+				const maxRefundable = resolveRetailRefundRequestAmount(receipt);
+				if (!(maxRefundable > 0)) {
+					await Swal.fire({
+						icon: "info",
+						title: "Refund Unavailable",
+						text: "There is no refundable balance left for this retail receipt.",
+						confirmButtonColor: "#2563eb",
+					});
+					return;
+				}
+
+				const typeChoice = await Swal.fire({
+					title: "Retail Refund Type",
+					text: `Refundable balance: ${formatPeso(maxRefundable)}`,
+					input: "radio",
+					inputOptions: {
+						full: "Full refund",
+						partial: "Partial refund",
+					},
+					inputValue: "full",
+					confirmButtonText: "Continue",
+					showCancelButton: true,
+					confirmButtonColor: "#2563eb",
+					inputValidator: (value) => (value ? undefined : "Please choose a refund type."),
+				});
+
+				if (!typeChoice.isConfirmed) {
+					return;
+				}
+
+				const requestType = (typeChoice.value === "partial" ? "partial" : "full") as "full" | "partial";
+				let requestedAmount = maxRefundable;
+
+				if (requestType === "partial") {
+					const partialInput = await Swal.fire({
+						title: "Partial Refund Amount",
+						text: `Enter amount up to ${formatPeso(maxRefundable)}`,
+						input: "text",
+						inputValue: toCurrencyInput(String(maxRefundable)),
+						showCancelButton: true,
+						confirmButtonText: "Submit",
+						confirmButtonColor: "#2563eb",
+						inputValidator: (value) => {
+							const parsed = Number(String(value || "").replace(/[^0-9.]/g, ""));
+							if (!Number.isFinite(parsed) || parsed <= 0) return "Enter a valid amount greater than zero.";
+							if (parsed > maxRefundable) return `Amount cannot exceed ${formatPeso(maxRefundable)}.`;
+							return undefined;
+						},
+					});
+
+					if (!partialInput.isConfirmed) {
+						return;
+					}
+
+					requestedAmount = Number(String(partialInput.value || "").replace(/[^0-9.]/g, ""));
+				}
+
+				const response = await axios.post(
+					"/api/retail-pos/refunds",
+					{
+						source_transaction_id: transactionId,
+						request_type: requestType,
+						requested_amount: Number(requestedAmount.toFixed(2)),
+						reason_code: "shop_owner_requested_refund",
+						reason_notes: "Requested from Shop Owner Retail POS receipt history.",
+					},
+					{ withCredentials: true },
+				);
+
+				const createdRefundId = Number((response.data as any)?.refund_id ?? 0);
+				const responseRequestedAmount = Number((response.data as any)?.data?.requested_amount ?? requestedAmount);
+				const apiRefundStatus = String((response.data as any)?.data?.status ?? "requested").toLowerCase();
+
+				setReceiptHistory((prev) => prev.map((entry) => (
+					entry.receiptNo === receipt.receiptNo
+						? {
+							...entry,
+							refundEntries: [
+								{
+									status: apiRefundStatus,
+									approvedAmount: 0,
+								},
+								...entry.refundEntries,
+							],
+							latestRefund: {
+								id: createdRefundId > 0 ? createdRefundId : Number(entry.latestRefund?.id ?? 0),
+								status: apiRefundStatus,
+							},
+						}
+						: entry
+				)));
+
+				await Swal.fire({
+					icon: "success",
+					title: "Refund Requested",
+					text: `Retail ${requestType} refund submitted: ${formatPeso(responseRequestedAmount)}.`,
+					confirmButtonColor: "#10b981",
+				});
+			} catch (error: any) {
+				const message =
+					error?.response?.data?.errors?.requested_amount?.[0]
+					|| error?.response?.data?.message
+					|| "Unable to create retail refund request.";
+				await Swal.fire({
+					icon: "error",
+					title: "Request Failed",
+					text: message,
+					confirmButtonColor: "#dc2626",
+				});
+			}
+
+			return;
+		}
+
 		if (!canRequestRepairRefund(receipt)) {
 			await Swal.fire({
 				icon: "info",
@@ -2938,7 +3108,7 @@ useEffect(() => {
 																{receipt.latestRefund.status}
 															</span>
 														)}
-														{canRequestRepairRefund(receipt) && (
+														{(receipt.moduleType === "retail" ? canRequestRetailRefund(receipt) : canRequestRepairRefund(receipt)) && (
 															<button
 																type="button"
 																onClick={() => handleRequestRefund(receipt)}
