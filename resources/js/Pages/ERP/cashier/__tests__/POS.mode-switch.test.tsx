@@ -39,16 +39,16 @@ describe("Cashier POS mode switch", () => {
   it("renders Repair and Retail tabs for both business type", () => {
     renderWithBusinessType("both");
 
-    expect(screen.getByRole("tab", { name: /repair mode/i })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /retail mode/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /repair mode/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /retail mode/i })).toBeInTheDocument();
     expect(screen.getByTestId("repair-pos-mode")).toBeInTheDocument();
   });
 
   it("renders only Retail tab for retail business type", () => {
     renderWithBusinessType("retail");
 
-    expect(screen.queryByRole("tab", { name: /repair mode/i })).not.toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /retail mode/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /repair mode/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /retail mode/i })).toBeInTheDocument();
     expect(screen.getByTestId("retail-pos-mode")).toBeInTheDocument();
   });
 });
