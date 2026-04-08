@@ -17,4 +17,9 @@ export const retailPosApi = {
 			withCredentials: true,
 		});
 	},
+	receipt(orderId: number) {
+		return axios.get(`/api/retail-pos/orders/${orderId}/receipt`, {
+			withCredentials: true,
+		});
+	},
 };

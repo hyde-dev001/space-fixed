@@ -2,6 +2,12 @@ import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
+vi.mock("../../../../services/retailPosApi", () => ({
+  retailPosApi: {
+    history: vi.fn().mockResolvedValue({ data: { data: [] } }),
+  },
+}));
+
 vi.mock("@inertiajs/react", () => ({
   Head: () => null,
   usePage: () => ({
