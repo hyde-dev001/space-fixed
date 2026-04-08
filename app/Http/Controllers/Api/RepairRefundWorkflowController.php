@@ -16,10 +16,19 @@ class RepairRefundWorkflowController extends Controller
     {
         $actor = Auth::guard('user')->user();
 
-        $refunds = $this->buildApprovalListQuery(
+        $query = $this->buildApprovalListQuery(
             request: $request,
             shopOwnerId: (int) ($actor->shop_owner_id ?? 0)
-        )->get();
+        );
+
+        // Finance queue should only include online MyRepair refunds after repairer endorsement.
+        $query->where(function ($builder) {
+            $builder->whereNull('workflow_source')
+                ->orWhere('workflow_source', '!=', 'online_myrepair')
+                ->orWhere('repairer_status', 'approved');
+        });
+
+        $refunds = $query->get();
 
         return response()->json([
             'data' => $refunds->map(fn (PosRefund $refund) => $this->transformApprovalRefund($refund))->values(),

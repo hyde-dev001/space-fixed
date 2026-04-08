@@ -391,6 +391,15 @@ const resolveFixedExecutionAmount = (request: RefundRequest): number => {
 	return Math.round(parsed * 100) / 100;
 };
 
+const shouldShowRepairRefundInFinanceQueue = (request: RefundRequest): boolean => {
+	const workflowSource = String(request.workflowSource || "").toLowerCase();
+	if (workflowSource !== "online_myrepair") {
+		return true;
+	}
+
+	return String(request.repairerStatus || "").toLowerCase() === "approved";
+};
+
 const refundReasonOptions = [
 	"Product defective or damaged",
 	"Wrong item received",
@@ -475,7 +484,7 @@ export default function RefundApproval() {
 	const [selectedRequest, setSelectedRequest] = useState<RefundRequest | null>(null);
 	const [activeImage, setActiveImage] = useState<string | null>(null);
 	const [searchQuery, setSearchQuery] = useState("");
-	const [statusFilter, setStatusFilter] = useState("Pending");
+	const [statusFilter, setStatusFilter] = useState("All");
 	const [isActionProcessing, setIsActionProcessing] = useState(false);
 	const [isLoading, setIsLoading] = useState(false);
 	const [executeModalOpen, setExecuteModalOpen] = useState(false);
@@ -547,10 +556,12 @@ export default function RefundApproval() {
 				refundType: "order",
 			}));
 
-			const normalizedRepairRefunds: RefundRequest[] = (Array.isArray(repairData?.data) ? repairData.data : []).map((item: any) => ({
-				...item,
-				refundType: "repair",
-			}));
+			const normalizedRepairRefunds: RefundRequest[] = (Array.isArray(repairData?.data) ? repairData.data : [])
+				.map((item: any) => ({
+					...item,
+					refundType: "repair",
+				}))
+				.filter(shouldShowRepairRefundInFinanceQueue);
 
 			setRequests(
 				[...normalizedOrderRefunds, ...normalizedRepairRefunds].sort((a, b) =>
@@ -600,6 +611,7 @@ export default function RefundApproval() {
 
 	const handleCloseModal = () => {
 		setViewModalOpen(false);
+		setSelectedRequest(null);
 		setActiveImage(null);
 	};
 
@@ -825,8 +837,8 @@ export default function RefundApproval() {
 		return "Execute Manual Payout";
 	};
 
-	const closeExecuteModal = () => {
-		if (isActionProcessing) {
+	const closeExecuteModal = (force = false) => {
+		if (isActionProcessing && !force) {
 			return;
 		}
 
@@ -928,7 +940,8 @@ export default function RefundApproval() {
 						icon: "info",
 						confirmButtonColor: "#2563eb",
 					});
-					closeExecuteModal();
+					closeExecuteModal(true);
+					handleCloseModal();
 					await fetchRefundRequests();
 					return;
 				}
@@ -936,7 +949,8 @@ export default function RefundApproval() {
 				throw new Error(data?.message || "Failed to execute refund payout.");
 			}
 
-			closeExecuteModal();
+			closeExecuteModal(true);
+			handleCloseModal();
 			await Swal.fire({
 				title: "Payout Execution Started",
 				text: data?.message || "Refund payout execution has started.",
@@ -987,9 +1001,7 @@ export default function RefundApproval() {
 		setIsActionProcessing(true);
 		try {
 			const response = await fetch(
-				request.refundType === "repair"
-					? `/api/finance/repair-refunds/${request.id}/execute`
-					: `/api/finance/refunds/${request.id}/execute-gateway-refund`,
+				`/api/finance/refunds/${request.id}/execute-gateway-refund`,
 				{
 				method: "POST",
 				credentials: "include",
@@ -1015,6 +1027,8 @@ export default function RefundApproval() {
 				icon: "success",
 				confirmButtonColor: "#2563eb",
 			});
+
+			handleCloseModal();
 
 			await fetchRefundRequests();
 		} catch (error) {
@@ -1366,13 +1380,15 @@ export default function RefundApproval() {
 									{String(selectedRequest.financeStatus || "").toLowerCase() === "approved_initial" ? "Finalize Approval" : "Approve"}
 								</button>
 							)}
-							<button
-								onClick={() => handleExecuteGatewayRefund(selectedRequest)}
-								disabled={!canExecuteGatewayRefund(selectedRequest) || isActionProcessing}
-								className="px-5 py-2.5 text-sm font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
-							>
-								{getExecuteActionLabel(selectedRequest)}
-							</button>
+							{canExecuteGatewayRefund(selectedRequest) && (
+								<button
+									onClick={() => handleExecuteGatewayRefund(selectedRequest)}
+									disabled={isActionProcessing}
+									className="px-5 py-2.5 text-sm font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+								>
+									{getExecuteActionLabel(selectedRequest)}
+								</button>
+							)}
 							{canFinanceReject(selectedRequest) && (
 								<button
 									onClick={() => handleReject(selectedRequest)}
@@ -1389,7 +1405,7 @@ export default function RefundApproval() {
 
 			{executeModalOpen && executeRequest && (
 				<div className="fixed inset-0 z-[1000001] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-					<div className="absolute inset-0" onClick={closeExecuteModal} />
+					<div className="absolute inset-0" onClick={() => closeExecuteModal()} />
 					<div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden">
 						<div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
 							<div>
@@ -1399,7 +1415,7 @@ export default function RefundApproval() {
 								<p className="text-sm text-gray-500 dark:text-gray-400">Request #{executeRequest.id}</p>
 							</div>
 							<button
-								onClick={closeExecuteModal}
+								onClick={() => closeExecuteModal()}
 								disabled={isActionProcessing}
 								aria-label="Close execute modal"
 								title="Close"
@@ -1475,7 +1491,7 @@ export default function RefundApproval() {
 
 						<div className="px-6 py-4 border-t border-gray-200 dark:border-gray-800 flex items-center justify-end gap-3">
 							<button
-								onClick={closeExecuteModal}
+								onClick={() => closeExecuteModal()}
 								disabled={isActionProcessing}
 								className="px-4 py-2 rounded-lg border border-gray-300 text-sm font-semibold text-gray-700 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 disabled:opacity-50"
 							>

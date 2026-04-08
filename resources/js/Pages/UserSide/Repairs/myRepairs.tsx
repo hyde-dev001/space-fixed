@@ -1725,7 +1725,7 @@ const MyRepairs: React.FC = () => {
     if (
       order.status === 'repairer_accepted' &&
       Boolean(order.conversation_id) &&
-      getIntakeMethod(order) !== 'walk_in' &&
+      getReturnMethod(order) !== 'walk_in' &&
       order.payment_status !== 'paid' &&
       order.payment_status !== 'completed' &&
       Boolean(order.payment_enabled) &&
@@ -2673,7 +2673,7 @@ const MyRepairs: React.FC = () => {
                       {/* Chat with Repairer actions */}
                       {order.status === 'repairer_accepted' && order.conversation_id && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (
                         <>
-                          {getIntakeMethod(order) !== 'walk_in' && (
+                          {getReturnMethod(order) !== 'walk_in' && (
                             <button
                               onClick={() => handlePayNow(order.id)}
                               disabled={!order.payment_enabled || processingPayment}
@@ -2715,7 +2715,7 @@ const MyRepairs: React.FC = () => {
                       
                       {order.status === 'pending' && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (
                         <>
-                          {getIntakeMethod(order) !== 'walk_in' && (
+                          {getReturnMethod(order) !== 'walk_in' && (
                             <button
                               onClick={() => handlePayNow(order.id)}
                               disabled={!order.payment_enabled || processingPayment}
@@ -2745,7 +2745,7 @@ const MyRepairs: React.FC = () => {
                       {(order.status === 'ready_for_pickup' || order.status === 'shipped') && (
                         <>
                           {/* For deposit_50 only — full_upfront is already paid */}
-                          {order.status === 'ready_for_pickup' && getIntakeMethod(order) !== 'walk_in' && (order.payment_policy ?? 'deposit_50') !== 'full_upfront' && order.payment_status !== 'completed' && (
+                          {order.status === 'ready_for_pickup' && getReturnMethod(order) !== 'walk_in' && (order.payment_policy ?? 'deposit_50') !== 'full_upfront' && order.payment_status !== 'completed' && (
                             <button
                               onClick={() => handlePayNow(order.id)}
                               disabled={!order.payment_enabled || processingPayment}

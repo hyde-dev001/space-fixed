@@ -92,6 +92,22 @@ type ReceiptSnapshot = {
 	items: POSItem[];
 };
 
+type RefundQueueItem = {
+	id: number;
+	status: string;
+	finance_status?: string;
+	shop_owner_status?: string;
+	requested_amount: number;
+	approved_amount?: number | null;
+	requested_at?: string | null;
+	reason_code?: string;
+	failure_reason?: string | null;
+	repairRequest?: {
+		request_id?: string;
+		customer_name?: string;
+	};
+};
+
 type ManualQueueStatus = "pending" | "received" | "in_progress" | "ready_for_pickup" | "picked_up";
 
 type ManualQueueRow = {
@@ -141,6 +157,22 @@ const getRefundStatusHint = (status: string | undefined): string => {
 	if (normalized === "succeeded") return "Refund payout completed";
 	if (normalized === "rejected") return "Refund request was rejected";
 	return "";
+};
+
+const getRefundStatusClass = (status: string): string => {
+	switch (String(status || "").toLowerCase()) {
+		case "succeeded":
+			return "bg-emerald-100 text-emerald-700";
+		case "failed":
+		case "rejected":
+			return "bg-red-100 text-red-700";
+		case "approved":
+			return "bg-blue-100 text-blue-700";
+		case "processing":
+			return "bg-amber-100 text-amber-700";
+		default:
+			return "bg-slate-100 text-slate-700";
+	}
 };
 
 const SERVICES_PER_PAGE = 6;
@@ -346,8 +378,11 @@ const PointOfSalePage = () => {
 	const [receiptSnapshot, setReceiptSnapshot] = useState<ReceiptSnapshot | null>(null);
 	const [isReceiptModalOpen, setIsReceiptModalOpen] = useState<boolean>(false);
 	const [isHistoryModalOpen, setIsHistoryModalOpen] = useState<boolean>(false);
+	const [isRefundQueueOpen, setIsRefundQueueOpen] = useState<boolean>(false);
 	const [receiptHistory, setReceiptHistory] = useState<ReceiptSnapshot[]>([]);
 	const [isLoadingHistory, setIsLoadingHistory] = useState<boolean>(false);
+	const [isRefundQueueLoading, setIsRefundQueueLoading] = useState<boolean>(false);
+	const [refundQueue, setRefundQueue] = useState<RefundQueueItem[]>([]);
 	const [historySearch, setHistorySearch] = useState<string>("");
 	const [historyDate, setHistoryDate] = useState<string>("");
 	const [selectedRepairOrder, setSelectedRepairOrder] = useState<RepairOrderOption | null>(null);
@@ -524,6 +559,19 @@ const PointOfSalePage = () => {
 		};
 	}, []);
 
+	const fetchRefundQueue = async () => {
+		setIsRefundQueueLoading(true);
+		try {
+			const response = await axios.get('/api/repair-pos/refunds/queue?include_history=1', { withCredentials: true });
+			const data = Array.isArray(response?.data?.data) ? response.data.data : [];
+			setRefundQueue(data);
+		} catch {
+			setRefundQueue([]);
+		} finally {
+			setIsRefundQueueLoading(false);
+		}
+	};
+
 	const fetchManualQueue = async (searchValue = "") => {
 		setManualQueueLoading(true);
 		try {
@@ -665,6 +713,11 @@ const PointOfSalePage = () => {
 			isMounted = false;
 		};
 	}, [cashierName, isHistoryModalOpen, selectedRepairOrder]);
+
+	useEffect(() => {
+		if (!isRefundQueueOpen) return;
+		fetchRefundQueue();
+	}, [isRefundQueueOpen]);
 
 	const handleRequestRefund = async (receipt: ReceiptSnapshot) => {
 		if (!canRequestRepairRefund(receipt)) {
@@ -1401,7 +1454,7 @@ const PointOfSalePage = () => {
 	};
 
 	return (
-		<AppLayoutERP hideHeader={isOrderModalOpen || isReceiptModalOpen || isHistoryModalOpen}>
+		<AppLayoutERP hideHeader={isOrderModalOpen || isRefundQueueOpen || isReceiptModalOpen || isHistoryModalOpen}>
 			<Head title="Point of Sale" />
 
 			<style>{`
@@ -1445,13 +1498,20 @@ const PointOfSalePage = () => {
 			`}</style>
 
 			<div className="space-y-6 p-4 md:p-6">
-				{!isOrderModalOpen && !isReceiptModalOpen && !isHistoryModalOpen && (
+				{!isOrderModalOpen && !isRefundQueueOpen && !isReceiptModalOpen && !isHistoryModalOpen && (
 				<div className="flex items-center justify-between">
 					<div>
 						<h1 className="text-2xl font-bold text-slate-900">Point of Sale</h1>
 						<p className="mt-1 text-sm text-slate-500">Manage repair cashier transactions and payment processing.</p>
 					</div>
 					<div className="flex items-center gap-2">
+						<button
+							type="button"
+							onClick={() => setIsRefundQueueOpen(true)}
+							className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+						>
+							Refund Queue
+						</button>
 						<button
 							type="button"
 							onClick={() => setIsHistoryModalOpen(true)}
@@ -1468,6 +1528,59 @@ const PointOfSalePage = () => {
 						</button>
 					</div>
 				</div>
+				)}
+
+				{isRefundQueueOpen && (
+					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+						<div className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
+							<div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+								<h3 className="text-lg font-semibold text-slate-900">Repair Refund Queue</h3>
+								<button
+									type="button"
+									onClick={() => setIsRefundQueueOpen(false)}
+									className="rounded-lg border border-slate-300 px-3 py-1 text-sm text-slate-700 hover:bg-slate-50"
+								>
+									Close
+								</button>
+							</div>
+
+							<div className="max-h-[70vh] overflow-y-auto p-5">
+								{isRefundQueueLoading ? (
+									<div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">Loading refund queue...</div>
+								) : refundQueue.length === 0 ? (
+									<div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">No repair refunds found.</div>
+								) : (
+									<div className="space-y-3">
+										{refundQueue.map((refund) => {
+											const financeStatus = String(refund.finance_status || 'pending').toLowerCase();
+											const ownerStatus = String(refund.shop_owner_status || 'pending').toLowerCase();
+											return (
+												<div key={refund.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+													<div className="flex flex-wrap items-start justify-between gap-3">
+														<div>
+															<p className="text-sm font-semibold text-slate-900">#{refund.id} {refund.repairRequest?.request_id ? `- ${refund.repairRequest.request_id}` : ''}</p>
+															<p className="text-xs text-slate-600">Customer: {refund.repairRequest?.customer_name || 'N/A'}</p>
+															<p className="text-xs text-slate-600">Amount: {formatPeso(Number(refund.approved_amount ?? refund.requested_amount ?? 0))}</p>
+															{refund.failure_reason && <p className="text-xs text-red-600">Reason: {refund.failure_reason}</p>}
+														</div>
+														<div className="flex items-center gap-2">
+															<span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase ${getRefundStatusClass(refund.status)}`}>{refund.status}</span>
+															{financeStatus && (
+																<span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-blue-700">F:{financeStatus}</span>
+															)}
+															{ownerStatus && (
+																<span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-violet-700">O:{ownerStatus}</span>
+															)}
+														</div>
+													</div>
+												</div>
+											);
+										})}
+									</div>
+								)}
+							</div>
+						</div>
+					</div>
 				)}
 
 				<div className="grid grid-cols-1 gap-6 xl:h-[calc(100vh-170px)] xl:grid-cols-12 xl:items-stretch">
