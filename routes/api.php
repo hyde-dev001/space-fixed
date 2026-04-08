@@ -243,10 +243,12 @@ Route::middleware(['web', 'auth:user,shop_owner'])->prefix('repair-pos')->group(
 });
 
 Route::middleware(['web', 'auth:user,shop_owner'])->prefix('retail-pos')->group(function () {
-    Route::get('/products', [\App\Http\Controllers\Api\RetailPosController::class, 'listProducts']);
     Route::post('/checkout', [\App\Http\Controllers\Api\RetailPosController::class, 'checkout']);
-    Route::get('/history', [\App\Http\Controllers\Api\RetailPosController::class, 'history']);
-    Route::get('/orders/{order}/receipt', [\App\Http\Controllers\Api\RetailPosController::class, 'receipt']);
+    Route::get('/transactions', [\App\Http\Controllers\Api\RetailPosController::class, 'listTransactions']);
+    Route::get('/transactions/{transaction}/receipt', [\App\Http\Controllers\Api\RetailPosController::class, 'showReceipt']);
+    Route::post('/refunds', [\App\Http\Controllers\Api\RetailPosController::class, 'requestRefund']);
+    Route::post('/refunds/{refund}/approve', [\App\Http\Controllers\Api\RetailPosController::class, 'approveRefund']);
+    Route::post('/refunds/{refund}/execute', [\App\Http\Controllers\Api\RetailPosController::class, 'executeRefund']);
 });
 
 /**

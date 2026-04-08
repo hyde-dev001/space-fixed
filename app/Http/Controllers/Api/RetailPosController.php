@@ -3,11 +3,12 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Order;
-use App\Models\Product;
+use App\Models\PosRefund;
+use App\Models\PosTransaction;
 use App\Models\ShopOwner;
 use App\Models\User;
-use App\Services\RetailPosCheckoutService;
+use App\Services\RetailPosPaymentService;
+use App\Services\RetailPosRefundService;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -15,41 +16,15 @@ use Illuminate\Validation\ValidationException;
 
 class RetailPosController extends Controller
 {
-    public function listProducts(Request $request)
-    {
-        $shopOwnerId = $this->resolveActorShopOwnerId($this->resolveActor());
-        $this->assertRetailOrBoth($shopOwnerId);
-
-        $search = trim((string) $request->query('q', ''));
-
-        $rows = Product::query()
-            ->where('shop_owner_id', $shopOwnerId)
-            ->where('is_active', true)
-            ->when($search !== '', function ($query) use ($search) {
-                $query->where(function ($searchQuery) use ($search) {
-                    $searchQuery->where('name', 'like', "%{$search}%")
-                        ->orWhere('slug', 'like', "%{$search}%");
-                });
-            })
-            ->orderByDesc('id')
-            ->limit(200)
-            ->get(['id', 'name', 'price', 'stock_quantity', 'slug', 'main_image']);
-
-        return response()->json([
-            'success' => true,
-            'data' => $rows,
-        ]);
-    }
-
-    public function checkout(Request $request, RetailPosCheckoutService $service)
+    public function checkout(Request $request, RetailPosPaymentService $service)
     {
         $validated = $request->validate([
             'idempotency_key' => ['required', 'string', 'min:8', 'max:120'],
-            'customer_name' => ['required', 'string', 'max:255'],
-            'customer_phone' => ['nullable', 'string', 'max:30'],
-            'customer_email' => ['nullable', 'email', 'max:255'],
-            'payment_method' => ['required', 'string', 'in:cash,gcash,card'],
-            'payment_reference' => ['nullable', 'string', 'max:255'],
+            'customer_type' => ['required', 'string', 'in:registered,walk_in'],
+            'customer_id' => ['nullable', 'integer', 'exists:users,id'],
+            'walk_in_name' => ['nullable', 'string', 'max:255'],
+            'walk_in_phone' => ['nullable', 'string', 'max:30'],
+            'walk_in_email' => ['nullable', 'email', 'max:255'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['required', 'integer', 'exists:products,id'],
             'items.*.qty' => ['required', 'integer', 'min:1'],
@@ -57,41 +32,62 @@ class RetailPosController extends Controller
             'items.*.size' => ['nullable', 'string', 'max:50'],
             'items.*.color' => ['nullable', 'string', 'max:100'],
             'items.*.image' => ['nullable', 'string', 'max:2048'],
+            'payment_lines' => ['required', 'array', 'min:1'],
+            'payment_lines.*.tender_type' => ['required', 'string', 'in:cash,paymongo_card,paymongo_wallet'],
+            'payment_lines.*.amount' => ['required', 'numeric', 'min:0.01'],
+            'payment_lines.*.provider_reference' => ['nullable', 'string', 'max:255'],
         ]);
 
-        if (in_array($validated['payment_method'], ['gcash', 'card'], true)
-            && trim((string) ($validated['payment_reference'] ?? '')) === '') {
+        foreach ((array) $validated['payment_lines'] as $index => $line) {
+            $isNonCash = in_array($line['tender_type'] ?? '', ['paymongo_card', 'paymongo_wallet'], true);
+            $reference = trim((string) ($line['provider_reference'] ?? ''));
+
+            if ($isNonCash && $reference === '') {
+                throw ValidationException::withMessages([
+                    "payment_lines.{$index}.provider_reference" => ['Reference is required for non-cash payments.'],
+                ]);
+            }
+        }
+
+        if ((string) ($validated['customer_type'] ?? '') === 'walk_in' && trim((string) ($validated['walk_in_name'] ?? '')) === '') {
             throw ValidationException::withMessages([
-                'payment_reference' => ['Reference is required for GCash and Card payments.'],
+                'walk_in_name' => ['Walk-in customer name is required.'],
             ]);
         }
 
         $shopOwnerId = $this->resolveActorShopOwnerId($this->resolveActor());
         $this->assertRetailOrBoth($shopOwnerId);
 
-        $order = $service->checkout($shopOwnerId, $validated, $this->resolveActorAuditUserId());
+        $transaction = $service->checkout($shopOwnerId, $validated, $this->resolveActorAuditUserId());
 
         return response()->json([
             'success' => true,
-            'order_id' => (int) $order->id,
-            'order_number' => (string) $order->order_number,
+            'data' => [
+                'id' => (int) $transaction->id,
+                'transaction_no' => (string) $transaction->transaction_no,
+                'module_type' => (string) $transaction->module_type,
+                'module_reference_id' => (int) $transaction->module_reference_id,
+                'status' => (string) $transaction->status,
+            ],
+            'meta' => [
+                'idempotency_replay' => (bool) $transaction->getAttribute('idempotency_replay'),
+            ],
         ], 201);
     }
 
-    public function history(Request $request)
+    public function listTransactions(Request $request)
     {
         $shopOwnerId = $this->resolveActorShopOwnerId($this->resolveActor());
         $this->assertRetailOrBoth($shopOwnerId);
 
-        $limit = max(1, min((int) $request->query('limit', 200), 500));
+        $perPage = max(1, min((int) $request->query('per_page', 50), 200));
 
-        $rows = Order::query()
+        $rows = PosTransaction::query()
+            ->where('module_type', 'retail')
             ->where('shop_owner_id', $shopOwnerId)
-            ->where('order_number', 'like', 'RPOS-%')
-            ->with('items')
+            ->with(['paymentLines', 'receipt', 'refunds' => fn ($query) => $query->orderByDesc('id')])
             ->orderByDesc('id')
-            ->limit($limit)
-            ->get();
+            ->paginate($perPage);
 
         return response()->json([
             'success' => true,
@@ -99,25 +95,132 @@ class RetailPosController extends Controller
         ]);
     }
 
-    public function receipt(Order $order)
+    public function showReceipt(PosTransaction $transaction)
     {
         $shopOwnerId = $this->resolveActorShopOwnerId($this->resolveActor());
         $this->assertRetailOrBoth($shopOwnerId);
 
-        abort_if((int) $order->shop_owner_id !== $shopOwnerId, 404);
-        abort_if(!str_starts_with((string) $order->order_number, 'RPOS-'), 404);
-
-        $order->load('items');
+        abort_if((string) $transaction->module_type !== 'retail', 404);
+        abort_if((int) $transaction->shop_owner_id !== $shopOwnerId, 404);
 
         return response()->json([
             'success' => true,
-            'data' => $order,
+            'data' => $transaction->load(['paymentLines', 'receipt']),
+        ]);
+    }
+
+    public function requestRefund(Request $request, RetailPosRefundService $service)
+    {
+        $validated = $request->validate([
+            'source_transaction_id' => ['required', 'integer', 'exists:pos_transactions,id'],
+            'request_type' => ['required', 'string', 'in:full,partial'],
+            'requested_amount' => ['required', 'numeric', 'min:0.01'],
+            'reason_code' => ['required', 'string', 'max:100'],
+            'reason_notes' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $source = PosTransaction::query()->findOrFail((int) $validated['source_transaction_id']);
+        if ((string) $source->module_type !== 'retail') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only retail transactions can be refunded from this endpoint.',
+            ], 422);
+        }
+
+        $actor = $this->resolveActor();
+        $actorId = $this->resolveActorId();
+        if (!$actor || $actorId <= 0) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized.'], 401);
+        }
+
+        $actorShopOwnerId = $this->resolveActorShopOwnerId($actor);
+        $isShopActor = $actorShopOwnerId > 0 && $actorShopOwnerId === (int) $source->shop_owner_id;
+        $isCustomerOwner = Auth::guard('user')->check() && (int) ($source->customer_id ?? 0) === $actorId;
+
+        if (!$isShopActor && !$isCustomerOwner) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You are not authorized to request a refund for this transaction.',
+            ], 403);
+        }
+
+        $refund = $service->requestRefund($source, $validated, $this->resolveActorAuditUserId());
+
+        return response()->json([
+            'success' => true,
+            'refund_id' => (int) $refund->id,
+            'data' => $refund,
+        ]);
+    }
+
+    public function approveRefund(Request $request, PosRefund $refund, RetailPosRefundService $service)
+    {
+        $shopOwnerId = $this->resolveActorShopOwnerId($this->resolveActor());
+        $this->assertRetailOrBoth($shopOwnerId);
+
+        if ((int) $refund->shop_owner_id !== $shopOwnerId || (string) $refund->module_type !== 'retail') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Refund not found in this retail scope.',
+            ], 404);
+        }
+
+        $validated = $request->validate([
+            'approved_amount' => ['nullable', 'numeric', 'min:0.01'],
+            'approval_note' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $updated = $service->approve(
+            refund: $refund,
+            actorId: $this->resolveActorAuditUserId(),
+            approvedAmount: isset($validated['approved_amount']) ? (float) $validated['approved_amount'] : null,
+            approvalNote: $validated['approval_note'] ?? null,
+        );
+
+        return response()->json([
+            'success' => true,
+            'data' => $updated,
+        ]);
+    }
+
+    public function executeRefund(Request $request, PosRefund $refund, RetailPosRefundService $service)
+    {
+        $shopOwnerId = $this->resolveActorShopOwnerId($this->resolveActor());
+        $this->assertRetailOrBoth($shopOwnerId);
+
+        if ((int) $refund->shop_owner_id !== $shopOwnerId || (string) $refund->module_type !== 'retail') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Refund not found in this retail scope.',
+            ], 404);
+        }
+
+        $validated = $request->validate([
+            'execution_mode' => ['nullable', 'string', 'in:manual,gateway'],
+            'execution_note' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $updated = $service->execute(
+            refund: $refund,
+            actorId: $this->resolveActorAuditUserId(),
+            executionMode: (string) ($validated['execution_mode'] ?? 'manual'),
+            executionNote: $validated['execution_note'] ?? null,
+        );
+
+        return response()->json([
+            'success' => true,
+            'data' => $updated,
         ]);
     }
 
     private function resolveActor(): ?object
     {
         return Auth::guard('user')->user() ?? Auth::guard('shop_owner')->user();
+    }
+
+    private function resolveActorId(): int
+    {
+        return (int) (Auth::guard('user')->id() ?? Auth::guard('shop_owner')->id() ?? 0);
     }
 
     private function resolveActorShopOwnerId(?object $actor = null): int
