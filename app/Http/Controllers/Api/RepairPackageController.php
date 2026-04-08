@@ -14,6 +14,8 @@ use Illuminate\Validation\ValidationException;
 
 class RepairPackageController extends Controller
 {
+    private const REPAIR_VAT_RATE_PERCENT = 12.0;
+
     public function __construct(private ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService)
     {
     }
@@ -212,27 +214,39 @@ class RepairPackageController extends Controller
                 ]);
 
         $bookingsCount = $packageRequests->count();
-        $packageRevenue = round($packageRequests->sum(fn ($repairRequest) => (float) ($repairRequest->final_total ?? $repairRequest->total ?? 0)), 2);
-        $packageBaseRevenue = round($packageRequests->sum(fn ($repairRequest) => (float) ($repairRequest->package_price ?? 0)), 2);
-        $addOnRevenue = round($packageRequests->sum(fn ($repairRequest) => (float) ($repairRequest->add_ons_total ?? 0)), 2);
+        $requestRevenueSnapshots = $packageRequests->mapWithKeys(function (RepairRequest $repairRequest) {
+            return [$repairRequest->id => $this->resolveRepairPackageRevenueSnapshot($repairRequest)];
+        });
+
+        $packageRevenue = round($requestRevenueSnapshots->sum('total_net_revenue_ex_vat'), 2);
+        $packageBaseRevenue = round($requestRevenueSnapshots->sum('package_net_revenue_ex_vat'), 2);
+        $addOnRevenue = round($requestRevenueSnapshots->sum('add_on_net_revenue_ex_vat'), 2);
         $cutoff = now()->subDays(30);
         $recentRequests = $packageRequests->filter(fn ($repairRequest) => $repairRequest->created_at && $repairRequest->created_at->gte($cutoff));
         $packageLookup = $packages->keyBy('id');
 
         $topPackages = $packages
-            ->map(function (RepairPackage $package) use ($packageRequests) {
+            ->map(function (RepairPackage $package) use ($packageRequests, $requestRevenueSnapshots) {
                 $bookings = $packageRequests->where('repair_package_id', $package->id)->values();
                 $serviceTotal = (float) $package->services->sum(fn ($service) => (float) $service->price);
+
+                $netRevenue = round($bookings->sum(function (RepairRequest $repairRequest) use ($requestRevenueSnapshots) {
+                    return (float) data_get($requestRevenueSnapshots, "{$repairRequest->id}.total_net_revenue_ex_vat", 0);
+                }), 2);
+
+                $netAddOnRevenue = round($bookings->sum(function (RepairRequest $repairRequest) use ($requestRevenueSnapshots) {
+                    return (float) data_get($requestRevenueSnapshots, "{$repairRequest->id}.add_on_net_revenue_ex_vat", 0);
+                }), 2);
 
                 return [
                     'id' => $package->id,
                     'name' => $package->name,
                     'status' => $package->status,
                     'booking_count' => $bookings->count(),
-                    'revenue' => round($bookings->sum(fn ($repairRequest) => (float) ($repairRequest->final_total ?? $repairRequest->total ?? 0)), 2),
-                    'add_on_revenue' => round($bookings->sum(fn ($repairRequest) => (float) ($repairRequest->add_ons_total ?? 0)), 2),
+                    'revenue' => $netRevenue,
+                    'add_on_revenue' => $netAddOnRevenue,
                     'average_order_value' => $bookings->count() > 0
-                        ? round($bookings->sum(fn ($repairRequest) => (float) ($repairRequest->final_total ?? $repairRequest->total ?? 0)) / $bookings->count(), 2)
+                        ? round($netRevenue / $bookings->count(), 2)
                         : 0,
                     'services_total_price' => round($serviceTotal, 2),
                     'package_price' => (float) $package->package_price,
@@ -244,7 +258,7 @@ class RepairPackageController extends Controller
             ->values();
 
         $monthlyTrend = collect(range(5, 0))
-            ->map(function (int $monthsAgo) use ($packageRequests) {
+            ->map(function (int $monthsAgo) use ($packageRequests, $requestRevenueSnapshots) {
                 $monthDate = now()->copy()->subMonths($monthsAgo);
                 $bookings = $packageRequests->filter(function ($repairRequest) use ($monthDate) {
                     return $repairRequest->created_at
@@ -255,7 +269,9 @@ class RepairPackageController extends Controller
                 return [
                     'month' => $monthDate->format('M Y'),
                     'bookings' => $bookings->count(),
-                    'revenue' => round($bookings->sum(fn ($repairRequest) => (float) ($repairRequest->final_total ?? $repairRequest->total ?? 0)), 2),
+                    'revenue' => round($bookings->sum(function (RepairRequest $repairRequest) use ($requestRevenueSnapshots) {
+                        return (float) data_get($requestRevenueSnapshots, "{$repairRequest->id}.total_net_revenue_ex_vat", 0);
+                    }), 2),
                 ];
             })
             ->values();
@@ -294,7 +310,9 @@ class RepairPackageController extends Controller
                         ? round(($packageRequests->filter(fn ($repairRequest) => (float) ($repairRequest->add_ons_total ?? 0) > 0)->count() / $bookingsCount) * 100, 1)
                         : 0,
                     'bookings_last_30_days' => $recentRequests->count(),
-                    'revenue_last_30_days' => round($recentRequests->sum(fn ($repairRequest) => (float) ($repairRequest->final_total ?? $repairRequest->total ?? 0)), 2),
+                    'revenue_last_30_days' => round($recentRequests->sum(function (RepairRequest $repairRequest) use ($requestRevenueSnapshots) {
+                        return (float) data_get($requestRevenueSnapshots, "{$repairRequest->id}.total_net_revenue_ex_vat", 0);
+                    }), 2),
                 ],
                 'top_packages' => $topPackages,
                 'status_breakdown' => $packageRequests
@@ -623,6 +641,66 @@ class RepairPackageController extends Controller
         }
 
         return (float) $package->package_price;
+    }
+
+    private function resolveRepairPackageRevenueSnapshot(RepairRequest $repairRequest): array
+    {
+        $grossOrderTotal = round((float) ($repairRequest->final_total ?? $repairRequest->total ?? 0), 2);
+        if ($grossOrderTotal <= 0) {
+            return [
+                'total_net_revenue_ex_vat' => 0.0,
+                'package_net_revenue_ex_vat' => 0.0,
+                'add_on_net_revenue_ex_vat' => 0.0,
+            ];
+        }
+
+        $packageGross = round(max(0.0, (float) ($repairRequest->package_price ?? data_get($repairRequest->pricing_breakdown, 'package_price', 0))), 2);
+        $addOnGross = round(max(0.0, (float) ($repairRequest->add_ons_total ?? data_get($repairRequest->pricing_breakdown, 'add_ons_total', 0))), 2);
+
+        if ($packageGross <= 0.0) {
+            $packageGross = round(max(0.0, $grossOrderTotal - $addOnGross), 2);
+        }
+
+        $recordedPaid = round((float) ($repairRequest->total_paid_amount ?? 0), 2);
+        $recordedRefunded = round((float) ($repairRequest->total_refunded_amount ?? 0), 2);
+        $paymentStatus = strtolower(trim((string) ($repairRequest->payment_status ?? 'pending')));
+        $paymentPolicy = (string) ($repairRequest->payment_policy ?? 'deposit_50');
+
+        $resolvedPaid = $recordedPaid;
+        if ($resolvedPaid <= 0) {
+            if ($paymentStatus === 'completed') {
+                $resolvedPaid = $grossOrderTotal;
+            } elseif (in_array($paymentStatus, ['paid', 'partially_paid'], true)) {
+                $resolvedPaid = $paymentPolicy === 'full_upfront'
+                    ? $grossOrderTotal
+                    : round($grossOrderTotal * 0.5, 2);
+            }
+        }
+
+        $netCollectedGross = max(0.0, round($resolvedPaid - $recordedRefunded, 2));
+        $realizedRatio = $grossOrderTotal > 0
+            ? min(1.0, $netCollectedGross / $grossOrderTotal)
+            : 0.0;
+
+        $taxMode = strtolower((string) data_get($repairRequest->pricing_breakdown, 'tax_mode', 'vat_inclusive'));
+        $vatRate = (float) data_get($repairRequest->pricing_breakdown, 'vat_rate', self::REPAIR_VAT_RATE_PERCENT);
+        if (!is_finite($vatRate) || $vatRate < 0) {
+            $vatRate = self::REPAIR_VAT_RATE_PERCENT;
+        }
+
+        $vatDivisor = in_array($taxMode, ['legacy_add_on', 'legacy_additive'], true)
+            ? 1.0
+            : (1 + ($vatRate / 100));
+
+        $totalNetExVat = round(($grossOrderTotal * $realizedRatio) / $vatDivisor, 2);
+        $packageNetExVat = round(($packageGross * $realizedRatio) / $vatDivisor, 2);
+        $addOnNetExVat = round(($addOnGross * $realizedRatio) / $vatDivisor, 2);
+
+        return [
+            'total_net_revenue_ex_vat' => max(0.0, $totalNetExVat),
+            'package_net_revenue_ex_vat' => max(0.0, $packageNetExVat),
+            'add_on_net_revenue_ex_vat' => max(0.0, $addOnNetExVat),
+        ];
     }
 
     private function syncMaterialTemplates(RepairPackage $package, array $materialTemplates): void

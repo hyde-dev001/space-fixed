@@ -47,6 +47,7 @@ type RepairOrder = {
   paymongo_payment_id?: string | null;
   payment_policy?: 'deposit_50' | 'full_upfront';
   totalPaidAmount?: number | string | null;
+  totalRefundedAmount?: number | string | null;
   pickup_enabled?: boolean;
   pickup_enabled_at?: string | null;
   preferredDate?: string | null;
@@ -826,6 +827,7 @@ export default function JobOrdersRepair() {
           payment_enabled: repair.payment_enabled || false,
           payment_status: repair.payment_status || 'pending',
           totalPaidAmount: toNumber(repair.total_paid_amount),
+          totalRefundedAmount: toNumber(repair.total_refunded_amount),
           paymongo_payment_id: repair.paymongo_payment_id || null,
           payment_policy: repair.payment_policy || 'deposit_50',
           pickup_enabled: repair.pickup_enabled || false,
@@ -1210,7 +1212,40 @@ export default function JobOrdersRepair() {
     const cancelled = orders.filter(o => o.status === "cancelled").length;
     const totalRevenue = orders
       .filter(o => o.status !== "cancelled" && !isRejectedWorkflowStatus(o.status))
-      .reduce((sum, o) => sum + (toNumber(o.finalPrice ?? o.total) ?? 0), 0);
+      .reduce((sum, o) => {
+        const orderGrandTotal = toNumber(o.grandTotal) ?? toNumber(o.total) ?? 0;
+        const orderNetTotal = toNumber(o.finalPrice ?? o.total) ?? 0;
+        if (orderGrandTotal <= 0 || orderNetTotal <= 0) {
+          return sum;
+        }
+
+        const recordedPaid = toNumber(o.totalPaidAmount);
+        const fallbackPaidStatus = (o.payment_status ?? '').toLowerCase();
+        const fallbackPolicy = o.payment_policy ?? 'deposit_50';
+
+        let grossPaid = 0;
+        if (recordedPaid !== null && recordedPaid > 0) {
+          grossPaid = recordedPaid;
+        } else if (fallbackPaidStatus === 'completed') {
+          grossPaid = orderGrandTotal;
+        } else if (fallbackPaidStatus === 'paid' || fallbackPaidStatus === 'partially_paid') {
+          grossPaid = fallbackPolicy === 'full_upfront'
+            ? orderGrandTotal
+            : Math.round(orderGrandTotal * 0.5 * 100) / 100;
+        }
+
+        const refundedAmount = toNumber(o.totalRefundedAmount) ?? 0;
+        const netCollected = Math.max(0, grossPaid - refundedAmount);
+        if (netCollected <= 0) {
+          return sum;
+        }
+
+        // Convert gross collected to net-of-VAT by scaling against the order's VAT-exclusive baseline.
+        const realizedRatio = Math.min(1, netCollected / orderGrandTotal);
+        const realizedRevenueExVat = orderNetTotal * realizedRatio;
+
+        return sum + realizedRevenueExVat;
+      }, 0);
     return { total, underReview, pending, received, inProgress, workCompleted, readyForPickup, pickedUp, completedAll, rejected, cancelled, totalRevenue };
   }, [orders]);
 

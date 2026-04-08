@@ -267,7 +267,7 @@ const DashboardRepair: React.FC = () => {
 						<div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
 							<div>
 								<h2 className="text-lg font-semibold text-gray-900">Total Revenue</h2>
-								<p className="text-sm text-gray-500">Repair revenue trends by period.</p>
+								<p className="text-sm text-gray-500">Repair net revenue trends by period (excl. VAT, refunds deducted).</p>
 							</div>
 							<span className="rounded-full bg-green-50 px-3 py-1 text-xs font-semibold text-green-600">Updated today</span>
 						</div>
@@ -364,9 +364,9 @@ const DashboardRepair: React.FC = () => {
 									<p className="mt-1 text-xs text-gray-500">{analytics.overview.bookings_last_30_days} in the last 30 days</p>
 								</div>
 								<div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-									<p className="text-xs uppercase tracking-wide text-gray-500">Revenue</p>
+									<p className="text-xs uppercase tracking-wide text-gray-500">Net Revenue (Excl. VAT)</p>
 									<p className="mt-2 text-2xl font-bold text-gray-900">₱{Number(analytics.overview.package_revenue).toFixed(2)}</p>
-									<p className="mt-1 text-xs text-gray-500">₱{Number(analytics.overview.revenue_last_30_days).toFixed(2)} in the last 30 days</p>
+									<p className="mt-1 text-xs text-gray-500">Refund-adjusted • ₱{Number(analytics.overview.revenue_last_30_days).toFixed(2)} in the last 30 days</p>
 								</div>
 								<div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
 									<p className="text-xs uppercase tracking-wide text-gray-500">Avg Order</p>
@@ -391,7 +391,7 @@ const DashboardRepair: React.FC = () => {
 												<tr>
 													<th className="px-4 py-3 text-left font-semibold">Package</th>
 													<th className="px-4 py-3 text-left font-semibold">Bookings</th>
-													<th className="px-4 py-3 text-left font-semibold">Revenue</th>
+													<th className="px-4 py-3 text-left font-semibold">Net Revenue</th>
 													<th className="px-4 py-3 text-left font-semibold">Avg Order</th>
 													<th className="px-4 py-3 text-left font-semibold">Last Booked</th>
 												</tr>
@@ -422,6 +422,7 @@ const DashboardRepair: React.FC = () => {
 									<div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
 										<div className="px-4 py-3 border-b border-gray-100">
 											<h4 className="text-sm font-semibold text-gray-900">Monthly Trend</h4>
+											<p className="mt-1 text-xs text-gray-500">Net revenue excludes VAT and deducts refunds.</p>
 										</div>
 										<div className="p-4 space-y-3">
 											{analytics.monthly_trend.length === 0 ? (

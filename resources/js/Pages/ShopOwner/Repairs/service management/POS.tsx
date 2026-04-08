@@ -4,6 +4,7 @@ import axios from "axios";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
 import Swal from "sweetalert2";
 import { computeCanPay, getPhoneDisplayForReceipt } from "../../../Repairs/posPaymentValidation";
+import { PosMode, resolveAllowedModes } from "../../../ERP/cashier/posModeResolver";
 import { buildRepairBreakdown } from "../../../../utils/repairPricing";
 import { repairPosHistoryApi } from "../../../../services/repairPosHistoryApi";
 
@@ -57,12 +58,43 @@ type POSItem = {
 	manualServiceIds?: number[];
 };
 
+type RetailProductVariant = {
+	id: number;
+	size: string;
+	color: string;
+	stock: number;
+	image?: string | null;
+};
+
+type RetailCatalogProduct = {
+	id: number;
+	name: string;
+	price: number;
+	stock: number;
+	image?: string | null;
+	variants: RetailProductVariant[];
+};
+
+type RetailCartItem = {
+	lineId: string;
+	productId: number;
+	name: string;
+	unitPrice: number;
+	qty: number;
+	stock: number;
+	image?: string | null;
+	variantId?: number | null;
+	size?: string | null;
+	color?: string | null;
+};
+
 type ReceiptRefundEntry = {
 	status: string;
 	approvedAmount: number;
 };
 
 type ReceiptSnapshot = {
+	moduleType?: "repair" | "retail";
 	transactionId?: number;
 	repairRequestId?: number;
 	customerType?: "registered" | "walk_in";
@@ -147,6 +179,30 @@ const getDueTypeLabel = (dueType: PosDueType | null | undefined): string => {
 
 const SERVICES_PER_PAGE = 6;
 const VAT_RATE = 12;
+
+const resolveBusinessTypeForPos = (props: any): "retail" | "repair" | "both" => {
+	const rawBusinessType = String(
+		props?.auth?.user?.shop_owner?.business_type
+		?? props?.auth?.shop_owner?.business_type
+		?? props?.shop_owner?.business_type
+		?? props?.auth?.user?.business_type
+		?? props?.auth?.business_type
+		?? "retail",
+	)
+		.toLowerCase()
+		.trim();
+
+	if (rawBusinessType.includes("both")) return "both";
+
+	const hasRetailSignal = rawBusinessType.includes("retail");
+	const hasRepairSignal = rawBusinessType.includes("repair") || rawBusinessType.includes("service");
+
+	if (hasRetailSignal && hasRepairSignal) return "both";
+	if (hasRepairSignal) return "repair";
+	if (hasRetailSignal) return "retail";
+
+	return "retail";
+};
 
 const normalizeDueType = (value: string | null): PosDueType => {
 	if (value === "deposit" || value === "balance" || value === "full") {
@@ -235,6 +291,17 @@ const formatPeso = (value: number): string => {
 		minimumFractionDigits: 2,
 		maximumFractionDigits: 2,
 	}).format(Number.isFinite(value) ? value : 0);
+};
+
+const createRetailLineId = (): string => `retail-line-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+const getRetailVariantIdentity = (
+	productId: number,
+	variantId: number | null | undefined,
+	size?: string | null,
+	color?: string | null,
+): string => {
+	return `${productId}:${variantId ?? "none"}:${size ?? ""}:${color ?? ""}`;
 };
 
 const MANUAL_QUEUE_NEXT_STATUS: Record<ManualQueueStatus, ManualQueueStatus | null> = {
@@ -362,11 +429,47 @@ const PointOfSalePage = () => {
 	const [manualQueueSearch, setManualQueueSearch] = useState<string>("");
 	const [manualQueueLoading, setManualQueueLoading] = useState<boolean>(false);
 	const [manualQueueActionLoadingId, setManualQueueActionLoadingId] = useState<number | null>(null);
+const businessType = resolveBusinessTypeForPos(props as any);
+const allowedModes = useMemo(() => resolveAllowedModes(businessType), [businessType]);
+const [mode, setMode] = useState<PosMode>(allowedModes[0]);
+const [retailSearch, setRetailSearch] = useState<string>("");
+const [retailProducts, setRetailProducts] = useState<RetailCatalogProduct[]>([]);
+const [retailLoading, setRetailLoading] = useState<boolean>(false);
+const [retailCart, setRetailCart] = useState<RetailCartItem[]>([]);
+const [retailSelectionByProduct, setRetailSelectionByProduct] = useState<Record<number, { size: string; color: string }>>({});
+const [retailCustomerName, setRetailCustomerName] = useState<string>("");
+const [retailCustomerPhone, setRetailCustomerPhone] = useState<string>("");
+const [retailCustomerEmail, setRetailCustomerEmail] = useState<string>("");
+const [retailPaymentMethod, setRetailPaymentMethod] = useState<PaymentMethod>("cash");
+const [retailCashReceivedInput, setRetailCashReceivedInput] = useState<string>("");
+const [retailProofReference, setRetailProofReference] = useState<string>("");
+const [retailNotes, setRetailNotes] = useState<string>("");
+const [retailProcessingPayment, setRetailProcessingPayment] = useState<boolean>(false);
 
-	useEffect(() => {
-		let isMounted = true;
+useEffect(() => {
+	if (!allowedModes.includes(mode)) {
+		setMode(allowedModes[0]);
+	}
+}, [allowedModes, mode]);
 
-		const loadData = async () => {
+useEffect(() => {
+	if (mode === "retail") {
+		setIsOrderModalOpen(false);
+		setIsRefundQueueOpen(false);
+		setIsReceiptModalOpen(false);
+		setIsHistoryModalOpen(false);
+	}
+}, [mode]);
+
+useEffect(() => {
+	let isMounted = true;
+
+	const loadData = async () => {
+			if (!allowedModes.includes("repair")) {
+				setIsLoadingData(false);
+				return;
+			}
+
 			setIsLoadingData(true);
 			try {
 				const [servicesResult, ordersResult, packagesResult] = await Promise.allSettled([
@@ -556,9 +659,72 @@ const PointOfSalePage = () => {
 		}
 	};
 
+	const fetchRetailProducts = async (searchValue = "") => {
+		setRetailLoading(true);
+		try {
+			const query = searchValue.trim();
+			const response = await axios.get('/api/retail-pos/products', {
+				params: query.length > 0 ? { q: query } : {},
+				withCredentials: true,
+			});
+			const data = Array.isArray(response?.data?.data) ? response.data.data : [];
+			const mapped: RetailCatalogProduct[] = data.map((row: any) => ({
+				id: Number(row?.id ?? 0),
+				name: String(row?.name ?? "Retail Product"),
+				price: Number(row?.price ?? 0),
+				stock: Number(row?.stock_quantity ?? 0),
+				image: row?.main_image ? String(row.main_image) : null,
+				variants: Array.isArray(row?.variants)
+					? row.variants.map((variant: any) => ({
+						id: Number(variant?.id ?? 0),
+						size: String(variant?.size ?? "").trim(),
+						color: String(variant?.color ?? "").trim(),
+						stock: Number(variant?.quantity ?? 0),
+						image: variant?.image ? String(variant.image) : null,
+					})).filter((variant: RetailProductVariant) => variant.id > 0)
+					: [],
+			})).filter((row: RetailCatalogProduct) => row.id > 0);
+
+			setRetailProducts(mapped);
+			setRetailSelectionByProduct((prev) => {
+				const next = { ...prev };
+				mapped.forEach((product) => {
+					if (next[product.id]) {
+						return;
+					}
+
+					const defaultVariant = product.variants.find((variant) => variant.stock > 0) ?? product.variants[0];
+					next[product.id] = {
+						size: defaultVariant?.size ?? "",
+						color: defaultVariant?.color ?? "",
+					};
+				});
+
+				return next;
+			});
+		} catch {
+			setRetailProducts([]);
+		} finally {
+			setRetailLoading(false);
+		}
+	};
+
 	useEffect(() => {
+		if (!allowedModes.includes("repair")) {
+			return;
+		}
+
 		fetchManualQueue();
-	}, []);
+	}, [allowedModes]);
+
+	useEffect(() => {
+		if (!allowedModes.includes("retail") || mode !== "retail") {
+			return;
+		}
+
+		fetchRetailProducts(retailSearch);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [allowedModes, mode]);
 
 	useEffect(() => {
 		let isMounted = true;
@@ -568,11 +734,23 @@ const PointOfSalePage = () => {
 
 			setIsLoadingHistory(true);
 			try {
-				const scopedRepairId = selectedRepairOrder ? Number(selectedRepairOrder.id) : undefined;
-				const response = await repairPosHistoryApi.listTransactions(scopedRepairId, 200);
-				const rows = Array.isArray((response.data as any)?.data?.data)
-					? (response.data as any).data.data
-					: [];
+				let rows: any[] = [];
+				if (mode === "retail") {
+					const response = await axios.get('/api/retail-pos/transactions', {
+						params: { per_page: 200 },
+						withCredentials: true,
+					});
+
+					rows = Array.isArray((response.data as any)?.data?.data)
+						? (response.data as any).data.data
+						: [];
+				} else {
+					const scopedRepairId = selectedRepairOrder ? Number(selectedRepairOrder.id) : undefined;
+					const response = await repairPosHistoryApi.listTransactions(scopedRepairId, 200);
+					rows = Array.isArray((response.data as any)?.data?.data)
+						? (response.data as any).data.data
+						: [];
+				}
 
 				const mappedHistory: ReceiptSnapshot[] = rows.map((row: any, index: number) => {
 					const receiptPayload = row?.receipt?.print_payload ?? {};
@@ -580,6 +758,9 @@ const PointOfSalePage = () => {
 					const items = Array.isArray(receiptPayload?.items)
 						? receiptPayload.items
 						: [];
+					const moduleType: "repair" | "retail" = String(row?.module_type || "").toLowerCase() === "retail"
+						? "retail"
+						: "repair";
 
 					const latestRefund = Array.isArray(row?.refunds) && row.refunds.length > 0
 						? row.refunds[0]
@@ -595,12 +776,14 @@ const PointOfSalePage = () => {
 						: methodRaw.includes("card")
 							? "card"
 							: "cash";
+					const dueType = parseDueType(row?.due_type ?? receiptPayload?.due_type);
 
 					return {
+						moduleType,
 						transactionId: Number(row?.id || 0),
-						repairRequestId: Number(row?.module_reference_id || 0),
+						repairRequestId: moduleType === "repair" ? Number(row?.module_reference_id || 0) : undefined,
 						customerType: String(row?.customer_type || "walk_in") === "registered" ? "registered" : "walk_in",
-						dueType: parseDueType(row?.due_type ?? receiptPayload?.due_type),
+						dueType: moduleType === "repair" ? dueType : null,
 						paidAmount: Number(row?.paid_amount ?? 0),
 						refundEntries: Array.isArray(row?.refunds)
 							? row.refunds.map((entry: any) => ({
@@ -678,7 +861,7 @@ const PointOfSalePage = () => {
 		return () => {
 			isMounted = false;
 		};
-	}, [cashierName, isHistoryModalOpen, selectedRepairOrder]);
+	}, [cashierName, isHistoryModalOpen, mode, selectedRepairOrder]);
 
 	useEffect(() => {
 		if (!isRefundQueueOpen) return;
@@ -878,6 +1061,304 @@ const PointOfSalePage = () => {
 				manualServiceIds: pkg.serviceIds,
 			},
 		]);
+	};
+
+	const getRetailSelectionForProduct = (product: RetailCatalogProduct): { size: string; color: string } => {
+		const existing = retailSelectionByProduct[product.id];
+		if (existing?.size && existing?.color) {
+			return existing;
+		}
+
+		const defaultVariant = product.variants.find((variant) => variant.stock > 0) ?? product.variants[0];
+		return {
+			size: defaultVariant?.size ?? "",
+			color: defaultVariant?.color ?? "",
+		};
+	};
+
+	const resolveRetailVariant = (product: RetailCatalogProduct, size: string, color: string): RetailProductVariant | null => {
+		const matched = product.variants.find((variant) => variant.size === size && variant.color === color);
+		return matched ?? null;
+	};
+
+	const updateRetailSelection = (productId: number, updates: Partial<{ size: string; color: string }>) => {
+		setRetailSelectionByProduct((prev) => ({
+			...prev,
+			[productId]: {
+				...(prev[productId] ?? { size: "", color: "" }),
+				...updates,
+			},
+		}));
+	};
+
+	const addRetailProductToCart = (product: RetailCatalogProduct) => {
+		const selection = getRetailSelectionForProduct(product);
+		const selectedVariant = resolveRetailVariant(product, selection.size, selection.color);
+		const nextVariantIdentity = getRetailVariantIdentity(product.id, selectedVariant?.id ?? null, selection.size, selection.color);
+		const stock = selectedVariant ? selectedVariant.stock : product.stock;
+		if (stock <= 0) return;
+
+		setRetailCart((prev) => {
+			const existing = prev.find((item) => getRetailVariantIdentity(item.productId, item.variantId, item.size, item.color) === nextVariantIdentity);
+			if (existing) {
+				return prev.map((item) => {
+					if (item.lineId !== existing.lineId) return item;
+					return {
+						...item,
+						qty: Math.min(item.qty + 1, item.stock),
+					};
+				});
+			}
+
+			return [
+				...prev,
+				{
+					lineId: createRetailLineId(),
+					productId: product.id,
+					name: product.name,
+					unitPrice: product.price,
+					qty: 1,
+					stock,
+					image: product.image ?? undefined,
+					variantId: selectedVariant?.id ?? null,
+					size: selection.size || undefined,
+					color: selection.color || undefined,
+				},
+			];
+		});
+	};
+
+	const updateRetailCartVariant = (lineId: string, nextSize: string, nextColor: string) => {
+		setRetailCart((prev) => {
+			return prev.map((item) => {
+				if (item.lineId !== lineId) return item;
+
+				const product = retailProducts.find((entry) => entry.id === item.productId);
+				if (!product) return item;
+
+				const matched = resolveRetailVariant(product, nextSize, nextColor);
+				if (!matched) return item;
+
+				const nextIdentity = getRetailVariantIdentity(item.productId, matched.id, nextSize, nextColor);
+				const duplicate = prev.find((entry) => entry.lineId !== lineId && getRetailVariantIdentity(entry.productId, entry.variantId, entry.size, entry.color) === nextIdentity);
+
+				if (duplicate) {
+					return {
+						...item,
+						qty: Math.min(item.qty + duplicate.qty, matched.stock),
+						variantId: matched.id,
+						size: nextSize,
+						color: nextColor,
+					};
+				}
+
+				return {
+					...item,
+					unitPrice: matched ? matched?.stock >= item.qty ? item.unitPrice : item.unitPrice : item.unitPrice,
+					variantId: matched.id,
+					size: nextSize,
+					color: nextColor,
+					stock: matched.stock,
+				};
+			});
+		});
+	};
+
+	const updateRetailCartQty = (lineId: string, nextQty: number) => {
+		setRetailCart((prev) => prev.map((item) => {
+			if (item.lineId !== lineId) return item;
+			return {
+				...item,
+				qty: Math.max(1, Math.min(nextQty, item.stock)),
+			};
+		}));
+	};
+
+	const removeRetailCartItem = (lineId: string) => {
+		setRetailCart((prev) => prev.filter((item) => item.lineId !== lineId));
+	};
+
+	const clearRetailTransaction = () => {
+		setRetailCart([]);
+		setRetailCustomerName("");
+		setRetailCustomerPhone("");
+		setRetailCustomerEmail("");
+		setRetailPaymentMethod("cash");
+		setRetailCashReceivedInput("");
+		setRetailProofReference("");
+		setRetailNotes("");
+	};
+
+	const retailSubtotal = useMemo(() => {
+		return retailCart.reduce((sum, item) => sum + item.qty * item.unitPrice, 0);
+	}, [retailCart]);
+
+	const retailBreakdown = useMemo(() => {
+		return buildRepairBreakdown({
+			finalTotal: retailSubtotal,
+			vatRate: VAT_RATE,
+			taxMode: "vat_inclusive",
+		});
+	}, [retailSubtotal]);
+	const retailVatAmount = useMemo(() => retailBreakdown.vatAmount, [retailBreakdown.vatAmount]);
+	const retailTotalDue = useMemo(() => retailBreakdown.grandTotal, [retailBreakdown.grandTotal]);
+	const retailCashReceived = useMemo(() => toSafeNumber(retailCashReceivedInput), [retailCashReceivedInput]);
+	const retailTenderedAmount = retailPaymentMethod === "cash" ? retailCashReceived : retailTotalDue;
+	const retailChangeValue = Math.max(retailTenderedAmount - retailTotalDue, 0);
+	const retailShortValue = Math.max(retailTotalDue - retailTenderedAmount, 0);
+	const retailHasInsufficientCash = retailPaymentMethod === "cash" && retailShortValue > 0;
+	const retailCanPay = !retailProcessingPayment && computeCanPay({
+		itemsCount: retailCart.length,
+		customerName: retailCustomerName,
+		customerPhone: retailCustomerPhone,
+		paymentMethod: retailPaymentMethod,
+		cashReceivedInput: retailCashReceivedInput,
+		hasInsufficientCash: retailHasInsufficientCash,
+		proofReference: retailProofReference,
+	});
+	const retailPayDisableReason = useMemo(() => {
+		if (retailProcessingPayment) return "Processing payment...";
+		if (retailCart.length === 0) return "Add at least one product before checkout.";
+		if (retailCustomerName.trim().length === 0) return "Customer name is required.";
+		if (retailPaymentMethod === "cash" && retailCashReceivedInput.trim().length === 0) return "Enter cash received for cash payments.";
+		if (retailPaymentMethod !== "cash" && retailProofReference.trim().length === 0) return "Enter proof reference for GCash/Card payments.";
+		if (retailHasInsufficientCash) return `Insufficient cash by ${formatPeso(retailShortValue)}.`;
+		return "";
+	}, [retailCart.length, retailCashReceivedInput, retailCustomerName, retailHasInsufficientCash, retailPaymentMethod, retailProcessingPayment, retailProofReference, retailShortValue]);
+
+	useEffect(() => {
+		if (retailPaymentMethod === "cash" && retailProofReference.length > 0) {
+			setRetailProofReference("");
+		}
+	}, [retailPaymentMethod, retailProofReference]);
+
+	useEffect(() => {
+		if (mode === "retail") {
+			setSelectedRepairOrder(null);
+		}
+	}, [mode]);
+
+	const canRequestRetailRefund = (receipt: ReceiptSnapshot): boolean => {
+		return false;
+	};
+
+	const handleRetailPay = async () => {
+		if (!retailCanPay) return;
+
+		setRetailProcessingPayment(true);
+		try {
+			const idempotencyKey = `retail-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+			const checkoutResponse = await axios.post(
+				"/api/retail-pos/checkout",
+				{
+					idempotency_key: idempotencyKey,
+					walk_in_name: retailCustomerName.trim(),
+					walk_in_phone: retailCustomerPhone.trim() || null,
+					walk_in_email: retailCustomerEmail.trim() || null,
+					items: retailCart.map((item) => ({
+						product_id: item.productId,
+						variant_id: item.variantId,
+						name: item.name,
+						quantity: item.qty,
+						unit_price: Number(item.unitPrice.toFixed(2)),
+					})),
+					payment_lines: [
+						{
+							tender_type: mapTenderType(retailPaymentMethod),
+							amount: Number(retailTotalDue.toFixed(2)),
+							provider_reference: retailPaymentMethod === "cash" ? null : retailProofReference.trim(),
+						},
+					],
+				},
+				{
+					headers: {
+						"X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "",
+						Accept: "application/json",
+					},
+					withCredentials: true,
+				},
+			);
+
+			const transactionId = Number(checkoutResponse?.data?.transaction_id || 0);
+			const transactionNo = String(checkoutResponse?.data?.transaction_no || "");
+
+			let receiptPayload: any = null;
+			if (transactionId > 0) {
+				try {
+					const receiptResponse = await axios.get(`/api/retail-pos/transactions/${transactionId}/receipt`, { withCredentials: true });
+					receiptPayload = receiptResponse?.data?.data ?? null;
+				} catch {
+					// Keep local snapshot fallback if receipt endpoint is temporarily unavailable.
+				}
+			}
+
+			const receiptNo = String(receiptPayload?.receipt_no || transactionNo || `POS-${Date.now()}`);
+			const issuedAt = String(receiptPayload?.issued_at || new Date().toISOString());
+			const receiptTotals = receiptPayload?.print_payload?.totals || {};
+
+			const snapshot: ReceiptSnapshot = {
+				moduleType: "retail",
+				transactionId: transactionId > 0 ? transactionId : undefined,
+				customerType: "walk_in",
+				dueType: null,
+				paidAmount: Number(receiptTotals?.paid ?? retailTotalDue),
+				refundEntries: [],
+				receiptNo,
+				createdAtISO: issuedAt,
+				dateLabel: new Date(issuedAt).toLocaleString("en-PH", {
+					weekday: "short",
+					month: "short",
+					day: "2-digit",
+					year: "numeric",
+					hour: "2-digit",
+					minute: "2-digit",
+				}),
+				cashierName,
+				customerName: retailCustomerName.trim(),
+				customerPhone: getPhoneDisplayForReceipt(retailPaymentMethod, retailCustomerPhone),
+				paymentReference: retailPaymentMethod === "cash" ? null : retailProofReference.trim(),
+				paymentMethod: retailPaymentMethod,
+				notes: retailNotes,
+				cashReceived: retailTenderedAmount,
+				subtotal: Number(receiptTotals?.subtotal ?? retailBreakdown.netSubtotal),
+				discount: Number(receiptTotals?.discount ?? 0),
+				vatRate: VAT_RATE,
+				vatAmount: Number(receiptTotals?.tax ?? retailVatAmount),
+				totalDue: Number(receiptTotals?.total ?? retailTotalDue),
+				change: retailChangeValue,
+				items: retailCart.map((item) => ({
+					id: item.lineId,
+					label: item.name,
+					qty: item.qty,
+					unitPrice: item.unitPrice,
+					source: "manual",
+				})),
+			};
+
+			setReceiptSnapshot(snapshot);
+			setReceiptHistory((prev) => [snapshot, ...prev]);
+			clearRetailTransaction();
+
+			await Swal.fire({
+				icon: "success",
+				title: "Retail payment successful!",
+				text: `Amount: ${formatPeso(snapshot.totalDue)}`,
+				confirmButtonColor: "#10b981",
+				confirmButtonText: "View Receipt",
+			});
+
+			setIsReceiptModalOpen(true);
+		} catch (error: any) {
+			const message = error?.response?.data?.message || "Retail checkout failed. Please verify payment details and try again.";
+			await Swal.fire({
+				icon: "error",
+				title: "Checkout Failed",
+				text: message,
+				confirmButtonColor: "#dc2626",
+			});
+		} finally {
+			setRetailProcessingPayment(false);
+		}
 	};
 
 	const isPackageSelected = (pkg: ServicePackageOption): boolean => {
@@ -1449,12 +1930,43 @@ const PointOfSalePage = () => {
 
 			<div className="space-y-6 p-4 md:p-6">
 				{!isOrderModalOpen && !isRefundQueueOpen && !isReceiptModalOpen && !isHistoryModalOpen && (
-				<div className="flex items-center justify-between">
+				<div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
 					<div>
 						<h1 className="text-2xl font-bold text-slate-900">Point of Sale</h1>
-						<p className="mt-1 text-sm text-slate-500">Manage repair cashier transactions and payment processing.</p>
+						<p className="mt-1 text-sm text-slate-500">
+						{mode === "repair"
+							? "Manage repair cashier transactions and payment processing."
+							: "Process retail walk-in sales with the same POS design system."
+						}
+					</p>
 					</div>
-					<div className="flex items-center gap-2">
+					<div className="flex flex-wrap items-center justify-start gap-2 xl:justify-end">
+						{allowedModes.includes("repair") && (
+							<button
+								type="button"
+								onClick={() => setMode("repair")}
+								className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+									mode === "repair"
+										? "bg-slate-900 text-white"
+										: "border border-slate-300 text-slate-700 hover:bg-slate-50"
+									}`}
+							>
+								Repair Mode
+							</button>
+						)}
+						{allowedModes.includes("retail") && (
+							<button
+								type="button"
+								onClick={() => setMode("retail")}
+								className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+									mode === "retail"
+										? "bg-slate-900 text-white"
+										: "border border-slate-300 text-slate-700 hover:bg-slate-50"
+									}`}
+							>
+								Retail Mode
+							</button>
+						)}
 						<button
 							type="button"
 							onClick={() => setIsRefundQueueOpen(true)}
@@ -1480,7 +1992,357 @@ const PointOfSalePage = () => {
 				</div>
 				)}
 
-				<div className="grid grid-cols-1 gap-6 xl:h-[calc(100vh-170px)] xl:grid-cols-12 xl:items-stretch">
+				{mode === "retail" ? (
+				<div data-testid="retail-pos-mode" className="grid grid-cols-1 gap-6 xl:h-[calc(100vh-170px)] xl:grid-cols-12 xl:items-stretch">
+					<section className="space-y-6 xl:col-span-8 xl:flex xl:h-full xl:flex-col xl:space-y-0 xl:gap-6">
+						<div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+							<h2 className="mb-2 text-base font-semibold text-slate-900">Customer Information</h2>
+							<p className="mb-3 text-xs text-slate-500">Capture walk-in details before checkout.</p>
+							<div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+								<input
+									title="Retail customer name"
+									value={retailCustomerName}
+									onChange={(event) => setRetailCustomerName(event.target.value)}
+									placeholder="Customer name"
+									className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500"
+								/>
+								<input
+									title="Retail customer phone"
+									type="text"
+									inputMode="numeric"
+									pattern="[0-9]*"
+									maxLength={11}
+									value={retailCustomerPhone}
+									onChange={(event) => setRetailCustomerPhone(toDigitsOnly(event.target.value).slice(0, 11))}
+									placeholder="Phone number"
+									className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500"
+								/>
+								<input
+									title="Retail customer email"
+									type="email"
+									value={retailCustomerEmail}
+									onChange={(event) => setRetailCustomerEmail(event.target.value)}
+									placeholder="Email (optional)"
+									className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500"
+								/>
+							</div>
+						</div>
+
+						<div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm xl:flex-1 xl:min-h-0 xl:flex xl:flex-col">
+							<div className="mb-4 flex items-center justify-between">
+								<div>
+									<h2 className="text-lg font-semibold text-slate-900">Retail Product Catalog</h2>
+									<p className="mt-1 text-xs text-slate-500">Tap products to add to current order.</p>
+								</div>
+								<button
+									type="button"
+									onClick={() => fetchRetailProducts(retailSearch)}
+									className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+								>
+									Refresh
+								</button>
+							</div>
+							<div className="mb-4 flex items-center gap-2">
+								<input
+									title="Search retail products"
+									value={retailSearch}
+									onChange={(event) => setRetailSearch(event.target.value)}
+									placeholder="Search product name"
+									className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500"
+								/>
+								<button
+									type="button"
+									onClick={() => fetchRetailProducts(retailSearch)}
+									className="rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
+								>
+									Search
+								</button>
+							</div>
+
+							{retailLoading ? (
+								<div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">Loading retail products...</div>
+							) : retailProducts.length === 0 ? (
+								<div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">No retail products found for this shop.</div>
+							) : (
+								<div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 xl:flex-1 xl:min-h-0 xl:content-start xl:overflow-y-auto xl:pr-1">
+									{retailProducts.map((product) => {
+										const isSelected = retailCart.some((entry) => entry.productId === product.id);
+										const inCartQty = retailCart
+											.filter((entry) => entry.productId === product.id)
+											.reduce((sum, entry) => sum + entry.qty, 0);
+										const selection = getRetailSelectionForProduct(product);
+										const selectedVariant = resolveRetailVariant(product, selection.size, selection.color);
+										const selectedStock = selectedVariant ? selectedVariant.stock : product.stock;
+										const sizeOptions = Array.from(new Set(product.variants.map((variant) => variant.size).filter((size) => size.length > 0)));
+										const colorOptions = Array.from(new Set(
+											product.variants
+												.filter((variant) => selection.size.length === 0 || variant.size === selection.size)
+												.map((variant) => variant.color)
+												.filter((color) => color.length > 0),
+										));
+
+										return (
+											<div
+												key={product.id}
+												className={`h-56 rounded-xl border p-4 text-left transition ${
+												selectedStock > 0
+													? "border-slate-200 bg-slate-50"
+													: "border-slate-200 bg-slate-100 opacity-80"
+											}`}
+											>
+												<div className="flex h-full flex-col">
+													<div className="flex items-start justify-between">
+														<span className="rounded-full bg-slate-200 px-2 py-1 text-[10px] font-semibold uppercase text-slate-600">
+															{selectedStock > 0 ? `${selectedStock} in stock` : "Out of stock"}
+														</span>
+														<span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${isSelected ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}>
+															{isSelected ? `In cart (${inCartQty})` : "Tap to add"}
+														</span>
+													</div>
+													<p className="mt-3 line-clamp-2 text-xl font-semibold text-slate-900">{product.name}</p>
+													{product.variants.length > 0 && (
+														<div className="mt-2 grid grid-cols-2 gap-2">
+															<select
+																title={`Select size for ${product.name}`}
+																value={selection.size}
+																onChange={(event) => {
+																	const nextSize = event.target.value;
+																	const firstColorForSize = product.variants.find((variant) => variant.size === nextSize && variant.stock > 0)?.color
+																		?? product.variants.find((variant) => variant.size === nextSize)?.color
+																		?? "";
+																	updateRetailSelection(product.id, { size: nextSize, color: firstColorForSize });
+																}}
+																className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700 outline-none focus:border-blue-500"
+															>
+																{sizeOptions.map((size) => (
+																		<option key={size} value={size}>{size}</option>
+																))}
+															</select>
+															<select
+																title={`Select color for ${product.name}`}
+																value={selection.color}
+																onChange={(event) => updateRetailSelection(product.id, { color: event.target.value })}
+																className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700 outline-none focus:border-blue-500"
+															>
+																{colorOptions.map((color) => (
+																		<option key={color} value={color}>{color}</option>
+																	))}
+															</select>
+															</div>
+													)}
+													<div className="mt-auto flex items-center justify-between border-t border-slate-200 pt-3">
+														<p className="text-2xl font-bold text-slate-900">{formatPeso(product.price)}</p>
+														<button
+															type="button"
+															onClick={() => addRetailProductToCart(product)}
+															disabled={selectedStock <= 0}
+															className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-300"
+														>
+															Add
+														</button>
+													</div>
+												</div>
+											</div>
+										);
+									})}
+								</div>
+							)}
+						</div>
+					</section>
+
+					<section className="space-y-6 xl:col-span-4 xl:h-full">
+						<div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm xl:h-full">
+							<div className="flex items-center justify-between">
+								<h2 className="text-lg font-semibold text-slate-900">Current Order</h2>
+								{retailCart.length > 0 && <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">{retailCart.length} item(s)</span>}
+							</div>
+
+							<div className="flex-1 min-h-0 space-y-2 overflow-y-auto pr-1">
+								{retailCart.length === 0 ? (
+									<div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-center text-xs text-slate-500">No products in order yet.</div>
+								) : (
+									retailCart.map((item) => (
+										<div key={item.lineId} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+											<div className="mb-2 flex items-start justify-between gap-2">
+												<p className="text-sm font-medium text-slate-900">{item.name}</p>
+												<button
+													type="button"
+													onClick={() => removeRetailCartItem(item.lineId)}
+													title="Remove product"
+													aria-label="Remove product"
+													className="rounded-md p-1 text-red-600 transition hover:bg-red-50 hover:text-red-500"
+												>
+													<svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+														<path d="M3 6h18" />
+														<path d="M8 6V4h8v2" />
+														<path d="M19 6l-1 14H6L5 6" />
+														<path d="M10 11v6" />
+														<path d="M14 11v6" />
+													</svg>
+												</button>
+											</div>
+											<div className="mb-2 grid grid-cols-2 gap-2">
+												{(() => {
+													const sourceProduct = retailProducts.find((entry) => entry.id === item.productId);
+													if (!sourceProduct || sourceProduct.variants.length === 0) return null;
+
+													const sizeOptions = Array.from(new Set(sourceProduct.variants.map((variant) => variant.size).filter((size) => size.length > 0)));
+													const selectedSize = item.size ?? sizeOptions[0] ?? "";
+													const colorOptions = Array.from(new Set(
+														sourceProduct.variants
+														.filter((variant) => variant.size === selectedSize)
+														.map((variant) => variant.color)
+														.filter((color) => color.length > 0),
+													));
+
+													return (
+														<>
+															<select
+																title={`Cart size for ${item.name}`}
+																value={selectedSize}
+																onChange={(event) => {
+																	const nextSize = event.target.value;
+																	const nextColor = sourceProduct.variants.find((variant) => variant.size === nextSize && variant.stock > 0)?.color
+																		?? sourceProduct.variants.find((variant) => variant.size === nextSize)?.color
+																		?? "";
+																	updateRetailCartVariant(item.lineId, selectedSize, event.target.value);
+																}}
+																className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700 outline-none focus:border-blue-500"
+															>
+																{sizeOptions.map((size) => (
+																		<option key={size} value={size}>{size}</option>
+																	))}
+															</select>
+															<select
+																title={`Cart color for ${item.name}`}
+																value={item.color ?? colorOptions[0] ?? ""}
+																onChange={(event) => updateRetailCartVariant(item.lineId, selectedSize, event.target.value)}
+																className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700 outline-none focus:border-blue-500"
+															>
+																{colorOptions.map((color) => (
+																		<option key={color} value={color}>{color}</option>
+																	))}
+																</select>
+															</>
+													);
+												})()}
+											</div>
+											<div className="mb-2 flex items-center justify-between text-xs text-slate-500">
+												<span>{formatPeso(item.unitPrice)} each</span>
+												<span>Stock: {item.stock}</span>
+											</div>
+											<div className="flex items-center justify-between">
+												<div className="flex items-center gap-2">
+													<button
+														type="button"
+														onClick={() => updateRetailCartQty(item.lineId, item.qty - 1)}
+														className="h-7 w-7 rounded-md border border-slate-300 text-slate-700 hover:bg-slate-100"
+													>
+														-
+													</button>
+													<span className="min-w-6 text-center text-sm font-semibold text-slate-900">{item.qty}</span>
+													<button
+														type="button"
+														onClick={() => updateRetailCartQty(item.lineId, item.qty + 1)}
+														disabled={item.qty >= item.stock}
+														className="h-7 w-7 rounded-md border border-slate-300 text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+													>
+														+
+													</button>
+												</div>
+												<p className="text-sm font-bold text-slate-900">{formatPeso(item.qty * item.unitPrice)}</p>
+											</div>
+										</div>
+									))
+								)}
+							</div>
+
+							<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Payment Method</label>
+							<select
+								title="Retail payment method"
+								value={retailPaymentMethod}
+								onChange={(event) => setRetailPaymentMethod(event.target.value as PaymentMethod)}
+								className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500"
+							>
+								<option value="cash">Cash</option>
+								<option value="gcash">GCash</option>
+								<option value="card">Card</option>
+							</select>
+
+							<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Cash Received</label>
+							<input
+								title="Retail cash received"
+								type="text"
+								inputMode="decimal"
+								value={retailCashReceivedInput}
+								onChange={(event) => setRetailCashReceivedInput(toCurrencyInput(event.target.value))}
+								disabled={retailPaymentMethod !== "cash"}
+								className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500 disabled:bg-slate-100"
+							/>
+
+							{retailPaymentMethod !== "cash" && (
+								<div>
+									<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Proof Reference</label>
+									<input
+										title="Retail proof reference"
+										value={retailProofReference}
+										onChange={(event) => setRetailProofReference(event.target.value)}
+										placeholder="Enter transaction/auth reference"
+										className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500"
+									/>
+								</div>
+							)}
+
+							<div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+								<div className="space-y-2 text-sm">
+									<div className="flex items-center justify-between text-slate-600"><span>Subtotal (Before VAT)</span><span>{formatPeso(retailBreakdown.netSubtotal)}</span></div>
+									<div className="flex items-center justify-between text-slate-600"><span>VAT ({VAT_RATE}%)</span><span>{formatPeso(retailVatAmount)}</span></div>
+									<div className="my-2 border-t border-dashed border-slate-300" />
+									<div className="flex items-center justify-between text-base font-bold text-slate-900"><span>Total Due</span><span>{formatPeso(retailTotalDue)}</span></div>
+									<div className="flex items-center justify-between text-slate-700"><span>Tendered</span><span>{formatPeso(retailTenderedAmount)}</span></div>
+									<div className="flex items-center justify-between text-green-700"><span>Change</span><span className="font-semibold">{formatPeso(retailChangeValue)}</span></div>
+								</div>
+							</div>
+
+							<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Notes</label>
+							<textarea
+								title="Retail notes"
+								value={retailNotes}
+								onChange={(event) => setRetailNotes(event.target.value)}
+								rows={2}
+								placeholder="Optional cashier notes"
+								className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500"
+							/>
+
+							{!retailCanPay && retailPayDisableReason.length > 0 && (
+								<div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+									{retailPayDisableReason}
+								</div>
+							)}
+
+							<div className="mt-auto grid grid-cols-2 gap-2">
+								<button
+									type="button"
+									onClick={handleRetailPay}
+									disabled={!retailCanPay}
+									className="rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-300"
+								>
+									{retailProcessingPayment ? "Processing..." : "Pay"}
+								</button>
+								<button
+									type="button"
+									onClick={clearRetailTransaction}
+									disabled={retailProcessingPayment}
+									className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+								>
+									Clear
+								</button>
+							</div>
+						</div>
+					</section>
+				</div>
+			) : (
+				<div data-testid="repair-pos-mode" className="grid grid-cols-1 gap-6 xl:h-[calc(100vh-170px)] xl:grid-cols-12 xl:items-stretch">
 					<section className="space-y-6 xl:col-span-8 xl:flex xl:h-full xl:flex-col xl:space-y-0 xl:gap-6">
 						<div className="grid grid-cols-1 gap-4">
 							<div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -1868,8 +2730,9 @@ const PointOfSalePage = () => {
 
 					</section>
 				</div>
+			)}
 
-				{isRefundQueueOpen && (
+			{isRefundQueueOpen && (
 					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
 						<div className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
 							<div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">

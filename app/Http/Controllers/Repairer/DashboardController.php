@@ -11,6 +11,8 @@ use Carbon\Carbon;
 
 class DashboardController extends Controller
 {
+    private const REPAIR_VAT_RATE_PERCENT = 12.0;
+
     /**
      * Get repair dashboard statistics and data
      */
@@ -144,42 +146,31 @@ class DashboardController extends Controller
             ->take(5)
             ->values();
 
-        // Revenue Data
-        $todayRevenue = RepairRequest::where('shop_owner_id', $shopOwnerId)
-            ->whereDate('created_at', $today)
-            ->whereNotNull('total')
-            ->sum('total');
-        
-        $todayOrders = RepairRequest::where('shop_owner_id', $shopOwnerId)
-            ->whereDate('created_at', $today)
-            ->count();
+        // Revenue Data (refund-adjusted, VAT-excluded net recognized revenue)
+        $todayRepairs = $allRepairs->filter(function ($repair) use ($today) {
+            return Carbon::parse($repair->created_at)->isSameDay($today);
+        });
+        $todayRevenue = round($todayRepairs->sum(fn (RepairRequest $repair) => $this->resolveRepairNetRevenueExVat($repair)), 2);
+        $todayOrders = $todayRepairs->count();
 
-        $thisWeekRevenue = RepairRequest::where('shop_owner_id', $shopOwnerId)
-            ->where('created_at', '>=', $weekStart)
-            ->whereNotNull('total')
-            ->sum('total');
-        
-        $thisWeekOrders = RepairRequest::where('shop_owner_id', $shopOwnerId)
-            ->where('created_at', '>=', $weekStart)
-            ->count();
+        $thisWeekRepairs = $allRepairs->filter(function ($repair) use ($weekStart) {
+            return Carbon::parse($repair->created_at)->gte($weekStart);
+        });
+        $thisWeekRevenue = round($thisWeekRepairs->sum(fn (RepairRequest $repair) => $this->resolveRepairNetRevenueExVat($repair)), 2);
+        $thisWeekOrders = $thisWeekRepairs->count();
 
-        $thisMonthRevenue = RepairRequest::where('shop_owner_id', $shopOwnerId)
-            ->where('created_at', '>=', $monthStart)
-            ->whereNotNull('total')
-            ->sum('total');
-        
-        $thisMonthOrders = RepairRequest::where('shop_owner_id', $shopOwnerId)
-            ->where('created_at', '>=', $monthStart)
-            ->count();
+        $thisMonthRepairs = $allRepairs->filter(function ($repair) use ($monthStart) {
+            return Carbon::parse($repair->created_at)->gte($monthStart);
+        });
+        $thisMonthRevenue = round($thisMonthRepairs->sum(fn (RepairRequest $repair) => $this->resolveRepairNetRevenueExVat($repair)), 2);
+        $thisMonthOrders = $thisMonthRepairs->count();
 
-        $lastMonthRevenue = RepairRequest::where('shop_owner_id', $shopOwnerId)
-            ->whereBetween('created_at', [$lastMonthStart, $lastMonthEnd])
-            ->whereNotNull('total')
-            ->sum('total');
-        
-        $lastMonthOrders = RepairRequest::where('shop_owner_id', $shopOwnerId)
-            ->whereBetween('created_at', [$lastMonthStart, $lastMonthEnd])
-            ->count();
+        $lastMonthRepairs = $allRepairs->filter(function ($repair) use ($lastMonthStart, $lastMonthEnd) {
+            $createdAt = Carbon::parse($repair->created_at);
+            return $createdAt->between($lastMonthStart, $lastMonthEnd);
+        });
+        $lastMonthRevenue = round($lastMonthRepairs->sum(fn (RepairRequest $repair) => $this->resolveRepairNetRevenueExVat($repair)), 2);
+        $lastMonthOrders = $lastMonthRepairs->count();
 
         $revenueRows = [
             [
@@ -277,5 +268,40 @@ class DashboardController extends Controller
                 'message' => $e->getMessage()
             ], 500);
         }
+    }
+
+    private function resolveRepairNetRevenueExVat(RepairRequest $repair): float
+    {
+        $grossOrderTotal = round((float) ($repair->final_total ?? $repair->total ?? 0), 2);
+        if ($grossOrderTotal <= 0) {
+            return 0.0;
+        }
+
+        $netOrderTotal = round($grossOrderTotal / (1 + (self::REPAIR_VAT_RATE_PERCENT / 100)), 2);
+
+        $recordedPaid = round((float) ($repair->total_paid_amount ?? 0), 2);
+        $recordedRefunded = round((float) ($repair->total_refunded_amount ?? 0), 2);
+        $paymentStatus = strtolower(trim((string) ($repair->payment_status ?? 'pending')));
+        $paymentPolicy = (string) ($repair->payment_policy ?? 'deposit_50');
+
+        $resolvedPaid = $recordedPaid;
+        if ($resolvedPaid <= 0) {
+            if ($paymentStatus === 'completed') {
+                $resolvedPaid = $grossOrderTotal;
+            } elseif (in_array($paymentStatus, ['paid', 'partially_paid'], true)) {
+                $resolvedPaid = $paymentPolicy === 'full_upfront'
+                    ? $grossOrderTotal
+                    : round($grossOrderTotal * 0.5, 2);
+            }
+        }
+
+        $netCollected = max(0.0, round($resolvedPaid - $recordedRefunded, 2));
+        if ($netCollected <= 0) {
+            return 0.0;
+        }
+
+        $realizedRatio = min(1, $netCollected / $grossOrderTotal);
+
+        return round($netOrderTotal * $realizedRatio, 2);
     }
 }
