@@ -532,6 +532,17 @@ const staffItems: NavItem[] = [
   {
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+        <rect x="3" y="5" width="18" height="14" rx="2" />
+        <path d="M7 10h10" />
+        <path d="M7 14h6" />
+      </svg>
+    ),
+    name: "Retail Point of Sale",
+    route: "erp.staff.point-of-sale",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
         <path d="M6 6h15l-1.5 9h-12z" />
         <circle cx="9" cy="19" r="1.5" />
         <circle cx="18" cy="19" r="1.5" />
@@ -761,6 +772,7 @@ const AppSidebar_ERP: React.FC = () => {
   // Map staff route names to static frontend paths (fallback when Ziggy route names are not available)
   const staffRouteMap: Record<string, string> = {
     "erp.staff.dashboard": "/erp/staff/dashboard",
+    "erp.staff.point-of-sale": "/erp/staff/point-of-sale",
     "erp.staff.job-orders": "/erp/staff/job-orders",
     "erp.staff.repair-dashboard": "/erp/staff/repair-dashboard",
     "erp.staff.job-orders-repair": "/erp/staff/job-orders-repair",
@@ -831,6 +843,7 @@ const AppSidebar_ERP: React.FC = () => {
     "erp.repairer.point-of-sale": "/erp/repairer/point-of-sale",
     // Staff section routes
     "erp.staff.dashboard": "/erp/staff/dashboard",
+    "erp.staff.point-of-sale": "/erp/staff/point-of-sale",
     "erp.staff.job-orders": "/erp/staff/job-orders",
     "erp.staff.repair-dashboard": "/erp/staff/repair-dashboard",
     "erp.staff.job-orders-repair": "/erp/staff/job-orders-repair",
@@ -1223,6 +1236,10 @@ const AppSidebar_ERP: React.FC = () => {
 
   // Check if user has Repairer role or repairer-specific permissions
   const hasRepairerAccess = () => {
+    if (!isRepairCapableBusiness) {
+      return false;
+    }
+
     if (normalizedRoles.includes('REPAIRER') || normalizedRole === 'REPAIRER') return true;
 
     const repairerPermissions = [
@@ -1393,6 +1410,16 @@ const AppSidebar_ERP: React.FC = () => {
       if (item.route === "erp.staff.dashboard") {
         return permissions.includes('access-staff-dashboard');
       }
+
+      // Staff Retail POS - retail capable businesses only
+      if (item.route === "erp.staff.point-of-sale") {
+        const hasRetailMode = normalizedBusinessType === 'retail' || normalizedBusinessType === 'both';
+        if (!hasRetailMode) {
+          return false;
+        }
+
+        return permissions.includes('access-staff-job-orders');
+      }
       
       // Job Orders - check simplified permission
       if (item.route === "erp.staff.job-orders") {
@@ -1424,7 +1451,7 @@ const AppSidebar_ERP: React.FC = () => {
     return repairItems.filter((item) => {
       // Point of Sale - use existing repairer permissions for frontend-first rollout
       if (item.route === "erp.repairer.point-of-sale") {
-        return permissions.includes('access-repair-job-orders') || permissions.includes('access-repairer-dashboard');
+        return isRepairCapableBusiness && (permissions.includes('access-repair-job-orders') || permissions.includes('access-repairer-dashboard'));
       }
 
       // Repair Dashboard - check simplified permission
