@@ -2,6 +2,11 @@ import React from "react";
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import PointOfSalePage from "../POS";
+import {
+	getAllowedPosModes,
+	normalizePosBusinessType,
+	resolveInitialPosMode,
+} from "../posBusinessType";
 
 const mockAxiosGet = vi.fn();
 const mockAxiosPost = vi.fn();
@@ -53,6 +58,22 @@ vi.mock("@inertiajs/react", () => ({
 }));
 
 describe("POS business-type mode gating", () => {
+	it("normalizes both variants to both", () => {
+		expect(normalizePosBusinessType("both (retail & repair)")).toBe("both");
+	});
+
+	it("returns allowed mode set for each business type", () => {
+		expect(getAllowedPosModes("retail")).toEqual(["retail"]);
+		expect(getAllowedPosModes("repair")).toEqual(["repair"]);
+		expect(getAllowedPosModes("both")).toEqual(["repair", "retail"]);
+	});
+
+	it("falls back to allowed mode when query mode is forbidden", () => {
+		expect(resolveInitialPosMode("retail", "repair")).toBe("retail");
+		expect(resolveInitialPosMode("repair", "retail")).toBe("repair");
+		expect(resolveInitialPosMode("both", "retail")).toBe("retail");
+	});
+
 	beforeEach(() => {
 		mockAxiosGet.mockReset();
 		mockAxiosPost.mockReset();
