@@ -805,6 +805,125 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
     }
 
     #[Test]
+    public function finance_execute_manual_for_shop_pos_repair_mixed_refund_also_refunds_gateway_leg(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'paymongo_secret_key' => 'sk_test_shop_pos_mixed_execute',
+        ]);
+        /** @var User $finance */
+        $finance = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        /** @var User $customer */
+        $customer = User::factory()->create();
+
+        Permission::findOrCreate('access-refund-approval', 'user');
+        $finance->givePermissionTo('access-refund-approval');
+
+        $repair = $this->createRepairRequest($shopOwner, $customer, [
+            'total' => 950,
+            'final_total' => 950,
+            'total_paid_amount' => 950,
+            'payment_status' => 'completed',
+            'paymongo_payment_id' => 'pay_shop_pos_mixed_dep_001',
+            'paymongo_payment_ids' => ['pay_shop_pos_mixed_dep_001'],
+            'pricing_breakdown' => ['tax_mode' => 'vat_inclusive'],
+        ]);
+
+        $source = PosTransaction::create([
+            'transaction_no' => 'POS-MIX-SHOP-POS-EXEC-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'due_type' => 'balance',
+            'subtotal' => 475,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 475,
+            'paid_amount' => 475,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        PosPaymentLine::create([
+            'pos_transaction_id' => $source->id,
+            'tender_type' => 'cash',
+            'amount' => 475,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $refund = PosRefund::create([
+            'refund_no' => 'RFD-MIX-SHOP-POS-EXEC-001',
+            'shop_owner_id' => $shopOwner->id,
+            'source_transaction_id' => $source->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'workflow_source' => 'shop_pos_repair',
+            'status' => 'approved',
+            'finance_status' => 'approved',
+            'shop_owner_status' => 'skipped',
+            'request_type' => 'full',
+            'requested_amount' => 950,
+            'approved_amount' => 950,
+            'reason_code' => 'mixed_payment_refund',
+            'requested_at' => now(),
+        ]);
+
+        $mockGateway = new class extends PaymongoRefundService {
+            public array $created = [];
+
+            public function getPaymentAmountInCentavos(string $secretKey, string $paymentId): ?int
+            {
+                if ($paymentId === 'pay_shop_pos_mixed_dep_001') {
+                    return 47500;
+                }
+
+                return null;
+            }
+
+            public function createRefund(string $secretKey, string $paymentId, int $amountInCentavos, string $reason = 'requested_by_customer'): array
+            {
+                $this->created[] = [
+                    'payment_id' => $paymentId,
+                    'amount' => $amountInCentavos,
+                ];
+
+                return [
+                    'success' => true,
+                    'message' => 'ok',
+                    'status' => 'succeeded',
+                    'refund_id' => 're_' . $paymentId,
+                ];
+            }
+        };
+
+        app()->instance(PaymongoRefundService::class, $mockGateway);
+
+        $response = $this->actingAs($finance, 'user')
+            ->postJson("/api/finance/repair-refunds/{$refund->id}/execute", [
+                'execution_mode' => 'manual',
+                'execution_channel' => 'gcash',
+                'execution_reference' => 'AUTH-SHOP-POS-MIX-001',
+                'execution_amount' => 475,
+                'execution_proof_urls' => ['https://proof.local/rfd-mix-shop-pos-001.png'],
+            ]);
+
+        $response->assertStatus(200)->assertJsonPath('success', true);
+
+        $updated = $refund->fresh();
+        $this->assertSame('succeeded', (string) $updated->status);
+        $this->assertSame('manual', (string) $updated->execution_mode);
+        $this->assertEqualsWithDelta(950.00, (float) $updated->approved_amount, 0.01);
+        $this->assertSame('re_pay_shop_pos_mixed_dep_001', (string) $updated->paymongo_refund_id);
+
+        $this->assertCount(1, $mockGateway->created);
+        $this->assertSame('pay_shop_pos_mixed_dep_001', (string) ($mockGateway->created[0]['payment_id'] ?? ''));
+        $this->assertSame(47500, (int) ($mockGateway->created[0]['amount'] ?? 0));
+    }
+
+    #[Test]
     public function finance_execute_gateway_clamps_amount_to_gateway_paid_cap(): void
     {
         $shopOwner = ShopOwner::factory()->approved()->create([

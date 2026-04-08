@@ -167,8 +167,9 @@ class RepairPosRefundService
 
     private function inferGatewayAmount(PosTransaction $source, float $requestedAmount, string $workflowSource = 'pos'): float
     {
+        $repairWideInference = in_array($workflowSource, ['online_myrepair', 'shop_pos_repair'], true);
         $repairPaymongoPaymentId = '';
-        if ($workflowSource === 'online_myrepair' && (string) $source->module_type === 'repair') {
+        if ($repairWideInference && (string) $source->module_type === 'repair') {
             $repairPaymongoPaymentId = trim((string) (RepairRequest::query()
                 ->whereKey((int) $source->module_reference_id)
                 ->value('paymongo_payment_id') ?? ''));
@@ -176,7 +177,7 @@ class RepairPosRefundService
 
         $sourceGatewayPaid = $this->sumTrustedGatewayPaid($source, $repairPaymongoPaymentId);
 
-        if ($workflowSource === 'online_myrepair' && (string) $source->module_type === 'repair') {
+        if ($repairWideInference && (string) $source->module_type === 'repair') {
             if ($sourceGatewayPaid > 0) {
                 return max(0.0, min($requestedAmount, round($sourceGatewayPaid, 2)));
             }
@@ -424,11 +425,39 @@ class RepairPosRefundService
             ]);
         }
 
-        if ($executionMode === 'gateway') {
-            return $this->executeViaGateway($refund, $source, $actorId, $approvedAmount, $executionNote);
+        $refund->loadMissing('legs');
+        $workflowSource = strtolower(trim((string) ($refund->workflow_source ?? 'pos')));
+
+        $gatewayLegAmount = round((float) collect($refund->legs)
+            ->filter(fn ($leg) => (string) ($leg->leg_type ?? '') === 'gateway')
+            ->sum(fn ($leg) => (float) ($leg->approved_amount ?? $leg->requested_amount ?? 0)), 2);
+
+        $posManualLegAmount = round((float) collect($refund->legs)
+            ->filter(fn ($leg) => (string) ($leg->leg_type ?? '') === 'pos_manual')
+            ->sum(fn ($leg) => (float) ($leg->approved_amount ?? $leg->requested_amount ?? 0)), 2);
+
+        $inferredGatewayAmount = 0.0;
+        if ($gatewayLegAmount <= 0 && $posManualLegAmount <= 0) {
+            $inferredGatewayAmount = $this->inferGatewayAmount($source, $approvedAmount, $workflowSource);
         }
 
-        $hasPosManualLeg = $refund->legs()->where('leg_type', 'pos_manual')->exists();
+        $resolvedGatewayAmount = round(max(0.0, min($approvedAmount, $gatewayLegAmount > 0 ? $gatewayLegAmount : $inferredGatewayAmount)), 2);
+        $resolvedPosManualAmount = round(max(0.0, $posManualLegAmount > 0 ? $posManualLegAmount : ($approvedAmount - $resolvedGatewayAmount)), 2);
+
+        $hasGatewayLeg = $resolvedGatewayAmount > 0;
+        $hasPosManualLeg = $resolvedPosManualAmount > 0;
+
+        if ($executionMode === 'gateway') {
+            return $this->executeViaGateway(
+                refund: $refund,
+                source: $source,
+                actorId: $actorId,
+                approvedAmount: $approvedAmount,
+                executionNote: $executionNote,
+                gatewayAmountOverride: $resolvedGatewayAmount > 0 ? $resolvedGatewayAmount : null,
+            );
+        }
+
         if ($executionMode === 'manual' && $hasPosManualLeg) {
             if (empty($executionContext['execution_channel'])) {
                 throw ValidationException::withMessages([
@@ -457,6 +486,19 @@ class RepairPosRefundService
                 : null,
             'execution_proof_urls' => $executionContext['execution_proof_urls'] ?? null,
         ]);
+
+        if ($executionMode === 'manual' && $hasGatewayLeg) {
+            return $this->executeViaGateway(
+                refund: $refund->fresh(),
+                source: $source,
+                actorId: $actorId,
+                approvedAmount: $approvedAmount,
+                executionNote: $executionNote,
+                gatewayAmountOverride: $resolvedGatewayAmount,
+                finalApprovedAmount: $hasPosManualLeg ? $approvedAmount : null,
+                finalExecutionMode: $hasPosManualLeg ? 'manual' : 'gateway',
+            );
+        }
 
         return $this->markRefundSucceeded($refund->fresh(), $source, $actorId, $approvedAmount, 'manual', $executionNote, null, null);
     }
@@ -550,7 +592,16 @@ class RepairPosRefundService
         return $refund;
     }
 
-    private function executeViaGateway(PosRefund $refund, PosTransaction $source, int $actorId, float $approvedAmount, ?string $executionNote): PosRefund
+    private function executeViaGateway(
+        PosRefund $refund,
+        PosTransaction $source,
+        int $actorId,
+        float $approvedAmount,
+        ?string $executionNote,
+        ?float $gatewayAmountOverride = null,
+        ?float $finalApprovedAmount = null,
+        ?string $finalExecutionMode = null,
+    ): PosRefund
     {
         $secretKeyCandidates = $this->resolvePaymongoSecretKeyCandidates((int) ($source->shop_owner_id ?? 0));
         $secretKey = $secretKeyCandidates[0] ?? '';
@@ -568,13 +619,19 @@ class RepairPosRefundService
             ->filter(fn ($leg) => (string) ($leg->leg_type ?? '') === 'gateway')
             ->sum(fn ($leg) => (float) ($leg->approved_amount ?? $leg->requested_amount ?? 0)), 2);
 
-        $targetGatewayAmount = $gatewayLegAmount > 0
-            ? min($approvedAmount, $gatewayLegAmount)
-            : $approvedAmount;
+        $targetGatewayAmount = $gatewayAmountOverride !== null
+            ? min($approvedAmount, max(0.0, round($gatewayAmountOverride, 2)))
+            : ($gatewayLegAmount > 0
+                ? min($approvedAmount, $gatewayLegAmount)
+                : $approvedAmount);
 
         if ($targetGatewayAmount <= 0) {
             return $this->markRefundFailed($refund, $actorId, 'Resolved gateway refund amount is invalid.', $executionNote);
         }
+
+        $persistedExecutionMode = in_array((string) $finalExecutionMode, ['manual', 'gateway'], true)
+            ? (string) $finalExecutionMode
+            : 'gateway';
 
         $remaining = round($targetGatewayAmount, 2);
         $allocations = [];
@@ -616,7 +673,7 @@ class RepairPosRefundService
 
         $refund->update([
             'status' => 'processing',
-            'execution_mode' => 'gateway',
+            'execution_mode' => $persistedExecutionMode,
             'execution_notes' => $effectiveExecutionNote ? Str::limit(trim($effectiveExecutionNote), 1000, '') : null,
             'paymongo_payment_id' => $allocations[0]['payment_reference'],
             'paymongo_payment_ids' => collect($allocations)->pluck('payment_reference')->unique()->values()->all(),
@@ -644,6 +701,7 @@ class RepairPosRefundService
                 if (!empty($submittedRefundIds) && $submittedAmount > 0) {
                     $refund->update([
                         'status' => 'processing',
+                        'execution_mode' => $persistedExecutionMode,
                         'paymongo_refund_id' => $submittedRefundIds[0],
                         'paymongo_refund_ids' => $submittedRefundIds,
                         'execution_notes' => Str::limit(trim($this->appendExecutionNote(
@@ -681,7 +739,7 @@ class RepairPosRefundService
                 'status' => 'processing',
                 'paymongo_refund_id' => $submittedRefundIds[0] ?? null,
                 'paymongo_refund_ids' => !empty($submittedRefundIds) ? $submittedRefundIds : null,
-                'execution_mode' => 'gateway',
+                'execution_mode' => $persistedExecutionMode,
                 'execution_notes' => $effectiveExecutionNote ? Str::limit(trim($effectiveExecutionNote), 1000, '') : null,
                 'executed_by' => $actorId,
                 'executed_at' => now(),
@@ -692,12 +750,16 @@ class RepairPosRefundService
             return $refund->fresh();
         }
 
+        $settledAmount = $finalApprovedAmount !== null
+            ? max($submittedAmount, round((float) $finalApprovedAmount, 2))
+            : $submittedAmount;
+
         $succeeded = $this->markRefundSucceeded(
             refund: $refund->fresh(),
             source: $source,
             actorId: $actorId,
-            approvedAmount: $submittedAmount,
-            executionMode: 'gateway',
+            approvedAmount: $settledAmount,
+            executionMode: $persistedExecutionMode,
             executionNote: $effectiveExecutionNote,
             paymongoPaymentId: $allocations[0]['payment_reference'] ?? null,
             paymongoRefundId: $submittedRefundIds[0] ?? null,
