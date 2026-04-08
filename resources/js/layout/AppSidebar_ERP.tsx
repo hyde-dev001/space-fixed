@@ -532,17 +532,6 @@ const staffItems: NavItem[] = [
   {
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
-        <rect x="3" y="5" width="18" height="14" rx="2" />
-        <path d="M7 10h10" />
-        <path d="M7 14h6" />
-      </svg>
-    ),
-    name: "Retail Point of Sale",
-    route: "erp.staff.point-of-sale",
-  },
-  {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
         <path d="M6 6h15l-1.5 9h-12z" />
         <circle cx="9" cy="19" r="1.5" />
         <circle cx="18" cy="19" r="1.5" />
@@ -586,17 +575,6 @@ const staffItems: NavItem[] = [
 ];
 
 const repairItems: NavItem[] = [
-  {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
-        <path d="M6 6h15l-1.4 7H8L6 4H3"></path>
-        <circle cx="9" cy="19" r="1.5"></circle>
-        <circle cx="18" cy="19" r="1.5"></circle>
-      </svg>
-    ),
-    name: "Point of Sale",
-    route: "erp.repairer.point-of-sale",
-  },
   {
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
@@ -677,6 +655,20 @@ const repairItems: NavItem[] = [
     ),
     name: "Repair Reject Approval",
     route: "erp.user.repair-reject-approval",
+  },
+];
+
+const cashierItems: NavItem[] = [
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+        <path d="M6 6h15l-1.4 7H8L6 4H3"></path>
+        <circle cx="9" cy="19" r="1.5"></circle>
+        <circle cx="18" cy="19" r="1.5"></circle>
+      </svg>
+    ),
+    name: "Point of Sale",
+    route: "erp.cashier.point-of-sale",
   },
 ];
 
@@ -772,7 +764,6 @@ const AppSidebar_ERP: React.FC = () => {
   // Map staff route names to static frontend paths (fallback when Ziggy route names are not available)
   const staffRouteMap: Record<string, string> = {
     "erp.staff.dashboard": "/erp/staff/dashboard",
-    "erp.staff.point-of-sale": "/erp/staff/point-of-sale",
     "erp.staff.job-orders": "/erp/staff/job-orders",
     "erp.staff.repair-dashboard": "/erp/staff/repair-dashboard",
     "erp.staff.job-orders-repair": "/erp/staff/job-orders-repair",
@@ -840,10 +831,10 @@ const AppSidebar_ERP: React.FC = () => {
     // User section routes
     "erp.user.repair-reject-approval": "/erp/user/repair-reject-approval",
     "erp.repairer.support": "/erp/staff/repairer-support",
+    "erp.cashier.point-of-sale": "/erp/cashier/point-of-sale",
     "erp.repairer.point-of-sale": "/erp/repairer/point-of-sale",
     // Staff section routes
     "erp.staff.dashboard": "/erp/staff/dashboard",
-    "erp.staff.point-of-sale": "/erp/staff/point-of-sale",
     "erp.staff.job-orders": "/erp/staff/job-orders",
     "erp.staff.repair-dashboard": "/erp/staff/repair-dashboard",
     "erp.staff.job-orders-repair": "/erp/staff/job-orders-repair",
@@ -991,7 +982,7 @@ const AppSidebar_ERP: React.FC = () => {
   };
 
   useEffect(() => {
-    const menuGroups: Array<{ menuType: "attendance" | "staff" | "repair" | "manager" | "hr" | "finance" | "crm" | "main" | "others"; items: NavItem[] }> = [];
+    const menuGroups: Array<{ menuType: "attendance" | "staff" | "repair" | "cashier" | "manager" | "hr" | "finance" | "crm" | "main" | "others"; items: NavItem[] }> = [];
 
     if (hasStaffAccess()) {
       menuGroups.push({ menuType: "staff", items: withAttendanceForSection("staff", [...getFilteredStaffItems(), myPayslipsItem]) });
@@ -999,6 +990,10 @@ const AppSidebar_ERP: React.FC = () => {
 
     if (hasRepairerAccess()) {
       menuGroups.push({ menuType: "repair", items: withAttendanceForSection("repair", [...getFilteredRepairItems(), myPayslipsItem]) });
+    }
+
+    if (hasCashierAccess()) {
+      menuGroups.push({ menuType: "cashier", items: [...cashierItems] });
     }
 
     if (hasManagerAccess()) {
@@ -1089,7 +1084,7 @@ const AppSidebar_ERP: React.FC = () => {
     }
   }, [openSubmenu]);
 
-  const handleSubmenuToggle = (index: number, menuType: "attendance" | "staff" | "repair" | "manager" | "hr" | "finance" | "crm" | "main" | "others") => {
+  const handleSubmenuToggle = (index: number, menuType: "attendance" | "staff" | "repair" | "cashier" | "manager" | "hr" | "finance" | "crm" | "main" | "others") => {
     const key = `${menuType}-${index}`;
     toggleSubmenu(key);
   };
@@ -1236,10 +1231,6 @@ const AppSidebar_ERP: React.FC = () => {
 
   // Check if user has Repairer role or repairer-specific permissions
   const hasRepairerAccess = () => {
-    if (!isRepairCapableBusiness) {
-      return false;
-    }
-
     if (normalizedRoles.includes('REPAIRER') || normalizedRole === 'REPAIRER') return true;
 
     const repairerPermissions = [
@@ -1252,6 +1243,10 @@ const AppSidebar_ERP: React.FC = () => {
     ];
 
     return repairerPermissions.some((perm) => permissions.includes(perm));
+  };
+
+  const hasCashierAccess = () => {
+    return permissions.includes('access-unified-pos');
   };
 
   // Filter manager items based on user permissions
@@ -1286,10 +1281,11 @@ const AppSidebar_ERP: React.FC = () => {
     });
   };
 
-  // Check if user has explicit inventory gate/page permissions
+  // Check if user has Inventory Manager role or explicit inventory gate permission
   // NOTE: 'access-inventory-overview' is intentionally excluded — it belongs to the Manager's
   // own overview page inside the Manager module, NOT the full Inventory module.
   const hasInventoryAccess = () => {
+    if (normalizedRoles.includes('INVENTORY MANAGER')) return true;
     if (permissions.includes('view-inventory')) return true;
     // Only individual inventory module page permissions grant sidebar access
     const inventoryPagePermissions = [
@@ -1410,16 +1406,6 @@ const AppSidebar_ERP: React.FC = () => {
       if (item.route === "erp.staff.dashboard") {
         return permissions.includes('access-staff-dashboard');
       }
-
-      // Staff Retail POS - retail capable businesses only
-      if (item.route === "erp.staff.point-of-sale") {
-        const hasRetailMode = normalizedBusinessType === 'retail' || normalizedBusinessType === 'both';
-        if (!hasRetailMode) {
-          return false;
-        }
-
-        return permissions.includes('access-staff-job-orders');
-      }
       
       // Job Orders - check simplified permission
       if (item.route === "erp.staff.job-orders") {
@@ -1449,11 +1435,6 @@ const AppSidebar_ERP: React.FC = () => {
   // Filter repair items based on user permissions
   const getFilteredRepairItems = () => {
     return repairItems.filter((item) => {
-      // Point of Sale - use existing repairer permissions for frontend-first rollout
-      if (item.route === "erp.repairer.point-of-sale") {
-        return isRepairCapableBusiness && (permissions.includes('access-repair-job-orders') || permissions.includes('access-repairer-dashboard'));
-      }
-
       // Repair Dashboard - check simplified permission
       if (item.route === "erp.staff.repair-dashboard") {
         return permissions.includes('access-repairer-dashboard');
@@ -1494,7 +1475,7 @@ const AppSidebar_ERP: React.FC = () => {
     });
   }
 
-  const renderMenuItems = (items: NavItem[], menuType: "attendance" | "staff" | "repair" | "manager" | "hr" | "finance" | "crm" | "main" | "others") => {
+  const renderMenuItems = (items: NavItem[], menuType: "attendance" | "staff" | "repair" | "cashier" | "manager" | "hr" | "finance" | "crm" | "main" | "others") => {
     return (
       <ul className="flex flex-col gap-4">
         {items.map((nav, index) => {
@@ -1714,6 +1695,28 @@ const AppSidebar_ERP: React.FC = () => {
                   )}
                 </h2>
                 {renderMenuItems(deduplicateItems(withAttendanceForSection("repair", [...getFilteredRepairItems(), myPayslipsItem])), "repair")}
+              </div>
+            </div>
+          </nav>
+        )}
+        {hasCashierAccess() && (
+          <nav className="mb-6">
+            <div className="flex flex-col gap-4">
+              <div>
+                <h2
+                  className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
+                    !isExpanded && !isHovered
+                      ? "lg:justify-center"
+                      : "justify-start"
+                  }`}
+                >
+                  {isExpanded || isHovered || isMobileOpen ? (
+                    "CASHIER"
+                  ) : (
+                    <HorizontaLDots className="size-6" />
+                  )}
+                </h2>
+                {renderMenuItems(deduplicateItems([...cashierItems]), "cashier")}
               </div>
             </div>
           </nav>
