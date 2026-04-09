@@ -516,17 +516,39 @@ class RepairPosRefundService
             return $refund;
         }
 
-        $secretKeyCandidates = $this->resolvePaymongoSecretKeyCandidates((int) ($source->shop_owner_id ?? 0));
-        if (empty($secretKeyCandidates)) {
-            return $refund;
-        }
-
+        $refund->loadMissing('legs');
         $refundIds = $this->normalizeGatewayRefundReferences(array_merge(
             is_array($refund->paymongo_refund_ids) ? $refund->paymongo_refund_ids : [],
             [(string) ($refund->paymongo_refund_id ?? '')],
         ));
 
         if (empty($refundIds)) {
+            if ($this->canAutoSettleManualProcessingRefund($refund)) {
+                $approvedAmount = round((float) ($refund->approved_amount ?? $refund->requested_amount), 2);
+                if ($approvedAmount > 0) {
+                    Log::info('Auto-settling manual processing repair refund without gateway references', [
+                        'refund_id' => (int) $refund->id,
+                        'source_transaction_id' => (int) $source->id,
+                    ]);
+
+                    return $this->markRefundSucceeded(
+                        refund: $refund->fresh(),
+                        source: $source,
+                        actorId: (int) ($refund->executed_by ?? 0),
+                        approvedAmount: $approvedAmount,
+                        executionMode: 'manual',
+                        executionNote: (string) ($refund->execution_notes ?: null),
+                        paymongoPaymentId: null,
+                        paymongoRefundId: null,
+                    );
+                }
+            }
+
+            return $refund;
+        }
+
+        $secretKeyCandidates = $this->resolvePaymongoSecretKeyCandidates((int) ($source->shop_owner_id ?? 0));
+        if (empty($secretKeyCandidates)) {
             return $refund;
         }
 
@@ -592,6 +614,48 @@ class RepairPosRefundService
         }
 
         return $refund;
+    }
+
+    private function canAutoSettleManualProcessingRefund(PosRefund $refund): bool
+    {
+        if (strtolower(trim((string) ($refund->execution_mode ?? 'manual'))) !== 'manual') {
+            return false;
+        }
+
+        if (!$refund->executed_at) {
+            return false;
+        }
+
+        $hasGatewayPaymentReference = !empty($this->normalizeGatewayReferences(array_merge(
+            is_array($refund->paymongo_payment_ids) ? $refund->paymongo_payment_ids : [],
+            [(string) ($refund->paymongo_payment_id ?? '')],
+        )));
+
+        if ($hasGatewayPaymentReference) {
+            return false;
+        }
+
+        $hasGatewayLeg = collect($refund->legs ?? [])->contains(function ($leg) {
+            if ((string) ($leg->leg_type ?? '') !== 'gateway') {
+                return false;
+            }
+
+            $approved = round((float) ($leg->approved_amount ?? 0), 2);
+            $requested = round((float) ($leg->requested_amount ?? 0), 2);
+
+            return $approved > 0 || $requested > 0;
+        });
+
+        if ($hasGatewayLeg) {
+            return false;
+        }
+
+        $executionProofUrls = is_array($refund->execution_proof_urls) ? $refund->execution_proof_urls : [];
+        $hasExecutionProof = !empty(array_filter($executionProofUrls, fn ($value) => trim((string) $value) !== ''));
+
+        return trim((string) ($refund->execution_channel ?? '')) !== ''
+            || trim((string) ($refund->execution_reference ?? '')) !== ''
+            || $hasExecutionProof;
     }
 
     private function executeViaGateway(

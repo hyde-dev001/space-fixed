@@ -2,7 +2,6 @@ import { Head, usePage } from "@inertiajs/react";
 import type { ComponentType } from "react";
 import { useState, useEffect } from "react";
 import Swal from "sweetalert2";
-import axios from "axios";
 import { hasPermission } from "../../../utils/permissions";
 
 // Types
@@ -431,6 +430,11 @@ export default function RepairPriceApproval() {
           confirmButtonColor: '#000000',
         });
 
+        // Move user to the list where the updated request now belongs.
+        setViewMode('recent');
+        setStatusFilter(canApplyNow ? 'approved' : 'owner_review');
+        setCurrentPage(1);
+
         // Refresh data to get updated list and metrics
         await fetchServices();
       } catch (error: any) {
@@ -572,7 +576,11 @@ export default function RepairPriceApproval() {
           {/* View Toggle */}
           <div className="flex gap-2 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
             <button
-              onClick={() => setViewMode('pending')}
+              onClick={() => {
+                setViewMode('pending');
+                setStatusFilter('all');
+                setCurrentPage(1);
+              }}
               className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                 viewMode === 'pending'
                   ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
@@ -582,7 +590,11 @@ export default function RepairPriceApproval() {
               Pending Review
             </button>
             <button
-              onClick={() => setViewMode('recent')}
+              onClick={() => {
+                setViewMode('recent');
+                setStatusFilter('all');
+                setCurrentPage(1);
+              }}
               className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                 viewMode === 'recent'
                   ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'

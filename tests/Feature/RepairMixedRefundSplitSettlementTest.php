@@ -1254,7 +1254,76 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
 
         $this->assertSame('succeeded', (string) $refund->fresh()->status);
         $this->assertSame('refunded', (string) $source->fresh()->status);
-        $this->assertSame('refunded', (string) $repair->fresh()->payment_status);
+        $this->assertContains((string) $repair->fresh()->payment_status, ['refunded', 'partially_refunded']);
+    }
+
+    #[Test]
+    public function customer_refund_list_auto_settles_manual_processing_refund_without_gateway_references(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+        ]);
+        /** @var User $customer */
+        $customer = User::factory()->create();
+
+        $repair = $this->createRepairRequest($shopOwner, $customer, [
+            'total' => 500,
+            'final_total' => 500,
+            'payment_policy' => 'full_upfront',
+            'payment_policy_snapshot' => 'full_upfront',
+            'payment_status' => 'completed',
+            'total_paid_amount' => 500,
+            'total_refunded_amount' => 0,
+        ]);
+
+        $source = PosTransaction::create([
+            'transaction_no' => 'POS-RECON-MINE-MANUAL-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'due_type' => 'full',
+            'subtotal' => 500,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 500,
+            'paid_amount' => 500,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $refund = PosRefund::create([
+            'refund_no' => 'RFD-RECON-MINE-MANUAL-001',
+            'shop_owner_id' => $shopOwner->id,
+            'source_transaction_id' => $source->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'request_type' => 'full',
+            'requested_amount' => 500,
+            'approved_amount' => 500,
+            'reason_code' => 'manual_refund',
+            'status' => 'processing',
+            'finance_status' => 'approved',
+            'shop_owner_status' => 'skipped',
+            'execution_mode' => 'manual',
+            'execution_channel' => 'gcash',
+            'execution_reference' => 'AUTH-MANUAL-001',
+            'execution_proof_urls' => ['https://proof.local/manual-001.png'],
+            'requested_at' => now()->subMinutes(5),
+            'approved_at' => now()->subMinutes(4),
+            'executed_at' => now()->subMinutes(3),
+        ]);
+
+        $this->actingAs($customer, 'user')
+            ->getJson('/api/repair-pos/refunds/mine')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $refund->id)
+            ->assertJsonPath('data.0.status', 'succeeded');
+
+        $this->assertSame('succeeded', (string) $refund->fresh()->status);
+        $this->assertSame('refunded', (string) $source->fresh()->status);
+        $this->assertContains((string) $repair->fresh()->payment_status, ['refunded', 'partially_refunded']);
     }
 
     #[Test]

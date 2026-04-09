@@ -21,6 +21,7 @@ use App\Events\LowStockAlert;
 use App\Services\RepairMaterialPlanningService;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use App\Services\NotificationService;
 use App\Services\PaymentSettlementService;
@@ -3619,6 +3620,25 @@ class RepairWorkflowController extends Controller
                     'message' => 'Insufficient stock for selected material.',
                     'available_quantity' => (int) $inventoryItem->available_quantity,
                 ], 422);
+            }
+
+            $dedupeFingerprint = hash('sha256', implode('|', [
+                (string) $shopOwnerId,
+                (string) $repairRequest->id,
+                (string) $inventoryItem->id,
+                (string) $quantityUsed,
+                strtolower($usageNotes),
+                (string) $actorUserId,
+            ]));
+
+            $dedupeKey = "repair_material_usage_log:{$shopOwnerId}:{$repairRequest->id}:{$dedupeFingerprint}";
+            $dedupeTtlSeconds = 6;
+
+            if (!Cache::add($dedupeKey, '1', now()->addSeconds($dedupeTtlSeconds))) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Duplicate material log detected. Please wait a few seconds before retrying.',
+                ], 429);
             }
 
             $usage = null;

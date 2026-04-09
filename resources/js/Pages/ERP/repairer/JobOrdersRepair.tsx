@@ -581,6 +581,8 @@ export default function JobOrdersRepair() {
   const [materialPlanItems, setMaterialPlanItems] = useState<RepairMaterialPlanItem[]>([]);
   const [availableMaterials, setAvailableMaterials] = useState<RepairMaterialInventoryItem[]>([]);
   const [isMaterialsLoading, setIsMaterialsLoading] = useState(false);
+  const [isLoggingMaterialUsage, setIsLoggingMaterialUsage] = useState(false);
+  const isLoggingMaterialUsageRef = useRef(false);
   const [materialForm, setMaterialForm] = useState({
     inventory_item_id: "",
     quantity_used: "",
@@ -998,6 +1000,7 @@ export default function JobOrdersRepair() {
 
   const handleLogMaterialUsage = async () => {
     if (!viewOrder) return;
+    if (isLoggingMaterialUsageRef.current) return;
 
     const workflowStatus = String(viewOrder.status ?? "").toLowerCase();
     const canLogByStatus = ["in-progress", "in_progress", "awaiting_parts"].includes(workflowStatus);
@@ -1031,6 +1034,9 @@ export default function JobOrdersRepair() {
       });
       return;
     }
+
+    isLoggingMaterialUsageRef.current = true;
+    setIsLoggingMaterialUsage(true);
 
     try {
       const response = await repairMaterialsApi.logRepairUsage(viewOrder.database_id, {
@@ -1070,6 +1076,9 @@ export default function JobOrdersRepair() {
         icon: "error",
         confirmButtonColor: "#2563eb",
       });
+    } finally {
+      isLoggingMaterialUsageRef.current = false;
+      setIsLoggingMaterialUsage(false);
     }
   };
 
@@ -3414,14 +3423,14 @@ export default function JobOrdersRepair() {
                       <button
                         type="button"
                         onClick={handleLogMaterialUsage}
-                        disabled={!canTrackMaterials(viewOrder.status)}
+                        disabled={!canTrackMaterials(viewOrder.status) || isLoggingMaterialUsage}
                         className={`px-3 py-2 text-sm rounded-lg font-medium transition-colors ${
-                          canTrackMaterials(viewOrder.status)
+                          canTrackMaterials(viewOrder.status) && !isLoggingMaterialUsage
                             ? 'bg-blue-600 hover:bg-blue-700 text-white'
                             : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                         }`}
                       >
-                        Log Usage
+                        {isLoggingMaterialUsage ? 'Logging...' : 'Log Usage'}
                       </button>
 
                       <button

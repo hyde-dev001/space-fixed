@@ -1666,8 +1666,12 @@ const MyRepairs: React.FC = () => {
     const activeRefund = latestRefundByRepairId[order.id];
     const refundStatus = String(activeRefund?.status || '').toLowerCase();
 
-    if (['requested', 'approved', 'processing'].includes(refundStatus)) {
+    if (['requested', 'processing'].includes(refundStatus)) {
       return 'text-blue-700';
+    }
+
+    if (refundStatus === 'approved') {
+      return 'text-indigo-700';
     }
 
     if (refundStatus === 'succeeded') {
@@ -1712,8 +1716,12 @@ const MyRepairs: React.FC = () => {
     const activeRefund = latestRefundByRepairId[order.id];
     const refundStatus = String(activeRefund?.status || '').toLowerCase();
 
-    if (['requested', 'approved', 'processing'].includes(refundStatus)) {
+    if (['requested', 'processing'].includes(refundStatus)) {
       return 'Refund Processing';
+    }
+
+    if (refundStatus === 'approved') {
+      return 'Approved for Refund Execution';
     }
 
     if (refundStatus === 'succeeded') {
