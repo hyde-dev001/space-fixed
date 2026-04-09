@@ -58,6 +58,14 @@ type POSItem = {
 	manualServiceIds?: number[];
 };
 
+type ReceiptLineItem = {
+	id: string;
+	label: string;
+	qty: number;
+	unitPrice: number;
+	orderItemId?: number;
+};
+
 type ReceiptRefundEntry = {
 	status: string;
 	approvedAmount: number;
@@ -91,7 +99,7 @@ type ReceiptSnapshot = {
 	vatAmount: number;
 	totalDue: number;
 	change: number;
-	items: POSItem[];
+	items: ReceiptLineItem[];
 };
 
 type RefundQueueItem = {
@@ -778,12 +786,61 @@ const PointOfSalePage = () => {
 				const mappedHistory: ReceiptSnapshot[] = rows.map((row: any, index: number) => {
 					const receiptPayload = row?.receipt?.print_payload ?? {};
 					const issuedAt = String(row?.receipt?.issued_at ?? row?.created_at ?? new Date().toISOString());
-					const items = Array.isArray(receiptPayload?.items)
-						? receiptPayload.items
-						: [];
 					const moduleType: "repair" | "retail" = String(row?.module_type || "").toLowerCase() === "retail"
 						? "retail"
 						: "repair";
+
+					const items: ReceiptLineItem[] = (() => {
+						if (moduleType === "retail" && Array.isArray(row?.source_order?.items)) {
+							const retailOrderItems = row.source_order.items
+								.map((orderItem: any) => {
+									const orderItemId = Number(orderItem?.id || 0);
+									const qty = Math.max(0, Number(orderItem?.quantity ?? 0));
+									const subtotal = Number(orderItem?.subtotal ?? 0);
+									const unitPrice = Number(orderItem?.price ?? 0) > 0
+										? Number(orderItem?.price ?? 0)
+										: Number((subtotal / Math.max(1, qty)).toFixed(2));
+
+									if (orderItemId <= 0 || qty <= 0 || unitPrice <= 0) {
+										return null;
+									}
+
+									const size = String(orderItem?.size ?? "").trim();
+									const color = String(orderItem?.color ?? "").trim();
+									const variantLabel = [size, color].filter(Boolean).join(" / ");
+
+									return {
+										id: `order-item-${orderItemId}`,
+										label: variantLabel !== ""
+											? `${String(orderItem?.product_name ?? "Item")} (${variantLabel})`
+											: String(orderItem?.product_name ?? "Item"),
+										qty,
+										unitPrice,
+										orderItemId,
+									};
+								})
+								.filter((item: ReceiptLineItem | null): item is ReceiptLineItem => item !== null);
+
+							if (retailOrderItems.length > 0) {
+								return retailOrderItems;
+							}
+						}
+
+						const payloadItems = Array.isArray(receiptPayload?.items) ? receiptPayload.items : [];
+
+						return payloadItems.map((item: any, itemIndex: number) => {
+							const qty = Math.max(0, Number(item?.qty ?? item?.quantity ?? 0));
+							const unitPrice = Number(item?.unitPrice ?? item?.unit_price ?? item?.price ?? 0);
+
+							return {
+								id: String(item?.id ?? `receipt-item-${index}-${itemIndex}`),
+								label: String(item?.label ?? item?.name ?? item?.product_name ?? "Item"),
+								qty,
+								unitPrice,
+								orderItemId: Number(item?.order_item_id || 0) > 0 ? Number(item?.order_item_id) : undefined,
+							};
+						});
+					})();
 
 					const latestRefund = Array.isArray(row?.refunds) && row.refunds.length > 0
 						? row.refunds[0]
@@ -841,7 +898,7 @@ const PointOfSalePage = () => {
 						vatAmount: Number(row?.tax_amount ?? receiptPayload?.totals?.tax ?? 0),
 						totalDue: Number(row?.total_amount ?? receiptPayload?.totals?.total ?? 0),
 						change: 0,
-						items: Array.isArray(items) ? items : [],
+						items,
 					};
 				});
 
@@ -1046,67 +1103,141 @@ const PointOfSalePage = () => {
 			return;
 		}
 
-		const requestTypeResult = await Swal.fire({
-			title: "Retail Refund Type",
-			text: `Refundable balance: ${formatPeso(refundableBalance)}`,
-			input: "radio",
-			inputOptions: {
-				full: "Full refund (remaining refundable amount)",
-				partial: "Partial refund (specific amount)",
-			},
-			inputValue: "partial",
-			showCancelButton: true,
-			confirmButtonText: "Continue",
-			cancelButtonText: "Cancel",
-			confirmButtonColor: "#2563eb",
-			cancelButtonColor: "#6b7280",
-			inputValidator: (value) => (!value ? "Please choose a refund type." : undefined),
+		const refundableItems = receipt.items.filter((item) => {
+			const orderItemId = Number(item.orderItemId ?? 0);
+			const qty = Math.max(0, Number(item.qty ?? 0));
+			const unitPrice = Math.max(0, Number(item.unitPrice ?? 0));
+			return orderItemId > 0 && qty > 0 && unitPrice > 0;
 		});
 
-		if (!requestTypeResult.isConfirmed || !requestTypeResult.value) {
+		if (refundableItems.length === 0) {
+			await Swal.fire({
+				icon: "warning",
+				title: "Refund Unavailable",
+				text: "No refundable line items were found for this retail receipt.",
+				confirmButtonColor: "#b45309",
+			});
 			return;
 		}
 
-		const requestType = String(requestTypeResult.value) === "full" ? "full" : "partial";
-		let requestedAmount = Number(refundableBalance.toFixed(2));
+		const escapeHtml = (value: string): string => value
+			.replace(/&/g, "&amp;")
+			.replace(/</g, "&lt;")
+			.replace(/>/g, "&gt;")
+			.replace(/\"/g, "&quot;")
+			.replace(/'/g, "&#39;");
 
-		if (requestType === "partial") {
-			const partialAmountResult = await Swal.fire({
-				title: "Enter Partial Refund Amount",
-				text: `Max allowed: ${formatPeso(refundableBalance)}`,
-				input: "number",
-				inputValue: refundableBalance.toFixed(2),
-				inputAttributes: {
-					min: "0.01",
-					max: refundableBalance.toFixed(2),
-					step: "0.01",
-				},
-				showCancelButton: true,
-				confirmButtonText: "Submit",
-				cancelButtonText: "Cancel",
-				confirmButtonColor: "#2563eb",
-				cancelButtonColor: "#6b7280",
-				preConfirm: (value) => {
-					const amount = Number(value);
-					if (!Number.isFinite(amount) || amount <= 0) {
-						Swal.showValidationMessage("Enter a valid refund amount.");
+		const pickerResult = await Swal.fire({
+			title: "Retail Item Refund",
+			html: `
+				<div style="text-align:left; display:flex; flex-direction:column; gap:10px; max-height:320px; overflow:auto; padding-right:4px;">
+					${refundableItems.map((item, index) => `
+						<div style="border:1px solid #e2e8f0; border-radius:10px; padding:10px;">
+							<div style="font-weight:600; margin-bottom:4px;">${escapeHtml(item.label)}</div>
+							<div style="font-size:12px; color:#64748b; margin-bottom:8px;">Purchased Qty: ${item.qty} | Unit: ${formatPeso(item.unitPrice)}</div>
+							<div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+								<div>
+									<label for="retail-refund-qty-${index}" style="display:block; font-size:12px; color:#475569; margin-bottom:4px;">Refund Qty</label>
+									<input id="retail-refund-qty-${index}" type="number" min="0" max="${item.qty}" step="1" value="0" style="width:100%; border:1px solid #cbd5e1; border-radius:8px; padding:8px;" />
+								</div>
+								<div>
+									<label for="retail-refund-disp-${index}" style="display:block; font-size:12px; color:#475569; margin-bottom:4px;">Inspection</label>
+									<select id="retail-refund-disp-${index}" style="width:100%; border:1px solid #cbd5e1; border-radius:8px; padding:8px;">
+										<option value="resellable">Resellable (restock)</option>
+										<option value="damaged">Damaged (write-off)</option>
+									</select>
+								</div>
+							</div>
+						</div>
+					`).join("")}
+				</div>
+				<p style="margin-top:10px; font-size:12px; color:#475569; text-align:left;">
+					Refund amount is auto-calculated from selected item qty.
+				</p>
+				<p style="margin-top:4px; font-size:12px; color:#475569; text-align:left;">
+					Remaining refundable balance: ${formatPeso(refundableBalance)}
+				</p>
+			`,
+			width: 760,
+			showCancelButton: true,
+			confirmButtonText: "Create Refund",
+			cancelButtonText: "Cancel",
+			confirmButtonColor: "#2563eb",
+			cancelButtonColor: "#6b7280",
+			focusConfirm: false,
+			preConfirm: () => {
+				const refundLines: Array<{ order_item_id: number; requested_qty: number; inspection_disposition: "resellable" | "damaged"; line_amount: number }> = [];
+
+				for (let index = 0; index < refundableItems.length; index += 1) {
+					const item = refundableItems[index];
+					const qtyInput = document.getElementById(`retail-refund-qty-${index}`) as HTMLInputElement | null;
+					const dispInput = document.getElementById(`retail-refund-disp-${index}`) as HTMLSelectElement | null;
+
+					const requestedQty = Math.floor(Number(qtyInput?.value ?? 0));
+					if (!Number.isFinite(requestedQty) || requestedQty < 0) {
+						Swal.showValidationMessage("Refund qty must be 0 or greater.");
 						return null;
 					}
 
-					if (amount >= refundableBalance) {
-						Swal.showValidationMessage("Partial amount must be less than refundable balance.");
+					if (requestedQty > item.qty) {
+						Swal.showValidationMessage("Refund qty cannot exceed purchased qty.");
 						return null;
 					}
 
-					return Number(amount.toFixed(2));
-				},
-			});
+					if (requestedQty === 0) {
+						continue;
+					}
 
-			if (!partialAmountResult.isConfirmed || !partialAmountResult.value) {
-				return;
-			}
+					const disposition = String(dispInput?.value || "resellable") === "damaged" ? "damaged" : "resellable";
+					refundLines.push({
+						order_item_id: Number(item.orderItemId),
+						requested_qty: requestedQty,
+						inspection_disposition: disposition,
+						line_amount: Number((requestedQty * item.unitPrice).toFixed(2)),
+					});
+				}
 
-			requestedAmount = Number(partialAmountResult.value);
+				if (refundLines.length === 0) {
+					Swal.showValidationMessage("Select at least one line with refund qty greater than zero.");
+					return null;
+				}
+
+				const requestedAmount = Number(refundLines.reduce((sum, line) => sum + line.line_amount, 0).toFixed(2));
+				if (requestedAmount <= 0) {
+					Swal.showValidationMessage("Computed refund amount must be greater than zero.");
+					return null;
+				}
+
+				if (requestedAmount > refundableBalance + 0.001) {
+					Swal.showValidationMessage("Computed refund amount exceeds refundable balance.");
+					return null;
+				}
+
+				const isFull = refundableItems.every((item) => {
+					const line = refundLines.find((entry) => entry.order_item_id === Number(item.orderItemId));
+					return line && line.requested_qty === item.qty;
+				});
+
+				return {
+					refund_lines: refundLines.map(({ line_amount, ...line }) => line),
+					requested_amount: requestedAmount,
+					request_type: isFull ? "full" : "partial",
+				};
+			},
+		});
+
+		if (!pickerResult.isConfirmed || !pickerResult.value) {
+			return;
+		}
+
+		const requestType = String((pickerResult.value as any).request_type || "partial") === "full" ? "full" : "partial";
+		const requestedAmount = Number((pickerResult.value as any).requested_amount ?? 0);
+		const refundLines = Array.isArray((pickerResult.value as any).refund_lines)
+			? (pickerResult.value as any).refund_lines
+			: [];
+
+		if (refundLines.length === 0 || requestedAmount <= 0) {
+			return;
 		}
 
 		let createdRefundId = 0;
@@ -1116,6 +1247,7 @@ const PointOfSalePage = () => {
 			`Receipt: ${receipt.receiptNo}`,
 			`Request type: ${requestType}`,
 			`Requested amount: ${requestedAmount.toFixed(2)}`,
+			`Requested lines: ${refundLines.length}`,
 		]
 			.filter(Boolean)
 			.join("\n");
@@ -1127,6 +1259,7 @@ const PointOfSalePage = () => {
 					source_transaction_id: transactionId,
 					request_type: requestType,
 					requested_amount: requestedAmount,
+					refund_lines: refundLines,
 					reason_code: "retail_pos_item_issue",
 					reason_notes: reasonNotes,
 				},

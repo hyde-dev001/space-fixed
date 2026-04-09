@@ -111,8 +111,7 @@ const MyOrders: React.FC = () => {
   const [refundReason, setRefundReason] = useState<string>('');
   const [refundMedia, setRefundMedia] = useState<File[]>([]);
   const [refundRequestType, setRefundRequestType] = useState<'full' | 'partial'>('full');
-  const [refundSelectedItemIds, setRefundSelectedItemIds] = useState<number[]>([]);
-  const [refundRequestedAmountInput, setRefundRequestedAmountInput] = useState<string>('');
+  const [refundLineQtyByItemId, setRefundLineQtyByItemId] = useState<Record<number, number>>({});
   const [refundMethod, setRefundMethod] = useState<string>('original_payment_method');
   const [refundNote, setRefundNote] = useState<string>('');
   const [refundOtherReasonNote, setRefundOtherReasonNote] = useState<string>('');
@@ -692,9 +691,8 @@ const MyOrders: React.FC = () => {
     const refundStageStatus = String(order.refund_stage?.status || '').toLowerCase();
     const paymentStatus = String(order.payment_status || '').toLowerCase();
 
-    const hasExistingRefundFlow = Boolean(order.refund_stage)
-      || ['processing', 'refunded'].includes(refundStatus)
-      || ['requested', 'pending_approval', 'processing', 'succeeded', 'rejected'].includes(refundStageStatus)
+    const hasExistingRefundFlow = ['processing', 'refunded'].includes(refundStatus)
+      || ['requested', 'pending_approval', 'approved', 'processing'].includes(refundStageStatus)
       || paymentStatus === 'refunded';
 
     if (hasExistingRefundFlow) {
@@ -827,7 +825,7 @@ const MyOrders: React.FC = () => {
       Swal.fire({
         icon: 'warning',
         title: 'Invalid Partial Refund Details',
-        text: 'For partial refunds, select at least one item and keep the amount less than the full order total.',
+        text: 'For partial refunds, choose at least one item qty and keep the auto-calculated amount less than the full order total.',
         confirmButtonColor: '#000000',
       });
       return;
@@ -857,8 +855,10 @@ const MyOrders: React.FC = () => {
       formData.append('request_type', refundRequestType);
       if (refundRequestType === 'partial') {
         formData.append('requested_amount', refundAmountToRequest.toFixed(2));
-        refundSelectedItemIds.forEach((itemId) => {
-          formData.append('requested_item_ids[]', String(itemId));
+        refundSelectedLines.forEach((line, index) => {
+          formData.append(`refund_lines[${index}][order_item_id]`, String(line.order_item_id));
+          formData.append(`refund_lines[${index}][requested_qty]`, String(line.requested_qty));
+          formData.append('requested_item_ids[]', String(line.order_item_id));
         });
       }
       formData.append('note', refundNote);
@@ -906,8 +906,7 @@ const MyOrders: React.FC = () => {
       setRefundReason('');
       setRefundMedia([]);
       setRefundRequestType('full');
-      setRefundSelectedItemIds([]);
-      setRefundRequestedAmountInput('');
+      setRefundLineQtyByItemId({});
       setRefundNote('');
       setRefundOtherReasonNote('');
 
@@ -1023,12 +1022,33 @@ const MyOrders: React.FC = () => {
     setRefundMedia(prev => prev.filter((_, i) => i !== index));
   };
 
-  const toggleRefundItemSelection = (itemId: number) => {
-    setRefundSelectedItemIds((prev) => (
-      prev.includes(itemId)
-        ? prev.filter((id) => id !== itemId)
-        : [...prev, itemId]
-    ));
+  const setRefundLineQty = (itemId: number, requestedQty: number, maxQty: number) => {
+    const safeMax = Math.max(0, Number(maxQty || 0));
+    const safeQty = Math.min(safeMax, Math.max(0, Number.isFinite(requestedQty) ? Math.floor(requestedQty) : 0));
+
+    setRefundLineQtyByItemId((prev) => ({
+      ...prev,
+      [itemId]: safeQty,
+    }));
+  };
+
+  const initializeRefundLineQty = (items: OrderItem[] = []) => {
+    const next: Record<number, number> = {};
+    items.forEach((item) => {
+      next[item.id] = 0;
+    });
+    setRefundLineQtyByItemId(next);
+  };
+
+  const resolveRefundItemUnitPrice = (item: OrderItem): number => {
+    const qty = Math.max(1, Number(item.quantity || 1));
+    const subtotal = parseAmount(item.subtotal);
+
+    if (subtotal > 0) {
+      return subtotal / qty;
+    }
+
+    return parseAmount(item.price);
   };
 
   const isVideoFile = (file: File) => {
@@ -1056,24 +1076,38 @@ const MyOrders: React.FC = () => {
   const actionButtonDisabledClass = 'border-gray-300 bg-gray-200 text-gray-500 cursor-not-allowed';
   const refundTargetOrder = refundOrderId ? orders.find((order) => order.id === refundOrderId) : null;
   const refundTargetOrderTotal = refundTargetOrder ? resolveOrderGrandTotal(refundTargetOrder) : 0;
-  const refundSelectedItems = refundTargetOrder
-    ? (refundTargetOrder.items || []).filter((item) => refundSelectedItemIds.includes(item.id))
+  const refundSelectedLines = refundTargetOrder
+    ? (refundTargetOrder.items || [])
+      .map((item) => {
+        const requestedQty = Math.max(0, Math.min(
+          Math.max(0, Number(item.quantity || 0)),
+          Math.floor(Number(refundLineQtyByItemId[item.id] || 0)),
+        ));
+
+        if (requestedQty <= 0) {
+          return null;
+        }
+
+        const unitPrice = resolveRefundItemUnitPrice(item);
+
+        return {
+          order_item_id: item.id,
+          requested_qty: requestedQty,
+          line_amount: unitPrice * requestedQty,
+        };
+      })
+      .filter((line): line is { order_item_id: number; requested_qty: number; line_amount: number } => line !== null)
     : [];
-  const refundSelectedItemsTotal = refundSelectedItems.reduce((sum, item) => sum + parseAmount(item.subtotal), 0);
-  const parsedRequestedPartialAmount = parseAmount(refundRequestedAmountInput);
-  const resolvedPartialRefundAmount = parsedRequestedPartialAmount > 0
-    ? parsedRequestedPartialAmount
-    : refundSelectedItemsTotal;
+  const refundSelectedItemsTotal = refundSelectedLines.reduce((sum, line) => sum + line.line_amount, 0);
   const refundAmountToRequest = refundRequestType === 'full'
     ? refundTargetOrderTotal
-    : Math.min(resolvedPartialRefundAmount, refundTargetOrderTotal);
+    : Math.min(refundSelectedItemsTotal, refundTargetOrderTotal);
   const isPartialRefundSelectionValid = refundRequestType !== 'partial'
     ? true
     : (
-      refundSelectedItemIds.length > 0
+      refundSelectedLines.length > 0
       && refundSelectedItemsTotal > 0
       && refundAmountToRequest > 0
-      && refundAmountToRequest <= refundSelectedItemsTotal
       && refundAmountToRequest < refundTargetOrderTotal
     );
   const isRefundSubmissionReady =
@@ -1653,8 +1687,7 @@ const MyOrders: React.FC = () => {
                                   setRefundReason('');
                                   setRefundMedia([]);
                                   setRefundRequestType('full');
-                                  setRefundSelectedItemIds((order.items || []).map((item) => item.id));
-                                  setRefundRequestedAmountInput('');
+                                  initializeRefundLineQty(order.items || []);
                                   setRefundNote('');
                                   setRefundOtherReasonNote('');
                                   setShowRefundModal(true);
@@ -1884,8 +1917,7 @@ const MyOrders: React.FC = () => {
                 setRefundReason('');
                 setRefundMedia([]);
                 setRefundRequestType('full');
-                setRefundSelectedItemIds([]);
-                setRefundRequestedAmountInput('');
+                setRefundLineQtyByItemId({});
                 setRefundNote('');
                 setRefundOtherReasonNote('');
               }}
@@ -1959,7 +1991,6 @@ const MyOrders: React.FC = () => {
                             checked={refundRequestType === 'full'}
                             onChange={() => {
                               setRefundRequestType('full');
-                              setRefundRequestedAmountInput('');
                             }}
                             className="form-radio h-4 w-4 text-black"
                           />
@@ -1976,16 +2007,15 @@ const MyOrders: React.FC = () => {
                             checked={refundRequestType === 'partial'}
                             onChange={() => {
                               setRefundRequestType('partial');
-                              if (refundTargetOrder && refundSelectedItemIds.length === 0) {
-                                setRefundSelectedItemIds((refundTargetOrder.items || []).map((item) => item.id));
+                              if (refundTargetOrder && Object.keys(refundLineQtyByItemId).length === 0) {
+                                initializeRefundLineQty(refundTargetOrder.items || []);
                               }
-                              setRefundRequestedAmountInput(refundSelectedItemsTotal > 0 ? refundSelectedItemsTotal.toFixed(2) : '');
                             }}
                             className="form-radio h-4 w-4 text-black"
                           />
                           <div>
                             <p className="text-sm font-semibold text-gray-900">Partial Refund</p>
-                            <p className="text-xs text-gray-500">Select affected item(s) and amount.</p>
+                            <p className="text-xs text-gray-500">Pick qty per item. Amount is auto-calculated.</p>
                           </div>
                         </label>
                       </div>
@@ -1993,25 +2023,41 @@ const MyOrders: React.FC = () => {
                       {refundRequestType === 'partial' && (
                         <div className="mt-4 space-y-4">
                           <div>
-                            <p className="mb-2 text-sm font-medium text-gray-700">Affected Item(s)</p>
+                            <p className="mb-2 text-sm font-medium text-gray-700">Affected Item Qty</p>
                             <div className="max-h-48 space-y-2 overflow-y-auto rounded-lg border border-gray-200 p-3">
-                              {(refundTargetOrder?.items || []).map((item) => (
-                                <label key={item.id} className="flex items-start justify-between gap-3 rounded-lg border border-gray-100 px-3 py-2">
-                                  <div className="flex items-start gap-3">
-                                    <input
-                                      type="checkbox"
-                                      checked={refundSelectedItemIds.includes(item.id)}
-                                      onChange={() => toggleRefundItemSelection(item.id)}
-                                      className="mt-1 h-4 w-4 rounded border-gray-300 text-black"
-                                    />
+                              {(refundTargetOrder?.items || []).map((item) => {
+                                const maxQty = Math.max(0, Number(item.quantity || 0));
+                                const selectedQty = Math.max(0, Math.min(maxQty, Math.floor(Number(refundLineQtyByItemId[item.id] || 0))));
+                                const unitPrice = resolveRefundItemUnitPrice(item);
+
+                                return (
+                                  <div key={item.id} className="flex items-start justify-between gap-3 rounded-lg border border-gray-100 px-3 py-2">
                                     <div>
                                       <p className="text-sm font-medium text-gray-900">{item.product_name}</p>
-                                      <p className="text-xs text-gray-500">Qty: {item.quantity}</p>
+                                      <p className="text-xs text-gray-500">Purchased Qty: {item.quantity}</p>
+                                      <p className="text-xs text-gray-500">Unit Price: {formatPeso(unitPrice)}</p>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                      <div className="w-24">
+                                        <label className="mb-1 block text-xs text-gray-500">Refund Qty</label>
+                                        <input
+                                          type="number"
+                                          min={0}
+                                          max={maxQty}
+                                          step={1}
+                                          value={selectedQty}
+                                          onChange={(event) => setRefundLineQty(item.id, Number(event.target.value), maxQty)}
+                                          aria-label={`Refund quantity for ${item.product_name}`}
+                                          title="Refund quantity"
+                                          placeholder="0"
+                                          className="w-full rounded-lg border border-gray-200 px-2 py-1 text-sm focus:border-gray-400 focus:outline-none"
+                                        />
+                                      </div>
+                                      <p className="w-28 text-right text-sm font-semibold text-gray-900">{formatPeso(unitPrice * selectedQty)}</p>
                                     </div>
                                   </div>
-                                  <p className="text-sm font-semibold text-gray-900">{formatPeso(item.subtotal)}</p>
-                                </label>
-                              ))}
+                                );
+                              })}
                             </div>
                           </div>
 
@@ -2026,20 +2072,13 @@ const MyOrders: React.FC = () => {
                             </div>
                             <div>
                               <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Refund Amount (Partial)
+                                Refund Amount (Auto)
                               </label>
-                              <input
-                                type="number"
-                                min="0.01"
-                                step="0.01"
-                                max={refundSelectedItemsTotal > 0 ? refundSelectedItemsTotal : undefined}
-                                value={refundRequestedAmountInput}
-                                onChange={(event) => setRefundRequestedAmountInput(event.target.value)}
-                                placeholder={refundSelectedItemsTotal > 0 ? refundSelectedItemsTotal.toFixed(2) : '0.00'}
-                                className="w-full rounded-lg border-2 border-gray-200 px-3 py-2 text-sm focus:border-gray-400 focus:outline-none"
-                              />
+                              <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-900">
+                                {formatPeso(refundAmountToRequest)}
+                              </div>
                               <p className="mt-1 text-xs text-gray-500">
-                                Must be greater than 0 and less than full order total.
+                                Computed from selected qty per line.
                               </p>
                             </div>
                           </div>
@@ -2200,8 +2239,7 @@ const MyOrders: React.FC = () => {
                         setRefundReason('');
                         setRefundMedia([]);
                         setRefundRequestType('full');
-                        setRefundSelectedItemIds([]);
-                        setRefundRequestedAmountInput('');
+                        setRefundLineQtyByItemId({});
                         setRefundNote('');
                         setRefundOtherReasonNote('');
                       }}
@@ -2236,7 +2274,7 @@ const MyOrders: React.FC = () => {
                           Swal.fire({
                             icon: 'warning',
                             title: 'Invalid Partial Refund Details',
-                            text: 'Select at least one item and use an amount less than full order total.',
+                            text: 'Select at least one item qty and keep the auto-calculated amount below the full order total.',
                             confirmButtonColor: '#000000',
                           });
                           return;
