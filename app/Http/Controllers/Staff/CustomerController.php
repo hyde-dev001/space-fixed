@@ -30,31 +30,48 @@ class CustomerController extends Controller
     {
         $identityExpr = $this->customerIdentityExpression();
 
-        $query = Order::query()
+        $baseQuery = Order::query()
             ->leftJoin('users', 'orders.customer_id', '=', 'users.id')
             ->where('orders.shop_owner_id', $shopOwnerId)
             ->select([
                 DB::raw("{$identityExpr} as customer_identity"),
-                DB::raw('MAX(orders.customer_id) as customer_id'),
-                DB::raw("COALESCE(MAX(NULLIF(users.name, '')), MAX(NULLIF(orders.customer_name, '')), 'Guest Customer') as name"),
-                DB::raw("COALESCE(MAX(NULLIF(users.email, '')), MAX(NULLIF(orders.customer_email, '')), 'N/A') as email"),
-                DB::raw("COALESCE(MAX(NULLIF(users.phone, '')), MAX(NULLIF(orders.customer_phone, '')), 'N/A') as phone"),
-                DB::raw("COALESCE(MAX(NULLIF(users.address, '')), MAX(NULLIF(orders.customer_address, '')), 'N/A') as address"),
-                DB::raw('COUNT(DISTINCT orders.id) as total_orders'),
-                DB::raw('COALESCE(SUM(orders.total_amount), 0) as total_spent'),
-                DB::raw('MAX(orders.created_at) as last_order_date'),
-                DB::raw('MIN(COALESCE(users.created_at, orders.created_at)) as first_seen_date'),
-            ])
-            ->groupBy(DB::raw($identityExpr));
+                'orders.id as order_id',
+                'orders.customer_id',
+                'orders.customer_name',
+                'orders.customer_email',
+                'orders.customer_phone',
+                'orders.customer_address',
+                'orders.total_amount',
+                'orders.created_at as order_created_at',
+                'users.name as user_name',
+                'users.email as user_email',
+                'users.phone as user_phone',
+                'users.address as user_address',
+                'users.created_at as user_created_at',
+            ]);
 
         if ($from) {
-            $query->where('orders.created_at', '>=', $from->copy()->startOfDay());
+            $baseQuery->where('orders.created_at', '>=', $from->copy()->startOfDay());
         }
         if ($to) {
-            $query->where('orders.created_at', '<=', $to->copy()->endOfDay());
+            $baseQuery->where('orders.created_at', '<=', $to->copy()->endOfDay());
         }
 
-        return $query;
+        return DB::query()
+            ->fromSub($baseQuery, 'customer_orders')
+            ->select([
+                'customer_identity',
+                DB::raw('MAX(customer_id) as customer_id'),
+                DB::raw("COALESCE(MAX(NULLIF(user_name, '')), MAX(NULLIF(customer_name, '')), 'Guest Customer') as name"),
+                DB::raw("COALESCE(MAX(NULLIF(user_email, '')), MAX(NULLIF(customer_email, '')), 'N/A') as email"),
+                DB::raw("COALESCE(MAX(NULLIF(user_phone, '')), MAX(NULLIF(customer_phone, '')), 'N/A') as phone"),
+                DB::raw("COALESCE(MAX(NULLIF(user_address, '')), MAX(NULLIF(customer_address, '')), 'N/A') as address"),
+                DB::raw('COUNT(DISTINCT order_id) as total_orders'),
+                DB::raw('COALESCE(SUM(total_amount), 0) as total_spent'),
+                DB::raw('MAX(order_created_at) as last_order_date'),
+                DB::raw('MIN(COALESCE(user_created_at, order_created_at)) as first_seen_date'),
+            ])
+            ->groupBy('customer_identity');
     }
 
     private function mapCustomerAggregate($customer): array
