@@ -144,7 +144,11 @@ class RetailPosController extends Controller
         $validated = $request->validate([
             'source_transaction_id' => ['required', 'integer', 'exists:pos_transactions,id'],
             'request_type' => ['required', 'string', 'in:full,partial'],
-            'requested_amount' => ['required', 'numeric', 'min:0.01'],
+            'requested_amount' => ['nullable', 'numeric', 'min:0.01'],
+            'refund_lines' => ['nullable', 'array', 'min:1'],
+            'refund_lines.*.order_item_id' => ['required', 'integer', 'min:1'],
+            'refund_lines.*.requested_qty' => ['required', 'integer', 'min:1'],
+            'refund_lines.*.inspection_disposition' => ['required', 'string', 'in:resellable,damaged'],
             'reason_code' => ['required', 'string', 'max:100'],
             'reason_notes' => ['nullable', 'string', 'max:2000'],
         ]);

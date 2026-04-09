@@ -813,6 +813,23 @@ class OrderRefundService
         ]);
 
         if ($refundStatus === 'succeeded') {
+            if (Schema::hasTable('order_refund_items')) {
+                try {
+                    $refund->loadMissing('items');
+                    /** @var RefundInventoryDispositionService $inventoryDisposition */
+                    $inventoryDisposition = app(RefundInventoryDispositionService::class);
+                    foreach ($refund->items as $itemLine) {
+                        $inventoryDisposition->applyOrderLine($itemLine);
+                    }
+                } catch (\Throwable $lineApplyError) {
+                    Log::warning('Order refund succeeded but line-level inventory disposition failed', [
+                        'refund_id' => (int) ($refund->id ?? 0),
+                        'order_id' => (int) ($order->id ?? 0),
+                        'error' => $lineApplyError->getMessage(),
+                    ]);
+                }
+            }
+
             $this->paymentSettlementService->settleOrderRefunded(
                 order: $order,
                 refundId: $refund->paymongo_refund_id,

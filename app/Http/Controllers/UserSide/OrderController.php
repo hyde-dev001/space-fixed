@@ -428,6 +428,9 @@ class OrderController extends Controller
                 'requested_amount' => 'nullable|numeric|min:0.01',
                 'requested_item_ids' => 'nullable|array|min:1',
                 'requested_item_ids.*' => 'integer|min:1',
+                'refund_lines' => 'nullable|array|min:1',
+                'refund_lines.*.order_item_id' => 'required|integer|min:1',
+                'refund_lines.*.requested_qty' => 'required|integer|min:1',
                 'note' => 'nullable|string|max:1000',
                 'other_reason_note' => 'nullable|string|max:1000',
                 'media' => 'required|array|size:6',
@@ -564,10 +567,93 @@ class OrderController extends Controller
                 ->values()
                 ->all();
 
+            $requestedRefundLines = collect((array) ($validated['refund_lines'] ?? []))
+                ->map(function ($line) {
+                    return [
+                        'order_item_id' => (int) ($line['order_item_id'] ?? 0),
+                        'requested_qty' => (int) ($line['requested_qty'] ?? 0),
+                    ];
+                })
+                ->filter(fn (array $line) => $line['order_item_id'] > 0 && $line['requested_qty'] > 0)
+                ->values();
+
             $selectedItemsAmount = 0.0;
             $selectedItemsSummary = [];
+            $normalizedRefundLines = [];
+            $orderItemsById = $order->items->keyBy('id');
+
+            if ($requestedRefundLines->isNotEmpty()) {
+                $invalidLineItems = $requestedRefundLines
+                    ->pluck('order_item_id')
+                    ->filter(fn (int $itemId) => !$orderItemsById->has($itemId))
+                    ->values()
+                    ->all();
+
+                if (!empty($invalidLineItems)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'One or more refund lines reference an invalid order item.',
+                    ], 422);
+                }
+
+                foreach ($requestedRefundLines as $line) {
+                    $orderItem = $orderItemsById->get($line['order_item_id']);
+                    if (!$orderItem) {
+                        continue;
+                    }
+
+                    $requestedQty = (int) ($line['requested_qty'] ?? 0);
+                    $maxQty = max(1, (int) ($orderItem->quantity ?? 1));
+                    if ($requestedQty > $maxQty) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Requested quantity exceeds ordered quantity for one or more lines.',
+                        ], 422);
+                    }
+
+                    $unitPrice = (float) ($orderItem->price ?? 0);
+                    if ($unitPrice <= 0) {
+                        $itemQty = max(1, (int) ($orderItem->quantity ?? 1));
+                        $unitPrice = round((float) ($orderItem->subtotal ?? 0) / $itemQty, 2);
+                    }
+
+                    $lineAmount = round($unitPrice * $requestedQty, 2);
+                    $selectedItemsAmount += $lineAmount;
+                    $selectedItemsSummary[] = sprintf(
+                        '%s x%d (%.2f)',
+                        (string) ($orderItem->product_name ?? 'Item'),
+                        $requestedQty,
+                        $lineAmount
+                    );
+
+                    $resolvedVariantId = null;
+                    $size = trim((string) ($orderItem->size ?? ''));
+                    $color = trim((string) ($orderItem->color ?? ''));
+                    if ((int) ($orderItem->product_id ?? 0) > 0 && $size !== '' && $color !== '') {
+                        $resolvedVariantId = ProductVariant::query()
+                            ->where('product_id', (int) $orderItem->product_id)
+                            ->where('size', $size)
+                            ->whereRaw('LOWER(color) = ?', [strtolower($color)])
+                            ->value('id');
+                    }
+
+                    $normalizedRefundLines[] = [
+                        'order_item_id' => (int) $orderItem->id,
+                        'product_id' => (int) ($orderItem->product_id ?? 0),
+                        'product_variant_id' => $resolvedVariantId ? (int) $resolvedVariantId : null,
+                        'requested_qty' => $requestedQty,
+                        'approved_qty' => $requestedQty,
+                        'unit_price_snapshot' => round($unitPrice, 2),
+                        'line_amount' => $lineAmount,
+                        'inspection_disposition' => 'pending',
+                        'inventory_action' => 'pending',
+                    ];
+                }
+
+                $selectedItemsAmount = round($selectedItemsAmount, 2);
+            }
+
             if (!empty($requestedItemIds)) {
-                $orderItemsById = $order->items->keyBy('id');
                 $invalidItemIds = array_values(array_filter(
                     $requestedItemIds,
                     fn (int $itemId) => !$orderItemsById->has($itemId)
@@ -605,17 +691,22 @@ class OrderController extends Controller
 
             $amount = round($fullRefundAmount, 2);
             if ($requestType === 'partial') {
+                $usesLinePayload = !empty($normalizedRefundLines);
                 $hasRequestedAmount = array_key_exists('requested_amount', $validated) && $validated['requested_amount'] !== null;
-                if (!$hasRequestedAmount && empty($requestedItemIds)) {
+                if (!$hasRequestedAmount && empty($requestedItemIds) && !$usesLinePayload) {
                     return response()->json([
                         'success' => false,
                         'message' => 'Partial refund requires a requested amount or selected item(s).',
                     ], 422);
                 }
 
-                $amount = $hasRequestedAmount
-                    ? round((float) $validated['requested_amount'], 2)
-                    : $selectedItemsAmount;
+                if ($usesLinePayload) {
+                    $amount = $selectedItemsAmount;
+                } else {
+                    $amount = $hasRequestedAmount
+                        ? round((float) $validated['requested_amount'], 2)
+                        : $selectedItemsAmount;
+                }
 
                 if ($amount <= 0) {
                     return response()->json([
@@ -624,7 +715,7 @@ class OrderController extends Controller
                     ], 422);
                 }
 
-                if (!empty($requestedItemIds) && $selectedItemsAmount > 0 && $amount > $selectedItemsAmount) {
+                if (!$usesLinePayload && !empty($requestedItemIds) && $selectedItemsAmount > 0 && $amount > $selectedItemsAmount) {
                     return response()->json([
                         'success' => false,
                         'message' => sprintf('Requested amount exceeds selected item total (%.2f).', $selectedItemsAmount),
@@ -657,6 +748,10 @@ class OrderController extends Controller
                     $scopeNotes[] = 'Selected item IDs: ' . implode(', ', $requestedItemIds);
                     $scopeNotes[] = 'Selected items: ' . implode('; ', $selectedItemsSummary);
                 }
+
+                if (!empty($normalizedRefundLines) && !empty($selectedItemsSummary)) {
+                    $scopeNotes[] = 'Refund lines: ' . implode('; ', $selectedItemsSummary);
+                }
             }
 
             $reasonNote = trim(implode("\n\n", array_filter([$baseReasonNote, implode("\n", $scopeNotes)])));
@@ -681,6 +776,18 @@ class OrderController extends Controller
             ];
 
             $refundRequest = $this->createRefundRequestWithCompatibilityFallback($refundPayload, (int) $order->id);
+
+            if (!empty($normalizedRefundLines) && Schema::hasTable('order_refund_items')) {
+                try {
+                    $refundRequest->items()->createMany($normalizedRefundLines);
+                } catch (\Throwable $linePersistError) {
+                    Log::warning('Refund line payload accepted but line persistence failed', [
+                        'order_id' => (int) $order->id,
+                        'refund_id' => (int) ($refundRequest->id ?? 0),
+                        'error' => $linePersistError->getMessage(),
+                    ]);
+                }
+            }
 
             try {
                 $this->orderRefundService->notifyRefundApprovalRequested($refundRequest);
