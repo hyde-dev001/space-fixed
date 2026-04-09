@@ -114,6 +114,11 @@ class ProductController extends Controller
         return implode(' + ', array_values($normalized));
     }
 
+    private function normalizeColorIdentity(string $colorName): string
+    {
+        return strtolower($this->canonicalizeColorName($colorName));
+    }
+
     private function isDuplicateColorConstraintError(\Throwable $exception): bool
     {
         if (!$exception instanceof QueryException) {
@@ -668,12 +673,14 @@ class ProductController extends Controller
                             continue;
                         }
 
-                        $bucketKey = strtolower($size) . '|' . strtolower($color);
+                        $canonicalColor = $this->canonicalizeColorName($color);
+
+                        $bucketKey = strtolower($size) . '|' . $this->normalizeColorIdentity($canonicalColor);
 
                         if (!isset($variantBuckets[$bucketKey])) {
                             $variantBuckets[$bucketKey] = [
                                 'size' => $size,
-                                'color' => $color,
+                                'color' => $canonicalColor,
                                 'quantity' => 0,
                                 'image' => $variantData['image'] ?? null,
                                 'sku' => $variantData['sku'] ?? null,
@@ -1087,10 +1094,12 @@ class ProductController extends Controller
 
                     // Create new variants
                     foreach ($validated['variants'] as $variantData) {
+                        $canonicalColor = $this->canonicalizeColorName((string) ($variantData['color'] ?? ''));
+
                         ProductVariant::create([
                             'product_id' => $product->id,
                             'size' => $variantData['size'],
-                            'color' => $variantData['color'],
+                            'color' => $canonicalColor,
                             'quantity' => $variantData['quantity'],
                             'image' => $variantData['image'] ?? null,
                             'sku' => $variantData['sku'] ?? null,
@@ -1308,6 +1317,13 @@ class ProductController extends Controller
                 ->with(['colorVariants.sizes'])
                 ->first();
 
+            $fallbackVariantsByIdentity = ProductVariant::where('product_id', $productId)
+                ->select('id', 'product_id', 'color', 'size', 'quantity', 'sku')
+                ->get()
+                ->groupBy(function ($variantRow) {
+                    return $this->normalizeColorIdentity((string) $variantRow->color);
+                });
+
             $colorVariants = $product->colorVariants()
                 ->with([
                     'images' => function ($query) {
@@ -1316,7 +1332,7 @@ class ProductController extends Controller
                 ])
                 ->orderBy('sort_order')
                 ->get()
-                ->map(function ($variant) use ($productId, $linkedInventory) {
+                ->map(function ($variant) use ($linkedInventory, $fallbackVariantsByIdentity) {
                     $sizeRows = [];
 
                     if ($linkedInventory) {
@@ -1349,10 +1365,9 @@ class ProductController extends Controller
 
                     if (empty($sizeRows)) {
                         // Fallback for non-linked products / legacy rows.
-                        $sizeRows = ProductVariant::where('product_id', $productId)
-                            ->where('color', $variant->color_name)
-                            ->select('id', 'product_id', 'color', 'size', 'quantity', 'sku')
-                            ->get()
+                        $variantIdentity = $this->normalizeColorIdentity((string) $variant->color_name);
+
+                        $sizeRows = collect($fallbackVariantsByIdentity->get($variantIdentity, collect()))
                             ->map(function ($size) {
                                 return [
                                     'id' => $size->id,

@@ -276,6 +276,43 @@ export default function ProductManagement() {
     return fallback;
   };
 
+  const normalizeColorToken = (value: string): string =>
+    value.trim().toLowerCase().replace(/\s+/g, ' ');
+
+  const splitColorTokens = (value: string): string[] =>
+    String(value || '')
+      .split('+')
+      .map((token) => token.trim())
+      .filter((token) => token.length > 0);
+
+  const canonicalizeCombinedColorName = (value: string): string => {
+    const byNormalized = new Map<string, string>();
+
+    splitColorTokens(value).forEach((token) => {
+      const normalized = normalizeColorToken(token);
+      if (!normalized || byNormalized.has(normalized)) return;
+
+      const cleaned = token.replace(/\s+/g, ' ').trim();
+      const display = cleaned
+        .toLowerCase()
+        .replace(/\b\w/g, (char) => char.toUpperCase());
+
+      byNormalized.set(normalized, display);
+    });
+
+    if (byNormalized.size === 0) {
+      return String(value || '').trim().replace(/\s+/g, ' ');
+    }
+
+    return Array.from(byNormalized.entries())
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([, display]) => display)
+      .join(' + ');
+  };
+
+  const normalizeCombinedColorIdentity = (value: string): string =>
+    canonicalizeCombinedColorName(value).toLowerCase();
+
   const categoryOptions = [
     { label: 'SHOES', value: 'shoes' },
     { label: 'Women', value: 'women' },
@@ -516,7 +553,7 @@ export default function ProductManagement() {
             // Transform loaded color variants to the expected format
             setColorVariants(loadedColorVariants.map((cv: any) => ({
               id: cv.id?.toString() || Date.now().toString(),
-              color_name: cv.color_name,
+              color_name: canonicalizeCombinedColorName(String(cv.color_name || '')),
               color_code: cv.color_code,
               images: (cv.images || [])
                 .filter((img: any) => !isShowroomFrameImageType(img.image_type))
@@ -869,11 +906,13 @@ export default function ProductManagement() {
           const existingData = await existingResponse.json();
           const existingVariants = existingData.color_variants || [];
           const keptColorNames = new Set(
-            colorVariants.map((variant) => String(variant.color_name || '').trim().toLowerCase()).filter(Boolean)
+            colorVariants
+              .map((variant) => normalizeCombinedColorIdentity(String(variant.color_name || '')))
+              .filter(Boolean)
           );
           
           for (const variant of existingVariants) {
-            const variantColorName = String(variant?.color_name || '').trim().toLowerCase();
+            const variantColorName = normalizeCombinedColorIdentity(String(variant?.color_name || ''));
             const shouldDelete = !!variant.id && variantColorName && !keptColorNames.has(variantColorName);
 
             if (shouldDelete) {
@@ -895,6 +934,8 @@ export default function ProductManagement() {
 
     for (const colorVariant of colorVariants) {
       try {
+        const canonicalColorName = canonicalizeCombinedColorName(String(colorVariant.color_name || ''));
+
         // First upload all NEW images for this color (skip already uploaded ones)
         const uploadedImages: any[] = [];
         let isFirstImageInColor = true;
@@ -938,7 +979,7 @@ export default function ProductManagement() {
               imageIndex,
               payload: {
                 path: data.path,
-                alt_text: image.alt_text || `${colorVariant.color_name} ${colorVariant.color_name}`,
+                alt_text: image.alt_text || `${canonicalColorName} ${canonicalColorName}`,
                 is_thumbnail: image.is_thumbnail,
                 sort_order: image.sort_order,
                 image_type: (image as any).image_type || 'product',
@@ -1004,18 +1045,18 @@ export default function ProductManagement() {
 
         // Skip if no images and no sizes (completely empty variant)
         if (uploadedImages.length === 0 && colorVariant.sizes.length === 0) {
-          console.warn(`Empty color variant ${colorVariant.color_name}, skipping...`);
+          console.warn(`Empty color variant ${canonicalColorName}, skipping...`);
           continue;
         }
 
         // For variants with sizes but no images, show a warning but continue
         if (uploadedImages.length === 0) {
-          console.warn(`Color variant ${colorVariant.color_name} has no images but has sizes. Creating variant anyway.`);
+          console.warn(`Color variant ${canonicalColorName} has no images but has sizes. Creating variant anyway.`);
         }
 
         // Create color variant with images
         const colorVariantData = {
-          color_name: colorVariant.color_name,
+          color_name: canonicalColorName,
           color_code: colorVariant.color_code,
           is_active: true,
           sort_order: 0,
@@ -1051,7 +1092,7 @@ export default function ProductManagement() {
         for (const sizeVariant of colorVariant.sizes) {
           const variantData = {
             size: sizeVariant.size,
-            color: colorVariant.color_name,
+            color: canonicalColorName,
             quantity: sizeVariant.quantity,
             image: uploadedImages[0]?.path || '', // Use first image as variant image
             sku: sizeVariant.sku || null,
@@ -1061,7 +1102,8 @@ export default function ProductManagement() {
         }
 
       } catch (error) {
-        console.error(`Error creating color variant for ${colorVariant.color_name}:`, error);
+        const canonicalColorName = canonicalizeCombinedColorName(String(colorVariant.color_name || ''));
+        console.error(`Error creating color variant for ${canonicalColorName}:`, error);
       }
     }
 
@@ -1256,17 +1298,23 @@ export default function ProductManagement() {
       );
 
       const uniqueSizes = [...new Set(colorVariants.flatMap(cv => cv.sizes.map(s => s.size)))];
-      const uniqueColors = colorVariants.map(cv => cv.color_name);
+      const uniqueColors = [
+        ...new Set(colorVariants.map((cv) => canonicalizeCombinedColorName(String(cv.color_name || '')))),
+      ];
 
       // Prepare variant data for backward compatibility
       const variantData = colorVariants.flatMap(cv => 
-        cv.sizes.map(size => ({
-          size: size.size,
-          color: cv.color_name,
-          quantity: size.quantity,
-          image: '', // Will be set after color variant creation
-          sku: size.sku || null,
-        }))
+        cv.sizes.map(size => {
+          const canonicalColorName = canonicalizeCombinedColorName(String(cv.color_name || ''));
+
+          return {
+            size: size.size,
+            color: canonicalColorName,
+            quantity: size.quantity,
+            image: '', // Will be set after color variant creation
+            sku: size.sku || null,
+          };
+        })
       );
 
       const baseProductData = {

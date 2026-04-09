@@ -148,6 +148,37 @@ const normalizeBusinessType = (rawBusinessType?: string): BusinessType => {
   return 'both';
 };
 
+const canonicalizeCombinedColorName = (value: string): string => {
+  const tokens = String(value || '')
+    .split('+')
+    .map((token) => token.trim())
+    .filter((token) => token.length > 0);
+
+  const byNormalized = new Map<string, string>();
+
+  tokens.forEach((token) => {
+    const normalized = token.toLowerCase().replace(/\s+/g, ' ').trim();
+    if (!normalized || byNormalized.has(normalized)) return;
+
+    const display = token
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase()
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+
+    byNormalized.set(normalized, display);
+  });
+
+  if (byNormalized.size === 0) {
+    return String(value || '').trim().replace(/\s+/g, ' ');
+  }
+
+  return Array.from(byNormalized.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([, display]) => display)
+    .join(' + ');
+};
+
 const canUseCategoryForBusinessType = (category: StockCategory, businessType: BusinessType): boolean => {
   if (category === 'shoes') {
     return businessType === 'retail' || businessType === 'both';
@@ -684,17 +715,21 @@ export default function UploadInventory() {
     // Build color variants payload for shoes — include each variant's images
     const colorVariantsPayload =
       isShoesMode && colorVariants.length > 0
-        ? colorVariants.map((v) => ({
-            color_name: v.color_name,
-            color_code: v.color_code,
-            quantity: v.sizes.reduce((sum, s) => sum + s.quantity, 0),
-            sizes: v.sizes.map((s) => ({
-              size: s.size,
-              size_system: (s.size_system ?? 'US') as SizeSystem,
-              quantity: s.quantity,
-            })),
-            images: v.images.map((img) => img.file).filter((f): f is File => f !== null),
-          }))
+        ? colorVariants.map((v) => {
+            const canonicalColorName = canonicalizeCombinedColorName(String(v.color_name || ''));
+
+            return {
+              color_name: canonicalColorName,
+              color_code: v.color_code,
+              quantity: v.sizes.reduce((sum, s) => sum + s.quantity, 0),
+              sizes: v.sizes.map((s) => ({
+                size: s.size,
+                size_system: (s.size_system ?? 'US') as SizeSystem,
+                quantity: s.quantity,
+              })),
+              images: v.images.map((img) => img.file).filter((f): f is File => f !== null),
+            };
+          })
         : undefined;
 
     // Keep top-level sizes undefined for shoes; size rows are scoped per color variant.
@@ -741,7 +776,7 @@ export default function UploadInventory() {
         if (isShoesMode && newColorVariants.length > 0) {
           for (const variant of newColorVariants) {
             await inventoryItemAPI.addColor(editingStock.id, {
-              color_name: variant.color_name,
+              color_name: canonicalizeCombinedColorName(String(variant.color_name || '')),
               color_code: variant.color_code || undefined,
               images: variant.images.map((img) => img.file).filter((f): f is File => f !== null),
               sizes: variant.sizes.map((s) => ({
