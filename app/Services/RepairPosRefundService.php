@@ -383,21 +383,34 @@ class RepairPosRefundService
         array $executionContext = []
     ): PosRefund
     {
-        if (in_array((string) $refund->status, ['succeeded', 'processing'], true)) {
+        $status = (string) ($refund->status ?? '');
+        if (in_array($status, ['succeeded', 'processing'], true)) {
             return $refund->fresh();
-        }
-
-        if ((string) $refund->status !== 'approved') {
-            throw ValidationException::withMessages([
-                'status' => ['Only approved refunds can be executed.'],
-            ]);
         }
 
         $financeStatus = (string) ($refund->finance_status ?? 'pending');
         $ownerStatus = (string) ($refund->shop_owner_status ?? 'pending');
 
+        // Compatibility for stage-based records where approval states are complete
+        // but the aggregate status remained in 'requested'.
+        if (
+            $status === 'requested'
+            && $financeStatus === 'approved'
+            && in_array($ownerStatus, ['approved', 'skipped'], true)
+        ) {
+            $refund->update(['status' => 'approved']);
+            $refund = $refund->fresh();
+            $status = (string) ($refund->status ?? 'approved');
+        }
+
+        if ($status !== 'approved') {
+            throw ValidationException::withMessages([
+                'status' => ['Only approved refunds can be executed.'],
+            ]);
+        }
+
         // Backward compatibility: legacy records may be fully approved without staged fields populated.
-        $isLegacyApproved = $financeStatus === 'pending' && $ownerStatus === 'pending' && (string) $refund->status === 'approved';
+        $isLegacyApproved = $financeStatus === 'pending' && $ownerStatus === 'pending' && $status === 'approved';
 
         if ($isLegacyApproved) {
             $financeStatus = 'approved';

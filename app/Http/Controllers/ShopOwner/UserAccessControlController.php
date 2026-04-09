@@ -42,6 +42,7 @@ class UserAccessControlController extends Controller
         }
 
         $financePermissions = [
+            'access-purchase-request-approval',
             'access-approval-workflow',
             'access-payslip-approval',
             'access-refund-approval',

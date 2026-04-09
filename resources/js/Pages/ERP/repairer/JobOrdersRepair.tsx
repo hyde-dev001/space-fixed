@@ -469,8 +469,12 @@ const MotorcycleIcon: React.FC<{ className?: string }> = ({ className }) => (
 
 const RefundIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7h16v10H4V7zm3 4h6m-3-3v6" />
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 15l3-3-3-3" />
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M16.023 9.348h4.992V4.356m0 0l-3.181 3.182a8.25 8.25 0 00-13.803 3.7M7.977 14.652H2.985v4.992m0 0l3.181-3.182a8.25 8.25 0 0013.803-3.7"
+    />
   </svg>
 );
 
@@ -2891,7 +2895,7 @@ export default function JobOrdersRepair() {
                           {pendingRefund && (
                             <button
                               onClick={() => handleRefundReview(order, pendingRefund)}
-                              className="inline-flex items-center justify-center p-2 text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:text-amber-300 dark:hover:bg-amber-900/30 rounded-lg transition-colors"
+                              className="inline-flex items-center justify-center p-2 text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70"
                               title={`Review refund (${pendingRefund.refund_no || `#${pendingRefund.id}`})`}
                               aria-label="Review Refund Request"
                             >

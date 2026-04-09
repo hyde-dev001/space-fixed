@@ -200,6 +200,17 @@ export default function FinancePage() {
         }
 
         case "purchase-request-approval":
+          if (!hasAnyPermission(auth, ['access-purchase-request-approval', 'access-approval-workflow', 'access-finance-dashboard'])) {
+            return (
+              <div className="flex items-center justify-center h-96">
+                <div className="text-center">
+                  <div className="text-red-500 text-6xl mb-4">🚫</div>
+                  <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Access Denied</h2>
+                  <p className="text-gray-600 dark:text-gray-400">You don't have permission to review purchase requests.</p>
+                </div>
+              </div>
+            );
+          }
           return <PurchaseRequestApproval onModalStateChange={setIsPurchaseRequestModalOpen} requests={purchaseRequests || []} />;
 
         case "payslip-approvals":

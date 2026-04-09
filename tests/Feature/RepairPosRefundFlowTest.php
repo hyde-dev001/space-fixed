@@ -593,4 +593,70 @@ class RepairPosRefundFlowTest extends TestCase
         $this->assertSame('refunded', (string) $repair->payment_status_derived);
         $this->assertSame('1000.00', number_format((float) $repair->total_refunded_amount, 2, '.', ''));
     }
+
+    #[Test]
+    public function execute_allows_stage_approved_refund_even_when_status_drifted_to_requested(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var \App\Models\User $customer */
+        $customer = \App\Models\User::factory()->create();
+        /** @var \App\Models\User $actor */
+        $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+
+        $repair = $this->createRepairRequest($shopOwner, $customer, [
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'payment_policy_snapshot' => 'full_upfront',
+            'payment_status_derived' => 'paid',
+            'total_paid_amount' => 1699,
+            'final_total' => 1699,
+        ]);
+
+        $source = \App\Models\PosTransaction::create([
+            'transaction_no' => 'POS-TDD-RFD-DRIFT-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Walk-in Customer',
+            'walk_in_phone' => '09171234567',
+            'due_type' => 'full',
+            'subtotal' => 1699,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 1699,
+            'paid_amount' => 1699,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $refund = \App\Models\PosRefund::create([
+            'refund_no' => 'RFD-TDD-DRIFT-001',
+            'shop_owner_id' => $shopOwner->id,
+            'source_transaction_id' => $source->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'request_type' => 'full',
+            'requested_amount' => 1699,
+            'approved_amount' => 1699,
+            'reason_code' => 'status_drift_manual_execute',
+            'status' => 'requested',
+            'finance_status' => 'approved',
+            'shop_owner_status' => 'approved',
+            'requested_by' => $actor->id,
+            'approved_by' => $actor->id,
+            'requested_at' => now(),
+            'approved_at' => now(),
+        ]);
+
+        app(\App\Services\RepairPosRefundService::class)->execute($refund, $actor->id, 'manual', 'Manual payout');
+
+        $refund->refresh();
+        $source->refresh();
+        $repair->refresh();
+
+        $this->assertSame('succeeded', (string) $refund->status);
+        $this->assertSame('refunded', (string) $source->status);
+        $this->assertSame('refunded', (string) $repair->payment_status_derived);
+    }
 }

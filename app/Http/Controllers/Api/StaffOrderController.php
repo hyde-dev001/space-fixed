@@ -496,7 +496,7 @@ class StaffOrderController extends Controller
             ->where('order_id', $order->id)
             ->where('shop_owner_id', $shopOwnerId)
             ->where('flow_type', 'request_approval')
-            ->whereIn('status', ['requested', 'pending_approval', 'processing'])
+            ->whereIn('status', ['requested', 'pending_approval', 'processing', 'succeeded'])
             ->latest('id')
             ->first();
 
@@ -567,7 +567,7 @@ class StaffOrderController extends Controller
             ->where('order_id', $order->id)
             ->where('shop_owner_id', $shopOwnerId)
             ->where('flow_type', 'request_approval')
-            ->whereIn('status', ['requested', 'pending_approval', 'processing'])
+            ->whereIn('status', ['requested', 'pending_approval', 'processing', 'succeeded'])
             ->latest('id')
             ->first();
 

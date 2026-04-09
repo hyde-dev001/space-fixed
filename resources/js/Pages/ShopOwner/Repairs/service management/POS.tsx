@@ -160,6 +160,22 @@ type ManualQueueRow = {
 	receipt_no?: string | null;
 };
 
+type RetailRefundDisposition = "resellable" | "damaged";
+
+type RetailRefundSelectableItem = {
+	orderItemId: number;
+	label: string;
+	purchasedQty: number;
+	committedQty: number;
+	remainingQty: number;
+	unitPrice: number;
+};
+
+type RetailRefundDraft = {
+	requestedQty: number;
+	inspectionDisposition: RetailRefundDisposition;
+};
+
 const hasOpenOrCompletedRefund = (receipt: ReceiptSnapshot): boolean => {
 	const status = String(receipt.latestRefund?.status || "").toLowerCase();
 	return ["requested", "approved", "processing", "succeeded"].includes(status);
@@ -474,6 +490,15 @@ const [retailCashReceivedInput, setRetailCashReceivedInput] = useState<string>("
 const [retailProofReference, setRetailProofReference] = useState<string>("");
 const [retailNotes, setRetailNotes] = useState<string>("");
 const [retailProcessingPayment, setRetailProcessingPayment] = useState<boolean>(false);
+const [isRetailRefundModalOpen, setIsRetailRefundModalOpen] = useState<boolean>(false);
+const [retailRefundReceipt, setRetailRefundReceipt] = useState<ReceiptSnapshot | null>(null);
+const [retailRefundTransactionId, setRetailRefundTransactionId] = useState<number>(0);
+const [retailRefundableBalance, setRetailRefundableBalance] = useState<number>(0);
+const [retailRefundItems, setRetailRefundItems] = useState<RetailRefundSelectableItem[]>([]);
+const [retailRefundDraftByOrderItem, setRetailRefundDraftByOrderItem] = useState<Record<number, RetailRefundDraft>>({});
+const [retailRefundSearch, setRetailRefundSearch] = useState<string>("");
+const [retailRefundValidationError, setRetailRefundValidationError] = useState<string>("");
+const [retailRefundSubmitting, setRetailRefundSubmitting] = useState<boolean>(false);
 
 useEffect(() => {
 	if (!allowedModes.includes(mode)) {
@@ -1413,6 +1438,121 @@ useEffect(() => {
 		return remaining > 0 ? remaining : Number(receipt.totalDue || 0);
 	};
 
+	const resetRetailRefundModalState = () => {
+		setIsRetailRefundModalOpen(false);
+		setRetailRefundReceipt(null);
+		setRetailRefundTransactionId(0);
+		setRetailRefundableBalance(0);
+		setRetailRefundItems([]);
+		setRetailRefundDraftByOrderItem({});
+		setRetailRefundSearch("");
+		setRetailRefundValidationError("");
+		setRetailRefundSubmitting(false);
+	};
+
+	const updateRetailRefundQty = (orderItemId: number, rawValue: string) => {
+		const sourceItem = retailRefundItems.find((item) => item.orderItemId === orderItemId);
+		if (!sourceItem) return;
+
+		const parsed = Math.floor(Number(rawValue));
+		const nextQty = Number.isFinite(parsed)
+			? Math.max(0, Math.min(parsed, sourceItem.remainingQty))
+			: 0;
+
+		setRetailRefundDraftByOrderItem((prev) => ({
+			...prev,
+			[orderItemId]: {
+				inspectionDisposition: prev[orderItemId]?.inspectionDisposition ?? "resellable",
+				requestedQty: nextQty,
+			},
+		}));
+
+		if (retailRefundValidationError.length > 0) {
+			setRetailRefundValidationError("");
+		}
+	};
+
+	const updateRetailRefundDisposition = (orderItemId: number, disposition: RetailRefundDisposition) => {
+		setRetailRefundDraftByOrderItem((prev) => ({
+			...prev,
+			[orderItemId]: {
+				requestedQty: prev[orderItemId]?.requestedQty ?? 0,
+				inspectionDisposition: disposition,
+			},
+		}));
+
+		if (retailRefundValidationError.length > 0) {
+			setRetailRefundValidationError("");
+		}
+	};
+
+	const filteredRetailRefundItems = useMemo(() => {
+		const query = retailRefundSearch.trim().toLowerCase();
+		if (!query) return retailRefundItems;
+
+		return retailRefundItems.filter((item) => (
+			item.label.toLowerCase().includes(query)
+			|| String(item.orderItemId).includes(query)
+		));
+	}, [retailRefundItems, retailRefundSearch]);
+
+	const retailRefundSelection = useMemo(() => {
+		const selectedLines = retailRefundItems
+			.map((item) => {
+				const draft = retailRefundDraftByOrderItem[item.orderItemId];
+				const rawQty = Math.floor(Number(draft?.requestedQty ?? 0));
+				const requestedQty = Number.isFinite(rawQty)
+					? Math.max(0, Math.min(rawQty, item.remainingQty))
+					: 0;
+
+				return {
+					order_item_id: item.orderItemId,
+					requested_qty: requestedQty,
+					inspection_disposition: draft?.inspectionDisposition === "damaged" ? "damaged" as const : "resellable" as const,
+					line_amount: Number((requestedQty * item.unitPrice).toFixed(2)),
+				};
+			})
+			.filter((line) => line.requested_qty > 0);
+
+		const requestedAmount = Number(selectedLines.reduce((sum, line) => sum + line.line_amount, 0).toFixed(2));
+		const selectedQtyByOrderItem = new Map<number, number>();
+		selectedLines.forEach((line) => {
+			selectedQtyByOrderItem.set(line.order_item_id, line.requested_qty);
+		});
+
+		const isFull = retailRefundItems.length > 0
+			&& retailRefundItems.every((item) => selectedQtyByOrderItem.get(item.orderItemId) === item.remainingQty);
+		const requestType: "full" | "partial" = isFull ? "full" : "partial";
+		const exceedsBalance = requestedAmount > retailRefundableBalance + 0.001;
+
+		return {
+			selectedLines,
+			requestedAmount,
+			requestType,
+			exceedsBalance,
+			selectedItemCount: selectedLines.length,
+		};
+	}, [retailRefundDraftByOrderItem, retailRefundItems, retailRefundableBalance]);
+
+	const retailRefundCanSubmit = useMemo(() => {
+		if (retailRefundSubmitting) return false;
+		if (!isRetailRefundModalOpen) return false;
+		if (!retailRefundReceipt) return false;
+		if (retailRefundTransactionId <= 0) return false;
+		if (retailRefundSelection.selectedItemCount === 0) return false;
+		if (retailRefundSelection.requestedAmount <= 0) return false;
+		if (retailRefundSelection.exceedsBalance) return false;
+		return true;
+	}, [
+		isRetailRefundModalOpen,
+		retailRefundReceipt,
+		retailRefundSelection.exceedsBalance,
+		retailRefundSelection.requestedAmount,
+		retailRefundSelection.selectedItemCount,
+		retailRefundSubmitting,
+		retailRefundTransactionId,
+	]);
+
 	const handleRetailPay = async () => {
 		if (!retailCanPay) return;
 
@@ -1942,7 +2082,7 @@ useEffect(() => {
 		}
 
 		const committedQtyByOrderItem = resolveCommittedRetailRefundQtyByOrderItem(receipt);
-		const refundableItems = receipt.items
+		const refundableItems: RetailRefundSelectableItem[] = receipt.items
 			.map((item) => {
 				const orderItemId = Number(item.orderItemId ?? 0);
 				const purchasedQty = Math.max(0, Number(item.qty ?? 0));
@@ -1951,8 +2091,8 @@ useEffect(() => {
 				const remainingQty = Math.max(0, purchasedQty - committedQty);
 
 				return {
-					...item,
 					orderItemId,
+					label: String(item.label || "Retail Item"),
 					purchasedQty,
 					committedQty,
 					remainingQty,
@@ -1971,131 +2111,56 @@ useEffect(() => {
 			return;
 		}
 
-		const escapeHtml = (value: string): string => value
-			.replace(/&/g, "&amp;")
-			.replace(/</g, "&lt;")
-			.replace(/>/g, "&gt;")
-			.replace(/\"/g, "&quot;")
-			.replace(/'/g, "&#39;");
+		const initialDrafts = refundableItems.reduce<Record<number, RetailRefundDraft>>((acc, item) => {
+			acc[item.orderItemId] = {
+				requestedQty: 0,
+				inspectionDisposition: "resellable",
+			};
+			return acc;
+		}, {});
 
-		const pickerResult = await Swal.fire({
-			title: "Retail Item Refund",
-				html: `
-				<div style="text-align:left; display:flex; flex-direction:column; gap:10px; max-height:320px; overflow:auto; padding-right:4px;">
-					${refundableItems.map((item, index) => `
-						<div style="border:1px solid #e2e8f0; border-radius:10px; padding:10px;">
-							<div style="font-weight:600; margin-bottom:4px;">${escapeHtml(item.label)}</div>
-								<div style="font-size:12px; color:#64748b; margin-bottom:8px;">Purchased Qty: ${item.purchasedQty} | Already refunded/requested: ${item.committedQty} | Remaining refundable qty: ${item.remainingQty} | Unit: ${formatPeso(item.unitPrice)}</div>
-							<div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-								<div>
-									<label for="retail-refund-qty-${index}" style="display:block; font-size:12px; color:#475569; margin-bottom:4px;">Refund Qty</label>
-										<input id="retail-refund-qty-${index}" type="number" min="0" max="${item.remainingQty}" step="1" value="0" style="width:100%; border:1px solid #cbd5e1; border-radius:8px; padding:8px;" />
-								</div>
-								<div>
-									<label for="retail-refund-disp-${index}" style="display:block; font-size:12px; color:#475569; margin-bottom:4px;">Inspection</label>
-									<select id="retail-refund-disp-${index}" style="width:100%; border:1px solid #cbd5e1; border-radius:8px; padding:8px;">
-										<option value="resellable">Resellable (restock)</option>
-										<option value="damaged">Damaged (write-off)</option>
-									</select>
-								</div>
-							</div>
-						</div>
-					`).join("")}
-				</div>
-				<p style="margin-top:10px; font-size:12px; color:#475569; text-align:left;">
-					Refund amount is auto-calculated from selected item qty.
-				</p>
-				<p style="margin-top:4px; font-size:12px; color:#475569; text-align:left;">
-					Remaining refundable balance: ${formatPeso(refundableBalance)}
-				</p>
-			`,
-			width: 760,
-			showCancelButton: true,
-			confirmButtonText: "Create Refund",
-			cancelButtonText: "Cancel",
-			confirmButtonColor: "#2563eb",
-			cancelButtonColor: "#6b7280",
-			focusConfirm: false,
-			preConfirm: () => {
-				const refundLines: Array<{ order_item_id: number; requested_qty: number; inspection_disposition: "resellable" | "damaged"; line_amount: number }> = [];
+		setRetailRefundReceipt(receipt);
+		setRetailRefundTransactionId(transactionId);
+		setRetailRefundableBalance(refundableBalance);
+		setRetailRefundItems(refundableItems);
+		setRetailRefundDraftByOrderItem(initialDrafts);
+		setRetailRefundSearch("");
+		setRetailRefundValidationError("");
+		setRetailRefundSubmitting(false);
+		setIsRetailRefundModalOpen(true);
+	};
 
-				for (let index = 0; index < refundableItems.length; index += 1) {
-					const item = refundableItems[index];
-					const qtyInput = document.getElementById(`retail-refund-qty-${index}`) as HTMLInputElement | null;
-					const dispInput = document.getElementById(`retail-refund-disp-${index}`) as HTMLSelectElement | null;
-
-					const requestedQty = Math.floor(Number(qtyInput?.value ?? 0));
-					if (!Number.isFinite(requestedQty) || requestedQty < 0) {
-						Swal.showValidationMessage("Refund qty must be 0 or greater.");
-						return null;
-					}
-
-					if (requestedQty > item.remainingQty) {
-						Swal.showValidationMessage("Refund qty cannot exceed remaining refundable qty.");
-						return null;
-					}
-
-					if (requestedQty === 0) {
-						continue;
-					}
-
-					const disposition = String(dispInput?.value || "resellable") === "damaged" ? "damaged" : "resellable";
-					refundLines.push({
-						order_item_id: Number(item.orderItemId),
-						requested_qty: requestedQty,
-						inspection_disposition: disposition,
-						line_amount: Number((requestedQty * item.unitPrice).toFixed(2)),
-					});
-				}
-
-				if (refundLines.length === 0) {
-					Swal.showValidationMessage("Select at least one line with refund qty greater than zero.");
-					return null;
-				}
-
-				const requestedAmount = Number(refundLines.reduce((sum, line) => sum + line.line_amount, 0).toFixed(2));
-				if (requestedAmount <= 0) {
-					Swal.showValidationMessage("Computed refund amount must be greater than zero.");
-					return null;
-				}
-
-				if (requestedAmount > refundableBalance + 0.001) {
-					Swal.showValidationMessage("Computed refund amount exceeds refundable balance.");
-					return null;
-				}
-
-				const isFull = refundableItems.every((item) => {
-					const line = refundLines.find((entry) => entry.order_item_id === Number(item.orderItemId));
-					return line && line.requested_qty === item.remainingQty;
-				});
-
-				return {
-					refund_lines: refundLines.map(({ line_amount, ...line }) => line),
-					requested_amount: requestedAmount,
-					request_type: isFull ? "full" : "partial",
-				};
-			},
-		});
-
-		if (!pickerResult.isConfirmed || !pickerResult.value) {
+	const submitRetailRefund = async () => {
+		if (!retailRefundReceipt || retailRefundTransactionId <= 0) {
+			setRetailRefundValidationError("Unable to resolve retail receipt context.");
 			return;
 		}
 
-		const requestType = String((pickerResult.value as any).request_type || "partial") === "full" ? "full" : "partial";
-		const requestedAmount = Number((pickerResult.value as any).requested_amount ?? 0);
-		const refundLines = Array.isArray((pickerResult.value as any).refund_lines)
-			? (pickerResult.value as any).refund_lines
-			: [];
-
-		if (refundLines.length === 0 || requestedAmount <= 0) {
+		if (retailRefundSelection.selectedItemCount === 0) {
+			setRetailRefundValidationError("Select at least one line with refund qty greater than zero.");
 			return;
 		}
+
+		if (retailRefundSelection.requestedAmount <= 0) {
+			setRetailRefundValidationError("Computed refund amount must be greater than zero.");
+			return;
+		}
+
+		if (retailRefundSelection.exceedsBalance) {
+			setRetailRefundValidationError("Computed refund amount exceeds refundable balance.");
+			return;
+		}
+
+		const requestType = retailRefundSelection.requestType;
+		const requestedAmount = Number(retailRefundSelection.requestedAmount.toFixed(2));
+		const refundLines = retailRefundSelection.selectedLines
+			.map(({ line_amount, ...line }) => line);
 
 		let createdRefundId = 0;
 		let latestStatus = "requested";
 		const reasonNotes = [
 			"Requested from Retail POS receipt history.",
-			`Receipt: ${receipt.receiptNo}`,
+			`Receipt: ${retailRefundReceipt.receiptNo}`,
 			`Request type: ${requestType}`,
 			`Requested amount: ${requestedAmount.toFixed(2)}`,
 			`Requested lines: ${refundLines.length}`,
@@ -2103,11 +2168,13 @@ useEffect(() => {
 			.filter(Boolean)
 			.join("\n");
 
+		setRetailRefundValidationError("");
+		setRetailRefundSubmitting(true);
 		try {
 			const createResponse = await axios.post(
 				"/api/retail-pos/refunds",
 				{
-					source_transaction_id: transactionId,
+					source_transaction_id: retailRefundTransactionId,
 					request_type: requestType,
 					requested_amount: requestedAmount,
 					refund_lines: refundLines,
@@ -2144,16 +2211,16 @@ useEffect(() => {
 
 			latestStatus = String((executeResponse.data as any)?.data?.status ?? "succeeded").toLowerCase() || "succeeded";
 			const approvedAmount = Number((executeResponse.data as any)?.data?.approved_amount ?? requestedAmount);
-			const committedLines: ReceiptRefundEntryItem[] = refundLines
-				.map((line: any) => ({
-					orderItemId: Number(line?.order_item_id || 0),
-					requestedQty: Math.max(0, Number(line?.requested_qty || 0)),
-					approvedQty: Math.max(0, Number(line?.requested_qty || 0)),
+			const committedLines: ReceiptRefundEntryItem[] = retailRefundSelection.selectedLines
+				.map((line) => ({
+					orderItemId: Number(line.order_item_id || 0),
+					requestedQty: Math.max(0, Number(line.requested_qty || 0)),
+					approvedQty: Math.max(0, Number(line.requested_qty || 0)),
 				}))
 				.filter((line: ReceiptRefundEntryItem) => line.orderItemId > 0 && line.approvedQty > 0);
 
 			setReceiptHistory((prev) => prev.map((entry) => (
-				entry.receiptNo === receipt.receiptNo
+				entry.receiptNo === retailRefundReceipt.receiptNo
 					? {
 						...entry,
 						refundEntries: [
@@ -2172,6 +2239,7 @@ useEffect(() => {
 					: entry
 			)));
 
+			resetRetailRefundModalState();
 			await Swal.fire({
 				icon: "success",
 				title: "Retail Refund Completed",
@@ -2181,7 +2249,7 @@ useEffect(() => {
 		} catch (error: any) {
 			if (createdRefundId > 0) {
 				setReceiptHistory((prev) => prev.map((entry) => (
-					entry.receiptNo === receipt.receiptNo
+					entry.receiptNo === retailRefundReceipt.receiptNo
 						? {
 							...entry,
 							latestRefund: {
@@ -2194,12 +2262,15 @@ useEffect(() => {
 			}
 
 			const message = error?.response?.data?.message || error?.message || "Unable to process retail refund.";
+			setRetailRefundValidationError(String(message));
 			await Swal.fire({
 				icon: "error",
 				title: "Retail Refund Failed",
 				text: String(message),
 				confirmButtonColor: "#dc2626",
 			});
+		} finally {
+			setRetailRefundSubmitting(false);
 		}
 	};
 
@@ -2389,7 +2460,7 @@ useEffect(() => {
 	};
 
 	return (
-		<AppLayoutShopOwner hideHeader={isOrderModalOpen || isRefundQueueOpen || isReceiptModalOpen || isHistoryModalOpen}>
+		<AppLayoutShopOwner hideHeader={isOrderModalOpen || isRefundQueueOpen || isReceiptModalOpen || isHistoryModalOpen || isRetailRefundModalOpen}>
 			<Head title="Point of Sale" />
 
 			<style>{`
@@ -2433,7 +2504,7 @@ useEffect(() => {
 			`}</style>
 
 			<div className="space-y-6 p-4 md:p-6">
-				{!isOrderModalOpen && !isRefundQueueOpen && !isReceiptModalOpen && !isHistoryModalOpen && (
+				{!isOrderModalOpen && !isRefundQueueOpen && !isReceiptModalOpen && !isHistoryModalOpen && !isRetailRefundModalOpen && (
 				<div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
 					<div>
 						<h1 className="text-2xl font-bold text-slate-900">Point of Sale</h1>
@@ -3533,9 +3604,16 @@ useEffect(() => {
 															<button
 																type="button"
 																onClick={() => handleRequestRefund(receipt)}
-																className="rounded-lg border border-amber-300 px-3 py-1 text-xs font-semibold text-amber-700 transition hover:bg-amber-50"
+																title="Refund"
+																aria-label="Refund"
+																className="inline-flex items-center justify-center bg-transparent p-1 text-amber-600 transition-colors hover:text-amber-700"
 															>
-																Refund Now
+																<svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+																	<path d="M3 12a9 9 0 0 0 15.3 6.36L21 16" />
+																	<path d="M21 12A9 9 0 0 0 5.7 5.64L3 8" />
+																	<path d="M3 3v5h5" />
+																	<path d="M21 21v-5h-5" />
+																</svg>
 															</button>
 														)}
 														<button
@@ -3545,9 +3623,14 @@ useEffect(() => {
 																setIsHistoryModalOpen(false);
 																setIsReceiptModalOpen(true);
 															}}
-															className="rounded-lg bg-blue-600 px-3 py-1 text-xs font-semibold text-white transition hover:bg-blue-500"
+															title="View Receipt"
+															aria-label="View Receipt"
+															className="inline-flex items-center justify-center bg-transparent p-1 text-blue-600 transition-colors hover:text-blue-700"
 														>
-															View
+															<svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+																<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z" />
+																<circle cx="12" cy="12" r="3" />
+															</svg>
 														</button>
 													</div>
 												</div>
@@ -3555,6 +3638,213 @@ useEffect(() => {
 										))
 									)}
 								</div>
+							</div>
+						</div>
+					</div>
+				)}
+
+				{isRetailRefundModalOpen && retailRefundReceipt && (
+					<div
+						className="fixed inset-0 z-60 flex items-center justify-center bg-slate-950/60 px-3 py-4"
+						onClick={(event) => {
+							if (event.target === event.currentTarget && !retailRefundSubmitting) {
+								resetRetailRefundModalState();
+							}
+						}}
+					>
+						<div className="w-full max-w-5xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
+							<div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
+								<div>
+									<h3 className="text-xl font-semibold text-slate-900">Retail Item Refund</h3>
+									<p className="mt-1 text-xs text-slate-500">
+										Receipt: {retailRefundReceipt.receiptNo} | Customer: {retailRefundReceipt.customerName}
+									</p>
+								</div>
+								<button
+									type="button"
+									onClick={resetRetailRefundModalState}
+									disabled={retailRefundSubmitting}
+									className="rounded-lg border border-slate-300 px-3 py-1 text-sm text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+								>
+									Close
+								</button>
+							</div>
+
+							<div className="grid grid-cols-1 gap-4 p-5 lg:grid-cols-3">
+								<section className="lg:col-span-2">
+									<div className="mb-3 flex flex-wrap items-center gap-2">
+										<input
+											title="Search refund lines"
+											value={retailRefundSearch}
+											onChange={(event) => setRetailRefundSearch(event.target.value)}
+											placeholder="Search item name"
+											className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500"
+										/>
+									</div>
+
+									<div className="max-h-[56vh] space-y-3 overflow-y-auto pr-1">
+										{filteredRetailRefundItems.length === 0 ? (
+											<div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+												No matching refundable items.
+											</div>
+										) : (
+											filteredRetailRefundItems.map((item) => {
+												const draft = retailRefundDraftByOrderItem[item.orderItemId] ?? {
+													requestedQty: 0,
+													inspectionDisposition: "resellable" as const,
+												};
+												const requestedQty = Math.max(0, Math.min(Number(draft.requestedQty || 0), item.remainingQty));
+												const lineAmount = Number((requestedQty * item.unitPrice).toFixed(2));
+
+												return (
+													<div key={item.orderItemId} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+														<div className="flex flex-wrap items-start justify-between gap-2">
+															<div>
+																<p className="text-sm font-semibold text-slate-900">{item.label}</p>
+																<p className="mt-1 text-xs text-slate-500">
+																	Purchased: {item.purchasedQty} | Refunded/Requested: {item.committedQty} | Remaining: {item.remainingQty}
+																</p>
+															</div>
+															<span className="rounded-full bg-white px-2 py-1 text-xs font-semibold text-slate-700">
+																{formatPeso(item.unitPrice)} each
+															</span>
+														</div>
+
+														<div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+															<div>
+																<label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Refund Qty</label>
+																<div className="flex items-center gap-2">
+																	<button
+																		type="button"
+																		onClick={() => updateRetailRefundQty(item.orderItemId, String(requestedQty - 1))}
+																		disabled={retailRefundSubmitting || requestedQty <= 0}
+																		className="h-8 w-8 rounded-lg border border-slate-300 text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+																	>
+																		-
+																	</button>
+																	<input
+																		title={`Refund qty for ${item.label}`}
+																		type="number"
+																		min={0}
+																		max={item.remainingQty}
+																		step={1}
+																		value={requestedQty}
+																		onChange={(event) => updateRetailRefundQty(item.orderItemId, event.target.value)}
+																		disabled={retailRefundSubmitting}
+																		className="w-20 rounded-lg border border-slate-300 px-2 py-1 text-center text-sm outline-none transition focus:border-blue-500 disabled:bg-slate-100"
+																	/>
+																	<button
+																		type="button"
+																		onClick={() => updateRetailRefundQty(item.orderItemId, String(requestedQty + 1))}
+																		disabled={retailRefundSubmitting || requestedQty >= item.remainingQty}
+																		className="h-8 w-8 rounded-lg border border-slate-300 text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+																	>
+																		+
+																	</button>
+																	<button
+																		type="button"
+																		onClick={() => updateRetailRefundQty(item.orderItemId, String(item.remainingQty))}
+																		disabled={retailRefundSubmitting || requestedQty === item.remainingQty}
+																		className="rounded-lg border border-blue-300 px-2 py-1 text-xs font-semibold text-blue-700 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+																	>
+																		Max
+																	</button>
+																</div>
+															</div>
+
+															<div>
+																<label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Inspection</label>
+																<select
+																	title={`Inspection for ${item.label}`}
+																	value={draft.inspectionDisposition}
+																	onChange={(event) => updateRetailRefundDisposition(item.orderItemId, event.target.value === "damaged" ? "damaged" : "resellable")}
+																	disabled={retailRefundSubmitting}
+																	className="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm outline-none transition focus:border-blue-500 disabled:bg-slate-100"
+																>
+																	<option value="resellable">Resellable (restock)</option>
+																	<option value="damaged">Damaged (write-off)</option>
+																</select>
+															</div>
+														</div>
+
+														<div className="mt-2 flex items-center justify-between border-t border-slate-200 pt-2 text-sm">
+															<span className="text-slate-600">Line amount</span>
+															<span className="font-semibold text-slate-900">{formatPeso(lineAmount)}</span>
+														</div>
+													</div>
+												);
+											})
+										)}
+									</div>
+								</section>
+
+								<aside className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+									<h4 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Refund Summary</h4>
+									<div className="mt-3 space-y-2 text-sm">
+										<div className="flex items-center justify-between text-slate-600">
+											<span>Selected lines</span>
+											<span className="font-semibold text-slate-900">{retailRefundSelection.selectedItemCount}</span>
+										</div>
+										<div className="flex items-center justify-between text-slate-600">
+											<span>Request type</span>
+											<span className="font-semibold uppercase text-slate-900">{retailRefundSelection.requestType}</span>
+										</div>
+										<div className="flex items-center justify-between text-slate-600">
+											<span>Refundable balance</span>
+											<span className="font-semibold text-slate-900">{formatPeso(retailRefundableBalance)}</span>
+										</div>
+										<div className="my-2 border-t border-dashed border-slate-300" />
+										<div className="flex items-center justify-between text-base font-bold text-slate-900">
+											<span>Requested amount</span>
+											<span>{formatPeso(retailRefundSelection.requestedAmount)}</span>
+										</div>
+										<div className="flex items-center justify-between text-xs text-slate-500">
+											<span>Balance after refund</span>
+											<span>{formatPeso(Math.max(retailRefundableBalance - retailRefundSelection.requestedAmount, 0))}</span>
+										</div>
+									</div>
+
+									{retailRefundSelection.exceedsBalance && (
+										<div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+											Requested amount exceeds refundable balance.
+										</div>
+									)}
+
+									{retailRefundValidationError.length > 0 && (
+										<div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+											{retailRefundValidationError}
+										</div>
+									)}
+
+									<div className="mt-4 grid grid-cols-2 gap-2">
+										<button
+											type="button"
+											onClick={submitRetailRefund}
+											disabled={!retailRefundCanSubmit}
+											className="rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-300"
+										>
+											{retailRefundSubmitting ? "Creating..." : "Create Refund"}
+										</button>
+										<button
+											type="button"
+											onClick={() => {
+												const resetDrafts = retailRefundItems.reduce<Record<number, RetailRefundDraft>>((acc, item) => {
+													acc[item.orderItemId] = {
+														requestedQty: 0,
+														inspectionDisposition: "resellable",
+													};
+													return acc;
+												}, {});
+												setRetailRefundDraftByOrderItem(resetDrafts);
+												setRetailRefundValidationError("");
+											}}
+											disabled={retailRefundSubmitting}
+											className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+										>
+											Clear
+										</button>
+									</div>
+								</aside>
 							</div>
 						</div>
 					</div>

@@ -3506,9 +3506,16 @@ const PointOfSalePage = () => {
 															<button
 																type="button"
 																onClick={() => handleRequestRefund(receipt)}
-																className="rounded-lg border border-amber-300 px-3 py-1 text-xs font-semibold text-amber-700 transition hover:bg-amber-50"
+																title="Request Refund"
+																aria-label="Request Refund"
+																className="inline-flex items-center justify-center bg-transparent p-1 text-amber-600 transition-colors hover:text-amber-700"
 															>
-																Request Refund
+																<svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+																	<path d="M3 12a9 9 0 0 0 15.3 6.36L21 16" />
+																	<path d="M21 12A9 9 0 0 0 5.7 5.64L3 8" />
+																	<path d="M3 3v5h5" />
+																	<path d="M21 21v-5h-5" />
+																</svg>
 															</button>
 														)}
 															{receipt.moduleType !== "retail" && canExecuteReceiptRefund(receipt) && (
@@ -3536,9 +3543,14 @@ const PointOfSalePage = () => {
 																setIsHistoryModalOpen(false);
 																setIsReceiptModalOpen(true);
 															}}
-															className="rounded-lg bg-blue-600 px-3 py-1 text-xs font-semibold text-white transition hover:bg-blue-500"
+															title="View Receipt"
+															aria-label="View Receipt"
+															className="inline-flex items-center justify-center bg-transparent p-1 text-blue-600 transition-colors hover:text-blue-700"
 														>
-															View
+															<svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+																<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z" />
+																<circle cx="12" cy="12" r="3" />
+															</svg>
 														</button>
 													</div>
 												</div>

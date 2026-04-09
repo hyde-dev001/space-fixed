@@ -1445,18 +1445,21 @@ Route::middleware(['auth:user', 'check.suspension'])->group(function () {
 });
 
 // Finance pages
-Route::prefix('finance')->name('finance.')->middleware(['auth:user', 'role_or_permission:Shop Owner|access-finance-dashboard|access-finance-expenses|access-finance-invoices|access-repair-price-approval|access-shoe-price-approval|access-approval-workflow|access-payslip-approval|access-refund-approval'])->group(function () {
+Route::prefix('finance')->name('finance.')->middleware(['auth:user', 'role_or_permission:Shop Owner|access-finance-dashboard|access-finance-expenses|access-finance-invoices|access-repair-price-approval|access-shoe-price-approval|access-approval-workflow|access-purchase-request-approval|access-payslip-approval|access-refund-approval'])->group(function () {
     Route::get('/', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
 
-        $purchaseRequests = \App\Models\PurchaseRequest::query()
-            ->with(['shopOwner', 'supplier', 'inventoryItem', 'requester', 'reviewer', 'approver'])
-            ->where('shop_owner_id', Auth::user()->shop_owner_id)
-            ->where('status', 'pending_finance')
-            ->orderBy('requested_date', 'desc')
-            ->get();
+        $purchaseRequests = collect();
+        if (Auth::user()->can('viewAny', \App\Models\PurchaseRequest::class)) {
+            $purchaseRequests = \App\Models\PurchaseRequest::query()
+                ->with(['shopOwner', 'supplier', 'inventoryItem', 'requester', 'reviewer', 'approver'])
+                ->where('shop_owner_id', Auth::user()->shop_owner_id)
+                ->where('status', 'pending_finance')
+                ->orderBy('requested_date', 'desc')
+                ->get();
+        }
 
         return Inertia::render('ERP/Finance/Finance', [
             'purchaseRequests' => $purchaseRequests
@@ -1654,6 +1657,8 @@ Route::prefix('finance')->name('finance.')->middleware(['auth:user', 'role_or_pe
             return redirect()->route('erp.profile');
         }
 
+        abort_unless(Auth::user()->can('viewAny', \App\Models\PurchaseRequest::class), 403);
+
         $requests = \App\Models\PurchaseRequest::query()
             ->with(['shopOwner', 'supplier', 'inventoryItem', 'requester', 'reviewer', 'approver'])
             ->where('shop_owner_id', Auth::user()->shop_owner_id)
@@ -1678,7 +1683,7 @@ Route::prefix('finance')->name('finance.')->middleware(['auth:user', 'role_or_pe
         return Inertia::render('ERP/Finance/PurchaseRequestApproval', [
             'requests' => $requests
         ]);
-    })->name('purchase-request-approval');
+    })->middleware('permission:access-finance-dashboard|access-approval-workflow|access-purchase-request-approval')->name('purchase-request-approval');
 });
 
 // Finance Audit Logs

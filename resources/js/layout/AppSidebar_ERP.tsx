@@ -1114,6 +1114,7 @@ const AppSidebar_ERP: React.FC = () => {
           permissions.includes('access-repair-price-approval') ||
           permissions.includes('access-shoe-price-approval') ||
           permissions.includes('access-refund-approval') ||
+          permissions.includes('access-purchase-request-approval') ||
           normalizedRoles.includes('SHOP OWNER') ||
           normalizedRole === 'SHOP OWNER' ||
           permissions.includes('access-payslip-approval') ||
@@ -1129,7 +1130,7 @@ const AppSidebar_ERP: React.FC = () => {
               return !isRepairOnlyBusiness && permissions.includes('access-shoe-price-approval');
             }
             if (subItem.name === "Purchase Request Review") {
-              return permissions.includes('access-shoe-price-approval') || permissions.includes('access-repair-price-approval');
+              return permissions.includes('access-purchase-request-approval') || permissions.includes('access-approval-workflow') || permissions.includes('access-finance-dashboard');
             }
             if (subItem.name === "Refund Approval") {
               return permissions.includes('access-refund-approval');
@@ -1159,6 +1160,7 @@ const AppSidebar_ERP: React.FC = () => {
       'access-finance-dashboard',
       'access-finance-expenses',
       'access-finance-invoices',
+      'access-purchase-request-approval',
       'access-approval-workflow',
       'access-payslip-approval',
       'access-refund-approval',

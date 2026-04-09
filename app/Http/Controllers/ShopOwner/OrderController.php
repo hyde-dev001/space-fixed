@@ -555,7 +555,7 @@ class OrderController extends Controller
             ->where('order_id', $order->id)
             ->where('shop_owner_id', (int) $shopOwner->id)
             ->where('flow_type', 'request_approval')
-            ->whereIn('status', ['requested', 'pending_approval', 'processing'])
+            ->whereIn('status', ['requested', 'pending_approval', 'processing', 'succeeded'])
             ->latest('id')
             ->first();
 
@@ -628,7 +628,7 @@ class OrderController extends Controller
             ->where('order_id', $order->id)
             ->where('shop_owner_id', (int) $shopOwner->id)
             ->where('flow_type', 'request_approval')
-            ->whereIn('status', ['requested', 'pending_approval', 'processing'])
+            ->whereIn('status', ['requested', 'pending_approval', 'processing', 'succeeded'])
             ->latest('id')
             ->first();
 

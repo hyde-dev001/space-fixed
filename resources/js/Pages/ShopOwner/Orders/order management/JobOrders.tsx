@@ -845,7 +845,7 @@ export default function JobOrdersPage() {
 
     return String(latestRefund.flow_type || '').toLowerCase() === 'request_approval'
       && ['pending_staff_pickup', 'in_transit'].includes(String(latestRefund.return_status || '').toLowerCase())
-      && !['rejected', 'failed', 'succeeded'].includes(String(latestRefund.status || '').toLowerCase());
+      && !['rejected', 'failed'].includes(String(latestRefund.status || '').toLowerCase());
   };
 
   const canArrangeReturnPickup = (order: Order) => {
@@ -856,7 +856,7 @@ export default function JobOrdersPage() {
 
     const returnStatus = String(latestRefund.return_status || '').toLowerCase();
     const flowType = String(latestRefund.flow_type || '').toLowerCase();
-    const isBlocked = ['rejected', 'failed', 'succeeded'].includes(String(latestRefund.status || '').toLowerCase());
+    const isBlocked = ['rejected', 'failed'].includes(String(latestRefund.status || '').toLowerCase());
 
     return flowType === 'request_approval'
       && ['pending_customer_shipment', 'pending_staff_pickup'].includes(returnStatus)
