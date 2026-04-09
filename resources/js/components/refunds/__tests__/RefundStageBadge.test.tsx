@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 import RefundStageBadge, { resolveRefundStageBadge } from "../RefundStageBadge";
 
 describe("RefundStageBadge", () => {
@@ -14,7 +15,7 @@ describe("RefundStageBadge", () => {
 			/>,
 		);
 
-		expect(screen.getByText("Awaiting Approval")).toBeInTheDocument();
+		expect(screen.getByText("Awaiting Finance Initial")).toBeInTheDocument();
 	});
 
 	it("resolves ready for finance payout after return received", () => {
