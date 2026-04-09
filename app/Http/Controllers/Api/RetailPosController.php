@@ -115,7 +115,13 @@ class RetailPosController extends Controller
         $rows = PosTransaction::query()
             ->where('module_type', 'retail')
             ->where('shop_owner_id', $shopOwnerId)
-            ->with(['paymentLines', 'receipt', 'refunds' => fn ($query) => $query->orderByDesc('id')])
+            ->with([
+                'paymentLines',
+                'receipt',
+                'refunds' => fn ($query) => $query->orderByDesc('id'),
+                'sourceOrder:id,shop_owner_id',
+                'sourceOrder.items:id,order_id,product_id,product_name,price,quantity,subtotal,size,color',
+            ])
             ->orderByDesc('id')
             ->paginate($perPage);
 

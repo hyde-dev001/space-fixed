@@ -15,6 +15,10 @@ class RetailPosRefundService
 {
     private const FINAL_STATUSES = ['succeeded', 'failed', 'rejected', 'cancelled'];
 
+    public function __construct(private readonly RefundLineCalculatorService $refundLineCalculatorService)
+    {
+    }
+
     public function requestRefund(PosTransaction $source, array $payload, int $actorId): PosRefund
     {
         if ((string) $source->module_type !== 'retail') {
@@ -61,6 +65,33 @@ class RetailPosRefundService
             }
 
             $orderItemsById = $order->items->keyBy('id');
+
+            $requestedQtyByItem = $rawLines
+                ->groupBy('order_item_id')
+                ->map(fn ($rows) => (int) collect($rows)->sum('requested_qty'));
+
+            foreach ($requestedQtyByItem as $itemId => $requestedQtyTotal) {
+                $orderItem = $orderItemsById->get((int) $itemId);
+                if (!$orderItem) {
+                    throw ValidationException::withMessages([
+                        'refund_lines' => ['One or more selected refund lines do not belong to the source order.'],
+                    ]);
+                }
+
+                $purchasedQty = max(1, (int) ($orderItem->quantity ?? 1));
+                $remainingQty = $this->refundLineCalculatorService->resolveRemainingQty(
+                    orderItemId: (int) $orderItem->id,
+                    purchasedQty: $purchasedQty,
+                    channel: 'retail',
+                );
+
+                if ($requestedQtyTotal > $remainingQty) {
+                    throw ValidationException::withMessages([
+                        'refund_lines' => ['Requested qty exceeds remaining refundable quantity for one or more items.'],
+                    ]);
+                }
+            }
+
             foreach ($rawLines as $line) {
                 $orderItem = $orderItemsById->get($line['order_item_id']);
                 if (!$orderItem) {
@@ -92,7 +123,7 @@ class RetailPosRefundService
                     $unitPrice = round((float) ($orderItem->subtotal ?? 0) / max(1, (int) ($orderItem->quantity ?? 1)), 2);
                 }
 
-                $lineAmount = round($unitPrice * $requestedQty, 2);
+                $lineAmount = $this->refundLineCalculatorService->computeLineAmount($unitPrice, $requestedQty);
                 $requestedAmount += $lineAmount;
 
                 $variantId = $this->resolveOrderItemVariantId($orderItem);

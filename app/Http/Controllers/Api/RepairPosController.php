@@ -385,6 +385,11 @@ class RepairPosController extends Controller
                     actorId: $this->resolveActorAuditUserId(),
                     executionMode: 'manual',
                     executionNote: 'Auto-executed for individual shop owner POS refund.',
+                    executionContext: [
+                        'execution_channel' => 'cash',
+                        'execution_reference' => 'AUTO-POS-REFUND-' . now()->format('YmdHis'),
+                        'execution_proof_urls' => ['auto_processed_by_system'],
+                    ],
                 );
 
                 $autoProcessed = (string) ($refund->status ?? '') === 'succeeded';

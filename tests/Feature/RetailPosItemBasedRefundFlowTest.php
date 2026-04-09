@@ -144,10 +144,59 @@ class RetailPosItemBasedRefundFlowTest extends TestCase
         $this->assertSame(5, (int) $product->fresh()->stock_quantity);
     }
 
+    #[Test]
+    public function second_pos_partial_refund_cannot_exceed_remaining_qty(): void
+    {
+        [$cashier, $product, $transactionId, $orderItemId] = $this->seedCheckout(2);
+
+        $first = $this->actingAs($cashier, 'user')
+            ->postJson('/api/retail-pos/refunds', [
+                'source_transaction_id' => $transactionId,
+                'request_type' => 'partial',
+                'refund_lines' => [
+                    [
+                        'order_item_id' => $orderItemId,
+                        'requested_qty' => 1,
+                        'inspection_disposition' => 'damaged',
+                    ],
+                ],
+                'reason_code' => 'damaged_item',
+                'reason_notes' => 'First partial refund line.',
+            ]);
+
+        $first->assertOk();
+        $firstRefund = PosRefund::query()->findOrFail((int) $first->json('refund_id'));
+        $firstRefund->update([
+            'status' => 'succeeded',
+            'approved_amount' => 800,
+            'executed_at' => now(),
+        ]);
+
+        $second = $this->actingAs($cashier, 'user')
+            ->postJson('/api/retail-pos/refunds', [
+                'source_transaction_id' => $transactionId,
+                'request_type' => 'partial',
+                'refund_lines' => [
+                    [
+                        'order_item_id' => $orderItemId,
+                        'requested_qty' => 2,
+                        'inspection_disposition' => 'damaged',
+                    ],
+                ],
+                'reason_code' => 'damaged_item',
+                'reason_notes' => 'Second request should exceed remaining qty.',
+            ]);
+
+        $second->assertStatus(422)
+            ->assertJsonValidationErrors(['refund_lines']);
+
+        $this->assertSame(3, (int) $product->fresh()->stock_quantity);
+    }
+
     /**
      * @return array{0: User, 1: Product, 2: int, 3: int}
      */
-    private function seedCheckout(): array
+    private function seedCheckout(int $qty = 1): array
     {
         $shopOwner = ShopOwner::factory()->approved()->create([
             'business_type' => 'both',
@@ -174,12 +223,12 @@ class RetailPosItemBasedRefundFlowTest extends TestCase
                 'walk_in_name' => 'Walk In Buyer',
                 'items' => [[
                     'product_id' => $product->id,
-                    'qty' => 1,
+                    'qty' => $qty,
                     'unit_price' => 800,
                 ]],
                 'payment_lines' => [[
                     'tender_type' => 'cash',
-                    'amount' => 800,
+                    'amount' => 800 * $qty,
                 ]],
             ]);
 

@@ -72,9 +72,15 @@ class RefundInventoryDispositionService
             $line->inventory_applied_at = now();
             $line->save();
 
+            $orderRefundId = (int) ($line->order_refund_id ?? 0);
+            $posRefundId = (int) ($line->pos_refund_id ?? 0);
+
             Log::info('Refund line inventory action applied', [
                 'channel' => $channel,
+                'refund_id' => $orderRefundId > 0 ? $orderRefundId : ($posRefundId > 0 ? $posRefundId : null),
+                'refund_table' => $orderRefundId > 0 ? 'order_refunds' : ($posRefundId > 0 ? 'pos_refunds' : null),
                 'line_id' => $lineId,
+                'order_item_id' => (int) ($line->order_item_id ?? 0),
                 'product_id' => (int) ($line->product_id ?? 0),
                 'qty' => $qty,
                 'inspection_disposition' => $disposition,

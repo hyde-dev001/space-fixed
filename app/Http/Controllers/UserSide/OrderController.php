@@ -17,6 +17,7 @@ use App\Services\NotificationService;
 use App\Services\OrderRefundService;
 use App\Services\PaymongoRefundService;
 use App\Services\PaymentSettlementService;
+use App\Services\RefundLineCalculatorService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
@@ -35,6 +36,7 @@ class OrderController extends Controller
     protected OrderRefundService $orderRefundService;
     protected PaymongoRefundService $paymongoRefundService;
     protected PaymentSettlementService $paymentSettlementService;
+    protected RefundLineCalculatorService $refundLineCalculatorService;
     private ?array $orderRefundColumns = null;
     private bool $orderRefundColumnIntrospectionFailed = false;
 
@@ -43,12 +45,14 @@ class OrderController extends Controller
         OrderRefundService $orderRefundService,
         PaymongoRefundService $paymongoRefundService,
         PaymentSettlementService $paymentSettlementService,
+        RefundLineCalculatorService $refundLineCalculatorService,
     )
     {
         $this->notificationService = $notificationService;
         $this->orderRefundService = $orderRefundService;
         $this->paymongoRefundService = $paymongoRefundService;
         $this->paymentSettlementService = $paymentSettlementService;
+        $this->refundLineCalculatorService = $refundLineCalculatorService;
     }
     /**
      * Display user's orders
@@ -596,6 +600,31 @@ class OrderController extends Controller
                     ], 422);
                 }
 
+                $requestedQtyByItem = $requestedRefundLines
+                    ->groupBy('order_item_id')
+                    ->map(fn ($rows) => (int) collect($rows)->sum('requested_qty'));
+
+                foreach ($requestedQtyByItem as $itemId => $requestedQtyTotal) {
+                    $orderItem = $orderItemsById->get((int) $itemId);
+                    if (!$orderItem) {
+                        continue;
+                    }
+
+                    $purchasedQty = max(1, (int) ($orderItem->quantity ?? 1));
+                    $remainingQty = $this->refundLineCalculatorService->resolveRemainingQty(
+                        orderItemId: (int) $orderItem->id,
+                        purchasedQty: $purchasedQty,
+                        channel: 'online',
+                    );
+
+                    if ($requestedQtyTotal > $remainingQty) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Requested qty exceeds remaining refundable quantity for one or more items.',
+                        ], 422);
+                    }
+                }
+
                 foreach ($requestedRefundLines as $line) {
                     $orderItem = $orderItemsById->get($line['order_item_id']);
                     if (!$orderItem) {
@@ -853,12 +882,7 @@ class OrderController extends Controller
             && $this->hasOrderRefundColumn('status')
             && !$this->orderRefundColumnIntrospectionFailed
         ) {
-            // Block duplicate requests unless latest flow is explicitly terminal/rejected.
-            $query->where(function ($statusQuery) {
-                $statusQuery
-                    ->whereNull('status')
-                    ->orWhereNotIn('status', ['rejected', 'failed']);
-            });
+            $query->whereIn('status', ['requested', 'pending_approval', 'approved', 'processing']);
         }
 
         return $query;
