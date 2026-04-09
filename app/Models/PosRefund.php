@@ -82,6 +82,11 @@ class PosRefund extends Model
         return $this->hasMany(PosRefundLine::class);
     }
 
+    public function items(): HasMany
+    {
+        return $this->hasMany(PosRefundItem::class);
+    }
+
     public function legs(): HasMany
     {
         return $this->hasMany(PosRefundLeg::class, 'pos_refund_id');
