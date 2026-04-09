@@ -75,6 +75,8 @@ export default function RecentOrders({ orders = [] }: RecentOrdersProps) {
       case 'refund':
       case 'refunded':
         return 'error';
+      case 'partially_refunded':
+        return 'warning';
       default:
         return 'default';
     }
@@ -84,6 +86,7 @@ export default function RecentOrders({ orders = [] }: RecentOrdersProps) {
   const formatStatusLabel = (status: string) => {
     const normalized = status.toLowerCase();
     if (normalized === 'refund' || normalized === 'refunded') return 'Refunded';
+    if (normalized === 'partially_refunded') return 'Partially Refunded';
     return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
   };
 

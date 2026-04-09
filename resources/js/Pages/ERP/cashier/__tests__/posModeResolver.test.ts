@@ -6,11 +6,19 @@ describe("resolveAllowedModes", () => {
     expect(resolveAllowedModes("both")).toEqual(["repair", "retail"]);
   });
 
+  it("returns both modes for legacy both label", () => {
+    expect(resolveAllowedModes("both (retail & repair)")).toEqual(["repair", "retail"]);
+  });
+
   it("returns retail mode only for retail business", () => {
     expect(resolveAllowedModes("retail")).toEqual(["retail"]);
   });
 
   it("returns repair mode only for repair business", () => {
     expect(resolveAllowedModes("repair")).toEqual(["repair"]);
+  });
+
+  it("returns repair mode for repair-only labels", () => {
+    expect(resolveAllowedModes("repair only")).toEqual(["repair"]);
   });
 });

@@ -4,15 +4,204 @@ namespace App\Http\Controllers\Staff;
 
 use App\Http\Controllers\Controller;
 use App\Models\Order;
+use App\Models\OrderRefund;
+use App\Models\PosRefund;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Carbon\Carbon;
 use Inertia\Inertia;
 
 class CustomerController extends Controller
 {
+    private function customerIdentityExpression(): string
+    {
+        return "CASE
+            WHEN orders.customer_id IS NOT NULL THEN CONCAT('user:', orders.customer_id)
+            WHEN COALESCE(NULLIF(orders.customer_email, ''), NULLIF(orders.customer_phone, ''), NULLIF(orders.customer_name, '')) IS NOT NULL
+                THEN CONCAT('guest:', LOWER(COALESCE(NULLIF(orders.customer_email, ''), NULLIF(orders.customer_phone, ''), NULLIF(orders.customer_name, ''))))
+            ELSE CONCAT('order:', orders.id)
+        END";
+    }
+
+    private function buildCustomerAggregateQuery(int $shopOwnerId, ?Carbon $from = null, ?Carbon $to = null)
+    {
+        $identityExpr = $this->customerIdentityExpression();
+
+        $query = Order::query()
+            ->leftJoin('users', 'orders.customer_id', '=', 'users.id')
+            ->where('orders.shop_owner_id', $shopOwnerId)
+            ->select([
+                DB::raw("{$identityExpr} as customer_identity"),
+                DB::raw('MAX(orders.customer_id) as customer_id'),
+                DB::raw("COALESCE(MAX(NULLIF(users.name, '')), MAX(NULLIF(orders.customer_name, '')), 'Guest Customer') as name"),
+                DB::raw("COALESCE(MAX(NULLIF(users.email, '')), MAX(NULLIF(orders.customer_email, '')), 'N/A') as email"),
+                DB::raw("COALESCE(MAX(NULLIF(users.phone, '')), MAX(NULLIF(orders.customer_phone, '')), 'N/A') as phone"),
+                DB::raw("COALESCE(MAX(NULLIF(users.address, '')), MAX(NULLIF(orders.customer_address, '')), 'N/A') as address"),
+                DB::raw('COUNT(DISTINCT orders.id) as total_orders'),
+                DB::raw('COALESCE(SUM(orders.total_amount), 0) as total_spent'),
+                DB::raw('MAX(orders.created_at) as last_order_date'),
+                DB::raw('MIN(COALESCE(users.created_at, orders.created_at)) as first_seen_date'),
+            ])
+            ->groupBy(DB::raw($identityExpr));
+
+        if ($from) {
+            $query->where('orders.created_at', '>=', $from->copy()->startOfDay());
+        }
+        if ($to) {
+            $query->where('orders.created_at', '<=', $to->copy()->endOfDay());
+        }
+
+        return $query;
+    }
+
+    private function mapCustomerAggregate($customer): array
+    {
+        $lastOrderDate = $customer->last_order_date ? Carbon::parse($customer->last_order_date) : null;
+        $firstSeenDate = $customer->first_seen_date ? Carbon::parse($customer->first_seen_date) : $lastOrderDate;
+        $status = $lastOrderDate && $lastOrderDate->greaterThan(Carbon::now()->subDays(90))
+            ? 'active'
+            : 'inactive';
+
+        $fallbackId = 0 - abs((int) sprintf('%u', crc32((string) ($customer->customer_identity ?? 'guest'))));
+
+        return [
+            'id' => (int) ($customer->customer_id ?: $fallbackId),
+            'name' => (string) ($customer->name ?? 'Guest Customer'),
+            'email' => (string) ($customer->email ?? 'N/A'),
+            'phone' => (string) ($customer->phone ?? 'N/A'),
+            'address' => (string) ($customer->address ?? 'N/A'),
+            'status' => $status,
+            'totalOrders' => (int) ($customer->total_orders ?? 0),
+            'totalSpent' => (float) ($customer->total_spent ?? 0.0),
+            'lastOrderDate' => $lastOrderDate ? $lastOrderDate->format('Y-m-d') : 'N/A',
+            'createdAt' => $firstSeenDate ? $firstSeenDate->format('Y-m-d') : Carbon::now()->format('Y-m-d'),
+        ];
+    }
+
+    private function getSucceededRefundAmountByOrder(array $orderIds): array
+    {
+        if (empty($orderIds)) {
+            return [];
+        }
+
+        $onlineRefundByOrder = [];
+        $onlineRefunds = OrderRefund::query()
+            ->select(['id', 'order_id', 'amount'])
+            ->whereIn('order_id', $orderIds)
+            ->where('status', 'succeeded')
+            ->get();
+
+        if ($onlineRefunds->isNotEmpty()) {
+            $lineRefundByRefundId = collect();
+
+            if (Schema::hasTable('order_refund_items')) {
+                $lineRefundByRefundId = DB::table('order_refund_items')
+                    ->select('order_refund_id', DB::raw('SUM(COALESCE(line_amount, 0)) as line_total'))
+                    ->whereIn('order_refund_id', $onlineRefunds->pluck('id')->all())
+                    ->groupBy('order_refund_id')
+                    ->pluck('line_total', 'order_refund_id');
+            }
+
+            foreach ($onlineRefunds as $refund) {
+                $lineAmount = (float) ($lineRefundByRefundId[$refund->id] ?? 0.0);
+                $effectiveRefundAmount = $lineAmount > 0
+                    ? $lineAmount
+                    : (float) ($refund->amount ?? 0.0);
+
+                if ($effectiveRefundAmount <= 0) {
+                    continue;
+                }
+
+                $orderId = (int) ($refund->order_id ?? 0);
+                if ($orderId <= 0) {
+                    continue;
+                }
+
+                $onlineRefundByOrder[$orderId] = (float) (($onlineRefundByOrder[$orderId] ?? 0.0) + $effectiveRefundAmount);
+            }
+        }
+
+        $posRefundByOrder = [];
+        if (Schema::hasTable('pos_refunds')) {
+            $posRefundRows = PosRefund::query()
+                ->select('module_reference_id')
+                ->selectRaw('SUM(COALESCE(approved_amount, requested_amount, 0)) as total_refunded')
+                ->where('module_type', 'retail')
+                ->where('status', 'succeeded')
+                ->whereIn('module_reference_id', $orderIds)
+                ->groupBy('module_reference_id')
+                ->get();
+
+            foreach ($posRefundRows as $row) {
+                $moduleReferenceId = (int) ($row->module_reference_id ?? 0);
+                if ($moduleReferenceId <= 0) {
+                    continue;
+                }
+
+                $posRefundByOrder[$moduleReferenceId] = (float) ($row->total_refunded ?? 0.0);
+            }
+        }
+
+        $combined = [];
+        foreach ($orderIds as $orderId) {
+            $id = (int) $orderId;
+            if ($id <= 0) {
+                continue;
+            }
+
+            $combined[$id] = round(
+                max(0.0, (float) ($onlineRefundByOrder[$id] ?? 0.0) + (float) ($posRefundByOrder[$id] ?? 0.0)),
+                2,
+            );
+        }
+
+        return $combined;
+    }
+
+    private function computeRetailNetRevenue(int $shopOwnerId, ?Carbon $from = null, ?Carbon $to = null): float
+    {
+        $ordersQuery = Order::query()
+            ->select('id', 'total_amount')
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where('status', '!=', 'cancelled');
+
+        if ($from) {
+            $ordersQuery->where('created_at', '>=', $from->copy()->startOfDay());
+        }
+        if ($to) {
+            $ordersQuery->where('created_at', '<=', $to->copy()->endOfDay());
+        }
+
+        $orders = $ordersQuery->get();
+        if ($orders->isEmpty()) {
+            return 0.0;
+        }
+
+        $orderIds = $orders->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $refundAmountByOrder = $this->getSucceededRefundAmountByOrder($orderIds);
+
+        $netRevenue = 0.0;
+        foreach ($orders as $order) {
+            $orderId = (int) ($order->id ?? 0);
+            if ($orderId <= 0) {
+                continue;
+            }
+
+            $grossAmount = max(0.0, (float) ($order->total_amount ?? 0.0));
+            if ($grossAmount <= 0) {
+                continue;
+            }
+
+            $totalRefunded = max(0.0, (float) ($refundAmountByOrder[$orderId] ?? 0.0));
+            $netRevenue += max(0.0, $grossAmount - min($grossAmount, $totalRefunded));
+        }
+
+        return round($netRevenue, 2);
+    }
+
     /**
      * Display the customer management page (Inertia)
      */
@@ -44,69 +233,41 @@ class CustomerController extends Controller
 
         $shopOwnerId = $user->shop_owner_id;
 
-        // Get customers
-        $customers = User::select([
-            'users.id',
-            'users.name',
-            'users.email',
-            'users.phone',
-            'users.address',
-            'users.created_at',
-            DB::raw('COUNT(DISTINCT orders.id) as total_orders'),
-            DB::raw('COALESCE(SUM(orders.total_amount), 0) as total_spent'),
-            DB::raw('MAX(orders.created_at) as last_order_date')
-        ])
-        ->join('orders', 'users.id', '=', 'orders.customer_id')
-        ->where('orders.shop_owner_id', $shopOwnerId)
-        ->groupBy('users.id', 'users.name', 'users.email', 'users.phone', 'users.address', 'users.created_at')
-        ->get()
-        ->map(function($customer) {
-            $lastOrderDate = $customer->last_order_date ? Carbon::parse($customer->last_order_date) : null;
-            $status = $lastOrderDate && $lastOrderDate->greaterThan(Carbon::now()->subDays(90)) 
-                ? 'active' 
-                : 'inactive';
-
-            return [
-                'id' => $customer->id,
-                'name' => $customer->name ?? 'Guest Customer',
-                'email' => $customer->email ?? 'N/A',
-                'phone' => $customer->phone ?? 'N/A',
-                'address' => $customer->address ?? 'N/A',
-                'status' => $status,
-                'totalOrders' => (int) $customer->total_orders,
-                'totalSpent' => (float) $customer->total_spent,
-                'lastOrderDate' => $lastOrderDate ? $lastOrderDate->format('Y-m-d') : 'N/A',
-                'createdAt' => Carbon::parse($customer->created_at)->format('Y-m-d'),
-            ];
-        });
+        // Build customer summaries from order data so POS walk-in customers are included.
+        $customers = $this->buildCustomerAggregateQuery($shopOwnerId)
+            ->get()
+            ->map(fn ($customer) => $this->mapCustomerAggregate($customer))
+            ->sortByDesc('lastOrderDate')
+            ->values();
 
         // Calculate stats
         $totalCustomers = $customers->count();
         $activeCustomers = $customers->where('status', 'active')->count();
         $totalOrders = Order::where('shop_owner_id', $shopOwnerId)->count();
-        $totalRevenue = Order::where('shop_owner_id', $shopOwnerId)
-            ->sum('total_amount');
+        $totalRevenue = $this->computeRetailNetRevenue($shopOwnerId);
 
         // Previous period for comparison (last 30 days)
-        $prevTotalCustomers = User::join('orders', 'users.id', '=', 'orders.customer_id')
-            ->where('orders.shop_owner_id', $shopOwnerId)
-            ->whereBetween('orders.created_at', [now()->subDays(60), now()->subDays(30)])
-            ->distinct('users.id')
-            ->count('users.id');
+        $prevTotalCustomers = $this->buildCustomerAggregateQuery(
+            $shopOwnerId,
+            now()->subDays(60),
+            now()->subDays(30),
+        )->get()->count();
 
-        $prevActiveCustomers = User::join('orders', 'users.id', '=', 'orders.customer_id')
-            ->where('orders.shop_owner_id', $shopOwnerId)
-            ->whereBetween('orders.created_at', [now()->subDays(120), now()->subDays(90)])
-            ->distinct('users.id')
-            ->count('users.id');
+        $prevActiveCustomers = $this->buildCustomerAggregateQuery(
+            $shopOwnerId,
+            now()->subDays(120),
+            now()->subDays(90),
+        )->get()->count();
 
         $prevTotalOrders = Order::where('shop_owner_id', $shopOwnerId)
             ->whereBetween('created_at', [now()->subDays(60), now()->subDays(30)])
             ->count();
 
-        $prevTotalRevenue = Order::where('shop_owner_id', $shopOwnerId)
-            ->whereBetween('created_at', [now()->subDays(60), now()->subDays(30)])
-            ->sum('total_amount');
+        $prevTotalRevenue = $this->computeRetailNetRevenue(
+            $shopOwnerId,
+            now()->subDays(60),
+            now()->subDays(30),
+        );
 
         // Calculate percentage changes (handle division by zero)
         $calculateChange = function($current, $previous) {
@@ -162,56 +323,19 @@ class CustomerController extends Controller
         $searchTerm = $request->input('search', '');
         $filterStatus = $request->input('status', 'all');
 
-        // Get unique customers who have ordered from this shop
-        $customersQuery = User::select([
-            'users.id',
-            'users.name',
-            'users.email',
-            'users.phone',
-            'users.address',
-            'users.created_at',
-            DB::raw('COUNT(DISTINCT orders.id) as total_orders'),
-            DB::raw('COALESCE(SUM(orders.total_amount), 0) as total_spent'),
-            DB::raw('MAX(orders.created_at) as last_order_date'),
-            DB::raw('CASE 
-                WHEN MAX(orders.created_at) >= DATE_SUB(NOW(), INTERVAL 30 DAY) 
-                THEN "active" 
-                ELSE "inactive" 
-            END as status')
-        ])
-        ->join('orders', 'users.id', '=', 'orders.customer_id')
-        ->where('orders.shop_owner_id', $shopOwnerId)
-        ->groupBy('users.id', 'users.name', 'users.email', 'users.phone', 'users.address', 'users.created_at');
+        $customers = $this->buildCustomerAggregateQuery($shopOwnerId)
+            ->get()
+            ->map(fn ($customer) => $this->mapCustomerAggregate($customer));
 
-        // Apply search filter
         if ($searchTerm) {
-            $customersQuery->where(function($q) use ($searchTerm) {
-                $q->where('users.name', 'like', '%' . $searchTerm . '%')
-                  ->orWhere('users.email', 'like', '%' . $searchTerm . '%')
-                  ->orWhere('users.phone', 'like', '%' . $searchTerm . '%');
-            });
+            $normalizedSearch = strtolower($searchTerm);
+
+            $customers = $customers->filter(function ($customer) use ($normalizedSearch) {
+                return str_contains(strtolower((string) $customer['name']), $normalizedSearch)
+                    || str_contains(strtolower((string) $customer['email']), $normalizedSearch)
+                    || str_contains((string) $customer['phone'], $normalizedSearch);
+            })->values();
         }
-
-        $customers = $customersQuery->get()->map(function($customer) use ($filterStatus) {
-            // Determine active status
-            $lastOrderDate = $customer->last_order_date ? Carbon::parse($customer->last_order_date) : null;
-            $status = $lastOrderDate && $lastOrderDate->greaterThan(Carbon::now()->subDays(30)) 
-                ? 'active' 
-                : 'inactive';
-
-            return [
-                'id' => $customer->id,
-                'name' => $customer->name ?? 'N/A',
-                'email' => $customer->email ?? 'N/A',
-                'phone' => $customer->phone ?? 'N/A',
-                'address' => $customer->address ?? 'N/A',
-                'status' => $status,
-                'totalOrders' => (int) $customer->total_orders,
-                'totalSpent' => (float) $customer->total_spent,
-                'lastOrderDate' => $lastOrderDate ? $lastOrderDate->format('Y-m-d') : 'N/A',
-                'createdAt' => Carbon::parse($customer->created_at)->format('Y-m-d'),
-            ];
-        });
 
         // Apply status filter after mapping
         if ($filterStatus !== 'all') {
@@ -245,32 +369,29 @@ class CustomerController extends Controller
         }
 
         // Get unique customer count
-        $totalCustomers = Order::where('shop_owner_id', $shopOwnerId)
-            ->distinct('customer_id')
-            ->count('customer_id');
+        $totalCustomers = $this->buildCustomerAggregateQuery($shopOwnerId)
+            ->get()
+            ->count();
 
-        // Get active customers (ordered in last 30 days)
-        $activeCustomers = Order::where('shop_owner_id', $shopOwnerId)
-            ->where('created_at', '>=', Carbon::now()->subDays(30))
-            ->distinct('customer_id')
-            ->count('customer_id');
+        // Get active customers (has orders in last 30 days)
+        $activeCustomers = $this->buildCustomerAggregateQuery(
+            $shopOwnerId,
+            Carbon::now()->subDays(30),
+            Carbon::now(),
+        )->get()->count();
 
         // Get total orders
         $totalOrders = Order::where('shop_owner_id', $shopOwnerId)->count();
 
-        // Get total revenue from completed/processing orders
-        $totalRevenue = Order::where('shop_owner_id', $shopOwnerId)
-            ->whereIn('status', ['processing', 'shipped', 'completed'])
-            ->sum('total_amount');
+        // Get total revenue (net of succeeded refunds)
+        $totalRevenue = $this->computeRetailNetRevenue($shopOwnerId);
 
         // Previous month stats for comparison
-        $lastMonthCustomers = Order::where('shop_owner_id', $shopOwnerId)
-            ->whereBetween('created_at', [
-                Carbon::now()->subMonths(2)->startOfMonth(),
-                Carbon::now()->subMonth()->endOfMonth()
-            ])
-            ->distinct('customer_id')
-            ->count('customer_id');
+        $lastMonthCustomers = $this->buildCustomerAggregateQuery(
+            $shopOwnerId,
+            Carbon::now()->subMonths(2)->startOfMonth(),
+            Carbon::now()->subMonth()->endOfMonth(),
+        )->get()->count();
 
         $lastMonthOrders = Order::where('shop_owner_id', $shopOwnerId)
             ->whereBetween('created_at', [
@@ -279,13 +400,11 @@ class CustomerController extends Controller
             ])
             ->count();
 
-        $lastMonthRevenue = Order::where('shop_owner_id', $shopOwnerId)
-            ->whereIn('status', ['processing', 'shipped', 'completed'])
-            ->whereBetween('created_at', [
-                Carbon::now()->subMonth()->startOfMonth(),
-                Carbon::now()->subMonth()->endOfMonth()
-            ])
-            ->sum('total_amount');
+        $lastMonthRevenue = $this->computeRetailNetRevenue(
+            $shopOwnerId,
+            Carbon::now()->subMonth()->startOfMonth(),
+            Carbon::now()->subMonth()->endOfMonth(),
+        );
 
         // Calculate percentage changes
         $customerChange = $lastMonthCustomers > 0 

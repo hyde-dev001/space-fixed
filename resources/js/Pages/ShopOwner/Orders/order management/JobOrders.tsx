@@ -51,6 +51,17 @@ type Order = {
   product?: string;
   pickup_enabled?: boolean;
   pickup_enabled_at?: string | null;
+  retail_pos_refund?: {
+    latest_refund_id: number;
+    latest_status: string | null;
+    has_activity: boolean;
+    has_open_request: boolean;
+    has_succeeded: boolean;
+    total_requested_amount: number;
+    total_succeeded_amount: number;
+    committed_item_qty: Array<{ order_item_id: number; qty: number }>;
+    succeeded_item_qty: Array<{ order_item_id: number; qty: number }>;
+  } | null;
   latest_refund?: {
     id: number;
     status: string;
@@ -78,6 +89,14 @@ type Order = {
     refund_executed_at?: string | null;
     rejection_reason?: string | null;
     flow_type?: string;
+    items?: Array<{
+      order_item_id: number;
+      product_name: string;
+      requested_qty: number;
+      approved_qty: number;
+      inspection_disposition?: string | null;
+      line_amount?: number;
+    }>;
   } | null;
   shippingAddressLine?: string;
   shippingBarangay?: string;
@@ -91,6 +110,64 @@ const parseAmount = (value: unknown): number => {
   const parsed = Number.parseFloat(String(value ?? 0).replace(/[^0-9.-]/g, ""));
   return Number.isFinite(parsed) ? parsed : 0;
 };
+
+const roundCurrency = (value: number): number => {
+  return Math.round(Math.max(0, value) * 100) / 100;
+};
+
+const getOnlineSucceededRefundLineAmount = (order: Pick<Order, 'latest_refund' | 'paymentStatus'>): number => {
+  const latestRefund = order.latest_refund;
+  if (!latestRefund || String(latestRefund.flow_type || '').toLowerCase() !== 'request_approval') {
+    return 0;
+  }
+
+  const refundStatus = String(latestRefund.status || '').toLowerCase();
+  const paymentStatus = String(order.paymentStatus || '').toLowerCase();
+  if (refundStatus !== 'succeeded' && paymentStatus !== 'refunded') {
+    return 0;
+  }
+
+  if (!Array.isArray(latestRefund.items)) {
+    return 0;
+  }
+
+  const lineAmount = latestRefund.items.reduce(
+    (sum, line) => sum + Math.max(0, Number(line.line_amount ?? 0)),
+    0,
+  );
+
+  return roundCurrency(lineAmount);
+};
+
+const getCombinedSucceededRefundAmount = (
+  order: Pick<Order, 'latest_refund' | 'paymentStatus' | 'retail_pos_refund'>,
+  fallbackOrderAmount: number,
+): number => {
+  const safeFallbackAmount = roundCurrency(fallbackOrderAmount);
+  const posSucceededAmount = roundCurrency(parseAmount(order.retail_pos_refund?.total_succeeded_amount ?? 0));
+  const onlineLineAmount = getOnlineSucceededRefundLineAmount(order);
+  const latestRefund = order.latest_refund;
+  const hasOnlineRefundSucceeded = Boolean(latestRefund)
+    && String(latestRefund?.flow_type || '').toLowerCase() === 'request_approval'
+    && (
+      String(latestRefund?.status || '').toLowerCase() === 'succeeded'
+      || String(order.paymentStatus || '').toLowerCase() === 'refunded'
+    );
+
+  const onlineSucceededAmount = onlineLineAmount > 0
+    ? onlineLineAmount
+    : (hasOnlineRefundSucceeded ? safeFallbackAmount : 0);
+
+  return roundCurrency(Math.min(safeFallbackAmount, posSucceededAmount + onlineSucceededAmount));
+};
+
+const escapeHtml = (value: string): string =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 
 type MetricCardProps = {
   title: string;
@@ -361,6 +438,7 @@ export default function JobOrdersPage() {
             product: order.items && order.items.length > 0 ? order.items[0].product_name : '',
             pickup_enabled: order.pickup_enabled || false,
             pickup_enabled_at: order.pickup_enabled_at || null,
+            retail_pos_refund: order.retail_pos_refund || null,
             latest_refund: order.latest_refund || null,
           };
         });
@@ -395,7 +473,10 @@ export default function JobOrdersPage() {
   // Filter orders based on tab and search
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
-      const isRefundOrder = order.status === "refund" || String(order.paymentStatus || '').toLowerCase() === 'refunded';
+      const hasRetailPosRefund = Boolean(order.retail_pos_refund?.has_activity);
+      const isRefundOrder = order.status === "refund"
+        || String(order.paymentStatus || '').toLowerCase() === 'refunded'
+        || hasRetailPosRefund;
       const matchesTab = selectedTab === "all" || (selectedTab === 'refund' ? isRefundOrder : order.status === selectedTab);
       const matchesSearch =
         String(order.id).toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -455,11 +536,22 @@ export default function JobOrdersPage() {
     const processing = orders.filter(o => o.status === "processing").length;
     const shipped = orders.filter(o => o.status === "shipped").length;
     const delivered = orders.filter(o => o.status === "delivered").length;
-    const refund = orders.filter(o => o.status === "refund" || String(o.paymentStatus || '').toLowerCase() === 'refunded').length;
-    // Exclude cancelled and refunded orders from recognized revenue.
+    const refund = orders.filter((o) =>
+      o.status === "refund"
+      || String(o.paymentStatus || '').toLowerCase() === 'refunded'
+      || Boolean(o.retail_pos_refund?.has_activity)
+      || String(o.latest_refund?.flow_type || '').toLowerCase() === 'request_approval'
+    ).length;
+
+    // Net revenue = order amount minus succeeded refunds (POS + online), clamped at zero.
     const totalRevenue = orders
-      .filter(o => o.status !== "cancelled" && o.status !== "refund" && String(o.paymentStatus || '').toLowerCase() !== 'refunded')
-      .reduce((sum, o) => sum + o.grand_total, 0);
+      .filter((o) => o.status !== "cancelled")
+      .reduce((sum, o) => {
+        const grossAmount = Math.max(0, parseAmount(o.grand_total));
+        const refundedAmount = getCombinedSucceededRefundAmount(o, grossAmount);
+        return sum + Math.max(0, grossAmount - refundedAmount);
+      }, 0);
+
     return { total, pending, processing, shipped, delivered, refund, totalRevenue };
   }, [orders]);
 
@@ -531,14 +623,59 @@ export default function JobOrdersPage() {
     const paymentStatus = String(order.paymentStatus || '').toLowerCase();
     const orderStatus = String(order.status || '').toLowerCase();
     const latestRefund = order.latest_refund;
+    const retailPosRefund = order.retail_pos_refund;
+    const orderGrandTotal = Math.max(0, parseAmount(order.grand_total));
+
+    if (retailPosRefund?.has_activity) {
+      const latestPosStatus = String(retailPosRefund.latest_status || '').toLowerCase();
+
+      if (retailPosRefund.has_open_request || ['requested', 'approved', 'processing'].includes(latestPosStatus)) {
+        return {
+          label: 'Refund Processing',
+          className: 'bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:ring-blue-700/40',
+        };
+      }
+
+      if (latestPosStatus === 'rejected' || latestPosStatus === 'failed' || latestPosStatus === 'cancelled') {
+        return {
+          label: 'Refund Rejected',
+          className: 'bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-200 dark:bg-rose-900/20 dark:text-rose-300 dark:ring-rose-700/40',
+        };
+      }
+
+      if (retailPosRefund.has_succeeded) {
+        const refundedAmount = parseAmount(retailPosRefund.total_succeeded_amount);
+        const orderGrandTotal = parseAmount(order.grand_total);
+        const isFullyRefunded = orderGrandTotal > 0 && refundedAmount >= orderGrandTotal - 0.01;
+
+        return {
+          label: isFullyRefunded ? 'Refunded' : 'Partially Refunded',
+          className: isFullyRefunded
+            ? 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:ring-emerald-700/40'
+            : 'bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-200 dark:bg-sky-900/20 dark:text-sky-300 dark:ring-sky-700/40',
+        };
+      }
+    }
 
     if (latestRefund && String(latestRefund.flow_type || '').toLowerCase() === 'request_approval') {
       const refundStatus = String(latestRefund.status || '').toLowerCase();
       const shopOwnerStatus = String(latestRefund.shop_owner_status || '').toLowerCase();
       const financeStatus = String(latestRefund.finance_status || '').toLowerCase();
       const returnStatus = String(latestRefund.return_status || '').toLowerCase();
+      const onlineRefundedAmount = getOnlineSucceededRefundLineAmount(order);
+      const hasOnlineRefundSucceeded = refundStatus === 'succeeded' || paymentStatus === 'refunded';
 
-      if (paymentStatus === 'refunded' || refundStatus === 'succeeded') {
+      if (hasOnlineRefundSucceeded) {
+        if (onlineRefundedAmount > 0 && orderGrandTotal > 0) {
+          const isFullyRefunded = onlineRefundedAmount >= orderGrandTotal - 0.01;
+          return {
+            label: isFullyRefunded ? 'Refunded' : 'Partially Refunded',
+            className: isFullyRefunded
+              ? 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:ring-emerald-700/40'
+              : 'bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-200 dark:bg-sky-900/20 dark:text-sky-300 dark:ring-sky-700/40',
+          };
+        }
+
         return {
           label: 'Refunded',
           className: 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:ring-emerald-700/40',
@@ -878,6 +1015,7 @@ export default function JobOrdersPage() {
             eta: item.eta || undefined,
             pickup_enabled: item.pickup_enabled || false,
             pickup_enabled_at: item.pickup_enabled_at || null,
+            retail_pos_refund: item.retail_pos_refund || null,
             latest_refund: item.latest_refund || null,
           };
         });
@@ -905,17 +1043,94 @@ export default function JobOrdersPage() {
   };
 
   const handleConfirmReturnReceived = async (order: Order) => {
-    const result = await Swal.fire({
-      title: 'Confirm Returned Item Received?',
-      text: `Mark returned item for order ${order.order_number} as received?`,
-      icon: 'question',
-      showCancelButton: true,
-      confirmButtonText: 'Yes, confirm',
-      cancelButtonText: 'Cancel',
-      confirmButtonColor: '#2563eb',
-    });
+    const refundLines = Array.isArray(order.latest_refund?.items)
+      ? order.latest_refund!.items
+          .map((line) => {
+            const approvedQty = Math.max(0, Number(line.approved_qty ?? line.requested_qty ?? 0));
+            return {
+              order_item_id: Number(line.order_item_id || 0),
+              product_name: String(line.product_name || 'Item'),
+              approved_qty: approvedQty,
+              inspection_disposition: String(line.inspection_disposition || 'pending').toLowerCase(),
+            };
+          })
+          .filter((line) => line.order_item_id > 0 && line.approved_qty > 0)
+      : [];
 
-    if (!result.isConfirmed) return;
+    let lineDispositionsPayload: Array<{ order_item_id: number; inspection_disposition: 'resellable' | 'damaged' }> = [];
+
+    if (refundLines.length > 0) {
+      const result = await Swal.fire({
+        title: 'Confirm Returned Item Received?',
+        html: `
+          <div style="text-align:left; display:flex; flex-direction:column; gap:10px; max-height:300px; overflow:auto; padding-right:4px; margin-top:8px;">
+            ${refundLines.map((line, index) => {
+              const selectedResellable = line.inspection_disposition === 'resellable' ? 'selected' : '';
+              const selectedDamaged = line.inspection_disposition === 'damaged' ? 'selected' : '';
+              const selectedPending = selectedResellable || selectedDamaged ? '' : 'selected';
+
+              return `
+                <div style="border:1px solid #e2e8f0; border-radius:10px; padding:10px;">
+                  <div style="font-weight:600; margin-bottom:4px;">${escapeHtml(line.product_name)}</div>
+                  <div style="font-size:12px; color:#64748b; margin-bottom:8px;">Returned Qty: ${line.approved_qty}</div>
+                  <label for="return-disp-${index}" style="display:block; font-size:12px; color:#475569; margin-bottom:4px;">Inspection Disposition</label>
+                  <select id="return-disp-${index}" style="width:100%; border:1px solid #cbd5e1; border-radius:8px; padding:8px;">
+                    <option value="" ${selectedPending}>Select disposition</option>
+                    <option value="resellable" ${selectedResellable}>Resellable (restock)</option>
+                    <option value="damaged" ${selectedDamaged}>Damaged (write-off)</option>
+                  </select>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, confirm',
+        cancelButtonText: 'Cancel',
+        confirmButtonColor: '#2563eb',
+        focusConfirm: false,
+        preConfirm: () => {
+          const lineDispositions: Array<{ order_item_id: number; inspection_disposition: 'resellable' | 'damaged' }> = [];
+
+          for (let index = 0; index < refundLines.length; index += 1) {
+            const line = refundLines[index];
+            const dispositionInput = document.getElementById(`return-disp-${index}`) as HTMLSelectElement | null;
+            const disposition = String(dispositionInput?.value || '');
+
+            if (disposition !== 'resellable' && disposition !== 'damaged') {
+              Swal.showValidationMessage('Please select resellable or damaged for each returned item.');
+              return null;
+            }
+
+            lineDispositions.push({
+              order_item_id: line.order_item_id,
+              inspection_disposition: disposition,
+            });
+          }
+
+          return { line_dispositions: lineDispositions };
+        },
+      });
+
+      if (!result.isConfirmed) return;
+
+      lineDispositionsPayload = Array.isArray(result.value?.line_dispositions)
+        ? result.value.line_dispositions
+        : [];
+    } else {
+      const result = await Swal.fire({
+        title: 'Confirm Returned Item Received?',
+        text: `Mark returned item for order ${order.order_number} as received?`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, confirm',
+        cancelButtonText: 'Cancel',
+        confirmButtonColor: '#2563eb',
+      });
+
+      if (!result.isConfirmed) return;
+    }
 
     try {
       const csrfResponse = await fetch('/api/csrf-token', {
@@ -933,7 +1148,11 @@ export default function JobOrdersPage() {
           Accept: 'application/json',
           'X-CSRF-TOKEN': csrfToken,
         },
-        body: JSON.stringify({}),
+        body: JSON.stringify(
+          lineDispositionsPayload.length > 0
+            ? { line_dispositions: lineDispositionsPayload }
+            : {},
+        ),
       });
 
       const data = await response.json();
@@ -993,6 +1212,7 @@ export default function JobOrdersPage() {
             eta: item.eta || undefined,
             pickup_enabled: item.pickup_enabled || false,
             pickup_enabled_at: item.pickup_enabled_at || null,
+            retail_pos_refund: item.retail_pos_refund || null,
             latest_refund: item.latest_refund || null,
           };
         });
@@ -1217,7 +1437,14 @@ export default function JobOrdersPage() {
           const mappedOrders: Order[] = payload.map((order: any) => {
             const itemSubtotal = parseAmount(order.total_amount);
             const shippingFee = parseAmount(order.shipping_fee);
-            const grandTotal = parseAmount(order.grand_total || itemSubtotal + shippingFee);
+            const hasStoredVat = order.vat_amount !== null && order.vat_amount !== undefined;
+            const rawVatRate = Number(order.vat_rate);
+            const vatRate = hasStoredVat && Number.isFinite(rawVatRate) && rawVatRate >= 0 ? rawVatRate : null;
+            const rawVatAmount = Number(order.vat_amount);
+            const vatAmount = hasStoredVat && Number.isFinite(rawVatAmount) && rawVatAmount >= 0
+              ? rawVatAmount
+              : null;
+            const grandTotal = parseAmount(order.grand_total || itemSubtotal + shippingFee + (vatAmount ?? 0));
 
             return {
               id: order.id,
@@ -1228,6 +1455,8 @@ export default function JobOrdersPage() {
               shippingAddress: order.shipping_address || '',
               total_amount: itemSubtotal,
               shipping_fee: shippingFee,
+              vat_amount: vatAmount,
+              vat_rate: vatRate,
               grand_total: grandTotal,
               paymentStatus: order.payment_status || 'pending',
               paymentMethod: order.payment_method || '',
@@ -1247,6 +1476,7 @@ export default function JobOrdersPage() {
               eta: order.eta || undefined,
               pickup_enabled: order.pickup_enabled || false,
               pickup_enabled_at: order.pickup_enabled_at || null,
+              retail_pos_refund: order.retail_pos_refund || null,
               latest_refund: order.latest_refund || null,
             };
           });
@@ -1619,8 +1849,8 @@ export default function JobOrdersPage() {
                             <span className="font-medium text-gray-800 dark:text-gray-200">{formatOrderTotal(order.shipping_fee)}</span>
                           </div>
                           <div className="flex items-center justify-between gap-3 text-xs text-gray-500 dark:text-gray-400">
-                            <span>{order.vat_rate !== null ? `VAT (${order.vat_rate}%)` : 'VAT'}</span>
-                            <span className="font-medium text-gray-800 dark:text-gray-200">{order.vat_amount !== null ? formatOrderTotal(order.vat_amount) : 'N/A'}</span>
+                            <span>{order.vat_rate != null ? `VAT (${order.vat_rate}%)` : 'VAT'}</span>
+                            <span className="font-medium text-gray-800 dark:text-gray-200">{order.vat_amount != null ? formatOrderTotal(order.vat_amount) : 'N/A'}</span>
                           </div>
                           <div className={`flex items-center justify-between gap-2 text-sm font-semibold ${
                             order.status === 'cancelled' || String(order.paymentStatus || '').toLowerCase() === 'refunded'
@@ -2238,8 +2468,8 @@ export default function JobOrdersPage() {
                           <span className="text-sm font-medium text-gray-900 dark:text-white">{formatOrderTotal(viewOrder.shipping_fee)}</span>
                         </div>
                         <div className="flex items-center justify-between pt-1">
-                          <span className="text-sm text-gray-600 dark:text-gray-400">{viewOrder.vat_rate !== null ? `VAT (${viewOrder.vat_rate}%)` : 'VAT'}</span>
-                          <span className="text-sm font-medium text-gray-900 dark:text-white">{viewOrder.vat_amount !== null ? formatOrderTotal(viewOrder.vat_amount) : 'N/A'}</span>
+                          <span className="text-sm text-gray-600 dark:text-gray-400">{viewOrder.vat_rate != null ? `VAT (${viewOrder.vat_rate}%)` : 'VAT'}</span>
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">{viewOrder.vat_amount != null ? formatOrderTotal(viewOrder.vat_amount) : 'N/A'}</span>
                         </div>
                         <div className="flex items-center justify-between pt-1">
                           <span className="text-sm text-gray-600 dark:text-gray-400">Grand Total</span>
@@ -2295,8 +2525,8 @@ export default function JobOrdersPage() {
                           <span className="text-sm font-medium text-gray-900 dark:text-white">{formatOrderTotal(viewOrder.shipping_fee)}</span>
                         </div>
                         <div className="flex items-center justify-between">
-                          <span className="text-sm text-gray-600 dark:text-gray-400">{viewOrder.vat_rate !== null ? `VAT (${viewOrder.vat_rate}%)` : 'VAT'}</span>
-                          <span className="text-sm font-medium text-gray-900 dark:text-white">{viewOrder.vat_amount !== null ? formatOrderTotal(viewOrder.vat_amount) : 'N/A'}</span>
+                          <span className="text-sm text-gray-600 dark:text-gray-400">{viewOrder.vat_rate != null ? `VAT (${viewOrder.vat_rate}%)` : 'VAT'}</span>
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">{viewOrder.vat_amount != null ? formatOrderTotal(viewOrder.vat_amount) : 'N/A'}</span>
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-sm text-gray-600 dark:text-gray-400">Grand Total</span>

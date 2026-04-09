@@ -6,12 +6,15 @@ use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\OrderItem;
+use App\Models\OrderRefund;
+use App\Models\PosRefund;
 use App\Models\RepairRequest;
 use App\Enums\OrderStatus;
 use App\Enums\ApprovalStatus;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Carbon\Carbon;
 
 class DashboardController extends Controller
@@ -48,6 +51,165 @@ class DashboardController extends Controller
         return (float) $query->sum(DB::raw($this->repairRevenueExpression()));
     }
 
+    private function retailGrossRevenueExpression(): string
+    {
+        $hasGrandTotal = Schema::hasColumn('orders', 'grand_total');
+        $hasShippingFee = Schema::hasColumn('orders', 'shipping_fee');
+        $hasVatAmount = Schema::hasColumn('orders', 'vat_amount');
+
+        $fallbackParts = ['COALESCE(total_amount, 0)'];
+        if ($hasShippingFee) {
+            $fallbackParts[] = 'COALESCE(shipping_fee, 0)';
+        }
+        if ($hasVatAmount) {
+            $fallbackParts[] = 'COALESCE(vat_amount, 0)';
+        }
+
+        $fallbackExpression = '(' . implode(' + ', $fallbackParts) . ')';
+
+        if (!$hasGrandTotal) {
+            return $fallbackExpression;
+        }
+
+        return "
+            CASE
+                WHEN COALESCE(grand_total, 0) > 0
+                    THEN COALESCE(grand_total, 0)
+                ELSE {$fallbackExpression}
+            END
+        ";
+    }
+
+    private function applyRetailRevenueDateWindow($query, ?Carbon $from = null, ?Carbon $to = null, ?Carbon $onDate = null): void
+    {
+        if ($onDate) {
+            $query->whereDate('created_at', $onDate->toDateString());
+            return;
+        }
+
+        if ($from) {
+            $query->where('created_at', '>=', $from->copy()->startOfDay());
+        }
+
+        if ($to) {
+            $query->where('created_at', '<=', $to->copy()->endOfDay());
+        }
+    }
+
+    private function computeRetailNetRevenue(int $shopOwnerId, ?Carbon $from = null, ?Carbon $to = null, ?Carbon $onDate = null): float
+    {
+        $ordersQuery = Order::query()
+            ->select('id')
+            ->selectRaw($this->retailGrossRevenueExpression() . ' as gross_amount')
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where('status', '!=', OrderStatus::CANCELLED->value);
+
+        $this->applyRetailRevenueDateWindow($ordersQuery, $from, $to, $onDate);
+
+        $orders = $ordersQuery->get();
+        if ($orders->isEmpty()) {
+            return 0.0;
+        }
+
+        $orderIds = $orders->pluck('id')->map(fn ($id) => (int) $id)->all();
+
+        $refundAmountByOrder = $this->getSucceededRefundAmountByOrder($orderIds);
+
+        $netRevenue = 0.0;
+        foreach ($orders as $order) {
+            $orderId = (int) ($order->id ?? 0);
+            $grossAmount = max(0.0, (float) ($order->gross_amount ?? 0.0));
+            if ($orderId <= 0 || $grossAmount <= 0) {
+                continue;
+            }
+
+            $totalRefunded = max(0.0, (float) ($refundAmountByOrder[$orderId] ?? 0.0));
+            $netRevenue += max(0.0, $grossAmount - min($grossAmount, $totalRefunded));
+        }
+
+        return round($netRevenue, 2);
+    }
+
+    private function getSucceededRefundAmountByOrder(array $orderIds): array
+    {
+        if (empty($orderIds)) {
+            return [];
+        }
+
+        $onlineRefundByOrder = [];
+        $onlineRefunds = OrderRefund::query()
+            ->select(['id', 'order_id', 'amount'])
+            ->whereIn('order_id', $orderIds)
+            ->where('status', 'succeeded')
+            ->get();
+
+        if ($onlineRefunds->isNotEmpty()) {
+            $lineRefundByRefundId = collect();
+
+            if (Schema::hasTable('order_refund_items')) {
+                $lineRefundByRefundId = DB::table('order_refund_items')
+                    ->select('order_refund_id', DB::raw('SUM(COALESCE(line_amount, 0)) as line_total'))
+                    ->whereIn('order_refund_id', $onlineRefunds->pluck('id')->all())
+                    ->groupBy('order_refund_id')
+                    ->pluck('line_total', 'order_refund_id');
+            }
+
+            foreach ($onlineRefunds as $refund) {
+                $lineAmount = (float) ($lineRefundByRefundId[$refund->id] ?? 0.0);
+                $effectiveRefundAmount = $lineAmount > 0
+                    ? $lineAmount
+                    : (float) ($refund->amount ?? 0.0);
+
+                if ($effectiveRefundAmount <= 0) {
+                    continue;
+                }
+
+                $orderId = (int) ($refund->order_id ?? 0);
+                if ($orderId <= 0) {
+                    continue;
+                }
+
+                $onlineRefundByOrder[$orderId] = (float) (($onlineRefundByOrder[$orderId] ?? 0.0) + $effectiveRefundAmount);
+            }
+        }
+
+        $posRefundByOrder = [];
+        if (Schema::hasTable('pos_refunds')) {
+            $posRefundRows = PosRefund::query()
+                ->select('module_reference_id')
+                ->selectRaw('SUM(COALESCE(approved_amount, requested_amount, 0)) as total_refunded')
+                ->where('module_type', 'retail')
+                ->where('status', 'succeeded')
+                ->whereIn('module_reference_id', $orderIds)
+                ->groupBy('module_reference_id')
+                ->get();
+
+            foreach ($posRefundRows as $row) {
+                $moduleReferenceId = (int) ($row->module_reference_id ?? 0);
+                if ($moduleReferenceId <= 0) {
+                    continue;
+                }
+
+                $posRefundByOrder[$moduleReferenceId] = (float) ($row->total_refunded ?? 0.0);
+            }
+        }
+
+        $combined = [];
+        foreach ($orderIds as $orderId) {
+            $id = (int) $orderId;
+            if ($id <= 0) {
+                continue;
+            }
+
+            $combined[$id] = round(
+                max(0.0, (float) ($onlineRefundByOrder[$id] ?? 0.0) + (float) ($posRefundByOrder[$id] ?? 0.0)),
+                2,
+            );
+        }
+
+        return $combined;
+    }
+
     /**
      * Get dashboard statistics for shop owner
      * 
@@ -70,13 +232,7 @@ class DashboardController extends Controller
         $lastMonthEnd = Carbon::now()->subMonth()->endOfMonth();
 
         // Total Revenue (all time) - Include both retail orders and repair services
-        $retailRevenue = Order::where('shop_owner_id', $shopOwnerId)
-            ->whereIn('status', ['processing', 'shipped', 'completed', 'delivered'])
-            ->where(function ($query) {
-                $query->whereNull('payment_status')
-                    ->orWhere('payment_status', '!=', 'refunded');
-            })
-            ->sum('total_amount');
+        $retailRevenue = $this->computeRetailNetRevenue($shopOwnerId);
         
         $repairRevenue = $this->computeRepairRevenue(
             RepairRequest::where('shop_owner_id', $shopOwnerId)
@@ -85,15 +241,7 @@ class DashboardController extends Controller
         $totalRevenue = $retailRevenue + $repairRevenue;
 
         // This Month Revenue - Include both retail and repair
-        $thisMonthRetailRevenue = Order::where('shop_owner_id', $shopOwnerId)
-            ->whereIn('status', ['processing', 'shipped', 'completed', 'delivered'])
-            ->where(function ($query) {
-                $query->whereNull('payment_status')
-                    ->orWhere('payment_status', '!=', 'refunded');
-            })
-            ->whereMonth('created_at', Carbon::now()->month)
-            ->whereYear('created_at', Carbon::now()->year)
-            ->sum('total_amount');
+        $thisMonthRetailRevenue = $this->computeRetailNetRevenue($shopOwnerId, $thisMonth, $today);
         
         $thisMonthRepairRevenue = $this->computeRepairRevenue(
             RepairRequest::where('shop_owner_id', $shopOwnerId)
@@ -104,15 +252,7 @@ class DashboardController extends Controller
         $thisMonthRevenue = $thisMonthRetailRevenue + $thisMonthRepairRevenue;
 
         // Last Month Revenue - Include both retail and repair
-        $lastMonthRetailRevenue = Order::where('shop_owner_id', $shopOwnerId)
-            ->whereIn('status', ['processing', 'shipped', 'completed', 'delivered'])
-            ->where(function ($query) {
-                $query->whereNull('payment_status')
-                    ->orWhere('payment_status', '!=', 'refunded');
-            })
-            ->whereMonth('created_at', Carbon::now()->subMonth()->month)
-            ->whereYear('created_at', Carbon::now()->subMonth()->year)
-            ->sum('total_amount');
+        $lastMonthRetailRevenue = $this->computeRetailNetRevenue($shopOwnerId, $lastMonth, $lastMonthEnd);
         
         $lastMonthRepairRevenue = $this->computeRepairRevenue(
             RepairRequest::where('shop_owner_id', $shopOwnerId)
@@ -207,13 +347,54 @@ class DashboardController extends Controller
             ->where('status', OrderStatus::CANCELLED)
             ->count();
 
-        // Refunded Orders (can be flagged either by order status or payment status)
-        $refundedOrders = Order::where('shop_owner_id', $shopOwnerId)
-            ->where(function ($query) {
-                $query->where('status', 'refund')
-                    ->orWhere('payment_status', 'refunded');
-            })
-            ->count();
+        // Refunded vs partially refunded orders (full/partial derived from succeeded refund amounts).
+        $ordersForRefundState = Order::query()
+            ->select('id', 'status', 'payment_status')
+            ->selectRaw($this->retailGrossRevenueExpression() . ' as gross_amount')
+            ->where('shop_owner_id', $shopOwnerId)
+            ->get();
+
+        $refundAmountByOrder = $this->getSucceededRefundAmountByOrder(
+            $ordersForRefundState->pluck('id')->map(fn ($id) => (int) $id)->all(),
+        );
+
+        $refundedOrders = 0;
+        $partiallyRefundedOrders = 0;
+
+        foreach ($ordersForRefundState as $orderRow) {
+            $orderId = (int) ($orderRow->id ?? 0);
+            if ($orderId <= 0) {
+                continue;
+            }
+
+            $gross = max(0.0, (float) ($orderRow->gross_amount ?? 0.0));
+            $refundedAmount = max(0.0, (float) ($refundAmountByOrder[$orderId] ?? 0.0));
+            $rawPaymentStatus = $orderRow->payment_status ?? '';
+            $rawOrderStatus = $orderRow->status ?? '';
+            $paymentStatus = strtolower((string) ($rawPaymentStatus instanceof \BackedEnum ? $rawPaymentStatus->value : $rawPaymentStatus));
+            $orderStatus = strtolower((string) ($rawOrderStatus instanceof \BackedEnum ? $rawOrderStatus->value : $rawOrderStatus));
+
+            if ($gross > 0 && $refundedAmount > 0) {
+                if ($refundedAmount >= ($gross - 0.01)) {
+                    $refundedOrders++;
+                } else {
+                    $partiallyRefundedOrders++;
+                }
+
+                continue;
+            }
+
+            $fallbackFullyRefunded = $paymentStatus === 'refunded' || $orderStatus === 'refund';
+            if ($fallbackFullyRefunded) {
+                $refundedOrders++;
+                continue;
+            }
+
+            $fallbackPartiallyRefunded = $paymentStatus === 'partially_refunded' || $orderStatus === 'partially_refunded';
+            if ($fallbackPartiallyRefunded) {
+                $partiallyRefundedOrders++;
+            }
+        }
 
         // Top Selling Products (last 30 days)
         $topProducts = OrderItem::select('product_id', 'product_name', 'product_slug', 'product_image')
@@ -234,12 +415,17 @@ class DashboardController extends Controller
             ->get();
 
         // Recent Orders (last 10)
-        $recentOrders = Order::where('shop_owner_id', $shopOwnerId)
+        $recentOrdersRaw = Order::where('shop_owner_id', $shopOwnerId)
             ->with(['customer', 'items.product'])
             ->orderBy('created_at', 'desc')
             ->limit(10)
-            ->get()
-            ->map(function($order) {
+            ->get();
+
+        $recentRefundAmountByOrder = $this->getSucceededRefundAmountByOrder(
+            $recentOrdersRaw->pluck('id')->map(fn ($id) => (int) $id)->all(),
+        );
+
+        $recentOrders = $recentOrdersRaw->map(function($order) use ($recentRefundAmountByOrder) {
                 $paymentStatus = $order->payment_status instanceof \BackedEnum
                     ? $order->payment_status->value
                     : (string) ($order->payment_status ?? '');
@@ -248,15 +434,40 @@ class DashboardController extends Controller
                     ? $order->status->value
                     : (string) ($order->status ?? '');
 
+                $grossAmount = (float) ($order->grand_total ?? 0);
+                if ($grossAmount <= 0) {
+                    $grossAmount = (float) ($order->total_amount ?? 0)
+                        + (float) ($order->shipping_fee ?? 0)
+                        + (float) ($order->vat_amount ?? 0);
+                }
+
+                $refundedAmount = max(0.0, (float) ($recentRefundAmountByOrder[(int) $order->id] ?? 0.0));
+                $normalizedPaymentStatus = strtolower(trim($paymentStatus));
+                $normalizedOrderStatus = strtolower(trim($orderStatus));
+                $isFullyRefunded = false;
+                $isPartiallyRefunded = false;
+
+                if ($grossAmount > 0 && $refundedAmount > 0) {
+                    $isFullyRefunded = $refundedAmount >= ($grossAmount - 0.01);
+                    $isPartiallyRefunded = !$isFullyRefunded;
+                } else {
+                    $isFullyRefunded = $normalizedPaymentStatus === 'refunded' || $normalizedOrderStatus === 'refund';
+                    $isPartiallyRefunded = !$isFullyRefunded
+                        && (
+                            $normalizedPaymentStatus === 'partially_refunded'
+                            || $normalizedOrderStatus === 'partially_refunded'
+                        );
+                }
+
                 return [
                     'id' => $order->id,
                     'order_number' => $order->order_number,
                     'customer_name' => $order->customer_name ?? $order->customer?->name ?? 'Guest',
                     'customer_email' => $order->customer_email ?? $order->customer?->email ?? '',
                     'total_amount' => $order->total_amount,
-                    'status' => $paymentStatus === 'refunded' || $orderStatus === 'refund'
+                    'status' => $isFullyRefunded
                         ? 'refunded'
-                        : $orderStatus,
+                        : ($isPartiallyRefunded ? 'partially_refunded' : $orderStatus),
                     'items_count' => $order->items->count(),
                     'order_items' => $order->items->map(function($item) {
                         return [
@@ -280,14 +491,7 @@ class DashboardController extends Controller
         for ($i = 6; $i >= 0; $i--) {
             $date = Carbon::now()->subDays($i);
             
-            $retailRevenue = Order::where('shop_owner_id', $shopOwnerId)
-                ->whereIn('status', ['processing', 'shipped', 'completed', 'delivered'])
-                ->where(function ($query) {
-                    $query->whereNull('payment_status')
-                        ->orWhere('payment_status', '!=', 'refunded');
-                })
-                ->whereDate('created_at', $date)
-                ->sum('total_amount');
+            $retailRevenue = $this->computeRetailNetRevenue($shopOwnerId, null, null, $date);
             
             $repairRevenue = $this->computeRepairRevenue(
                 RepairRequest::where('shop_owner_id', $shopOwnerId)
@@ -347,6 +551,7 @@ class DashboardController extends Controller
                 'completed' => $completedOrders,
                 'cancelled' => $cancelledOrders,
                 'refunded' => $refundedOrders,
+                'partially_refunded' => $partiallyRefundedOrders,
             ],
             'products' => [
                 'total' => $totalProducts,

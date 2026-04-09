@@ -21,6 +21,7 @@ interface DashboardStats {
     completed: number;
     cancelled: number;
     refunded: number;
+    partially_refunded?: number;
     growth_percentage: number;
   };
   products: {
@@ -81,6 +82,7 @@ export default function StatisticsChart({ stats }: StatisticsChartProps) {
     { label: 'Shipped', value: stats.orders.shipped, color: '#9CB9FF' },
     { label: 'Completed', value: stats.orders.completed, color: '#039855' },
     { label: 'Cancelled', value: stats.orders.cancelled, color: '#D92D20' },
+    { label: 'Partially Refunded', value: Number(stats.orders.partially_refunded || 0), color: '#F59E0B' },
     { label: 'Refunded', value: stats.orders.refunded, color: '#DC2626' },
   ] : [];
 

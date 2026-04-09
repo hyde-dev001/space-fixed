@@ -858,7 +858,6 @@ const MyOrders: React.FC = () => {
         refundSelectedLines.forEach((line, index) => {
           formData.append(`refund_lines[${index}][order_item_id]`, String(line.order_item_id));
           formData.append(`refund_lines[${index}][requested_qty]`, String(line.requested_qty));
-          formData.append('requested_item_ids[]', String(line.order_item_id));
         });
       }
       formData.append('note', refundNote);

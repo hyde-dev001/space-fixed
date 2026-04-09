@@ -44,16 +44,13 @@ type ServicePackageOption = {
 	saveText: string;
 };
 
-type CatalogCardItem =
-	| { kind: "package"; key: string; pkg: ServicePackageOption }
-	| { kind: "service"; key: string; service: RepairServiceOption };
-
 type POSItem = {
 	id: string;
 	label: string;
 	qty: number;
 	unitPrice: number;
-	source: "manual" | "repair-order" | "service-catalog" | "package";
+	orderItemId?: number;
+	source: "manual" | "repair-order" | "service-catalog" | "package" | "package-add-on";
 	manualRepairPackageId?: number | null;
 	manualServiceIds?: number[];
 };
@@ -88,9 +85,16 @@ type RetailCartItem = {
 	color?: string | null;
 };
 
+type ReceiptRefundEntryItem = {
+	orderItemId: number;
+	requestedQty: number;
+	approvedQty: number;
+};
+
 type ReceiptRefundEntry = {
 	status: string;
 	approvedAmount: number;
+	items?: ReceiptRefundEntryItem[];
 };
 
 type ReceiptSnapshot = {
@@ -182,11 +186,11 @@ const VAT_RATE = 12;
 
 const resolveBusinessTypeForPos = (props: any): "retail" | "repair" | "both" => {
 	const rawBusinessType = String(
-		props?.auth?.user?.shop_owner?.business_type
-		?? props?.auth?.shop_owner?.business_type
+		props?.auth?.shop_owner?.business_type
+		?? props?.auth?.user?.shop_owner?.business_type
 		?? props?.shop_owner?.business_type
-		?? props?.auth?.user?.business_type
 		?? props?.auth?.business_type
+		?? props?.auth?.user?.business_type
 		?? "retail",
 	)
 		.toLowerCase()
@@ -344,6 +348,31 @@ const toDateInputValue = (isoValue: string): string => {
 	const month = String(date.getMonth() + 1).padStart(2, "0");
 	const day = String(date.getDate()).padStart(2, "0");
 	return `${year}-${month}-${day}`;
+};
+
+const RETAIL_COMMITTED_REFUND_STATUSES = new Set(["requested", "approved", "processing", "succeeded"]);
+
+const resolveCommittedRetailRefundQtyByOrderItem = (receipt: ReceiptSnapshot): Map<number, number> => {
+	const qtyByOrderItem = new Map<number, number>();
+
+	receipt.refundEntries.forEach((entry) => {
+		const status = String(entry.status || "").toLowerCase();
+		if (!RETAIL_COMMITTED_REFUND_STATUSES.has(status)) {
+			return;
+		}
+
+		(entry.items || []).forEach((line) => {
+			const orderItemId = Number(line.orderItemId || 0);
+			const qty = Math.max(0, Number(line.approvedQty || line.requestedQty || 0));
+			if (orderItemId <= 0 || qty <= 0) {
+				return;
+			}
+
+			qtyByOrderItem.set(orderItemId, (qtyByOrderItem.get(orderItemId) || 0) + qty);
+		});
+	});
+
+	return qtyByOrderItem;
 };
 
 const buildReceiptText = (snapshot: ReceiptSnapshot): string => {
@@ -755,12 +784,57 @@ useEffect(() => {
 				const mappedHistory: ReceiptSnapshot[] = rows.map((row: any, index: number) => {
 					const receiptPayload = row?.receipt?.print_payload ?? {};
 					const issuedAt = String(row?.receipt?.issued_at ?? row?.created_at ?? new Date().toISOString());
-					const items = Array.isArray(receiptPayload?.items)
-						? receiptPayload.items
-						: [];
 					const moduleType: "repair" | "retail" = String(row?.module_type || "").toLowerCase() === "retail"
 						? "retail"
 						: "repair";
+
+					const items: POSItem[] = (() => {
+						if (moduleType === "retail" && Array.isArray(row?.source_order?.items)) {
+							const retailOrderItems = row.source_order.items
+								.map((orderItem: any) => {
+									const orderItemId = Number(orderItem?.id || 0);
+									const qty = Math.max(0, Number(orderItem?.quantity ?? 0));
+									const subtotal = Number(orderItem?.subtotal ?? 0);
+									const unitPrice = Number(orderItem?.price ?? 0) > 0
+										? Number(orderItem?.price ?? 0)
+										: Number((subtotal / Math.max(1, qty)).toFixed(2));
+
+									if (orderItemId <= 0 || qty <= 0 || unitPrice <= 0) {
+										return null;
+									}
+
+									const size = String(orderItem?.size ?? "").trim();
+									const color = String(orderItem?.color ?? "").trim();
+									const variantLabel = [size, color].filter(Boolean).join(" / ");
+
+									return {
+										id: `order-item-${orderItemId}`,
+										label: variantLabel !== ""
+											? `${String(orderItem?.product_name ?? "Item")} (${variantLabel})`
+											: String(orderItem?.product_name ?? "Item"),
+										qty,
+										unitPrice,
+										orderItemId,
+										source: "manual" as const,
+									};
+								})
+								.filter((item: POSItem | null): item is POSItem => item !== null);
+
+							if (retailOrderItems.length > 0) {
+								return retailOrderItems;
+							}
+						}
+
+						const payloadItems = Array.isArray(receiptPayload?.items) ? receiptPayload.items : [];
+						return payloadItems.map((item: any, itemIndex: number) => ({
+							id: String(item?.id ?? `receipt-item-${index}-${itemIndex}`),
+							label: String(item?.label ?? item?.name ?? item?.product_name ?? "Item"),
+							qty: Math.max(0, Number(item?.qty ?? item?.quantity ?? 0)),
+							unitPrice: Number(item?.unitPrice ?? item?.unit_price ?? item?.price ?? 0),
+							orderItemId: Number(item?.order_item_id || 0) > 0 ? Number(item?.order_item_id) : undefined,
+							source: "manual" as const,
+						}));
+					})();
 
 					const latestRefund = Array.isArray(row?.refunds) && row.refunds.length > 0
 						? row.refunds[0]
@@ -789,6 +863,15 @@ useEffect(() => {
 							? row.refunds.map((entry: any) => ({
 								status: String(entry?.status || ""),
 								approvedAmount: Number(entry?.approved_amount ?? 0),
+								items: Array.isArray(entry?.items)
+									? entry.items
+										.map((item: any) => ({
+											orderItemId: Number(item?.order_item_id || 0),
+											requestedQty: Math.max(0, Number(item?.requested_qty || 0)),
+											approvedQty: Math.max(0, Number(item?.approved_qty ?? item?.requested_qty ?? 0)),
+										}))
+										.filter((item: ReceiptRefundEntryItem) => item.orderItemId > 0 && item.approvedQty > 0)
+									: [],
 							}))
 							: [],
 						latestRefund: latestRefund ? {
@@ -818,7 +901,7 @@ useEffect(() => {
 						vatAmount: Number(row?.tax_amount ?? receiptPayload?.totals?.tax ?? 0),
 						totalDue: Number(row?.total_amount ?? receiptPayload?.totals?.total ?? 0),
 						change: 0,
-						items: Array.isArray(items) ? items : [],
+						items,
 					};
 				});
 
@@ -978,6 +1061,37 @@ useEffect(() => {
 		return new Set(selectedRepairOrder.requestedServices.map((serviceName) => normalizeServiceName(serviceName)));
 	}, [selectedRepairOrder]);
 
+	const activeManualPackage = useMemo(() => {
+		const packageItem = items.find((item) => item.source === "package");
+		const packageId = Number(packageItem?.manualRepairPackageId ?? 0);
+		if (!Number.isInteger(packageId) || packageId <= 0) {
+			return null;
+		}
+
+		return servicePackages.find((pkg) => Number(pkg.id) === packageId) ?? null;
+	}, [items, servicePackages]);
+
+	const activeManualPackageServiceIds = useMemo(() => {
+		if (!activeManualPackage) return new Set<number>();
+		return new Set(
+			activeManualPackage.serviceIds
+				.map((id) => Number(id))
+				.filter((id) => Number.isInteger(id) && id > 0),
+		);
+	}, [activeManualPackage]);
+
+	const packageOrderItem = useMemo(() => {
+		return items.find((item) => item.source === "package") ?? null;
+	}, [items]);
+
+	const packageAddOnOrderItems = useMemo(() => {
+		return items.filter((item) => item.source === "package-add-on");
+	}, [items]);
+
+	const standaloneOrderItems = useMemo(() => {
+		return items.filter((item) => item.source !== "package" && item.source !== "package-add-on");
+	}, [items]);
+
 	const visiblePackages = useMemo(() => {
 		const query = serviceSearch.trim().toLowerCase();
 		if (!query) return servicePackages;
@@ -1024,43 +1138,67 @@ useEffect(() => {
 
 	const addFromServiceCatalog = (service: RepairServiceOption) => {
 		if (selectedRepairOrder) return;
-		if (isServiceSelected(service)) return;
 
-		setItems((prev) => [
-			...prev,
-			{
-				id: `service-${service.id}-${Date.now()}`,
-				label: service.name,
-				qty: 1,
-				unitPrice: service.price,
-				source: "service-catalog",
-				manualServiceIds: (() => {
-					const serviceId = Number(service.id);
-					return Number.isInteger(serviceId) && serviceId > 0 ? [serviceId] : [];
-				})(),
-			},
-		]);
+		const serviceId = Number(service.id);
+		if (!Number.isInteger(serviceId) || serviceId <= 0) return;
+
+		setItems((prev) => {
+			const hasSelectedPackage = prev.some((item) => item.source === "package");
+			if (hasSelectedPackage && activeManualPackageServiceIds.has(serviceId)) {
+				return prev;
+			}
+
+			const alreadySelected = prev.some((item) => {
+				if (item.source !== "service-catalog" && item.source !== "package-add-on") {
+					return false;
+				}
+
+				return (item.manualServiceIds ?? []).some((id) => Number(id) === serviceId);
+			});
+
+			if (alreadySelected) {
+				return prev;
+			}
+
+			return [
+				...prev,
+				{
+					id: `service-${service.id}-${Date.now()}`,
+					label: hasSelectedPackage ? `${service.name} (Add-on)` : service.name,
+					qty: 1,
+					unitPrice: service.price,
+					source: hasSelectedPackage ? "package-add-on" : "service-catalog",
+					manualServiceIds: [serviceId],
+				},
+			];
+		});
 	};
 
 	const addPackageToOrder = (pkg: ServicePackageOption) => {
 		if (selectedRepairOrder) return;
 		if (isPackageSelected(pkg)) return;
 
-		setItems((prev) => [
-			...prev,
-			{
-				id: `package-${pkg.id}-${Date.now()}`,
-				label: `${pkg.name} (${pkg.includedServices.length} services)`,
-				qty: 1,
-				unitPrice: pkg.price,
-				source: "package",
-				manualRepairPackageId: (() => {
-					const packageId = Number(pkg.id);
-					return Number.isInteger(packageId) && packageId > 0 ? packageId : null;
-				})(),
-				manualServiceIds: pkg.serviceIds,
-			},
-		]);
+		setItems((prev) => {
+			const preservedItems = prev.filter((item) => (
+				item.source !== "package"
+				&& item.source !== "service-catalog"
+				&& item.source !== "package-add-on"
+			));
+
+			const packageId = Number(pkg.id);
+			return [
+				...preservedItems,
+				{
+					id: `package-${pkg.id}-${Date.now()}`,
+					label: `${pkg.name} (${pkg.includedServices.length} services)`,
+					qty: 1,
+					unitPrice: pkg.price,
+					source: "package",
+					manualRepairPackageId: Number.isInteger(packageId) && packageId > 0 ? packageId : null,
+					manualServiceIds: pkg.serviceIds,
+				},
+			];
+		});
 	};
 
 	const getRetailSelectionForProduct = (product: RetailCatalogProduct): { size: string; color: string } => {
@@ -1331,6 +1469,17 @@ useEffect(() => {
 			const receiptNo = String(receiptPayload?.receipt_no || transactionNo || `POS-${Date.now()}`);
 			const issuedAt = String(receiptPayload?.issued_at || new Date().toISOString());
 			const receiptTotals = receiptPayload?.print_payload?.totals || {};
+			const receiptLineItems = Array.isArray(receiptPayload?.print_payload?.items)
+				? receiptPayload.print_payload.items
+				: [];
+			const mappedReceiptItems: POSItem[] = receiptLineItems.map((item: any, itemIndex: number) => ({
+				id: String(item?.id ?? `receipt-item-${transactionId || "new"}-${itemIndex}`),
+				label: String(item?.label ?? item?.name ?? item?.product_name ?? "Item"),
+				qty: Math.max(0, Number(item?.qty ?? item?.quantity ?? 0)),
+				unitPrice: Number(item?.unitPrice ?? item?.unit_price ?? item?.price ?? 0),
+				orderItemId: Number(item?.order_item_id || 0) > 0 ? Number(item?.order_item_id) : undefined,
+				source: "manual",
+			}));
 
 			const snapshot: ReceiptSnapshot = {
 				moduleType: "retail",
@@ -1362,13 +1511,15 @@ useEffect(() => {
 				vatAmount: Number(receiptTotals?.tax ?? retailVatAmount),
 				totalDue: Number(receiptTotals?.total ?? retailTotalDue),
 				change: retailChangeValue,
-				items: retailCart.map((item) => ({
-					id: item.lineId,
-					label: item.name,
-					qty: item.qty,
-					unitPrice: item.unitPrice,
-					source: "manual",
-				})),
+				items: mappedReceiptItems.length > 0
+					? mappedReceiptItems
+					: retailCart.map((item) => ({
+						id: item.lineId,
+						label: item.name,
+						qty: item.qty,
+						unitPrice: item.unitPrice,
+						source: "manual",
+					})),
 			};
 
 			setReceiptSnapshot(snapshot);
@@ -1404,15 +1555,25 @@ useEffect(() => {
 	};
 
 	const isPackageSelected = (pkg: ServicePackageOption): boolean => {
-		const packageName = normalizeServiceName(pkg.name);
+		const packageId = Number(pkg.id);
+		if (!Number.isInteger(packageId) || packageId <= 0) return false;
+
 		return items.some((item) => {
-			return item.source === "package" && normalizeServiceName(item.label).startsWith(packageName);
+			return item.source === "package" && Number(item.manualRepairPackageId ?? 0) === packageId;
 		});
 	};
 
 	const isServiceSelected = (service: RepairServiceOption): boolean => {
-		const serviceName = normalizeServiceName(service.name);
-		return items.some((item) => normalizeServiceName(item.label) === serviceName);
+		const serviceId = Number(service.id);
+		if (!Number.isInteger(serviceId) || serviceId <= 0) return false;
+
+		return items.some((item) => {
+			if (item.source !== "service-catalog" && item.source !== "package-add-on") {
+				return false;
+			}
+
+			return (item.manualServiceIds ?? []).some((id) => Number(id) === serviceId);
+		});
 	};
 
 	const filteredRepairOrders = useMemo(() => {
@@ -1542,33 +1703,40 @@ useEffect(() => {
 		return remaining > 0 ? remaining : Number(receipt.totalDue || 0);
 	};
 
-	const combinedCatalogCards = useMemo<CatalogCardItem[]>(() => {
-		const packageCards: CatalogCardItem[] = visiblePackages.map((pkg) => ({ kind: "package", key: `package-${pkg.id}`, pkg }));
-		const serviceCards: CatalogCardItem[] = filteredServiceCatalog.map((service) => ({ kind: "service", key: `service-${service.id}`, service }));
-		return [...packageCards, ...serviceCards];
-	}, [visiblePackages, filteredServiceCatalog]);
+	const totalServicePages = useMemo(() => {
+		return Math.max(1, Math.ceil(filteredServiceCatalog.length / SERVICES_PER_PAGE));
+	}, [filteredServiceCatalog.length]);
 
-	const totalCatalogPages = useMemo(() => {
-		return Math.max(1, Math.ceil(combinedCatalogCards.length / SERVICES_PER_PAGE));
-	}, [combinedCatalogCards.length]);
-
-	const paginatedCatalogCards = useMemo(() => {
+	const paginatedServiceCatalog = useMemo(() => {
 		const start = (servicePage - 1) * SERVICES_PER_PAGE;
-		return combinedCatalogCards.slice(start, start + SERVICES_PER_PAGE);
-	}, [combinedCatalogCards, servicePage]);
+		return filteredServiceCatalog.slice(start, start + SERVICES_PER_PAGE);
+	}, [filteredServiceCatalog, servicePage]);
 
 	useEffect(() => {
 		setServicePage(1);
 	}, [serviceSearch]);
 
 	useEffect(() => {
-		if (servicePage > totalCatalogPages) {
-			setServicePage(totalCatalogPages);
+		if (servicePage > totalServicePages) {
+			setServicePage(totalServicePages);
 		}
-	}, [servicePage, totalCatalogPages]);
+	}, [servicePage, totalServicePages]);
 
 	const removeItem = (id: string) => {
-		setItems((prev) => prev.filter((item) => item.id !== id));
+		setItems((prev) => {
+			const target = prev.find((item) => item.id === id);
+			if (!target) return prev;
+
+			if (target.source === "package") {
+				return prev.filter((item) => item.id !== id && item.source !== "package-add-on");
+			}
+
+			return prev.filter((item) => item.id !== id);
+		});
+	};
+
+	const unselectManualPackage = () => {
+		setItems((prev) => prev.filter((item) => item.source !== "package" && item.source !== "package-add-on"));
 	};
 
 	const clearTransaction = () => {
@@ -1750,141 +1918,294 @@ useEffect(() => {
 		window.print();
 	};
 
-	const handleRequestRefund = async (receipt: ReceiptSnapshot) => {
-		if (receipt.moduleType === "retail") {
-			if (!canRequestRetailRefund(receipt)) {
-				await Swal.fire({
-					icon: "info",
-					title: "Refund Already Exists",
-					text: "A retail refund is already in progress or fully completed for this receipt.",
-					confirmButtonColor: "#2563eb",
-				});
-				return;
-			}
+	const handleRetailRefund = async (receipt: ReceiptSnapshot) => {
+		if (!canRequestRetailRefund(receipt)) {
+			await Swal.fire({
+				icon: "info",
+				title: "Refund Unavailable",
+				text: "This receipt has no refundable balance or has an active refund request.",
+				confirmButtonColor: "#2563eb",
+			});
+			return;
+		}
 
-			const transactionId = Number(receipt.transactionId ?? 0);
-			if (transactionId <= 0) {
-				await Swal.fire({
-					icon: "warning",
-					title: "Refund Unavailable",
-					text: "This record has no linked transaction reference.",
-					confirmButtonColor: "#b45309",
-				});
-				return;
-			}
+		const transactionId = Number(receipt.transactionId ?? 0);
+		const refundableBalance = resolveRetailRefundRequestAmount(receipt);
+		if (transactionId <= 0 || refundableBalance <= 0) {
+			await Swal.fire({
+				icon: "warning",
+				title: "Refund Unavailable",
+				text: "Unable to resolve transaction reference or refundable amount.",
+				confirmButtonColor: "#b45309",
+			});
+			return;
+		}
 
-			try {
-				const maxRefundable = resolveRetailRefundRequestAmount(receipt);
-				if (!(maxRefundable > 0)) {
-					await Swal.fire({
-						icon: "info",
-						title: "Refund Unavailable",
-						text: "There is no refundable balance left for this retail receipt.",
-						confirmButtonColor: "#2563eb",
-					});
-					return;
-				}
+		const committedQtyByOrderItem = resolveCommittedRetailRefundQtyByOrderItem(receipt);
+		const refundableItems = receipt.items
+			.map((item) => {
+				const orderItemId = Number(item.orderItemId ?? 0);
+				const purchasedQty = Math.max(0, Number(item.qty ?? 0));
+				const unitPrice = Math.max(0, Number(item.unitPrice ?? 0));
+				const committedQty = Math.max(0, Number(committedQtyByOrderItem.get(orderItemId) || 0));
+				const remainingQty = Math.max(0, purchasedQty - committedQty);
 
-				const typeChoice = await Swal.fire({
-					title: "Retail Refund Type",
-					text: `Refundable balance: ${formatPeso(maxRefundable)}`,
-					input: "radio",
-					inputOptions: {
-						full: "Full refund",
-						partial: "Partial refund",
-					},
-					inputValue: "full",
-					confirmButtonText: "Continue",
-					showCancelButton: true,
-					confirmButtonColor: "#2563eb",
-					inputValidator: (value) => (value ? undefined : "Please choose a refund type."),
-				});
+				return {
+					...item,
+					orderItemId,
+					purchasedQty,
+					committedQty,
+					remainingQty,
+					unitPrice,
+				};
+			})
+			.filter((item) => item.orderItemId > 0 && item.remainingQty > 0 && item.unitPrice > 0);
 
-				if (!typeChoice.isConfirmed) {
-					return;
-				}
+		if (refundableItems.length === 0) {
+			await Swal.fire({
+				icon: "warning",
+				title: "Refund Unavailable",
+				text: "No refundable line items were found for this retail receipt.",
+				confirmButtonColor: "#b45309",
+			});
+			return;
+		}
 
-				const requestType = (typeChoice.value === "partial" ? "partial" : "full") as "full" | "partial";
-				let requestedAmount = maxRefundable;
+		const escapeHtml = (value: string): string => value
+			.replace(/&/g, "&amp;")
+			.replace(/</g, "&lt;")
+			.replace(/>/g, "&gt;")
+			.replace(/\"/g, "&quot;")
+			.replace(/'/g, "&#39;");
 
-				if (requestType === "partial") {
-					const partialInput = await Swal.fire({
-						title: "Partial Refund Amount",
-						text: `Enter amount up to ${formatPeso(maxRefundable)}`,
-						input: "text",
-						inputValue: toCurrencyInput(String(maxRefundable)),
-						showCancelButton: true,
-						confirmButtonText: "Submit",
-						confirmButtonColor: "#2563eb",
-						inputValidator: (value) => {
-							const parsed = Number(String(value || "").replace(/[^0-9.]/g, ""));
-							if (!Number.isFinite(parsed) || parsed <= 0) return "Enter a valid amount greater than zero.";
-							if (parsed > maxRefundable) return `Amount cannot exceed ${formatPeso(maxRefundable)}.`;
-							return undefined;
-						},
-					});
+		const pickerResult = await Swal.fire({
+			title: "Retail Item Refund",
+				html: `
+				<div style="text-align:left; display:flex; flex-direction:column; gap:10px; max-height:320px; overflow:auto; padding-right:4px;">
+					${refundableItems.map((item, index) => `
+						<div style="border:1px solid #e2e8f0; border-radius:10px; padding:10px;">
+							<div style="font-weight:600; margin-bottom:4px;">${escapeHtml(item.label)}</div>
+								<div style="font-size:12px; color:#64748b; margin-bottom:8px;">Purchased Qty: ${item.purchasedQty} | Already refunded/requested: ${item.committedQty} | Remaining refundable qty: ${item.remainingQty} | Unit: ${formatPeso(item.unitPrice)}</div>
+							<div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+								<div>
+									<label for="retail-refund-qty-${index}" style="display:block; font-size:12px; color:#475569; margin-bottom:4px;">Refund Qty</label>
+										<input id="retail-refund-qty-${index}" type="number" min="0" max="${item.remainingQty}" step="1" value="0" style="width:100%; border:1px solid #cbd5e1; border-radius:8px; padding:8px;" />
+								</div>
+								<div>
+									<label for="retail-refund-disp-${index}" style="display:block; font-size:12px; color:#475569; margin-bottom:4px;">Inspection</label>
+									<select id="retail-refund-disp-${index}" style="width:100%; border:1px solid #cbd5e1; border-radius:8px; padding:8px;">
+										<option value="resellable">Resellable (restock)</option>
+										<option value="damaged">Damaged (write-off)</option>
+									</select>
+								</div>
+							</div>
+						</div>
+					`).join("")}
+				</div>
+				<p style="margin-top:10px; font-size:12px; color:#475569; text-align:left;">
+					Refund amount is auto-calculated from selected item qty.
+				</p>
+				<p style="margin-top:4px; font-size:12px; color:#475569; text-align:left;">
+					Remaining refundable balance: ${formatPeso(refundableBalance)}
+				</p>
+			`,
+			width: 760,
+			showCancelButton: true,
+			confirmButtonText: "Create Refund",
+			cancelButtonText: "Cancel",
+			confirmButtonColor: "#2563eb",
+			cancelButtonColor: "#6b7280",
+			focusConfirm: false,
+			preConfirm: () => {
+				const refundLines: Array<{ order_item_id: number; requested_qty: number; inspection_disposition: "resellable" | "damaged"; line_amount: number }> = [];
 
-					if (!partialInput.isConfirmed) {
-						return;
+				for (let index = 0; index < refundableItems.length; index += 1) {
+					const item = refundableItems[index];
+					const qtyInput = document.getElementById(`retail-refund-qty-${index}`) as HTMLInputElement | null;
+					const dispInput = document.getElementById(`retail-refund-disp-${index}`) as HTMLSelectElement | null;
+
+					const requestedQty = Math.floor(Number(qtyInput?.value ?? 0));
+					if (!Number.isFinite(requestedQty) || requestedQty < 0) {
+						Swal.showValidationMessage("Refund qty must be 0 or greater.");
+						return null;
 					}
 
-					requestedAmount = Number(String(partialInput.value || "").replace(/[^0-9.]/g, ""));
+					if (requestedQty > item.remainingQty) {
+						Swal.showValidationMessage("Refund qty cannot exceed remaining refundable qty.");
+						return null;
+					}
+
+					if (requestedQty === 0) {
+						continue;
+					}
+
+					const disposition = String(dispInput?.value || "resellable") === "damaged" ? "damaged" : "resellable";
+					refundLines.push({
+						order_item_id: Number(item.orderItemId),
+						requested_qty: requestedQty,
+						inspection_disposition: disposition,
+						line_amount: Number((requestedQty * item.unitPrice).toFixed(2)),
+					});
 				}
 
-				const response = await axios.post(
-					"/api/retail-pos/refunds",
-					{
-						source_transaction_id: transactionId,
-						request_type: requestType,
-						requested_amount: Number(requestedAmount.toFixed(2)),
-						reason_code: "shop_owner_requested_refund",
-						reason_notes: "Requested from Shop Owner Retail POS receipt history.",
-					},
-					{ withCredentials: true },
-				);
+				if (refundLines.length === 0) {
+					Swal.showValidationMessage("Select at least one line with refund qty greater than zero.");
+					return null;
+				}
 
-				const createdRefundId = Number((response.data as any)?.refund_id ?? 0);
-				const responseRequestedAmount = Number((response.data as any)?.data?.requested_amount ?? requestedAmount);
-				const apiRefundStatus = String((response.data as any)?.data?.status ?? "requested").toLowerCase();
+				const requestedAmount = Number(refundLines.reduce((sum, line) => sum + line.line_amount, 0).toFixed(2));
+				if (requestedAmount <= 0) {
+					Swal.showValidationMessage("Computed refund amount must be greater than zero.");
+					return null;
+				}
 
+				if (requestedAmount > refundableBalance + 0.001) {
+					Swal.showValidationMessage("Computed refund amount exceeds refundable balance.");
+					return null;
+				}
+
+				const isFull = refundableItems.every((item) => {
+					const line = refundLines.find((entry) => entry.order_item_id === Number(item.orderItemId));
+					return line && line.requested_qty === item.remainingQty;
+				});
+
+				return {
+					refund_lines: refundLines.map(({ line_amount, ...line }) => line),
+					requested_amount: requestedAmount,
+					request_type: isFull ? "full" : "partial",
+				};
+			},
+		});
+
+		if (!pickerResult.isConfirmed || !pickerResult.value) {
+			return;
+		}
+
+		const requestType = String((pickerResult.value as any).request_type || "partial") === "full" ? "full" : "partial";
+		const requestedAmount = Number((pickerResult.value as any).requested_amount ?? 0);
+		const refundLines = Array.isArray((pickerResult.value as any).refund_lines)
+			? (pickerResult.value as any).refund_lines
+			: [];
+
+		if (refundLines.length === 0 || requestedAmount <= 0) {
+			return;
+		}
+
+		let createdRefundId = 0;
+		let latestStatus = "requested";
+		const reasonNotes = [
+			"Requested from Retail POS receipt history.",
+			`Receipt: ${receipt.receiptNo}`,
+			`Request type: ${requestType}`,
+			`Requested amount: ${requestedAmount.toFixed(2)}`,
+			`Requested lines: ${refundLines.length}`,
+		]
+			.filter(Boolean)
+			.join("\n");
+
+		try {
+			const createResponse = await axios.post(
+				"/api/retail-pos/refunds",
+				{
+					source_transaction_id: transactionId,
+					request_type: requestType,
+					requested_amount: requestedAmount,
+					refund_lines: refundLines,
+					reason_code: "retail_pos_item_issue",
+					reason_notes: reasonNotes,
+				},
+				{ withCredentials: true },
+			);
+
+			createdRefundId = Number((createResponse.data as any)?.refund_id ?? 0);
+			latestStatus = String((createResponse.data as any)?.data?.status ?? "requested").toLowerCase() || "requested";
+
+			if (createdRefundId <= 0) {
+				throw new Error("Refund request was created without a valid reference.");
+			}
+
+			await axios.post(
+				`/api/retail-pos/refunds/${createdRefundId}/approve`,
+				{
+					approved_amount: requestedAmount,
+					approval_note: "Approved from Retail POS shop owner history.",
+				},
+				{ withCredentials: true },
+			);
+
+			const executeResponse = await axios.post(
+				`/api/retail-pos/refunds/${createdRefundId}/execute`,
+				{
+					execution_mode: "manual",
+					execution_note: "Executed from Retail POS shop owner history.",
+				},
+				{ withCredentials: true },
+			);
+
+			latestStatus = String((executeResponse.data as any)?.data?.status ?? "succeeded").toLowerCase() || "succeeded";
+			const approvedAmount = Number((executeResponse.data as any)?.data?.approved_amount ?? requestedAmount);
+			const committedLines: ReceiptRefundEntryItem[] = refundLines
+				.map((line: any) => ({
+					orderItemId: Number(line?.order_item_id || 0),
+					requestedQty: Math.max(0, Number(line?.requested_qty || 0)),
+					approvedQty: Math.max(0, Number(line?.requested_qty || 0)),
+				}))
+				.filter((line: ReceiptRefundEntryItem) => line.orderItemId > 0 && line.approvedQty > 0);
+
+			setReceiptHistory((prev) => prev.map((entry) => (
+				entry.receiptNo === receipt.receiptNo
+					? {
+						...entry,
+						refundEntries: [
+							{
+								status: latestStatus,
+								approvedAmount,
+								items: committedLines,
+							},
+							...entry.refundEntries,
+						],
+						latestRefund: {
+							id: createdRefundId,
+							status: latestStatus,
+						},
+					}
+					: entry
+			)));
+
+			await Swal.fire({
+				icon: "success",
+				title: "Retail Refund Completed",
+				text: `Refunded ${formatPeso(approvedAmount)} successfully.`,
+				confirmButtonColor: "#10b981",
+			});
+		} catch (error: any) {
+			if (createdRefundId > 0) {
 				setReceiptHistory((prev) => prev.map((entry) => (
 					entry.receiptNo === receipt.receiptNo
 						? {
 							...entry,
-							refundEntries: [
-								{
-									status: apiRefundStatus,
-									approvedAmount: 0,
-								},
-								...entry.refundEntries,
-							],
 							latestRefund: {
-								id: createdRefundId > 0 ? createdRefundId : Number(entry.latestRefund?.id ?? 0),
-								status: apiRefundStatus,
+								id: createdRefundId,
+								status: latestStatus || "requested",
 							},
 						}
 						: entry
 				)));
-
-				await Swal.fire({
-					icon: "success",
-					title: "Refund Requested",
-					text: `Retail ${requestType} refund submitted: ${formatPeso(responseRequestedAmount)}.`,
-					confirmButtonColor: "#10b981",
-				});
-			} catch (error: any) {
-				const message =
-					error?.response?.data?.errors?.requested_amount?.[0]
-					|| error?.response?.data?.message
-					|| "Unable to create retail refund request.";
-				await Swal.fire({
-					icon: "error",
-					title: "Request Failed",
-					text: message,
-					confirmButtonColor: "#dc2626",
-				});
 			}
 
+			const message = error?.response?.data?.message || error?.message || "Unable to process retail refund.";
+			await Swal.fire({
+				icon: "error",
+				title: "Retail Refund Failed",
+				text: String(message),
+				confirmButtonColor: "#dc2626",
+			});
+		}
+	};
+
+	const handleRequestRefund = async (receipt: ReceiptSnapshot) => {
+		if (receipt.moduleType === "retail") {
+			await handleRetailRefund(receipt);
 			return;
 		}
 
@@ -2661,88 +2982,130 @@ useEffect(() => {
 								<span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Choose one or more</span>
 							</div>
 
-							<div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 xl:flex-1 xl:min-h-0 xl:content-start xl:overflow-y-auto xl:pr-1">
-								{paginatedCatalogCards.map((card) => {
-									if (card.kind === "package") {
-										const selected = isPackageSelected(card.pkg);
-										return (
+							<div className="space-y-5 xl:flex-1 xl:min-h-0 xl:overflow-y-auto xl:pr-1">
+								<div>
+									<div className="mb-2 flex items-center justify-between">
+										<h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-600">Packages</h4>
+										<span className="text-xs text-slate-500">Bundle pricing</span>
+									</div>
+									{visiblePackages.length === 0 ? (
+										<div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-center text-xs text-slate-500">
+											No package matches your current search.
+										</div>
+									) : (
+										<div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+											{visiblePackages.map((pkg) => {
+												const selected = isPackageSelected(pkg);
+												return (
+													<button
+														type="button"
+														key={`package-${pkg.id}`}
+														onClick={() => addPackageToOrder(pkg)}
+														disabled={!!selectedRepairOrder}
+														className="h-56 rounded-xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+													>
+														<div className="flex h-full flex-col">
+															<div className="flex items-start justify-between">
+																<span className="rounded-full bg-slate-200 px-2 py-1 text-[10px] font-semibold uppercase text-slate-600">Package</span>
+																<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-blue-500 bg-blue-500 text-white" : "border-slate-300"}`}>
+																	{selected && (
+																		<svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+																			<path d="M4 10l4 4 8-8" />
+																		</svg>
+																	)}
+																</span>
+															</div>
+															<p className="mt-3 text-xl font-semibold text-slate-900">{pkg.name}</p>
+															<p className="mt-1 text-xs text-slate-600">{pkg.description}</p>
+															<p className="mt-2 text-xs text-slate-700">Includes {pkg.includedServices.length} services</p>
+															<p className="text-xs text-slate-700">{pkg.saveText}</p>
+															<div className="mt-auto flex items-center justify-between border-t border-slate-200 pt-3">
+																<p className="text-2xl font-bold text-slate-900">{formatPeso(pkg.price)}</p>
+																<p className="text-xs text-slate-500">Bundle offer</p>
+															</div>
+														</div>
+													</button>
+												);
+											})}
+										</div>
+									)}
+									{activeManualPackage && !selectedRepairOrder && (
+										<div className="mt-2 flex justify-end">
 											<button
 												type="button"
-												key={card.key}
-												onClick={() => addPackageToOrder(card.pkg)}
-												disabled={!!selectedRepairOrder}
-												className="h-56 rounded-xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+												onClick={unselectManualPackage}
+												className="text-xs font-semibold text-slate-700 underline hover:text-slate-900"
 											>
-												<div className="flex h-full flex-col">
-													<div className="flex items-start justify-between">
-														<span className="rounded-full bg-slate-200 px-2 py-1 text-[10px] font-semibold uppercase text-slate-600">Package</span>
-														<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-blue-500 bg-blue-500 text-white" : "border-slate-300"}`}>
-															{selected && (
-																<svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-																	<path d="M4 10l4 4 8-8" />
-																</svg>
-															)}
-														</span>
-													</div>
-													<p className="mt-3 text-xl font-semibold text-slate-900">{card.pkg.name}</p>
-													<p className="mt-1 text-xs text-slate-600">{card.pkg.description}</p>
-													<p className="mt-2 text-xs text-slate-700">Includes {card.pkg.includedServices.length} services</p>
-													<p className="text-xs text-slate-700">{card.pkg.saveText}</p>
-													<div className="mt-auto flex items-center justify-between border-t border-slate-200 pt-3">
-														<p className="text-2xl font-bold text-slate-900">{formatPeso(card.pkg.price)}</p>
-														<p className="text-xs text-slate-500">Bundle offer</p>
-													</div>
-												</div>
+												Unselect package
 											</button>
-										);
-									}
+										</div>
+									)}
+								</div>
 
-									const isRequestedService = !selectedOrderServiceSet || selectedOrderServiceSet.has(normalizeServiceName(card.service.name));
-									const selected = isServiceSelected(card.service);
-
-									return (
-										<button
-											type="button"
-											key={card.key}
-											onClick={() => addFromServiceCatalog(card.service)}
-											disabled={!isRequestedService}
-											className={`h-56 rounded-xl border p-4 text-left transition ${
-												isRequestedService
-													? "border-slate-200 bg-slate-50 hover:border-blue-300 hover:bg-blue-50"
-													: "border-slate-200 bg-slate-100 opacity-45 grayscale cursor-not-allowed"
-											}`}
-										>
-											<div className="flex h-full flex-col">
-												<div className="flex items-start justify-between">
-													<span className="rounded-full bg-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-600">{card.service.category}</span>
-													<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-blue-500 bg-blue-500 text-white" : "border-slate-300"}`}>
-														{selected && (
-															<svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-																<path d="M4 10l4 4 8-8" />
-															</svg>
-														)}
-													</span>
-												</div>
-												<p className="mt-3 text-xl font-semibold text-slate-900">{card.service.name}</p>
-												<ul className="mt-2 list-disc pl-5 text-xs text-slate-600">
-													<li>{card.service.category} service for customer request.</li>
-													<li>Estimated turnaround: {card.service.duration}.</li>
-												</ul>
-												<div className="mt-auto flex items-center justify-between border-t border-slate-200 pt-3">
-													<p className="text-2xl font-bold text-slate-900">{formatPeso(card.service.price)}</p>
-													<p className="text-xs text-slate-500">{card.service.duration}</p>
-												</div>
-												{selectedRepairOrder && isRequestedService && <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700">Requested</span>}
-											</div>
-										</button>
-									);
-								})}
+								<div>
+									<div className="mb-2 flex items-center justify-between">
+										<h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-600">Individual Services</h4>
+										<span className="text-xs text-slate-500">Select add-ons or standalone services</span>
+									</div>
+									{paginatedServiceCatalog.length === 0 ? (
+										<div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-center text-xs text-slate-500">
+											No individual services match your current search.
+										</div>
+									) : (
+										<div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+											{paginatedServiceCatalog.map((service) => {
+												const isRequestedService = !selectedOrderServiceSet || selectedOrderServiceSet.has(normalizeServiceName(service.name));
+												const isIncludedByPackage = activeManualPackageServiceIds.has(Number(service.id));
+												const canSelectService = isRequestedService && !isIncludedByPackage;
+												const selected = isServiceSelected(service);
+												return (
+													<button
+														type="button"
+														key={`service-${service.id}`}
+														onClick={() => addFromServiceCatalog(service)}
+														disabled={!canSelectService}
+														className={`h-56 rounded-xl border p-4 text-left transition ${
+															canSelectService
+																? "border-slate-200 bg-slate-50 hover:border-blue-300 hover:bg-blue-50"
+																: "border-slate-200 bg-slate-100 opacity-45 grayscale cursor-not-allowed"
+														}`}
+													>
+														<div className="flex h-full flex-col">
+															<div className="flex items-start justify-between">
+																<span className="rounded-full bg-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-600">{service.category}</span>
+																<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-blue-500 bg-blue-500 text-white" : "border-slate-300"}`}>
+																	{selected && (
+																		<svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+																			<path d="M4 10l4 4 8-8" />
+																		</svg>
+																	)}
+																</span>
+															</div>
+															<p className="mt-3 text-xl font-semibold text-slate-900">{service.name}</p>
+															<ul className="mt-2 list-disc pl-5 text-xs text-slate-600">
+																<li>{service.category} service for customer request.</li>
+																<li>Estimated turnaround: {service.duration}.</li>
+															</ul>
+															<div className="mt-auto flex items-center justify-between border-t border-slate-200 pt-3">
+																<p className="text-2xl font-bold text-slate-900">{formatPeso(service.price)}</p>
+																<p className="text-xs text-slate-500">{service.duration}</p>
+															</div>
+															{activeManualPackage && isIncludedByPackage && <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Included in package</span>}
+															{activeManualPackage && !isIncludedByPackage && <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-700">Add-on</span>}
+															{selectedRepairOrder && isRequestedService && <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700">Requested</span>}
+														</div>
+													</button>
+												);
+											})}
+										</div>
+									)}
+								</div>
 							</div>
 
-							{combinedCatalogCards.length > 0 && (
+							{filteredServiceCatalog.length > 0 && (
 								<div className="mt-4 flex items-center justify-between border-t border-slate-200 pt-4 text-sm text-slate-700">
 									<p>
-										Showing {(servicePage - 1) * SERVICES_PER_PAGE + 1} to {Math.min(servicePage * SERVICES_PER_PAGE, combinedCatalogCards.length)} of {combinedCatalogCards.length} results
+										Showing {(servicePage - 1) * SERVICES_PER_PAGE + 1} to {Math.min(servicePage * SERVICES_PER_PAGE, filteredServiceCatalog.length)} of {filteredServiceCatalog.length} individual services
 									</p>
 									<div className="flex items-center gap-2">
 										<button
@@ -2758,8 +3121,8 @@ useEffect(() => {
 										</div>
 										<button
 											type="button"
-											onClick={() => setServicePage((prev) => Math.min(prev + 1, totalCatalogPages))}
-											disabled={servicePage === totalCatalogPages}
+											onClick={() => setServicePage((prev) => Math.min(prev + 1, totalServicePages))}
+											disabled={servicePage === totalServicePages}
 											className="h-9 w-9 rounded-lg border border-slate-300 text-slate-500 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
 										>
 											&#8250;
@@ -2781,29 +3144,87 @@ useEffect(() => {
 								{items.length === 0 ? (
 									<div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-center text-xs text-slate-500">No services in order yet.</div>
 								) : (
-									items.map((item) => (
-										<div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-											<div className="mb-2 flex items-start justify-between gap-2">
-												<p className="text-sm font-medium text-slate-900">{item.label}</p>
-												<button
-													type="button"
-													onClick={() => removeItem(item.id)}
-													title="Remove item"
-													aria-label="Remove item"
-													className="rounded-md p-1 text-red-600 transition hover:bg-red-50 hover:text-red-500"
-												>
-													<svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-														<path d="M3 6h18" />
-														<path d="M8 6V4h8v2" />
-														<path d="M19 6l-1 14H6L5 6" />
-														<path d="M10 11v6" />
-														<path d="M14 11v6" />
-													</svg>
-												</button>
+									<>
+										{packageOrderItem && (
+											<div className="rounded-xl border border-blue-200 bg-blue-50/40 p-3">
+												<div className="mb-2 flex items-start justify-between gap-2">
+													<div>
+														<p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-blue-700">Package</p>
+														<p className="text-sm font-semibold text-slate-900">{packageOrderItem.label}</p>
+													</div>
+													<button
+														type="button"
+														onClick={unselectManualPackage}
+														title="Unselect package"
+														aria-label="Unselect package"
+														className="rounded-md p-1 text-red-600 transition hover:bg-red-50 hover:text-red-500"
+													>
+														<svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+															<path d="M3 6h18" />
+															<path d="M8 6V4h8v2" />
+															<path d="M19 6l-1 14H6L5 6" />
+															<path d="M10 11v6" />
+															<path d="M14 11v6" />
+														</svg>
+													</button>
+												</div>
+												<p className="text-right text-sm font-bold text-slate-900">{formatPeso(packageOrderItem.qty * packageOrderItem.unitPrice)}</p>
+
+												{packageAddOnOrderItems.length > 0 && (
+													<div className="mt-3 border-t border-blue-200 pt-2">
+														<p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-blue-700">Add-ons</p>
+														<div className="space-y-2">
+															{packageAddOnOrderItems.map((item) => (
+																<div key={item.id} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5">
+																	<p className="text-xs font-medium text-slate-800">{item.label.replace(/\s*\(add-on\)\s*$/i, "")}</p>
+																	<div className="flex items-center gap-2">
+																		<p className="text-xs font-semibold text-slate-900">{formatPeso(item.qty * item.unitPrice)}</p>
+																		<button
+																			type="button"
+																			onClick={() => removeItem(item.id)}
+																			title="Remove add-on"
+																			aria-label="Remove add-on"
+																			className="rounded p-1 text-red-600 transition hover:bg-red-50 hover:text-red-500"
+																		>
+																			<svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+																				<path d="M3 6h18" />
+																				<path d="M8 6V4h8v2" />
+																				<path d="M19 6l-1 14H6L5 6" />
+																			</svg>
+																		</button>
+																	</div>
+																</div>
+															))}
+														</div>
+													</div>
+												)}
 											</div>
-											<p className="text-right text-sm font-bold text-slate-900">{formatPeso(item.qty * item.unitPrice)}</p>
-										</div>
-									))
+										)}
+
+										{standaloneOrderItems.map((item) => (
+											<div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+												<div className="mb-2 flex items-start justify-between gap-2">
+													<p className="text-sm font-medium text-slate-900">{item.label}</p>
+													<button
+														type="button"
+														onClick={() => removeItem(item.id)}
+														title="Remove item"
+														aria-label="Remove item"
+														className="rounded-md p-1 text-red-600 transition hover:bg-red-50 hover:text-red-500"
+													>
+														<svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+															<path d="M3 6h18" />
+															<path d="M8 6V4h8v2" />
+															<path d="M19 6l-1 14H6L5 6" />
+															<path d="M10 11v6" />
+															<path d="M14 11v6" />
+														</svg>
+													</button>
+												</div>
+												<p className="text-right text-sm font-bold text-slate-900">{formatPeso(item.qty * item.unitPrice)}</p>
+											</div>
+										))}
+									</>
 								)}
 							</div>
 

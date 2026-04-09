@@ -682,7 +682,9 @@ class OrderController extends Controller
                 $selectedItemsAmount = round($selectedItemsAmount, 2);
             }
 
-            if (!empty($requestedItemIds)) {
+            $usesLinePayload = !empty($normalizedRefundLines);
+
+            if (!empty($requestedItemIds) && !$usesLinePayload) {
                 $invalidItemIds = array_values(array_filter(
                     $requestedItemIds,
                     fn (int $itemId) => !$orderItemsById->has($itemId)
@@ -720,7 +722,6 @@ class OrderController extends Controller
 
             $amount = round($fullRefundAmount, 2);
             if ($requestType === 'partial') {
-                $usesLinePayload = !empty($normalizedRefundLines);
                 $hasRequestedAmount = array_key_exists('requested_amount', $validated) && $validated['requested_amount'] !== null;
                 if (!$hasRequestedAmount && empty($requestedItemIds) && !$usesLinePayload) {
                     return response()->json([
@@ -768,22 +769,7 @@ class OrderController extends Controller
 
             $reasonCode = Str::slug((string) $validated['reason'], '_');
             $baseReasonNote = trim((string) (($validated['reason'] ?? '') . (!empty($validated['note']) ? "\n\n" . $validated['note'] : '')));
-            $scopeNotes = [];
-            if ($requestType === 'partial') {
-                $scopeNotes[] = 'Refund scope: partial';
-                $scopeNotes[] = sprintf('Requested amount: %.2f', $amount);
-
-                if (!empty($requestedItemIds) && !empty($selectedItemsSummary)) {
-                    $scopeNotes[] = 'Selected item IDs: ' . implode(', ', $requestedItemIds);
-                    $scopeNotes[] = 'Selected items: ' . implode('; ', $selectedItemsSummary);
-                }
-
-                if (!empty($normalizedRefundLines) && !empty($selectedItemsSummary)) {
-                    $scopeNotes[] = 'Refund lines: ' . implode('; ', $selectedItemsSummary);
-                }
-            }
-
-            $reasonNote = trim(implode("\n\n", array_filter([$baseReasonNote, implode("\n", $scopeNotes)])));
+            $reasonNote = $baseReasonNote;
 
             $refundPayload = [
                 'order_id' => $order->id,

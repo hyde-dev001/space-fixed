@@ -547,7 +547,6 @@ class RepairPosController extends Controller
             ->where('shop_owner_id', $shopOwnerId)
             ->where('manual_pos_queue_enabled', true)
             ->where('request_id', 'like', 'REP-POS-%')
-            ->whereNull('assigned_repairer_id')
             ->whereIn('status', ['pending', 'received', 'in_progress', 'ready_for_pickup'])
             ->with(['latestPosTransaction.receipt'])
             ->when($q !== '', function ($query) use ($q) {

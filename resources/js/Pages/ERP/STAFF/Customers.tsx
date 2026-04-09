@@ -222,7 +222,7 @@ export default function CustomersPage() {
               changeType={stats.totalCustomersChange >= 0 ? 'increase' : 'decrease'}
               icon={UserCircleIcon}
               color="info"
-              description="All registered customers"
+              description="All customers with orders"
             />
             <MetricCard
               title="Active Customers"

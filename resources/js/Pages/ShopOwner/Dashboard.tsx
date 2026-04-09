@@ -25,6 +25,9 @@ interface DashboardStats {
     processing: number;
     shipped: number;
     completed: number;
+    cancelled?: number;
+    refunded?: number;
+    partially_refunded?: number;
   };
   products: {
     total: number;

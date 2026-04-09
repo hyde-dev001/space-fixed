@@ -1,0 +1,1 @@
+const n=e=>{const r=String(e||"").toLowerCase().trim();if(r==="both"||r.includes("both"))return"both";const i=r.includes("repair")||r.includes("service"),t=r.includes("retail")||r.includes("shoe")||r.includes("product");return i&&t?"both":i?"repair":"retail"},s=e=>{const r=n(e);return r==="both"?["repair","retail"]:r==="repair"?["repair"]:["retail"]};export{s as r};

@@ -36,6 +36,29 @@ describe("Cashier POS mode switch", () => {
     usePageMock.mockReset();
   });
 
+  it("prioritizes shop_owner guard business type over user guard fallback", () => {
+    usePageMock.mockReturnValue({
+      props: {
+        auth: {
+          shop_owner: {
+            business_type: "retail",
+          },
+          user: {
+            shop_owner: {
+              business_type: "both",
+            },
+          },
+        },
+      },
+    });
+
+    render(<CashierPOS />);
+
+    expect(screen.queryByRole("button", { name: /repair mode/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /retail mode/i })).toBeInTheDocument();
+    expect(screen.getByTestId("retail-pos-mode")).toBeInTheDocument();
+  });
+
   it("renders Repair and Retail tabs for both business type", () => {
     renderWithBusinessType("both");
 

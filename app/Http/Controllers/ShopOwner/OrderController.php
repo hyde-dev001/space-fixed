@@ -8,14 +8,17 @@ use App\Models\OrderItem;
 use App\Models\OrderRefund;
 use App\Enums\OrderStatus;
 use App\Services\OrderRefundService;
+use App\Services\RetailPosRefundSummaryService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class OrderController extends Controller
 {
     public function __construct(
         private readonly OrderRefundService $orderRefundService,
+        private readonly RetailPosRefundSummaryService $retailPosRefundSummaryService,
     ) {
     }
 
@@ -32,11 +35,19 @@ class OrderController extends Controller
             return response()->json(['error' => 'Unauthenticated'], 401);
         }
 
+        $includeRefundItems = Schema::hasTable('order_refund_items');
+
         $query = Order::where('shop_owner_id', $shopOwner->id)
             ->with([
                 'items.product',
                 'customer',
-                'refunds' => fn ($refundQuery) => $refundQuery->orderByDesc('id'),
+                'refunds' => function ($refundQuery) use ($includeRefundItems) {
+                    if ($includeRefundItems) {
+                        $refundQuery->with('items.orderItem');
+                    }
+
+                    $refundQuery->orderByDesc('id');
+                },
             ]);
 
         // Filter by status if provided
@@ -62,9 +73,13 @@ class OrderController extends Controller
         // Paginate
         $perPage = $request->get('per_page', 15);
         $orders = $query->paginate($perPage);
+        $retailPosRefundSummaries = $this->retailPosRefundSummaryService->buildForOrders(
+            (int) $shopOwner->id,
+            $orders->getCollection()->pluck('id')->map(fn ($id) => (int) $id)->all(),
+        );
 
         return response()->json([
-            'data' => $orders->map(function($order) {
+            'data' => $orders->map(function($order) use ($retailPosRefundSummaries, $includeRefundItems) {
                 $itemSubtotal = (float) ($order->total_amount ?? 0);
                 $shippingFee = (float) ($order->shipping_fee ?? 0);
                 $hasStoredVat = $order->vat_amount !== null;
@@ -73,6 +88,25 @@ class OrderController extends Controller
                     ? round((float) $order->vat_rate, 2)
                     : null;
                 $latestRefund = $order->refunds->first();
+
+                $latestRefundItems = [];
+                if ($includeRefundItems && $latestRefund) {
+                    $latestRefundItems = $latestRefund->items
+                        ->map(function ($line) {
+                            return [
+                                'order_item_id' => (int) ($line->order_item_id ?? 0),
+                                'product_name' => (string) ($line->orderItem->product_name ?? 'Item'),
+                                'requested_qty' => (int) ($line->requested_qty ?? 0),
+                                'approved_qty' => (int) ($line->approved_qty ?? $line->requested_qty ?? 0),
+                                'inspection_disposition' => (string) ($line->inspection_disposition ?? 'pending'),
+                                'line_amount' => (float) ($line->line_amount ?? 0),
+                            ];
+                        })
+                        ->filter(fn (array $line) => (int) ($line['order_item_id'] ?? 0) > 0)
+                        ->values()
+                        ->all();
+                }
+
                 return [
                     'id' => $order->id,
                     'order_number' => $order->order_number,
@@ -100,6 +134,7 @@ class OrderController extends Controller
                     'tracking_number' => $order->tracking_number ?? '',
                     'carrier_company' => $order->carrier_company ?? '',
                     'eta' => $order->eta ?? null,
+                    'retail_pos_refund' => $retailPosRefundSummaries[(int) $order->id] ?? null,
                     'latest_refund' => $latestRefund ? [
                         'id' => (int) $latestRefund->id,
                         'status' => (string) $latestRefund->status,
@@ -128,6 +163,7 @@ class OrderController extends Controller
                         'rejected_at' => optional($latestRefund->rejected_at)->toDateTimeString(),
                         'rejection_reason' => $latestRefund->rejection_reason,
                         'flow_type' => (string) ($latestRefund->flow_type ?? ''),
+                        'items' => $latestRefundItems,
                     ] : null,
                     'created_at' => $order->created_at->toISOString(),
                     'updated_at' => $order->updated_at->toISOString(),
@@ -170,11 +206,19 @@ class OrderController extends Controller
             return response()->json(['error' => 'Unauthenticated'], 401);
         }
 
+        $includeRefundItems = Schema::hasTable('order_refund_items');
+
         $order = Order::where('shop_owner_id', $shopOwner->id)
             ->with([
                 'items.product',
                 'customer',
-                'refunds' => fn ($refundQuery) => $refundQuery->orderByDesc('id'),
+                'refunds' => function ($refundQuery) use ($includeRefundItems) {
+                    if ($includeRefundItems) {
+                        $refundQuery->with('items.orderItem');
+                    }
+
+                    $refundQuery->orderByDesc('id');
+                },
             ])
             ->find($id);
 
@@ -190,6 +234,25 @@ class OrderController extends Controller
             ? round((float) $order->vat_rate, 2)
             : null;
         $latestRefund = $order->refunds->first();
+        $latestRefundItems = [];
+        if ($includeRefundItems && $latestRefund) {
+            $latestRefundItems = $latestRefund->items
+                ->map(function ($line) {
+                    return [
+                        'order_item_id' => (int) ($line->order_item_id ?? 0),
+                        'product_name' => (string) ($line->orderItem->product_name ?? 'Item'),
+                        'requested_qty' => (int) ($line->requested_qty ?? 0),
+                        'approved_qty' => (int) ($line->approved_qty ?? $line->requested_qty ?? 0),
+                        'inspection_disposition' => (string) ($line->inspection_disposition ?? 'pending'),
+                        'line_amount' => (float) ($line->line_amount ?? 0),
+                    ];
+                })
+                ->filter(fn (array $line) => (int) ($line['order_item_id'] ?? 0) > 0)
+                ->values()
+                ->all();
+        }
+
+        $retailPosRefundSummary = $this->retailPosRefundSummaryService->buildForOrders((int) $shopOwner->id, [(int) $order->id]);
 
         return response()->json([
             'id' => $order->id,
@@ -221,6 +284,7 @@ class OrderController extends Controller
             'carrier_phone' => $order->carrier_phone ?? '',
             'tracking_link' => $order->tracking_link ?? '',
             'eta' => $order->eta ?? null,
+            'retail_pos_refund' => $retailPosRefundSummary[(int) $order->id] ?? null,
             'latest_refund' => $latestRefund ? [
                 'id' => (int) $latestRefund->id,
                 'status' => (string) $latestRefund->status,
@@ -249,6 +313,7 @@ class OrderController extends Controller
                 'rejected_at' => optional($latestRefund->rejected_at)->toDateTimeString(),
                 'rejection_reason' => $latestRefund->rejection_reason,
                 'flow_type' => (string) ($latestRefund->flow_type ?? ''),
+                'items' => $latestRefundItems,
             ] : null,
             'created_at' => $order->created_at->toISOString(),
             'updated_at' => $order->updated_at->toISOString(),
@@ -458,6 +523,9 @@ class OrderController extends Controller
     {
         $validated = $request->validate([
             'return_notes' => 'nullable|string|max:1000',
+            'line_dispositions' => 'nullable|array',
+            'line_dispositions.*.order_item_id' => 'required|integer|min:1',
+            'line_dispositions.*.inspection_disposition' => 'required|string|in:resellable,damaged',
         ]);
 
         $shopOwner = Auth::guard('shop_owner')->user();
@@ -502,6 +570,7 @@ class OrderController extends Controller
             refund: $refund,
             staffId: null,
             notes: $validated['return_notes'] ?? null,
+            lineDispositions: $validated['line_dispositions'] ?? null,
         );
 
         if (($result['result'] ?? null) === 'invalid_state') {
@@ -589,5 +658,6 @@ class OrderController extends Controller
             'refund' => $result['refund'],
         ]);
     }
+
 }
 

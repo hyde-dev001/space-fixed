@@ -593,7 +593,12 @@ class OrderRefundService
         ];
     }
 
-    public function confirmReturnReceived(OrderRefund $refund, ?int $staffId, ?string $notes = null): array
+    public function confirmReturnReceived(
+        OrderRefund $refund,
+        ?int $staffId,
+        ?string $notes = null,
+        ?array $lineDispositions = null,
+    ): array
     {
         if (!in_array((string) ($refund->return_status ?? 'awaiting_approval'), ['pending_customer_shipment', 'pending_staff_pickup', 'in_transit'], true)) {
             return [
@@ -601,6 +606,42 @@ class OrderRefundService
                 'message' => 'Return cannot be confirmed in the current state.',
                 'refund' => $refund,
             ];
+        }
+
+        if (!empty($lineDispositions) && Schema::hasTable('order_refund_items')) {
+            try {
+                $dispositionByOrderItemId = collect($lineDispositions)
+                    ->filter(fn ($line) => is_array($line))
+                    ->mapWithKeys(function (array $line) {
+                        $orderItemId = (int) ($line['order_item_id'] ?? 0);
+                        $disposition = strtolower(trim((string) ($line['inspection_disposition'] ?? '')));
+
+                        if ($orderItemId <= 0 || !in_array($disposition, ['resellable', 'damaged'], true)) {
+                            return [];
+                        }
+
+                        return [$orderItemId => $disposition];
+                    });
+
+                if ($dispositionByOrderItemId->isNotEmpty()) {
+                    $refund->loadMissing('items');
+
+                    foreach ($refund->items as $itemLine) {
+                        $orderItemId = (int) ($itemLine->order_item_id ?? 0);
+                        if ($orderItemId <= 0 || !$dispositionByOrderItemId->has($orderItemId)) {
+                            continue;
+                        }
+
+                        $itemLine->inspection_disposition = $dispositionByOrderItemId->get($orderItemId);
+                        $itemLine->save();
+                    }
+                }
+            } catch (\Throwable $lineDispositionError) {
+                Log::warning('Unable to persist return inspection dispositions before confirming return', [
+                    'refund_id' => (int) ($refund->id ?? 0),
+                    'error' => $lineDispositionError->getMessage(),
+                ]);
+            }
         }
 
         $this->updateOrderRefundCompat($refund, [
@@ -692,7 +733,15 @@ class OrderRefundService
             ];
         }
 
-        $amount = (float) ($refund->amount ?? 0);
+        $amount = $this->resolveLineBasedRefundAmount($refund);
+        if ($amount > 0 && round((float) ($refund->amount ?? 0), 2) !== $amount) {
+            $refund->update(['amount' => $amount]);
+        }
+
+        if ($amount <= 0) {
+            $amount = (float) ($refund->amount ?? 0);
+        }
+
         if ($amount <= 0) {
             $amount = $this->resolveRefundAmount($order, $secretKey);
         }
@@ -858,6 +907,27 @@ class OrderRefundService
 
         return str_contains($message, 'cannot partially refund')
             && str_contains($message, 'same day');
+    }
+
+    private function resolveLineBasedRefundAmount(OrderRefund $refund): float
+    {
+        if (!Schema::hasTable('order_refund_items')) {
+            return 0.0;
+        }
+
+        try {
+            $refund->loadMissing('items');
+            $lineBasedAmount = round((float) $refund->items->sum(fn ($line) => (float) ($line->line_amount ?? 0)), 2);
+
+            return $lineBasedAmount > 0 ? $lineBasedAmount : 0.0;
+        } catch (\Throwable $error) {
+            Log::warning('Unable to resolve line-based refund amount for order refund', [
+                'refund_id' => (int) ($refund->id ?? 0),
+                'error' => $error->getMessage(),
+            ]);
+
+            return 0.0;
+        }
     }
 
     private function isEligibleForOnlineRefund(Order $order): bool

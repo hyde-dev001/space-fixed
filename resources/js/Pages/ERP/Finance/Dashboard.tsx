@@ -143,7 +143,7 @@ export default function FinanceDashboard() {
         return String(invoice.effective_status || invoice.status || '').toLowerCase();
     };
 
-    // Calculate stats from real data - only count PAID invoices for net revenue.
+    // Calculate stats from real data - count paid revenue records (invoices + POS payload entries).
     const refundedRevenue = typeof refundedRevenueProp === 'number'
         ? refundedRevenueProp
         : refunds.reduce((sum: number, refund: any) => {
@@ -177,7 +177,7 @@ export default function FinanceDashboard() {
             changeType: 'increase',
             icon: DollarIconSvg,
             color: 'success',
-            description: `From ${invoices.filter((inv: any) => getInvoiceStatus(inv) === 'paid').length} paid invoices before VAT`,
+            description: `From ${invoices.filter((inv: any) => getInvoiceStatus(inv) === 'paid').length} paid records before VAT`,
         },
         {
             title: 'Refunded Revenue',
@@ -217,7 +217,7 @@ export default function FinanceDashboard() {
         },
     ];
 
-    // Chart data — last 6 calendar months, revenue derived from paid invoices before VAT.
+    // Chart data — last 6 calendar months, revenue from paid records before VAT.
     const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const now = new Date();
     const chartMonths: string[] = [];

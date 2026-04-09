@@ -317,6 +317,28 @@ const parseCurrencyToNumber = (value: string): number => {
 	return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const normalizeReasonDetails = (reason: unknown, otherReasonNote?: unknown): string => {
+	const raw = String(reason ?? "").trim();
+	const stripped = raw.replace(/\bRefund scope:\s*(?:full|partial)\b[\s\S]*$/i, "").trim();
+	const base = stripped !== "" ? stripped : raw;
+	const other = String(otherReasonNote ?? "").trim();
+
+	if (other !== "" && !base.toLowerCase().includes(other.toLowerCase())) {
+		return `${base}${base !== "" ? "\n\n" : ""}Other reason note: ${other}`;
+	}
+
+	return base;
+};
+
+const normalizeRefundRequestForDisplay = (item: RefundRequest): RefundRequest => {
+	const normalizedReason = normalizeReasonDetails(item.reason, (item as any).otherReasonNote ?? (item as any).other_reason_note);
+	return {
+		...item,
+		reason: normalizedReason,
+		refundNote: normalizeReasonDetails(item.refundNote, (item as any).otherReasonNote ?? (item as any).other_reason_note),
+	};
+};
+
 const formatPayoutChannelLabel = (channel?: string): string => {
 	switch (String(channel || "").toLowerCase()) {
 		case "gcash":
@@ -554,13 +576,14 @@ export default function RefundApproval() {
 			const normalizedOrderRefunds: RefundRequest[] = (Array.isArray(orderData?.data) ? orderData.data : []).map((item: any) => ({
 				...item,
 				refundType: "order",
-			}));
+			})).map(normalizeRefundRequestForDisplay);
 
 			const normalizedRepairRefunds: RefundRequest[] = (Array.isArray(repairData?.data) ? repairData.data : [])
 				.map((item: any) => ({
 					...item,
 					refundType: "repair",
 				}))
+				.map(normalizeRefundRequestForDisplay)
 				.filter(shouldShowRepairRefundInFinanceQueue);
 
 			setRequests(

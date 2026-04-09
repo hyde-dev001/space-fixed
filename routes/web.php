@@ -1469,9 +1469,11 @@ Route::prefix('finance')->name('finance.')->middleware(['auth:user', 'role_or_pe
         }
         $shopId = Auth::user()->shop_owner_id;
         $year   = now()->year;
+        $yearStart = now()->copy()->startOfYear();
+        $yearEnd = now()->copy()->endOfYear();
 
         $invoices = \App\Models\Finance\Invoice::where('shop_id', $shopId)
-            ->whereYear('date', $year)
+            ->whereBetween('date', [$yearStart->toDateString(), $yearEnd->toDateString()])
             ->with(['jobOrder' => function ($query) {
                 $query->select(['id', 'payment_status']);
             }])
@@ -1497,28 +1499,152 @@ Route::prefix('finance')->name('finance.')->middleware(['auth:user', 'role_or_pe
             ];
         })->values();
 
+        $posTransactions = \App\Models\PosTransaction::query()
+            ->where('shop_owner_id', $shopId)
+            ->whereBetween(\Illuminate\Support\Facades\DB::raw('COALESCE(paid_at, created_at)'), [
+                $yearStart->toDateTimeString(),
+                $yearEnd->toDateTimeString(),
+            ])
+            ->whereIn('status', ['paid', 'partially_refunded', 'refunded'])
+            ->select(['id', 'transaction_no', 'status', 'total_amount', 'tax_amount', 'paid_at', 'created_at'])
+            ->orderByDesc(\Illuminate\Support\Facades\DB::raw('COALESCE(paid_at, created_at)'))
+            ->get();
+
+        $posRefundByTransaction = [];
+        if ($posTransactions->isNotEmpty()) {
+            $posRefundRows = \App\Models\PosRefund::query()
+                ->select('source_transaction_id')
+                ->selectRaw('SUM(COALESCE(approved_amount, requested_amount, 0)) as total_refunded')
+                ->where('status', 'succeeded')
+                ->whereIn('source_transaction_id', $posTransactions->pluck('id')->all())
+                ->groupBy('source_transaction_id')
+                ->get();
+
+            foreach ($posRefundRows as $row) {
+                $transactionId = (int) ($row->source_transaction_id ?? 0);
+                if ($transactionId <= 0) {
+                    continue;
+                }
+                $posRefundByTransaction[$transactionId] = (float) ($row->total_refunded ?? 0.0);
+            }
+        }
+
+        $posRevenuePayload = $posTransactions->map(function ($transaction) use ($posRefundByTransaction) {
+            $transactionStatus = strtolower((string) ($transaction->status ?? ''));
+            $grossTotal = max(0.0, (float) ($transaction->total_amount ?? 0.0));
+            $vatAmount = max(0.0, (float) ($transaction->tax_amount ?? 0.0));
+            $preRefundNet = max(0.0, ($grossTotal - $vatAmount) > 0 ? ($grossTotal - $vatAmount) : $grossTotal);
+
+            $refundAmount = max(0.0, (float) ($posRefundByTransaction[$transaction->id] ?? 0.0));
+            if ($refundAmount <= 0 && $transactionStatus === 'refunded') {
+                $refundAmount = $preRefundNet;
+            }
+
+            $netRevenue = max(0.0, $preRefundNet - min($preRefundNet, $refundAmount));
+            $effectiveStatus = ($transactionStatus === 'refunded' && $netRevenue <= 0)
+                ? 'refunded'
+                : 'paid';
+
+            return [
+                'id' => 'pos-' . $transaction->id,
+                'reference' => $transaction->transaction_no,
+                'status' => $transactionStatus,
+                'effective_status' => $effectiveStatus,
+                'total' => $grossTotal,
+                'tax_amount' => $vatAmount,
+                'meta' => [
+                    'subtotal_amount' => round($netRevenue, 2),
+                ],
+                'date' => optional($transaction->paid_at ?? $transaction->created_at)->toDateString(),
+            ];
+        })->values();
+
+        $invoicePayload = $invoicePayload
+            ->concat($posRevenuePayload)
+            ->sortByDesc('date')
+            ->values();
+
         $expenses = \App\Models\Finance\Expense::where('shop_id', $shopId)
-            ->whereYear('date', $year)
+            ->whereBetween('date', [$yearStart->toDateString(), $yearEnd->toDateString()])
             ->select(['id', 'reference', 'status', 'amount', 'date'])
             ->orderBy('date', 'desc')
             ->get();
 
-        $refunds = \App\Models\OrderRefund::query()
+        $orderRefunds = \App\Models\OrderRefund::query()
             ->where('shop_owner_id', $shopId)
             ->whereYear('refunded_at', $year)
             ->whereNotNull('refunded_at')
+            ->where('status', 'succeeded')
             ->select(['id', 'order_id', 'amount', 'status', 'refunded_at', 'requested_at'])
             ->orderByDesc('refunded_at')
             ->get();
 
-        $refundedRevenue = $refunds->sum(function ($refund) {
-            return (float) ($refund->amount ?? 0);
+        $orderRefundLineById = collect();
+        if (
+            $orderRefunds->isNotEmpty()
+            && \Illuminate\Support\Facades\Schema::hasTable('order_refund_items')
+        ) {
+            $orderRefundLineById = \Illuminate\Support\Facades\DB::table('order_refund_items')
+                ->select('order_refund_id', \Illuminate\Support\Facades\DB::raw('SUM(COALESCE(line_amount, 0)) as line_total'))
+                ->whereIn('order_refund_id', $orderRefunds->pluck('id')->all())
+                ->groupBy('order_refund_id')
+                ->pluck('line_total', 'order_refund_id');
+        }
+
+        $orderRefundPayload = $orderRefunds->map(function ($refund) use ($orderRefundLineById) {
+            $lineAmount = (float) ($orderRefundLineById[$refund->id] ?? 0.0);
+            $effectiveAmount = $lineAmount > 0
+                ? $lineAmount
+                : (float) ($refund->amount ?? 0.0);
+
+            return [
+                'id' => $refund->id,
+                'order_id' => $refund->order_id,
+                'amount' => round(max(0.0, $effectiveAmount), 2),
+                'status' => $refund->status,
+                'refunded_at' => optional($refund->refunded_at)->toDateTimeString(),
+                'requested_at' => optional($refund->requested_at)->toDateTimeString(),
+            ];
+        })->values();
+
+        $posRefunds = \App\Models\PosRefund::query()
+            ->where('shop_owner_id', $shopId)
+            ->where('status', 'succeeded')
+            ->whereYear('executed_at', $year)
+            ->whereNotNull('executed_at')
+            ->select(['id', 'source_transaction_id', 'approved_amount', 'requested_amount', 'executed_at'])
+            ->orderByDesc('executed_at')
+            ->get();
+
+        $posRefundPayload = $posRefunds->map(function ($refund) {
+            $effectiveAmount = (float) ($refund->approved_amount ?? 0.0);
+            if ($effectiveAmount <= 0) {
+                $effectiveAmount = (float) ($refund->requested_amount ?? 0.0);
+            }
+
+            return [
+                'id' => 'pos-' . $refund->id,
+                'order_id' => null,
+                'amount' => round(max(0.0, $effectiveAmount), 2),
+                'status' => 'succeeded',
+                'refunded_at' => optional($refund->executed_at)->toDateTimeString(),
+                'requested_at' => optional($refund->executed_at)->toDateTimeString(),
+            ];
+        })->values();
+
+        $refundPayload = $orderRefundPayload
+            ->concat($posRefundPayload)
+            ->sortByDesc('refunded_at')
+            ->values();
+
+        $refundedRevenue = $refundPayload->sum(function ($refund) {
+            return (float) ($refund['amount'] ?? 0.0);
         });
 
         return Inertia::render('ERP/Finance/Dashboard', [
             'invoices' => $invoicePayload,
             'expenses' => $expenses,
-            'refunds' => $refunds,
+            'refunds' => $refundPayload,
             'refundedRevenue' => $refundedRevenue,
         ]);
     })->name('dashboard');

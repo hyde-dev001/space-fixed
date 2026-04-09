@@ -8,6 +8,7 @@ use App\Services\OrderRefundService;
 use App\Services\ShopOwnerApprovalPolicyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Schema;
 
 class RefundApprovalController extends Controller
 {
@@ -334,16 +335,34 @@ class RefundApprovalController extends Controller
 
     private function transformRefund(OrderRefund $refund): array
     {
-        $refund->loadMissing(['order', 'customer']);
+        $refund->loadMissing(['order', 'customer', 'items']);
 
         $order = $refund->order;
         $status = strtolower((string) $refund->status);
         $shopOwnerStatus = strtolower((string) ($refund->shop_owner_status ?? 'pending'));
         $financeStatus = strtolower((string) ($refund->finance_status ?? 'pending'));
+        $reasonLabel = $this->humanizeReason((string) $refund->reason_code);
+        $reasonNote = trim((string) ($refund->reason_note ?? ''));
+        $cleanReasonNote = trim((string) (preg_replace('/\bRefund scope:\s*(?:full|partial)\b.*$/i', '', $reasonNote) ?? $reasonNote));
+        $otherReasonNote = trim((string) ($refund->other_reason_note ?? ''));
+        $reasonDetails = $cleanReasonNote !== '' ? $cleanReasonNote : $reasonLabel;
+
+        if ($otherReasonNote !== '' && stripos($reasonDetails, $otherReasonNote) === false) {
+            $reasonDetails = trim($reasonDetails . ($reasonDetails !== '' ? "\n\n" : '') . 'Other reason note: ' . $otherReasonNote);
+        }
+
+        $lineBasedAmount = 0.0;
+        if (Schema::hasTable('order_refund_items')) {
+            $lineBasedAmount = round((float) $refund->items->sum(fn ($line) => (float) ($line->line_amount ?? 0)), 2);
+        }
+
+        $effectiveAmount = $lineBasedAmount > 0
+            ? $lineBasedAmount
+            : round((float) ($refund->amount ?? 0), 2);
 
         $requiresOwnerApproval = $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForRefund(
             (int) ($refund->shop_owner_id ?? 0),
-            (float) ($refund->amount ?? 0)
+            $effectiveAmount
         );
 
         $approvalStage = 'none';
@@ -373,13 +392,14 @@ class RefundApprovalController extends Controller
             'orderNumber' => (string) ($order->order_number ?? ('#' . $refund->order_id)),
             'customerName' => (string) ($refund->customer?->name ?? 'Unknown Customer'),
             'orderTotal' => '₱' . number_format($orderTotal, 2),
-            'refundAmount' => '₱' . number_format((float) $refund->amount, 2),
+            'refundAmount' => '₱' . number_format($effectiveAmount, 2),
             'refundMethod' => $this->humanizeRefundMethod($refund->requested_refund_method),
             'requestedBy' => (string) ($refund->customer?->name ?? 'Customer'),
             'requestDate' => optional($refund->requested_at)->format('Y-m-d') ?? optional($refund->created_at)->format('Y-m-d'),
-            'refundReason' => $this->humanizeReason((string) $refund->reason_code),
-            'refundNote' => (string) ($refund->reason_note ?? ''),
-            'reason' => (string) ($refund->reason_note ?? $this->humanizeReason((string) $refund->reason_code)),
+            'refundReason' => $reasonLabel,
+            'refundNote' => $cleanReasonNote,
+            'otherReasonNote' => $otherReasonNote,
+            'reason' => $reasonDetails,
             'status' => $uiStatus,
             'rawStatus' => $status,
             'shopOwnerStatus' => (string) ($refund->shop_owner_status ?? 'pending'),

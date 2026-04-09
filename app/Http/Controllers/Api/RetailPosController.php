@@ -118,7 +118,9 @@ class RetailPosController extends Controller
             ->with([
                 'paymentLines',
                 'receipt',
-                'refunds' => fn ($query) => $query->orderByDesc('id'),
+                'refunds' => fn ($query) => $query
+                    ->with(['items:id,pos_refund_id,order_item_id,requested_qty,approved_qty'])
+                    ->orderByDesc('id'),
                 'sourceOrder:id,shop_owner_id',
                 'sourceOrder.items:id,order_id,product_id,product_name,price,quantity,subtotal,size,color',
             ])

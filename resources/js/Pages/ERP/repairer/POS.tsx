@@ -43,16 +43,12 @@ type ServicePackageOption = {
 	saveText: string;
 };
 
-type CatalogCardItem =
-	| { kind: "package"; key: string; pkg: ServicePackageOption }
-	| { kind: "service"; key: string; service: RepairServiceOption };
-
 type POSItem = {
 	id: string;
 	label: string;
 	qty: number;
 	unitPrice: number;
-	source: "manual" | "repair-order" | "service-catalog" | "package";
+	source: "manual" | "repair-order" | "service-catalog" | "package" | "package-add-on";
 	manualRepairPackageId?: number | null;
 	manualServiceIds?: number[];
 };
@@ -961,6 +957,37 @@ const PointOfSalePage = () => {
 		return new Set(selectedRepairOrder.requestedServices.map((serviceName) => normalizeServiceName(serviceName)));
 	}, [selectedRepairOrder]);
 
+	const activeManualPackage = useMemo(() => {
+		const packageItem = items.find((item) => item.source === "package");
+		const packageId = Number(packageItem?.manualRepairPackageId ?? 0);
+		if (!Number.isInteger(packageId) || packageId <= 0) {
+			return null;
+		}
+
+		return servicePackages.find((pkg) => Number(pkg.id) === packageId) ?? null;
+	}, [items, servicePackages]);
+
+	const activeManualPackageServiceIds = useMemo(() => {
+		if (!activeManualPackage) return new Set<number>();
+		return new Set(
+			activeManualPackage.serviceIds
+				.map((id) => Number(id))
+				.filter((id) => Number.isInteger(id) && id > 0),
+		);
+	}, [activeManualPackage]);
+
+	const packageOrderItem = useMemo(() => {
+		return items.find((item) => item.source === "package") ?? null;
+	}, [items]);
+
+	const packageAddOnOrderItems = useMemo(() => {
+		return items.filter((item) => item.source === "package-add-on");
+	}, [items]);
+
+	const standaloneOrderItems = useMemo(() => {
+		return items.filter((item) => item.source !== "package" && item.source !== "package-add-on");
+	}, [items]);
+
 	const visiblePackages = useMemo(() => {
 		const query = serviceSearch.trim().toLowerCase();
 		if (!query) return servicePackages;
@@ -1007,55 +1034,89 @@ const PointOfSalePage = () => {
 
 	const addFromServiceCatalog = (service: RepairServiceOption) => {
 		if (selectedRepairOrder) return;
-		if (isServiceSelected(service)) return;
 
-		setItems((prev) => [
-			...prev,
-			{
-				id: `service-${service.id}-${Date.now()}`,
-				label: service.name,
-				qty: 1,
-				unitPrice: service.price,
-				source: "service-catalog",
-				manualServiceIds: (() => {
-					const serviceId = Number(service.id);
-					return Number.isInteger(serviceId) && serviceId > 0 ? [serviceId] : [];
-				})(),
-			},
-		]);
+		const serviceId = Number(service.id);
+		if (!Number.isInteger(serviceId) || serviceId <= 0) return;
+
+		setItems((prev) => {
+			const hasSelectedPackage = prev.some((item) => item.source === "package");
+			if (hasSelectedPackage && activeManualPackageServiceIds.has(serviceId)) {
+				return prev;
+			}
+
+			const alreadySelected = prev.some((item) => {
+				if (item.source !== "service-catalog" && item.source !== "package-add-on") {
+					return false;
+				}
+
+				return (item.manualServiceIds ?? []).some((id) => Number(id) === serviceId);
+			});
+
+			if (alreadySelected) {
+				return prev;
+			}
+
+			return [
+				...prev,
+				{
+					id: `service-${service.id}-${Date.now()}`,
+					label: hasSelectedPackage ? `${service.name} (Add-on)` : service.name,
+					qty: 1,
+					unitPrice: service.price,
+					source: hasSelectedPackage ? "package-add-on" : "service-catalog",
+					manualServiceIds: [serviceId],
+				},
+			];
+		});
 	};
 
 	const addPackageToOrder = (pkg: ServicePackageOption) => {
 		if (selectedRepairOrder) return;
 		if (isPackageSelected(pkg)) return;
 
-		setItems((prev) => [
-			...prev,
-			{
-				id: `package-${pkg.id}-${Date.now()}`,
-				label: `${pkg.name} (${pkg.includedServices.length} services)`,
-				qty: 1,
-				unitPrice: pkg.price,
-				source: "package",
-				manualRepairPackageId: (() => {
-					const packageId = Number(pkg.id);
-					return Number.isInteger(packageId) && packageId > 0 ? packageId : null;
-				})(),
-				manualServiceIds: pkg.serviceIds,
-			},
-		]);
+		setItems((prev) => {
+			const preservedItems = prev.filter((item) => (
+				item.source !== "package"
+				&& item.source !== "service-catalog"
+				&& item.source !== "package-add-on"
+			));
+
+			const packageId = Number(pkg.id);
+			return [
+				...preservedItems,
+				{
+					id: `package-${pkg.id}-${Date.now()}`,
+					label: `${pkg.name} (${pkg.includedServices.length} services)`,
+					qty: 1,
+					unitPrice: pkg.price,
+					source: "package",
+					manualRepairPackageId: Number.isInteger(packageId) && packageId > 0 ? packageId : null,
+					manualServiceIds: pkg.serviceIds,
+				},
+			];
+		});
 	};
 
 	const isPackageSelected = (pkg: ServicePackageOption): boolean => {
-		const packageName = normalizeServiceName(pkg.name);
+		const packageId = Number(pkg.id);
+		if (!Number.isInteger(packageId) || packageId <= 0) return false;
+
 		return items.some((item) => {
-			return item.source === "package" && normalizeServiceName(item.label).startsWith(packageName);
+			return item.source === "package" && Number(item.manualRepairPackageId ?? 0) === packageId;
 		});
 	};
 
 	const isServiceSelected = (service: RepairServiceOption): boolean => {
-		const serviceName = normalizeServiceName(service.name);
-		return items.some((item) => normalizeServiceName(item.label) === serviceName);
+		const serviceId = Number(service.id);
+		if (!Number.isInteger(serviceId) || serviceId <= 0) return false;
+
+		return items.some((item) => {
+			if (item.source !== "service-catalog" && item.source !== "package-add-on") {
+				return false;
+			}
+
+			return (item.manualServiceIds ?? []).some((id) => Number(id) === serviceId);
+		});
 	};
 
 	const filteredRepairOrders = useMemo(() => {
@@ -1180,33 +1241,40 @@ const PointOfSalePage = () => {
 		return remaining > 0 ? remaining : Number(receipt.totalDue || 0);
 	};
 
-	const combinedCatalogCards = useMemo<CatalogCardItem[]>(() => {
-		const packageCards: CatalogCardItem[] = visiblePackages.map((pkg) => ({ kind: "package", key: `package-${pkg.id}`, pkg }));
-		const serviceCards: CatalogCardItem[] = filteredServiceCatalog.map((service) => ({ kind: "service", key: `service-${service.id}`, service }));
-		return [...packageCards, ...serviceCards];
-	}, [visiblePackages, filteredServiceCatalog]);
+	const totalServicePages = useMemo(() => {
+		return Math.max(1, Math.ceil(filteredServiceCatalog.length / SERVICES_PER_PAGE));
+	}, [filteredServiceCatalog.length]);
 
-	const totalCatalogPages = useMemo(() => {
-		return Math.max(1, Math.ceil(combinedCatalogCards.length / SERVICES_PER_PAGE));
-	}, [combinedCatalogCards.length]);
-
-	const paginatedCatalogCards = useMemo(() => {
+	const paginatedServiceCatalog = useMemo(() => {
 		const start = (servicePage - 1) * SERVICES_PER_PAGE;
-		return combinedCatalogCards.slice(start, start + SERVICES_PER_PAGE);
-	}, [combinedCatalogCards, servicePage]);
+		return filteredServiceCatalog.slice(start, start + SERVICES_PER_PAGE);
+	}, [filteredServiceCatalog, servicePage]);
 
 	useEffect(() => {
 		setServicePage(1);
 	}, [serviceSearch]);
 
 	useEffect(() => {
-		if (servicePage > totalCatalogPages) {
-			setServicePage(totalCatalogPages);
+		if (servicePage > totalServicePages) {
+			setServicePage(totalServicePages);
 		}
-	}, [servicePage, totalCatalogPages]);
+	}, [servicePage, totalServicePages]);
 
 	const removeItem = (id: string) => {
-		setItems((prev) => prev.filter((item) => item.id !== id));
+		setItems((prev) => {
+			const target = prev.find((item) => item.id === id);
+			if (!target) return prev;
+
+			if (target.source === "package") {
+				return prev.filter((item) => item.id !== id && item.source !== "package-add-on");
+			}
+
+			return prev.filter((item) => item.id !== id);
+		});
+	};
+
+	const unselectManualPackage = () => {
+		setItems((prev) => prev.filter((item) => item.source !== "package" && item.source !== "package-add-on"));
 	};
 
 	const clearTransaction = () => {
@@ -1717,88 +1785,130 @@ const PointOfSalePage = () => {
 								<span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Choose one or more</span>
 							</div>
 
-							<div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 xl:flex-1 xl:min-h-0 xl:content-start xl:overflow-y-auto xl:pr-1">
-								{paginatedCatalogCards.map((card) => {
-									if (card.kind === "package") {
-										const selected = isPackageSelected(card.pkg);
-										return (
+							<div className="space-y-5 xl:flex-1 xl:min-h-0 xl:overflow-y-auto xl:pr-1">
+								<div>
+									<div className="mb-2 flex items-center justify-between">
+										<h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-600">Packages</h4>
+										<span className="text-xs text-slate-500">Bundle pricing</span>
+									</div>
+									{visiblePackages.length === 0 ? (
+										<div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-center text-xs text-slate-500">
+											No package matches your current search.
+										</div>
+									) : (
+										<div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+											{visiblePackages.map((pkg) => {
+												const selected = isPackageSelected(pkg);
+												return (
+													<button
+														type="button"
+														key={`package-${pkg.id}`}
+														onClick={() => addPackageToOrder(pkg)}
+														disabled={!!selectedRepairOrder}
+														className="h-56 rounded-xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+													>
+														<div className="flex h-full flex-col">
+															<div className="flex items-start justify-between">
+																<span className="rounded-full bg-slate-200 px-2 py-1 text-[10px] font-semibold uppercase text-slate-600">Package</span>
+																<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-blue-500 bg-blue-500 text-white" : "border-slate-300"}`}>
+																	{selected && (
+																		<svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+																			<path d="M4 10l4 4 8-8" />
+																		</svg>
+																	)}
+																</span>
+															</div>
+															<p className="mt-3 text-xl font-semibold text-slate-900">{pkg.name}</p>
+															<p className="mt-1 text-xs text-slate-600">{pkg.description}</p>
+															<p className="mt-2 text-xs text-slate-700">Includes {pkg.includedServices.length} services</p>
+															<p className="text-xs text-slate-700">{pkg.saveText}</p>
+															<div className="mt-auto flex items-center justify-between border-t border-slate-200 pt-3">
+																<p className="text-2xl font-bold text-slate-900">{formatPeso(pkg.price)}</p>
+																<p className="text-xs text-slate-500">Bundle offer</p>
+															</div>
+														</div>
+													</button>
+												);
+											})}
+										</div>
+									)}
+									{activeManualPackage && !selectedRepairOrder && (
+										<div className="mt-2 flex justify-end">
 											<button
 												type="button"
-												key={card.key}
-												onClick={() => addPackageToOrder(card.pkg)}
-												disabled={!!selectedRepairOrder}
-												className="h-56 rounded-xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+												onClick={unselectManualPackage}
+												className="text-xs font-semibold text-slate-700 underline hover:text-slate-900"
 											>
-												<div className="flex h-full flex-col">
-													<div className="flex items-start justify-between">
-														<span className="rounded-full bg-slate-200 px-2 py-1 text-[10px] font-semibold uppercase text-slate-600">Package</span>
-														<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-blue-500 bg-blue-500 text-white" : "border-slate-300"}`}>
-															{selected && (
-																<svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-																	<path d="M4 10l4 4 8-8" />
-																</svg>
-															)}
-														</span>
-													</div>
-													<p className="mt-3 text-xl font-semibold text-slate-900">{card.pkg.name}</p>
-													<p className="mt-1 text-xs text-slate-600">{card.pkg.description}</p>
-													<p className="mt-2 text-xs text-slate-700">Includes {card.pkg.includedServices.length} services</p>
-													<p className="text-xs text-slate-700">{card.pkg.saveText}</p>
-													<div className="mt-auto flex items-center justify-between border-t border-slate-200 pt-3">
-														<p className="text-2xl font-bold text-slate-900">{formatPeso(card.pkg.price)}</p>
-														<p className="text-xs text-slate-500">Bundle offer</p>
-													</div>
-												</div>
+												Unselect package
 											</button>
-										);
-									}
+										</div>
+									)}
+								</div>
 
-									const isRequestedService = !selectedOrderServiceSet || selectedOrderServiceSet.has(normalizeServiceName(card.service.name));
-									const selected = isServiceSelected(card.service);
-
-									return (
-										<button
-											type="button"
-											key={card.key}
-											onClick={() => addFromServiceCatalog(card.service)}
-											disabled={!isRequestedService}
-											className={`h-56 rounded-xl border p-4 text-left transition ${
-												isRequestedService
-													? "border-slate-200 bg-slate-50 hover:border-blue-300 hover:bg-blue-50"
-													: "border-slate-200 bg-slate-100 opacity-45 grayscale cursor-not-allowed"
-											}`}
-										>
-											<div className="flex h-full flex-col">
-												<div className="flex items-start justify-between">
-													<span className="rounded-full bg-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-600">{card.service.category}</span>
-													<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-blue-500 bg-blue-500 text-white" : "border-slate-300"}`}>
-														{selected && (
-															<svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-																<path d="M4 10l4 4 8-8" />
-															</svg>
-														)}
-													</span>
-												</div>
-												<p className="mt-3 text-xl font-semibold text-slate-900">{card.service.name}</p>
-												<ul className="mt-2 list-disc pl-5 text-xs text-slate-600">
-													<li>{card.service.category} service for customer request.</li>
-													<li>Estimated turnaround: {card.service.duration}.</li>
-												</ul>
-												<div className="mt-auto flex items-center justify-between border-t border-slate-200 pt-3">
-													<p className="text-2xl font-bold text-slate-900">{formatPeso(card.service.price)}</p>
-													<p className="text-xs text-slate-500">{card.service.duration}</p>
-												</div>
-												{selectedRepairOrder && isRequestedService && <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700">Requested</span>}
-											</div>
-										</button>
-									);
-								})}
+								<div>
+									<div className="mb-2 flex items-center justify-between">
+										<h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-600">Individual Services</h4>
+										<span className="text-xs text-slate-500">Select add-ons or standalone services</span>
+									</div>
+									{paginatedServiceCatalog.length === 0 ? (
+										<div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-center text-xs text-slate-500">
+											No individual services match your current search.
+										</div>
+									) : (
+										<div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+											{paginatedServiceCatalog.map((service) => {
+												const isRequestedService = !selectedOrderServiceSet || selectedOrderServiceSet.has(normalizeServiceName(service.name));
+												const isIncludedByPackage = activeManualPackageServiceIds.has(Number(service.id));
+												const canSelectService = isRequestedService && !isIncludedByPackage;
+												const selected = isServiceSelected(service);
+												return (
+													<button
+														type="button"
+														key={`service-${service.id}`}
+														onClick={() => addFromServiceCatalog(service)}
+														disabled={!canSelectService}
+														className={`h-56 rounded-xl border p-4 text-left transition ${
+															canSelectService
+																? "border-slate-200 bg-slate-50 hover:border-blue-300 hover:bg-blue-50"
+																: "border-slate-200 bg-slate-100 opacity-45 grayscale cursor-not-allowed"
+														}`}
+													>
+														<div className="flex h-full flex-col">
+															<div className="flex items-start justify-between">
+																<span className="rounded-full bg-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-600">{service.category}</span>
+																<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-blue-500 bg-blue-500 text-white" : "border-slate-300"}`}>
+																	{selected && (
+																		<svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+																			<path d="M4 10l4 4 8-8" />
+																		</svg>
+																	)}
+																</span>
+															</div>
+															<p className="mt-3 text-xl font-semibold text-slate-900">{service.name}</p>
+															<ul className="mt-2 list-disc pl-5 text-xs text-slate-600">
+																<li>{service.category} service for customer request.</li>
+																<li>Estimated turnaround: {service.duration}.</li>
+															</ul>
+															<div className="mt-auto flex items-center justify-between border-t border-slate-200 pt-3">
+																<p className="text-2xl font-bold text-slate-900">{formatPeso(service.price)}</p>
+																<p className="text-xs text-slate-500">{service.duration}</p>
+															</div>
+															{activeManualPackage && isIncludedByPackage && <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Included in package</span>}
+															{activeManualPackage && !isIncludedByPackage && <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-700">Add-on</span>}
+															{selectedRepairOrder && isRequestedService && <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700">Requested</span>}
+														</div>
+													</button>
+												);
+											})}
+										</div>
+									)}
+								</div>
 							</div>
 
-							{combinedCatalogCards.length > 0 && (
+							{filteredServiceCatalog.length > 0 && (
 								<div className="mt-4 flex items-center justify-between border-t border-slate-200 pt-4 text-sm text-slate-700">
 									<p>
-										Showing {(servicePage - 1) * SERVICES_PER_PAGE + 1} to {Math.min(servicePage * SERVICES_PER_PAGE, combinedCatalogCards.length)} of {combinedCatalogCards.length} results
+										Showing {(servicePage - 1) * SERVICES_PER_PAGE + 1} to {Math.min(servicePage * SERVICES_PER_PAGE, filteredServiceCatalog.length)} of {filteredServiceCatalog.length} individual services
 									</p>
 									<div className="flex items-center gap-2">
 										<button
@@ -1814,8 +1924,8 @@ const PointOfSalePage = () => {
 										</div>
 										<button
 											type="button"
-											onClick={() => setServicePage((prev) => Math.min(prev + 1, totalCatalogPages))}
-											disabled={servicePage === totalCatalogPages}
+											onClick={() => setServicePage((prev) => Math.min(prev + 1, totalServicePages))}
+											disabled={servicePage === totalServicePages}
 											className="h-9 w-9 rounded-lg border border-slate-300 text-slate-500 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
 										>
 											&#8250;
@@ -1837,29 +1947,87 @@ const PointOfSalePage = () => {
 								{items.length === 0 ? (
 									<div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-center text-xs text-slate-500">No services in order yet.</div>
 								) : (
-									items.map((item) => (
-										<div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-											<div className="mb-2 flex items-start justify-between gap-2">
-												<p className="text-sm font-medium text-slate-900">{item.label}</p>
-												<button
-													type="button"
-													onClick={() => removeItem(item.id)}
-													title="Remove item"
-													aria-label="Remove item"
-													className="rounded-md p-1 text-red-600 transition hover:bg-red-50 hover:text-red-500"
-												>
-													<svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-														<path d="M3 6h18" />
-														<path d="M8 6V4h8v2" />
-														<path d="M19 6l-1 14H6L5 6" />
-														<path d="M10 11v6" />
-														<path d="M14 11v6" />
-													</svg>
-												</button>
+									<>
+										{packageOrderItem && (
+											<div className="rounded-xl border border-blue-200 bg-blue-50/40 p-3">
+												<div className="mb-2 flex items-start justify-between gap-2">
+													<div>
+														<p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-blue-700">Package</p>
+														<p className="text-sm font-semibold text-slate-900">{packageOrderItem.label}</p>
+													</div>
+													<button
+														type="button"
+														onClick={unselectManualPackage}
+														title="Unselect package"
+														aria-label="Unselect package"
+														className="rounded-md p-1 text-red-600 transition hover:bg-red-50 hover:text-red-500"
+													>
+														<svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+															<path d="M3 6h18" />
+															<path d="M8 6V4h8v2" />
+															<path d="M19 6l-1 14H6L5 6" />
+															<path d="M10 11v6" />
+															<path d="M14 11v6" />
+														</svg>
+													</button>
+												</div>
+												<p className="text-right text-sm font-bold text-slate-900">{formatPeso(packageOrderItem.qty * packageOrderItem.unitPrice)}</p>
+
+												{packageAddOnOrderItems.length > 0 && (
+													<div className="mt-3 border-t border-blue-200 pt-2">
+														<p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-blue-700">Add-ons</p>
+														<div className="space-y-2">
+															{packageAddOnOrderItems.map((item) => (
+																<div key={item.id} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5">
+																	<p className="text-xs font-medium text-slate-800">{item.label.replace(/\s*\(add-on\)\s*$/i, "")}</p>
+																	<div className="flex items-center gap-2">
+																		<p className="text-xs font-semibold text-slate-900">{formatPeso(item.qty * item.unitPrice)}</p>
+																		<button
+																			type="button"
+																			onClick={() => removeItem(item.id)}
+																			title="Remove add-on"
+																			aria-label="Remove add-on"
+																			className="rounded p-1 text-red-600 transition hover:bg-red-50 hover:text-red-500"
+																		>
+																			<svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+																				<path d="M3 6h18" />
+																				<path d="M8 6V4h8v2" />
+																				<path d="M19 6l-1 14H6L5 6" />
+																			</svg>
+																		</button>
+																	</div>
+																</div>
+															))}
+														</div>
+													</div>
+												)}
 											</div>
-											<p className="text-right text-sm font-bold text-slate-900">{formatPeso(item.qty * item.unitPrice)}</p>
-										</div>
-									))
+										)}
+
+										{standaloneOrderItems.map((item) => (
+											<div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+												<div className="mb-2 flex items-start justify-between gap-2">
+													<p className="text-sm font-medium text-slate-900">{item.label}</p>
+													<button
+														type="button"
+														onClick={() => removeItem(item.id)}
+														title="Remove item"
+														aria-label="Remove item"
+														className="rounded-md p-1 text-red-600 transition hover:bg-red-50 hover:text-red-500"
+													>
+														<svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+															<path d="M3 6h18" />
+															<path d="M8 6V4h8v2" />
+															<path d="M19 6l-1 14H6L5 6" />
+															<path d="M10 11v6" />
+															<path d="M14 11v6" />
+														</svg>
+													</button>
+												</div>
+												<p className="text-right text-sm font-bold text-slate-900">{formatPeso(item.qty * item.unitPrice)}</p>
+											</div>
+										))}
+									</>
 								)}
 							</div>
 
