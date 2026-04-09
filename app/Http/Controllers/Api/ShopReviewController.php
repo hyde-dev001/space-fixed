@@ -132,7 +132,7 @@ class ShopReviewController extends Controller
 
         $request->validate([
             'rating' => 'required|integer|min:1|max:5',
-            'comment' => 'required|string|min:10|max:1000',
+            'comment' => 'required|string|max:1000',
             'images.*' => 'nullable|image|max:5120',
         ]);
 

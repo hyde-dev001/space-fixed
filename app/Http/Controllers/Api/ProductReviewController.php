@@ -118,7 +118,7 @@ class ProductReviewController extends Controller
         // Validate input
         $validator = Validator::make($request->all(), [
             'rating' => 'required|integer|min:1|max:5',
-            'comment' => 'required|string|min:10|max:2000',
+            'comment' => 'required|string|max:2000',
             'images' => 'nullable|array|max:5',
             'images.*' => 'nullable|image|mimes:jpeg,jpg,png|max:5120', // 5MB max per image
         ]);
@@ -262,7 +262,7 @@ class ProductReviewController extends Controller
 
         $validator = Validator::make($request->all(), [
             'rating' => 'sometimes|required|integer|min:1|max:5',
-            'comment' => 'sometimes|required|string|min:10|max:2000',
+            'comment' => 'sometimes|required|string|max:2000',
         ]);
 
         if ($validator->fails()) {

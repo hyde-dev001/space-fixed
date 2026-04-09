@@ -2219,7 +2219,6 @@ const ProductShow: React.FC = () => {
                           placeholder="Share your experience with this product..."
                           className="w-full resize-none rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-black placeholder:text-gray-400 focus:border-[#16233b] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#16233b]/20"
                           rows={3}
-                          minLength={10}
                           maxLength={2000}
                         />
                         <p className="mt-1 text-right text-[11px] text-gray-400">{newComment.length}/2000</p>
@@ -2273,7 +2272,7 @@ const ProductShow: React.FC = () => {
 
                       <button
                         onClick={handleSubmitReview}
-                        disabled={isSubmittingReview || !newComment.trim() || newComment.length < 10 || userRating === 0}
+                        disabled={isSubmittingReview || !newComment.trim() || userRating === 0}
                         className="w-full rounded-full bg-[#16233b] py-3 text-sm font-bold uppercase tracking-widest text-white transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-40"
                         type="button"
                       >
