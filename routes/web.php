@@ -92,7 +92,7 @@ Route::post('/orders/request-refund', [OrderController::class, 'requestRefund'])
 Route::post('/orders/refunds/{id}/mark-shipped-return', [OrderController::class, 'markRefundReturnShipped'])->middleware('auth:user')->name('orders.refunds.mark-shipped-return');
 Route::get('/customer-profile', [CustomerProfileController::class, 'show'])->middleware('auth:user')->name('customer-profile');
 Route::post('/customer-profile', [CustomerProfileController::class, 'update'])->middleware('auth:user')->name('customer-profile.update');
-Route::post('/customer-profile/password', [CustomerProfileController::class, 'updatePassword'])->middleware('auth:user')->name('customer-profile.password');
+Route::post('/customer-profile/password', [CustomerProfileController::class, 'updatePassword'])->middleware(['auth:user', 'throttle:5,1'])->name('customer-profile.password');
 Route::get('/my-repairs', function () {
     $user = Auth::guard('user')->user();
     if ($user) {
@@ -1431,7 +1431,7 @@ Route::get('/erp/hr/audit-logs', function () {
 
 Route::middleware(['auth:user', 'check.suspension'])->group(function () {
     Route::get('/erp/profile', [UserProfileController::class, 'show'])->name('erp.profile');
-    Route::post('/erp/password', [UserProfileController::class, 'updatePassword'])->name('erp.password.update');
+    Route::post('/erp/password', [UserProfileController::class, 'updatePassword'])->middleware('throttle:5,1')->name('erp.password.update');
 });
 
 // Finance pages

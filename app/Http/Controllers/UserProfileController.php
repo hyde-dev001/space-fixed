@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
 
 /**
@@ -45,17 +46,8 @@ class UserProfileController extends Controller
     public function updatePassword(Request $request)
     {
         $request->validate([
-            'current_password' => 'required',
-            'password' => [
-                'required',
-                'min:8',
-                'confirmed',
-                'regex:/[A-Z]/',              // At least one uppercase letter
-                'regex:/[a-z]/',              // At least one lowercase letter
-                'regex:/[0-9]/',              // At least one number
-            ],
-        ], [
-            'password.regex' => 'Password must contain uppercase letters, lowercase letters, and numbers',
+            'current_password' => ['required'],
+            'password' => ['required', 'confirmed', Password::min(8)->mixedCase()->numbers()->symbols()],
         ]);
 
         $user = Auth::guard('user')->user();

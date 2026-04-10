@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
 
 class CustomerProfileController extends Controller
@@ -89,17 +90,8 @@ class CustomerProfileController extends Controller
         }
 
         $request->validate([
-            'current_password' => 'required',
-            'password' => [
-                'required',
-                'min:8',
-                'confirmed',
-                'regex:/[A-Z]/',
-                'regex:/[a-z]/',
-                'regex:/[0-9]/',
-            ],
-        ], [
-            'password.regex' => 'Password must contain uppercase letters, lowercase letters, and numbers',
+            'current_password' => ['required'],
+            'password' => ['required', 'confirmed', Password::min(8)->mixedCase()->numbers()->symbols()],
         ]);
 
         if (!Hash::check($request->current_password, $user->password)) {
