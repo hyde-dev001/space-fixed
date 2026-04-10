@@ -324,4 +324,50 @@ class NotificationCriticalFlowsTest extends TestCase
             'type' => 'purchase_request_submitted',
         ]);
     }
+
+    #[Test]
+    public function critical_flow_notifications_emit_without_cross_shop_leakage(): void
+    {
+        $shopOwnerA = $this->createShopOwner();
+        $shopOwnerB = $this->createShopOwner();
+
+        $supplierA = Supplier::factory()->create([
+            'shop_owner_id' => $shopOwnerA->id,
+        ]);
+
+        SupplierOrder::factory()->create([
+            'shop_owner_id' => $shopOwnerA->id,
+            'supplier_id' => $supplierA->id,
+            'status' => 'sent',
+            'expected_delivery_date' => now()->subDays(3)->toDateString(),
+            'created_by' => null,
+        ]);
+
+        $recipientA = User::factory()->create([
+            'shop_owner_id' => $shopOwnerA->id,
+        ]);
+
+        $recipientB = User::factory()->create([
+            'shop_owner_id' => $shopOwnerB->id,
+        ]);
+
+        $procurementRole = Role::findOrCreate('Procurement Manager', 'user');
+        $recipientA->assignRole($procurementRole);
+        $recipientB->assignRole($procurementRole);
+
+        $service = app(SupplierOrderService::class);
+        $service->notifyOverdueOrders();
+
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $recipientA->id,
+            'title' => 'Supplier Order Overdue',
+            'type' => 'purchase_request_submitted',
+        ]);
+
+        $this->assertDatabaseMissing('notifications', [
+            'user_id' => $recipientB->id,
+            'title' => 'Supplier Order Overdue',
+            'type' => 'purchase_request_submitted',
+        ]);
+    }
 }

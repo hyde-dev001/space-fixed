@@ -242,3 +242,10 @@ Track and alert on:
 ## Implementation Handoff
 
 Next step is a detailed implementation plan that decomposes this design into file-level, test-first tasks with phased commits and rollback checkpoints.
+
+## Rollout Status
+
+- [x] Route contract normalization
+- [x] Recipient resolver integration
+- [x] Critical gap coverage wave A
+- [ ] Legacy emitter retirement wave B/C

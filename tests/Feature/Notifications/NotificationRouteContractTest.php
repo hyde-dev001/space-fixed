@@ -26,4 +26,31 @@ class NotificationRouteContractTest extends TestCase
         $this->assertTrue($routes->contains(fn (array $route) => $route['uri'] === 'api/notifications/mark-all-read'));
         $this->assertFalse($routes->contains(fn (array $route) => $route['uri'] === 'api/notifications/read-all'));
     }
+
+    #[Test]
+    public function no_notification_route_collisions_exist_after_unification(): void
+    {
+        $routes = collect(app('router')->getRoutes()->getRoutes())
+            ->flatMap(function ($route) {
+                $uri = (string) $route->uri();
+
+                if (!str_contains($uri, 'notifications')) {
+                    return [];
+                }
+
+                return collect($route->methods())
+                    ->filter(fn ($method) => $method !== 'HEAD')
+                    ->map(fn ($method) => [
+                        'signature' => strtoupper((string) $method) . ' ' . $uri,
+                    ])
+                    ->values()
+                    ->all();
+            });
+
+        $collisions = $routes
+            ->groupBy('signature')
+            ->filter(fn ($group) => $group->count() > 1);
+
+        $this->assertCount(0, $collisions, 'Found duplicate notification route signatures: ' . $collisions->keys()->implode(', '));
+    }
 }
