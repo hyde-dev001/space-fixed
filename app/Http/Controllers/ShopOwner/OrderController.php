@@ -7,6 +7,8 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\OrderRefund;
 use App\Enums\OrderStatus;
+use App\Enums\NotificationType;
+use App\Services\NotificationService;
 use App\Services\OrderRefundService;
 use App\Services\RetailPosRefundSummaryService;
 use Illuminate\Http\Request;
@@ -19,6 +21,7 @@ class OrderController extends Controller
     public function __construct(
         private readonly OrderRefundService $orderRefundService,
         private readonly RetailPosRefundSummaryService $retailPosRefundSummaryService,
+        private readonly NotificationService $notificationService,
     ) {
     }
 
@@ -415,6 +418,23 @@ class OrderController extends Controller
             ])
             ->log("Order status updated from {$oldStatusValue} to {$request->status}");
 
+        if ($order->customer_id && $oldStatusValue !== (string) $request->status) {
+            $this->notificationService->sendToUser(
+                userId: (int) $order->customer_id,
+                type: NotificationType::ORDER_STATUS_UPDATE,
+                title: 'Order Status Updated',
+                message: "Order {$order->order_number} is now {$request->status}.",
+                data: [
+                    'order_id' => (int) $order->id,
+                    'order_number' => (string) $order->order_number,
+                    'status' => (string) $request->status,
+                ],
+                actionUrl: '/my-orders',
+                shopId: (int) $order->shop_owner_id,
+                priority: 'high'
+            );
+        }
+
         $finalStatus = $order->fresh()->status;
         $finalStatusValue = $finalStatus instanceof OrderStatus ? $finalStatus->value : (string) $finalStatus;
 
@@ -499,6 +519,23 @@ class OrderController extends Controller
                 'pickup_enabled_at' => now(),
                 'pickup_enabled_by' => $shopOwner->id,
             ]);
+
+            if ($order->customer_id) {
+                $this->notificationService->sendToUser(
+                    userId: (int) $order->customer_id,
+                    type: NotificationType::ORDER_STATUS_UPDATE,
+                    title: 'Order Pickup Activated',
+                    message: "Pickup confirmation is now enabled for order {$order->order_number}.",
+                    data: [
+                        'order_id' => (int) $order->id,
+                        'order_number' => (string) $order->order_number,
+                        'pickup_enabled' => true,
+                    ],
+                    actionUrl: '/my-orders',
+                    shopId: (int) $order->shop_owner_id,
+                    priority: 'high'
+                );
+            }
             
             return response()->json([
                 'success' => true,

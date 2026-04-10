@@ -6,13 +6,19 @@ use App\Http\Controllers\Controller;
 use App\Models\SuspensionRequest;
 use App\Models\Employee;
 use App\Enums\EmployeeStatus;
+use App\Enums\NotificationType;
 use App\Enums\SuspensionStatus;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class SuspensionFinalApprovalController extends Controller
 {
+    public function __construct(
+        private readonly NotificationService $notificationService,
+    ) {}
+
     /**
      * Display a listing of suspension requests for shop owner review.
      */
@@ -193,6 +199,44 @@ class SuspensionFinalApprovalController extends Controller
             }
 
             DB::commit();
+
+            $shopOwnerId = (int) (auth('shop_owner')->id() ?? 0);
+            $employeeName = (string) ($suspensionRequest->employee?->name ?? 'Employee');
+            $decisionText = $action === 'approve' ? 'approved' : 'rejected';
+
+            if ($shopOwnerId > 0) {
+                $this->notificationService->notifyEmployeeSuspensionRequest($shopOwnerId, [
+                    'suspension_request_id' => (int) $suspensionRequest->id,
+                    'employee_id' => (int) $suspensionRequest->employee_id,
+                    'employee_name' => $employeeName,
+                    'requested_by' => (string) ($suspensionRequest->requester?->name ?? 'HR'),
+                    'owner_decision' => $decisionText,
+                ]);
+            }
+
+            $recipientUserIds = collect([
+                (int) ($suspensionRequest->requested_by ?? 0),
+                (int) ($suspensionRequest->employee?->user?->id ?? 0),
+            ])->filter(fn (int $id): bool => $id > 0)->unique()->values();
+
+            foreach ($recipientUserIds as $recipientUserId) {
+                $this->notificationService->sendToUser(
+                    userId: (int) $recipientUserId,
+                    type: NotificationType::TASK_ASSIGNED,
+                    title: 'Suspension Request Reviewed',
+                    message: "Suspension request for {$employeeName} was {$decisionText} by the shop owner.",
+                    data: [
+                        'suspension_request_id' => (int) $suspensionRequest->id,
+                        'employee_id' => (int) $suspensionRequest->employee_id,
+                        'employee_name' => $employeeName,
+                        'decision' => $decisionText,
+                        'note' => $note,
+                    ],
+                    actionUrl: '/erp/hr?section=suspensions',
+                    shopId: $shopOwnerId > 0 ? $shopOwnerId : null,
+                    priority: 'high'
+                );
+            }
 
             return response()->json([
                 'success' => true,

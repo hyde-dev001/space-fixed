@@ -5,6 +5,7 @@ namespace App\Services\HR;
 use App\Models\Employee;
 use App\Models\HR\SalaryChange;
 use App\Models\User;
+use App\Enums\NotificationType;
 use App\Services\NotificationService;
 use Illuminate\Support\Facades\DB;
 
@@ -86,6 +87,22 @@ class SalaryChangeApprovalService
         $change->rejected_at = now();
         $change->notes = $notes;
         $change->save();
+
+        if ($change->proposed_by) {
+            $this->notificationService->sendToUser(
+                userId: (int) $change->proposed_by,
+                type: NotificationType::SALARY_CHANGE_APPROVED,
+                title: 'Salary Change Rejected',
+                message: 'Your salary change request was rejected. Please review remarks.',
+                data: [
+                    'salary_change_id' => (int) $change->id,
+                    'reason' => $notes,
+                ],
+                actionUrl: '/erp/hr?section=salary-changes',
+                shopId: (int) $change->shop_owner_id,
+                priority: 'high'
+            );
+        }
 
         return $change->fresh(['employee:id,first_name,last_name', 'rejector:id,name']);
     }
