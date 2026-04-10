@@ -7,7 +7,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 use App\Enums\OrderStatus;
-use App\Models\Notification;
 use App\Models\OrderRefund;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
@@ -245,39 +244,6 @@ class Order extends Model
     public static function generateOrderNumber(): string
     {
         return 'ORD-' . date('YmdHis') . '-' . str_pad(rand(0, 999), 3, '0', STR_PAD_LEFT);
-    }
-
-    protected static function booted(): void
-    {
-        static::updated(function (Order $order): void {
-            if (!$order->wasChanged('status') || !$order->customer_id) {
-                return;
-            }
-
-            $status = $order->status instanceof OrderStatus
-                ? $order->status->value
-                : (string) $order->status;
-
-            if ($status === 'pending') {
-                return;
-            }
-
-            $statusLabel = str_replace('_', ' ', $status);
-
-            Notification::create([
-                'user_id' => $order->customer_id,
-                'type' => 'order_status_update',
-                'title' => 'Order Status Updated',
-                'message' => "Order {$order->order_number} is now {$statusLabel}.",
-                'data' => [
-                    'order_id' => $order->id,
-                    'order_number' => $order->order_number,
-                    'status' => $status,
-                ],
-                'action_url' => '/my-orders',
-                'shop_id' => $order->shop_owner_id,
-            ]);
-        });
     }
 
     /**

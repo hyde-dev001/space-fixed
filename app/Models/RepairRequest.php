@@ -4,7 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use App\Models\Notification;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
 use App\Models\PosTransaction;
@@ -291,36 +290,6 @@ class RepairRequest extends Model
         return $query->payable()
             ->whereNotNull('payment_expires_at')
             ->where('payment_expires_at', '<=', now());
-    }
-
-    protected static function booted(): void
-    {
-        static::updated(function (RepairRequest $repair): void {
-            if (!$repair->wasChanged('status') || !$repair->user_id) {
-                return;
-            }
-
-            $status = (string) $repair->status;
-            if ($status === 'new_request') {
-                return;
-            }
-
-            $statusLabel = str_replace('_', ' ', $status);
-
-            Notification::create([
-                'user_id' => $repair->user_id,
-                'type' => 'repair_status_update',
-                'title' => 'Repair Status Updated',
-                'message' => "Repair is now {$statusLabel}.",
-                'data' => [
-                    'repair_id' => $repair->id,
-                    'request_id' => $repair->request_id,
-                    'status' => $status,
-                ],
-                'action_url' => '/my-repairs',
-                'shop_id' => $repair->shop_owner_id,
-            ]);
-        });
     }
 
     /**
