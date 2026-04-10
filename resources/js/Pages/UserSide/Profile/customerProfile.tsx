@@ -501,19 +501,17 @@ const CustomerProfile: React.FC = () => {
 						)}
 					</div>
 
-					{isEditingPersonal && (
-						<div className="rounded-[28px] border border-gray-200 bg-white px-4 py-4 shadow-sm">
-						<h2 className="mb-4 text-[1.02rem] font-semibold text-gray-900">Change Password</h2>
-						<form onSubmit={handlePasswordSubmit} className="space-y-3">
-							<input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} placeholder="Enter current password" title="Current password" className="w-full rounded-2xl border border-gray-200 px-3 py-3 text-sm text-gray-900 focus:border-black focus:outline-none" />
-							<input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Enter new password" title="New password" className="w-full rounded-2xl border border-gray-200 px-3 py-3 text-sm text-gray-900 focus:border-black focus:outline-none" />
-							<input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirm new password" title="Confirm new password" className="w-full rounded-2xl border border-gray-200 px-3 py-3 text-sm text-gray-900 focus:border-black focus:outline-none" />
-							<button type="submit" className="inline-flex w-full items-center justify-center rounded-full bg-[#16233b] px-4 py-3 text-sm font-medium text-white" disabled={isSubmitting}>
-								{isSubmitting ? 'Updating...' : 'Update password'}
-							</button>
-						</form>
-						</div>
-					)}
+					<div className="rounded-[28px] border border-gray-200 bg-white px-4 py-4 shadow-sm">
+					<h2 className="mb-4 text-[1.02rem] font-semibold text-gray-900">Change Password</h2>
+					<form onSubmit={handlePasswordSubmit} className="space-y-3">
+						<input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} placeholder="Enter current password" title="Current password" className="w-full rounded-2xl border border-gray-200 px-3 py-3 text-sm text-gray-900 focus:border-black focus:outline-none" />
+						<input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Enter new password" title="New password" className="w-full rounded-2xl border border-gray-200 px-3 py-3 text-sm text-gray-900 focus:border-black focus:outline-none" />
+						<input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirm new password" title="Confirm new password" className="w-full rounded-2xl border border-gray-200 px-3 py-3 text-sm text-gray-900 focus:border-black focus:outline-none" />
+						<button type="submit" className="inline-flex w-full items-center justify-center rounded-full bg-[#16233b] px-4 py-3 text-sm font-medium text-white" disabled={isSubmitting}>
+							{isSubmitting ? 'Updating...' : 'Update password'}
+						</button>
+					</form>
+					</div>
 				</div>
 
 				<div className="hidden xl:block rounded-3xl border border-gray-200 bg-white p-8 shadow-sm lg:p-10">
@@ -595,28 +593,26 @@ const CustomerProfile: React.FC = () => {
 						</div>
 					</div>
 
-					{isEditingPersonal && (
-						<div className="mt-8 rounded-2xl border border-gray-200 bg-white px-6 py-6 lg:px-8">
-						<h3 className="text-base font-semibold text-gray-900">Change Password</h3>
-						<form onSubmit={handlePasswordSubmit} className="mt-6 grid grid-cols-1 gap-6 text-sm md:grid-cols-2">
-							<div className="md:col-span-2">
-								<label className="text-gray-400">Current password</label>
-								<input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} placeholder="Enter current password" title="Current password" className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-black focus:outline-none" />
-							</div>
-							<div>
-								<label className="text-gray-400">New password</label>
-								<input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Enter new password" title="New password" className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-black focus:outline-none" />
-							</div>
-							<div>
-								<label className="text-gray-400">Confirm new password</label>
-								<input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirm new password" title="Confirm new password" className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-black focus:outline-none" />
-							</div>
-							<div className="md:col-span-2">
-								<button type="submit" className="inline-flex items-center gap-2 rounded-full border border-gray-900 bg-gray-900 px-5 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50" disabled={isSubmitting}>{isSubmitting ? 'Updating...' : 'Update password'}</button>
-							</div>
-						</form>
+					<div className="mt-8 rounded-2xl border border-gray-200 bg-white px-6 py-6 lg:px-8">
+					<h3 className="text-base font-semibold text-gray-900">Change Password</h3>
+					<form onSubmit={handlePasswordSubmit} className="mt-6 grid grid-cols-1 gap-6 text-sm md:grid-cols-2">
+						<div className="md:col-span-2">
+							<label className="text-gray-400">Current password</label>
+							<input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} placeholder="Enter current password" title="Current password" className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-black focus:outline-none" />
 						</div>
-					)}
+						<div>
+							<label className="text-gray-400">New password</label>
+							<input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Enter new password" title="New password" className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-black focus:outline-none" />
+						</div>
+						<div>
+							<label className="text-gray-400">Confirm new password</label>
+							<input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirm new password" title="Confirm new password" className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-black focus:outline-none" />
+						</div>
+						<div className="md:col-span-2">
+							<button type="submit" className="inline-flex items-center gap-2 rounded-full border border-gray-900 bg-gray-900 px-5 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50" disabled={isSubmitting}>{isSubmitting ? 'Updating...' : 'Update password'}</button>
+						</div>
+					</form>
+					</div>
 				</div>
 			</div>
 
