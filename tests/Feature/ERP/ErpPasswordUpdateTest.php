@@ -13,6 +13,27 @@ class ErpPasswordUpdateTest extends TestCase
     use RefreshDatabase;
 
     #[Test]
+    public function erp_user_password_is_updated_with_valid_current_password(): void
+    {
+        $employee = User::factory()->create([
+            'password' => Hash::make('CurrentPass1!'),
+        ]);
+
+        $response = $this->actingAs($employee, 'user')
+            ->withServerVariables(['REMOTE_ADDR' => '127.0.0.31'])
+            ->post('/erp/password', [
+                'current_password' => 'CurrentPass1!',
+                'password' => 'NewStrongPass1!',
+                'password_confirmation' => 'NewStrongPass1!',
+            ]);
+
+        $response->assertSessionHasNoErrors();
+        $response->assertRedirect();
+
+        $this->assertTrue(Hash::check('NewStrongPass1!', $employee->fresh()->password));
+    }
+
+    #[Test]
     public function erp_password_rejects_wrong_current_password(): void
     {
         $employee = User::factory()->create([

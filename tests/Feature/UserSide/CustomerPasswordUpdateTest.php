@@ -13,6 +13,28 @@ class CustomerPasswordUpdateTest extends TestCase
     use RefreshDatabase;
 
     #[Test]
+    public function customer_password_is_updated_with_valid_current_password(): void
+    {
+        $customer = User::factory()->create([
+            'password' => Hash::make('CurrentPass1!'),
+            'shop_owner_id' => null,
+        ]);
+
+        $response = $this->actingAs($customer, 'user')
+            ->withServerVariables(['REMOTE_ADDR' => '127.0.0.21'])
+            ->post('/customer-profile/password', [
+                'current_password' => 'CurrentPass1!',
+                'password' => 'NewStrongPass1!',
+                'password_confirmation' => 'NewStrongPass1!',
+            ]);
+
+        $response->assertSessionHasNoErrors();
+        $response->assertRedirect();
+
+        $this->assertTrue(Hash::check('NewStrongPass1!', $customer->fresh()->password));
+    }
+
+    #[Test]
     public function customer_password_requires_symbol_in_new_password(): void
     {
         $customer = User::factory()->create([
