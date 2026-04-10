@@ -631,6 +631,10 @@ const ShopProfile: React.FC = () => {
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [isUploadingCoverPhoto, setIsUploadingCoverPhoto] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isPasswordSubmitting, setIsPasswordSubmitting] = useState(false);
   const profilePhotoInputRef = useRef<HTMLInputElement>(null);
   const coverPhotoInputRef = useRef<HTMLInputElement>(null);
 
@@ -651,6 +655,62 @@ const ShopProfile: React.FC = () => {
     sunday_open: normalizeTimeToHhmm(shopOwner?.sunday_open),
     sunday_close: normalizeTimeToHhmm(shopOwner?.sunday_close),
   });
+
+  const handlePasswordSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      Swal.fire({
+        title: "Missing fields",
+        text: "Please fill in all password fields.",
+        icon: "warning",
+        confirmButtonColor: "#2563eb",
+      });
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      Swal.fire({
+        title: "Password mismatch",
+        text: "New password and confirmation do not match.",
+        icon: "error",
+        confirmButtonColor: "#dc2626",
+      });
+      return;
+    }
+
+    setIsPasswordSubmitting(true);
+    router.post('/shop-owner/shop-profile/password', {
+      current_password: currentPassword,
+      password: newPassword,
+      password_confirmation: confirmPassword,
+    }, {
+      preserveScroll: true,
+      onSuccess: () => {
+        setCurrentPassword("");
+        setNewPassword("");
+        setConfirmPassword("");
+        setIsPasswordSubmitting(false);
+        Swal.fire({
+          title: "Password updated",
+          text: "Your password has been updated successfully.",
+          icon: "success",
+          confirmButtonColor: "#2563eb",
+        });
+      },
+      onError: (errors: any) => {
+        setIsPasswordSubmitting(false);
+        const message = errors?.current_password || errors?.password || "Please check your input and try again.";
+
+        Swal.fire({
+          title: "Password update failed",
+          text: message,
+          icon: "error",
+          confirmButtonColor: "#dc2626",
+        });
+      },
+    });
+  };
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1040,6 +1100,43 @@ const ShopProfile: React.FC = () => {
               </div>
 
               <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                <h3 className="text-lg font-semibold text-gray-900">Change Password</h3>
+                <form onSubmit={handlePasswordSubmit} className="mt-3 space-y-3">
+                  <input
+                    type="password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    placeholder="Current password"
+                    title="Current password"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none"
+                  />
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="New password"
+                    title="New password"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none"
+                  />
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Confirm new password"
+                    title="Confirm new password"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isPasswordSubmitting}
+                    className="inline-flex w-full items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {isPasswordSubmitting ? "Updating..." : "Update Password"}
+                  </button>
+                </form>
+              </div>
+
+              <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                 <h3 className="text-lg font-semibold text-gray-900">Operating Hours</h3>
                 <div className="mt-3 space-y-2">
                   {[
@@ -1333,6 +1430,56 @@ const ShopProfile: React.FC = () => {
                     />
                   </div>
                 </div>
+              </div>
+            </div>
+
+            {/* Security */}
+            <div className="bg-white dark:bg-gray-800 dark:bg-opacity-50 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 dark:border-opacity-50 overflow-hidden mb-6">
+              <div className="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 dark:bg-opacity-80 px-6 py-4">
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white">Change Password</h3>
+              </div>
+              <div className="p-6">
+                <form onSubmit={handlePasswordSubmit} className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  <div className="lg:col-span-2">
+                    <input
+                      type="password"
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      placeholder="Current password"
+                      title="Current password"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <input
+                      type="password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="New password"
+                      title="New password"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <input
+                      type="password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Confirm new password"
+                      title="Confirm new password"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                  <div className="lg:col-span-2">
+                    <button
+                      type="submit"
+                      disabled={isPasswordSubmitting}
+                      className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {isPasswordSubmitting ? "Updating..." : "Update Password"}
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
 
