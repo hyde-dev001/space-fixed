@@ -27,4 +27,28 @@ class ErpPasswordUpdateTest extends TestCase
 
         $response->assertSessionHasErrors('current_password');
     }
+
+    #[Test]
+    public function erp_password_route_is_throttled_after_five_attempts(): void
+    {
+        $employee = User::factory()->create([
+            'password' => Hash::make('CurrentPass1!'),
+        ]);
+
+        for ($i = 0; $i < 5; $i++) {
+            $this->actingAs($employee, 'user')->post('/erp/password', [
+                'current_password' => 'WrongPass1!',
+                'password' => 'NewStrongPass1!',
+                'password_confirmation' => 'NewStrongPass1!',
+            ]);
+        }
+
+        $last = $this->actingAs($employee, 'user')->post('/erp/password', [
+            'current_password' => 'WrongPass1!',
+            'password' => 'NewStrongPass1!',
+            'password_confirmation' => 'NewStrongPass1!',
+        ]);
+
+        $last->assertStatus(429);
+    }
 }

@@ -28,4 +28,29 @@ class CustomerPasswordUpdateTest extends TestCase
 
         $response->assertSessionHasErrors('password');
     }
+
+    #[Test]
+    public function customer_password_route_is_throttled_after_five_attempts(): void
+    {
+        $customer = User::factory()->create([
+            'password' => Hash::make('CurrentPass1!'),
+            'shop_owner_id' => null,
+        ]);
+
+        for ($i = 0; $i < 5; $i++) {
+            $this->actingAs($customer, 'user')->post('/customer-profile/password', [
+                'current_password' => 'WrongPass1!',
+                'password' => 'NewStrongPass1!',
+                'password_confirmation' => 'NewStrongPass1!',
+            ]);
+        }
+
+        $last = $this->actingAs($customer, 'user')->post('/customer-profile/password', [
+            'current_password' => 'WrongPass1!',
+            'password' => 'NewStrongPass1!',
+            'password_confirmation' => 'NewStrongPass1!',
+        ]);
+
+        $last->assertStatus(429);
+    }
 }
