@@ -6,9 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Services\CaviteLocationPolicyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -176,6 +178,31 @@ class ShopProfileController extends Controller
         $shopOwner->update($validated);
 
         return back()->with('success', 'Profile updated successfully');
+    }
+
+    /**
+     * Update shop owner password
+     */
+    public function updatePassword(Request $request)
+    {
+        $shopOwner = Auth::guard('shop_owner')->user();
+
+        $request->validate([
+            'current_password' => ['required'],
+            'password' => ['required', 'confirmed', Password::min(8)->mixedCase()->numbers()->symbols()],
+        ]);
+
+        if (!Hash::check((string) $request->input('current_password'), (string) $shopOwner->password)) {
+            return back()->withErrors([
+                'current_password' => 'Current password is incorrect',
+            ]);
+        }
+
+        $shopOwner->update([
+            'password' => Hash::make((string) $request->input('password')),
+        ]);
+
+        return back()->with('success', 'Password updated successfully');
     }
 
     /**

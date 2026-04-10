@@ -530,6 +530,9 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
     // SHOP PROFILE - Available to ALL
     Route::get('/shop-profile', [\App\Http\Controllers\ShopOwner\ShopProfileController::class, 'index'])->name('shop-profile');
     Route::post('/shop-profile', [\App\Http\Controllers\ShopOwner\ShopProfileController::class, 'update'])->name('shop-profile.update');
+    Route::post('/shop-profile/password', [\App\Http\Controllers\ShopOwner\ShopProfileController::class, 'updatePassword'])
+        ->middleware('throttle:5,1')
+        ->name('shop-profile.password.update');
 
     // SHOP SETTINGS - Available to ALL
     Route::get('/settings', [ShopSettingsController::class, 'index'])->name('settings');
