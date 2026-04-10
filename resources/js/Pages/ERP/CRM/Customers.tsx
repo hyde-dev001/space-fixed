@@ -56,6 +56,42 @@ const money = (value: number) => `₱${value.toLocaleString()}`;
 
 const dateText = (value: string) => new Date(value).toLocaleDateString();
 
+const getPurchaseStatusBadgeClass = (status: string) => {
+  const normalizedStatus = String(status || "").toLowerCase();
+
+  if (normalizedStatus.includes("refund")) {
+    return "bg-sky-100 text-sky-700";
+  }
+
+  if (normalizedStatus.includes("complet")) {
+    return "bg-green-100 text-green-700";
+  }
+
+  if (normalizedStatus.includes("cancel")) {
+    return "bg-red-100 text-red-700";
+  }
+
+  return "bg-yellow-100 text-yellow-700";
+};
+
+const getRepairStatusBadgeClass = (status: string) => {
+  const normalizedStatus = String(status || "").toLowerCase();
+
+  if (normalizedStatus.includes("refund")) {
+    return "bg-sky-100 text-sky-700";
+  }
+
+  if (normalizedStatus.includes("complet") || normalizedStatus.includes("done")) {
+    return "bg-green-100 text-green-700";
+  }
+
+  if (normalizedStatus.includes("progress")) {
+    return "bg-blue-100 text-blue-700";
+  }
+
+  return "bg-yellow-100 text-yellow-700";
+};
+
 // seedCustomers removed — data comes from Inertia props (initialCustomers)
 
 // ─── Inertia prop shape from the server ──────────────────────────────────────
@@ -547,7 +583,7 @@ export default function Customers() {
                       <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
                         <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Status</p>
                         {editing ? (
-                          <select value={formData.status} onChange={(e) => setFormData((prev) => ({ ...prev, status: e.target.value as CustomerStatus }))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white">
+                          <select value={formData.status} onChange={(e) => setFormData((prev) => ({ ...prev, status: e.target.value as CustomerStatus }))} title="Customer status" aria-label="Customer status" className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white">
                             <option value="active">Active</option>
                             <option value="inactive">Inactive</option>
                           </select>
@@ -589,9 +625,7 @@ export default function Customers() {
                                 <td className="px-4 py-3 text-sm font-semibold text-gray-900 dark:text-white">{money(Number(o.total_amount ?? 0))}</td>
                                 <td className="px-4 py-3 text-sm">
                                   <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
-                                    String(o.status).toLowerCase().includes("complet") ? "bg-green-100 text-green-700" :
-                                    String(o.status).toLowerCase().includes("cancel")  ? "bg-red-100 text-red-700" :
-                                    "bg-yellow-100 text-yellow-700"
+                                    getPurchaseStatusBadgeClass(String(o.status))
                                   }`}>{String(o.status).replace(/_/g, " ")}</span>
                                 </td>
                               </tr>
@@ -617,9 +651,7 @@ export default function Customers() {
                             <div className="flex items-center gap-3">
                               <span className="text-sm font-semibold text-gray-900 dark:text-white">{money(Number(r.total ?? 0))}</span>
                               <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
-                                String(r.status).includes("complet") || String(r.status).includes("done")   ? "bg-green-100 text-green-700" :
-                                String(r.status).includes("progress")                                        ? "bg-blue-100 text-blue-700" :
-                                "bg-yellow-100 text-yellow-700"
+                                getRepairStatusBadgeClass(String(r.status))
                               }`}>{String(r.status).replace(/_/g, " ")}</span>
                             </div>
                           </div>
