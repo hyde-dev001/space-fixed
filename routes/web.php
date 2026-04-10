@@ -1302,19 +1302,6 @@ Route::middleware('super_admin.auth')->prefix('api/admin/notifications')->group(
     Route::delete('/{id}', [\App\Http\Controllers\Api\AdminNotificationController::class, 'destroy']);
 });
 
-// Notification routes
-Route::middleware(['auth:user', 'check.suspension'])->prefix('api/notifications')->group(function () {
-    Route::get('/', [\App\Http\Controllers\Api\NotificationController::class, 'index']);
-    Route::get('unread-count', [\App\Http\Controllers\Api\NotificationController::class, 'unreadCount']);
-    Route::post('{id}/read', [\App\Http\Controllers\Api\NotificationController::class, 'markAsRead']);
-    Route::post('read-all', [\App\Http\Controllers\Api\NotificationController::class, 'markAllAsRead']);
-    Route::delete('{id}', [\App\Http\Controllers\Api\NotificationController::class, 'destroy']);
-
-    // Notification preferences
-    Route::get('preferences', [\App\Http\Controllers\Api\NotificationController::class, 'getPreferences']);
-    Route::put('preferences', [\App\Http\Controllers\Api\NotificationController::class, 'updatePreferences']);
-});
-
 // Shop Registration Routes
 Route::get('/shop/register', function () {
     return Inertia::render('UserSide/Auth/ShopOwnerRegistration');

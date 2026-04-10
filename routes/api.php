@@ -453,6 +453,8 @@ Route::prefix('notifications')->middleware(['auth:user'])->group(function () {
     Route::post('/{id}/read', [\App\Http\Controllers\NotificationController::class, 'markAsRead'])->name('notifications.mark-read');
     Route::post('/mark-all-read', [\App\Http\Controllers\NotificationController::class, 'markAllAsRead'])->name('notifications.mark-all-read');
     Route::delete('/{id}', [\App\Http\Controllers\NotificationController::class, 'destroy'])->name('notifications.destroy');
+    Route::get('/preferences', [\App\Http\Controllers\Api\NotificationController::class, 'getPreferences'])->name('notifications.preferences');
+    Route::put('/preferences', [\App\Http\Controllers\Api\NotificationController::class, 'updatePreferences'])->name('notifications.update-preferences');
     
     // Phase 6: Advanced Features
     Route::post('/bulk/mark-read', [\App\Http\Controllers\NotificationController::class, 'bulkMarkAsRead'])->name('notifications.bulk-mark-read');
