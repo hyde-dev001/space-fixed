@@ -51,6 +51,22 @@ export interface NotificationPreferences {
 
 const normalizeBasePath = (basePath: string) => basePath.replace(/\/$/, '');
 
+const normalizeNotificationListPayload = (payload: any): Notification[] => {
+    if (Array.isArray(payload)) {
+        return payload as Notification[];
+    }
+
+    if (Array.isArray(payload?.data)) {
+        return payload.data as Notification[];
+    }
+
+    if (Array.isArray(payload?.notifications)) {
+        return payload.notifications as Notification[];
+    }
+
+    return [];
+};
+
 /**
  * Fetch notifications with pagination and filters
  */
@@ -94,7 +110,20 @@ export function useNotifications(
                 throw new Error('Failed to fetch notifications');
             }
 
-            return response.json();
+            const payload = await response.json();
+
+            if (Array.isArray(payload)) {
+                return {
+                    data: payload,
+                    total: payload.length,
+                    unread_count: payload.filter((notification: Notification) => !notification?.is_read).length,
+                    last_page: 1,
+                    from: payload.length > 0 ? 1 : 0,
+                    to: payload.length,
+                };
+            }
+
+            return payload;
         },
         refetchInterval: 10000, // Refresh every 10 seconds for real-time updates
     });
@@ -152,7 +181,8 @@ export function useRecentNotifications(
                 throw new Error('Failed to fetch recent notifications');
             }
 
-            return response.json() as Promise<Notification[]>;
+            const payload = await response.json();
+            return normalizeNotificationListPayload(payload);
         },
         refetchInterval: 15000, // Refresh every 15 seconds to reduce API throttling
     });
@@ -215,7 +245,7 @@ export function useMarkAsRead(basePath: string = DEFAULT_NOTIFICATION_API_BASE) 
  */
 export function useMarkAllAsRead(
     basePath: string = DEFAULT_NOTIFICATION_API_BASE,
-    markAllPath: string = 'read-all',
+    markAllPath: string = 'mark-all-read',
 ) {
     const queryClient = useQueryClient();
     const normalizedBasePath = normalizeBasePath(basePath);

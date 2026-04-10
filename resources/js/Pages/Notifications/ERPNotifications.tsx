@@ -9,11 +9,14 @@ import NotificationList from './NotificationList';
 
 const ERPNotifications: React.FC = () => {
   const { auth } = usePage().props as any;
-  const userRole = String(auth?.user?.role || '').toUpperCase();
-  const userRoles = Array.isArray(auth?.user?.roles) ? auth.user.roles.map((role: string) => String(role).toUpperCase()) : [];
-  const isStaffRole = userRole.includes('STAFF') || userRoles.includes('STAFF');
-  const isRepairerRole = userRole === 'REPAIRER' || userRoles.includes('REPAIRER');
-  const isStaffScopedNotifications = isRepairerRole || isStaffRole;
+  const userRole = String(auth?.user?.role || '').trim().toUpperCase();
+  const userRoles = Array.isArray(auth?.user?.roles)
+    ? auth.user.roles.map((role: string) => String(role).trim().toUpperCase())
+    : [];
+
+  const normalizedRoles = [userRole, ...userRoles].filter((role) => role.length > 0);
+  const staffScopedRoles = new Set(['STAFF', 'REPAIRER']);
+  const isStaffScopedNotifications = normalizedRoles.some((role) => staffScopedRoles.has(role));
   const basePath = isStaffScopedNotifications ? '/api/staff/notifications' : '/api/hr/notifications';
 
   return (

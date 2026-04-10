@@ -19,7 +19,7 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
   const dropdownRef = useRef<HTMLDivElement>(null);
   const { data: notifications = [], isLoading } = useRecentNotifications(10, basePath);
   const markAsRead = useMarkAsRead(basePath);
-  const markAllPath = basePath === '/api/notifications' ? 'read-all' : 'mark-all-read';
+  const markAllPath = 'mark-all-read';
   const markAllAsRead = useMarkAllAsRead(basePath, markAllPath);
 
   // Close dropdown when clicking outside
