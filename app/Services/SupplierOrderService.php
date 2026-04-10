@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\NotificationType;
 use App\Models\SupplierOrder;
 use App\Models\SupplierOrderItem;
 use App\Models\StockMovement;
@@ -11,6 +12,10 @@ use Carbon\Carbon;
 
 class SupplierOrderService
 {
+    public function __construct(
+        private readonly NotificationService $notificationService,
+    ) {}
+
     /**
      * Create a new supplier order
      */
@@ -227,18 +232,29 @@ class SupplierOrderService
     public function notifyOverdueOrders()
     {
         $overdueOrders = SupplierOrder::overdue()
-            ->with(['supplier', 'shopOwner.user'])
+            ->with(['supplier'])
             ->get();
-        
+
         $notificationsSent = 0;
-        
+
         foreach ($overdueOrders as $order) {
-            // Here you would send notifications
-            // For now, we'll just count them
-            // This would integrate with your notification system
+            $this->notificationService->sendToErpRole(
+                roleName: 'Procurement Manager',
+                shopId: (int) $order->shop_owner_id,
+                type: NotificationType::PURCHASE_REQUEST_SUBMITTED,
+                title: 'Supplier Order Overdue',
+                message: "PO {$order->po_number} is overdue and needs follow-up.",
+                data: [
+                    'supplier_order_id' => (int) $order->id,
+                    'po_number' => (string) $order->po_number,
+                ],
+                actionUrl: '/erp/procurement/supplier-orders',
+                priority: 'high'
+            );
+
             $notificationsSent++;
         }
-        
+
         return [
             'total_overdue' => $overdueOrders->count(),
             'notifications_sent' => $notificationsSent

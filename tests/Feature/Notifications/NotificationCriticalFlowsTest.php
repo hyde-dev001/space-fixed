@@ -10,11 +10,14 @@ use App\Models\PosTransaction;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\SuspensionRequest;
+use App\Models\Supplier;
+use App\Models\SupplierOrder;
 use App\Models\HR\SalaryChange;
 use App\Models\User;
 use App\Services\HR\SalaryChangeApprovalService;
 use App\Services\RepairOnlineRefundWorkflowService;
 use App\Services\RepairPosRefundService;
+use App\Services\SupplierOrderService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
 use Spatie\Permission\Models\Role;
@@ -283,6 +286,42 @@ class NotificationCriticalFlowsTest extends TestCase
         $this->assertDatabaseHas('notifications', [
             'user_id' => $financeUser->id,
             'title' => 'Repair Refund Needs Finance Review',
+        ]);
+    }
+
+    #[Test]
+    public function overdue_supplier_orders_emit_notifications_to_inventory_recipients(): void
+    {
+        $shopOwner = $this->createShopOwner();
+
+        $supplier = Supplier::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+        ]);
+
+        SupplierOrder::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'supplier_id' => $supplier->id,
+            'status' => 'sent',
+            'expected_delivery_date' => now()->subDays(2)->toDateString(),
+            'created_by' => null,
+        ]);
+
+        $inventoryUser = User::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+        ]);
+
+        $procurementRole = Role::findOrCreate('Procurement Manager', 'user');
+        $inventoryUser->assignRole($procurementRole);
+
+        $service = app(SupplierOrderService::class);
+        $result = $service->notifyOverdueOrders();
+
+        $this->assertGreaterThan(0, (int) ($result['notifications_sent'] ?? 0));
+
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $inventoryUser->id,
+            'title' => 'Supplier Order Overdue',
+            'type' => 'purchase_request_submitted',
         ]);
     }
 }
