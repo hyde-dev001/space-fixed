@@ -5,13 +5,19 @@ namespace Tests\Feature\Notifications;
 use App\Enums\SuspensionStatus;
 use App\Models\Employee;
 use App\Models\Order;
+use App\Models\PosRefund;
+use App\Models\PosTransaction;
+use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\SuspensionRequest;
 use App\Models\HR\SalaryChange;
 use App\Models\User;
 use App\Services\HR\SalaryChangeApprovalService;
+use App\Services\RepairOnlineRefundWorkflowService;
+use App\Services\RepairPosRefundService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 class NotificationCriticalFlowsTest extends TestCase
@@ -24,6 +30,69 @@ class NotificationCriticalFlowsTest extends TestCase
             'business_type' => 'both',
             'registration_type' => 'individual',
         ], $overrides));
+    }
+
+    private function createRepairRefundFixture(string $workflowSource = 'pos'): array
+    {
+        $shopOwner = $this->createShopOwner();
+
+        $customer = User::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'email' => 'repair-customer@example.test',
+        ]);
+
+        $repair = RepairRequest::query()->create([
+            'request_id' => 'RR-' . now()->format('YmdHis') . '-' . random_int(100, 999),
+            'customer_name' => 'Repair Customer',
+            'email' => $customer->email,
+            'phone' => '09171234567',
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'total' => 1200.00,
+            'status' => 'completed',
+        ]);
+
+        $source = PosTransaction::query()->create([
+            'transaction_no' => 'TXN-' . now()->format('YmdHis') . '-' . random_int(100, 999),
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'due_type' => 'full',
+            'subtotal' => 1200.00,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 1200.00,
+            'paid_amount' => 1200.00,
+            'status' => 'paid',
+        ]);
+
+        $refund = PosRefund::query()->create([
+            'refund_no' => 'RFD-' . now()->format('YmdHis') . '-' . random_int(100, 999),
+            'shop_owner_id' => $shopOwner->id,
+            'source_transaction_id' => $source->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'workflow_source' => $workflowSource,
+            'request_type' => 'partial',
+            'requested_amount' => 300.00,
+            'reason_code' => 'service_issue',
+            'status' => 'requested',
+            'finance_status' => 'pending',
+            'shop_owner_status' => 'pending',
+            'repairer_status' => 'pending',
+            'requested_by' => $customer->id,
+            'requested_at' => now(),
+        ]);
+
+        return [
+            'shop_owner' => $shopOwner,
+            'customer' => $customer,
+            'repair' => $repair,
+            'source' => $source,
+            'refund' => $refund,
+        ];
     }
 
     #[Test]
@@ -159,6 +228,61 @@ class NotificationCriticalFlowsTest extends TestCase
             'user_id' => $proposer->id,
             'title' => 'Salary Change Rejected',
             'type' => 'salary_change_approved',
+        ]);
+    }
+
+    #[Test]
+    public function repair_refund_finance_approve_emits_customer_and_owner_notifications(): void
+    {
+        $fixture = $this->createRepairRefundFixture('pos');
+
+        $financeActor = User::factory()->create([
+            'shop_owner_id' => $fixture['shop_owner']->id,
+        ]);
+
+        $service = app(RepairPosRefundService::class);
+        $service->approve(
+            refund: $fixture['refund'],
+            actorId: (int) $financeActor->id,
+            approvedAmount: 250.00,
+            approvalNote: 'Finance approved',
+            stage: 'finance',
+        );
+
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $fixture['customer']->id,
+            'title' => 'Repair Refund Approved',
+        ]);
+
+        $this->assertDatabaseHas('notifications', [
+            'shop_owner_id' => $fixture['shop_owner']->id,
+            'title' => 'Repair Refund Approved',
+        ]);
+    }
+
+    #[Test]
+    public function repair_refund_repairer_reject_emits_finance_review_notification(): void
+    {
+        $fixture = $this->createRepairRefundFixture('online_myrepair');
+
+        $financeUser = User::factory()->create([
+            'shop_owner_id' => $fixture['shop_owner']->id,
+        ]);
+
+        $financeRole = Role::findOrCreate('Finance', 'user');
+        $financeUser->assignRole($financeRole);
+
+        $workflow = app(RepairOnlineRefundWorkflowService::class);
+        $workflow->repairerReject(
+            refund: $fixture['refund'],
+            actorId: (int) $financeUser->id,
+            assessmentNote: 'Cannot verify issue',
+            reason: 'No defect found',
+        );
+
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $financeUser->id,
+            'title' => 'Repair Refund Needs Finance Review',
         ]);
     }
 }

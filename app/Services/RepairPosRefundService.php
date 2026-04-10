@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Enums\NotificationType;
+use App\Models\Notification;
 use App\Models\PosRefund;
 use App\Models\PosTransaction;
 use App\Models\RepairRequest;
@@ -15,6 +17,10 @@ class RepairPosRefundService
 {
     private const FINAL_STATUSES = ['succeeded', 'failed', 'rejected', 'cancelled'];
     private const REPAIR_VAT_RATE_PERCENT = 12.0;
+
+    public function __construct(
+        private readonly NotificationService $notificationService,
+    ) {}
 
     public function computeRepairRefundableAmount(int $repairId): float
     {
@@ -297,6 +303,15 @@ class RepairPosRefundService
                 'failed_at' => null,
             ]);
 
+            $this->notifyRefundParties(
+                refund: $refund,
+                source: $source,
+                title: 'Repair Refund Approved',
+                message: 'Your repair refund request was approved by finance.',
+                actionUrl: '/my-repairs',
+                includeOwner: true,
+            );
+
             return $refund->fresh();
         }
 
@@ -325,6 +340,15 @@ class RepairPosRefundService
             'failure_reason' => null,
             'failed_at' => null,
         ]);
+
+        $this->notifyRefundParties(
+            refund: $refund,
+            source: $source,
+            title: 'Repair Refund Approved',
+            message: 'Your repair refund request was approved by the shop owner.',
+            actionUrl: '/my-repairs',
+            includeOwner: false,
+        );
 
         return $refund->fresh();
     }
@@ -371,6 +395,18 @@ class RepairPosRefundService
         }
 
         $refund->update($payload);
+
+        $source = $refund->sourceTransaction()->first();
+        if ($source) {
+            $this->notifyRefundParties(
+                refund: $refund,
+                source: $source,
+                title: 'Repair Refund Rejected',
+                message: 'Your repair refund request was rejected. Please review the provided reason.',
+                actionUrl: '/my-repairs',
+                includeOwner: true,
+            );
+        }
 
         return $refund->fresh();
     }
@@ -908,6 +944,15 @@ class RepairPosRefundService
             ]);
         }
 
+            $this->notifyRefundParties(
+                refund: $refund,
+                source: $source,
+                title: 'Repair Refund Executed',
+                message: 'Your repair refund has been executed successfully.',
+                actionUrl: '/my-repairs',
+                includeOwner: true,
+            );
+
         return $refund->fresh();
     }
 
@@ -925,7 +970,65 @@ class RepairPosRefundService
             'failed_at' => now(),
         ]);
 
+        $source = $refund->sourceTransaction()->first();
+        if ($source) {
+            $this->notifyRefundParties(
+                refund: $refund,
+                source: $source,
+                title: 'Repair Refund Execution Failed',
+                message: 'Repair refund execution failed and requires manual review.',
+                actionUrl: '/my-repairs',
+                includeOwner: true,
+            );
+        }
+
         return $refund->fresh();
+    }
+
+    private function notifyRefundParties(
+        PosRefund $refund,
+        PosTransaction $source,
+        string $title,
+        string $message,
+        string $actionUrl,
+        bool $includeOwner = true,
+    ): void {
+        $customerId = (int) ($source->customer_id ?? 0);
+        if ($customerId > 0) {
+            $this->notificationService->sendToUser(
+                userId: $customerId,
+                type: NotificationType::MESSAGE_RECEIVED,
+                title: $title,
+                message: $message,
+                data: [
+                    'refund_id' => (int) $refund->id,
+                    'refund_no' => (string) $refund->refund_no,
+                    'status' => (string) $refund->status,
+                    'approved_amount' => (float) ($refund->approved_amount ?? 0),
+                ],
+                actionUrl: $actionUrl,
+                shopId: (int) $refund->shop_owner_id,
+                priority: 'high',
+            );
+        }
+
+        if ($includeOwner) {
+            Notification::create([
+                'shop_owner_id' => (int) $refund->shop_owner_id,
+                'type' => NotificationType::REFUND_REQUEST->value,
+                'priority' => 'high',
+                'title' => $title,
+                'message' => $message,
+                'data' => [
+                    'refund_id' => (int) $refund->id,
+                    'refund_no' => (string) $refund->refund_no,
+                    'status' => (string) $refund->status,
+                    'approved_amount' => (float) ($refund->approved_amount ?? 0),
+                ],
+                'action_url' => '/shop-owner/repair-refunds',
+                'shop_id' => (int) $refund->shop_owner_id,
+            ]);
+        }
     }
 
     private function shouldUseRepairWideLimit(PosTransaction $source, string $workflowSource, string $reasonCode): bool
