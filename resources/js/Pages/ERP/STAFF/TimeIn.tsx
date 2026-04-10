@@ -130,6 +130,42 @@ const formatDateInputFromParts = (year: number, month: number, day: number) => {
     return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 };
 
+const extractTimeParts = (timeValue?: string | null): { hour: number; minute: number; second: number } | null => {
+    if (!timeValue) return null;
+
+    const match = String(timeValue).trim().match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    if (!match) return null;
+
+    const hour = parseInt(match[1], 10);
+    const minute = parseInt(match[2], 10);
+    const second = parseInt(match[3] ?? '0', 10);
+
+    if (
+        Number.isNaN(hour)
+        || Number.isNaN(minute)
+        || Number.isNaN(second)
+        || hour < 0
+        || hour > 23
+        || minute < 0
+        || minute > 59
+        || second < 0
+        || second > 59
+    ) {
+        return null;
+    }
+
+    return { hour, minute, second };
+};
+
+const parseAttendanceTimeToDate = (timeValue?: string | null): Date | null => {
+    const parts = extractTimeParts(timeValue);
+    if (!parts) return null;
+
+    const base = getPHTime();
+    base.setHours(parts.hour, parts.minute, parts.second, 0);
+    return base;
+};
+
 export default function TimeIn() {
     const { auth } = usePage().props as any;
     const [currentTime, setCurrentTime] = useState<Date>(getPHTime());
@@ -203,33 +239,21 @@ export default function TimeIn() {
                 setTodayAttendance(data);
                 
                 if (data.checked_in && data.check_in_time) {
-                    const [hours, minutes] = data.check_in_time.split(':');
-                    const checkInDate = new Date();
-                    checkInDate.setHours(parseInt(hours), parseInt(minutes), 0);
-                    setLoginTime(checkInDate);
+                    setLoginTime(parseAttendanceTimeToDate(data.check_in_time));
                     setIsClockedIn(true);
                 }
 
                 if (data.checked_out && data.check_out_time) {
-                    const [hours, minutes] = data.check_out_time.split(':');
-                    const checkOutDate = new Date();
-                    checkOutDate.setHours(parseInt(hours), parseInt(minutes), 0);
-                    setLogoutTime(checkOutDate);
+                    setLogoutTime(parseAttendanceTimeToDate(data.check_out_time));
                     setIsClockedIn(false);
                 }
 
                 // Restore lunch break state
                 if (data.lunch_break_start) {
-                    const [lh, lm] = data.lunch_break_start.split(':');
-                    const lunchDate = new Date();
-                    lunchDate.setHours(parseInt(lh), parseInt(lm), 0);
-                    setLunchStartTime(lunchDate);
+                    setLunchStartTime(parseAttendanceTimeToDate(data.lunch_break_start));
                 }
                 if (data.lunch_break_end) {
-                    const [lh2, lm2] = data.lunch_break_end.split(':');
-                    const lunchEndDate = new Date();
-                    lunchEndDate.setHours(parseInt(lh2), parseInt(lm2), 0);
-                    setLunchEndTime(lunchEndDate);
+                    setLunchEndTime(parseAttendanceTimeToDate(data.lunch_break_end));
                 }
                 setIsOnLunch(data.is_on_lunch || false);
 
@@ -512,12 +536,11 @@ export default function TimeIn() {
     // Convert HH:mm[:ss] (24-hour) strings to 12-hour format like "h:mm AM/PM"
     const formatTimeFromString = (timeStr?: string | null) => {
         if (!timeStr) return '--:--';
-        // Accept formats like "17:00:00", "17:00" or "17:00:00.000000"
-        const parts = timeStr.split(':');
-        if (parts.length < 2) return timeStr;
-        let hour = parseInt(parts[0], 10);
-        const minute = parts[1].slice(0,2);
-        if (Number.isNaN(hour)) return timeStr;
+        const parts = extractTimeParts(timeStr);
+        if (!parts) return String(timeStr);
+
+        let hour = parts.hour;
+        const minute = String(parts.minute).padStart(2, '0');
         const ampm = hour >= 12 ? 'PM' : 'AM';
         hour = hour % 12;
         if (hour === 0) hour = 12;
@@ -526,13 +549,9 @@ export default function TimeIn() {
 
     // Convert HH:mm[:ss] into minutes since midnight for reliable comparisons.
     const timeStringToMinutes = (timeStr?: string | null): number | null => {
-        if (!timeStr) return null;
-        const parts = timeStr.split(':');
-        if (parts.length < 2) return null;
-        const hour = parseInt(parts[0], 10);
-        const minute = parseInt(parts[1], 10);
-        if (Number.isNaN(hour) || Number.isNaN(minute)) return null;
-        return hour * 60 + minute;
+        const parts = extractTimeParts(timeStr);
+        if (!parts) return null;
+        return parts.hour * 60 + parts.minute;
     };
 
     useEffect(() => {

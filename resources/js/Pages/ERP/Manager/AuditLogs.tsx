@@ -228,8 +228,10 @@ export default function ManagerAuditLogs() {
   };
 
   const viewLogDetails = (log: ActivityLog) => {
-    const properties = log.properties;
-    const changes = log.changes || {};
+    const properties: Record<string, any> =
+      log.properties && typeof log.properties === 'object' ? log.properties : {};
+    const changes: Record<string, { old: any; new: any; label?: string }> =
+      log.changes && typeof log.changes === 'object' ? log.changes : {};
     
     // Detect dark mode
     const isDarkMode = document.documentElement.classList.contains('dark');
@@ -282,7 +284,9 @@ export default function ManagerAuditLogs() {
       }
       diffHtml += '</div></div>';
     } else if (log.event === 'created') {
-      const attributes = properties.attributes || {};
+      const attributes = properties?.attributes && typeof properties.attributes === 'object'
+        ? properties.attributes
+        : {};
       if (Object.keys(attributes).length > 0) {
         diffHtml = `<div style="margin-top: 1rem;"><h3 style="font-weight: 600; font-size: 1.125rem; margin-bottom: 0.75rem; color: ${colors.grayDarkText}">Created With:</h3><div style="background-color: ${colors.greenBg}; padding: 0.75rem; border-radius: 0.5rem;"><div style="display: flex; flex-direction: column; gap: 0.25rem;">`;
         for (const [key, value] of Object.entries(attributes)) {

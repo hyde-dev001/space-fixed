@@ -232,8 +232,10 @@ export default function ShopOwnerAuditLogs() {
   };
 
   const viewLogDetails = (log: ActivityLog) => {
-    const properties = log.properties;
-    const changes = log.changes || {};
+    const properties: Record<string, any> =
+      log.properties && typeof log.properties === 'object' ? log.properties : {};
+    const changes: Record<string, { old: any; new: any; label?: string }> =
+      log.changes && typeof log.changes === 'object' ? log.changes : {};
     
     // Build formatted description
     const formattedDescription = formatDetailedDescription(log);
@@ -267,7 +269,9 @@ export default function ShopOwnerAuditLogs() {
       }
       diffHtml += '</div></div>';
     } else if (log.event === 'created') {
-      const attributes = properties.attributes || {};
+      const attributes = properties?.attributes && typeof properties.attributes === 'object'
+        ? properties.attributes
+        : {};
       if (Object.keys(attributes).length > 0) {
         diffHtml = '<div class="mt-4"><h3 class="font-semibold text-lg mb-3">Created With:</h3><div class="bg-green-50 p-3 rounded-lg"><div class="space-y-1">';
         for (const [key, value] of Object.entries(attributes)) {
