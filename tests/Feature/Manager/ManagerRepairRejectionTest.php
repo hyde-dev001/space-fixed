@@ -6,6 +6,7 @@ use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 /**
@@ -268,5 +269,42 @@ class ManagerRepairRejectionTest extends TestCase
         $data = $response->json('data');
         
         $this->assertCount(3, $data);
+    }
+
+    public function test_repairer_rejection_notifies_permission_based_manager_reviewer(): void
+    {
+        Permission::findOrCreate('access-repair-reject-review', 'user');
+
+        $permissionBasedReviewer = User::factory()
+            ->for($this->repairShop)
+            ->create(['role' => 'STAFF']);
+        $permissionBasedReviewer->givePermissionTo('access-repair-reject-review');
+
+        $repairer = User::factory()
+            ->for($this->repairShop)
+            ->create(['role' => 'STAFF']);
+
+        $assignedRepair = RepairRequest::factory()
+            ->for($this->repairShop)
+            ->create([
+                'request_id' => 'REP-NOTIF-001',
+                'status' => 'assigned_to_repairer',
+                'assigned_repairer_id' => $repairer->id,
+            ]);
+
+        $response = $this->actingAs($repairer, 'user')
+            ->postJson("/api/repairer/repairs/{$assignedRepair->id}/reject", [
+                'reason_text' => 'Cannot proceed due to severe structural damage.',
+                'reason_category' => 'safety_risk',
+            ]);
+
+        $response->assertStatus(200)
+            ->assertJson(['success' => true]);
+
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $permissionBasedReviewer->id,
+            'type' => 'repair_rejection_review',
+            'action_url' => '/erp/manager/repair-rejection-review',
+        ]);
     }
 }

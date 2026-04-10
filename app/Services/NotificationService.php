@@ -906,11 +906,77 @@ class NotificationService
             $message .= ' Missing skills: ' . implode(', ', $missingSkills) . '.';
         }
 
-        $this->sendToErpRole('Manager', $shopId, NotificationType::REPAIR_REJECTION_REVIEW,
-            'Repair Rejection Needs Review',
-            $message,
-            $repairData, '/erp/manager/repair-rejection-review', 'high'
-        );
+        $title = 'Repair Rejection Needs Review';
+        $actionUrl = '/erp/manager/repair-rejection-review';
+        $excludedUserId = (int) ($repairData['rejected_by_user_id'] ?? 0);
+
+        $recipientIds = User::query()
+            ->where('shop_owner_id', $shopId)
+            ->where(function ($query) {
+                $query->whereHas('permissions', function ($permissionQuery) {
+                    $permissionQuery->whereIn('name', [
+                        'access-repair-reject-review',
+                        'access-manager-dashboard',
+                    ]);
+                })->orWhereHas('roles', function ($roleQuery) {
+                    $roleQuery->whereIn('name', [
+                        'Manager',
+                        'MANAGER',
+                        'Finance Manager',
+                        'FINANCE_MANAGER',
+                        'Super Admin',
+                        'SUPER_ADMIN',
+                    ]);
+                });
+            })
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0 && $id !== $excludedUserId)
+            ->unique()
+            ->values();
+
+        $assignedManagerId = (int) ($repairData['assigned_manager_id'] ?? $repairData['manager_id'] ?? 0);
+        if ($assignedManagerId > 0 && $assignedManagerId !== $excludedUserId) {
+            $assignedManagerExists = User::query()
+                ->where('id', $assignedManagerId)
+                ->where('shop_owner_id', $shopId)
+                ->exists();
+
+            if ($assignedManagerExists) {
+                $recipientIds = $recipientIds
+                    ->push($assignedManagerId)
+                    ->unique()
+                    ->values();
+            }
+        }
+
+        if ($recipientIds->isEmpty()) {
+            // Backward-compatible fallback for shops still relying on classic role labels.
+            $this->sendToErpRole(
+                'Manager',
+                $shopId,
+                NotificationType::REPAIR_REJECTION_REVIEW,
+                $title,
+                $message,
+                $repairData,
+                $actionUrl,
+                'high'
+            );
+            return;
+        }
+
+        foreach ($recipientIds as $recipientId) {
+            $this->sendToUser(
+                (int) $recipientId,
+                NotificationType::REPAIR_REJECTION_REVIEW,
+                $title,
+                $message,
+                $repairData,
+                $actionUrl,
+                $shopId,
+                'high'
+            );
+        }
     }
 
     // ==================== SHOP OWNER NOTIFICATIONS ====================

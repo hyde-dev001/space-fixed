@@ -836,6 +836,8 @@ class RepairWorkflowController extends Controller
                     'reason'       => $reasonText,
                     'reason_category' => $reasonCategory,
                     'missing_skills' => $missingSkillNames,
+                    'assigned_manager_id' => $manager?->id,
+                    'rejected_by_user_id' => $user->id,
                 ]);
             } catch (\Exception $e) {
                 \Log::warning('Could not notify manager of repair rejection: ' . $e->getMessage());
