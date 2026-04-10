@@ -9,6 +9,7 @@ use App\Models\ShopOwner;
 use App\Models\Order;
 use App\Enums\NotificationType;
 use App\Mail\NotificationEmail;
+use App\Services\Notifications\RecipientResolver;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
 
@@ -24,6 +25,12 @@ use Illuminate\Support\Facades\Log;
  */
 class NotificationService
 {
+    public function __construct(
+        private ?RecipientResolver $recipientResolver = null
+    ) {
+        $this->recipientResolver ??= app(RecipientResolver::class);
+    }
+
     // ==================== CORE METHODS ====================
 
     /**
@@ -170,6 +177,75 @@ class NotificationService
             ]);
             return null;
         }
+    }
+
+    /**
+     * Resolve recipients for shop-owner-scoped events and fan out notifications.
+     * Governance events always include owner records even for company registrations.
+     */
+    private function sendToResolvedShopOwnerRecipients(
+        string $eventType,
+        int $shopOwnerId,
+        NotificationType $type,
+        string $title,
+        string $message,
+        ?array $data = null,
+        ?string $actionUrl = null,
+        string $priority = 'medium',
+        ?string $groupKey = null,
+        bool $requiresAction = false
+    ): ?Notification {
+        $shopOwner = ShopOwner::find($shopOwnerId);
+        if (!$shopOwner) {
+            Log::warning('Shop owner not found for recipient resolution', ['shop_owner_id' => $shopOwnerId]);
+            return null;
+        }
+
+        $recipients = $this->recipientResolver->resolveShopOwnerRecipients(
+            $eventType,
+            $shopOwnerId,
+            (string) ($shopOwner->registration_type ?? 'individual')
+        );
+
+        $shopOwnerIds = array_values(array_unique(array_map('intval', $recipients['shop_owner_ids'] ?? [])));
+        $userIds = array_values(array_unique(array_map('intval', $recipients['user_ids'] ?? [])));
+
+        $notification = null;
+
+        foreach ($shopOwnerIds as $resolvedShopOwnerId) {
+            $sent = $this->sendToShopOwner(
+                shopOwnerId: $resolvedShopOwnerId,
+                type: $type,
+                title: $title,
+                message: $message,
+                data: $data,
+                actionUrl: $actionUrl,
+                priority: $priority,
+                groupKey: $groupKey,
+                requiresAction: $requiresAction
+            );
+
+            $notification ??= $sent;
+        }
+
+        foreach ($userIds as $resolvedUserId) {
+            $sent = $this->sendToUser(
+                userId: $resolvedUserId,
+                type: $type,
+                title: $title,
+                message: $message,
+                data: $data,
+                actionUrl: $actionUrl,
+                shopId: $shopOwnerId,
+                priority: $priority,
+                groupKey: $groupKey,
+                requiresAction: $requiresAction
+            );
+
+            $notification ??= $sent;
+        }
+
+        return $notification;
     }
 
     /**
@@ -641,7 +717,8 @@ class NotificationService
 
         $dateText = $effectiveDate ? " Effective: {$effectiveDate}." : '';
 
-        $this->sendToShopOwner(
+        $this->sendToResolvedShopOwnerRecipients(
+            eventType: 'salary_change_submitted',
             shopOwnerId: $shopId,
             type: NotificationType::SALARY_CHANGE_SUBMITTED,
             title: 'New Salary Change Request',
@@ -1154,19 +1231,12 @@ class NotificationService
     }
 
     /**
-     * Notify shop owner of high-value repair needing approval
-     * Only sends notification to individual shop owners, not companies
+     * Notify shop owner of high-value repair needing approval.
      */
     public function notifyHighValueRepairApproval(int $shopOwnerId, array $repairData): ?Notification
     {
-        // Check if shop owner is individual type
-        $shopOwner = ShopOwner::find($shopOwnerId);
-        if (!$shopOwner || $shopOwner->registration_type !== 'individual') {
-            Log::info("Skipping high-value repair approval notification for shop owner #{$shopOwnerId} - not an individual registration type");
-            return null;
-        }
-
-        return $this->sendToShopOwner(
+        return $this->sendToResolvedShopOwnerRecipients(
+            eventType: 'high_value_approval',
             shopOwnerId: $shopOwnerId,
             type: NotificationType::HIGH_VALUE_APPROVAL,
             title: 'High-Value Repair Approval',
@@ -1177,19 +1247,12 @@ class NotificationService
     }
 
     /**
-     * Notify shop owner of refund request
-     * Only sends notification to individual shop owners, not companies
+     * Notify shop owner of refund request.
      */
     public function notifyRefundRequest(int $shopOwnerId, array $refundData): ?Notification
     {
-        // Check if shop owner is individual type
-        $shopOwner = ShopOwner::find($shopOwnerId);
-        if (!$shopOwner || $shopOwner->registration_type !== 'individual') {
-            Log::info("Skipping refund request notification for shop owner #{$shopOwnerId} - not an individual registration type");
-            return null;
-        }
-
-        return $this->sendToShopOwner(
+        return $this->sendToResolvedShopOwnerRecipients(
+            eventType: 'refund_request',
             shopOwnerId: $shopOwnerId,
             type: NotificationType::REFUND_REQUEST,
             title: 'Refund Request',
@@ -1219,7 +1282,8 @@ class NotificationService
      */
     public function notifyEmployeeSuspensionRequest(int $shopOwnerId, array $suspensionData): ?Notification
     {
-        return $this->sendToShopOwner(
+        return $this->sendToResolvedShopOwnerRecipients(
+            eventType: 'employee_suspension_request',
             shopOwnerId: $shopOwnerId,
             type: NotificationType::EMPLOYEE_SUSPENSION_REQUEST,
             title: 'Employee Suspension Request',
