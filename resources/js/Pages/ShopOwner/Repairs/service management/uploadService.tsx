@@ -164,8 +164,12 @@ export default function UploadService() {
   const [formData, setFormData] = useState({
     name: "",
     category: "",
+    categoryCustom: "",
     price: "",
     duration: "",
+    durationFrom: "",
+    durationTo: "",
+    durationUnit: "hours" as "hours" | "days",
     description: "",
     status: "Active" as "Active" | "Inactive" | "Pending",
     material_templates: [] as Array<{
@@ -258,12 +262,94 @@ export default function UploadService() {
     return String(Math.max(1, Math.ceil(numericValue)));
   };
 
+  const parseDurationValue = (value: string): { durationFrom: string; durationTo: string; durationUnit: "hours" | "days" } => {
+    const normalized = value.trim().toLowerCase().replace(/\s+/g, " ");
+    const rangeMatch = normalized.match(/^(\d+(?:\.\d+)?)\s*(?:-|to)\s*(\d+(?:\.\d+)?)\s*(hours?|days?)$/i);
+
+    if (rangeMatch) {
+      return {
+        durationFrom: rangeMatch[1],
+        durationTo: rangeMatch[2],
+        durationUnit: (rangeMatch[3].startsWith("day") ? "days" : "hours") as "hours" | "days",
+      };
+    }
+
+    const singleMatch = normalized.match(/^(\d+(?:\.\d+)?)\s*(hours?|days?)$/i);
+
+    if (singleMatch) {
+      return {
+        durationFrom: singleMatch[1],
+        durationTo: "",
+        durationUnit: (singleMatch[2].startsWith("day") ? "days" : "hours") as "hours" | "days",
+      };
+    }
+
+    return {
+      durationFrom: "",
+      durationTo: "",
+      durationUnit: "hours" as const,
+    };
+  };
+
+  const buildDurationValue = (durationFrom: string, durationTo: string, durationUnit: "hours" | "days") => {
+    const fromValue = Number(durationFrom);
+
+    if (!Number.isFinite(fromValue) || fromValue <= 0) {
+      return "";
+    }
+
+    const formatUnit = (value: number) => (value === 1 ? durationUnit.slice(0, -1) : durationUnit);
+
+    if (durationTo.trim()) {
+      const toValue = Number(durationTo);
+
+      if (!Number.isFinite(toValue) || toValue < fromValue) {
+        return "";
+      }
+
+      return `${fromValue} to ${toValue} ${durationUnit}`;
+    }
+
+    return `${fromValue} ${formatUnit(fromValue)}`;
+  };
+
+  const serviceCategoryOptions = ["Care", "Repair", "Restoration"];
+
+  const getEffectiveCategory = () => (
+    formData.category === "Others"
+      ? formData.categoryCustom.trim()
+      : formData.category
+  );
+
+  const getDurationPreview = () => buildDurationValue(formData.durationFrom, formData.durationTo, formData.durationUnit);
+
   const handleAddService = async () => {
-    if (!formData.name || !formData.category || !formData.price || !formData.duration) {
+    const effectiveCategory = getEffectiveCategory();
+
+    if (!formData.name || !formData.category || !formData.price) {
       Swal.fire({
         icon: "error",
         title: "Validation Error",
         text: "Please fill in all required fields",
+      });
+      return;
+    }
+
+    if (formData.category === "Others" && !effectiveCategory) {
+      Swal.fire({
+        icon: "error",
+        title: "Validation Error",
+        text: "Please enter a custom category name.",
+      });
+      return;
+    }
+
+    const durationValue = buildDurationValue(formData.durationFrom, formData.durationTo, formData.durationUnit);
+    if (!durationValue) {
+      Swal.fire({
+        icon: "error",
+        title: "Validation Error",
+        text: "Please enter a valid duration and choose hours or days.",
       });
       return;
     }
@@ -284,9 +370,9 @@ export default function UploadService() {
       
       const response = await axios.post('/api/shop-owner/repair-services', {
         name: formData.name,
-        category: formData.category,
+        category: effectiveCategory,
         price: priceValue,
-        duration: formData.duration,
+        duration: durationValue,
         description: formData.description,
         status: 'Active', // New services are always Active, no approval needed
         material_templates: formData.material_templates.map((line) => ({
@@ -323,11 +409,32 @@ export default function UploadService() {
   const handleEditService = async () => {
     if (!selectedService) return;
 
-    if (!formData.name || !formData.category || !formData.price || !formData.duration) {
+    const effectiveCategory = getEffectiveCategory();
+
+    if (!formData.name || !formData.category || !formData.price) {
       Swal.fire({
         icon: "error",
         title: "Validation Error",
         text: "Please fill in all required fields",
+      });
+      return;
+    }
+
+    if (formData.category === "Others" && !effectiveCategory) {
+      Swal.fire({
+        icon: "error",
+        title: "Validation Error",
+        text: "Please enter a custom category name.",
+      });
+      return;
+    }
+
+    const durationValue = buildDurationValue(formData.durationFrom, formData.durationTo, formData.durationUnit);
+    if (!durationValue) {
+      Swal.fire({
+        icon: "error",
+        title: "Validation Error",
+        text: "Please enter a valid duration and choose hours or days.",
       });
       return;
     }
@@ -345,9 +452,9 @@ export default function UploadService() {
     try {
       const response = await axios.put(`/api/shop-owner/repair-services/${selectedService.id}`, {
         name: formData.name,
-        category: formData.category,
+        category: effectiveCategory,
         price: formData.price.replace(/[₱,]/g, ''),
-        duration: formData.duration,
+        duration: durationValue,
         description: formData.description,
         status: formData.status,
         material_templates: formData.material_templates.map((line) => ({
@@ -419,12 +526,18 @@ export default function UploadService() {
   };
 
   const openEditModal = (service: Service) => {
+    const parsedDuration = parseDurationValue(service.duration);
+
     setSelectedService(service);
     setFormData({
       name: service.name,
-      category: service.category,
+      category: serviceCategoryOptions.includes(service.category) ? service.category : "Others",
+      categoryCustom: serviceCategoryOptions.includes(service.category) ? "" : service.category,
       price: service.price,
       duration: service.duration,
+      durationFrom: parsedDuration.durationFrom,
+      durationTo: parsedDuration.durationTo,
+      durationUnit: parsedDuration.durationUnit,
       description: service.description,
       status: service.status,
       material_templates: (service.material_templates || []).map((line) => ({
@@ -441,8 +554,12 @@ export default function UploadService() {
     setFormData({
       name: "",
       category: "",
+      categoryCustom: "",
       price: "",
       duration: "",
+      durationFrom: "",
+      durationTo: "",
+      durationUnit: "hours",
       description: "",
       status: "Active",
       material_templates: [],
@@ -757,7 +874,7 @@ export default function UploadService() {
       {/* Add Service Modal */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200 dark:border-gray-800">
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Add New Service</h2>
             </div>
@@ -784,14 +901,16 @@ export default function UploadService() {
                   <select
                     title="Select service category"
                     value={formData.category}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value, categoryCustom: e.target.value === "Others" ? formData.categoryCustom : "" })}
                     className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
                     <option value="">Select Category</option>
-                    <option value="Care">Care</option>
-                    <option value="Repair">Repair</option>
-                    <option value="Restoration">Restoration</option>
-                    <option value="Custom">Custom</option>
+                    {serviceCategoryOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                    <option value="Others">Others</option>
                   </select>
                 </div>
 
@@ -812,6 +931,21 @@ export default function UploadService() {
                 </div>
               </div>
 
+              {formData.category === "Others" && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Custom Category *
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.categoryCustom}
+                    onChange={(e) => setFormData({ ...formData, categoryCustom: e.target.value })}
+                    className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Enter a custom category name"
+                  />
+                </div>
+              )}
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -828,15 +962,51 @@ export default function UploadService() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Duration *
+                    Duration Estimate *
                   </label>
-                  <input
-                    type="text"
-                    value={formData.duration}
-                    onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
-                    className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="e.g., 30 min"
-                  />
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={formData.durationFrom}
+                        onChange={(e) => setFormData({ ...formData, durationFrom: e.target.value })}
+                        className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="2"
+                      />
+                    </div>
+                    <div>
+                      <input
+                        type="number"
+                        min={formData.durationFrom ? Number(formData.durationFrom) : 1}
+                        step="1"
+                        value={formData.durationTo}
+                        onChange={(e) => setFormData({ ...formData, durationTo: e.target.value })}
+                        className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="3"
+                      />
+                    </div>
+                    <div>
+                      <select
+                        title="Select duration unit"
+                        value={formData.durationUnit}
+                        onChange={(e) => setFormData({ ...formData, durationUnit: e.target.value as "hours" | "days" })}
+                        className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      >
+                        <option value="hours">Hours</option>
+                        <option value="days">Days</option>
+                      </select>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                    Leave the second box empty for an exact estimate. Fill both for a range like 2 to 3 hours or days.
+                  </p>
+                  {getDurationPreview() && (
+                    <p className="mt-2 text-xs font-medium text-blue-600 dark:text-blue-400">
+                      Preview: {getDurationPreview()}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -976,7 +1146,7 @@ export default function UploadService() {
       {/* Edit Service Modal */}
       {isEditModalOpen && selectedService && (
         <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200 dark:border-gray-800">
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Edit Service</h2>
             </div>
@@ -1010,7 +1180,6 @@ export default function UploadService() {
                     <option value="Care">Care</option>
                     <option value="Repair">Repair</option>
                     <option value="Restoration">Restoration</option>
-                    <option value="Custom">Custom</option>
                   </select>
                 </div>
 
@@ -1047,15 +1216,51 @@ export default function UploadService() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Duration *
+                    Duration Estimate *
                   </label>
-                  <input
-                    type="text"
-                    value={formData.duration}
-                    onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
-                    className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="e.g., 30 min"
-                  />
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={formData.durationFrom}
+                        onChange={(e) => setFormData({ ...formData, durationFrom: e.target.value })}
+                        className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="2"
+                      />
+                    </div>
+                    <div>
+                      <input
+                        type="number"
+                        min={formData.durationFrom ? Number(formData.durationFrom) : 1}
+                        step="1"
+                        value={formData.durationTo}
+                        onChange={(e) => setFormData({ ...formData, durationTo: e.target.value })}
+                        className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="3"
+                      />
+                    </div>
+                    <div>
+                      <select
+                        title="Select duration unit"
+                        value={formData.durationUnit}
+                        onChange={(e) => setFormData({ ...formData, durationUnit: e.target.value as "hours" | "days" })}
+                        className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      >
+                        <option value="hours">Hours</option>
+                        <option value="days">Days</option>
+                      </select>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                    Leave the second box empty for an exact estimate. Fill both for a range like 2 to 3 hours or days.
+                  </p>
+                  {buildDurationValue(formData.durationFrom, formData.durationTo, formData.durationUnit) && (
+                    <p className="mt-2 text-xs font-medium text-blue-600 dark:text-blue-400">
+                      Preview: {buildDurationValue(formData.durationFrom, formData.durationTo, formData.durationUnit)}
+                    </p>
+                  )}
                 </div>
               </div>
 

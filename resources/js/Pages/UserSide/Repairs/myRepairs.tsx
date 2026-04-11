@@ -429,6 +429,7 @@ const MyRepairs: React.FC = () => {
   const [refundOrderId, setRefundOrderId] = useState<number | null>(null);
   const [refundStep, setRefundStep] = useState<number>(1);
   const [refundReason, setRefundReason] = useState<string>('');
+  const [refundOtherReason, setRefundOtherReason] = useState<string>('');
   const [refundMedia, setRefundMedia] = useState<File[]>([]);
   const [refundMethod, setRefundMethod] = useState<string>('gcash');
   const [refundAccountName, setRefundAccountName] = useState<string>('');
@@ -1150,6 +1151,11 @@ const MyRepairs: React.FC = () => {
       Swal.fire({ icon: 'warning', title: 'Please select a reason', confirmButtonColor: '#000000' });
       return;
     }
+
+    if (!isRefundReasonValid()) {
+      Swal.fire({ icon: 'warning', title: 'Please provide details for Other reason', confirmButtonColor: '#000000' });
+      return;
+    }
     
     if (!isMediaRequirementMet()) {
       Swal.fire({ icon: 'warning', title: 'Please upload at least one photo or video', confirmButtonColor: '#000000' });
@@ -1202,10 +1208,13 @@ const MyRepairs: React.FC = () => {
     setIsSubmittingRefund(true);
     try {
       const reasonCode = refundReason.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 100) || 'customer_refund_request';
+      const otherReasonSummary = refundReason === 'Other' && refundOtherReason.trim().length > 0
+        ? `Other reason details: ${refundOtherReason.trim()}`
+        : '';
       const mediaSummary = refundMedia.length > 0
         ? `Uploaded media references: ${refundMedia.map((file) => file.name).join(', ')}`
         : '';
-      const reasonNotes = [refundNote.trim(), mediaSummary].filter(Boolean).join('\n').slice(0, 2000);
+      const reasonNotes = [otherReasonSummary, refundNote.trim(), mediaSummary].filter(Boolean).join('\n').slice(0, 2000);
 
       const preferredReturnChannel: PreferredReturnChannel =
         originalMethodOnly
@@ -1270,6 +1279,7 @@ const MyRepairs: React.FC = () => {
       setRefundOrderId(null);
       setRefundStep(1);
       setRefundReason('');
+      setRefundOtherReason('');
       setRefundMedia([]);
       setRefundMethod('gcash');
       setRefundAccountName('');
@@ -1364,6 +1374,18 @@ const MyRepairs: React.FC = () => {
 
   const isMediaRequirementMet = () => {
     return refundMedia.length >= 1;
+  };
+
+  const isRefundReasonValid = () => {
+    if (!refundReason) {
+      return false;
+    }
+
+    if (refundReason !== 'Other') {
+      return true;
+    }
+
+    return refundOtherReason.trim().length > 0;
   };
 
   // Phase 10D - Review functions
@@ -2808,6 +2830,7 @@ const MyRepairs: React.FC = () => {
                               setRefundOrderId(order.id);
                               setRefundStep(1);
                               setRefundReason('');
+                              setRefundOtherReason('');
                               setRefundMedia([]);
                               setRefundMethod('gcash');
                               setRefundAccountName('');
@@ -2952,13 +2975,34 @@ const MyRepairs: React.FC = () => {
                               name="refund_reason"
                               value={r}
                               checked={refundReason === r}
-                              onChange={(e) => setRefundReason(e.target.value)}
+                              onChange={(e) => {
+                                const nextReason = e.target.value;
+                                setRefundReason(nextReason);
+                                if (nextReason !== 'Other') {
+                                  setRefundOtherReason('');
+                                }
+                              }}
                               className="form-radio h-4 w-4 text-black shrink-0"
                             />
                             <span className="text-sm text-gray-700">{r}</span>
                           </label>
                         ))}
                       </div>
+
+                      {refundReason === 'Other' && (
+                        <div className="mt-4">
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Please specify <span className="text-red-500">*</span>
+                          </label>
+                          <textarea
+                            value={refundOtherReason}
+                            onChange={(e) => setRefundOtherReason(e.target.value)}
+                            className="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-gray-400 focus:outline-none resize-none"
+                            rows={3}
+                            placeholder="Please provide details for your refund reason..."
+                          />
+                        </div>
+                      )}
                     </div>
 
                     {/* Media Upload (Photos & Videos) */}
@@ -3219,6 +3263,7 @@ const MyRepairs: React.FC = () => {
                         setRefundOrderId(null);
                         setRefundStep(1);
                         setRefundReason('');
+                        setRefundOtherReason('');
                         setRefundMedia([]);
                         setRefundMethod('gcash');
                         setRefundAccountName('');
@@ -3238,6 +3283,10 @@ const MyRepairs: React.FC = () => {
                           Swal.fire({ icon: 'warning', title: 'Please select a reason', confirmButtonColor: '#000000' });
                           return;
                         }
+                        if (!isRefundReasonValid()) {
+                          Swal.fire({ icon: 'warning', title: 'Please provide details for Other reason', confirmButtonColor: '#000000' });
+                          return;
+                        }
                         if (!isMediaRequirementMet()) {
                           Swal.fire({ 
                             icon: 'warning', 
@@ -3249,9 +3298,9 @@ const MyRepairs: React.FC = () => {
                         }
                         setRefundStep(2);
                       }}
-                      disabled={!refundReason || !isMediaRequirementMet()}
+                      disabled={!isRefundReasonValid() || !isMediaRequirementMet()}
                       className={`${actionButtonBaseClass} ${
-                        refundReason && isMediaRequirementMet()
+                        isRefundReasonValid() && isMediaRequirementMet()
                           ? actionButtonPrimaryClass
                           : actionButtonDisabledClass
                       }`}
@@ -3261,9 +3310,9 @@ const MyRepairs: React.FC = () => {
                   ) : (
                     <button
                       onClick={handleSubmitRefund}
-                      disabled={!refundReason || !isMediaRequirementMet() || isSubmittingRefund}
+                      disabled={!isRefundReasonValid() || !isMediaRequirementMet() || isSubmittingRefund}
                       className={`${actionButtonBaseClass} ${
-                        refundReason && isMediaRequirementMet() && !isSubmittingRefund
+                        isRefundReasonValid() && isMediaRequirementMet() && !isSubmittingRefund
                           ? actionButtonPrimaryClass
                           : actionButtonDisabledClass
                       }`}
