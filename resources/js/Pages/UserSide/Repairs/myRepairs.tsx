@@ -13,7 +13,7 @@ const REPAIR_VAT_RATE_PERCENT = 12;
 
 
 type RepairStatus = 'new_request' | 'assigned_to_repairer' | 'repairer_accepted' | 'waiting_customer_confirmation' | 'owner_approval_pending' | 'owner_approved' | 'owner_rejected' | 'in_progress' | 'awaiting_parts' | 'completed' | 'ready_for_pickup' | 'shipped' | 'picked_up' | 'pending' | 'received' | 'cancelled' | 'rejected' | 'repairer_rejected';
-type RepairTab = 'new_request' | 'repairer_accepted' | 'waiting_customer_confirmation' | 'owner_approval_pending' | 'in_progress' | 'completed' | 'ready_for_pickup' | 'picked_up' | 'pending' | 'received' | 'cancelled' | 'rejected';
+type RepairTab = 'new_request' | 'repairer_accepted' | 'waiting_customer_confirmation' | 'owner_approval_pending' | 'in_progress' | 'completed' | 'ready_for_pickup' | 'picked_up' | 'pending' | 'received' | 'cancelled' | 'rejected' | 'return_refund';
 
 type RepairOrder = {
   id: number;
@@ -586,7 +586,26 @@ const MyRepairs: React.FC = () => {
     return normalized === 'requested' || normalized === 'approved' || normalized === 'processing' || normalized === 'succeeded';
   };
 
-  const mapRepairStatusToTab = (status: RepairStatus): RepairTab => {
+  const isReturnRefundRepair = (order: RepairOrder): boolean => {
+    const activeRefund = latestRefundByRepairId[order.id];
+    const refundStatus = String(activeRefund?.status || '').toLowerCase();
+    const paymentStatus = String(order.payment_status || '').toLowerCase();
+    const refundedAmount = Number(order.total_refunded_amount ?? 0);
+
+    return (
+      ['requested', 'approved', 'processing', 'succeeded', 'failed', 'rejected'].includes(refundStatus)
+      || paymentStatus === 'refunded'
+      || refundedAmount > 0
+    );
+  };
+
+  const mapRepairStatusToTab = (order: RepairOrder): RepairTab => {
+    if (isReturnRefundRepair(order)) {
+      return 'return_refund';
+    }
+
+    const status = order.status;
+
     switch (status) {
       case 'new_request':
       case 'assigned_to_repairer':
@@ -628,6 +647,7 @@ const MyRepairs: React.FC = () => {
     if (value === 'accepted') return 'pending';
     if (value === 'progress') return 'in_progress';
     if (value === 'pickup' || value === 'ready' || value === 'shipped') return 'ready_for_pickup';
+    if (value === 'return_refund' || value === 'return/refund' || value === 'return' || value === 'refund') return 'return_refund';
 
     if (
       value === 'new_request' ||
@@ -638,7 +658,8 @@ const MyRepairs: React.FC = () => {
       value === 'ready_for_pickup' ||
       value === 'picked_up' ||
       value === 'cancelled' ||
-      value === 'rejected'
+      value === 'rejected' ||
+      value === 'return_refund'
     ) {
       return value as RepairTab;
     }
@@ -682,7 +703,7 @@ const MyRepairs: React.FC = () => {
       return;
     }
 
-    setSelectedTab(mapRepairStatusToTab(targetRepair.status));
+    setSelectedTab(mapRepairStatusToTab(targetRepair));
 
     const scrollTimer = window.setTimeout(() => {
       const targetElement = document.querySelector(`[data-repair-id="${highlightRepairId}"]`);
@@ -1845,6 +1866,9 @@ const MyRepairs: React.FC = () => {
 
   // Count functions for repair statuses
   const getCountByStatus = (status: RepairTab) => {
+    if (status === 'return_refund') {
+      return orders.filter((order) => isReturnRefundRepair(order)).length;
+    }
     if (status === 'new_request') {
       // NEW REQUEST tab includes both new_request and assigned_to_repairer
       return orders.filter(order => 
@@ -1870,6 +1894,9 @@ const MyRepairs: React.FC = () => {
   };
 
   const filteredOrders = orders.filter(order => {
+    if (selectedTab === 'return_refund') {
+      return isReturnRefundRepair(order);
+    }
     if (selectedTab === 'new_request') {
       // NEW REQUEST tab shows new_request and assigned_to_repairer
       return order.status === 'new_request' || order.status === 'assigned_to_repairer';
@@ -1922,7 +1949,7 @@ const MyRepairs: React.FC = () => {
         ];
   const showPayoutAccountFields = refundRequiresPayoutDestination;
   const tabButtonBaseClass =
-    'relative inline-flex min-w-[112px] shrink-0 items-center justify-center gap-2 rounded-2xl border px-3 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 xl:min-w-0 xl:flex-1 xl:rounded-full xl:px-4 xl:text-[11px] xl:tracking-[0.16em]';
+    'relative inline-flex min-w-[112px] shrink-0 items-center justify-center gap-2 rounded-2xl border px-3 py-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 sm:min-w-[128px] xl:min-w-0 xl:flex-1 xl:rounded-full xl:px-4 xl:text-[11px] xl:tracking-[0.16em]';
   const tabBadgeClass =
     'pointer-events-none absolute -right-1 top-1 z-10 min-w-[20px] h-[20px] rounded-full bg-red-600 flex items-center justify-center text-[8px] font-bold leading-none text-white';
   const actionButtonBaseClass =
@@ -1943,6 +1970,7 @@ const MyRepairs: React.FC = () => {
     'in_progress',
     'ready_for_pickup',
     'picked_up',
+    'return_refund',
     'cancelled',
     'rejected',
   ];
@@ -1999,6 +2027,7 @@ const MyRepairs: React.FC = () => {
       case 'in_progress': return 'In Progress';
       case 'ready_for_pickup': return 'Ready';
       case 'picked_up': return 'Completed';
+      case 'return_refund': return 'Return/Refund';
       case 'cancelled': return 'Cancelled';
       case 'rejected': return 'Rejected';
       default: return 'Status';
@@ -2027,7 +2056,7 @@ const MyRepairs: React.FC = () => {
           </div>
 
           {/* Mobile Tabs */}
-          <div className="mb-6 flex w-full gap-2 overflow-x-auto pb-3 pl-4 pr-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden xl:hidden">
+          <div className="flex w-full gap-2 overflow-x-auto pb-3 pl-4 pr-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden xl:hidden">
             {repairTabs.map((tab) => (
               <button
                 key={tab}
@@ -2046,7 +2075,7 @@ const MyRepairs: React.FC = () => {
           </div>
 
           {/* Desktop Tabs */}
-          <div className="mb-12 hidden w-full gap-3 overflow-x-auto pb-2 pt-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden xl:flex">
+          <div className="mb-6 hidden w-full gap-2 overflow-x-auto pb-2 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden xl:mb-12 xl:flex xl:gap-3 xl:pt-2">
             <button
               onClick={() => setSelectedTab('new_request')}
               className={`${tabButtonBaseClass} ${
@@ -2134,6 +2163,21 @@ const MyRepairs: React.FC = () => {
               {getCountByStatus('picked_up') > 0 && (
                 <span className={tabBadgeClass}>
                   {getCountByStatus('picked_up')}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setSelectedTab('return_refund')}
+              className={`${tabButtonBaseClass} ${
+                selectedTab === 'return_refund'
+                  ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
+                  : 'border-gray-200 bg-white text-black/70 hover:-translate-y-0.5 hover:border-gray-300 hover:text-black'
+              }`}
+            >
+              RETURN/REFUND
+              {getCountByStatus('return_refund') > 0 && (
+                <span className={tabBadgeClass}>
+                  {getCountByStatus('return_refund')}
                 </span>
               )}
             </button>

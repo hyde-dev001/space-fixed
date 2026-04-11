@@ -7,6 +7,8 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use App\Models\Notification;
 use App\Models\NotificationPreference;
+use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Validator;
 
 /**
@@ -37,8 +39,7 @@ class ErpNotificationController extends Controller
             ], 403);
         }
 
-        $query = Notification::where('user_id', $user->id)
-            ->where('shop_id', $user->shop_owner_id)
+        $query = $this->buildScopedNotificationQuery($user)
             ->orderBy('created_at', 'desc');
 
         // Filter by read status if requested
@@ -61,8 +62,7 @@ class ErpNotificationController extends Controller
         $notifications = $query->paginate($perPage);
 
         // Count unread for the badge/counter
-        $unreadCount = Notification::where('user_id', $user->id)
-            ->where('shop_id', $user->shop_owner_id)
+        $unreadCount = $this->buildScopedNotificationQuery($user)
             ->unread()
             ->count();
 
@@ -87,8 +87,7 @@ class ErpNotificationController extends Controller
             return response()->json(['count' => 0]);
         }
 
-        $count = Notification::where('user_id', $user->id)
-            ->where('shop_id', $user->shop_owner_id)
+        $count = $this->buildScopedNotificationQuery($user)
             ->unread()
             ->count();
 
@@ -107,8 +106,7 @@ class ErpNotificationController extends Controller
             return response()->json([]);
         }
 
-        $notifications = Notification::where('user_id', $user->id)
-            ->where('shop_id', $user->shop_owner_id)
+        $notifications = $this->buildScopedNotificationQuery($user)
             ->where('is_archived', false)
             ->orderBy('created_at', 'desc')
             ->limit($limit)
@@ -131,9 +129,8 @@ class ErpNotificationController extends Controller
             ], 403);
         }
 
-        $notification = Notification::where('id', $id)
-            ->where('user_id', $user->id)
-            ->where('shop_id', $user->shop_owner_id)
+        $notification = $this->buildScopedNotificationQuery($user)
+            ->where('id', $id)
             ->first();
 
         if (!$notification) {
@@ -165,8 +162,7 @@ class ErpNotificationController extends Controller
             ], 403);
         }
 
-        $count = Notification::where('user_id', $user->id)
-            ->where('shop_id', $user->shop_owner_id)
+        $count = $this->buildScopedNotificationQuery($user)
             ->unread()
             ->update([
                 'is_read' => true,
@@ -194,9 +190,8 @@ class ErpNotificationController extends Controller
             ], 403);
         }
 
-        $notification = Notification::where('id', $id)
-            ->where('user_id', $user->id)
-            ->where('shop_id', $user->shop_owner_id)
+        $notification = $this->buildScopedNotificationQuery($user)
+            ->where('id', $id)
             ->first();
 
         if (!$notification) {
@@ -335,8 +330,7 @@ class ErpNotificationController extends Controller
             ], 403);
         }
 
-        $baseQuery = Notification::where('user_id', $user->id)
-            ->where('shop_id', $user->shop_owner_id);
+        $baseQuery = $this->buildScopedNotificationQuery($user);
 
         $stats = [
             'total' => (clone $baseQuery)->count(),
@@ -351,5 +345,15 @@ class ErpNotificationController extends Controller
         ];
 
         return response()->json($stats);
+    }
+
+    private function buildScopedNotificationQuery(User $user): Builder
+    {
+        return Notification::query()
+            ->where('user_id', $user->id)
+            ->where(function (Builder $query) use ($user) {
+                $query->where('shop_id', $user->shop_owner_id)
+                    ->orWhereNull('shop_id');
+            });
     }
 }

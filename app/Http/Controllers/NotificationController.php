@@ -30,7 +30,6 @@ class NotificationController extends Controller
         $user = $request->user('user');
         
         $query = Notification::where('user_id', $user->id)
-            ->whereNull('shop_owner_id') // Ensure customer notifications only
             ->active() // Only active (not archived) by default
             ->orderBy('created_at', 'desc');
 
@@ -304,7 +303,6 @@ class NotificationController extends Controller
         
         $notification = Notification::where('id', $id)
             ->where('user_id', $user->id)
-            ->whereNull('shop_owner_id')
             ->first();
 
         if (!$notification) {
@@ -330,7 +328,7 @@ class NotificationController extends Controller
         $user = $request->user('user');
 
         $stats = [
-            'total' => Notification::where('user_id', $user->id)->whereNull('shop_owner_id')->count(),
+            'total' => Notification::where('user_id', $user->id)->count(),
             'unread' => $this->notificationService->getUnreadCount($user->id, false),
             'by_category' => [
                 'orders' => Notification::where('user_id', $user->id)->byCategory('orders')->count(),
@@ -416,7 +414,6 @@ class NotificationController extends Controller
         
         $notification = Notification::where('id', $id)
             ->where('user_id', $user->id)
-            ->whereNull('shop_owner_id')
             ->first();
 
         if (!$notification) {

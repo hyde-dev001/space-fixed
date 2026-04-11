@@ -6,6 +6,17 @@ layer(base);
 /* Flatpickr CSS */
 @import 'flatpickr/dist/flatpickr.min.css';
 
+/* Hide viewport scrollbar UI on UserSide pages while keeping scroll behavior */
+.userside-hide-scrollbar {
+  -ms-overflow-style: none;
+}
+
+.userside-hide-scrollbar::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 /* Custom Flatpickr styling for dashboard consistency */
 .flatpickr-calendar {
   background: white !important;

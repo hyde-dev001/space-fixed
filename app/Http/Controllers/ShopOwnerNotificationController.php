@@ -7,6 +7,9 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use App\Models\Notification;
 use App\Models\NotificationPreference;
+use App\Models\User;
+use App\Models\ShopOwner;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Validator;
 
 /**
@@ -28,8 +31,8 @@ class ShopOwnerNotificationController extends Controller
     public function index(Request $request): JsonResponse
     {
         $shopOwner = $request->user('shop_owner');
-        
-        $query = Notification::where('shop_owner_id', $shopOwner->id);
+
+        $query = $this->buildScopedNotificationQuery($shopOwner);
 
         // Filter by archived status first
         if ($request->has('archived') && $request->boolean('archived')) {
@@ -82,7 +85,7 @@ class ShopOwnerNotificationController extends Controller
         $notifications = $query->paginate($perPage);
 
         // Add unread count to response
-        $unreadCount = Notification::where('shop_owner_id', $shopOwner->id)
+        $unreadCount = $this->buildScopedNotificationQuery($shopOwner)
             ->active()
             ->unread()
             ->count();
@@ -99,7 +102,9 @@ class ShopOwnerNotificationController extends Controller
     public function unreadCount(Request $request): JsonResponse
     {
         $shopOwner = $request->user('shop_owner');
-        $count = $this->notificationService->getUnreadCount($shopOwner->id, true);
+        $count = $this->buildScopedNotificationQuery($shopOwner)
+            ->unread()
+            ->count();
 
         return response()->json(['count' => $count]);
     }
@@ -111,8 +116,12 @@ class ShopOwnerNotificationController extends Controller
     {
         $shopOwner = $request->user('shop_owner');
         $limit = $request->input('limit', 5);
-        
-        $notifications = $this->notificationService->getRecent($shopOwner->id, $limit, true);
+
+        $notifications = $this->buildScopedNotificationQuery($shopOwner)
+            ->active()
+            ->orderBy('created_at', 'desc')
+            ->limit($limit)
+            ->get();
 
         return response()->json($notifications);
     }
@@ -123,15 +132,19 @@ class ShopOwnerNotificationController extends Controller
     public function markAsRead(Request $request, int $id): JsonResponse
     {
         $shopOwner = $request->user('shop_owner');
-        
-        $success = $this->notificationService->markAsRead($id, $shopOwner->id, true);
 
-        if (!$success) {
+        $notification = $this->buildScopedNotificationQuery($shopOwner)
+            ->where('id', $id)
+            ->first();
+
+        if (!$notification) {
             return response()->json([
                 'success' => false,
                 'message' => 'Notification not found or already read'
             ], 404);
         }
+
+        $notification->markAsRead();
 
         return response()->json([
             'success' => true,
@@ -145,8 +158,13 @@ class ShopOwnerNotificationController extends Controller
     public function markAllAsRead(Request $request): JsonResponse
     {
         $shopOwner = $request->user('shop_owner');
-        
-        $count = $this->notificationService->markAllAsRead($shopOwner->id, true);
+
+        $count = $this->buildScopedNotificationQuery($shopOwner)
+            ->unread()
+            ->update([
+                'is_read' => true,
+                'read_at' => now(),
+            ]);
 
         return response()->json([
             'success' => true,
@@ -161,9 +179,9 @@ class ShopOwnerNotificationController extends Controller
     public function destroy(Request $request, int $id): JsonResponse
     {
         $shopOwner = $request->user('shop_owner');
-        
-        $notification = Notification::where('id', $id)
-            ->where('shop_owner_id', $shopOwner->id)
+
+        $notification = $this->buildScopedNotificationQuery($shopOwner)
+            ->where('id', $id)
             ->first();
 
         if (!$notification) {
@@ -187,9 +205,9 @@ class ShopOwnerNotificationController extends Controller
     public function unarchive(Request $request, int $id): JsonResponse
     {
         $shopOwner = $request->user('shop_owner');
-        
-        $notification = Notification::where('id', $id)
-            ->where('shop_owner_id', $shopOwner->id)
+
+        $notification = $this->buildScopedNotificationQuery($shopOwner)
+            ->where('id', $id)
             ->first();
 
         if (!$notification) {
@@ -308,19 +326,53 @@ class ShopOwnerNotificationController extends Controller
     public function stats(Request $request): JsonResponse
     {
         $shopOwner = $request->user('shop_owner');
+        $baseQuery = $this->buildScopedNotificationQuery($shopOwner)->active();
 
         $stats = [
-            'total' => Notification::where('shop_owner_id', $shopOwner->id)->active()->count(),
-            'unread' => $this->notificationService->getUnreadCount($shopOwner->id, true),
+            'total' => (clone $baseQuery)->count(),
+            'unread' => (clone $baseQuery)->unread()->count(),
             'by_category' => [
-                'orders' => Notification::where('shop_owner_id', $shopOwner->id)->active()->byCategory('orders')->count(),
-                'finance' => Notification::where('shop_owner_id', $shopOwner->id)->active()->byCategory('finance')->count(),
-                'crm' => Notification::where('shop_owner_id', $shopOwner->id)->active()->byCategory('crm')->count(),
-                'general' => Notification::where('shop_owner_id', $shopOwner->id)->active()->byCategory('general')->count(),
+                'orders' => (clone $baseQuery)->byCategory('orders')->count(),
+                'finance' => (clone $baseQuery)->byCategory('finance')->count(),
+                'crm' => (clone $baseQuery)->byCategory('crm')->count(),
+                'general' => (clone $baseQuery)->byCategory('general')->count(),
             ],
-            'requires_action' => Notification::where('shop_owner_id', $shopOwner->id)->active()->requiresAction()->count(),
+            'requires_action' => (clone $baseQuery)->requiresAction()->count(),
         ];
 
         return response()->json($stats);
+    }
+
+    private function resolveLinkedUserId(ShopOwner $shopOwner): ?int
+    {
+        $email = strtolower(trim((string) $shopOwner->email));
+        if ($email === '') {
+            return null;
+        }
+
+        $userId = User::query()
+            ->whereRaw('LOWER(email) = ?', [$email])
+            ->value('id');
+
+        return $userId ? (int) $userId : null;
+    }
+
+    private function buildScopedNotificationQuery(ShopOwner $shopOwner): Builder
+    {
+        $linkedUserId = $this->resolveLinkedUserId($shopOwner);
+
+        return Notification::query()->where(function (Builder $query) use ($shopOwner, $linkedUserId) {
+            $query->where('shop_owner_id', $shopOwner->id);
+
+            if ($linkedUserId !== null) {
+                $query->orWhere(function (Builder $nested) use ($linkedUserId, $shopOwner) {
+                    $nested->where('user_id', $linkedUserId)
+                        ->where(function (Builder $scopeQuery) use ($shopOwner) {
+                            $scopeQuery->where('shop_id', $shopOwner->id)
+                                ->orWhereNull('shop_id');
+                        });
+                });
+            }
+        });
     }
 }
