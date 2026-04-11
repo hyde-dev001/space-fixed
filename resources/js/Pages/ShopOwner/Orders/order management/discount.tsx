@@ -138,12 +138,31 @@ const ChartIcon = ({ className = "" }: { className?: string }) => (
 	</svg>
 );
 
+const EyeIcon = ({ className = "" }: { className?: string }) => (
+	<svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+		<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+		<circle cx="12" cy="12" r="3" />
+	</svg>
+);
+
+const TrashIcon = ({ className = "" }: { className?: string }) => (
+	<svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+		<path d="M3 6h18" />
+		<path d="M8 6V4h8v2" />
+		<path d="M19 6l-1 14H6L5 6" />
+		<path d="M10 11v6" />
+		<path d="M14 11v6" />
+	</svg>
+);
+
 export default function VouchersDiscountPage() {
 	const [campaigns, setCampaigns] = useState<Campaign[]>([]);
 	const [products, setProducts] = useState<ProductOption[]>([]);
 	const [isLoading, setIsLoading] = useState(false);
 	const [isSaving, setIsSaving] = useState(false);
 	const [isUndoing, setIsUndoing] = useState(false);
+	const [deletingCampaignId, setDeletingCampaignId] = useState<number | null>(null);
+	const [editingCampaignId, setEditingCampaignId] = useState<number | null>(null);
 	const [form, setForm] = useState<PromoFormState>(buildInitialForm());
 	const [filter, setFilter] = useState<"all" | PromoKind>("all");
 
@@ -293,6 +312,29 @@ export default function VouchersDiscountPage() {
 	const saleSavingsPercent = isProductDiscountMode && currentProductPrice > 0
 		? Math.round((saleSavings / baselineOriginalPrice) * 100)
 		: 0;
+	const previewDurationDays = form.startDate && form.endDate
+		? Math.max(
+			1,
+			Math.floor(
+				(new Date(form.endDate).getTime() - new Date(form.startDate).getTime())
+				/ (1000 * 60 * 60 * 24)
+			) + 1
+		)
+		: 0;
+	const previewDurationLabel = isProductDiscountMode && !form.discountScheduleEnabled
+		? "Instant"
+		: `${previewDurationDays} day${previewDurationDays === 1 ? "" : "s"}`;
+	const previewScopeLabel = isProductDiscountMode
+		? (form.discountScheduleEnabled ? "Scheduled sale" : "Immediate sale")
+		: (Number(form.usageLimit || 0) > 0 ? `${form.usageLimit} max uses` : "Unlimited uses");
+	const previewIntensity = Math.min(100, Math.max(14, previewDurationDays * 8));
+	const previewIntensityClass = previewIntensity >= 80
+		? "w-5/6"
+		: previewIntensity >= 60
+			? "w-2/3"
+			: previewIntensity >= 40
+				? "w-1/2"
+				: "w-1/3";
 	const previewTitle = form.name || (isProductDiscountMode ? `${selectedProduct?.name ?? "Selected product"} sale` : "Untitled promo");
 
 	const handleUndoSalePrice = async () => {
@@ -372,6 +414,100 @@ export default function VouchersDiscountPage() {
 			});
 		} finally {
 			setIsUndoing(false);
+		}
+	};
+
+	const handleEditCampaign = (campaign: Campaign) => {
+		const fallbackProductId = products[0] ? String(products[0].id) : "";
+		const productExists = campaign.productId
+			? products.some((product) => String(product.id) === campaign.productId)
+			: false;
+		const targetProductId = campaign.productId && productExists ? campaign.productId : fallbackProductId;
+		setEditingCampaignId(campaign.id);
+
+		setForm((current) => ({
+			...current,
+			kind: campaign.kind,
+			name: campaign.name,
+			code: campaign.kind === "voucher" ? campaign.code : "AUTO-DISCOUNT",
+			productId: targetProductId,
+			discountScheduleEnabled: campaign.kind === "discount",
+			discountMode: campaign.discountMode,
+			value: campaign.value > 0 ? String(campaign.value) : "",
+			minSpend: campaign.minSpend > 0 ? String(campaign.minSpend) : "",
+			usageLimit: campaign.usageLimit > 0 ? String(campaign.usageLimit) : "",
+			startDate: campaign.startDate || current.startDate,
+			endDate: campaign.endDate || current.endDate,
+		}));
+
+		window.scrollTo({ top: 0, behavior: "smooth" });
+
+		void Swal.fire({
+			title: "Campaign loaded",
+			text: "Review the fields above, update what you need, then click Save campaign.",
+			icon: "info",
+			confirmButtonColor: "#111827",
+		});
+	};
+
+	const handleDeleteCampaign = async (campaign: Campaign) => {
+		const confirmation = await Swal.fire({
+			title: "Delete campaign?",
+			text: `This will permanently remove ${campaign.name}.`,
+			icon: "warning",
+			showCancelButton: true,
+			confirmButtonColor: "#DC2626",
+			cancelButtonColor: "#9CA3AF",
+			confirmButtonText: "Yes, delete it",
+			cancelButtonText: "Cancel",
+		});
+
+		if (!confirmation.isConfirmed) {
+			return;
+		}
+
+		setDeletingCampaignId(campaign.id);
+
+		try {
+			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
+
+			const response = await fetch(`/api/shop-owner/promos/${campaign.id}`, {
+				method: "DELETE",
+				credentials: "include",
+				headers: {
+					Accept: "application/json",
+					"X-CSRF-TOKEN": csrfToken,
+				},
+			});
+
+			const result = await response.json().catch(() => ({}));
+
+			if (!response.ok) {
+				throw new Error(result?.message || "Failed to delete campaign");
+			}
+
+			await fetchCampaigns();
+
+			if (editingCampaignId === campaign.id) {
+				setEditingCampaignId(null);
+				setForm(buildInitialForm(products[0] ? String(products[0].id) : ""));
+			}
+
+			await Swal.fire({
+				title: "Campaign deleted",
+				text: `${campaign.name} has been removed successfully.`,
+				icon: "success",
+				confirmButtonColor: "#111827",
+			});
+		} catch (error: any) {
+			await Swal.fire({
+				title: "Delete failed",
+				text: error?.message || "Unable to delete campaign right now.",
+				icon: "error",
+				confirmButtonColor: "#111827",
+			});
+		} finally {
+			setDeletingCampaignId((current) => (current === campaign.id ? null : current));
 		}
 	};
 
@@ -517,10 +653,77 @@ export default function VouchersDiscountPage() {
 			return;
 		}
 
+		const confirmation = await Swal.fire({
+			title: editingCampaignId !== null ? "Update campaign?" : "Save campaign?",
+			text: isProductDiscountMode
+				? (
+					form.discountScheduleEnabled
+						? `Schedule ${selectedProduct?.name || "this product"} at ${formatCurrency(Number(form.value))} from ${form.startDate} to ${form.endDate}?`
+						: `Apply sale price ${formatCurrency(Number(form.value))} to ${selectedProduct?.name || "this product"} now?`
+				)
+				: `${editingCampaignId !== null ? "Update" : "Create"} campaign \"${form.name.trim()}\" with code ${form.code.trim().toUpperCase()}?`,
+			icon: "question",
+			showCancelButton: true,
+			confirmButtonColor: "#111827",
+			cancelButtonColor: "#9CA3AF",
+			confirmButtonText: editingCampaignId !== null ? "Yes, update it" : "Yes, save it",
+			cancelButtonText: "Cancel",
+		});
+
+		if (!confirmation.isConfirmed) {
+			return;
+		}
+
 		setIsSaving(true);
 
 		try {
 			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
+
+			if (editingCampaignId !== null) {
+				const payload = {
+					kind: form.kind === "discount" ? "sale" : "voucher",
+					scope: form.productId ? "product_specific" : "shop_wide",
+					product_ids: form.productId ? [Number(form.productId)] : [],
+					name: form.name.trim(),
+					code: form.kind === "voucher" ? form.code.trim().toUpperCase() : null,
+					discount_mode: form.discountMode,
+					value: Number(form.value),
+					min_spend: Number(form.minSpend || 0),
+					usage_limit: Number(form.usageLimit || 0) || null,
+					start_at: form.startDate,
+					end_at: form.endDate,
+				};
+
+				const response = await fetch(`/api/shop-owner/promos/${editingCampaignId}`, {
+					method: "PUT",
+					credentials: "include",
+					headers: {
+						"Content-Type": "application/json",
+						Accept: "application/json",
+						"X-CSRF-TOKEN": csrfToken,
+					},
+					body: JSON.stringify(payload),
+				});
+
+				const result = await response.json().catch(() => ({}));
+
+				if (!response.ok) {
+					throw new Error(result?.message || "Failed to update campaign");
+				}
+
+				await fetchCampaigns();
+				setEditingCampaignId(null);
+				setForm(buildInitialForm(products[0] ? String(products[0].id) : ""));
+
+				await Swal.fire({
+					title: "Campaign updated",
+					text: `${payload.name} has been updated successfully.`,
+					icon: "success",
+					confirmButtonColor: "#111827",
+				});
+
+				return;
+			}
 
 			if (isProductDiscountMode) {
 				const productId = Number(form.productId);
@@ -619,6 +822,7 @@ export default function VouchersDiscountPage() {
 			}
 
 			await fetchCampaigns();
+			setEditingCampaignId(null);
 			setForm(buildInitialForm(products[0] ? String(products[0].id) : ""));
 
 			await Swal.fire({
@@ -697,7 +901,7 @@ export default function VouchersDiscountPage() {
 					</div>
 				</section>
 
-				<section className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.2fr)_420px]">
+				<section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_420px]">
 					<div className="rounded-[26px] border border-slate-200 bg-white p-6 shadow-sm">
 						{isLoading && (
 							<div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
@@ -888,7 +1092,10 @@ export default function VouchersDiscountPage() {
 							<div className="flex flex-col gap-3 border-t border-slate-200 pt-5 sm:flex-row sm:items-center sm:justify-end">
 								<button
 									type="button"
-									onClick={() => setForm(buildInitialForm(products[0] ? String(products[0].id) : ""))}
+									onClick={() => {
+										setEditingCampaignId(null);
+										setForm(buildInitialForm(products[0] ? String(products[0].id) : ""));
+									}}
 									className="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
 								>
 									Reset form
@@ -898,7 +1105,7 @@ export default function VouchersDiscountPage() {
 										type="button"
 										onClick={handleUndoSalePrice}
 										disabled={isUndoing}
-										className="rounded-2xl border border-amber-300 bg-amber-50 px-5 py-3 text-sm font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+										className="rounded-2xl border border-slate-900 bg-white px-5 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-900 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
 									>
 										{isUndoing ? "Undoing..." : "Undo sale"}
 									</button>
@@ -908,21 +1115,21 @@ export default function VouchersDiscountPage() {
 									disabled={isSaving}
 									className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
 								>
-									{isSaving ? "Saving..." : "Save campaign"}
+									{isSaving ? "Saving..." : (editingCampaignId !== null ? "Update campaign" : "Save campaign")}
 								</button>
 							</div>
 						</form>
 					</div>
 
-					<aside className="space-y-6">
-						<div className="rounded-[26px] border border-slate-200 bg-white p-6 shadow-sm">
+					<aside className="h-full">
+						<div className="flex h-full flex-col rounded-[26px] border border-slate-200 bg-white p-6 shadow-sm">
 							<div className="flex items-center justify-between">
 								<h2 className="text-lg font-semibold text-slate-900">Promo preview</h2>
 								<span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
 									{form.kind}
 								</span>
 							</div>
-							<div className="mt-5 rounded-[24px] bg-slate-950 p-5 text-white shadow-[0_20px_60px_-30px_rgba(15,23,42,0.85)]">
+							<div className="mt-5 flex flex-1 flex-col rounded-[24px] bg-slate-950 p-5 text-white shadow-[0_20px_60px_-30px_rgba(15,23,42,0.85)]">
 								<div className="flex items-start justify-between gap-4">
 									<div>
 										<p className="text-xs uppercase tracking-[0.24em] text-slate-400">Offer Summary</p>
@@ -974,6 +1181,25 @@ export default function VouchersDiscountPage() {
 										</span>
 									</div>
 								</div>
+
+								<div className="mt-6 border-t border-white/10 pt-4">
+									<p className="text-[11px] uppercase tracking-[0.24em] text-slate-400">Promo Pulse</p>
+									<div className="mt-3 grid grid-cols-2 gap-3">
+										<div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+											<p className="text-[11px] uppercase tracking-wide text-slate-400">Duration</p>
+											<p className="mt-1 text-sm font-semibold text-white">{previewDurationLabel}</p>
+										</div>
+										<div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+											<p className="text-[11px] uppercase tracking-wide text-slate-400">Scope</p>
+											<p className="mt-1 text-sm font-semibold text-white">{previewScopeLabel}</p>
+										</div>
+									</div>
+									<div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-white/10">
+										<div
+											className={`h-full rounded-full bg-linear-to-r from-cyan-300 via-blue-300 to-indigo-300 ${previewIntensityClass}`}
+										/>
+									</div>
+								</div>
 							</div>
 						</div>
 					</aside>
@@ -1012,7 +1238,8 @@ export default function VouchersDiscountPage() {
 									<th className="pb-3 pr-4">Offer</th>
 									<th className="pb-3 pr-4">Schedule</th>
 									<th className="pb-3 pr-4">Usage</th>
-									<th className="pb-3">Status</th>
+									<th className="pb-3 pr-4">Status</th>
+									<th className="pb-3 text-right">Actions</th>
 								</tr>
 							</thead>
 							<tbody className="divide-y divide-slate-100">
@@ -1045,6 +1272,27 @@ export default function VouchersDiscountPage() {
 											<span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold capitalize ${getStatusClasses(campaign.status)}`}>
 												{campaign.status}
 											</span>
+										</td>
+										<td className="py-4 text-right">
+											<div className="inline-flex items-center gap-2">
+												<button
+													type="button"
+													onClick={() => handleEditCampaign(campaign)}
+													className="rounded-lg p-2 text-blue-600 transition-colors hover:bg-blue-50"
+													title="View / Edit"
+												>
+													<EyeIcon className="h-5 w-5" />
+												</button>
+												<button
+													type="button"
+													onClick={() => handleDeleteCampaign(campaign)}
+													disabled={deletingCampaignId === campaign.id}
+													className="rounded-lg p-2 text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+													title="Delete"
+												>
+													<TrashIcon className="h-5 w-5" />
+												</button>
+											</div>
 										</td>
 									</tr>
 								))}

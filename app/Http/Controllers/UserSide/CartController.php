@@ -127,7 +127,30 @@ class CartController extends Controller
                 'product.shopOwner:id,business_name',
             ])
             ->get()
-            ->map(function ($item) {
+            ->map(function (CartItem $item): array {
+                $product = $item->product;
+                $latestPrice = $product ? (float) $product->price : (float) $item->price;
+                $latestStockQuantity = $product ? (int) $product->stock_quantity : (int) ($item->stock_quantity ?? 0);
+                $latestProductName = $product?->name ?: $item->product_name;
+                $latestImage = $item->image ?: $product?->main_image;
+
+                // Keep cart snapshot fields aligned with current product data.
+                if ($product) {
+                    $needsSnapshotRefresh =
+                        round((float) $item->price, 2) !== round($latestPrice, 2)
+                        || (int) ($item->stock_quantity ?? 0) !== $latestStockQuantity
+                        || (string) $item->product_name !== (string) $latestProductName
+                        || (string) ($item->image ?? '') !== (string) ($latestImage ?? '');
+
+                    if ($needsSnapshotRefresh) {
+                        $item->price = $latestPrice;
+                        $item->stock_quantity = $latestStockQuantity;
+                        $item->product_name = $latestProductName;
+                        $item->image = $latestImage;
+                        $item->save();
+                    }
+                }
+
                 $shopOwnerId = $item->product?->shop_owner_id;
                 $shopName = $item->product?->shopOwner?->business_name;
 
@@ -135,13 +158,13 @@ class CartController extends Controller
                     'id' => $item->id,
                     'product_id' => $item->product_id,
                     'pid' => $item->product_id,
-                    'name' => $item->product_name,
-                    'price' => $item->price,
+                    'name' => $latestProductName,
+                    'price' => $latestPrice,
                     'size' => $item->size,
                     'qty' => $item->quantity,
                     'quantity' => $item->quantity,
-                    'image' => $item->image,
-                    'stock_quantity' => $item->stock_quantity,
+                    'image' => $latestImage,
+                    'stock_quantity' => $latestStockQuantity,
                     'options' => $item->options,
                     'shop_owner_id' => $shopOwnerId,
                     'shop_id' => $shopOwnerId,

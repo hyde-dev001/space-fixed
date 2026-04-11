@@ -345,7 +345,7 @@ export default function ERPShoePricing() {
         </div>
 
         <div className="mb-12 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <MetricCard title="Active SKUs" value={activeCount} icon={TagIcon} color="info" description="Live pricing" />
+          <MetricCard title="Active Stocks" value={activeCount} icon={TagIcon} color="info" description="Live pricing" />
           <MetricCard title="Under Review" value={underReviewCount} icon={WalletIcon} color="warning" description="Awaiting finance review" />
           <MetricCard title="Awaiting Owner" value={awaitingOwnerCount} icon={BoxIcon} color="info" description="Forwarded to owner" />
           <MetricCard title="Rejected" value={rejectedCount} icon={ArrowDownIcon} color="warning" description="Needs adjustment" />
