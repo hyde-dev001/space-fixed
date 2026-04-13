@@ -436,6 +436,53 @@ class RepairPosPaymentFlowTest extends TestCase
     }
 
     #[Test]
+    public function repairer_repairs_endpoint_uses_user_scope_when_shop_owner_session_also_exists(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create([
+            'business_type' => 'both',
+            'registration_type' => 'company',
+        ]);
+
+        $repairerRole = \Spatie\Permission\Models\Role::firstOrCreate([
+            'name' => 'Repairer',
+            'guard_name' => 'user',
+        ]);
+
+        /** @var \App\Models\User $repairer */
+        $repairer = \App\Models\User::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'status' => 'active',
+        ]);
+        $repairer->assignRole($repairerRole);
+
+        $assignedRepair = \App\Models\RepairRequest::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'assigned_repairer_id' => $repairer->id,
+            'status' => 'assigned_to_repairer',
+            'request_id' => 'REP-GUARD-CONTEXT-ASSIGNED-001',
+        ]);
+
+        $unassignedNewRequest = \App\Models\RepairRequest::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'assigned_repairer_id' => null,
+            'status' => 'new_request',
+            'request_id' => 'REP-GUARD-CONTEXT-NEW-001',
+        ]);
+
+        // Simulate a browser session where both guards are authenticated.
+        $this->actingAs($repairer, 'user');
+        $this->actingAs($shopOwner, 'shop_owner');
+
+        $response = $this->getJson('/api/repairer/repairs');
+        $response->assertOk()->assertJsonPath('success', true);
+
+        $repairIds = collect($response->json('data'))->pluck('id')->map(fn ($id) => (int) $id);
+
+        $this->assertTrue($repairIds->contains((int) $assignedRepair->id));
+        $this->assertFalse($repairIds->contains((int) $unassignedNewRequest->id));
+    }
+
+    #[Test]
     public function repairer_can_accept_manual_pos_walk_in_without_customer_account(): void
     {
         $shopOwner = \App\Models\ShopOwner::factory()->approved()->create([

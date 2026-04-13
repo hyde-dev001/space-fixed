@@ -17,9 +17,12 @@ use Illuminate\Validation\ValidationException;
 use Illuminate\Auth\Events\Registered;
 use App\Rules\NotDisposableEmail;
 use Inertia\Inertia;
+use Inertia\Response as InertiaResponse;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\Validator;
 
 /**
@@ -36,6 +39,280 @@ class ShopOwnerAuthController extends Controller
     private const LOGIN_EMAIL_OTP_TTL_MINUTES = 10;
     private const LOGIN_EMAIL_OTP_MAX_ATTEMPTS = 5;
     private const LOGIN_TWO_FACTOR_SESSION_KEY = 'shop_owner_2fa_entry';
+
+    /**
+     * Show signed resubmission form for rejected applications.
+     */
+    public function showResubmissionForm(Request $request, ShopOwner $shopOwner): InertiaResponse
+    {
+        $statusValue = $shopOwner->status instanceof ShopOwnerStatus
+            ? $shopOwner->status->value
+            : (string) $shopOwner->status;
+
+        if ($statusValue !== ShopOwnerStatus::REJECTED->value) {
+            abort(403, 'Only rejected applications can be resubmitted.');
+        }
+
+        $documents = $shopOwner->documents()->get()->groupBy('document_type');
+        $toDocumentPayload = static function ($document) {
+            if (!$document) {
+                return null;
+            }
+
+            return [
+                'id' => $document->id,
+                'type' => $document->document_type,
+                'url' => asset('storage/' . ltrim((string) $document->file_path, '/')),
+                'fileName' => basename((string) $document->file_path),
+            ];
+        };
+
+        $submitUrl = URL::temporarySignedRoute(
+            'shop-owner.resubmission.submit',
+            now()->addDays(14),
+            ['shopOwner' => $shopOwner->id]
+        );
+
+        return Inertia::render('UserSide/Auth/ShopOwnerRegistration', [
+            'resubmission' => [
+                'isResubmission' => true,
+                'submitUrl' => $submitUrl,
+                'rejectionReason' => $shopOwner->rejection_reason,
+                'form' => [
+                    'firstName' => (string) ($shopOwner->first_name ?? ''),
+                    'lastName' => (string) ($shopOwner->last_name ?? ''),
+                    'email' => (string) ($shopOwner->email ?? ''),
+                    'phone' => (string) ($shopOwner->phone ?? ''),
+                    'businessName' => (string) ($shopOwner->business_name ?? ''),
+                    'businessAddress' => (string) ($shopOwner->business_address ?? ''),
+                    'postalCode' => (string) ($shopOwner->postal_code ?? ''),
+                    'businessType' => (string) ($shopOwner->business_type ?? ''),
+                    'registrationType' => (string) ($shopOwner->registration_type ?? 'individual'),
+                    'shopLatitude' => $shopOwner->shop_latitude,
+                    'shopLongitude' => $shopOwner->shop_longitude,
+                    'shopAddress' => (string) ($shopOwner->shop_address ?? ''),
+                    'shopGeofenceRadius' => (int) ($shopOwner->shop_geofence_radius ?? 90),
+                ],
+                'documents' => [
+                    'dti_registration' => $toDocumentPayload($documents->get('dti_registration')?->sortByDesc('id')->first()),
+                    'mayors_permit' => $toDocumentPayload($documents->get('mayors_permit')?->sortByDesc('id')->first()),
+                    'bir_certificate' => $toDocumentPayload($documents->get('bir_certificate')?->sortByDesc('id')->first()),
+                    'valid_id' => $toDocumentPayload($documents->get('valid_id')?->sortByDesc('id')->first()),
+                    'other_documents' => $documents
+                        ->get('other_supporting_document', collect())
+                        ->sortByDesc('id')
+                        ->values()
+                        ->map(static function ($document) {
+                            return [
+                                'id' => $document->id,
+                                'type' => $document->document_type,
+                                'url' => asset('storage/' . ltrim((string) $document->file_path, '/')),
+                                'fileName' => basename((string) $document->file_path),
+                            ];
+                        })
+                        ->all(),
+                ],
+            ],
+        ]);
+    }
+
+    /**
+     * Resubmit rejected application with updated fields and documents.
+     */
+    public function resubmit(Request $request, ShopOwner $shopOwner, CaviteLocationPolicyService $caviteLocationPolicy)
+    {
+        $statusValue = $shopOwner->status instanceof ShopOwnerStatus
+            ? $shopOwner->status->value
+            : (string) $shopOwner->status;
+
+        if ($statusValue !== ShopOwnerStatus::REJECTED->value) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only rejected applications can be resubmitted.',
+            ], 422);
+        }
+
+        $requiredDocumentTypes = [
+            'dti_registration',
+            'mayors_permit',
+            'bir_certificate',
+            'valid_id',
+        ];
+
+        try {
+            $validated = $request->validate([
+                'first_name' => 'required|string|max:255|min:2',
+                'last_name' => 'required|string|max:255|min:2',
+                'phone' => ['required', 'regex:/^\d{11}$/'],
+                'business_name' => 'required|string|max:255',
+                'business_address' => 'required|string|max:500',
+                'postal_code' => 'nullable|string|max:20',
+                'zip_code' => 'nullable|string|max:20',
+                'business_type' => 'required|in:retail,repair,both (retail & repair)',
+                'registration_type' => 'required|in:individual,company',
+                'attendance_geofence_enabled' => 'sometimes|boolean',
+                'shop_latitude' => 'nullable|numeric|between:-90,90',
+                'shop_longitude' => 'nullable|numeric|between:-180,180',
+                'shop_address' => 'nullable|string|max:500',
+                'shop_geofence_radius' => 'nullable|integer|min:10|max:5000',
+                'dti_registration' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120',
+                'mayors_permit' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120',
+                'bir_certificate' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120',
+                'valid_id' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120',
+                'other_documents' => 'nullable|array|max:8',
+                'other_documents.*' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120',
+            ]);
+
+            foreach ($requiredDocumentTypes as $documentType) {
+                $hasExistingDocument = $shopOwner
+                    ->documents()
+                    ->where('document_type', $documentType)
+                    ->exists();
+
+                if (!$request->hasFile($documentType) && !$hasExistingDocument) {
+                    throw ValidationException::withMessages([
+                        $documentType => ['This document is required for resubmission.'],
+                    ]);
+                }
+            }
+
+            $caviteLocationPolicy->assertRegistrationLocation(
+                $validated['shop_latitude'] ?? null,
+                $validated['shop_longitude'] ?? null,
+                $validated['business_address'] ?? null,
+                $request,
+                null,
+                [
+                    'email' => (string) $shopOwner->email,
+                    'business_name' => $validated['business_name'] ?? null,
+                    'target_type' => 'shop_owner_resubmission',
+                    'shop_owner_id' => (int) $shopOwner->id,
+                ]
+            );
+
+            DB::beginTransaction();
+
+            $shopOwner->update([
+                'first_name' => $validated['first_name'],
+                'last_name' => $validated['last_name'],
+                'phone' => $validated['phone'],
+                'business_name' => $validated['business_name'],
+                'business_address' => $validated['business_address'],
+                'postal_code' => $validated['postal_code'] ?? $validated['zip_code'] ?? null,
+                'business_type' => $validated['business_type'],
+                'registration_type' => $validated['registration_type'],
+                'attendance_geofence_enabled' => (bool) ($validated['attendance_geofence_enabled'] ?? false),
+                'shop_latitude' => $validated['shop_latitude'] ?? null,
+                'shop_longitude' => $validated['shop_longitude'] ?? null,
+                'shop_address' => $validated['shop_address'] ?? $validated['business_address'],
+                'shop_geofence_radius' => $validated['shop_geofence_radius'] ?? 100,
+                'status' => ShopOwnerStatus::PENDING->value,
+                'rejection_reason' => null,
+            ]);
+
+            $shopOwner->documents()->update(['status' => 'pending']);
+
+            foreach ($requiredDocumentTypes as $documentType) {
+                if ($request->hasFile($documentType)) {
+                    $file = $request->file($documentType);
+
+                    if ($file) {
+                        $fileName = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
+                        $newPath = $file->storeAs('shop_documents', $fileName, 'public');
+
+                        $latestDocument = $shopOwner
+                            ->documents()
+                            ->where('document_type', $documentType)
+                            ->latest('id')
+                            ->first();
+
+                        if ($latestDocument) {
+                            $oldPath = (string) $latestDocument->file_path;
+                            $latestDocument->update([
+                                'file_path' => $newPath,
+                                'status' => 'pending',
+                            ]);
+
+                            if ($oldPath !== '' && $oldPath !== $newPath) {
+                                Storage::disk('public')->delete($oldPath);
+                            }
+                        } else {
+                            ShopDocument::create([
+                                'shop_owner_id' => $shopOwner->id,
+                                'document_type' => $documentType,
+                                'file_path' => $newPath,
+                                'status' => 'pending',
+                            ]);
+                        }
+                    }
+                }
+            }
+
+            if ($request->hasFile('other_documents')) {
+                foreach ((array) $request->file('other_documents') as $file) {
+                    if (!$file) {
+                        continue;
+                    }
+
+                    $fileName = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
+                    $filePath = $file->storeAs('shop_documents', $fileName, 'public');
+
+                    ShopDocument::create([
+                        'shop_owner_id' => $shopOwner->id,
+                        'document_type' => 'other_supporting_document',
+                        'file_path' => $filePath,
+                        'status' => 'pending',
+                    ]);
+                }
+            }
+
+            DB::commit();
+
+            Log::info('Shop owner application resubmitted successfully', [
+                'shop_owner_id' => $shopOwner->id,
+                'email' => $shopOwner->email,
+            ]);
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Application resubmitted successfully. Please wait for admin review.',
+                ]);
+            }
+
+            return redirect()->route('shop-owner-register')->with('success', 'Application resubmitted successfully. Please wait for admin review.');
+        } catch (ValidationException $e) {
+            DB::rollBack();
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $caviteLocationPolicy->isLocationPolicyValidationException($e)
+                        ? $caviteLocationPolicy->denialMessage()
+                        : 'Please review the highlighted fields and try again.',
+                    'errors' => $e->errors(),
+                ], 422);
+            }
+
+            throw $e;
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            Log::error('Error resubmitting shop owner application', [
+                'shop_owner_id' => $shopOwner->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Resubmission failed. Please try again.',
+                ], 500);
+            }
+
+            return back()->withErrors(['message' => 'Resubmission failed. Please try again.'])->withInput();
+        }
+    }
 
     /**
      * Send verification OTP to a shop owner registration email.

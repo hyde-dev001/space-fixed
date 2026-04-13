@@ -225,6 +225,24 @@ class RepairWorkflowController extends Controller
             ->where('status', 'active')
             ->first();
     }
+
+    /**
+     * Resolve whether the current request should execute using shop-owner context.
+     *
+     * This prevents cross-guard leakage when both user and shop_owner sessions
+     * exist in the same browser.
+     */
+    private function isShopOwnerRouteContext(Request $request): bool
+    {
+        $routeName = (string) optional($request->route())->getName();
+        if ($routeName !== '' && str_starts_with($routeName, 'shop_owner.')) {
+            return true;
+        }
+
+        $path = trim((string) $request->path(), '/');
+
+        return str_starts_with($path, 'api/shop-owner/');
+    }
     
     /**
      * Get repairs assigned to current repairer (Phase 3)
@@ -246,10 +264,17 @@ class RepairWorkflowController extends Controller
                 });
             };
 
-            // Check if authenticated as shop owner first
-            $shopOwner = Auth::guard('shop_owner')->user();
-            
-            if ($shopOwner) {
+            $isShopOwnerContext = $this->isShopOwnerRouteContext($request);
+
+            if ($isShopOwnerContext) {
+                $shopOwner = Auth::guard('shop_owner')->user();
+                if (!$shopOwner) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Unauthenticated'
+                    ], 401);
+                }
+
                 // Shop owner sees all repairs for their shop
                 $repairs = RepairRequest::with(['user', 'services', 'shopOwner', 'repairer'])
                     ->withSum(['posTransactions as pos_paid_amount' => function ($query) {
@@ -274,7 +299,6 @@ class RepairWorkflowController extends Controller
                 ]);
             }
             
-            // Otherwise check for regular user (repairer)
             $user = Auth::guard('user')->user();
             
             if (!$user) {

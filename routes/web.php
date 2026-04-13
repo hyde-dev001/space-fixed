@@ -193,6 +193,12 @@ Route::get('/new-password', function (Request $request) {
     ]);
 })->name('password.new');
 Route::get('/shop-owner-register', [LandingPageController::class, 'shopOwnerRegister'])->name('shop-owner-register');
+Route::get('/shop-owner/resubmit/{shopOwner}', [ShopOwnerAuthController::class, 'showResubmissionForm'])
+    ->middleware('signed')
+    ->name('shop-owner.resubmission.form');
+Route::post('/shop-owner/resubmit/{shopOwner}', [ShopOwnerAuthController::class, 'resubmit'])
+    ->middleware(['signed', 'throttle:10,1'])
+    ->name('shop-owner.resubmission.submit');
 
 // Employee Invitation Routes (Public - No Authentication Required)
 Route::get('/invite/{token}', [InvitationController::class, 'show'])->name('invitation.show');
