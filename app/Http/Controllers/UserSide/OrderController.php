@@ -9,6 +9,7 @@ use App\Models\InventorySize;
 use App\Models\Notification;
 use App\Models\Order;
 use App\Models\OrderRefund;
+use App\Models\ProductReview;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\StockMovement;
@@ -81,15 +82,24 @@ class OrderController extends Controller
                 'read_at' => now(),
             ]);
         
-        $orders = Order::where('customer_id', $user->id)
+        $orderCollection = Order::where('customer_id', $user->id)
             ->with([
                 'items',
                 'shopOwner',
                 'refunds' => fn ($query) => $query->orderByDesc('id'),
             ])
             ->orderBy('created_at', 'desc')
-            ->get()
-            ->map(function (Order $order) {
+            ->get();
+
+        $reviewedOrderLookup = ProductReview::query()
+            ->where('user_id', $user->id)
+            ->whereIn('order_id', $orderCollection->pluck('id')->all())
+            ->pluck('order_id')
+            ->mapWithKeys(fn ($orderId) => [(int) $orderId => true])
+            ->all();
+
+        $orders = $orderCollection
+            ->map(function (Order $order) use ($reviewedOrderLookup) {
                 $itemSubtotal = (float) ($order->total_amount ?? 0);
                 $shippingFee = (float) ($order->shipping_fee ?? 0);
                 $vatAmount = $order->vat_amount !== null ? max(0.0, (float) $order->vat_amount) : null;
@@ -210,6 +220,7 @@ class OrderController extends Controller
                     'tracking_link' => $order->tracking_link,
                     'eta' => $order->eta,
                     'pickup_enabled' => $order->pickup_enabled ?? false,
+                    'review_submitted' => isset($reviewedOrderLookup[(int) $order->id]),
                     'refund_status' => $refundStatus,
                     'refund_status_note' => $refundStatusNote,
                     'refund_stage' => $latestRefund ? [

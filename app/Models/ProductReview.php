@@ -69,57 +69,70 @@ class ProductReview extends Model
      */
     public static function canUserReview(int $userId, int $productId): array
     {
-        // Check if user already reviewed this product
-        $existingReview = self::where('user_id', $userId)
-            ->where('product_id', $productId)
-            ->first();
-
-        if ($existingReview) {
-            return [
-                'can_review' => false,
-                'reason' => 'already_reviewed',
-                'message' => 'You have already reviewed this product.',
-                'existing_review' => $existingReview,
-            ];
-        }
-
-        // Check if user has purchased this product
-        $purchasedOrder = Order::where('customer_id', $userId)
+        // Get delivered/completed orders containing this product.
+        $purchasedOrders = Order::where('customer_id', $userId)
             ->whereHas('items', function ($query) use ($productId) {
                 $query->where('product_id', $productId);
             })
             ->whereIn('status', [OrderStatus::COMPLETED, OrderStatus::DELIVERED])
-            ->first();
+            ->orderByDesc('created_at')
+            ->get(['id', 'status']);
 
-        if (!$purchasedOrder) {
-            // Check if there's a pending order
-            $pendingOrder = Order::where('customer_id', $userId)
-                ->whereHas('items', function ($query) use ($productId) {
-                    $query->where('product_id', $productId);
-                })
-                ->whereIn('status', [OrderStatus::PENDING, OrderStatus::PROCESSING, OrderStatus::SHIPPED])
-                ->first();
+        if ($purchasedOrders->isNotEmpty()) {
+            $reviewedOrderIds = self::where('user_id', $userId)
+                ->where('product_id', $productId)
+                ->whereIn('order_id', $purchasedOrders->pluck('id')->all())
+                ->pluck('order_id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
 
-            if ($pendingOrder) {
+            $firstUnreviewedOrder = $purchasedOrders->first(
+                fn ($order) => !in_array((int) $order->id, $reviewedOrderIds, true)
+            );
+
+            if ($firstUnreviewedOrder) {
                 return [
-                    'can_review' => false,
-                    'reason' => 'pending_delivery',
-                    'message' => 'You can leave a review once your order has been delivered.',
-                    'order_status' => $pendingOrder->status,
+                    'can_review' => true,
+                    'order_id' => $firstUnreviewedOrder->id,
+                    'order_status' => $firstUnreviewedOrder->status,
+                    'message' => 'You can write a review for this product.',
                 ];
             }
 
+            $latestExistingReview = self::where('user_id', $userId)
+                ->where('product_id', $productId)
+                ->orderByDesc('created_at')
+                ->first();
+
             return [
                 'can_review' => false,
-                'reason' => 'not_purchased',
-                'message' => 'Only verified buyers can review this product.',
+                'reason' => 'already_reviewed',
+                'message' => 'You have already reviewed all delivered orders for this product.',
+                'existing_review' => $latestExistingReview,
+            ];
+        }
+
+        // Check if there's a pending order
+        $pendingOrder = Order::where('customer_id', $userId)
+            ->whereHas('items', function ($query) use ($productId) {
+                $query->where('product_id', $productId);
+            })
+            ->whereIn('status', [OrderStatus::PENDING, OrderStatus::PROCESSING, OrderStatus::SHIPPED])
+            ->first();
+
+        if ($pendingOrder) {
+            return [
+                'can_review' => false,
+                'reason' => 'pending_delivery',
+                'message' => 'You can leave a review once your order has been delivered.',
+                'order_status' => $pendingOrder->status,
             ];
         }
 
         return [
-            'can_review' => true,
-            'order_id' => $purchasedOrder->id,
-            'message' => 'You can write a review for this product.',
+            'can_review' => false,
+            'reason' => 'not_purchased',
+            'message' => 'Only verified buyers can review this product.',
         ];
     }
 

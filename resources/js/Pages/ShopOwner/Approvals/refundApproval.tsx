@@ -327,6 +327,23 @@ const escapeSwalText = (value?: string): string => {
 		.replace(/'/g, "&#39;");
 };
 
+const rejectionReasonChoices = [
+	"Item condition does not match the refund claim",
+	"Issue was resolved through replacement or support",
+	"Refund request is outside the allowed return window",
+	"Insufficient evidence for refund verification",
+	"Product shows signs of misuse after delivery",
+];
+
+const buildInspectionDeclineMessage = (reason: string): string => {
+	const normalizedReason = String(reason || "our inspection findings").trim();
+	const suffix = normalizedReason
+		? `${normalizedReason.charAt(0).toLowerCase()}${normalizedReason.slice(1)}`
+		: "our inspection findings";
+
+	return `Due to our inspection, we declined your refund request because ${suffix}. If you believe this decision is incorrect, please contact our support team for further review.`;
+};
+
 const normalizeReasonDetails = (reason: unknown, otherReasonNote?: unknown): string => {
 	const raw = String(reason ?? "").trim();
 	const stripped = raw.replace(/\bRefund scope:\s*(?:full|partial)\b[\s\S]*$/i, "").trim();
@@ -636,6 +653,7 @@ export default function RefundApproval() {
 
 	const handleCloseModal = () => {
 		setViewModalOpen(false);
+		setSelectedRequest(null);
 		setActiveImage(null);
 	};
 
@@ -770,6 +788,7 @@ export default function RefundApproval() {
 						: (updatedRefund.financeStatus ?? request.financeStatus),
 				};
 				setSelectedRequest(nextSelected);
+				handleCloseModal();
 				
 				await Swal.fire({
 					title: "Approved!",
@@ -817,32 +836,99 @@ export default function RefundApproval() {
 			return;
 		}
 
-		const { value: reason } = await Swal.fire({
+		const { value: rejectionForm } = await Swal.fire<{ selectedReason: string; customerMessage: string }>({
 			title: "Reject Refund",
 			html: `
 				<div style="text-align: left; margin-bottom: 1rem;">
 					<p style="margin-bottom: 0.5rem;"><strong>Amount:</strong> ${request.refundAmount}</p>
+					<label for="reject-reason-select" style="display:block; margin-top: 0.75rem; margin-bottom: 0.35rem; font-weight: 600;">Rejection Category</label>
+					<select id="reject-reason-select" class="swal2-select" style="display:block; width:100%; margin: 0;">
+						${rejectionReasonChoices.map((choice) => `<option value="${escapeSwalText(choice)}">${escapeSwalText(choice)}</option>`).join("")}
+						<option value="__other__">Other (Specify)</option>
+					</select>
+					<div id="reject-other-wrap" style="display:none; margin-top: 0.75rem;">
+						<label for="reject-other-input" style="display:block; margin-bottom: 0.35rem; font-weight: 600;">Custom Rejection Reason</label>
+						<input id="reject-other-input" class="swal2-input" style="margin: 0;" placeholder="Type custom rejection reason" />
+					</div>
+				</div>
+				<div style="text-align: left; margin-bottom: 0.5rem;">
+					<label for="reject-customer-message" style="display:block; margin-bottom: 0.35rem; font-weight: 600;">Customer Message</label>
+					<textarea id="reject-customer-message" class="swal2-textarea" style="display:block; width:100%; min-height: 110px; margin: 0;" aria-label="Customer rejection message">${escapeSwalText(buildInspectionDeclineMessage(rejectionReasonChoices[0]))}</textarea>
 				</div>
 			`,
-			input: "textarea",
-			inputLabel: "Rejection Reason",
-			inputPlaceholder: "Enter the reason for rejection...",
-			inputAttributes: {
-				"aria-label": "Enter the reason for rejection",
-			},
 			showCancelButton: true,
 			confirmButtonColor: "#ef4444",
 			cancelButtonColor: "#6b7280",
 			confirmButtonText: "Reject",
 			cancelButtonText: "Cancel",
-			inputValidator: (value) => {
-				if (!value) {
-					return "Please provide a reason for rejection";
+			focusConfirm: false,
+			didOpen: () => {
+				const reasonSelect = document.getElementById("reject-reason-select") as HTMLSelectElement | null;
+				const otherWrap = document.getElementById("reject-other-wrap") as HTMLDivElement | null;
+				const otherInput = document.getElementById("reject-other-input") as HTMLInputElement | null;
+				const messageInput = document.getElementById("reject-customer-message") as HTMLTextAreaElement | null;
+
+				const syncMessage = () => {
+					if (!reasonSelect || !messageInput) {
+						return;
+					}
+
+					const isOther = reasonSelect.value === "__other__";
+					if (otherWrap) {
+						otherWrap.style.display = isOther ? "block" : "none";
+					}
+
+					const resolvedReason = isOther
+						? String(otherInput?.value || "").trim()
+						: reasonSelect.value;
+					messageInput.value = buildInspectionDeclineMessage(resolvedReason || "our inspection findings");
+				};
+
+				reasonSelect?.addEventListener("change", syncMessage);
+				otherInput?.addEventListener("input", () => {
+					if (reasonSelect?.value === "__other__") {
+						syncMessage();
+					}
+				});
+				syncMessage();
+			},
+			preConfirm: () => {
+				const reasonSelect = document.getElementById("reject-reason-select") as HTMLSelectElement | null;
+				const otherInput = document.getElementById("reject-other-input") as HTMLInputElement | null;
+				const messageInput = document.getElementById("reject-customer-message") as HTMLTextAreaElement | null;
+
+				if (!reasonSelect || !messageInput) {
+					Swal.showValidationMessage("Unable to read reject form values. Please try again.");
+					return;
 				}
+
+				const selectedReason = reasonSelect.value === "__other__"
+					? String(otherInput?.value || "").trim()
+					: String(reasonSelect.value || "").trim();
+				if (!selectedReason) {
+					Swal.showValidationMessage("Please select or provide a rejection category.");
+					return;
+				}
+
+				const customerMessage = String(messageInput.value || "").trim();
+				if (!customerMessage) {
+					Swal.showValidationMessage("Please provide a rejection message for the customer.");
+					return;
+				}
+
+				const messageWithInspectionClause = customerMessage.toLowerCase().includes("due to our inspection")
+					? customerMessage
+					: `${buildInspectionDeclineMessage(selectedReason)}\n\nAdditional details: ${customerMessage}`;
+
+				return {
+					selectedReason,
+					customerMessage: messageWithInspectionClause,
+				};
 			},
 		});
 
-		if (reason) {
+		if (rejectionForm?.customerMessage) {
+			const rejectionMessage = rejectionForm.customerMessage;
 			setIsActionProcessing(true);
 			try {
 				const response = await fetch(`${getShopOwnerActionBase(request)}/${request.id}/reject`, {
@@ -854,7 +940,7 @@ export default function RefundApproval() {
 						"X-CSRF-TOKEN":
 							document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "",
 					},
-					body: JSON.stringify(request.refundType === "repair" ? { reason } : { rejection_reason: reason }),
+					body: JSON.stringify(request.refundType === "repair" ? { reason: rejectionMessage } : { rejection_reason: rejectionMessage }),
 				});
 
 				const data = await response.json();
@@ -865,10 +951,11 @@ export default function RefundApproval() {
 				setRequests((prev) =>
 					prev.map((r) =>
 						isSameRefundRequest(r, request)
-							? { ...r, ...(data?.refund || data?.data || {}), status: "Rejected", rejectionReason: reason }
+							? { ...r, ...(data?.refund || data?.data || {}), status: "Rejected", rejectionReason: rejectionMessage }
 							: r
 					)
 				);
+				handleCloseModal();
 				Swal.fire({
 					title: "Rejected",
 					text: data?.message || "The refund request has been rejected.",

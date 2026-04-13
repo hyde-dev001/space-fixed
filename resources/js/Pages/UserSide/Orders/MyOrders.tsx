@@ -22,6 +22,7 @@ type Order = {
   id: number;
   order_number: string;
   status: string;
+  review_submitted?: boolean;
   payment_status?: string;
   payment_method?: string;
   refund_status?: 'processing' | 'refunded' | null;
@@ -119,6 +120,8 @@ const MyOrders: React.FC = () => {
   const [isSubmittingCancel, setIsSubmittingCancel] = useState(false);
   const [showReasonDetailsModal, setShowReasonDetailsModal] = useState(false);
   const [reasonDetailsOrder, setReasonDetailsOrder] = useState<Order | null>(null);
+  const [showRefundRejectionModal, setShowRefundRejectionModal] = useState(false);
+  const [refundRejectionOrder, setRefundRejectionOrder] = useState<Order | null>(null);
 
   const isOtherReason = (value?: string | null): boolean => String(value || '').trim().toLowerCase() === 'other';
 
@@ -559,6 +562,24 @@ const MyOrders: React.FC = () => {
     return !['cod', 'cash_on_delivery', 'cash on delivery'].includes(paymentMethod);
   };
 
+  const isShopOwnerRejectedRefund = (order: Order): boolean => {
+    return String(order.refund_stage?.shop_owner_status || '').toLowerCase() === 'rejected';
+  };
+
+  const getShopOwnerRejectionReason = (order: Order): string => {
+    const rejectionReason = String(order.refund_stage?.rejection_reason || '').trim();
+    if (rejectionReason) {
+      return rejectionReason;
+    }
+
+    const fallbackReason = String(order.refund_status_note || '').trim();
+    if (fallbackReason) {
+      return fallbackReason;
+    }
+
+    return 'No rejection note provided.';
+  };
+
   const getRefundStageText = (order: Order): string | null => {
     const stage = order.refund_stage;
     if (!stage) return null;
@@ -687,6 +708,10 @@ const MyOrders: React.FC = () => {
       return false;
     }
 
+    if (order.review_submitted) {
+      return false;
+    }
+
     const refundStatus = String(order.refund_status || '').toLowerCase();
     const refundStageStatus = String(order.refund_stage?.status || '').toLowerCase();
     const paymentStatus = String(order.payment_status || '').toLowerCase();
@@ -806,6 +831,8 @@ const MyOrders: React.FC = () => {
 
   const handleSubmitRefund = async () => {
     if (!refundOrderId) return;
+
+    const effectiveRequestType = canChooseRefundScope ? refundRequestType : 'full';
     
     if (!refundReason) {
       Swal.fire({ icon: 'warning', title: 'Please select a reason', confirmButtonColor: '#000000' });
@@ -852,8 +879,8 @@ const MyOrders: React.FC = () => {
       formData.append('order_id', refundOrderId.toString());
       formData.append('reason', refundReason);
       formData.append('refund_method', refundMethod || 'original_payment_method');
-      formData.append('request_type', refundRequestType);
-      if (refundRequestType === 'partial') {
+      formData.append('request_type', effectiveRequestType);
+      if (effectiveRequestType === 'partial') {
         formData.append('requested_amount', refundAmountToRequest.toFixed(2));
         refundSelectedLines.forEach((line, index) => {
           formData.append(`refund_lines[${index}][order_item_id]`, String(line.order_item_id));
@@ -1074,6 +1101,12 @@ const MyOrders: React.FC = () => {
     'border-red-600 bg-red-600 text-white hover:-translate-y-0.5 hover:bg-red-700 focus-visible:ring-red-300';
   const actionButtonDisabledClass = 'border-gray-300 bg-gray-200 text-gray-500 cursor-not-allowed';
   const refundTargetOrder = refundOrderId ? orders.find((order) => order.id === refundOrderId) : null;
+  const refundProductCount = refundTargetOrder
+    ? new Set(
+      (refundTargetOrder.items || []).map((item) => String(item.product_slug || item.product_name || item.id)),
+    ).size
+    : 0;
+  const canChooseRefundScope = refundProductCount > 1;
   const refundTargetOrderTotal = refundTargetOrder ? resolveOrderGrandTotal(refundTargetOrder) : 0;
   const refundSelectedLines = refundTargetOrder
     ? (refundTargetOrder.items || [])
@@ -1098,10 +1131,11 @@ const MyOrders: React.FC = () => {
       .filter((line): line is { order_item_id: number; requested_qty: number; line_amount: number } => line !== null)
     : [];
   const refundSelectedItemsTotal = refundSelectedLines.reduce((sum, line) => sum + line.line_amount, 0);
-  const refundAmountToRequest = refundRequestType === 'full'
+  const effectiveRefundRequestType = canChooseRefundScope ? refundRequestType : 'full';
+  const refundAmountToRequest = effectiveRefundRequestType === 'full'
     ? refundTargetOrderTotal
     : Math.min(refundSelectedItemsTotal, refundTargetOrderTotal);
-  const isPartialRefundSelectionValid = refundRequestType !== 'partial'
+  const isPartialRefundSelectionValid = effectiveRefundRequestType !== 'partial'
     ? true
     : (
       refundSelectedLines.length > 0
@@ -1283,11 +1317,13 @@ const MyOrders: React.FC = () => {
                   const displayStatus = getDisplayStatus(order);
                   const refundStageText = getRefundStageText(order);
                   const deadlinePassed = isDeadlinePassed(order);
+                  const reviewSubmitted = Boolean(order.review_submitted);
                   const canCancel = canCancelOrder(order);
                   const canRefund = canRequestRefund(order);
-                  const shouldShowRefundDetails = displayStatus === 'refund_rejected'
+                  const shouldShowRefundDetailsIcon = displayStatus === 'refund_rejected'
                     && isOnlinePaymentOrder(order)
-                    && Boolean(order.refund_stage?.rejection_reason || order.refund_status_note);
+                    && isShopOwnerRejectedRefund(order)
+                    && Boolean(String(order.refund_stage?.rejection_reason || order.refund_status_note || '').trim());
 
                   return (
                   <div
@@ -1328,10 +1364,21 @@ const MyOrders: React.FC = () => {
                           >
                             {getStatusText(displayStatus)}
                           </span>
-                          {shouldShowRefundDetails && (
-                            <p className="mt-2 text-right text-xs text-gray-500">
-                              {order.refund_stage?.rejection_reason || order.refund_status_note || refundStageText}
-                            </p>
+                          {shouldShowRefundDetailsIcon && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRefundRejectionOrder(order);
+                                setShowRefundRejectionModal(true);
+                              }}
+                              title="View rejection note"
+                              aria-label="View rejection note"
+                              className="mt-2 inline-flex items-center justify-center text-red-600 transition-colors hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
+                            >
+                              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M7 3h10l4 4v14H3V3h4z" />
+                              </svg>
+                            </button>
                           )}
                         </div>
                       </div>
@@ -1674,7 +1721,7 @@ const MyOrders: React.FC = () => {
                         )}
                         {['delivered', 'completed'].includes(order.status) && (
                           <>
-                            {!order.refund_stage ? (
+                            {!order.refund_stage && !reviewSubmitted ? (
                               <button
                                 disabled={!canRefund}
                                 onClick={() => {
@@ -1697,16 +1744,18 @@ const MyOrders: React.FC = () => {
                                 REFUND
                               </button>
                             ) : null}
-                            <button
-                              onClick={() => {
-                                if (primaryItem?.product_slug) {
-                                  router.visit(`/products/${primaryItem.product_slug}#reviews`);
-                                }
-                              }}
-                              className={`${actionButtonBaseClass} ${actionButtonPrimaryClass}`}
-                            >
-                              REVIEW
-                            </button>
+                            {!reviewSubmitted ? (
+                              <button
+                                onClick={() => {
+                                  if (primaryItem?.product_slug) {
+                                    router.visit(`/products/${primaryItem.product_slug}#reviews`);
+                                  }
+                                }}
+                                className={`${actionButtonBaseClass} ${actionButtonPrimaryClass}`}
+                              >
+                                REVIEW
+                              </button>
+                            ) : null}
                           </>
                         )}
                         {order.status === 'completed' && (
@@ -1728,9 +1777,11 @@ const MyOrders: React.FC = () => {
 
                       {['delivered', 'completed'].includes(order.status) && (
                         <p className={`mt-3 text-xs sm:text-right ${canRefund ? 'text-gray-500' : 'text-red-600 font-medium'}`}>
-                          {canRefund
-                            ? `You can request a refund until ${formatDeadline(order.cancellation_refund_deadline_at)}.`
-                            : `Refund deadline passed on ${formatDeadline(order.cancellation_refund_deadline_at)}.`}
+                          {reviewSubmitted
+                            ? 'Refund is no longer available after a review has been submitted for this order.'
+                            : canRefund
+                              ? `You can request a refund until ${formatDeadline(order.cancellation_refund_deadline_at)}.`
+                              : `Refund deadline passed on ${formatDeadline(order.cancellation_refund_deadline_at)}.`}
                         </p>
                       )}
                     </div>
@@ -1827,6 +1878,38 @@ const MyOrders: React.FC = () => {
                   ) : (
                     'Cancel Order'
                   )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {showRefundRejectionModal && refundRejectionOrder && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div
+              className="absolute inset-0 bg-black opacity-40"
+              onClick={() => {
+                setShowRefundRejectionModal(false);
+                setRefundRejectionOrder(null);
+              }}
+            ></div>
+            <div className="bg-white rounded-lg shadow-xl z-50 max-w-xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="px-6 py-4 border-b">
+                <h3 className="text-lg font-semibold">Shop Owner Rejection Note</h3>
+                <p className="text-sm text-gray-500">Order #{refundRejectionOrder.order_number}</p>
+              </div>
+              <div className="px-6 py-5">
+                <p className="text-sm font-medium text-gray-500 mb-2">Reason</p>
+                <p className="text-sm text-gray-900 whitespace-pre-wrap">{getShopOwnerRejectionReason(refundRejectionOrder)}</p>
+              </div>
+              <div className="px-6 py-4 border-t flex justify-end">
+                <button
+                  onClick={() => {
+                    setShowRefundRejectionModal(false);
+                    setRefundRejectionOrder(null);
+                  }}
+                  className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
+                >
+                  Close
                 </button>
               </div>
             </div>
@@ -1981,45 +2064,51 @@ const MyOrders: React.FC = () => {
                       <label className="block text-sm font-medium text-gray-700 mb-3">
                         Refund Scope <span className="text-red-500">*</span>
                       </label>
-                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                        <label className="flex items-center gap-3 rounded-lg border border-gray-200 p-3">
-                          <input
-                            type="radio"
-                            name="refund_scope"
-                            value="full"
-                            checked={refundRequestType === 'full'}
-                            onChange={() => {
-                              setRefundRequestType('full');
-                            }}
-                            className="form-radio h-4 w-4 text-black"
-                          />
-                          <div>
-                            <p className="text-sm font-semibold text-gray-900">Full Refund</p>
-                            <p className="text-xs text-gray-500">Refund whole order amount.</p>
-                          </div>
-                        </label>
-                        <label className="flex items-center gap-3 rounded-lg border border-gray-200 p-3">
-                          <input
-                            type="radio"
-                            name="refund_scope"
-                            value="partial"
-                            checked={refundRequestType === 'partial'}
-                            onChange={() => {
-                              setRefundRequestType('partial');
-                              if (refundTargetOrder && Object.keys(refundLineQtyByItemId).length === 0) {
-                                initializeRefundLineQty(refundTargetOrder.items || []);
-                              }
-                            }}
-                            className="form-radio h-4 w-4 text-black"
-                          />
-                          <div>
-                            <p className="text-sm font-semibold text-gray-900">Partial Refund</p>
-                            <p className="text-xs text-gray-500">Pick qty per item. Amount is auto-calculated.</p>
-                          </div>
-                        </label>
-                      </div>
+                      {canChooseRefundScope ? (
+                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                          <label className="flex items-center gap-3 rounded-lg border border-gray-200 p-3">
+                            <input
+                              type="radio"
+                              name="refund_scope"
+                              value="full"
+                              checked={refundRequestType === 'full'}
+                              onChange={() => {
+                                setRefundRequestType('full');
+                              }}
+                              className="form-radio h-4 w-4 text-black"
+                            />
+                            <div>
+                              <p className="text-sm font-semibold text-gray-900">Full Refund</p>
+                              <p className="text-xs text-gray-500">Refund whole order amount.</p>
+                            </div>
+                          </label>
+                          <label className="flex items-center gap-3 rounded-lg border border-gray-200 p-3">
+                            <input
+                              type="radio"
+                              name="refund_scope"
+                              value="partial"
+                              checked={refundRequestType === 'partial'}
+                              onChange={() => {
+                                setRefundRequestType('partial');
+                                if (refundTargetOrder && Object.keys(refundLineQtyByItemId).length === 0) {
+                                  initializeRefundLineQty(refundTargetOrder.items || []);
+                                }
+                              }}
+                              className="form-radio h-4 w-4 text-black"
+                            />
+                            <div>
+                              <p className="text-sm font-semibold text-gray-900">Partial Refund</p>
+                              <p className="text-xs text-gray-500">Pick qty per item. Amount is auto-calculated.</p>
+                            </div>
+                          </label>
+                        </div>
+                      ) : (
+                        <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+                          Single-product order detected. Refund scope is automatically set to Full Refund.
+                        </div>
+                      )}
 
-                      {refundRequestType === 'partial' && (
+                      {canChooseRefundScope && refundRequestType === 'partial' && (
                         <div className="mt-4 space-y-4">
                           <div>
                             <p className="mb-2 text-sm font-medium text-gray-700">Affected Item Qty</p>
@@ -2163,7 +2252,7 @@ const MyOrders: React.FC = () => {
                           <span className="text-sm text-gray-700">Order Total:</span>
                           <span className="text-sm text-gray-900">{formatPeso(refundTargetOrderTotal)}</span>
                         </div>
-                        {refundRequestType === 'partial' && (
+                        {canChooseRefundScope && refundRequestType === 'partial' && (
                           <div className="flex justify-between items-center">
                             <span className="text-sm text-gray-700">Selected Item Total:</span>
                             <span className="text-sm text-gray-900">{formatPeso(refundSelectedItemsTotal)}</span>
@@ -2175,7 +2264,7 @@ const MyOrders: React.FC = () => {
                         </div>
                         <div className="flex justify-between items-center">
                           <span className="text-sm text-gray-700">Refund Type:</span>
-                          <span className="text-sm text-gray-900 uppercase">{refundRequestType}</span>
+                          <span className="text-sm text-gray-900 uppercase">{effectiveRefundRequestType}</span>
                         </div>
                       </div>
                     </div>

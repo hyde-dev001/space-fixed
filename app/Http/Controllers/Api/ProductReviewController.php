@@ -211,6 +211,7 @@ class ProductReviewController extends Controller
 
         $review = ProductReview::where('user_id', $user->id)
             ->where('product_id', $productId)
+            ->orderByDesc('created_at')
             ->first();
 
         if (!$review) {

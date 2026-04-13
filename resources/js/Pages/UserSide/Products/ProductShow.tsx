@@ -712,9 +712,7 @@ const ProductShow: React.FC = () => {
       if (data.success) {
         setCanReview(data.can_review);
         setReviewEligibility(data);
-        if (data.existing_review) {
-          setUserExistingReview(data.existing_review);
-        }
+        setUserExistingReview(data.existing_review || null);
       }
     } catch (error) {
       console.error('Failed to check review eligibility:', error);
