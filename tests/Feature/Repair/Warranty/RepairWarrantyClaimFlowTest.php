@@ -92,6 +92,44 @@ class RepairWarrantyClaimFlowTest extends TestCase
         $this->assertSame(0.0, (float) $repair->total_refunded_amount);
     }
 
+    public function test_approve_claim_uses_preferred_receive_method_for_linked_return_delivery(): void
+    {
+        [, $repairer, $repair, $claim] = $this->seedPendingClaimContext();
+
+        $repair->forceFill([
+            'pickup_address' => [
+                'address_line' => '12 Sample Street',
+                'barangay' => 'Barangay Uno',
+                'city' => 'Makati',
+                'region' => 'NCR',
+                'postal_code' => '1200',
+            ],
+            'return_address' => [
+                'address_line' => '34 Return Avenue',
+                'barangay' => 'Barangay Dos',
+                'city' => 'Pasig',
+                'region' => 'NCR',
+                'postal_code' => '1600',
+            ],
+        ])->save();
+
+        $claim->forceFill([
+            'preferred_receive_method' => 'shop_delivery',
+        ])->save();
+
+        $response = $this->actingAs($repairer, 'user')->postJson(
+            "/api/repairer/warranty-claims/{$claim->id}/approve"
+        );
+
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true);
+
+        $linked = RepairRequest::query()->findOrFail((int) $claim->fresh()->approved_repair_request_id);
+
+        $this->assertSame('shop_delivery', (string) $linked->return_delivery_method);
+        $this->assertSame('Pasig', (string) data_get($linked->return_address, 'city'));
+    }
+
     public function test_reject_claim_persists_reason_and_creates_no_linked_job(): void
     {
         [, $repairer, $repair, $claim] = $this->seedPendingClaimContext();

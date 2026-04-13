@@ -146,6 +146,7 @@ type RepairWarrantyClaimStatus = {
   reason_code?: string;
   source_channel?: string;
   preferred_return_method?: string;
+  preferred_receive_method?: string;
   created_at?: string | null;
   reviewed_at?: string | null;
   rejection_reason?: string | null;
@@ -470,7 +471,8 @@ const MyRepairs: React.FC = () => {
   const [warrantyOrderId, setWarrantyOrderId] = useState<number | null>(null);
   const [warrantyReasonCode, setWarrantyReasonCode] = useState<string>('issue_returned');
   const [warrantyReasonDetails, setWarrantyReasonDetails] = useState<string>('');
-  const [warrantyReturnMethod, setWarrantyReturnMethod] = useState<'walk_in' | 'customer_delivery'>('walk_in');
+  const [warrantyIntakeMethod, setWarrantyIntakeMethod] = useState<'walk_in' | 'customer_delivery'>('walk_in');
+  const [warrantyReceiveMethod, setWarrantyReceiveMethod] = useState<'walk_in' | 'shop_delivery'>('walk_in');
   const [warrantyImages, setWarrantyImages] = useState<File[]>([]);
   const [isSubmittingWarrantyClaim, setIsSubmittingWarrantyClaim] = useState(false);
   const [latestRefundByRepairId, setLatestRefundByRepairId] = useState<Record<number, RepairRefundStatus>>({});
@@ -1029,6 +1031,7 @@ const MyRepairs: React.FC = () => {
             reason_code: claim.reason_code ? String(claim.reason_code) : undefined,
             source_channel: claim.source_channel ? String(claim.source_channel) : undefined,
             preferred_return_method: claim.preferred_return_method ? String(claim.preferred_return_method) : undefined,
+            preferred_receive_method: claim.preferred_receive_method ? String(claim.preferred_receive_method) : undefined,
             created_at: claim.created_at || null,
             reviewed_at: claim.reviewed_at || null,
             rejection_reason: claim.rejection_reason || null,
@@ -1252,7 +1255,8 @@ const MyRepairs: React.FC = () => {
     setWarrantyOrderId(null);
     setWarrantyReasonCode('issue_returned');
     setWarrantyReasonDetails('');
-    setWarrantyReturnMethod('walk_in');
+    setWarrantyIntakeMethod('walk_in');
+    setWarrantyReceiveMethod('walk_in');
     setWarrantyImages([]);
   };
 
@@ -1279,7 +1283,8 @@ const MyRepairs: React.FC = () => {
     setWarrantyOrderId(order.id);
     setWarrantyReasonCode('issue_returned');
     setWarrantyReasonDetails('');
-    setWarrantyReturnMethod('walk_in');
+    setWarrantyIntakeMethod('walk_in');
+    setWarrantyReceiveMethod('walk_in');
     setWarrantyImages([]);
     setShowWarrantyModal(true);
   };
@@ -1336,6 +1341,10 @@ const MyRepairs: React.FC = () => {
   };
 
   const isWarrantyFormValid = () => {
+    if (!warrantyIntakeMethod || !warrantyReceiveMethod) {
+      return false;
+    }
+
     if (!warrantyReasonCode) {
       return false;
     }
@@ -1413,7 +1422,8 @@ const MyRepairs: React.FC = () => {
     payload.append('reason_code', warrantyReasonCode);
     payload.append('reason_details', warrantyReasonDetails.trim() || 'Warranty claim filed by customer.');
     payload.append('same_issue_confirmation', '1');
-    payload.append('preferred_return_method', warrantyReturnMethod);
+    payload.append('preferred_return_method', warrantyIntakeMethod);
+    payload.append('preferred_receive_method', warrantyReceiveMethod);
 
     warrantyImages.forEach((file: File, index: number) => {
       payload.append(`images[${index}]`, file);
@@ -3937,7 +3947,7 @@ const MyRepairs: React.FC = () => {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-3">
-                      Preferred Return Method <span className="text-red-500">*</span>
+                      How Will You Send The Item To The Shop? <span className="text-red-500">*</span>
                     </label>
                     <div className="grid grid-cols-2 gap-3">
                       {[
@@ -3947,17 +3957,51 @@ const MyRepairs: React.FC = () => {
                         <label
                           key={method.value}
                           className={`flex items-start gap-3 p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                            warrantyReturnMethod === method.value
+                            warrantyIntakeMethod === method.value
                               ? 'border-black bg-gray-50'
                               : 'border-gray-200 hover:border-gray-400'
                           }`}
                         >
                           <input
                             type="radio"
-                            name="warranty_return_method"
+                            name="warranty_intake_method"
                             value={method.value}
-                            checked={warrantyReturnMethod === method.value}
-                            onChange={(e) => setWarrantyReturnMethod(e.target.value as 'walk_in' | 'customer_delivery')}
+                            checked={warrantyIntakeMethod === method.value}
+                            onChange={(e) => setWarrantyIntakeMethod(e.target.value as 'walk_in' | 'customer_delivery')}
+                            className="form-radio h-4 w-4 text-black shrink-0 mt-0.5"
+                          />
+                          <span>
+                            <span className="block text-sm font-medium text-gray-900">{method.label}</span>
+                            <span className="block text-xs text-gray-500 mt-1">{method.hint}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-3">
+                      How Do You Want To Receive The Reworked Shoes? <span className="text-red-500">*</span>
+                    </label>
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        { value: 'walk_in', label: 'Pick Up At Shop', hint: 'Pick up your repaired item at the shop once ready.' },
+                        { value: 'shop_delivery', label: 'Repairer Delivery', hint: 'Have the repairer arrange courier delivery to your address.' },
+                      ].map((method) => (
+                        <label
+                          key={method.value}
+                          className={`flex items-start gap-3 p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                            warrantyReceiveMethod === method.value
+                              ? 'border-black bg-gray-50'
+                              : 'border-gray-200 hover:border-gray-400'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="warranty_receive_method"
+                            value={method.value}
+                            checked={warrantyReceiveMethod === method.value}
+                            onChange={(e) => setWarrantyReceiveMethod(e.target.value as 'walk_in' | 'shop_delivery')}
                             className="form-radio h-4 w-4 text-black shrink-0 mt-0.5"
                           />
                           <span>

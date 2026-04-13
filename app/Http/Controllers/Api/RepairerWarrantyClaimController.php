@@ -61,6 +61,7 @@ class RepairerWarrantyClaimController extends Controller
                 'reason_details' => $claim->reason_details,
                 'evidence_media' => is_array($claim->evidence_media) ? $claim->evidence_media : [],
                 'preferred_return_method' => $claim->preferred_return_method,
+                'preferred_receive_method' => $claim->preferred_receive_method,
                 'source_channel' => $claim->source_channel,
                 'handler_source' => $claim->handler_source,
                 'repair_handler_user_id' => $claim->repair_handler_user_id,

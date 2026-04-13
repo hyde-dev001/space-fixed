@@ -242,9 +242,13 @@ class RepairWarrantyService
                 $handlerSource = $handlerSource !== '' ? $handlerSource : $resolvedHandlerSource;
             }
 
-            $preferredReturn = (string) ($lockedClaim->preferred_return_method ?? 'walk_in');
-            $intakeMethod = $preferredReturn === 'customer_delivery' ? 'customer_delivery' : 'walk_in';
+            $preferredReturn = $this->normalizePreferredReturnMethod((string) ($lockedClaim->preferred_return_method ?? 'walk_in'));
+            $intakeMethod = $preferredReturn;
             $deliveryMethod = $intakeMethod === 'customer_delivery' ? 'pickup' : 'walk_in';
+            $preferredReceive = $this->normalizePreferredReceiveMethod((string) ($lockedClaim->preferred_receive_method ?? 'walk_in'));
+            $returnAddress = $preferredReceive === 'shop_delivery'
+                ? ($original->return_address ?? $original->pickup_address ?? $original->intake_address)
+                : null;
 
             $status = ($handlerSource === 'business_employee' && $handlerUserId)
                 ? 'assigned_to_repairer'
@@ -303,7 +307,8 @@ class RepairWarrantyService
                 'intake_delivery_method' => $intakeMethod,
                 'intake_address' => $intakeMethod === 'customer_delivery' ? ($original->intake_address ?? $original->pickup_address) : null,
                 'pickup_address' => $intakeMethod === 'customer_delivery' ? ($original->pickup_address ?? $original->intake_address) : null,
-                'return_delivery_method' => 'walk_in',
+                'return_delivery_method' => $preferredReceive,
+                'return_address' => $returnAddress,
                 'is_high_value' => false,
                 'requires_owner_approval' => false,
             ]);
@@ -539,6 +544,9 @@ class RepairWarrantyService
 
         $evidenceMedia = $this->storeEvidenceMedia($images);
 
+        $preferredReturnMethod = $this->normalizePreferredReturnMethod((string) ($validated['preferred_return_method'] ?? 'walk_in'));
+        $preferredReceiveMethod = $this->normalizePreferredReceiveMethod((string) ($validated['preferred_receive_method'] ?? 'walk_in'));
+
         $claim = RepairWarrantyClaim::query()->create([
             'claim_no' => $this->generateClaimNo(),
             'original_repair_request_id' => $repair->id,
@@ -552,7 +560,8 @@ class RepairWarrantyService
             'reason_details' => isset($validated['reason_details']) ? trim((string) $validated['reason_details']) : null,
             'same_issue_confirmation' => true,
             'evidence_media' => $evidenceMedia,
-            'preferred_return_method' => trim((string) ($validated['preferred_return_method'] ?? 'walk_in')),
+            'preferred_return_method' => $preferredReturnMethod,
+            'preferred_receive_method' => $preferredReceiveMethod,
             'shipping_cost_bearer' => 'customer',
             'source_channel' => $sourceChannel,
             'warranty_started_at_snapshot' => $window['warranty_started_at'],
@@ -669,6 +678,20 @@ class RepairWarrantyService
         }
 
         return $stored;
+    }
+
+    private function normalizePreferredReturnMethod(string $method): string
+    {
+        return strtolower(trim($method)) === 'customer_delivery'
+            ? 'customer_delivery'
+            : 'walk_in';
+    }
+
+    private function normalizePreferredReceiveMethod(string $method): string
+    {
+        return strtolower(trim($method)) === 'shop_delivery'
+            ? 'shop_delivery'
+            : 'walk_in';
     }
 
     /**

@@ -318,14 +318,7 @@ const parseCurrencyToNumber = (value: string): number => {
 	return Number.isFinite(parsed) ? parsed : 0;
 };
 
-const escapeSwalText = (value?: string): string => {
-	return String(value || "")
-		.replace(/&/g, "&amp;")
-		.replace(/</g, "&lt;")
-		.replace(/>/g, "&gt;")
-		.replace(/"/g, "&quot;")
-		.replace(/'/g, "&#39;");
-};
+const OTHER_REJECTION_CHOICE = "__other__";
 
 const rejectionReasonChoices = [
 	"Item condition does not match the refund claim",
@@ -342,6 +335,14 @@ const buildInspectionDeclineMessage = (reason: string): string => {
 		: "our inspection findings";
 
 	return `Due to our inspection, we declined your refund request because ${suffix}. If you believe this decision is incorrect, please contact our support team for further review.`;
+};
+
+const resolveRejectReasonText = (selectedChoice: string, customReason: string): string => {
+	if (selectedChoice === OTHER_REJECTION_CHOICE) {
+		return String(customReason || "").trim();
+	}
+
+	return String(selectedChoice || "").trim();
 };
 
 const normalizeReasonDetails = (reason: unknown, otherReasonNote?: unknown): string => {
@@ -506,6 +507,13 @@ export default function RefundApproval() {
 	const [executeReference, setExecuteReference] = useState("");
 	const [executeProofUrlsText, setExecuteProofUrlsText] = useState("");
 	const [executeError, setExecuteError] = useState("");
+	const [rejectModalOpen, setRejectModalOpen] = useState(false);
+	const [rejectRequest, setRejectRequest] = useState<RefundRequest | null>(null);
+	const [rejectReasonChoice, setRejectReasonChoice] = useState<string>(rejectionReasonChoices[0]);
+	const [rejectCustomReason, setRejectCustomReason] = useState("");
+	const [rejectCustomerMessage, setRejectCustomerMessage] = useState(buildInspectionDeclineMessage(rejectionReasonChoices[0]));
+	const [rejectError, setRejectError] = useState("");
+	const [hasCustomRejectMessage, setHasCustomRejectMessage] = useState(false);
 	const hasAppliedFocusOrder = useRef(false);
 
 	useEffect(() => {
@@ -655,6 +663,13 @@ export default function RefundApproval() {
 		setViewModalOpen(false);
 		setSelectedRequest(null);
 		setActiveImage(null);
+		setRejectModalOpen(false);
+		setRejectRequest(null);
+		setRejectReasonChoice(rejectionReasonChoices[0]);
+		setRejectCustomReason("");
+		setRejectCustomerMessage(buildInspectionDeclineMessage(rejectionReasonChoices[0]));
+		setRejectError("");
+		setHasCustomRejectMessage(false);
 	};
 
 	const canShopOwnerApprove = (request: RefundRequest): boolean => {
@@ -701,6 +716,51 @@ export default function RefundApproval() {
 		
 		return request.status === "Pending"
 			&& shopOwnerStatus === "pending";
+	};
+
+	const closeRejectModal = (force = false) => {
+		if (isActionProcessing && !force) {
+			return;
+		}
+
+		setRejectModalOpen(false);
+		setRejectRequest(null);
+		setRejectReasonChoice(rejectionReasonChoices[0]);
+		setRejectCustomReason("");
+		setRejectCustomerMessage(buildInspectionDeclineMessage(rejectionReasonChoices[0]));
+		setRejectError("");
+		setHasCustomRejectMessage(false);
+	};
+
+	const openRejectModal = (request: RefundRequest) => {
+		const defaultChoice = rejectionReasonChoices[0];
+		setRejectRequest(request);
+		setRejectReasonChoice(defaultChoice);
+		setRejectCustomReason("");
+		setRejectCustomerMessage(buildInspectionDeclineMessage(defaultChoice));
+		setRejectError("");
+		setHasCustomRejectMessage(false);
+		setRejectModalOpen(true);
+	};
+
+	const handleRejectChoiceChange = (choice: string) => {
+		setRejectReasonChoice(choice);
+		if (hasCustomRejectMessage) {
+			return;
+		}
+
+		const resolvedReason = resolveRejectReasonText(choice, rejectCustomReason) || "our inspection findings";
+		setRejectCustomerMessage(buildInspectionDeclineMessage(resolvedReason));
+	};
+
+	const handleRejectCustomReasonChange = (value: string) => {
+		setRejectCustomReason(value);
+		if (rejectReasonChoice !== OTHER_REJECTION_CHOICE || hasCustomRejectMessage) {
+			return;
+		}
+
+		const resolvedReason = String(value || "").trim() || "our inspection findings";
+		setRejectCustomerMessage(buildInspectionDeclineMessage(resolvedReason));
 	};
 
 	const handleApprove = async (request: RefundRequest) => {
@@ -836,143 +896,77 @@ export default function RefundApproval() {
 			return;
 		}
 
-		const { value: rejectionForm } = await Swal.fire<{ selectedReason: string; customerMessage: string }>({
-			title: "Reject Refund",
-			html: `
-				<div style="text-align: left; margin-bottom: 1rem;">
-					<p style="margin-bottom: 0.5rem;"><strong>Amount:</strong> ${request.refundAmount}</p>
-					<label for="reject-reason-select" style="display:block; margin-top: 0.75rem; margin-bottom: 0.35rem; font-weight: 600;">Rejection Category</label>
-					<select id="reject-reason-select" class="swal2-select" style="display:block; width:100%; margin: 0;">
-						${rejectionReasonChoices.map((choice) => `<option value="${escapeSwalText(choice)}">${escapeSwalText(choice)}</option>`).join("")}
-						<option value="__other__">Other (Specify)</option>
-					</select>
-					<div id="reject-other-wrap" style="display:none; margin-top: 0.75rem;">
-						<label for="reject-other-input" style="display:block; margin-bottom: 0.35rem; font-weight: 600;">Custom Rejection Reason</label>
-						<input id="reject-other-input" class="swal2-input" style="margin: 0;" placeholder="Type custom rejection reason" />
-					</div>
-				</div>
-				<div style="text-align: left; margin-bottom: 0.5rem;">
-					<label for="reject-customer-message" style="display:block; margin-bottom: 0.35rem; font-weight: 600;">Customer Message</label>
-					<textarea id="reject-customer-message" class="swal2-textarea" style="display:block; width:100%; min-height: 110px; margin: 0;" aria-label="Customer rejection message">${escapeSwalText(buildInspectionDeclineMessage(rejectionReasonChoices[0]))}</textarea>
-				</div>
-			`,
-			showCancelButton: true,
-			confirmButtonColor: "#ef4444",
-			cancelButtonColor: "#6b7280",
-			confirmButtonText: "Reject",
-			cancelButtonText: "Cancel",
-			focusConfirm: false,
-			didOpen: () => {
-				const reasonSelect = document.getElementById("reject-reason-select") as HTMLSelectElement | null;
-				const otherWrap = document.getElementById("reject-other-wrap") as HTMLDivElement | null;
-				const otherInput = document.getElementById("reject-other-input") as HTMLInputElement | null;
-				const messageInput = document.getElementById("reject-customer-message") as HTMLTextAreaElement | null;
+		openRejectModal(request);
+	};
 
-				const syncMessage = () => {
-					if (!reasonSelect || !messageInput) {
-						return;
-					}
+	const handleSubmitRejectModal = async () => {
+		if (!rejectRequest) {
+			return;
+		}
 
-					const isOther = reasonSelect.value === "__other__";
-					if (otherWrap) {
-						otherWrap.style.display = isOther ? "block" : "none";
-					}
+		setRejectError("");
 
-					const resolvedReason = isOther
-						? String(otherInput?.value || "").trim()
-						: reasonSelect.value;
-					messageInput.value = buildInspectionDeclineMessage(resolvedReason || "our inspection findings");
-				};
+		const selectedReason = resolveRejectReasonText(rejectReasonChoice, rejectCustomReason);
+		if (!selectedReason) {
+			setRejectError("Please select or provide a rejection category.");
+			return;
+		}
 
-				reasonSelect?.addEventListener("change", syncMessage);
-				otherInput?.addEventListener("input", () => {
-					if (reasonSelect?.value === "__other__") {
-						syncMessage();
-					}
-				});
-				syncMessage();
-			},
-			preConfirm: () => {
-				const reasonSelect = document.getElementById("reject-reason-select") as HTMLSelectElement | null;
-				const otherInput = document.getElementById("reject-other-input") as HTMLInputElement | null;
-				const messageInput = document.getElementById("reject-customer-message") as HTMLTextAreaElement | null;
+		const message = String(rejectCustomerMessage || "").trim();
+		if (!message) {
+			setRejectError("Please provide a rejection message for the customer.");
+			return;
+		}
 
-				if (!reasonSelect || !messageInput) {
-					Swal.showValidationMessage("Unable to read reject form values. Please try again.");
-					return;
-				}
+		const rejectionMessage = message.toLowerCase().includes("due to our inspection")
+			? message
+			: `${buildInspectionDeclineMessage(selectedReason)}\n\nAdditional details: ${message}`;
 
-				const selectedReason = reasonSelect.value === "__other__"
-					? String(otherInput?.value || "").trim()
-					: String(reasonSelect.value || "").trim();
-				if (!selectedReason) {
-					Swal.showValidationMessage("Please select or provide a rejection category.");
-					return;
-				}
+		setIsActionProcessing(true);
+		try {
+			const response = await fetch(`${getShopOwnerActionBase(rejectRequest)}/${rejectRequest.id}/reject`, {
+				method: "POST",
+				credentials: "include",
+				headers: {
+					"Content-Type": "application/json",
+					Accept: "application/json",
+					"X-CSRF-TOKEN":
+						document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "",
+				},
+				body: JSON.stringify(rejectRequest.refundType === "repair" ? { reason: rejectionMessage } : { rejection_reason: rejectionMessage }),
+			});
 
-				const customerMessage = String(messageInput.value || "").trim();
-				if (!customerMessage) {
-					Swal.showValidationMessage("Please provide a rejection message for the customer.");
-					return;
-				}
-
-				const messageWithInspectionClause = customerMessage.toLowerCase().includes("due to our inspection")
-					? customerMessage
-					: `${buildInspectionDeclineMessage(selectedReason)}\n\nAdditional details: ${customerMessage}`;
-
-				return {
-					selectedReason,
-					customerMessage: messageWithInspectionClause,
-				};
-			},
-		});
-
-		if (rejectionForm?.customerMessage) {
-			const rejectionMessage = rejectionForm.customerMessage;
-			setIsActionProcessing(true);
-			try {
-				const response = await fetch(`${getShopOwnerActionBase(request)}/${request.id}/reject`, {
-					method: "POST",
-					credentials: "include",
-					headers: {
-						"Content-Type": "application/json",
-						Accept: "application/json",
-						"X-CSRF-TOKEN":
-							document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "",
-					},
-					body: JSON.stringify(request.refundType === "repair" ? { reason: rejectionMessage } : { rejection_reason: rejectionMessage }),
-				});
-
-				const data = await response.json();
-				if (!response.ok) {
-					throw new Error(data?.message || "Failed to reject refund request.");
-				}
-
-				setRequests((prev) =>
-					prev.map((r) =>
-						isSameRefundRequest(r, request)
-							? { ...r, ...(data?.refund || data?.data || {}), status: "Rejected", rejectionReason: rejectionMessage }
-							: r
-					)
-				);
-				handleCloseModal();
-				Swal.fire({
-					title: "Rejected",
-					text: data?.message || "The refund request has been rejected.",
-					icon: "info",
-					confirmButtonColor: "#2563eb",
-				});
-				await fetchRefundRequests();
-			} catch (error) {
-				Swal.fire({
-					title: "Failed",
-					text: error instanceof Error ? error.message : "Unable to reject refund request.",
-					icon: "error",
-					confirmButtonColor: "#2563eb",
-				});
-			} finally {
-				setIsActionProcessing(false);
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data?.message || "Failed to reject refund request.");
 			}
+
+			setRequests((prev) =>
+				prev.map((r) =>
+					isSameRefundRequest(r, rejectRequest)
+						? { ...r, ...(data?.refund || data?.data || {}), status: "Rejected", rejectionReason: rejectionMessage }
+						: r
+				)
+			);
+
+			closeRejectModal(true);
+			handleCloseModal();
+			await Swal.fire({
+				title: "Rejected",
+				text: data?.message || "The refund request has been rejected.",
+				icon: "info",
+				confirmButtonColor: "#2563eb",
+			});
+			await fetchRefundRequests();
+		} catch (error) {
+			await Swal.fire({
+				title: "Failed",
+				text: error instanceof Error ? error.message : "Unable to reject refund request.",
+				icon: "error",
+				confirmButtonColor: "#2563eb",
+			});
+		} finally {
+			setIsActionProcessing(false);
 		}
 	};
 
@@ -1589,6 +1583,108 @@ export default function RefundApproval() {
 									Reject
 								</button>
 							)}
+						</div>
+					</div>
+				</div>
+			)}
+
+			{rejectModalOpen && rejectRequest && (
+				<div className="fixed inset-0 z-[1000002] flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
+					<div className="absolute inset-0" onClick={() => closeRejectModal()} />
+					<div className="relative w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+						<div className="bg-gradient-to-r from-rose-600 to-orange-500 px-6 py-5 text-white">
+							<p className="text-lg font-semibold">Reject Refund Request</p>
+							<p className="mt-1 text-sm text-white/85">{rejectRequest.orderNumber} • {rejectRequest.customerName}</p>
+						</div>
+
+						<div className="space-y-5 px-6 py-5">
+							<div className="grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200 sm:grid-cols-2">
+								<p><span className="font-semibold">Amount:</span> {rejectRequest.refundAmount}</p>
+								<p><span className="font-semibold">Method:</span> {rejectRequest.refundMethod}</p>
+							</div>
+
+							<div>
+								<label htmlFor="reject-reason-choice" className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">Rejection Category</label>
+								<select
+									id="reject-reason-choice"
+									title="Select rejection category"
+									value={rejectReasonChoice}
+									onChange={(event) => handleRejectChoiceChange(event.target.value)}
+									className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-rose-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+								>
+									{rejectionReasonChoices.map((choice) => (
+										<option key={choice} value={choice}>{choice}</option>
+									))}
+									<option value={OTHER_REJECTION_CHOICE}>Other (Specify)</option>
+								</select>
+							</div>
+
+							{rejectReasonChoice === OTHER_REJECTION_CHOICE && (
+								<div>
+									<label htmlFor="reject-custom-reason" className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">Custom Rejection Reason</label>
+									<input
+										id="reject-custom-reason"
+										type="text"
+										value={rejectCustomReason}
+										onChange={(event) => handleRejectCustomReasonChange(event.target.value)}
+										placeholder="Type custom rejection reason"
+										className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-rose-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+									/>
+								</div>
+							)}
+
+							<div>
+								<div className="mb-1.5 flex items-center justify-between gap-3">
+									<label htmlFor="reject-customer-message" className="block text-sm font-semibold text-slate-700 dark:text-slate-200">Customer Message</label>
+									<button
+										type="button"
+										onClick={() => {
+											const reason = resolveRejectReasonText(rejectReasonChoice, rejectCustomReason) || "our inspection findings";
+											setRejectCustomerMessage(buildInspectionDeclineMessage(reason));
+											setHasCustomRejectMessage(false);
+										}}
+										className="text-xs font-semibold text-rose-600 hover:text-rose-700 dark:text-rose-300 dark:hover:text-rose-200"
+									>
+										Reset to default message
+									</button>
+								</div>
+								<textarea
+									id="reject-customer-message"
+									title="Customer rejection message"
+									value={rejectCustomerMessage}
+									onChange={(event) => {
+										setRejectCustomerMessage(event.target.value);
+										setHasCustomRejectMessage(true);
+									}}
+									placeholder="Type the customer-facing rejection message"
+									rows={5}
+									className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-rose-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+								/>
+								<p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">Message should clearly communicate the inspection-based decline reason.</p>
+							</div>
+
+							{rejectError && (
+								<div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-900/30 dark:text-rose-200">
+									{rejectError}
+								</div>
+							)}
+						</div>
+
+						<div className="flex items-center justify-end gap-3 border-t border-slate-200 px-6 py-4 dark:border-slate-700">
+							<button
+								onClick={() => closeRejectModal()}
+								disabled={isActionProcessing}
+								className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+							>
+								Cancel
+							</button>
+							<button
+								onClick={() => { void handleSubmitRejectModal(); }}
+								disabled={isActionProcessing}
+								className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+							>
+								{isActionProcessing ? "Rejecting..." : "Confirm Rejection"}
+							</button>
 						</div>
 					</div>
 				</div>

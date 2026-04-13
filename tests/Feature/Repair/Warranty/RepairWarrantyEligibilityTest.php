@@ -47,6 +47,7 @@ class RepairWarrantyEligibilityTest extends TestCase
                 'reason_details' => 'Issue came back after two days.',
                 'same_issue_confirmation' => '1',
                 'preferred_return_method' => 'walk_in',
+                'preferred_receive_method' => 'shop_delivery',
                 'images' => [UploadedFile::fake()->create('proof-1.jpg', 64, 'image/jpeg')],
             ],
             ['Accept' => 'application/json']
@@ -60,6 +61,7 @@ class RepairWarrantyEligibilityTest extends TestCase
             'original_repair_request_id' => $repair->id,
             'status' => RepairWarrantyClaim::STATUS_PENDING_REPAIRER,
             'source_channel' => 'customer_portal',
+            'preferred_receive_method' => 'shop_delivery',
         ]);
     }
 

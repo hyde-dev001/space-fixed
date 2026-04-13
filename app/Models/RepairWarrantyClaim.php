@@ -28,6 +28,7 @@ class RepairWarrantyClaim extends Model
         'same_issue_confirmation',
         'evidence_media',
         'preferred_return_method',
+        'preferred_receive_method',
         'shipping_cost_bearer',
         'source_channel',
         'warranty_started_at_snapshot',
