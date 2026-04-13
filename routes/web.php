@@ -1010,8 +1010,10 @@ Route::middleware('auth:user')->prefix('api/customer/repairs')->group(function (
     Route::post('{id}/refunds', [\App\Http\Controllers\Api\RepairRequestController::class, 'requestRefundFromMyRepair']);
 
     // Customer-initiated warranty claim flow
-    Route::post('{id}/warranty-claims', [\App\Http\Controllers\Api\RepairWarrantyClaimController::class, 'store']);
-    Route::get('{id}/warranty-claims/latest', [\App\Http\Controllers\Api\RepairWarrantyClaimController::class, 'latest']);
+    Route::post('{id}/warranty-claims', [\App\Http\Controllers\Api\RepairWarrantyClaimController::class, 'store'])
+        ->name('api.customer.repairs.warranty-claims');
+    Route::get('{id}/warranty-claims/latest', [\App\Http\Controllers\Api\RepairWarrantyClaimController::class, 'latest'])
+        ->name('api.customer.repairs.warranty-claims.latest');
 
     // Phase 10D - Reviews & Ratings
     Route::post('{id}/review', [\App\Http\Controllers\Api\RepairReviewController::class, 'store']);

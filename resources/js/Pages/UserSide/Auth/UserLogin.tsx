@@ -86,6 +86,13 @@ export default function UserLogin() {
       password: formData.password,
     }, {
       onSuccess: (page: any) => {
+        const redirectUrl = String(page?.url || '');
+        const isTwoFactorChallenge = redirectUrl.includes('/shop-owner/two-factor');
+
+        if (isTwoFactorChallenge) {
+          return;
+        }
+
         Swal.fire({
           icon: 'success',
           title: 'Signed In',
