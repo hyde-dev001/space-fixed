@@ -447,23 +447,23 @@ Route::prefix('repairer/conversations')->middleware(['web', 'auth:user', 'permis
  * Middleware: auth:user (for customers only)
  */
 Route::prefix('notifications')->middleware(['auth:user'])->group(function () {
-    Route::get('/', [\App\Http\Controllers\NotificationController::class, 'index'])->name('notifications.index');
-    Route::get('/unread-count', [\App\Http\Controllers\NotificationController::class, 'unreadCount'])->name('notifications.unread-count');
-    Route::get('/recent', [\App\Http\Controllers\NotificationController::class, 'recent'])->name('notifications.recent');
-    Route::get('/stats', [\App\Http\Controllers\NotificationController::class, 'stats'])->name('notifications.stats');
-    Route::post('/{id}/read', [\App\Http\Controllers\NotificationController::class, 'markAsRead'])->name('notifications.mark-read');
-    Route::post('/mark-all-read', [\App\Http\Controllers\NotificationController::class, 'markAllAsRead'])->name('notifications.mark-all-read');
-    Route::delete('/{id}', [\App\Http\Controllers\NotificationController::class, 'destroy'])->name('notifications.destroy');
-    Route::get('/preferences', [\App\Http\Controllers\Api\NotificationController::class, 'getPreferences'])->name('notifications.preferences');
-    Route::put('/preferences', [\App\Http\Controllers\Api\NotificationController::class, 'updatePreferences'])->name('notifications.update-preferences');
+    Route::get('/', [\App\Http\Controllers\NotificationController::class, 'index'])->name('api.notifications.index');
+    Route::get('/unread-count', [\App\Http\Controllers\NotificationController::class, 'unreadCount'])->name('api.notifications.unread-count');
+    Route::get('/recent', [\App\Http\Controllers\NotificationController::class, 'recent'])->name('api.notifications.recent');
+    Route::get('/stats', [\App\Http\Controllers\NotificationController::class, 'stats'])->name('api.notifications.stats');
+    Route::post('/{id}/read', [\App\Http\Controllers\NotificationController::class, 'markAsRead'])->name('api.notifications.mark-read');
+    Route::post('/mark-all-read', [\App\Http\Controllers\NotificationController::class, 'markAllAsRead'])->name('api.notifications.mark-all-read');
+    Route::delete('/{id}', [\App\Http\Controllers\NotificationController::class, 'destroy'])->name('api.notifications.destroy');
+    Route::get('/preferences', [\App\Http\Controllers\Api\NotificationController::class, 'getPreferences'])->name('api.notifications.preferences');
+    Route::put('/preferences', [\App\Http\Controllers\Api\NotificationController::class, 'updatePreferences'])->name('api.notifications.update-preferences');
     
     // Phase 6: Advanced Features
-    Route::post('/bulk/mark-read', [\App\Http\Controllers\NotificationController::class, 'bulkMarkAsRead'])->name('notifications.bulk-mark-read');
-    Route::delete('/bulk/delete', [\App\Http\Controllers\NotificationController::class, 'bulkDelete'])->name('notifications.bulk-delete');
-    Route::post('/bulk/archive', [\App\Http\Controllers\NotificationController::class, 'bulkArchive'])->name('notifications.bulk-archive');
-    Route::post('/{id}/archive', [\App\Http\Controllers\NotificationController::class, 'archive'])->name('notifications.archive');
-    Route::get('/grouped', [\App\Http\Controllers\NotificationController::class, 'grouped'])->name('notifications.grouped');
-    Route::get('/export', [\App\Http\Controllers\NotificationController::class, 'export'])->name('notifications.export');
+    Route::post('/bulk/mark-read', [\App\Http\Controllers\NotificationController::class, 'bulkMarkAsRead'])->name('api.notifications.bulk-mark-read');
+    Route::delete('/bulk/delete', [\App\Http\Controllers\NotificationController::class, 'bulkDelete'])->name('api.notifications.bulk-delete');
+    Route::post('/bulk/archive', [\App\Http\Controllers\NotificationController::class, 'bulkArchive'])->name('api.notifications.bulk-archive');
+    Route::post('/{id}/archive', [\App\Http\Controllers\NotificationController::class, 'archive'])->name('api.notifications.archive');
+    Route::get('/grouped', [\App\Http\Controllers\NotificationController::class, 'grouped'])->name('api.notifications.grouped');
+    Route::get('/export', [\App\Http\Controllers\NotificationController::class, 'export'])->name('api.notifications.export');
 });
 
 /**

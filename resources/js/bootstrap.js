@@ -31,13 +31,34 @@ window.axios.interceptors.response.use(
 // some legacy pages pass URL paths into route(), which Ziggy rejects.
 if (typeof window !== 'undefined') {
     window.route = (name, params, absolute, config) => {
+        const runtimeZiggy = typeof window.Ziggy !== 'undefined'
+            ? {
+                ...Ziggy,
+                ...window.Ziggy,
+                routes: {
+                    ...(Ziggy?.routes || {}),
+                    ...(window.Ziggy?.routes || {}),
+                },
+            }
+            : Ziggy;
+
         if (typeof name === 'string') {
             const trimmed = name.trim();
             if (trimmed.startsWith('/') || trimmed.startsWith('api/')) {
                 return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
             }
+
+            if (!runtimeZiggy?.routes?.[trimmed]) {
+                const fallbackNamedRoutes = {
+                    'password.request': '/forgot-password',
+                };
+
+                if (Object.prototype.hasOwnProperty.call(fallbackNamedRoutes, trimmed)) {
+                    return fallbackNamedRoutes[trimmed];
+                }
+            }
         }
 
-        return ziggyRoute(name, params, absolute, config || Ziggy);
+        return ziggyRoute(name, params, absolute, config || runtimeZiggy);
     };
 }
