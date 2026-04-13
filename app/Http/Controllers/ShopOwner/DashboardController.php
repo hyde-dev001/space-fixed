@@ -48,7 +48,16 @@ class DashboardController extends Controller
 
     private function computeRepairRevenue($query): float
     {
-        return (float) $query->sum(DB::raw($this->repairRevenueExpression()));
+        return (float) $this->applyRepairRevenueEligibility($query)
+            ->sum(DB::raw($this->repairRevenueExpression()));
+    }
+
+    private function applyRepairRevenueEligibility($query)
+    {
+        return $query->where(function ($innerQuery) {
+            $innerQuery->whereNull('is_warranty_job')
+                ->orWhere('is_warranty_job', false);
+        });
     }
 
     private function retailGrossRevenueExpression(): string

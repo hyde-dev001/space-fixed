@@ -65,6 +65,16 @@ class DssController extends Controller
             });
     }
 
+    private function applyRepairRevenueEligibility($query, string $tableAlias = 'repair_requests')
+    {
+        $qualified = $tableAlias . '.is_warranty_job';
+
+        return $query->where(function ($q) use ($qualified) {
+            $q->whereNull($qualified)
+                ->orWhere($qualified, false);
+        });
+    }
+
     // ─── helpers ────────────────────────────────────────────────────────────────
 
     /**
@@ -272,9 +282,13 @@ class DssController extends Controller
         $since = Carbon::now()->subDays($period);
 
         // Revenue + demand per service for completed paid repairs in the period
-        $rows = DB::table('repair_request_service as rrs')
+        $rows = $this->applyRepairRevenueEligibility(
+            DB::table('repair_request_service as rrs')
             ->join('repair_services as rs', 'rrs.repair_service_id', '=', 'rs.id')
             ->join('repair_requests as rr', 'rrs.repair_request_id', '=', 'rr.id')
+            ,
+            'rr'
+        )
             ->where('rr.shop_owner_id', $shopOwnerId)
             ->whereIn('rr.status', self::COMPLETED_STATUSES)
             ->where('rr.payment_status', 'completed')
@@ -340,7 +354,9 @@ class DssController extends Controller
         $periodRevenue = $rows->sum('total_revenue');
 
         // Revenue this month vs last month
-        $thisMonthRevenue = RepairRequest::where('shop_owner_id', $shopOwnerId)
+        $thisMonthRevenue = $this->applyRepairRevenueEligibility(
+            RepairRequest::where('shop_owner_id', $shopOwnerId)
+        )
             ->whereIn('status', self::COMPLETED_STATUSES)
             ->where('payment_status', 'completed')
             ->whereBetween('completed_at', [
@@ -349,7 +365,9 @@ class DssController extends Controller
             ])
             ->sum(DB::raw($this->repairNetRevenueExpression()));
 
-        $lastMonthRevenue = RepairRequest::where('shop_owner_id', $shopOwnerId)
+        $lastMonthRevenue = $this->applyRepairRevenueEligibility(
+            RepairRequest::where('shop_owner_id', $shopOwnerId)
+        )
             ->whereIn('status', self::COMPLETED_STATUSES)
             ->where('payment_status', 'completed')
             ->whereBetween('completed_at', [
@@ -376,7 +394,10 @@ class DssController extends Controller
     {
         $since = Carbon::now()->subDays($period);
 
-        $rows = DB::table('repair_requests as rr')
+        $rows = $this->applyRepairRevenueEligibility(
+            DB::table('repair_requests as rr'),
+            'rr'
+        )
             ->leftJoin('repair_packages as rp', 'rr.repair_package_id', '=', 'rp.id')
             ->where('rr.shop_owner_id', $shopOwnerId)
             ->whereNotNull('rr.repair_package_id')
@@ -396,26 +417,34 @@ class DssController extends Controller
         $packageRevenue = (float) $rows->sum('revenue');
         $packageBookings = (int) $rows->sum('bookings');
 
-        $allRepairRevenue = (float) RepairRequest::where('shop_owner_id', $shopOwnerId)
+        $allRepairRevenue = (float) $this->applyRepairRevenueEligibility(
+            RepairRequest::where('shop_owner_id', $shopOwnerId)
+        )
             ->whereIn('status', self::COMPLETED_STATUSES)
             ->where('payment_status', 'completed')
             ->where('completed_at', '>=', $since)
             ->sum(DB::raw($this->repairNetRevenueExpression()));
 
-        $allRepairBookings = (int) RepairRequest::where('shop_owner_id', $shopOwnerId)
+        $allRepairBookings = (int) $this->applyRepairRevenueEligibility(
+            RepairRequest::where('shop_owner_id', $shopOwnerId)
+        )
             ->whereIn('status', self::COMPLETED_STATUSES)
             ->where('payment_status', 'completed')
             ->where('completed_at', '>=', $since)
             ->count();
 
-        $thisMonthRevenue = (float) RepairRequest::where('shop_owner_id', $shopOwnerId)
+        $thisMonthRevenue = (float) $this->applyRepairRevenueEligibility(
+            RepairRequest::where('shop_owner_id', $shopOwnerId)
+        )
             ->whereNotNull('repair_package_id')
             ->whereIn('status', self::COMPLETED_STATUSES)
             ->where('payment_status', 'completed')
             ->whereBetween('completed_at', [Carbon::now()->startOfMonth(), Carbon::now()->endOfMonth()])
             ->sum(DB::raw($this->repairNetRevenueExpression()));
 
-        $lastMonthRevenue = (float) RepairRequest::where('shop_owner_id', $shopOwnerId)
+        $lastMonthRevenue = (float) $this->applyRepairRevenueEligibility(
+            RepairRequest::where('shop_owner_id', $shopOwnerId)
+        )
             ->whereNotNull('repair_package_id')
             ->whereIn('status', self::COMPLETED_STATUSES)
             ->where('payment_status', 'completed')
@@ -468,7 +497,9 @@ class DssController extends Controller
                 ->whereBetween('completed_at', [$start, $end])
                 ->count();
 
-            $revenue = RepairRequest::where('shop_owner_id', $shopOwnerId)
+            $revenue = $this->applyRepairRevenueEligibility(
+                RepairRequest::where('shop_owner_id', $shopOwnerId)
+            )
                 ->whereIn('status', self::COMPLETED_STATUSES)
                 ->where('payment_status', 'completed')
                 ->whereBetween('completed_at', [$start, $end])
@@ -847,9 +878,13 @@ class DssController extends Controller
 
             // ─── service pricing rules ─────────────────────────────────────────
 
-            $serviceRows = DB::table('repair_request_service as rrs')
+            $serviceRows = $this->applyRepairRevenueEligibility(
+                DB::table('repair_request_service as rrs')
                 ->join('repair_services as rs', 'rrs.repair_service_id', '=', 'rs.id')
                 ->join('repair_requests as rr', 'rrs.repair_request_id', '=', 'rr.id')
+                ,
+                'rr'
+            )
                 ->where('rr.shop_owner_id', $shopOwnerId)
                 ->whereIn('rr.status', self::COMPLETED_STATUSES)
                 ->where('rr.payment_status', 'completed')

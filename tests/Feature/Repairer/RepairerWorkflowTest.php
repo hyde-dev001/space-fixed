@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Repairer;
 
+use App\Models\Notification;
 use App\Models\InventoryItem;
 use App\Models\RepairPackage;
 use App\Models\RepairRequest;
@@ -936,5 +937,67 @@ class RepairerWorkflowTest extends TestCase
         $repairRequest->refresh();
         $this->assertSame('picked_up', $repairRequest->status);
         $this->assertNotNull($repairRequest->picked_up_at);
+    }
+
+    public function test_warranty_return_activation_sends_customer_notification_for_receive_confirmation(): void
+    {
+        $shopOwner = $this->createRepairShop();
+        $customer = $this->createCustomer([
+            'email' => 'warranty-return-notify@example.com',
+        ]);
+        $repairer = $this->createRepairer($shopOwner);
+        $service = $this->createService($shopOwner, [
+            'name' => 'Warranty Rework',
+            'price' => 0,
+        ]);
+
+        $repairRequest = $this->createAssignedRepairRequest(
+            $shopOwner,
+            $customer,
+            $repairer,
+            [$service->id],
+            [
+                'status' => 'shipped',
+                'delivery_method' => 'pickup',
+                'return_delivery_method' => 'customer_pickup',
+                'total' => 0,
+                'final_total' => 0,
+                'payment_policy' => 'full_upfront',
+                'payment_status' => 'completed',
+                'is_warranty_job' => true,
+                'billing_mode' => 'warranty_no_charge',
+            ]
+        );
+
+        $beforeCount = Notification::query()
+            ->where('user_id', $customer->id)
+            ->where('type', 'repair_status_update')
+            ->count();
+
+        $activateResponse = $this->actingAs($repairer, 'user')->postJson(
+            "/api/repairer/repairs/{$repairRequest->id}/activate-pickup"
+        );
+
+        $activateResponse->assertStatus(200)
+            ->assertJsonPath('success', true);
+
+        $repairRequest->refresh();
+        $this->assertTrue((bool) $repairRequest->pickup_enabled);
+
+        $afterCount = Notification::query()
+            ->where('user_id', $customer->id)
+            ->where('type', 'repair_status_update')
+            ->count();
+
+        $this->assertSame($beforeCount + 1, $afterCount);
+
+        $latestNotification = Notification::query()
+            ->where('user_id', $customer->id)
+            ->where('type', 'repair_status_update')
+            ->latest('id')
+            ->first();
+
+        $this->assertNotNull($latestNotification);
+        $this->assertStringContainsString('warranty re-repair', strtolower((string) $latestNotification->message));
     }
 }

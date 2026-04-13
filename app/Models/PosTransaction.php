@@ -61,6 +61,11 @@ class PosTransaction extends Model
         return $this->belongsTo(Order::class, 'module_reference_id');
     }
 
+    public function repairRequest()
+    {
+        return $this->belongsTo(RepairRequest::class, 'module_reference_id');
+    }
+
     public function refunds()
     {
         return $this->hasMany(PosRefund::class, 'source_transaction_id');

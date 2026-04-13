@@ -60,6 +60,14 @@ class RepairRequest extends Model
         'total_refunded_amount',
         'latest_pos_transaction_id',
         'manual_pos_queue_enabled',
+        'is_warranty_job',
+        'parent_repair_request_id',
+        'warranty_sequence',
+        'warranty_claim_id',
+        'billing_mode',
+        'warranty_display_alias',
+        'repair_handler_user_id',
+        'handler_source',
         'pickup_enabled',
         'pickup_enabled_at',
         'pickup_enabled_by',
@@ -135,7 +143,9 @@ class RepairRequest extends Model
         'payment_enabled' => 'boolean',
         'pickup_enabled' => 'boolean',
         'manual_pos_queue_enabled' => 'boolean',
+        'is_warranty_job' => 'boolean',
         'reassignment_count' => 'integer',
+        'warranty_sequence' => 'integer',
         'images' => 'array',
         'pickup_address' => 'array',
         'intake_address' => 'array',
@@ -226,6 +236,36 @@ class RepairRequest extends Model
     public function latestPosTransaction()
     {
         return $this->belongsTo(PosTransaction::class, 'latest_pos_transaction_id');
+    }
+
+    public function parentRepairRequest()
+    {
+        return $this->belongsTo(self::class, 'parent_repair_request_id');
+    }
+
+    public function warrantyJobs()
+    {
+        return $this->hasMany(self::class, 'parent_repair_request_id');
+    }
+
+    public function warrantyClaim()
+    {
+        return $this->belongsTo(RepairWarrantyClaim::class, 'warranty_claim_id');
+    }
+
+    public function warrantyClaims()
+    {
+        return $this->hasMany(RepairWarrantyClaim::class, 'original_repair_request_id');
+    }
+
+    public function approvedWarrantyClaim()
+    {
+        return $this->hasOne(RepairWarrantyClaim::class, 'approved_repair_request_id');
+    }
+
+    public function repairHandler()
+    {
+        return $this->belongsTo(User::class, 'repair_handler_user_id');
     }
 
     public function materialUsages()

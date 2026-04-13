@@ -122,21 +122,9 @@ class NotificationService
             }
 
             // Get or create shop owner preferences
-            $preferences = NotificationPreference::firstOrCreate(
-                ['shop_owner_id' => $shopOwnerId],
-                [
-                    'preferences' => [],
-                    'email_digest_frequency' => 'none',
-                    'sound_enabled' => true,
-                    // Shop Owner notification defaults
-                    'email_new_orders' => true,
-                    'email_approvals' => true,
-                    'email_alerts' => true,
-                    'browser_new_orders' => true,
-                    'browser_approvals' => true,
-                    'browser_alerts' => true,
-                ]
-            );
+            $preferences = NotificationPreference::firstOrCreate([
+                'shop_owner_id' => $shopOwnerId,
+            ]);
 
             // Check quiet hours
             if ($preferences->isQuietHours() && $priority !== 'high') {
@@ -359,10 +347,13 @@ class NotificationService
             'waiting_customer_confirmation' => 'Please confirm the repair details and pricing.',
             'owner_approval_pending' => 'Repair is pending shop owner approval.',
             'owner_approved' => 'Your repair has been approved!',
+            'received' => 'Your item has been received by the shop.',
             'in_progress' => 'Your repair work is now in progress.',
             'awaiting_parts' => 'Repair is awaiting parts.',
             'completed' => 'Your repair has been completed!',
             'ready_for_pickup' => 'Your shoes are ready for pickup!',
+            'shipped' => 'Your repaired item is now on the way.',
+            'picked_up' => 'Your repair has been marked as received. Thank you!',
         ];
 
         $message = $statusMessages[$repairData['status']] ?? 'Your repair status has been updated.';
@@ -463,6 +454,34 @@ class NotificationService
             type: NotificationType::REPAIR_READY_PICKUP,
             title: 'Ready for Pickup!',
             message: "Your repaired shoes are ready for pickup!",
+            data: $repairData,
+            actionUrl: '/my-repairs'
+        );
+    }
+
+    /**
+     * Notify customer when receive confirmation is activated for return delivery.
+     */
+    public function notifyRepairReceiveConfirmationActivated(int $userId, array $repairData): ?Notification
+    {
+        $orderNumber = trim((string) ($repairData['order_number'] ?? ''));
+        $orderSuffix = $orderNumber !== '' ? " #{$orderNumber}" : '';
+        $isWarrantyRework = (bool) ($repairData['is_warranty_job'] ?? false)
+            || strtolower((string) ($repairData['billing_mode'] ?? '')) === 'warranty_no_charge';
+
+        $title = $isWarrantyRework
+            ? 'Warranty Re-Repair In Transit'
+            : 'Return Delivery Update';
+
+        $message = $isWarrantyRework
+            ? "Your warranty re-repair{$orderSuffix} is on the way back. Please confirm once received."
+            : "Your repaired item{$orderSuffix} is on the way back. Please confirm once received.";
+
+        return $this->sendToUser(
+            userId: $userId,
+            type: NotificationType::REPAIR_STATUS_UPDATE,
+            title: $title,
+            message: $message,
             data: $repairData,
             actionUrl: '/my-repairs'
         );
@@ -979,6 +998,138 @@ class NotificationService
         }
     }
 
+    /**
+     * Notify workflow actors when a warranty claim is filed.
+     */
+    public function notifyRepairWarrantyClaimFiled(int $shopOwnerId, array $claimData): void
+    {
+        $claimNo = (string) ($claimData['claim_no'] ?? 'N/A');
+        $requestId = (string) ($claimData['request_id'] ?? $claimData['order_number'] ?? 'N/A');
+        $handlerUserId = (int) ($claimData['repair_handler_user_id'] ?? 0);
+        $sourceChannel = (string) ($claimData['source_channel'] ?? 'customer_portal');
+        $isPosChannel = $sourceChannel === 'manual_pos_walk_in';
+
+        $ownerMessage = $isPosChannel
+            ? "Warranty claim {$claimNo} was filed at POS for repair #{$requestId}."
+            : "Warranty claim {$claimNo} was filed for repair #{$requestId}.";
+
+        $this->sendToResolvedShopOwnerRecipients(
+            eventType: 'high_value_approval',
+            shopOwnerId: $shopOwnerId,
+            type: NotificationType::NEW_REPAIR_REQUEST,
+            title: 'Warranty Claim Filed',
+            message: $ownerMessage,
+            data: $claimData,
+            actionUrl: '/erp/staff/job-orders-repair',
+            priority: 'medium'
+        );
+
+        if ($handlerUserId > 0) {
+            $this->sendToUser(
+                userId: $handlerUserId,
+                type: NotificationType::REPAIR_ASSIGNED_TO_ME,
+                title: 'Warranty Claim Needs Review',
+                message: "Review warranty claim {$claimNo} for repair #{$requestId}.",
+                data: $claimData,
+                actionUrl: '/erp/staff/job-orders-repair',
+                shopId: $shopOwnerId,
+                priority: 'high',
+                groupKey: "warranty-claim-{$claimNo}",
+                requiresAction: true
+            );
+        }
+    }
+
+    /**
+     * Notify workflow actors when a warranty claim is approved.
+     */
+    public function notifyRepairWarrantyClaimApproved(int $shopOwnerId, array $claimData): void
+    {
+        $claimNo = (string) ($claimData['claim_no'] ?? 'N/A');
+        $requestId = (string) ($claimData['request_id'] ?? $claimData['order_number'] ?? 'N/A');
+        $linkedRequestId = (string) ($claimData['linked_request_id'] ?? '');
+        $customerUserId = (int) ($claimData['customer_user_id'] ?? 0);
+
+        $ownerMessage = $linkedRequestId !== ''
+            ? "Warranty claim {$claimNo} for repair #{$requestId} was approved. Linked job: {$linkedRequestId}."
+            : "Warranty claim {$claimNo} for repair #{$requestId} was approved.";
+
+        $this->sendToResolvedShopOwnerRecipients(
+            eventType: 'high_value_approval',
+            shopOwnerId: $shopOwnerId,
+            type: NotificationType::NEW_REPAIR_REQUEST,
+            title: 'Warranty Claim Approved',
+            message: $ownerMessage,
+            data: $claimData,
+            actionUrl: '/erp/staff/job-orders-repair',
+            priority: 'medium'
+        );
+
+        if ($customerUserId > 0) {
+            $customerMessage = $linkedRequestId !== ''
+                ? "Your warranty claim {$claimNo} was approved. Rework job {$linkedRequestId} has been created with no additional charge."
+                : "Your warranty claim {$claimNo} was approved. Rework job has been created with no additional charge.";
+
+            $this->sendToUser(
+                userId: $customerUserId,
+                type: NotificationType::REPAIR_STATUS_UPDATE,
+                title: 'Warranty Claim Approved',
+                message: $customerMessage,
+                data: $claimData,
+                actionUrl: '/my-repairs',
+                shopId: $shopOwnerId,
+                priority: 'high',
+                groupKey: "warranty-claim-{$claimNo}"
+            );
+        }
+    }
+
+    /**
+     * Notify workflow actors when a warranty claim is rejected.
+     */
+    public function notifyRepairWarrantyClaimRejected(int $shopOwnerId, array $claimData): void
+    {
+        $claimNo = (string) ($claimData['claim_no'] ?? 'N/A');
+        $requestId = (string) ($claimData['request_id'] ?? $claimData['order_number'] ?? 'N/A');
+        $customerUserId = (int) ($claimData['customer_user_id'] ?? 0);
+        $reason = trim((string) ($claimData['rejection_reason'] ?? ''));
+
+        $ownerMessage = "Warranty claim {$claimNo} for repair #{$requestId} was rejected.";
+        if ($reason !== '') {
+            $ownerMessage .= " Reason: {$reason}";
+        }
+
+        $this->sendToResolvedShopOwnerRecipients(
+            eventType: 'high_value_approval',
+            shopOwnerId: $shopOwnerId,
+            type: NotificationType::NEW_REPAIR_REQUEST,
+            title: 'Warranty Claim Rejected',
+            message: $ownerMessage,
+            data: $claimData,
+            actionUrl: '/erp/staff/job-orders-repair',
+            priority: 'medium'
+        );
+
+        if ($customerUserId > 0) {
+            $customerMessage = "Your warranty claim {$claimNo} was rejected.";
+            if ($reason !== '') {
+                $customerMessage .= " Reason: {$reason}";
+            }
+
+            $this->sendToUser(
+                userId: $customerUserId,
+                type: NotificationType::REPAIR_STATUS_UPDATE,
+                title: 'Warranty Claim Rejected',
+                message: $customerMessage,
+                data: $claimData,
+                actionUrl: '/my-repairs',
+                shopId: $shopOwnerId,
+                priority: 'high',
+                groupKey: "warranty-claim-{$claimNo}"
+            );
+        }
+    }
+
     // ==================== SHOP OWNER NOTIFICATIONS ====================
 
     /**
@@ -1309,6 +1460,33 @@ class NotificationService
             message: "Repair (₱{$repairData['total']}) requires your approval",
             data: $repairData,
             actionUrl: '/shop-owner/repair-reject-approval'
+        );
+    }
+
+    /**
+     * Notify shop owner when manager forwards a repairer rejection for owner review.
+     */
+    public function notifyRepairRejectApprovalRequest(int $shopOwnerId, array $repairData): ?Notification
+    {
+        $orderNumber = (string) ($repairData['order_number'] ?? $repairData['request_id'] ?? $repairData['repair_id'] ?? 'N/A');
+        $reason = trim((string) ($repairData['reason'] ?? $repairData['repairer_rejection_reason'] ?? ''));
+
+        $message = "Repair rejection for #{$orderNumber} was forwarded by manager and needs your review.";
+        if ($reason !== '') {
+            $message .= " Reason: {$reason}";
+        }
+
+        return $this->sendToResolvedShopOwnerRecipients(
+            eventType: 'repair_reject_approval',
+            shopOwnerId: $shopOwnerId,
+            type: NotificationType::REPAIR_REJECTION_REVIEW,
+            title: 'Repair Rejection Awaiting Your Review',
+            message: $message,
+            data: $repairData,
+            actionUrl: '/shop-owner/repair-reject-approval',
+            priority: 'high',
+            groupKey: "repair-reject-owner-{$orderNumber}",
+            requiresAction: true
         );
     }
 

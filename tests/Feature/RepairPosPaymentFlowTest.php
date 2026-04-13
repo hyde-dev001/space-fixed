@@ -194,6 +194,181 @@ class RepairPosPaymentFlowTest extends TestCase
     }
 
     #[Test]
+    public function manual_pos_package_add_ons_persist_after_ready_for_pickup_transition(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'individual',
+        ]);
+
+        $includedService = \App\Models\RepairService::create([
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Starter Clean Service',
+            'category' => 'Cleaning',
+            'price' => 599,
+            'duration' => '40 min',
+            'status' => 'Active',
+        ]);
+
+        $addOnService = \App\Models\RepairService::create([
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Whitening Add-on',
+            'category' => 'Enhancement',
+            'price' => 450,
+            'duration' => '30 min',
+            'status' => 'Active',
+        ]);
+
+        $package = \App\Models\RepairPackage::create([
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Starter Clean Package',
+            'description' => 'POS package + add-on regression test',
+            'package_price' => 599,
+            'status' => 'active',
+        ]);
+        $package->services()->sync([$includedService->id]);
+
+        $checkoutResponse = $this->actingAs($shopOwner, 'shop_owner')->postJson('/api/repair-pos/checkout', [
+            'repair_request_id' => null,
+            'due_type' => 'deposit',
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'POS Package Add-on Customer',
+            'walk_in_phone' => '09178887777',
+            'idempotency_key' => 'manual-pos-package-addon-001',
+            'manual_repair_subtotal' => 1049,
+            'manual_service_summary' => 'Starter package with whitening add-on',
+            'manual_payment_policy' => 'deposit_50',
+            'manual_repair_package_id' => $package->id,
+            'manual_service_ids' => [$includedService->id, $addOnService->id],
+            'payment_lines' => [
+                ['tender_type' => 'cash', 'amount' => 524.50],
+            ],
+        ]);
+
+        $checkoutResponse->assertOk()->assertJsonPath('success', true);
+
+        $transactionId = (int) $checkoutResponse->json('transaction_id');
+        $transaction = \App\Models\PosTransaction::query()->findOrFail($transactionId);
+        $repair = \App\Models\RepairRequest::query()->findOrFail((int) $transaction->module_reference_id);
+
+        $this->assertSame((int) $package->id, (int) $repair->repair_package_id);
+        $this->assertSame('599.00', number_format((float) $repair->package_price, 2, '.', ''));
+        $this->assertSame('450.00', number_format((float) $repair->add_ons_total, 2, '.', ''));
+        $this->assertSame('1049.00', number_format((float) $repair->total, 2, '.', ''));
+        $this->assertSame('1049.00', number_format((float) $repair->final_total, 2, '.', ''));
+        $this->assertCount(1, (array) $repair->add_on_services_snapshot);
+
+        $repair->update(['status' => 'in_progress']);
+
+        $markReadyResponse = $this->actingAs($shopOwner, 'shop_owner')->postJson(
+            "/api/shop-owner/repairs/{$repair->id}/mark-ready",
+            [
+                'pickup_instructions' => 'Ready for pickup.',
+                'no_materials_used_confirmed' => true,
+                'variance_override_confirmed' => true,
+            ]
+        );
+
+        $markReadyResponse->assertOk()->assertJsonPath('success', true);
+
+        $repair->refresh();
+        $this->assertSame('ready_for_pickup', (string) $repair->status);
+        $this->assertSame('450.00', number_format((float) $repair->add_ons_total, 2, '.', ''));
+        $this->assertSame('1049.00', number_format((float) $repair->final_total, 2, '.', ''));
+        $this->assertSame('1049.00', number_format((float) data_get($repair->pricing_breakdown, 'base_total', 0), 2, '.', ''));
+    }
+
+    #[Test]
+    public function balance_checkout_uses_original_manual_pos_total_even_if_repair_totals_were_downgraded(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'individual',
+        ]);
+
+        $includedService = \App\Models\RepairService::create([
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Starter Clean Service',
+            'category' => 'Cleaning',
+            'price' => 599,
+            'duration' => '40 min',
+            'status' => 'Active',
+        ]);
+
+        $addOnService = \App\Models\RepairService::create([
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Whitening Add-on',
+            'category' => 'Enhancement',
+            'price' => 450,
+            'duration' => '30 min',
+            'status' => 'Active',
+        ]);
+
+        $package = \App\Models\RepairPackage::create([
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Starter Clean Package',
+            'description' => 'Balance due regression test',
+            'package_price' => 599,
+            'status' => 'active',
+        ]);
+        $package->services()->sync([$includedService->id]);
+
+        $depositResponse = $this->actingAs($shopOwner, 'shop_owner')->postJson('/api/repair-pos/checkout', [
+            'repair_request_id' => null,
+            'due_type' => 'deposit',
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'POS Remaining Balance Customer',
+            'walk_in_phone' => '09179996666',
+            'idempotency_key' => 'manual-pos-balance-regression-deposit-001',
+            'manual_repair_subtotal' => 1049,
+            'manual_service_summary' => 'Starter package with whitening add-on',
+            'manual_payment_policy' => 'deposit_50',
+            'manual_repair_package_id' => $package->id,
+            'manual_service_ids' => [$includedService->id, $addOnService->id],
+            'payment_lines' => [
+                ['tender_type' => 'cash', 'amount' => 524.50],
+            ],
+        ]);
+
+        $depositResponse->assertOk()->assertJsonPath('success', true);
+
+        $depositTransaction = \App\Models\PosTransaction::query()->findOrFail((int) $depositResponse->json('transaction_id'));
+        $repair = \App\Models\RepairRequest::query()->findOrFail((int) $depositTransaction->module_reference_id);
+
+        // Simulate stale data issue where totals were downgraded to package-only after workflow updates.
+        $repair->forceFill([
+            'total' => 599,
+            'final_total' => 599,
+            'add_ons_total' => 0,
+            'pricing_breakdown' => array_merge((array) ($repair->pricing_breakdown ?? []), [
+                'mode' => 'manual_pos',
+                'base_total' => 599,
+                'final_total' => 599,
+                'package_price' => 599,
+                'add_ons_total' => 0,
+            ]),
+        ])->save();
+
+        $balanceResponse = $this->actingAs($shopOwner, 'shop_owner')->postJson('/api/repair-pos/checkout', [
+            'repair_request_id' => $repair->id,
+            'due_type' => 'balance',
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'POS Remaining Balance Customer',
+            'walk_in_phone' => '09179996666',
+            'idempotency_key' => 'manual-pos-balance-regression-balance-001',
+            'payment_lines' => [
+                ['tender_type' => 'cash', 'amount' => 524.50],
+            ],
+        ]);
+
+        $balanceResponse->assertOk()->assertJsonPath('success', true);
+
+        $balanceTransaction = \App\Models\PosTransaction::query()->findOrFail((int) $balanceResponse->json('transaction_id'));
+        $this->assertSame('524.50', number_format((float) $balanceTransaction->total_amount, 2, '.', ''));
+        $this->assertSame('balance', (string) $balanceTransaction->due_type);
+    }
+
+    #[Test]
     public function cashier_walk_in_payment_is_visible_in_repairer_job_orders_with_paid_amount(): void
     {
         $shopOwner = \App\Models\ShopOwner::factory()->approved()->create([

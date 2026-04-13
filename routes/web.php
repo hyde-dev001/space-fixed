@@ -312,9 +312,22 @@ Route::post('/user/logout', [UserController::class, 'logout'])->name('user.logou
 Route::get('/api/user/me', [UserController::class, 'me'])->middleware('auth:user')->name('user.me');
 
 // Shop Owner Authentication Routes
+Route::post('/shop-owner/email-verification/send-code', [ShopOwnerAuthController::class, 'sendRegistrationEmailOtp'])
+    ->middleware('throttle:5,1')
+    ->name('shop-owner.email-verification.send-code');
+Route::post('/shop-owner/email-verification/verify-code', [ShopOwnerAuthController::class, 'verifyRegistrationEmailOtp'])
+    ->middleware('throttle:10,1')
+    ->name('shop-owner.email-verification.verify-code');
 Route::post('/shop-owner/register', [ShopOwnerAuthController::class, 'register'])->name('shop-owner.register');
 Route::post('/shop-owner/login', [ShopOwnerAuthController::class, 'login'])->name('shop-owner.login');
 Route::post('/shop-owner/logout', [ShopOwnerAuthController::class, 'logout'])->name('shop-owner.logout');
+Route::get('/shop-owner/two-factor', [ShopOwnerAuthController::class, 'showTwoFactorChallenge'])->name('shop-owner.two-factor.challenge');
+Route::post('/shop-owner/two-factor/verify', [ShopOwnerAuthController::class, 'verifyLoginTwoFactorOtp'])
+    ->middleware('throttle:10,1')
+    ->name('shop-owner.two-factor.verify');
+Route::post('/shop-owner/two-factor/resend', [ShopOwnerAuthController::class, 'resendLoginTwoFactorOtp'])
+    ->middleware('throttle:6,1')
+    ->name('shop-owner.two-factor.resend');
 
 // Shop Owner Pending Approval Page
 Route::get('/shop-owner/pending-approval', function () {
@@ -485,6 +498,10 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
                 'repair_workload_limit' => (int) ($shopOwner->repair_workload_limit ?? 20),
             ]);
         })->name('job-orders-repair');
+
+        Route::get('/warranty-queue', function () {
+            return Inertia::render('ShopOwner/Repairs/service management/WarrantyQueue');
+        })->middleware('check.registration.type:individual')->name('warranty-queue');
 
         Route::get('/upload-services', function () {
             return Inertia::render('ShopOwner/Repairs/service management/uploadService');
@@ -992,6 +1009,10 @@ Route::middleware('auth:user')->prefix('api/customer/repairs')->group(function (
     // Customer-initiated online refund request for myRepairs flow
     Route::post('{id}/refunds', [\App\Http\Controllers\Api\RepairRequestController::class, 'requestRefundFromMyRepair']);
 
+    // Customer-initiated warranty claim flow
+    Route::post('{id}/warranty-claims', [\App\Http\Controllers\Api\RepairWarrantyClaimController::class, 'store']);
+    Route::get('{id}/warranty-claims/latest', [\App\Http\Controllers\Api\RepairWarrantyClaimController::class, 'latest']);
+
     // Phase 10D - Reviews & Ratings
     Route::post('{id}/review', [\App\Http\Controllers\Api\RepairReviewController::class, 'store']);
     Route::get('{id}/review', [\App\Http\Controllers\Api\RepairReviewController::class, 'getRepairReview']);
@@ -1008,6 +1029,20 @@ Route::middleware(['auth:user', 'check.user.business.type:repair,both'])->prefix
     Route::get('/', [\App\Http\Controllers\Api\RepairRefundWorkflowController::class, 'repairerQueue']);
     Route::post('{refund}/approve', [\App\Http\Controllers\Api\RepairRefundWorkflowController::class, 'repairerApprove']);
     Route::post('{refund}/reject', [\App\Http\Controllers\Api\RepairRefundWorkflowController::class, 'repairerReject']);
+});
+
+Route::middleware(['auth:user', 'check.user.business.type:repair,both'])->prefix('api/repairer/warranty-claims')->group(function () {
+    Route::get('/', [\App\Http\Controllers\Api\RepairerWarrantyClaimController::class, 'index']);
+    Route::get('/kpi', [\App\Http\Controllers\Api\RepairerWarrantyClaimController::class, 'metrics']);
+    Route::post('{claim}/approve', [\App\Http\Controllers\Api\RepairerWarrantyClaimController::class, 'approve']);
+    Route::post('{claim}/reject', [\App\Http\Controllers\Api\RepairerWarrantyClaimController::class, 'reject']);
+});
+
+Route::middleware(['auth:shop_owner', 'check.business.type:repair,both'])->prefix('api/shop-owner/warranty-claims')->group(function () {
+    Route::get('/', [\App\Http\Controllers\Api\RepairerWarrantyClaimController::class, 'index']);
+    Route::get('/kpi', [\App\Http\Controllers\Api\RepairerWarrantyClaimController::class, 'metrics']);
+    Route::post('{claim}/approve', [\App\Http\Controllers\Api\RepairerWarrantyClaimController::class, 'approve']);
+    Route::post('{claim}/reject', [\App\Http\Controllers\Api\RepairerWarrantyClaimController::class, 'reject']);
 });
 
 Route::middleware(['auth:user', 'permission:access-refund-approval'])->prefix('api/finance/repair-refunds')->group(function () {
@@ -2155,6 +2190,14 @@ Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manage
             'repair_workload_limit' => (int) ($shopOwner?->repair_workload_limit ?? 20),
         ]);
     })->middleware(['permission:access-repair-job-orders', 'check.user.business.type:repair,both'])->name('job-orders-repair');
+
+    Route::get('/warranty-queue', function () {
+        if (Auth::guard('user')->user()?->force_password_change) {
+            return redirect()->route('erp.profile');
+        }
+
+        return Inertia::render('ERP/repairer/WarrantyQueue');
+    })->middleware(['permission:access-repair-job-orders', 'check.user.business.type:repair,both'])->name('warranty-queue');
 
     Route::get('/upload-services', function () {
         if (Auth::guard('user')->user()?->force_password_change) {

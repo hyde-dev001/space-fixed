@@ -1,0 +1,347 @@
+<?php
+
+namespace Tests\Feature\Repair\Warranty;
+
+use App\Models\RepairRequest;
+use App\Models\RepairWarrantyClaim;
+use App\Models\ShopOwner;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Tests\TestCase;
+
+class RepairWarrantyClaimFlowTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_approve_claim_creates_exactly_one_linked_warranty_job(): void
+    {
+        [$shopOwner, $repairer, $repair, $claim] = $this->seedPendingClaimContext();
+
+        $response = $this->actingAs($repairer, 'user')->postJson(
+            "/api/repairer/warranty-claims/{$claim->id}/approve"
+        );
+
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true);
+
+        $claim->refresh();
+
+        $this->assertSame(RepairWarrantyClaim::STATUS_APPROVED, (string) $claim->status);
+        $this->assertNotNull($claim->approved_repair_request_id);
+
+        $linked = RepairRequest::query()->findOrFail((int) $claim->approved_repair_request_id);
+        $this->assertTrue((bool) $linked->is_warranty_job);
+        $this->assertSame((int) $repair->id, (int) $linked->parent_repair_request_id);
+        $this->assertSame('warranty_no_charge', (string) $linked->billing_mode);
+        $this->assertSame(0.0, (float) $linked->final_total);
+        $this->assertFalse((bool) $linked->payment_enabled);
+
+        $this->assertSame(
+            1,
+            RepairRequest::query()
+                ->where('parent_repair_request_id', $repair->id)
+                ->where('is_warranty_job', true)
+                ->count()
+        );
+
+        $secondAttempt = $this->actingAs($repairer, 'user')->postJson(
+            "/api/repairer/warranty-claims/{$claim->id}/approve"
+        );
+
+        $secondAttempt->assertStatus(422);
+
+        $this->assertSame(
+            1,
+            RepairRequest::query()
+                ->where('parent_repair_request_id', $repair->id)
+                ->where('is_warranty_job', true)
+                ->count()
+        );
+    }
+
+    public function test_approve_claim_does_not_reduce_existing_recognized_revenue(): void
+    {
+        [$shopOwner, $repairer, $repair, $claim] = $this->seedPendingClaimContext();
+
+        $repair->forceFill([
+            'total' => 1120.00,
+            'final_total' => 1120.00,
+            'payment_policy' => 'full_upfront',
+            'payment_policy_snapshot' => 'full_upfront',
+            'total_paid_amount' => 1120.00,
+            'total_refunded_amount' => 0.00,
+            'payment_status' => 'completed',
+        ])->save();
+
+        $beforeRevenue = $this->dashboardStyleRepairRevenueForShop((int) $shopOwner->id);
+
+        $response = $this->actingAs($repairer, 'user')->postJson(
+            "/api/repairer/warranty-claims/{$claim->id}/approve"
+        );
+
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true);
+
+        $afterRevenue = $this->dashboardStyleRepairRevenueForShop((int) $shopOwner->id);
+
+        $this->assertEqualsWithDelta($beforeRevenue, $afterRevenue, 0.0001);
+
+        $repair->refresh();
+        $this->assertSame(1120.0, (float) $repair->total_paid_amount);
+        $this->assertSame(0.0, (float) $repair->total_refunded_amount);
+    }
+
+    public function test_reject_claim_persists_reason_and_creates_no_linked_job(): void
+    {
+        [, $repairer, $repair, $claim] = $this->seedPendingClaimContext();
+
+        $response = $this->actingAs($repairer, 'user')->postJson(
+            "/api/repairer/warranty-claims/{$claim->id}/reject",
+            ['rejection_reason' => 'Issue does not match the original repair scope.']
+        );
+
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.status', RepairWarrantyClaim::STATUS_REJECTED);
+
+        $claim->refresh();
+        $this->assertSame(RepairWarrantyClaim::STATUS_REJECTED, (string) $claim->status);
+        $this->assertSame('Issue does not match the original repair scope.', (string) $claim->rejection_reason);
+        $this->assertNull($claim->approved_repair_request_id);
+
+        $this->assertSame(
+            0,
+            RepairRequest::query()
+                ->where('parent_repair_request_id', $repair->id)
+                ->where('is_warranty_job', true)
+                ->count()
+        );
+    }
+
+    public function test_repairer_kpi_endpoint_returns_scoped_warranty_metrics(): void
+    {
+        [$shopOwner, $repairer, $repair, $claim] = $this->seedPendingClaimContext();
+
+        $otherRepairer = User::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+        ]);
+
+        $otherRepair = RepairRequest::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => User::factory()->create()->id,
+            'assigned_repairer_id' => $otherRepairer->id,
+            'status' => 'picked_up',
+            'picked_up_at' => now()->subDays(2),
+            'received_at' => now()->subDays(2),
+            'payment_status' => 'completed',
+        ]);
+
+        RepairWarrantyClaim::query()->create([
+            'claim_no' => 'WCLM-FLOW-0002',
+            'original_repair_request_id' => $otherRepair->id,
+            'customer_user_id' => $otherRepair->user_id,
+            'shop_owner_id' => $shopOwner->id,
+            'repair_handler_user_id' => $otherRepairer->id,
+            'handler_source' => 'business_employee',
+            'status' => RepairWarrantyClaim::STATUS_APPROVED,
+            'reason_code' => 'issue_returned',
+            'reason_details' => 'Approved claim for another repairer.',
+            'same_issue_confirmation' => true,
+            'evidence_media' => ['repair-warranty-claims/other-proof.jpg'],
+            'preferred_return_method' => 'walk_in',
+            'shipping_cost_bearer' => 'customer',
+            'source_channel' => 'manual_pos_walk_in',
+            'warranty_started_at_snapshot' => now()->subDays(2),
+            'warranty_expires_at_snapshot' => now()->addDays(20),
+            'reviewed_by_repairer_id' => $otherRepairer->id,
+            'reviewed_at' => now()->subHours(6),
+        ]);
+
+        $response = $this->actingAs($repairer, 'user')->getJson('/api/repairer/warranty-claims/kpi?days=30');
+
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.window_days', 30)
+            ->assertJsonPath('data.total_claims', 1)
+            ->assertJsonPath('data.pending_count', 1)
+            ->assertJsonPath('data.approved_count', 0)
+            ->assertJsonPath('data.from_pos_count', 0)
+            ->assertJsonPath('data.from_customer_portal_count', 1);
+
+        $claim->refresh();
+        $repair->refresh();
+    }
+
+    public function test_repairer_index_without_status_filter_returns_all_claim_statuses(): void
+    {
+        [$shopOwner, $repairer, $repair, $pendingClaim] = $this->seedPendingClaimContext();
+
+        $approvedRepair = RepairRequest::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => User::factory()->create()->id,
+            'assigned_repairer_id' => $repairer->id,
+            'status' => 'picked_up',
+            'picked_up_at' => now()->subDays(1),
+            'received_at' => now()->subDays(2),
+            'payment_status' => 'completed',
+        ]);
+
+        $approvedClaim = RepairWarrantyClaim::query()->create([
+            'claim_no' => 'WCLM-FLOW-0003',
+            'original_repair_request_id' => $approvedRepair->id,
+            'customer_user_id' => $approvedRepair->user_id,
+            'shop_owner_id' => $shopOwner->id,
+            'repair_handler_user_id' => $repairer->id,
+            'handler_source' => 'business_employee',
+            'status' => RepairWarrantyClaim::STATUS_APPROVED,
+            'reason_code' => 'issue_returned',
+            'reason_details' => 'Approved claim used for status aggregation test.',
+            'same_issue_confirmation' => true,
+            'evidence_media' => ['repair-warranty-claims/all-status-proof.jpg'],
+            'preferred_return_method' => 'walk_in',
+            'shipping_cost_bearer' => 'customer',
+            'source_channel' => 'manual_pos_walk_in',
+            'warranty_started_at_snapshot' => now()->subDays(1),
+            'warranty_expires_at_snapshot' => now()->addDays(20),
+            'reviewed_by_repairer_id' => $repairer->id,
+            'reviewed_at' => now()->subHours(2),
+        ]);
+
+        $response = $this->actingAs($repairer, 'user')->getJson('/api/repairer/warranty-claims');
+
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonCount(2, 'data');
+
+        $returnedStatuses = collect(data_get($response->json(), 'data', []))
+            ->pluck('status')
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
+
+        $this->assertSame([
+            RepairWarrantyClaim::STATUS_APPROVED,
+            RepairWarrantyClaim::STATUS_PENDING_REPAIRER,
+        ], $returnedStatuses);
+
+        $filteredResponse = $this->actingAs($repairer, 'user')
+            ->getJson('/api/repairer/warranty-claims?status=' . RepairWarrantyClaim::STATUS_PENDING_REPAIRER);
+
+        $filteredResponse->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', (int) $pendingClaim->id)
+            ->assertJsonPath('data.0.status', RepairWarrantyClaim::STATUS_PENDING_REPAIRER);
+
+        $repair->refresh();
+        $pendingClaim->refresh();
+        $approvedClaim->refresh();
+    }
+
+    public function test_assigned_repairer_can_reject_claim_when_handler_is_unset(): void
+    {
+        [, $repairer, $repair, $claim] = $this->seedPendingClaimContext();
+
+        $claim->forceFill([
+            'repair_handler_user_id' => null,
+            'handler_source' => null,
+        ])->save();
+
+        $response = $this->actingAs($repairer, 'user')->postJson(
+            "/api/repairer/warranty-claims/{$claim->id}/reject",
+            ['rejection_reason' => 'Handled by currently assigned repairer.']
+        );
+
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.status', RepairWarrantyClaim::STATUS_REJECTED);
+
+        $claim->refresh();
+        $repair->refresh();
+
+        $this->assertSame(RepairWarrantyClaim::STATUS_REJECTED, (string) $claim->status);
+    }
+
+    private function dashboardStyleRepairRevenueForShop(int $shopOwnerId): float
+    {
+        $vatDivisor = 1.12;
+
+        $expression = "
+            CASE
+                WHEN (COALESCE(total_paid_amount, 0) > 0 OR COALESCE(total_refunded_amount, 0) > 0)
+                    THEN CASE
+                        WHEN (COALESCE(total_paid_amount, 0) - COALESCE(total_refunded_amount, 0)) < 0 THEN 0
+                        ELSE ((COALESCE(total_paid_amount, 0) - COALESCE(total_refunded_amount, 0)) / {$vatDivisor})
+                    END
+                WHEN payment_status = 'completed'
+                    THEN (COALESCE(final_total, total, 0) / {$vatDivisor})
+                WHEN payment_status = 'paid'
+                    THEN CASE
+                        WHEN COALESCE(payment_policy_snapshot, payment_policy, 'deposit_50') = 'deposit_50'
+                            THEN ((COALESCE(final_total, total, 0) * 0.5) / {$vatDivisor})
+                        ELSE (COALESCE(final_total, total, 0) / {$vatDivisor})
+                    END
+                ELSE 0
+            END
+        ";
+
+        return (float) RepairRequest::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where(function ($query) {
+                $query->whereNull('is_warranty_job')
+                    ->orWhere('is_warranty_job', false);
+            })
+            ->sum(DB::raw($expression));
+    }
+
+    /**
+     * @return array{0: ShopOwner, 1: User, 2: RepairRequest, 3: RepairWarrantyClaim}
+     */
+    private function seedPendingClaimContext(): array
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'company',
+            'warranty_enabled' => true,
+            'repair_warranty_days' => 30,
+        ]);
+
+        $customer = User::factory()->create();
+        $repairer = User::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+        ]);
+
+        $repair = RepairRequest::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'assigned_repairer_id' => $repairer->id,
+            'status' => 'picked_up',
+            'picked_up_at' => now()->subDays(2),
+            'received_at' => now()->subDays(3),
+            'payment_status' => 'completed',
+        ]);
+
+        $claim = RepairWarrantyClaim::query()->create([
+            'claim_no' => 'WCLM-FLOW-0001',
+            'original_repair_request_id' => $repair->id,
+            'customer_user_id' => $customer->id,
+            'shop_owner_id' => $shopOwner->id,
+            'repair_handler_user_id' => $repairer->id,
+            'handler_source' => 'business_employee',
+            'status' => RepairWarrantyClaim::STATUS_PENDING_REPAIRER,
+            'reason_code' => 'issue_returned',
+            'reason_details' => 'Issue returned shortly after pickup.',
+            'same_issue_confirmation' => true,
+            'evidence_media' => ['repair-warranty-claims/proof.jpg'],
+            'preferred_return_method' => 'walk_in',
+            'shipping_cost_bearer' => 'customer',
+            'source_channel' => 'customer_portal',
+            'warranty_started_at_snapshot' => now()->subDays(2),
+            'warranty_expires_at_snapshot' => now()->addDays(20),
+        ]);
+
+        return [$shopOwner, $repairer, $repair, $claim];
+    }
+}

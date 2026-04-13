@@ -67,6 +67,9 @@ type RepairOrder = {
     base_total?: number | string;
     final_total?: number | string;
   } | null;
+  isWarrantyJob?: boolean;
+  billingMode?: string | null;
+  warrantyDisplayAlias?: string | null;
 };
 
 type RepairRefundQueueItem = {
@@ -336,15 +339,6 @@ const humanizeReasonCode = (value: string | null | undefined): string => {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
     .join(" ");
-};
-
-const escapeHtml = (value: unknown): string => {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 };
 
 const extractRefundEvidenceMedia = (refund: any): string[] => {
@@ -724,12 +718,21 @@ export default function JobOrdersRepair() {
               ?? repair.repair_package?.name
               ?? ''
           ).trim();
-          const billableBaseAmount =
+          const pricingMode = String(repair.pricing_breakdown?.mode ?? '').toLowerCase();
+          const baseCandidates = [
+            toNumber(repair.pricing_breakdown?.base_total),
+            toNumber(repair.final_total),
+            toNumber(repair.pricing_breakdown?.final_total),
+            toNumber(repair.total),
+          ].filter((value): value is number => value !== null && Number.isFinite(value));
+          const fallbackBase =
             toNumber(repair.pricing_breakdown?.base_total ?? repair.final_total ?? repair.pricing_breakdown?.final_total ?? repair.total)
             ?? 0;
+          const billableBaseAmount = pricingMode === 'manual_pos' && baseCandidates.length > 0
+            ? Math.max(...baseCandidates)
+            : fallbackBase;
           const rawVatRate = Number(repair.vat_rate);
           const vatRate = Number.isFinite(rawVatRate) && rawVatRate > 0 ? rawVatRate : REPAIR_VAT_RATE_PERCENT;
-          const pricingMode = String(repair.pricing_breakdown?.mode ?? '').toLowerCase();
           const fallbackTaxMode = pricingMode === 'manual_pos' ? 'vat_inclusive' : 'legacy_additive';
           const rawTaxMode = String(repair.tax_mode ?? repair.pricing_breakdown?.tax_mode ?? fallbackTaxMode).toLowerCase();
           const taxMode: RepairTaxMode = rawTaxMode === 'vat_inclusive'
@@ -769,6 +772,9 @@ export default function JobOrdersRepair() {
           vatAmount: formatPesoAmount(breakdown.vatAmount),
           grandTotal: formatPesoAmount(breakdown.grandTotal),
           pricingBreakdown: repair.pricing_breakdown || null,
+          isWarrantyJob: Boolean(repair.is_warranty_job),
+          billingMode: repair.billing_mode ? String(repair.billing_mode) : null,
+          warrantyDisplayAlias: repair.warranty_display_alias ? String(repair.warranty_display_alias) : null,
           status: normalizeRepairStatus(repair.status),
           createdAt: new Date(repair.created_at).toLocaleString('en-US', {
             year: 'numeric',
@@ -1180,6 +1186,8 @@ export default function JobOrdersRepair() {
         matchesTab = order.status === "picked_up";
       } else if (selectedTab === "ready-for-pickup") {
         matchesTab = order.status === "ready-for-pickup" || order.status === "shipped";
+      } else if (selectedTab === "warranty") {
+        matchesTab = isWarrantyNoChargeOrder(order);
       } else if (selectedTab === "rejected") {
         matchesTab = isRejectedWorkflowStatus(order.status);
       } else {
@@ -1221,10 +1229,11 @@ export default function JobOrdersRepair() {
     const readyForPickup = orders.filter(o => o.status === "ready-for-pickup" || o.status === "shipped").length;
     const pickedUp = orders.filter(o => o.status === "picked_up").length;
     const completedAll = orders.filter(o => o.status === "picked_up").length;
+    const warranty = orders.filter(o => isWarrantyNoChargeOrder(o)).length;
     const rejected = orders.filter(o => isRejectedWorkflowStatus(o.status)).length;
     const cancelled = orders.filter(o => o.status === "cancelled").length;
     const totalRevenue = orders
-      .filter(o => o.status !== "cancelled" && !isRejectedWorkflowStatus(o.status))
+      .filter(o => o.status !== "cancelled" && !isRejectedWorkflowStatus(o.status) && !isWarrantyNoChargeOrder(o))
       .reduce((sum, o) => {
         const orderGrandTotal = toNumber(o.grandTotal) ?? toNumber(o.total) ?? 0;
         const orderNetTotal = toNumber(o.finalPrice ?? o.total) ?? 0;
@@ -1259,7 +1268,7 @@ export default function JobOrdersRepair() {
 
         return sum + realizedRevenueExVat;
       }, 0);
-    return { total, underReview, pending, received, inProgress, workCompleted, readyForPickup, pickedUp, completedAll, rejected, cancelled, totalRevenue };
+    return { total, underReview, pending, received, inProgress, workCompleted, readyForPickup, pickedUp, completedAll, warranty, rejected, cancelled, totalRevenue };
   }, [orders]);
 
   const activeRepairCount = useMemo(() => {
@@ -1305,29 +1314,36 @@ export default function JobOrdersRepair() {
     return toNumber(order.grandTotal) ?? toNumber(order.total) ?? 0;
   };
 
+  function isWarrantyNoChargeOrder(order: Pick<RepairOrder, 'isWarrantyJob' | 'billingMode'>) {
+    return Boolean(order.isWarrantyJob) || String(order.billingMode ?? '').toLowerCase() === 'warranty_no_charge';
+  }
+
   const getDisplayedPaidAmount = (order: Pick<RepairOrder, 'totalPaidAmount' | 'payment_status' | 'payment_policy' | 'grandTotal' | 'total'>) => {
     const recordedPaid = toNumber(order.totalPaidAmount);
-    if (recordedPaid !== null && recordedPaid > 0) {
-      return recordedPaid;
-    }
+    const resolvedRecordedPaid = recordedPaid !== null && recordedPaid > 0 ? recordedPaid : 0;
 
     const status = (order.payment_status ?? '').toLowerCase();
     const policy = order.payment_policy ?? 'deposit_50';
     const grandTotal = getOrderGrandTotalValue(order);
 
+    let inferredPaid = 0;
+
     if (status === 'completed') {
-      return grandTotal;
+      inferredPaid = grandTotal;
+      return Math.max(resolvedRecordedPaid, inferredPaid);
     }
 
     if (status === 'paid' || status === 'partially_paid') {
       if (policy === 'full_upfront') {
-        return grandTotal;
+        inferredPaid = grandTotal;
+        return Math.max(resolvedRecordedPaid, inferredPaid);
       }
 
-      return Math.round(grandTotal * 0.5 * 100) / 100;
+      inferredPaid = Math.round(grandTotal * 0.5 * 100) / 100;
+      return Math.max(resolvedRecordedPaid, inferredPaid);
     }
 
-    return 0;
+    return resolvedRecordedPaid;
   };
 
   const isFullyPaidForRelease = (order: Pick<RepairOrder, 'payment_policy' | 'payment_status'>) => {
@@ -1663,46 +1679,14 @@ export default function JobOrdersRepair() {
       return proceedResult.isConfirmed;
     };
 
-    try {
-      const completionReadiness = await repairMaterialsApi.validateCompletionReadiness(Number(orderId));
-
-      if (!completionReadiness.success) {
-        await Swal.fire({
-          title: "Readiness check failed",
-          text: "Unable to validate completion readiness right now.",
-          icon: "error",
-          confirmButtonColor: "#2563eb",
-        });
-        return;
-      }
-
-      if (completionReadiness.data.readiness_state === "variance_review_needed") {
-        const shouldProceed = await confirmProceedWithVariance();
-        if (!shouldProceed) {
-          return;
-        }
-      }
-    } catch (readinessError: any) {
-      if (readinessError?.response?.data?.data?.readiness_state === "variance_review_needed") {
-        const shouldProceed = await confirmProceedWithVariance();
-        if (!shouldProceed) {
-          return;
-        }
-      } else {
-        await Swal.fire({
-          title: "Readiness check failed",
-          text: readinessError?.response?.data?.message || "Unable to validate completion readiness right now.",
-          icon: "error",
-          confirmButtonColor: "#2563eb",
-        });
-        return;
-      }
-    }
-
-    const completeRepair = (noMaterialsUsedConfirmed: boolean = false) => {
+    const completeRepair = (
+      noMaterialsUsedConfirmed: boolean = false,
+      varianceOverrideConfirmed: boolean = false
+    ) => {
       return axios.post(`/api/repairer/repairs/${orderId}/mark-completed`, {
         completion_notes: '',
         no_materials_used_confirmed: noMaterialsUsedConfirmed,
+        variance_override_confirmed: varianceOverrideConfirmed,
       });
     };
 
@@ -1744,9 +1728,63 @@ export default function JobOrdersRepair() {
             fetchOrders();
           }
         } catch (retryError: any) {
+          if (retryError?.response?.status === 422 && (retryError?.response?.data?.requires_variance_review
+            || retryError?.response?.data?.data?.readiness_state === 'variance_review_needed')) {
+            const shouldProceed = await confirmProceedWithVariance();
+            if (!shouldProceed) return;
+
+            try {
+              const varianceRetryResponse = await completeRepair(true, true);
+              if (varianceRetryResponse.data.success) {
+                await Swal.fire({
+                  title: 'Repair Completed!',
+                  text: 'Customer will be notified that repair is done.',
+                  icon: 'success',
+                  confirmButtonColor: '#2563eb',
+                });
+                fetchOrders();
+              }
+            } catch (varianceRetryError: any) {
+              await Swal.fire({
+                title: 'Error',
+                text: varianceRetryError.response?.data?.message || 'Failed to mark as completed',
+                icon: 'error',
+              });
+            }
+
+            return;
+          }
+
           await Swal.fire({
             title: 'Error',
             text: retryError.response?.data?.message || 'Failed to mark as completed',
+            icon: 'error',
+          });
+        }
+
+        return;
+      }
+
+      if (error?.response?.status === 422 && (error?.response?.data?.requires_variance_review
+        || error?.response?.data?.data?.readiness_state === 'variance_review_needed')) {
+        const shouldProceed = await confirmProceedWithVariance();
+        if (!shouldProceed) return;
+
+        try {
+          const varianceRetryResponse = await completeRepair(false, true);
+          if (varianceRetryResponse.data.success) {
+            await Swal.fire({
+              title: 'Repair Completed!',
+              text: 'Customer will be notified that repair is done.',
+              icon: 'success',
+              confirmButtonColor: '#2563eb',
+            });
+            fetchOrders();
+          }
+        } catch (varianceRetryError: any) {
+          await Swal.fire({
+            title: 'Error',
+            text: varianceRetryError.response?.data?.message || 'Failed to mark as completed',
             icon: 'error',
           });
         }
@@ -1762,7 +1800,7 @@ export default function JobOrdersRepair() {
     }
   };
 
-  const handleMarkReady = async (order: RepairOrder) => {
+  const handleMarkReady = async (orderId: string) => {
     const result = await Swal.fire({
       title: 'Mark as Ready for Pickup',
       text: 'Are you sure you want to mark this repair as ready for pickup?',
@@ -1775,62 +1813,28 @@ export default function JobOrdersRepair() {
 
     if (!result.isConfirmed) return;
 
-    if (order.status === "in-progress") {
-      const confirmProceedWithVariance = async () => {
-        const proceedResult = await Swal.fire({
-          title: "Material variance detected",
-          text: "Some planned vs actual materials exceed tolerance without review notes. Continue anyway?",
-          icon: "warning",
-          showCancelButton: true,
-          confirmButtonText: "Continue",
-          cancelButtonText: "Review Materials",
-          confirmButtonColor: "#10b981",
-        });
+    const confirmProceedWithVariance = async () => {
+      const proceedResult = await Swal.fire({
+        title: 'Material variance detected',
+        text: 'Some planned vs actual materials exceed tolerance without review notes. Continue anyway?',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Continue',
+        cancelButtonText: 'Review Materials',
+        confirmButtonColor: '#10b981',
+      });
 
-        return proceedResult.isConfirmed;
-      };
+      return proceedResult.isConfirmed;
+    };
 
-      try {
-        const completionReadiness = await repairMaterialsApi.validateCompletionReadiness(order.database_id);
-
-        if (!completionReadiness.success) {
-          await Swal.fire({
-            title: "Readiness check failed",
-            text: "Unable to validate completion readiness right now.",
-            icon: "error",
-            confirmButtonColor: "#2563eb",
-          });
-          return;
-        }
-
-        if (completionReadiness.data.readiness_state === "variance_review_needed") {
-          const shouldProceed = await confirmProceedWithVariance();
-          if (!shouldProceed) {
-            return;
-          }
-        }
-      } catch (readinessError: any) {
-        if (readinessError?.response?.data?.data?.readiness_state === "variance_review_needed") {
-          const shouldProceed = await confirmProceedWithVariance();
-          if (!shouldProceed) {
-            return;
-          }
-        } else {
-          await Swal.fire({
-            title: "Readiness check failed",
-            text: readinessError?.response?.data?.message || "Unable to validate completion readiness right now.",
-            icon: "error",
-            confirmButtonColor: "#2563eb",
-          });
-          return;
-        }
-      }
-    }
-
-    const markReadyRepair = (noMaterialsUsedConfirmed: boolean = false) => {
-      return axios.post(`/api/repairer/repairs/${order.database_id}/mark-ready`, {
+    const markReadyRepair = (
+      noMaterialsUsedConfirmed: boolean = false,
+      varianceOverrideConfirmed: boolean = false
+    ) => {
+      return axios.post(`/api/repairer/repairs/${orderId}/mark-ready`, {
         pickup_instructions: '',
         no_materials_used_confirmed: noMaterialsUsedConfirmed,
+        variance_override_confirmed: varianceOverrideConfirmed,
       });
     };
 
@@ -1838,6 +1842,9 @@ export default function JobOrdersRepair() {
       const response = await markReadyRepair(false);
       
       if (response.data.success) {
+        setIsViewModalOpen(false);
+        setViewOrder(null);
+
         await Swal.fire({
           title: 'Ready for Pickup!',
           text: 'Customer will be notified to pick up their item.',
@@ -1863,6 +1870,9 @@ export default function JobOrdersRepair() {
         try {
           const retryResponse = await markReadyRepair(true);
           if (retryResponse.data.success) {
+            setIsViewModalOpen(false);
+            setViewOrder(null);
+
             await Swal.fire({
               title: 'Ready for Pickup!',
               text: 'Customer will be notified to pick up their item.',
@@ -1872,9 +1882,69 @@ export default function JobOrdersRepair() {
             fetchOrders();
           }
         } catch (retryError: any) {
+          if (retryError?.response?.status === 422 && (retryError?.response?.data?.requires_variance_review
+            || retryError?.response?.data?.data?.readiness_state === 'variance_review_needed')) {
+            const shouldProceed = await confirmProceedWithVariance();
+            if (!shouldProceed) return;
+
+            try {
+              const varianceRetryResponse = await markReadyRepair(true, true);
+              if (varianceRetryResponse.data.success) {
+                setIsViewModalOpen(false);
+                setViewOrder(null);
+
+                await Swal.fire({
+                  title: 'Ready for Pickup!',
+                  text: 'Customer will be notified to pick up their item.',
+                  icon: 'success',
+                  confirmButtonColor: '#2563eb',
+                });
+                fetchOrders();
+              }
+            } catch (varianceRetryError: any) {
+              await Swal.fire({
+                title: 'Error',
+                text: varianceRetryError.response?.data?.message || 'Failed to mark as ready',
+                icon: 'error',
+              });
+            }
+
+            return;
+          }
+
           await Swal.fire({
             title: 'Error',
             text: retryError.response?.data?.message || 'Failed to mark as ready',
+            icon: 'error',
+          });
+        }
+
+        return;
+      }
+
+      if (error?.response?.status === 422 && (error?.response?.data?.requires_variance_review
+        || error?.response?.data?.data?.readiness_state === 'variance_review_needed')) {
+        const shouldProceed = await confirmProceedWithVariance();
+        if (!shouldProceed) return;
+
+        try {
+          const varianceRetryResponse = await markReadyRepair(false, true);
+          if (varianceRetryResponse.data.success) {
+            setIsViewModalOpen(false);
+            setViewOrder(null);
+
+            await Swal.fire({
+              title: 'Ready for Pickup!',
+              text: 'Customer will be notified to pick up their item.',
+              icon: 'success',
+              confirmButtonColor: '#2563eb',
+            });
+            fetchOrders();
+          }
+        } catch (varianceRetryError: any) {
+          await Swal.fire({
+            title: 'Error',
+            text: varianceRetryError.response?.data?.message || 'Failed to mark as ready',
             icon: 'error',
           });
         }
@@ -2572,7 +2642,7 @@ export default function JobOrdersRepair() {
         </div>
 
         {/* Metrics */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
           <MetricCard
             title="Pending"
             value={stats.pending}
@@ -2677,6 +2747,16 @@ export default function JobOrdersRepair() {
                   }`}
                 >
                   Ready for Pickup ({stats.readyForPickup})
+                </button>
+                <button
+                  onClick={() => setSelectedTab("warranty")}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    selectedTab === "warranty"
+                      ? "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                  }`}
+                >
+                  Warranty ({stats.warranty})
                 </button>
                 <button
                   onClick={() => setSelectedTab("completed")}
@@ -2821,6 +2901,11 @@ export default function JobOrdersRepair() {
                               Package: {order.packageName}
                             </span>
                           )}
+                          {isWarrantyNoChargeOrder(order) && (
+                            <span className="inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300">
+                              Warranty Rework
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td className="px-4 py-4">
@@ -2838,6 +2923,11 @@ export default function JobOrdersRepair() {
                               In-Shop Payment
                             </span>
                           )}
+                          {isWarrantyNoChargeOrder(order) && (
+                            <span className="px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs leading-5 font-semibold rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                              Warranty
+                            </span>
+                          )}
                           {pendingRefund && (
                             <span className="px-2.5 py-1 inline-flex w-fit max-w-max whitespace-nowrap text-xs leading-5 font-semibold rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
                               Refund Review Pending
@@ -2849,7 +2939,16 @@ export default function JobOrdersRepair() {
                         {formatServiceType(order.serviceType)}
                       </td>
                       <td className="px-4 py-4 text-sm text-gray-900 dark:text-white font-medium">
-                        {order.grandTotal || order.total}
+                        {isWarrantyNoChargeOrder(order) ? (
+                          <div className="space-y-0.5">
+                            <span className="block text-emerald-700 dark:text-emerald-300">No Charge</span>
+                            <span className="block text-[11px] font-normal text-emerald-600 dark:text-emerald-400">
+                              Covered by warranty
+                            </span>
+                          </div>
+                        ) : (
+                          order.grandTotal || order.total
+                        )}
                       </td>
                       <td className="px-4 py-4 text-sm font-semibold">
                         {order.payment_status === 'refunded' ? (
@@ -2922,7 +3021,7 @@ export default function JobOrdersRepair() {
                               >
                                 <PackageIcon className="size-5" />
                               </button>
-                              {!order.payment_enabled && !isPosManualWalkIn(order) && (
+                              {!order.payment_enabled && !isPosManualWalkIn(order) && !isWarrantyNoChargeOrder(order) && (
                                 <button
                                   onClick={() => handleActivatePayment(String(order.database_id))}
                                   className="inline-flex items-center justify-center p-2 rounded-lg text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:text-amber-300 dark:hover:bg-amber-900/30 transition-colors"
@@ -2937,7 +3036,7 @@ export default function JobOrdersRepair() {
 
                           {order.status === "received" && (
                             <>
-                              {!order.payment_enabled && !isPosManualWalkIn(order) && (
+                              {!order.payment_enabled && !isPosManualWalkIn(order) && !isWarrantyNoChargeOrder(order) && (
                                 <button
                                   onClick={() => handleActivatePayment(String(order.database_id))}
                                   className="inline-flex items-center justify-center p-2 rounded-lg text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:text-amber-300 dark:hover:bg-amber-900/30 transition-colors"
@@ -2960,7 +3059,7 @@ export default function JobOrdersRepair() {
 
                           {(order.status === "in-progress" || order.status === "completed") && (
                             <button
-                              onClick={() => handleMarkReady(order)}
+                              onClick={() => handleMarkReady(String(order.database_id))}
                               className="inline-flex items-center justify-center p-2 text-green-600 hover:text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:text-green-300 dark:hover:bg-green-900/30 rounded-lg transition-colors"
                               title="Ready for Pickup"
                               aria-label="Ready for Pickup"
@@ -2982,7 +3081,7 @@ export default function JobOrdersRepair() {
                           
                           {order.status === "ready-for-pickup" && getReturnDeliveryMethod(order) !== "walk_in" && (
                             <>
-                              {canActivateOnlineRemainingBalance(order) && (
+                              {!isWarrantyNoChargeOrder(order) && canActivateOnlineRemainingBalance(order) && (
                                 <button
                                   onClick={() => handleActivatePayment(String(order.database_id))}
                                   className="inline-flex items-center justify-center p-2 rounded-lg text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:text-amber-300 dark:hover:bg-amber-900/30 transition-colors"
@@ -3289,8 +3388,15 @@ export default function JobOrdersRepair() {
                     </div>
                     <div className="flex items-center justify-between pt-1 border-t border-gray-200 dark:border-gray-700">
                       <span className="text-sm text-gray-700 dark:text-gray-300">Grand Total</span>
-                      <span className="text-sm font-semibold text-gray-900 dark:text-white">{viewOrder.grandTotal || viewOrder.total}</span>
+                      <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                        {isWarrantyNoChargeOrder(viewOrder) ? 'No Charge (Warranty)' : (viewOrder.grandTotal || viewOrder.total)}
+                      </span>
                     </div>
+                    {isWarrantyNoChargeOrder(viewOrder) && (
+                      <p className="text-xs text-emerald-700 dark:text-emerald-300">
+                        This linked warranty job is covered under your warranty policy and is intentionally billed at no charge.
+                      </p>
+                    )}
                     {viewOrder.startedAt && (
                       <div className="flex items-center justify-between">
                         <span className="text-sm text-gray-600 dark:text-gray-400">Started At</span>

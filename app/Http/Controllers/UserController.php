@@ -15,6 +15,9 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Auth\Events\Registered;
 use App\Rules\NotDisposableEmail;
 use Inertia\Inertia;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Log;
 
 /**
  * UserController
@@ -24,6 +27,8 @@ use Inertia\Inertia;
  */
 class UserController extends Controller
 {
+    private const SHOP_OWNER_LOGIN_2FA_TTL_MINUTES = 10;
+
     /**
      * Check whether an email can be used for public registration flows.
      */
@@ -32,8 +37,8 @@ class UserController extends Controller
         $validator = Validator::make($request->all(), [
             'email' => ['required', 'string', 'email', 'max:255', new NotDisposableEmail()],
         ], [
-            'email.required' => 'Email is required',
-            'email.email' => 'Please provide a valid email address',
+            'email.required' => 'Please enter your email address.',
+            'email.email' => 'Please enter a valid email address (example: name@email.com).',
         ]);
 
         if ($validator->fails()) {
@@ -95,25 +100,29 @@ class UserController extends Controller
                 'address' => 'required|string|max:500',
                 'valid_id' => 'required|file|mimes:jpg,jpeg,png,pdf|max:5120', // 5MB max
             ], [
-                'first_name.required' => 'First name is required',
-                'first_name.min' => 'First name must be at least 2 characters',
-                'last_name.required' => 'Last name is required',
-                'last_name.min' => 'Last name must be at least 2 characters',
-                'email.required' => 'Email is required',
-                'email.email' => 'Please provide a valid email address',
-                'email.unique' => 'This email is already registered',
-                'phone.required' => 'Phone number is required',
-                'phone.regex' => 'Phone number must be exactly 11 digits',
-                'age.required' => 'Age is required',
-                'age.min' => 'You must be at least 18 years old to register',
-                'password.required' => 'Password is required',
-                'password.min' => 'Password must be at least 8 characters',
-                'password.confirmed' => 'Passwords do not match',
-                'password.regex' => 'Password must contain uppercase, lowercase, and numbers',
-                'address.required' => 'Address is required',
-                'valid_id.required' => 'Valid ID is required',
-                'valid_id.mimes' => 'Valid ID must be a JPG, PNG, or PDF file',
-                'valid_id.max' => 'File size must not exceed 5MB',
+                'first_name.required' => 'Please enter your first name.',
+                'first_name.min' => 'First name must be at least 2 characters.',
+                'last_name.required' => 'Please enter your last name.',
+                'last_name.min' => 'Last name must be at least 2 characters.',
+                'email.required' => 'Please enter your email address.',
+                'email.email' => 'Please enter a valid email address (example: name@email.com).',
+                'email.unique' => 'This email is already registered. Try another email or sign in instead.',
+                'phone.required' => 'Please enter your phone number.',
+                'phone.regex' => 'Phone number must be exactly 11 digits (example: 09171234567).',
+                'age.required' => 'Please enter your age.',
+                'age.integer' => 'Age must be a whole number.',
+                'age.min' => 'You must be at least 18 years old to register.',
+                'age.max' => 'Please enter a valid age (120 or below).',
+                'password.required' => 'Please enter a password.',
+                'password.min' => 'Password must be at least 8 characters.',
+                'password.confirmed' => 'Passwords do not match.',
+                'password.regex' => 'Password must include uppercase, lowercase, and at least one number.',
+                'address.required' => 'Please enter your address.',
+                'address.max' => 'Address is too long. Maximum allowed is 500 characters.',
+                'valid_id.required' => 'Please upload a valid government-issued ID.',
+                'valid_id.file' => 'Valid ID must be an uploaded file.',
+                'valid_id.mimes' => 'Valid ID must be JPG, JPEG, PNG, or PDF only.',
+                'valid_id.max' => 'Valid ID file size must not exceed 5MB.',
             ]);
 
             // Handle valid ID upload
@@ -138,7 +147,7 @@ class UserController extends Controller
                 'valid_id_path' => $validIdPath,
             ]);
 
-            \Log::info('User registered successfully', ['user_id' => $user->id, 'email' => $user->email]);
+            Log::info('User registered successfully', ['user_id' => $user->id, 'email' => $user->email]);
 
             // Send email verification notification
             event(new Registered($user));
@@ -174,7 +183,7 @@ class UserController extends Controller
                 'email' => $user->email,
             ]);
         } catch (ValidationException $e) {
-            \Log::warning('User registration validation failed', [
+            Log::warning('User registration validation failed', [
                 'errors' => $e->errors(),
                 'input' => $request->except(['password', 'password_confirmation', 'valid_id'])
             ]);
@@ -187,14 +196,14 @@ class UserController extends Controller
             if ($request->expectsJson()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Validation failed',
+                    'message' => 'Please review the highlighted fields and try again.',
                     'errors' => $e->errors(),
                 ], 422);
             }
 
             throw $e;
         } catch (\Exception $e) {
-            \Log::error('Error registering user', [
+            Log::error('Error registering user', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
                 'input' => $request->except(['password', 'password_confirmation', 'valid_id'])
@@ -279,7 +288,7 @@ class UserController extends Controller
                     'last_login_ip' => $request->ip(),
                 ]);
 
-                \Log::info('User logged in successfully', ['user_id' => $user->id, 'user_role' => $user->role, 'shop_owner_id' => $user->shop_owner_id]);
+                Log::info('User logged in successfully', ['user_id' => $user->id, 'user_role' => $user->role, 'shop_owner_id' => $user->shop_owner_id]);
 
                 // Determine redirect URL based ONLY on shop_owner_id
                 // - If user has shop_owner_id -> they are an employee/staff member -> redirect to erp/time-in
@@ -301,7 +310,7 @@ class UserController extends Controller
                     }
                 }
 
-                \Log::info('Login redirect decision', [
+                Log::info('Login redirect decision', [
                     'user_id' => $user->id,
                     'shop_owner_id' => $user->shop_owner_id,
                     'role' => $user->role,
@@ -369,8 +378,25 @@ class UserController extends Controller
                 ]);
             }
 
+            $remember = (bool) $request->boolean('remember');
+
+            if ((bool) ($shopOwner->two_factor_email_enabled ?? false)) {
+                $this->beginShopOwnerTwoFactorChallenge($request, $shopOwner, $remember);
+
+                if ($request->expectsJson()) {
+                    return response()->json([
+                        'success' => true,
+                        'requires_two_factor' => true,
+                        'message' => 'Verification code sent to your email.',
+                        'redirect' => route('shop-owner.two-factor.challenge'),
+                    ], 202);
+                }
+
+                return redirect()->route('shop-owner.two-factor.challenge')->with('status', 'otp-sent');
+            }
+
             // Login the shop owner using shop_owner guard
-            Auth::guard('shop_owner')->login($shopOwner, $request->filled('remember'));
+            Auth::guard('shop_owner')->login($shopOwner, $remember);
             $request->session()->regenerate();
 
             $shopOwner->update([
@@ -378,7 +404,7 @@ class UserController extends Controller
                 'last_login_ip' => $request->ip(),
             ]);
 
-            \Log::info('Shop owner logged in successfully via unified login', [
+            Log::info('Shop owner logged in successfully via unified login', [
                 'shop_owner_id' => $shopOwner->id,
                 'business_name' => $shopOwner->business_name,
             ]);
@@ -407,7 +433,7 @@ class UserController extends Controller
 
             throw $e;
         } catch (\Exception $e) {
-            \Log::error('Error logging in user', ['error' => $e->getMessage()]);
+            Log::error('Error logging in user', ['error' => $e->getMessage()]);
 
             if ($request->expectsJson()) {
                 return response()->json([
@@ -418,6 +444,56 @@ class UserController extends Controller
 
             return back()->withErrors(['email' => 'Login failed. Please try again.']);
         }
+    }
+
+    private function beginShopOwnerTwoFactorChallenge(Request $request, ShopOwner $shopOwner, bool $remember): void
+    {
+        $request->session()->put('shop_owner_2fa_pending_id', (int) $shopOwner->id);
+        $request->session()->put('shop_owner_2fa_remember', $remember);
+        $request->session()->put('shop_owner_2fa_pending_at', now()->timestamp);
+
+        $this->issueShopOwnerLoginOtp($shopOwner);
+    }
+
+    private function issueShopOwnerLoginOtp(ShopOwner $shopOwner): void
+    {
+        $otp = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        $ttl = now()->addMinutes(self::SHOP_OWNER_LOGIN_2FA_TTL_MINUTES);
+
+        Cache::put($this->shopOwnerTwoFactorCacheKey((int) $shopOwner->id), [
+            'otp_hash' => Hash::make($otp),
+            'attempts' => 0,
+            'expires_at' => $ttl->timestamp,
+        ], $ttl);
+
+        try {
+            Mail::raw(
+                "Your SoleSpace login verification code is {$otp}. This code expires in "
+                . self::SHOP_OWNER_LOGIN_2FA_TTL_MINUTES
+                . ' minutes.',
+                function ($message) use ($shopOwner) {
+                    $message->to($shopOwner->email)
+                        ->subject('SoleSpace Login Verification Code');
+                }
+            );
+        } catch (\Throwable $e) {
+            Cache::forget($this->shopOwnerTwoFactorCacheKey((int) $shopOwner->id));
+
+            Log::error('Failed to send shop owner login 2FA code from unified login', [
+                'shop_owner_id' => $shopOwner->id,
+                'email' => $shopOwner->email,
+                'error' => $e->getMessage(),
+            ]);
+
+            throw ValidationException::withMessages([
+                'email' => ['Unable to send verification code right now. Please try again.'],
+            ]);
+        }
+    }
+
+    private function shopOwnerTwoFactorCacheKey(int $shopOwnerId): string
+    {
+        return 'shop_owner_login_2fa:' . $shopOwnerId;
     }
 
     /**
@@ -434,7 +510,7 @@ class UserController extends Controller
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
-        \Log::info('User logged out', ['user_id' => $userId]);
+        Log::info('User logged out', ['user_id' => $userId]);
 
         if ($request->expectsJson()) {
             return response()->json([

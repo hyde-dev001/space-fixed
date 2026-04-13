@@ -107,6 +107,43 @@ class RepairVatInclusivePayloadTest extends TestCase
     }
 
     #[Test]
+    public function my_repairs_payload_uses_parent_paid_amount_for_warranty_child_display(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $customer = User::factory()->create();
+
+        $originalRepair = $this->createRepairForCustomer($shopOwner, $customer, [
+            'request_id' => 'REP-WAR-PARENT-001',
+            'status' => 'picked_up',
+            'payment_status' => 'completed',
+            'total_paid_amount' => 1120,
+        ]);
+
+        $warrantyChild = $this->createRepairForCustomer($shopOwner, $customer, [
+            'request_id' => 'REP-WAR-CHILD-001',
+            'status' => 'received',
+            'total' => 0,
+            'final_total' => 0,
+            'payment_status' => 'completed',
+            'total_paid_amount' => 0,
+            'is_warranty_job' => true,
+            'parent_repair_request_id' => $originalRepair->id,
+            'billing_mode' => 'warranty_no_charge',
+            'warranty_display_alias' => 'REP-WAR-PARENT-001-W1',
+        ]);
+
+        $response = $this->actingAs($customer, 'user')->getJson('/api/customer/repairs');
+
+        $response->assertOk();
+
+        $row = collect($response->json('data'))->firstWhere('id', $warrantyChild->id);
+        $this->assertNotNull($row);
+        $this->assertTrue((bool) ($row['is_warranty_job'] ?? false));
+        $this->assertSame('0.00', number_format((float) ($row['total_paid_amount'] ?? 0), 2, '.', ''));
+        $this->assertSame('1120.00', number_format((float) ($row['display_total_paid_amount'] ?? 0), 2, '.', ''));
+    }
+
+    #[Test]
     public function retry_payment_session_uses_tax_mode_aware_due_amounts(): void
     {
         $shopOwner = ShopOwner::factory()->approved()->create([

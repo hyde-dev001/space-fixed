@@ -21,8 +21,6 @@ type MaterialForm = {
   sku: string;
   quantity: string;
   unit: string;
-  reorderLevel: string;
-  reorderQuantity: string;
   notes: string;
 };
 
@@ -31,8 +29,6 @@ const defaultForm: MaterialForm = {
   sku: '',
   quantity: '',
   unit: 'pcs',
-  reorderLevel: '10',
-  reorderQuantity: '50',
   notes: '',
 };
 
@@ -143,8 +139,6 @@ export default function UploadStockMaterial() {
       sku: item.sku,
       quantity: String(item.available_quantity),
       unit: item.unit || 'pcs',
-      reorderLevel: String(item.reorder_level ?? 10),
-      reorderQuantity: String(item.reorder_quantity ?? 50),
       notes: item.notes ?? '',
     });
     setIsModalOpen(true);
@@ -152,8 +146,6 @@ export default function UploadStockMaterial() {
 
   const buildPayload = () => {
     const quantity = Number(form.quantity);
-    const reorderLevel = Number(form.reorderLevel || 0);
-    const reorderQuantity = Number(form.reorderQuantity || 0);
 
     return {
       name: form.name.trim(),
@@ -161,8 +153,12 @@ export default function UploadStockMaterial() {
       category: 'repair_materials',
       available_quantity: quantity,
       unit: form.unit.trim() || 'pcs',
-      reorder_level: Number.isFinite(reorderLevel) ? reorderLevel : 0,
-      reorder_quantity: Number.isFinite(reorderQuantity) ? reorderQuantity : 0,
+      reorder_level: Number.isFinite(Number(editing?.reorder_level))
+        ? Number(editing?.reorder_level)
+        : 10,
+      reorder_quantity: Number.isFinite(Number(editing?.reorder_quantity))
+        ? Number(editing?.reorder_quantity)
+        : 50,
       cost_price: null,
       price: null,
       notes: form.notes.trim() || null,
@@ -336,7 +332,6 @@ export default function UploadStockMaterial() {
                     <tr key={item.id} className="transition-colors hover:bg-gray-50 dark:hover:bg-white/2">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <p className="font-medium text-gray-900 dark:text-white">{item.name}</p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">Reorder level: {item.reorder_level}</p>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">{item.sku}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">
@@ -429,32 +424,6 @@ export default function UploadStockMaterial() {
                   title="Quantity"
                   value={form.quantity}
                   onChange={(event) => setForm((prev) => ({ ...prev, quantity: event.target.value }))}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 outline-none ring-blue-500 transition focus:ring-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="material-reorder-level" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Reorder Level</label>
-                <input
-                  id="material-reorder-level"
-                  type="number"
-                  min={0}
-                  title="Reorder Level"
-                  value={form.reorderLevel}
-                  onChange={(event) => setForm((prev) => ({ ...prev, reorderLevel: event.target.value }))}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 outline-none ring-blue-500 transition focus:ring-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="material-reorder-quantity" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Reorder Quantity</label>
-                <input
-                  id="material-reorder-quantity"
-                  type="number"
-                  min={0}
-                  title="Reorder Quantity"
-                  value={form.reorderQuantity}
-                  onChange={(event) => setForm((prev) => ({ ...prev, reorderQuantity: event.target.value }))}
                   className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 outline-none ring-blue-500 transition focus:ring-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                 />
               </div>

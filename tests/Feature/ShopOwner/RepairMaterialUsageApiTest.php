@@ -255,6 +255,160 @@ class RepairMaterialUsageApiTest extends TestCase
     }
 
     #[Test]
+    public function shop_owner_can_override_variance_gate_when_marking_ready(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'individual',
+        ]);
+
+        $repair = RepairRequest::create([
+            'request_id' => 'REP-SHOP-MAT-VAR-READY-0001',
+            'customer_name' => 'Variance Ready Override Customer',
+            'email' => 'variance-ready-override@example.test',
+            'phone' => '09170010101',
+            'shoe_type' => 'Sneakers',
+            'description' => 'Variance override test for mark-ready',
+            'shop_owner_id' => $shopOwner->id,
+            'assigned_repairer_id' => null,
+            'status' => 'in_progress',
+            'images' => [],
+            'total' => 1450,
+            'final_total' => 1450,
+            'payment_policy' => 'deposit_50',
+            'payment_policy_snapshot' => 'deposit_50',
+            'payment_status' => 'unpaid',
+            'payment_status_derived' => 'unpaid',
+            'total_paid_amount' => 0,
+            'total_refunded_amount' => 0,
+            'delivery_method' => 'walk_in',
+        ]);
+
+        $material = InventoryItem::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'category' => 'repair_materials',
+            'name' => 'Variance Override Material Ready',
+            'sku' => 'MAT-VAR-OVR-RDY',
+            'available_quantity' => 20,
+            'reserved_quantity' => 0,
+            'reorder_level' => 3,
+            'is_active' => true,
+            'price' => 100,
+            'cost_price' => 65,
+        ]);
+
+        $repair->materialPlanItems()->create([
+            'inventory_item_id' => $material->id,
+            'planned_quantity' => 5,
+            'actual_quantity' => 0,
+            'is_critical' => true,
+            'tolerance_percent' => 20,
+            'variance_status' => 'within_tolerance',
+            'variance_note' => null,
+        ]);
+
+        $this->actingAs($shopOwner, 'shop_owner')->postJson(
+            "/api/shop-owner/repairs/{$repair->id}/materials",
+            [
+                'inventory_item_id' => $material->id,
+                'quantity_used' => 1,
+                'notes' => 'Usage for override path.',
+            ]
+        )->assertStatus(201);
+
+        $response = $this->actingAs($shopOwner, 'shop_owner')->postJson(
+            "/api/shop-owner/repairs/{$repair->id}/mark-ready",
+            [
+                'pickup_instructions' => 'Override variance and proceed.',
+                'variance_override_confirmed' => true,
+            ]
+        );
+
+        $response->assertOk()
+            ->assertJsonPath('success', true);
+
+        $repair->refresh();
+        $this->assertSame('ready_for_pickup', $repair->status);
+    }
+
+    #[Test]
+    public function shop_owner_can_override_variance_gate_when_marking_completed(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'individual',
+        ]);
+
+        $repair = RepairRequest::create([
+            'request_id' => 'REP-SHOP-MAT-VAR-COMP-0001',
+            'customer_name' => 'Variance Complete Override Customer',
+            'email' => 'variance-complete-override@example.test',
+            'phone' => '09170020202',
+            'shoe_type' => 'Sneakers',
+            'description' => 'Variance override test for mark-completed',
+            'shop_owner_id' => $shopOwner->id,
+            'assigned_repairer_id' => null,
+            'status' => 'in_progress',
+            'images' => [],
+            'total' => 1600,
+            'final_total' => 1600,
+            'payment_policy' => 'deposit_50',
+            'payment_policy_snapshot' => 'deposit_50',
+            'payment_status' => 'unpaid',
+            'payment_status_derived' => 'unpaid',
+            'total_paid_amount' => 0,
+            'total_refunded_amount' => 0,
+            'delivery_method' => 'walk_in',
+        ]);
+
+        $material = InventoryItem::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'category' => 'repair_materials',
+            'name' => 'Variance Override Material Complete',
+            'sku' => 'MAT-VAR-OVR-CMP',
+            'available_quantity' => 20,
+            'reserved_quantity' => 0,
+            'reorder_level' => 3,
+            'is_active' => true,
+            'price' => 150,
+            'cost_price' => 90,
+        ]);
+
+        $repair->materialPlanItems()->create([
+            'inventory_item_id' => $material->id,
+            'planned_quantity' => 5,
+            'actual_quantity' => 0,
+            'is_critical' => true,
+            'tolerance_percent' => 20,
+            'variance_status' => 'within_tolerance',
+            'variance_note' => null,
+        ]);
+
+        $this->actingAs($shopOwner, 'shop_owner')->postJson(
+            "/api/shop-owner/repairs/{$repair->id}/materials",
+            [
+                'inventory_item_id' => $material->id,
+                'quantity_used' => 1,
+                'notes' => 'Usage for complete override path.',
+            ]
+        )->assertStatus(201);
+
+        $response = $this->actingAs($shopOwner, 'shop_owner')->postJson(
+            "/api/shop-owner/repairs/{$repair->id}/mark-completed",
+            [
+                'completion_notes' => 'Override variance and complete.',
+                'variance_override_confirmed' => true,
+            ]
+        );
+
+        $response->assertOk()
+            ->assertJsonPath('success', true);
+
+        $repair->refresh();
+        $this->assertSame('completed', $repair->status);
+    }
+
+    #[Test]
     public function shop_owner_cannot_access_material_usage_of_another_shop(): void
     {
         $ownerA = ShopOwner::factory()->approved()->create([

@@ -218,7 +218,8 @@ interface RepairRejection {
 	media?: string[];
 	repairerName?: string;
 	rawStatus?: string;
-	workflowStage?: "manager_initial" | "manager_final" | "resolved";
+	statusLabel?: string;
+	workflowStage?: "manager_initial" | "owner_pending" | "manager_final" | "resolved";
 }
 
 interface AvailableRepairer {
@@ -349,18 +350,24 @@ export default function RepairRejectReview() {
 					const workflowStage: RepairRejection['workflowStage'] =
 						item.status === 'repairer_rejected'
 							? 'manager_initial'
+							: item.status === 'owner_approval_pending'
+							? 'owner_pending'
 							: item.status === 'manager_reviewing'
 							? 'manager_final'
 							: 'resolved';
 
 					const mappedStatus: RepairRejection['status'] =
-						item.status === 'repairer_rejected' || item.status === 'manager_reviewing'
+						item.status === 'repairer_rejected' || item.status === 'owner_approval_pending' || item.status === 'manager_reviewing'
 							? 'Pending'
-							: item.status === 'rejected' || item.manager_decision === 'approve_rejection'
+							: item.status === 'rejected'
 							? 'Approved'
 							: item.status === 'manager_rejected' || item.status === 'assigned_to_repairer' || item.manager_decision === 'override_accept'
 							? 'Rejected'
 							: 'Pending';
+
+					const statusLabel = item.status === 'owner_approval_pending'
+						? 'Waiting for Shop Owner Approval'
+						: mappedStatus;
 
 					return {
 					id: item.id,
@@ -373,6 +380,7 @@ export default function RepairRejectReview() {
 					reason: item.description || 'No description',
 					rejectionReason: item.repairer_rejection_reason,
 					status: mappedStatus,
+					statusLabel,
 					approvedBy: item.manager_reviewed_by?.name,
 					approvedAt: item.manager_reviewed_at,
 					rejectedBy: item.manager_reviewed_by?.name,
@@ -436,6 +444,14 @@ export default function RepairRejectReview() {
 		setSelectedRejection(rejection);
 		setApproveNotes("");
 		setApproveModalOpen(true);
+	};
+
+	const canManagerAction = (rejection: RepairRejection) => {
+		return (
+			rejection.status === "Pending" &&
+			rejection.workflowStage !== "owner_pending" &&
+			rejection.workflowStage !== "resolved"
+		);
 	};
 
 	const getApproveActionConfig = (rejection: RepairRejection) => {
@@ -706,7 +722,7 @@ export default function RepairRejectReview() {
 														: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
 												}`}
 											>
-												{rejection.status}
+												{rejection.statusLabel || rejection.status}
 											</span>
 										</td>
 										<td className="py-4 text-right">
@@ -861,7 +877,7 @@ export default function RepairRejectReview() {
 													? "text-green-600 dark:text-green-400"
 													: "text-red-600 dark:text-red-400"
 											}`}>
-												{selectedRejection.status}
+												{selectedRejection.statusLabel || selectedRejection.status}
 											</p>
 										</div>
 									</div>
@@ -948,14 +964,18 @@ export default function RepairRejectReview() {
 							</button>
 							<button
 								onClick={() => handleApproveRejection(selectedRejection)}
-								disabled={selectedRejection.status !== "Pending"}
+								disabled={!canManagerAction(selectedRejection)}
 								className="px-5 py-2.5 text-sm font-semibold rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
 							>
-								{selectedRejection.workflowStage === 'manager_final' ? 'Finalize Rejection' : 'Forward to Shop Owner'}
+								{selectedRejection.workflowStage === 'owner_pending'
+									? 'Waiting for Shop Owner Approval'
+									: selectedRejection.workflowStage === 'manager_final'
+									? 'Finalize Rejection'
+									: 'Forward to Shop Owner'}
 							</button>
 							<button
 								onClick={() => handleRejectRejection(selectedRejection)}
-								disabled={selectedRejection.status !== "Pending" || selectedRejection.workflowStage !== 'manager_initial' || isLoadingRepairers}
+								disabled={!canManagerAction(selectedRejection) || selectedRejection.workflowStage !== 'manager_initial' || isLoadingRepairers}
 								className="px-5 py-2.5 text-sm font-semibold rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								{isLoadingRepairers ? "Loading repairers..." : "Override & Reassign"}

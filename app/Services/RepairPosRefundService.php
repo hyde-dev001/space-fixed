@@ -70,7 +70,7 @@ class RepairPosRefundService
             ]);
         }
 
-        return PosRefund::create([
+        $refund = PosRefund::create([
             'refund_no' => 'RFD-' . now()->format('YmdHis') . '-' . str_pad((string) random_int(1, 999), 3, '0', STR_PAD_LEFT),
             'shop_owner_id' => $source->shop_owner_id,
             'source_transaction_id' => $source->id,
@@ -91,6 +91,10 @@ class RepairPosRefundService
             'requested_by' => $actorId > 0 ? $actorId : null,
             'requested_at' => now(),
         ]);
+
+        $this->notifyRefundRequested($refund, $source, $requested);
+
+        return $refund;
     }
 
     public function createRefundWithSplitLegs(PosTransaction $source, array $payload, int $actorId): PosRefund
@@ -1025,8 +1029,32 @@ class RepairPosRefundService
                     'status' => (string) $refund->status,
                     'approved_amount' => (float) ($refund->approved_amount ?? 0),
                 ],
-                'action_url' => '/shop-owner/repair-refunds',
+                'action_url' => '/shop-owner/refund-approvals',
                 'shop_id' => (int) $refund->shop_owner_id,
+            ]);
+        }
+    }
+
+    private function notifyRefundRequested(PosRefund $refund, PosTransaction $source, float $requestedAmount): void
+    {
+        try {
+            $source->loadMissing('receipt');
+
+            $orderNumber = (string) ($source->receipt?->receipt_no ?? $source->transaction_no ?? $refund->refund_no);
+
+            $this->notificationService->notifyRefundRequest((int) $refund->shop_owner_id, [
+                'refund_id' => (int) $refund->id,
+                'refund_no' => (string) $refund->refund_no,
+                'order_number' => $orderNumber,
+                'amount' => number_format($requestedAmount, 2, '.', ''),
+                'workflow_source' => (string) ($refund->workflow_source ?? 'pos'),
+                'status' => (string) ($refund->status ?? 'requested'),
+            ]);
+        } catch (\Throwable $exception) {
+            Log::warning('Failed to dispatch repair refund request notification.', [
+                'refund_id' => (int) $refund->id,
+                'shop_owner_id' => (int) $refund->shop_owner_id,
+                'error' => $exception->getMessage(),
             ]);
         }
     }

@@ -980,6 +980,7 @@ class LandingPageController extends Controller
         $shopOwner = ShopOwner::where('id', (int)$id)
             ->where('status', 'approved')
             ->firstOrFail();
+        $normalizedRepairPaymentPolicy = $this->normalizeRepairPaymentPolicy($shopOwner->repair_payment_policy);
 
         $normalizedBusinessType = $this->normalizeBusinessType($shopOwner->business_type);
         if (!in_array($normalizedBusinessType, ['repair', 'both'], true)) {
@@ -1113,6 +1114,7 @@ class LandingPageController extends Controller
                 'phone' => $shopOwner->phone ?? 'Not available',
                 'email' => $shopOwner->email,
                 'address' => $shopOwner->business_address ?? 'Not specified',
+                'repair_payment_policy' => $normalizedRepairPaymentPolicy,
             ],
             'repairServices' => $repairServices,
             'repairPackages' => $repairPackages,
@@ -1142,6 +1144,14 @@ class LandingPageController extends Controller
         }
 
         return 'retail';
+    }
+
+    /**
+     * Normalize repair payment policy into one of the supported values.
+     */
+    private function normalizeRepairPaymentPolicy(?string $value): string
+    {
+        return (string) $value === 'full_upfront' ? 'full_upfront' : 'deposit_50';
     }
 
     private function resolveEffectivePackagePrice(RepairPackage $package): float

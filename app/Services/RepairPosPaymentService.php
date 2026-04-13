@@ -31,7 +31,7 @@ class RepairPosPaymentService
             ]);
         }
 
-        $totalInclusive = (float) ($repair->final_total ?? $repair->total ?? 0);
+        $totalInclusive = $this->resolveRepairTotalInclusive($repair, $dueType, $normalizedPolicy);
 
         $dueTotal = $normalizedPolicy === 'full_upfront'
             ? round($totalInclusive, 2)
@@ -265,5 +265,51 @@ class RepairPosPaymentService
                 'transaction' => $transaction->fresh(['paymentLines']),
             ];
         });
+    }
+
+    private function resolveRepairTotalInclusive(RepairRequest $repair, string $dueType, string $normalizedPolicy): float
+    {
+        $pricingBreakdown = is_array($repair->pricing_breakdown)
+            ? $repair->pricing_breakdown
+            : [];
+
+        $pricingMode = strtolower((string) ($pricingBreakdown['mode'] ?? ''));
+        $packagePrice = round((float) ($repair->package_price ?? ($pricingBreakdown['package_price'] ?? 0)), 2);
+        $addOnsTotal = round((float) ($repair->add_ons_total ?? ($pricingBreakdown['add_ons_total'] ?? 0)), 2);
+        $packagePlusAddOns = !is_null($repair->repair_package_id)
+            ? round($packagePrice + $addOnsTotal, 2)
+            : 0.0;
+
+        $candidates = [
+            round((float) ($repair->final_total ?? 0), 2),
+            round((float) ($repair->total ?? 0), 2),
+            round((float) ($pricingBreakdown['base_total'] ?? 0), 2),
+            round((float) ($pricingBreakdown['final_total'] ?? 0), 2),
+            $packagePlusAddOns,
+        ];
+
+        $positiveCandidates = array_values(array_filter($candidates, static fn ($value) => $value > 0));
+        $resolved = $positiveCandidates !== [] ? max($positiveCandidates) : 0.0;
+
+        if ($pricingMode !== 'manual_pos' && $resolved <= 0) {
+            $resolved = round((float) ($repair->final_total ?? $repair->total ?? 0), 2);
+        }
+
+        if ($normalizedPolicy === 'deposit_50' && $dueType === 'balance') {
+            $storedPaidAmount = round((float) ($repair->total_paid_amount ?? 0), 2);
+            $ledgerPaidAmount = round((float) PosTransaction::query()
+                ->where('module_type', 'repair')
+                ->where('module_reference_id', $repair->id)
+                ->whereIn('status', ['paid', 'partially_refunded', 'refunded'])
+                ->sum('paid_amount'), 2);
+
+            $paidSoFar = max($storedPaidAmount, $ledgerPaidAmount);
+
+            if ($paidSoFar > 0) {
+                $resolved = max($resolved, round($paidSoFar * 2, 2));
+            }
+        }
+
+        return round(max($resolved, 0), 2);
     }
 }

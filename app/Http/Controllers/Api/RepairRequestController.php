@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use App\Models\RepairRequest;
+use App\Models\RepairReview;
 use App\Models\RepairPackage;
 use App\Models\RepairService;
 use App\Models\ShopOwner;
@@ -590,6 +591,7 @@ class RepairRequestController extends Controller
                 'services',
                 'shopOwner',
                 'repairer',
+            'parentRepairRequest:id,total_paid_amount',
                 'materialUsages.inventoryItem:id,price',
                 'latestPosTransaction:id,metadata',
                 'posTransactions:id,module_reference_id,module_type,paid_amount,status',
@@ -609,9 +611,42 @@ class RepairRequestController extends Controller
 
         $repairRequests = $query->orderBy('created_at', 'desc')->get();
 
+        $repairIds = $repairRequests->pluck('id')
+            ->map(fn ($value) => (int) $value)
+            ->all();
+
+        $parentRepairIds = $repairRequests->pluck('parent_repair_request_id')
+            ->filter(fn ($value) => (int) $value > 0)
+            ->map(fn ($value) => (int) $value)
+            ->all();
+
+        $allRelevantRepairIds = array_values(array_unique(array_merge($repairIds, $parentRepairIds)));
+
+        $childrenByParent = [];
+        foreach ($repairRequests as $repairRow) {
+            $parentId = (int) ($repairRow->parent_repair_request_id ?? 0);
+            if ($parentId <= 0) {
+                continue;
+            }
+
+            $childrenByParent[$parentId] ??= [];
+            $childrenByParent[$parentId][] = (int) $repairRow->id;
+        }
+
+        $reviewedRepairIds = [];
+        if (!empty($allRelevantRepairIds)) {
+            $reviewedRepairIds = RepairReview::query()
+                ->whereIn('repair_request_id', $allRelevantRepairIds)
+                ->pluck('repair_request_id')
+                ->map(fn ($value) => (int) $value)
+                ->all();
+        }
+
+        $reviewedLookup = array_fill_keys($reviewedRepairIds, true);
+
         return response()->json([
             'success' => true,
-            'data' => $repairRequests->map(function (RepairRequest $repair) {
+            'data' => $repairRequests->map(function (RepairRequest $repair) use ($childrenByParent, $reviewedLookup) {
                 // Images are already cast as array, so no need to json_decode
                 $images = is_array($repair->images) ? $repair->images : (is_string($repair->images) ? json_decode($repair->images, true) : []);
                 $pricingSnapshot = $this->calculateRepairPricingSnapshot($repair);
@@ -625,7 +660,28 @@ class RepairRequestController extends Controller
                     $storedPaidAmount,
                     $posLedgerPaidAmount,
                 );
+                $parentStoredPaidAmount = round((float) ($repair->parentRepairRequest?->total_paid_amount ?? 0), 2);
+                $displayPaidAmount = (bool) ($repair->is_warranty_job ?? false)
+                    ? round(max($resolvedPaidAmount, $parentStoredPaidAmount), 2)
+                    : $resolvedPaidAmount;
                 $refundPaymentProfile = $this->resolveRefundPaymentProfile($repair, $resolvedPaidAmount);
+
+                $anchorRepairId = ((bool) ($repair->is_warranty_job ?? false) && (int) ($repair->parent_repair_request_id ?? 0) > 0)
+                    ? (int) $repair->parent_repair_request_id
+                    : (int) $repair->id;
+
+                $relatedRepairIds = array_values(array_unique(array_merge(
+                    [$anchorRepairId],
+                    $childrenByParent[$anchorRepairId] ?? []
+                )));
+
+                $hasReview = false;
+                foreach ($relatedRepairIds as $relatedRepairId) {
+                    if (isset($reviewedLookup[(int) $relatedRepairId])) {
+                        $hasReview = true;
+                        break;
+                    }
+                }
 
                 return [
                     'id' => $repair->id,
@@ -668,15 +724,21 @@ class RepairRequestController extends Controller
                     'assigned_repairer_id' => $repair->assigned_repairer_id,
                     'repairer_name' => $repair->repairer ? $repair->repairer->name : null,
                     'payment_policy' => $repair->payment_policy ?? 'deposit_50',
+                    'is_warranty_job' => (bool) ($repair->is_warranty_job ?? false),
+                    'parent_repair_request_id' => $repair->parent_repair_request_id,
+                    'billing_mode' => $repair->billing_mode,
+                    'warranty_display_alias' => $repair->warranty_display_alias,
                     'repair_package_id' => $repair->repair_package_id,
                     'package_price' => $repair->package_price,
                     'add_ons_total' => $repair->add_ons_total,
                     'total_paid_amount' => $resolvedPaidAmount,
+                    'display_total_paid_amount' => $displayPaidAmount,
                     'total_refunded_amount' => (float) $repair->total_refunded_amount,
                     'latest_pos_transaction_id' => $repair->latest_pos_transaction_id,
                     'refund_payment_type' => $refundPaymentProfile['payment_type'],
                     'refund_requires_payout_destination' => $refundPaymentProfile['requires_payout_destination'],
                     'refund_original_method_only' => $refundPaymentProfile['original_method_only'],
+                    'has_review' => $hasReview,
                     'vat_rate' => self::REPAIR_VAT_RATE_PERCENT,
                     'vat_amount' => $taxSummary['vat_amount'],
                     'grand_total' => $taxSummary['grand_total'],
@@ -812,6 +874,35 @@ class RepairRequestController extends Controller
                 'success' => false,
                 'message' => 'Repair request not found',
             ], 404);
+        }
+
+        $anchorRepairId = ((bool) ($repair->is_warranty_job ?? false) && (int) ($repair->parent_repair_request_id ?? 0) > 0)
+            ? (int) $repair->parent_repair_request_id
+            : (int) $repair->id;
+
+        $relatedRepairIds = RepairRequest::query()
+            ->where('user_id', (int) $user->id)
+            ->where(function ($query) use ($anchorRepairId) {
+                $query->where('id', $anchorRepairId)
+                    ->orWhere('parent_repair_request_id', $anchorRepairId);
+            })
+            ->pluck('id')
+            ->map(fn ($value) => (int) $value)
+            ->all();
+
+        if (empty($relatedRepairIds)) {
+            $relatedRepairIds = [$anchorRepairId];
+        }
+
+        $hasReview = RepairReview::query()
+            ->whereIn('repair_request_id', $relatedRepairIds)
+            ->exists();
+
+        if ($hasReview) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Refund request is no longer allowed because a review has already been submitted for this repair.',
+            ], 422);
         }
 
         if ($request->has('customer_payout_consent')) {

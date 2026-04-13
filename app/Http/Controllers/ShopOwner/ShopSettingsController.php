@@ -111,6 +111,7 @@ class ShopSettingsController extends Controller
                 'repair_payment_policy'  => $normalizedRepairPaymentPolicy,
                 'repair_workload_limit'  => (int) ($shopOwner->repair_workload_limit ?? 20),
                 'order_refund_deadline_days' => (int) ($shopOwner->order_refund_deadline_days ?? 7),
+                'two_factor_email_enabled' => (bool) ($shopOwner->two_factor_email_enabled ?? false),
                 'has_paymongo_key'       => !empty($shopOwner->paymongo_secret_key),
                 'pay_cycle'              => $branchPayrollSetting?->pay_cycle ?? 'monthly',
                 'pay_day_first'          => (int) ($branchPayrollSetting?->pay_day_first ?? 15),
@@ -201,6 +202,7 @@ class ShopSettingsController extends Controller
             'repair_payment_policy' => ['sometimes', 'string', 'in:deposit_50,full_upfront'],
             'repair_workload_limit' => ['sometimes', 'integer', 'min:1', 'max:500'],
             'order_refund_deadline_days' => ['sometimes', 'integer', 'min:1', 'max:30'],
+            'two_factor_email_enabled' => ['sometimes', 'boolean'],
             'pay_cycle' => ['sometimes', 'string', 'in:monthly,semi_monthly'],
             'pay_day_first' => ['sometimes', 'integer', 'min:1', 'max:31'],
             'pay_day_second' => ['sometimes', 'integer', 'min:1', 'max:31', 'gt:pay_day_first'],
@@ -227,6 +229,9 @@ class ShopSettingsController extends Controller
         }
         if (isset($validated['order_refund_deadline_days'])) {
             $shopOwnerUpdates['order_refund_deadline_days'] = $validated['order_refund_deadline_days'];
+        }
+        if (array_key_exists('two_factor_email_enabled', $validated)) {
+            $shopOwnerUpdates['two_factor_email_enabled'] = (bool) $validated['two_factor_email_enabled'];
         }
         if (!empty($shopOwnerUpdates)) {
             $shopOwner->update($shopOwnerUpdates);

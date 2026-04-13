@@ -194,7 +194,7 @@ class ManagerRepairRejectionTest extends TestCase
             ->getJson('/api/manager/repairs/rejected');
 
         $data = $response->json('data');
-        
+
         // All items should have repairer_rejected status
         foreach ($data as $repair) {
             $this->assertEquals('repairer_rejected', $repair['status']);

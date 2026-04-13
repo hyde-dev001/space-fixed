@@ -175,7 +175,7 @@ class RepairPosController extends Controller
                 ->get(['id', 'name', 'category', 'price', 'duration']);
         }
 
-        $serviceSnapshots = $resolvedServices->map(function (RepairService $service) {
+        $toServiceSnapshot = static function (RepairService $service): array {
             return [
                 'id' => (int) $service->id,
                 'name' => (string) $service->name,
@@ -183,10 +183,36 @@ class RepairPosController extends Controller
                 'price' => (float) ($service->price ?? 0),
                 'duration' => $service->duration,
             ];
-        })->values()->all();
+        };
 
-        $includedServicesSnapshot = !empty($serviceSnapshots)
-            ? $serviceSnapshots
+        $includedServices = $resolvedServices;
+        $addOnServices = collect();
+
+        if ($resolvedPackage) {
+            $packageServiceIds = $resolvedPackage->services()->pluck('repair_services.id')
+                ->map(fn ($id) => (int) $id)
+                ->filter(fn ($id) => $id > 0)
+                ->unique()
+                ->values();
+
+            if ($packageServiceIds->isNotEmpty()) {
+                $includedServices = $resolvedServices
+                    ->filter(fn (RepairService $service) => $packageServiceIds->contains((int) $service->id))
+                    ->values();
+                $addOnServices = $resolvedServices
+                    ->filter(fn (RepairService $service) => !$packageServiceIds->contains((int) $service->id))
+                    ->values();
+            } else {
+                $includedServices = collect();
+                $addOnServices = $resolvedServices->values();
+            }
+        }
+
+        $includedServicesSnapshot = $includedServices->map($toServiceSnapshot)->values()->all();
+        $addOnServicesSnapshot = $addOnServices->map($toServiceSnapshot)->values()->all();
+
+        $includedServicesSnapshot = !empty($includedServicesSnapshot)
+            ? $includedServicesSnapshot
             : [[
                 'id' => null,
                 'name' => $snapshotServiceName,
@@ -202,6 +228,17 @@ class RepairPosController extends Controller
 
         $resolvedPackageName = $resolvedPackage ? (string) ($resolvedPackage->name ?? '') : null;
         $resolvedPackagePrice = $resolvedPackage ? (float) ($resolvedPackage->package_price ?? 0) : null;
+        $includedServicesTotal = $resolvedPackage
+            ? round((float) ($resolvedPackagePrice ?? $includedServices->sum(fn (RepairService $service) => (float) ($service->price ?? 0))), 2)
+            : round((float) $includedServices->sum(fn (RepairService $service) => (float) ($service->price ?? 0)), 2);
+        $addOnsTotal = round((float) $addOnServices->sum(fn (RepairService $service) => (float) ($service->price ?? 0)), 2);
+        $resolvedBaseTotal = $resolvedPackage
+            ? round((float) (($resolvedPackagePrice ?? 0) + $addOnsTotal), 2)
+            : round((float) $subtotal, 2);
+
+        if ($resolvedBaseTotal <= 0) {
+            $resolvedBaseTotal = round((float) $subtotal, 2);
+        }
 
         $repair = RepairRequest::create([
             'request_id' => $requestId,
@@ -214,25 +251,25 @@ class RepairPosController extends Controller
             'shop_owner_id' => $shopOwnerId,
             'user_id' => null,
             'images' => [],
-            'total' => $subtotal,
-            'final_total' => $subtotal,
+            'total' => $resolvedBaseTotal,
+            'final_total' => $resolvedBaseTotal,
             'repair_package_id' => $resolvedPackage ? (int) $resolvedPackage->id : null,
             'package_price' => $resolvedPackagePrice,
-            'add_ons_total' => 0,
+            'add_ons_total' => $addOnsTotal,
             'included_services_snapshot' => $includedServicesSnapshot,
-            'add_on_services_snapshot' => null,
+            'add_on_services_snapshot' => !empty($addOnServicesSnapshot) ? $addOnServicesSnapshot : null,
             'pricing_breakdown' => [
                 'mode' => 'manual_pos',
                 'tax_mode' => 'vat_inclusive',
                 'vat_rate' => 12.0,
                 'package_id' => $resolvedPackage ? (int) $resolvedPackage->id : null,
                 'package_name' => $resolvedPackageName,
-                'included_services_total' => $subtotal,
+                'included_services_total' => $includedServicesTotal,
                 'package_price' => $resolvedPackagePrice,
-                'add_ons_total' => 0,
-                'base_total' => $subtotal,
+                'add_ons_total' => $addOnsTotal,
+                'base_total' => $resolvedBaseTotal,
                 'materials_total' => 0,
-                'final_total' => $subtotal,
+                'final_total' => $resolvedBaseTotal,
             ],
             'payment_policy' => $resolvedPolicy,
             'payment_policy_snapshot' => $resolvedPolicy,
@@ -514,6 +551,7 @@ class RepairPosController extends Controller
             ->when($shopOwnerId > 0, fn ($query) => $query->where('shop_owner_id', $shopOwnerId))
             ->when($repairRequestId > 0, fn ($query) => $query->where('module_reference_id', $repairRequestId))
             ->with([
+                'repairRequest:id,status',
                 'paymentLines',
                 'receipt',
                 'refunds' => fn ($query) => $query->orderByDesc('id'),

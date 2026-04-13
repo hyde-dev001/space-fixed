@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\RepairReview;
 use App\Models\RepairRequest;
+use App\Models\PosRefund;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
@@ -47,13 +48,22 @@ class RepairReviewController extends Controller
             ], 404);
         }
 
+        $linkedRepairIds = $this->resolveLinkedRepairIds($repair, (int) $user->id);
+
         // Check if review already exists
-        $existingReview = RepairReview::where('repair_request_id', $repairId)->first();
+        $existingReview = RepairReview::whereIn('repair_request_id', $linkedRepairIds)->first();
         if ($existingReview) {
             return response()->json([
                 'success' => false,
                 'message' => 'You have already reviewed this repair'
             ], 400);
+        }
+
+        if ($this->hasBlockingRefundFlow($linkedRepairIds)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Review is not allowed after a refund request has been filed for this repair.',
+            ], 422);
         }
 
         try {
@@ -171,13 +181,23 @@ class RepairReviewController extends Controller
             ]);
         }
 
-        $existingReview = RepairReview::where('repair_request_id', $repairId)->first();
+        $linkedRepairIds = $this->resolveLinkedRepairIds($repair, (int) $user->id);
+
+        $existingReview = RepairReview::whereIn('repair_request_id', $linkedRepairIds)->first();
         if ($existingReview) {
             return response()->json([
                 'success' => true,
                 'can_review' => false,
                 'reason' => 'Already reviewed',
                 'review' => $existingReview
+            ]);
+        }
+
+        if ($this->hasBlockingRefundFlow($linkedRepairIds)) {
+            return response()->json([
+                'success' => true,
+                'can_review' => false,
+                'reason' => 'Refund already requested or completed',
             ]);
         }
 
@@ -249,5 +269,44 @@ class RepairReviewController extends Controller
             'message' => 'Response added successfully',
             'review' => $review->fresh()
         ]);
+    }
+
+    /**
+     * @return int[]
+     */
+    private function resolveLinkedRepairIds(RepairRequest $repair, int $customerUserId): array
+    {
+        $anchorRepairId = ((bool) ($repair->is_warranty_job ?? false) && (int) ($repair->parent_repair_request_id ?? 0) > 0)
+            ? (int) $repair->parent_repair_request_id
+            : (int) $repair->id;
+
+        $linkedRepairIds = RepairRequest::query()
+            ->where('user_id', $customerUserId)
+            ->where(function ($query) use ($anchorRepairId) {
+                $query->where('id', $anchorRepairId)
+                    ->orWhere('parent_repair_request_id', $anchorRepairId);
+            })
+            ->pluck('id')
+            ->map(fn ($value) => (int) $value)
+            ->all();
+
+        if (empty($linkedRepairIds)) {
+            $linkedRepairIds = [$anchorRepairId];
+        }
+
+        return array_values(array_unique($linkedRepairIds));
+    }
+
+    private function hasBlockingRefundFlow(array $linkedRepairIds): bool
+    {
+        if (empty($linkedRepairIds)) {
+            return false;
+        }
+
+        return PosRefund::query()
+            ->where('module_type', 'repair')
+            ->whereIn('module_reference_id', $linkedRepairIds)
+            ->whereIn('status', ['requested', 'approved', 'processing', 'succeeded'])
+            ->exists();
     }
 }

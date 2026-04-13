@@ -18,6 +18,7 @@ interface Shop {
   rating: number;
   image: string;
   description: string;
+  repair_payment_policy?: 'deposit_50' | 'full_upfront';
   hours: ShopHours[] | null;
   phone: string;
   email: string;
@@ -288,6 +289,13 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
   };
 
   const shopStatus = checkIfOpen();
+  const normalizedRepairPaymentPolicy = shop.repair_payment_policy === 'full_upfront' ? 'full_upfront' : 'deposit_50';
+  const paymentPolicyLabel = normalizedRepairPaymentPolicy === 'full_upfront'
+    ? 'Full Payment Upfront'
+    : '50% Deposit + 50% on Pickup';
+  const paymentPolicyHint = normalizedRepairPaymentPolicy === 'full_upfront'
+    ? 'Customer pays full amount before service starts.'
+    : 'Customer pays half upfront and half when claiming repaired shoes.';
   const requestRepairHref = `/repair-process?shop=${shop.id}${selectedPackageId ? `&package=${selectedPackageId}` : ''}${selectedServices.length > 0 ? `&services=${selectedServices.join(',')}` : ''}`;
   const selectionSummary = selectedPackageId
     ? '(1 package selected)'
@@ -448,6 +456,16 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                 </svg>
                 <span className="text-sm xl:text-lg font-medium leading-snug wrap-break-word">{shop.location}</span>
               </div>
+              <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-white/55 bg-black/35 px-3 py-1.5 text-[11px] xl:text-xs font-semibold text-white backdrop-blur-sm">
+                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/20">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="6" x2="12" y2="12" />
+                    <line x1="12" y1="16" x2="12.01" y2="16" />
+                  </svg>
+                </span>
+                <span>Payment Policy: {paymentPolicyLabel}</span>
+              </div>
             </div>
 
             {/* Rating Badge (Top Right) - removed */}
@@ -522,6 +540,17 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                     <div className={`leading-6 wrap-break-word ${shop.location === 'Location not specified' || shop.location === 'Not specified' ? 'text-gray-400 italic' : 'text-gray-600'}`}>
                       {shop.location || 'Location not specified'}
                     </div>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3 rounded-2xl border border-blue-100 bg-blue-50/70 p-3.5 xl:p-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-blue-700 mt-0.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 1v22" />
+                    <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7H14a3.5 3.5 0 0 1 0 7H6" />
+                  </svg>
+                  <div className="min-w-0">
+                    <div className="font-bold text-blue-900 mb-1">Repair Payment Policy</div>
+                    <div className="text-blue-900 font-semibold leading-6">{paymentPolicyLabel}</div>
+                    <p className="text-blue-800/90 text-xs sm:text-sm mt-1 leading-5">{paymentPolicyHint}</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-white/80 p-3.5 xl:p-4">

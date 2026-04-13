@@ -360,6 +360,86 @@ class RepairWorkflowController extends Controller
         return round($resolved, 2);
     }
 
+    private function buildRepairNotificationPayload(RepairRequest $repairRequest, array $overrides = []): array
+    {
+        return array_merge([
+            'repair_id' => $repairRequest->id,
+            'order_number' => $repairRequest->request_id,
+            'status' => (string) ($repairRequest->status ?? ''),
+            'service_type' => (string) ($repairRequest->delivery_method ?? ''),
+            'customer_name' => (string) ($repairRequest->customer_name ?? ''),
+            'is_warranty_job' => (bool) ($repairRequest->is_warranty_job ?? false),
+            'billing_mode' => $repairRequest->billing_mode,
+        ], $overrides);
+    }
+
+    private function notifyCustomerRepairLifecycle(RepairRequest $repairRequest, ?string $status = null): void
+    {
+        $customerId = (int) ($repairRequest->user_id ?? 0);
+        if ($customerId <= 0) {
+            return;
+        }
+
+        $normalizedStatus = strtolower(trim((string) ($status ?? $repairRequest->status ?? '')));
+        if ($normalizedStatus === '') {
+            return;
+        }
+
+        $payload = $this->buildRepairNotificationPayload($repairRequest, [
+            'status' => $normalizedStatus,
+        ]);
+
+        try {
+            if ($normalizedStatus === 'in_progress') {
+                $this->notificationService->notifyRepairInProgress($customerId, $payload);
+                return;
+            }
+
+            if ($normalizedStatus === 'completed') {
+                $this->notificationService->notifyRepairCompleted($customerId, $payload);
+                return;
+            }
+
+            if ($normalizedStatus === 'ready_for_pickup') {
+                $this->notificationService->notifyRepairReadyForPickup($customerId, $payload);
+                return;
+            }
+
+            $this->notificationService->notifyRepairStatusUpdate($customerId, $payload);
+        } catch (\Throwable $exception) {
+            \Log::warning('Failed to send repair lifecycle notification', [
+                'repair_id' => $repairRequest->id,
+                'status' => $normalizedStatus,
+                'customer_id' => $customerId,
+                'error' => $exception->getMessage(),
+            ]);
+        }
+    }
+
+    private function notifyCustomerReceiveConfirmationActivated(RepairRequest $repairRequest): void
+    {
+        $customerId = (int) ($repairRequest->user_id ?? 0);
+        if ($customerId <= 0) {
+            return;
+        }
+
+        $payload = $this->buildRepairNotificationPayload($repairRequest, [
+            'status' => (string) ($repairRequest->status ?? ''),
+            'pickup_enabled' => true,
+            'return_delivery_method' => (string) ($repairRequest->return_delivery_method ?? ''),
+        ]);
+
+        try {
+            $this->notificationService->notifyRepairReceiveConfirmationActivated($customerId, $payload);
+        } catch (\Throwable $exception) {
+            \Log::warning('Failed to send receive-confirmation activation notification', [
+                'repair_id' => $repairRequest->id,
+                'customer_id' => $customerId,
+                'error' => $exception->getMessage(),
+            ]);
+        }
+    }
+
     public function validateMaterialStart($id, RepairMaterialPlanningService $planner)
     {
         $repair = $this->resolveRepairForMaterialValidation((int) $id);
@@ -892,6 +972,7 @@ class RepairWorkflowController extends Controller
             
             // Manager inbox for rejection workflow:
             // - Initial review: repairer_rejected
+            // - Forwarded to owner (for manager visibility): owner_approval_pending
             // - Final review after owner approval: manager_reviewing
             // Include resolved entries for reference/history in the same table.
             $repairs = RepairRequest::with([
@@ -904,7 +985,7 @@ class RepairWorkflowController extends Controller
             ])
                 ->where('shop_owner_id', $user->shop_owner_id)
                 ->whereNotNull('repairer_rejected_at')
-                ->whereIn('status', ['repairer_rejected', 'manager_reviewing', 'rejected', 'assigned_to_repairer'])
+                ->whereIn('status', ['repairer_rejected', 'owner_approval_pending', 'manager_reviewing', 'rejected', 'assigned_to_repairer'])
                 ->orderBy('repairer_rejected_at', 'desc')
                 ->get();
 
@@ -988,6 +1069,29 @@ class RepairWorkflowController extends Controller
             ]);
             
             DB::commit();
+
+            try {
+                $this->notificationService->notifyRepairRejectApprovalRequest(
+                    (int) $repairRequest->shop_owner_id,
+                    [
+                        'repair_id' => (int) $repairRequest->id,
+                        'request_id' => (string) ($repairRequest->request_id ?? $repairRequest->id),
+                        'order_number' => (string) ($repairRequest->request_id ?? $repairRequest->id),
+                        'customer_name' => (string) ($repairRequest->customer_name ?? 'Customer'),
+                        'reason' => (string) ($repairRequest->repairer_rejection_reason ?? ''),
+                        'manager_notes' => (string) ($request->notes ?? ''),
+                        'manager_id' => (int) $user->id,
+                        'manager_name' => (string) ($user->name ?? trim((string) (($user->first_name ?? '') . ' ' . ($user->last_name ?? '')))),
+                        'status' => 'owner_approval_pending',
+                    ]
+                );
+            } catch (\Throwable $notificationError) {
+                \Log::warning('Could not notify shop owner for forwarded repair rejection', [
+                    'repair_request_id' => $repairRequest->id,
+                    'shop_owner_id' => $repairRequest->shop_owner_id,
+                    'error' => $notificationError->getMessage(),
+                ]);
+            }
 
             return response()->json([
                 'success' => true,
@@ -1688,8 +1792,8 @@ class RepairWorkflowController extends Controller
             ]);
             
             DB::commit();
-            
-            // TODO: Send notification to customer that work has started
+
+            $this->notifyCustomerRepairLifecycle($repairRequest, 'in_progress');
             
             return response()->json([
                 'success' => true,
@@ -1782,8 +1886,8 @@ class RepairWorkflowController extends Controller
             ]);
             
             DB::commit();
-            
-            // TODO: Send notification to customer that work resumed
+
+            $this->notifyCustomerRepairLifecycle($repairRequest, 'in_progress');
             
             return response()->json([
                 'success' => true,
@@ -1808,9 +1912,11 @@ class RepairWorkflowController extends Controller
         $request->validate([
             'completion_notes' => 'nullable|string|max:500',
             'no_materials_used_confirmed' => 'nullable|boolean',
+            'variance_override_confirmed' => 'nullable|boolean',
         ]);
 
         $noMaterialsUsedConfirmed = $request->boolean('no_materials_used_confirmed');
+        $varianceOverrideConfirmed = $request->boolean('variance_override_confirmed');
 
         try {
             // Check if authenticated as shop owner first
@@ -1831,7 +1937,10 @@ class RepairWorkflowController extends Controller
                     return $materialGateResponse;
                 }
 
-                $completionGateResponse = $this->validateMaterialCompletionGateForTransition($repairRequest);
+                $completionGateResponse = $this->validateMaterialCompletionGateForTransition(
+                    $repairRequest,
+                    $varianceOverrideConfirmed
+                );
                 if ($completionGateResponse) {
                     return $completionGateResponse;
                 }
@@ -1846,8 +1955,8 @@ class RepairWorkflowController extends Controller
                 ]);
                 
                 DB::commit();
-                
-                // TODO: Send notification to customer that repair is completed
+
+                $this->notifyCustomerRepairLifecycle($repairRequest, 'completed');
                 
                 return response()->json([
                     'success' => true,
@@ -1880,6 +1989,14 @@ class RepairWorkflowController extends Controller
                 return $materialGateResponse;
             }
 
+            $completionGateResponse = $this->validateMaterialCompletionGateForTransition(
+                $repairRequest,
+                $varianceOverrideConfirmed
+            );
+            if ($completionGateResponse) {
+                return $completionGateResponse;
+            }
+
             DB::beginTransaction();
             
             $repairRequest->update([
@@ -1889,8 +2006,8 @@ class RepairWorkflowController extends Controller
             ]);
             
             DB::commit();
-            
-            // TODO: Send notification to customer that repair is completed
+
+            $this->notifyCustomerRepairLifecycle($repairRequest, 'completed');
             
             return response()->json([
                 'success' => true,
@@ -1915,9 +2032,11 @@ class RepairWorkflowController extends Controller
         $request->validate([
             'pickup_instructions' => 'nullable|string|max:500',
             'no_materials_used_confirmed' => 'nullable|boolean',
+            'variance_override_confirmed' => 'nullable|boolean',
         ]);
 
         $noMaterialsUsedConfirmed = $request->boolean('no_materials_used_confirmed');
+        $varianceOverrideConfirmed = $request->boolean('variance_override_confirmed');
 
         try {
             // Check if authenticated as shop owner first
@@ -1939,7 +2058,10 @@ class RepairWorkflowController extends Controller
                         return $materialGateResponse;
                     }
 
-                    $completionGateResponse = $this->validateMaterialCompletionGateForTransition($repairRequest);
+                    $completionGateResponse = $this->validateMaterialCompletionGateForTransition(
+                        $repairRequest,
+                        $varianceOverrideConfirmed
+                    );
                     if ($completionGateResponse) {
                         return $completionGateResponse;
                     }
@@ -1955,8 +2077,8 @@ class RepairWorkflowController extends Controller
                 ]);
                 
                 DB::commit();
-                
-                // TODO: Send notification to customer to pick up their item
+
+                $this->notifyCustomerRepairLifecycle($repairRequest, 'ready_for_pickup');
                 
                 return response()->json([
                     'success' => true,
@@ -1989,6 +2111,14 @@ class RepairWorkflowController extends Controller
                 if ($materialGateResponse) {
                     return $materialGateResponse;
                 }
+
+                $completionGateResponse = $this->validateMaterialCompletionGateForTransition(
+                    $repairRequest,
+                    $varianceOverrideConfirmed
+                );
+                if ($completionGateResponse) {
+                    return $completionGateResponse;
+                }
             }
 
             DB::beginTransaction();
@@ -2000,8 +2130,8 @@ class RepairWorkflowController extends Controller
             ]);
             
             DB::commit();
-            
-            // TODO: Send notification to customer to pick up their item
+
+            $this->notifyCustomerRepairLifecycle($repairRequest, 'ready_for_pickup');
             
             return response()->json([
                 'success' => true,
@@ -2075,6 +2205,8 @@ class RepairWorkflowController extends Controller
                 ]);
                 
                 DB::commit();
+
+                $this->notifyCustomerRepairLifecycle($debugRepair, 'received');
                 
                 return response()->json([
                     'success' => true,
@@ -2145,6 +2277,8 @@ class RepairWorkflowController extends Controller
             ]);
             
             DB::commit();
+
+            $this->notifyCustomerRepairLifecycle($debugRepair, 'received');
             
             return response()->json([
                 'success' => true,
@@ -2262,6 +2396,8 @@ class RepairWorkflowController extends Controller
 
                     DB::commit();
 
+                    $this->notifyCustomerRepairLifecycle($repairRequest, 'picked_up');
+
                     return response()->json([
                         'success' => true,
                         'message' => 'Repair marked as received in-shop and completed.',
@@ -2277,6 +2413,8 @@ class RepairWorkflowController extends Controller
                 ]);
                 
                 DB::commit();
+
+                $this->notifyCustomerReceiveConfirmationActivated($repairRequest);
                 
                 return response()->json([
                     'success' => true,
@@ -2370,6 +2508,8 @@ class RepairWorkflowController extends Controller
 
                 DB::commit();
 
+                $this->notifyCustomerRepairLifecycle($repairRequest, 'picked_up');
+
                 return response()->json([
                     'success' => true,
                     'message' => 'Repair marked as received in-shop and completed.',
@@ -2385,6 +2525,8 @@ class RepairWorkflowController extends Controller
             ]);
             
             DB::commit();
+
+            $this->notifyCustomerReceiveConfirmationActivated($repairRequest);
             
             return response()->json([
                 'success' => true,
@@ -2515,32 +2657,86 @@ class RepairWorkflowController extends Controller
 
     private function calculateRepairPricingSnapshot(RepairRequest $repair): array
     {
-        $repair->loadMissing(['materialUsages.inventoryItem:id,price']);
+        $repair->loadMissing([
+            'materialUsages.inventoryItem:id,price',
+            'services:id,price',
+            'repairPackage.services:id',
+        ]);
 
         $materialsTotal = round((float) $repair->materialUsages->sum(function ($usage) {
             $unitPrice = (float) ($usage->inventoryItem->price ?? 0);
             return ((int) $usage->quantity_used) * $unitPrice;
         }), 2);
 
-        $packagePrice = round((float) ($repair->package_price ?? 0), 2);
-        $addOnsTotal = round((float) ($repair->add_ons_total ?? 0), 2);
-        $baseTotal = !is_null($repair->repair_package_id)
+        $pricingBreakdown = is_array($repair->pricing_breakdown)
+            ? $repair->pricing_breakdown
+            : [];
+        $pricingMode = strtolower((string) ($pricingBreakdown['mode'] ?? ''));
+
+        $packagePrice = round((float) ($repair->package_price ?? ($pricingBreakdown['package_price'] ?? 0)), 2);
+        $addOnsTotal = round((float) ($repair->add_ons_total ?? ($pricingBreakdown['add_ons_total'] ?? 0)), 2);
+
+        if (!is_null($repair->repair_package_id) && $addOnsTotal <= 0) {
+            $snapshotAddOns = round((float) collect((array) ($repair->add_on_services_snapshot ?? []))
+                ->sum(fn ($row) => (float) data_get($row, 'price', 0)), 2);
+            if ($snapshotAddOns > 0) {
+                $addOnsTotal = $snapshotAddOns;
+            }
+        }
+
+        if (!is_null($repair->repair_package_id) && $addOnsTotal <= 0) {
+            $packageServiceIds = collect($repair->repairPackage?->services?->pluck('id')->all() ?? [])
+                ->map(fn ($id) => (int) $id)
+                ->filter(fn ($id) => $id > 0)
+                ->values();
+
+            if ($packageServiceIds->isNotEmpty()) {
+                $derivedAddOns = round((float) $repair->services
+                    ->filter(fn ($service) => !$packageServiceIds->contains((int) $service->id))
+                    ->sum(fn ($service) => (float) ($service->price ?? 0)), 2);
+
+                if ($derivedAddOns > 0) {
+                    $addOnsTotal = $derivedAddOns;
+                }
+            }
+        }
+
+        $baseFromStoredTotal = round((float) ($repair->total ?? 0), 2);
+        $baseFromBreakdown = round((float) ($pricingBreakdown['base_total'] ?? 0), 2);
+        $baseFromPackage = !is_null($repair->repair_package_id)
             ? round($packagePrice + $addOnsTotal, 2)
-            : round((float) ($repair->total ?? 0), 2);
+            : 0;
+
+        if (!is_null($repair->repair_package_id)) {
+            $baseTotal = $pricingMode === 'manual_pos'
+                ? round(max($baseFromStoredTotal, $baseFromBreakdown, $baseFromPackage), 2)
+                : ($baseFromPackage > 0
+                    ? $baseFromPackage
+                    : round(max($baseFromStoredTotal, $baseFromBreakdown), 2));
+        } else {
+            $baseTotal = $baseFromStoredTotal > 0
+                ? $baseFromStoredTotal
+                : $baseFromBreakdown;
+        }
+
+        if ($baseTotal <= 0) {
+            $baseTotal = round((float) ($repair->final_total ?? 0), 2);
+        }
+
         // Material usage is operational tracking and should not auto-inflate
         // the customer-facing billable amount for the repair.
         $finalTotal = $baseTotal;
 
-        $pricingBreakdown = is_array($repair->pricing_breakdown)
-            ? $repair->pricing_breakdown
-            : [];
-
         $pricingBreakdown['base_total'] = $baseTotal;
+        $pricingBreakdown['package_price'] = $packagePrice;
+        $pricingBreakdown['add_ons_total'] = $addOnsTotal;
         $pricingBreakdown['materials_total'] = $materialsTotal;
         $pricingBreakdown['final_total'] = $finalTotal;
 
         return [
             'base_total' => $baseTotal,
+            'package_price' => $packagePrice,
+            'add_ons_total' => $addOnsTotal,
             'materials_total' => $materialsTotal,
             'final_total' => $finalTotal,
             'pricing_breakdown' => $pricingBreakdown,
@@ -2967,6 +3163,8 @@ class RepairWorkflowController extends Controller
                 'pickup_enabled_at' => null,
                 'pickup_enabled_by' => null,
             ]));
+
+            $this->notifyCustomerRepairLifecycle($repairRequest, 'shipped');
 
             return response()->json([
                 'success' => true,
@@ -4016,18 +4214,71 @@ class RepairWorkflowController extends Controller
 
     private function computeRepairPricingTotals(RepairRequest $repairRequest): array
     {
-        $repairRequest->loadMissing(['materialUsages.inventoryItem:id,price']);
+        $repairRequest->loadMissing([
+            'materialUsages.inventoryItem:id,price',
+            'services:id,price',
+            'repairPackage.services:id',
+        ]);
 
         $materialsTotal = round((float) $repairRequest->materialUsages->sum(function ($usage) {
             $unitPrice = (float) ($usage->inventoryItem->price ?? 0);
             return ((int) $usage->quantity_used) * $unitPrice;
         }), 2);
 
-        $packagePrice = round((float) ($repairRequest->package_price ?? 0), 2);
-        $addOnsTotal = round((float) ($repairRequest->add_ons_total ?? 0), 2);
-        $baseTotal = !is_null($repairRequest->repair_package_id)
+        $pricingBreakdown = is_array($repairRequest->pricing_breakdown)
+            ? $repairRequest->pricing_breakdown
+            : [];
+        $pricingMode = strtolower((string) ($pricingBreakdown['mode'] ?? ''));
+
+        $packagePrice = round((float) ($repairRequest->package_price ?? ($pricingBreakdown['package_price'] ?? 0)), 2);
+        $addOnsTotal = round((float) ($repairRequest->add_ons_total ?? ($pricingBreakdown['add_ons_total'] ?? 0)), 2);
+
+        if (!is_null($repairRequest->repair_package_id) && $addOnsTotal <= 0) {
+            $snapshotAddOns = round((float) collect((array) ($repairRequest->add_on_services_snapshot ?? []))
+                ->sum(fn ($row) => (float) data_get($row, 'price', 0)), 2);
+            if ($snapshotAddOns > 0) {
+                $addOnsTotal = $snapshotAddOns;
+            }
+        }
+
+        if (!is_null($repairRequest->repair_package_id) && $addOnsTotal <= 0) {
+            $packageServiceIds = collect($repairRequest->repairPackage?->services?->pluck('id')->all() ?? [])
+                ->map(fn ($id) => (int) $id)
+                ->filter(fn ($id) => $id > 0)
+                ->values();
+
+            if ($packageServiceIds->isNotEmpty()) {
+                $derivedAddOns = round((float) $repairRequest->services
+                    ->filter(fn ($service) => !$packageServiceIds->contains((int) $service->id))
+                    ->sum(fn ($service) => (float) ($service->price ?? 0)), 2);
+
+                if ($derivedAddOns > 0) {
+                    $addOnsTotal = $derivedAddOns;
+                }
+            }
+        }
+
+        $baseFromStoredTotal = round((float) ($repairRequest->total ?? 0), 2);
+        $baseFromBreakdown = round((float) ($pricingBreakdown['base_total'] ?? 0), 2);
+        $baseFromPackage = !is_null($repairRequest->repair_package_id)
             ? round($packagePrice + $addOnsTotal, 2)
-            : round((float) ($repairRequest->total ?? 0), 2);
+            : 0;
+
+        if (!is_null($repairRequest->repair_package_id)) {
+            $baseTotal = $pricingMode === 'manual_pos'
+                ? round(max($baseFromStoredTotal, $baseFromBreakdown, $baseFromPackage), 2)
+                : ($baseFromPackage > 0
+                    ? $baseFromPackage
+                    : round(max($baseFromStoredTotal, $baseFromBreakdown), 2));
+        } else {
+            $baseTotal = $baseFromStoredTotal > 0
+                ? $baseFromStoredTotal
+                : $baseFromBreakdown;
+        }
+
+        if ($baseTotal <= 0) {
+            $baseTotal = round((float) ($repairRequest->final_total ?? 0), 2);
+        }
 
         // Keep final_total stable with the billable base amount; materials_total
         // remains available in pricing_breakdown for operational visibility.
@@ -4035,6 +4286,8 @@ class RepairWorkflowController extends Controller
 
         return [
             'base_total' => $baseTotal,
+            'package_price' => $packagePrice,
+            'add_ons_total' => $addOnsTotal,
             'materials_total' => $materialsTotal,
             'final_total' => $finalTotal,
         ];
@@ -4210,11 +4463,14 @@ class RepairWorkflowController extends Controller
             : [];
 
         $pricingBreakdown['base_total'] = $totals['base_total'];
+        $pricingBreakdown['package_price'] = $totals['package_price'];
+        $pricingBreakdown['add_ons_total'] = $totals['add_ons_total'];
         $pricingBreakdown['materials_total'] = $totals['materials_total'];
         $pricingBreakdown['final_total'] = $totals['final_total'];
 
         $repairRequest->forceFill([
             'final_total' => $totals['final_total'],
+            'add_ons_total' => $totals['add_ons_total'],
             'pricing_breakdown' => $pricingBreakdown,
         ])->save();
 
@@ -4429,7 +4685,10 @@ class RepairWorkflowController extends Controller
         return null;
     }
 
-    private function validateMaterialCompletionGateForTransition(RepairRequest $repairRequest)
+    private function validateMaterialCompletionGateForTransition(
+        RepairRequest $repairRequest,
+        bool $varianceOverrideConfirmed = false
+    )
     {
         $this->ensureRepairMaterialPlanItems($repairRequest);
         $repairRequest->load('materialPlanItems');
@@ -4437,7 +4696,13 @@ class RepairWorkflowController extends Controller
         $planner = app(RepairMaterialPlanningService::class);
         $readiness = $planner->validateCompletionReadiness($repairRequest);
 
-        if (($readiness['readiness_state'] ?? 'ready') === 'ready') {
+        $readinessState = (string) ($readiness['readiness_state'] ?? 'ready');
+
+        if ($readinessState === 'ready') {
+            return null;
+        }
+
+        if ($varianceOverrideConfirmed && $readinessState === 'variance_review_needed') {
             return null;
         }
 
@@ -4445,6 +4710,7 @@ class RepairWorkflowController extends Controller
             'success' => false,
             'message' => 'Resolve material variance note/review first before moving this repair forward.',
             'requires_variance_review' => true,
+            'can_override' => $readinessState === 'variance_review_needed',
             'data' => $readiness,
         ], 422);
     }

@@ -19,6 +19,7 @@ final class RecipientResolver
             'refund_request',
             'employee_suspension_request',
             'high_value_approval',
+            'repair_reject_approval',
         ];
 
         if (in_array($eventType, $governanceTypes, true)) {

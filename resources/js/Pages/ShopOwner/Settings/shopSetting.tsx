@@ -38,6 +38,7 @@ type ShopSettingsPayload = {
 	repair_payment_policy: 'deposit_50' | 'full_upfront';
 	repair_workload_limit: number;
 	order_refund_deadline_days: number;
+	two_factor_email_enabled: boolean;
 	has_paymongo_key: boolean;
 	// Geofence
 	attendance_geofence_enabled: boolean;
@@ -146,6 +147,10 @@ const ShopSetting: React.FC = () => {
 		.trim()
 		.toLowerCase()
 		.replace(/[-\s]+/g, '_');
+	const normalizedBusinessType = String(shop_settings.business_type ?? '').toLowerCase().trim();
+	const isBothSignal = normalizedBusinessType === 'both' || normalizedBusinessType.includes('both');
+	const hasRepairSignal = isBothSignal || normalizedBusinessType.includes('repair') || normalizedBusinessType.includes('service');
+	const hasRetailSignal = isBothSignal || normalizedBusinessType.includes('retail') || normalizedBusinessType.includes('shoe') || normalizedBusinessType.includes('product');
 	const isIndividual = normalizedRegistrationType === 'individual'
 		|| normalizedRegistrationType.startsWith('individual_')
 		|| normalizedRegistrationType.endsWith('_individual');
@@ -182,9 +187,12 @@ const ShopSetting: React.FC = () => {
 	const [savingAutoRenewal, setSavingAutoRenewal] = useState(false);
 	const [autoRenewalError, setAutoRenewalError] = useState<string | null>(null);
 	const [autoRenewalSuccess, setAutoRenewalSuccess] = useState(false);
-	const showWideRepairPaymentPolicy = isIndividual
-		&& (shop_settings.business_type === 'repair' || shop_settings.business_type === 'both');
-	const showWideApprovalLimits = !isIndividual && shop_settings.business_type === 'retail';
+	const [twoFactorEmailEnabled, setTwoFactorEmailEnabled] = useState(Boolean(shop_settings.two_factor_email_enabled));
+	const [savingTwoFactor, setSavingTwoFactor] = useState(false);
+	const [twoFactorError, setTwoFactorError] = useState<string | null>(null);
+	const [twoFactorSuccess, setTwoFactorSuccess] = useState(false);
+	const showWideRepairPaymentPolicy = isIndividual && hasRepairSignal;
+	const showWideApprovalLimits = !isIndividual && hasRetailSignal && !hasRepairSignal;
 
 	// Repair workload limit state — server prop is source of truth, localStorage is a cache
 	const serverLimit = shop_settings.repair_workload_limit ?? 20;
@@ -298,17 +306,43 @@ const ShopSetting: React.FC = () => {
 		}
 	};
 
+	const handleToggleTwoFactorEmail = (enabled: boolean) => {
+		if (savingTwoFactor) return;
+
+		const previous = twoFactorEmailEnabled;
+		setTwoFactorEmailEnabled(enabled);
+		setSavingTwoFactor(true);
+		setTwoFactorError(null);
+		setTwoFactorSuccess(false);
+
+		router.put(
+			'/shop-owner/settings',
+			{ two_factor_email_enabled: enabled },
+			{
+				preserveScroll: true,
+				onSuccess: () => {
+					setTwoFactorSuccess(true);
+					window.setTimeout(() => setTwoFactorSuccess(false), 2200);
+				},
+				onError: (pageErrors) => {
+					setTwoFactorEmailEnabled(previous);
+					const errors = pageErrors as Record<string, string | undefined>;
+					setTwoFactorError(errors.two_factor_email_enabled || 'Failed to update two-factor authentication setting.');
+				},
+				onFinish: () => {
+					setSavingTwoFactor(false);
+				},
+			},
+		);
+	};
+
 	const accountLabel = isIndividual ? 'Individual Account' : 'Business Account';
-	const normalizedBusinessType = (shop_settings.business_type || '').toLowerCase().trim();
-	const hasRepairSignal = normalizedBusinessType.includes('repair') || normalizedBusinessType.includes('service');
-	const hasRetailSignal = normalizedBusinessType.includes('retail') || normalizedBusinessType.includes('shoe') || normalizedBusinessType.includes('product');
 	const isRepairOnlyShop = hasRepairSignal && !hasRetailSignal;
-	const businessTypeLabel =
-		shop_settings.business_type === 'retail'
-			? 'Retail Shop'
-			: shop_settings.business_type === 'repair'
-				? 'Repair Services'
-				: 'Retail & Repair';
+	const businessTypeLabel = hasRetailSignal && hasRepairSignal
+		? 'Retail & Repair'
+		: hasRepairSignal
+			? 'Repair Services'
+			: 'Retail Shop';
 	const premiumStatus = shop_settings.premium?.status;
 	const premiumIsActive = Boolean(shop_settings.premium?.has_active);
 	const premiumIsEligible = Boolean(shop_settings.premium?.eligible);
@@ -361,14 +395,19 @@ const ShopSetting: React.FC = () => {
 		setAutoRenewalEnabled(Boolean(shop_settings.premium?.auto_renew ?? shop_settings.premium?.has_active ?? false));
 	}, [shop_settings.premium?.auto_renew, shop_settings.premium?.has_active]);
 
+	useEffect(() => {
+		setTwoFactorEmailEnabled(Boolean(shop_settings.two_factor_email_enabled));
+	}, [shop_settings.two_factor_email_enabled]);
+
 	const accountFeatures: Array<{ label: string; enabled: boolean }> = [
 		{ label: 'Staff Management', enabled: shop_settings.can_manage_staff },
 		{ label: 'Shop Profile Management', enabled: true },
 		{ label: 'Shop Notification Settings', enabled: true },
+		{ label: 'Email OTP Two-Factor Login', enabled: twoFactorEmailEnabled },
 		{ label: 'Approval Limit Controls', enabled: true },
 		{ label: 'Audit Logs Access', enabled: true },
-		{ label: 'Retail Order Workflows', enabled: shop_settings.business_type === 'retail' || shop_settings.business_type === 'both' },
-		{ label: 'Repair Service Workflows', enabled: shop_settings.business_type === 'repair' || shop_settings.business_type === 'both' },
+		{ label: 'Retail Order Workflows', enabled: hasRetailSignal },
+		{ label: 'Repair Service Workflows', enabled: hasRepairSignal },
 		{ label: 'Staff & Access Control', enabled: shop_settings.can_manage_staff },
 	];
 
@@ -932,6 +971,27 @@ const ShopSetting: React.FC = () => {
 									</div>
 								)}
 
+									<div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 text-sm text-gray-700">
+										<div className="flex items-start justify-between gap-3">
+											<div className="min-w-0">
+												<p className="font-semibold text-gray-900">Email OTP Two-Factor Login</p>
+												<p className="mt-1 text-xs text-gray-600">Require a one-time code from email after entering password.</p>
+											</div>
+											<ToggleSwitch
+												enabled={twoFactorEmailEnabled}
+												onChange={handleToggleTwoFactorEmail}
+												disabled={savingTwoFactor}
+												ariaLabel="Toggle email OTP two-factor login"
+											/>
+										</div>
+										{twoFactorError ? <p className="mt-2 text-xs text-red-600">{twoFactorError}</p> : null}
+										{twoFactorSuccess ? (
+											<p className="mt-2 flex items-center gap-1 text-xs font-medium text-green-700">
+												<Check size={13} /> Two-factor login setting saved.
+											</p>
+										) : null}
+									</div>
+
 								<div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
 									{accountFeatures.map((feature) => (
 										<div key={feature.label} className="flex items-center gap-2 rounded-lg border border-gray-300 bg-gray-50 px-2.5 py-2 text-sm text-gray-800">
@@ -1007,7 +1067,7 @@ const ShopSetting: React.FC = () => {
 					</div>
 
 					{/* Repair Payment Policy */}
-					{(shop_settings.business_type === 'repair' || shop_settings.business_type === 'both') && (
+					{hasRepairSignal && (
 						<div className={`rounded-2xl border border-gray-200 bg-white shadow-sm lg:order-3 ${showWideRepairPaymentPolicy ? 'lg:col-span-12' : 'lg:col-span-5'}`}>
 							<div className="border-b border-gray-200 p-6">
 								<h2 className="text-xl font-semibold text-gray-900">Repair Payment Policy</h2>
@@ -1104,18 +1164,18 @@ const ShopSetting: React.FC = () => {
 						</div>
 					)}
 
-					{(shop_settings.business_type === 'retail' || shop_settings.business_type === 'both') && (
+					{(hasRetailSignal || hasRepairSignal) && (
 						<div className="rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-12 lg:order-3">
 							<div className="border-b border-gray-200 p-6">
-								<h2 className="text-xl font-semibold text-gray-900">Product Refund Deadline</h2>
+								<h2 className="text-xl font-semibold text-gray-900">Refund Deadline</h2>
 								<p className="mt-1 text-sm text-gray-600">
-									Set how many days customers can request refund for product orders after order creation.
+									Set how many days customers can request a refund after transaction creation.
 								</p>
 							</div>
 							<div className="p-6">
 								<div className="rounded-lg border border-blue-100 bg-blue-50/40 p-4">
 									<p className="mb-3 text-sm text-gray-700">
-										Allowed range is 1 to 30 days. This applies to new product orders for your shop.
+										Allowed range is 1 to 30 days. This applies to new refund requests for your shop.
 									</p>
 									<div className="flex flex-col gap-2 sm:flex-row sm:items-center">
 										<label className="sr-only" htmlFor="order-refund-deadline-days">Refund deadline in days</label>

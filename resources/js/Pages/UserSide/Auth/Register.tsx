@@ -9,6 +9,18 @@ import { MailIcon, LockIcon, UserIcon } from '../../../icons';
 
 type FormErrors = Record<string, string>;
 
+const EMAIL_REGEX = /^\S+@\S+\.\S+$/;
+const PHONE_REGEX = /^\d{11}$/;
+
+const escapeHtml = (value: string) => (
+  value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;')
+);
+
 export default function Register() {
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState({
@@ -28,60 +40,128 @@ export default function Register() {
   const [isLoading, setIsLoading] = useState(false);
   const authInputClasses = 'h-12 rounded-xl !border-gray-200 !bg-[#f8fafc] !text-[13px] !text-gray-800 placeholder:!text-gray-400 shadow-none focus:!border-gray-300 focus:!ring-gray-200/70 dark:!border-gray-200 dark:!bg-[#f8fafc] dark:!text-gray-800 dark:placeholder:!text-gray-400 dark:focus:!border-gray-300 dark:focus:!ring-gray-200/70';
 
-  const validateStep = (step: number): boolean => {
+  const getStepValidationErrors = (step: number): FormErrors => {
     const newErrors: FormErrors = {};
 
     if (step === 1) {
-      if (!formData.firstName.trim()) newErrors.firstName = 'Enter your first name.';
-      if (!formData.lastName.trim()) newErrors.lastName = 'Enter your last name.';
-      if (!formData.email.trim()) newErrors.email = 'Enter your email address.';
-      else if (!/\S+@\S+\.\S+/.test(formData.email.trim())) newErrors.email = 'Enter a valid email address.';
-      if (!formData.phone.trim()) newErrors.phone = 'Enter your phone number.';
-      else if (!/^\d{11}$/.test(formData.phone.trim())) newErrors.phone = 'Phone number must be 11 digits.';
-    } else if (step === 2) {
-      if (!formData.age.trim()) newErrors.age = 'Enter your age.';
-      else if (Number(formData.age) < 18) newErrors.age = 'You must be at least 18.';
-      if (!formData.address.trim()) newErrors.address = 'Enter your address.';
-      if (!formData.password) newErrors.password = 'Enter a password.';
-      else if (formData.password.length < 8) newErrors.password = 'Password must be at least 8 characters.';
-      else if (!/[A-Z]/.test(formData.password) || !/[a-z]/.test(formData.password) || !/[0-9]/.test(formData.password)) {
-        newErrors.password = 'Include uppercase, lowercase, and a number.';
+      const firstName = formData.firstName.trim();
+      const lastName = formData.lastName.trim();
+      const email = formData.email.trim();
+      const phone = formData.phone.trim();
+
+      if (!firstName) {
+        newErrors.firstName = 'Please enter your first name.';
+      } else if (firstName.length < 2) {
+        newErrors.firstName = 'First name must be at least 2 characters.';
       }
-      if (!formData.confirmPassword) newErrors.confirmPassword = 'Confirm your password.';
-      else if (formData.password !== formData.confirmPassword) newErrors.confirmPassword = 'Passwords do not match.';
-    } else if (step === 3) {
-      if (!formData.validId) newErrors.validId = 'Upload a valid ID.';
-      if (!formData.termsAccepted) newErrors.termsAccepted = 'You must accept the terms and conditions.';
+
+      if (!lastName) {
+        newErrors.lastName = 'Please enter your last name.';
+      } else if (lastName.length < 2) {
+        newErrors.lastName = 'Last name must be at least 2 characters.';
+      }
+
+      if (!email) {
+        newErrors.email = 'Please enter your email address.';
+      } else if (!EMAIL_REGEX.test(email)) {
+        newErrors.email = 'Please enter a valid email address (example: name@email.com).';
+      }
+
+      if (!phone) {
+        newErrors.phone = 'Please enter your phone number.';
+      } else if (!PHONE_REGEX.test(phone)) {
+        newErrors.phone = 'Phone number must be exactly 11 digits (example: 09171234567).';
+      }
     }
 
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    if (step === 2) {
+      const age = formData.age.trim();
+      const ageNumber = Number(age);
+
+      if (!age) {
+        newErrors.age = 'Please enter your age.';
+      } else if (!Number.isInteger(ageNumber)) {
+        newErrors.age = 'Age must be a whole number.';
+      } else if (ageNumber < 18) {
+        newErrors.age = 'You must be at least 18 years old to register.';
+      } else if (ageNumber > 120) {
+        newErrors.age = 'Please enter a valid age (120 or below).';
+      }
+
+      if (!formData.address.trim()) {
+        newErrors.address = 'Please enter your address.';
+      }
+
+      if (!formData.password) {
+        newErrors.password = 'Please enter a password.';
+      } else if (formData.password.length < 8) {
+        newErrors.password = 'Password must be at least 8 characters.';
+      } else if (!/[A-Z]/.test(formData.password) || !/[a-z]/.test(formData.password) || !/[0-9]/.test(formData.password)) {
+        newErrors.password = 'Password must include uppercase, lowercase, and at least one number.';
+      }
+
+      if (!formData.confirmPassword) {
+        newErrors.confirmPassword = 'Please confirm your password.';
+      } else if (formData.password !== formData.confirmPassword) {
+        newErrors.confirmPassword = 'Passwords do not match.';
+      }
+    }
+
+    if (step === 3) {
+      if (!formData.validId) {
+        newErrors.validId = 'Please upload a valid government-issued ID (JPG, PNG, or PDF up to 5MB).';
+      }
+
+      if (!formData.termsAccepted) {
+        newErrors.termsAccepted = 'Please accept the terms and conditions before creating your account.';
+      }
+    }
+
+    return newErrors;
   };
 
-  const validateForm = (): { isValid: boolean; errors: FormErrors } => {
-    const newErrors: FormErrors = {};
-
-    if (!formData.firstName.trim()) newErrors.firstName = 'Enter your first name.';
-    if (!formData.lastName.trim()) newErrors.lastName = 'Enter your last name.';
-    if (!formData.email.trim()) newErrors.email = 'Enter your email address.';
-    else if (!/\S+@\S+\.\S+/.test(formData.email.trim())) newErrors.email = 'Enter a valid email address.';
-    if (!formData.phone.trim()) newErrors.phone = 'Enter your phone number.';
-    else if (!/^\d{11}$/.test(formData.phone.trim())) newErrors.phone = 'Phone number must be 11 digits.';
-    if (!formData.age.trim()) newErrors.age = 'Enter your age.';
-    else if (Number(formData.age) < 18) newErrors.age = 'You must be at least 18.';
-    if (!formData.address.trim()) newErrors.address = 'Enter your address.';
-    if (!formData.password) newErrors.password = 'Enter a password.';
-    else if (formData.password.length < 8) newErrors.password = 'Password must be at least 8 characters.';
-    else if (!/[A-Z]/.test(formData.password) || !/[a-z]/.test(formData.password) || !/[0-9]/.test(formData.password)) {
-      newErrors.password = 'Include uppercase, lowercase, and a number.';
+  const getFirstInvalidStep = (validationErrors: FormErrors): number => {
+    if (validationErrors.firstName || validationErrors.lastName || validationErrors.email || validationErrors.phone) {
+      return 1;
     }
-    if (!formData.confirmPassword) newErrors.confirmPassword = 'Confirm your password.';
-    else if (formData.password !== formData.confirmPassword) newErrors.confirmPassword = 'Passwords do not match.';
-    if (!formData.validId) newErrors.validId = 'Upload a valid ID.';
-    if (!formData.termsAccepted) newErrors.termsAccepted = 'You must accept the terms and conditions.';
 
-    setErrors(newErrors);
-    return { isValid: Object.keys(newErrors).length === 0, errors: newErrors };
+    if (validationErrors.age || validationErrors.address || validationErrors.password || validationErrors.confirmPassword) {
+      return 2;
+    }
+
+    if (validationErrors.validId || validationErrors.termsAccepted) {
+      return 3;
+    }
+
+    return 1;
+  };
+
+  const showValidationModal = (title: string, validationErrors: FormErrors) => {
+    const uniqueMessages = Array.from(new Set(Object.values(validationErrors).filter(Boolean)));
+    const listItems = uniqueMessages
+      .map((message) => `<li style="margin-bottom:6px;">${escapeHtml(message)}</li>`)
+      .join('');
+
+    Swal.fire({
+      icon: 'error',
+      title,
+      html: `<div style="text-align:left;"><p style="margin-bottom:8px;">Please check the following:</p><ul style="padding-left:18px; margin:0;">${listItems}</ul></div>`,
+      confirmButtonColor: '#000000',
+    });
+  };
+
+  const validateForm = (): { isValid: boolean; errors: FormErrors; firstInvalidStep: number } => {
+    const newErrors: FormErrors = {
+      ...getStepValidationErrors(1),
+      ...getStepValidationErrors(2),
+      ...getStepValidationErrors(3),
+    };
+
+    return {
+      isValid: Object.keys(newErrors).length === 0,
+      errors: newErrors,
+      firstInvalidStep: getFirstInvalidStep(newErrors),
+    };
   };
 
   const checkEmailAvailability = async (email: string): Promise<{ available: boolean; message?: string }> => {
@@ -107,7 +187,10 @@ export default function Register() {
   };
 
   const handleNext = async () => {
-    if (!validateStep(currentStep)) {
+    const stepErrors = getStepValidationErrors(currentStep);
+    if (Object.keys(stepErrors).length > 0) {
+      setErrors(prev => ({ ...prev, ...stepErrors }));
+      showValidationModal('Please fix the highlighted fields', stepErrors);
       return;
     }
 
@@ -117,12 +200,9 @@ export default function Register() {
 
       if (!result.available) {
         const message = result.message || 'This email is already registered';
-        setErrors(prev => ({ ...prev, email: message }));
-        Swal.fire({
-          icon: 'error',
-          title: 'Email not available',
-          text: message,
-        });
+        const emailError: FormErrors = { email: message };
+        setErrors(prev => ({ ...prev, ...emailError }));
+        showValidationModal('Email not available', emailError);
         return;
       }
     }
@@ -296,6 +376,23 @@ export default function Register() {
     }
   };
 
+  const mapBackendErrorsToFrontend = (backendErrors: Record<string, unknown>): FormErrors => {
+    const keyMap: Record<string, string> = {
+      first_name: 'firstName',
+      last_name: 'lastName',
+      password_confirmation: 'confirmPassword',
+      valid_id: 'validId',
+    };
+
+    const mapped: FormErrors = {};
+    Object.entries(backendErrors || {}).forEach(([key, value]) => {
+      const targetKey = keyMap[key] || key;
+      mapped[targetKey] = Array.isArray(value) ? String(value[0] ?? '') : String(value ?? '');
+    });
+
+    return mapped;
+  };
+
   const handleRegisterClick = async () => {
     // Ensure we're on the last step
     if (currentStep !== 3) {
@@ -304,41 +401,9 @@ export default function Register() {
     
     const validation = validateForm();
     if (!validation.isValid) {
-      
-      // Get list of fields with errors
-      const errorFields = Object.keys(validation.errors).map(key => {
-        const fieldNames: Record<string, string> = {
-          firstName: 'First Name',
-          lastName: 'Last Name',
-          email: 'Email',
-          phone: 'Phone Number',
-          age: 'Age',
-          address: 'Address',
-          password: 'Password',
-          confirmPassword: 'Confirm Password',
-          validId: 'Valid ID',
-          termsAccepted: 'Terms and Conditions'
-        };
-        return fieldNames[key] || key;
-      });
-      
-      // Find which step has errors
-      let errorStep = 1;
-      if (validation.errors.age || validation.errors.address || validation.errors.password || validation.errors.confirmPassword) {
-        errorStep = 2;
-      } else if (validation.errors.validId || validation.errors.termsAccepted) {
-        errorStep = 3;
-      }
-      
-      Swal.fire({
-        icon: 'error',
-        title: 'Please review your details',
-        html: `<p>Please complete the following on step ${errorStep}:</p><ul style="text-align: left; margin-top: 10px;">${errorFields.map(field => `<li><strong>${field}</strong></li>`).join('')}</ul>`,
-        confirmButtonColor: '#000000',
-      });
-      
-      // Navigate to the step with errors
-      setCurrentStep(errorStep);
+      setErrors(validation.errors);
+      setCurrentStep(validation.firstInvalidStep);
+      showValidationModal('Please review your details', validation.errors);
       return;
     }
 
@@ -374,19 +439,12 @@ export default function Register() {
           // Router will automatically handle redirect to verification.notice
         },
         onError: (backendErrors) => {
-          const mapped: Record<string, string> = {};
-          Object.entries(backendErrors || {}).forEach(([key, val]) => {
-            mapped[key] = Array.isArray(val) ? val[0] : String(val);
-          });
+          const mapped = mapBackendErrorsToFrontend(backendErrors as Record<string, unknown>);
           setErrors(mapped);
-          
-          // Show specific error messages if available
-          const errorMessages = Object.values(mapped).join('\n');
-          Swal.fire({
-            icon: 'error',
-            title: 'Registration failed',
-            text: errorMessages || 'Please review the form and try again.',
-          });
+
+          const firstInvalidStep = getFirstInvalidStep(mapped);
+          setCurrentStep(firstInvalidStep);
+          showValidationModal('Registration failed. Please review your details.', mapped);
         },
       });
     } catch (error) {

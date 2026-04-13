@@ -78,6 +78,7 @@ type ReceiptSnapshot = {
 	moduleType?: "repair" | "retail";
 	transactionId?: number;
 	repairRequestId?: number;
+	repairStatus?: string | null;
 	customerType?: "registered" | "walk_in";
 	dueType?: PosDueType | null;
 	paidAmount: number;
@@ -161,6 +162,41 @@ const hasOpenOrCompletedRefund = (receipt: ReceiptSnapshot): boolean => {
 
 const canExecuteReceiptRefund = (receipt: ReceiptSnapshot): boolean => {
 	return receipt.customerType === "walk_in" && String(receipt.latestRefund?.status || "").toLowerCase() === "approved";
+};
+
+const WARRANTY_ELIGIBLE_REPAIR_STATUSES = new Set(["picked_up", "received"]);
+
+const isWarrantyEligibleRepairStatus = (status: unknown): boolean => {
+	const normalized = String(status ?? "")
+		.trim()
+		.toLowerCase()
+		.replace(/-/g, "_");
+
+	return WARRANTY_ELIGIBLE_REPAIR_STATUSES.has(normalized);
+};
+
+const canRequestWarrantyClaimFromReceipt = (receipt: ReceiptSnapshot): boolean => {
+	if (receipt.moduleType === "retail") {
+		return false;
+	}
+
+	if (receipt.customerType !== "walk_in") {
+		return false;
+	}
+
+	if (Number(receipt.repairRequestId ?? 0) <= 0) {
+		return false;
+	}
+
+	if (String(receipt.receiptNo || "").trim().length === 0) {
+		return false;
+	}
+
+	if (!isWarrantyEligibleRepairStatus(receipt.repairStatus)) {
+		return false;
+	}
+
+	return String(receipt.customerPhone || "").trim().length > 0;
 };
 
 const parseDueType = (value: unknown): PosDueType | null => {
@@ -904,6 +940,9 @@ const PointOfSalePage = () => {
 						moduleType,
 						transactionId: Number(row?.id || 0),
 						repairRequestId: moduleType === "repair" ? Number(row?.module_reference_id || 0) : undefined,
+						repairStatus: moduleType === "repair"
+							? String(row?.repair_request?.status ?? row?.repairRequest?.status ?? "")
+							: null,
 						customerType: String(row?.customer_type || "walk_in") === "registered" ? "registered" : "walk_in",
 						dueType: moduleType === "repair" ? dueType : null,
 						paidAmount: Number(row?.paid_amount ?? 0),
@@ -1021,8 +1060,22 @@ const PointOfSalePage = () => {
 			return;
 		}
 
+		const requestedAmount = resolveRefundRequestAmount(receipt);
+		const refundConfirmation = await Swal.fire({
+			icon: "warning",
+			title: "Confirm Refund Request",
+			html: `This will request a refund for <b>${formatPeso(requestedAmount)}</b>.`,
+			showCancelButton: true,
+			confirmButtonText: "Yes, Continue",
+			cancelButtonText: "Cancel",
+			confirmButtonColor: "#dc2626",
+		});
+
+		if (!refundConfirmation.isConfirmed) {
+			return;
+		}
+
 		try {
-			const requestedAmount = resolveRefundRequestAmount(receipt);
 			const response = await repairPosHistoryApi.requestRefund({
 				source_transaction_id: transactionId,
 				request_type: "full",
@@ -1073,6 +1126,127 @@ const PointOfSalePage = () => {
 		}
 	};
 
+	const handleRequestWarrantyClaim = async (payload: {
+		repairRequestId?: number;
+		receiptNo?: string | null;
+		walkInPhone?: string | null;
+	}) => {
+		const repairRequestId = Number(payload.repairRequestId ?? 0);
+		const receiptNo = String(payload.receiptNo ?? '').trim();
+		const walkInPhone = String(payload.walkInPhone ?? '').trim();
+
+		if (repairRequestId <= 0 || receiptNo.length === 0 || walkInPhone.length === 0) {
+			await Swal.fire({
+				icon: 'warning',
+				title: 'Warranty Claim Unavailable',
+				text: 'Missing repair reference, receipt number, or customer phone.',
+				confirmButtonColor: '#b45309',
+			});
+			return;
+		}
+
+		const modal = await Swal.fire({
+			title: 'File Warranty Claim',
+			html: `
+				<div style="text-align:left; display:flex; flex-direction:column; gap:12px;">
+					<div>
+						<label for="pos_warranty_reason_code" style="display:block; font-size:12px; font-weight:700; margin-bottom:6px;">Reason</label>
+						<select id="pos_warranty_reason_code" class="swal2-input" style="margin:0; width:100%;">
+							<option value="issue_returned" selected>Issue returned</option>
+							<option value="same_defect">Same defect not fixed</option>
+							<option value="poor_workmanship">Workmanship concern</option>
+							<option value="other">Other</option>
+						</select>
+					</div>
+					<div>
+						<label for="pos_warranty_reason_details" style="display:block; font-size:12px; font-weight:700; margin-bottom:6px;">Details</label>
+						<textarea id="pos_warranty_reason_details" class="swal2-textarea" style="margin:0; width:100%;" placeholder="Describe the issue..."></textarea>
+					</div>
+					<div>
+						<label for="pos_warranty_return_method" style="display:block; font-size:12px; font-weight:700; margin-bottom:6px;">Preferred Return Method</label>
+						<select id="pos_warranty_return_method" class="swal2-input" style="margin:0; width:100%;">
+							<option value="walk_in" selected>Walk-in</option>
+							<option value="customer_delivery">Customer Delivery</option>
+						</select>
+					</div>
+					<div>
+						<label for="pos_warranty_images" style="display:block; font-size:12px; font-weight:700; margin-bottom:6px;">Evidence Images</label>
+						<input id="pos_warranty_images" type="file" accept="image/jpeg,image/jpg,image/png,image/webp" multiple style="display:block; width:100%;" />
+						<p style="margin-top:6px; font-size:11px; color:#6b7280;">Upload 1 to 10 images (JPEG/PNG/WEBP, max 20MB each).</p>
+					</div>
+				</div>
+			`,
+			showCancelButton: true,
+			confirmButtonText: 'Submit Claim',
+			cancelButtonText: 'Cancel',
+			confirmButtonColor: '#2563eb',
+			focusConfirm: false,
+			preConfirm: () => {
+				const reasonCode = (document.getElementById('pos_warranty_reason_code') as HTMLSelectElement | null)?.value?.trim() || '';
+				const reasonDetails = (document.getElementById('pos_warranty_reason_details') as HTMLTextAreaElement | null)?.value?.trim() || '';
+				const preferredReturnMethod = (document.getElementById('pos_warranty_return_method') as HTMLSelectElement | null)?.value?.trim() || 'walk_in';
+				const files = Array.from((document.getElementById('pos_warranty_images') as HTMLInputElement | null)?.files || []);
+
+				if (!reasonCode) {
+					Swal.showValidationMessage('Please select a reason.');
+					return null;
+				}
+
+				if (reasonCode === 'other' && reasonDetails.length === 0) {
+					Swal.showValidationMessage('Please provide details for Other reason.');
+					return null;
+				}
+
+				if (files.length === 0) {
+					Swal.showValidationMessage('Please upload at least one image.');
+					return null;
+				}
+
+				if (files.length > 10) {
+					Swal.showValidationMessage('You can upload a maximum of 10 images.');
+					return null;
+				}
+
+				return {
+					reasonCode,
+					reasonDetails,
+					preferredReturnMethod: preferredReturnMethod === 'customer_delivery' ? 'customer_delivery' : 'walk_in',
+					files,
+				};
+			},
+		});
+
+		if (!modal.isConfirmed || !modal.value) {
+			return;
+		}
+
+		try {
+			await repairPosHistoryApi.requestWarrantyClaim({
+				repair_request_id: repairRequestId,
+				receipt_no: receiptNo,
+				walk_in_phone: walkInPhone,
+				reason_code: modal.value.reasonCode,
+				reason_details: modal.value.reasonDetails,
+				preferred_return_method: modal.value.preferredReturnMethod,
+				images: modal.value.files,
+			});
+
+			await Swal.fire({
+				icon: 'success',
+				title: 'Warranty Claim Submitted',
+				text: 'Warranty claim has been filed for repairer review.',
+				confirmButtonColor: '#10b981',
+			});
+		} catch (error: any) {
+			await Swal.fire({
+				icon: 'error',
+				title: 'Submission Failed',
+				text: error?.response?.data?.message || 'Unable to submit warranty claim.',
+				confirmButtonColor: '#dc2626',
+			});
+		}
+	};
+
 	const handleExecuteRefund = async (receipt: ReceiptSnapshot) => {
 		const refundId = Number(receipt.latestRefund?.id ?? 0);
 		if (refundId <= 0) {
@@ -1082,6 +1256,20 @@ const PointOfSalePage = () => {
 				text: "No approved refund request is linked to this receipt.",
 				confirmButtonColor: "#b45309",
 			});
+			return;
+		}
+
+		const executeConfirmation = await Swal.fire({
+			icon: "warning",
+			title: "Confirm Refund Execution",
+			text: "This will execute the approved refund payout. Continue?",
+			showCancelButton: true,
+			confirmButtonText: "Yes, Execute",
+			cancelButtonText: "Cancel",
+			confirmButtonColor: "#dc2626",
+		});
+
+		if (!executeConfirmation.isConfirmed) {
 			return;
 		}
 
@@ -3501,6 +3689,19 @@ const PointOfSalePage = () => {
 															<span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-slate-700">
 																{receipt.latestRefund.status}
 															</span>
+														)}
+														{canRequestWarrantyClaimFromReceipt(receipt) && (
+															<button
+																type="button"
+																onClick={() => handleRequestWarrantyClaim({
+																	repairRequestId: Number(receipt.repairRequestId ?? 0),
+																	receiptNo: receipt.receiptNo,
+																	walkInPhone: receipt.customerPhone,
+																})}
+																className="rounded-lg border border-indigo-300 px-3 py-1 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-50"
+															>
+																Warranty
+															</button>
 														)}
 															{receipt.moduleType !== "retail" && canRequestRepairRefund(receipt) && (
 															<button

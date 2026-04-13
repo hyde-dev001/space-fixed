@@ -147,25 +147,29 @@ class DashboardController extends Controller
             ->values();
 
         // Revenue Data (refund-adjusted, VAT-excluded net recognized revenue)
-        $todayRepairs = $allRepairs->filter(function ($repair) use ($today) {
+        $revenueEligibleRepairs = $allRepairs->filter(function ($repair) {
+            return ! (bool) ($repair->is_warranty_job ?? false);
+        });
+
+        $todayRepairs = $revenueEligibleRepairs->filter(function ($repair) use ($today) {
             return Carbon::parse($repair->created_at)->isSameDay($today);
         });
         $todayRevenue = round($todayRepairs->sum(fn (RepairRequest $repair) => $this->resolveRepairNetRevenueExVat($repair)), 2);
         $todayOrders = $todayRepairs->count();
 
-        $thisWeekRepairs = $allRepairs->filter(function ($repair) use ($weekStart) {
+        $thisWeekRepairs = $revenueEligibleRepairs->filter(function ($repair) use ($weekStart) {
             return Carbon::parse($repair->created_at)->gte($weekStart);
         });
         $thisWeekRevenue = round($thisWeekRepairs->sum(fn (RepairRequest $repair) => $this->resolveRepairNetRevenueExVat($repair)), 2);
         $thisWeekOrders = $thisWeekRepairs->count();
 
-        $thisMonthRepairs = $allRepairs->filter(function ($repair) use ($monthStart) {
+        $thisMonthRepairs = $revenueEligibleRepairs->filter(function ($repair) use ($monthStart) {
             return Carbon::parse($repair->created_at)->gte($monthStart);
         });
         $thisMonthRevenue = round($thisMonthRepairs->sum(fn (RepairRequest $repair) => $this->resolveRepairNetRevenueExVat($repair)), 2);
         $thisMonthOrders = $thisMonthRepairs->count();
 
-        $lastMonthRepairs = $allRepairs->filter(function ($repair) use ($lastMonthStart, $lastMonthEnd) {
+        $lastMonthRepairs = $revenueEligibleRepairs->filter(function ($repair) use ($lastMonthStart, $lastMonthEnd) {
             $createdAt = Carbon::parse($repair->created_at);
             return $createdAt->between($lastMonthStart, $lastMonthEnd);
         });

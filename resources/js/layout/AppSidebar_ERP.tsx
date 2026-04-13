@@ -385,7 +385,7 @@ const managerItems: NavItem[] = [
         <path d="M7 8h.01M11 8h6M7 12h4m2 0h3"></path>
       </svg>
     ),
-    name: "DSS Insights",
+    name: "Assist Center",
     route: "erp.manager.dss-insights",
   },
 ];
@@ -599,6 +599,17 @@ const repairItems: NavItem[] = [
   },
   {
     icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M9 12h6M9 16h6M9 8h6" />
+        <path d="M7 4h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" />
+        <path d="M4 12h1M19 12h1" />
+      </svg>
+    ),
+    name: "Warranty Queue",
+    route: "erp.staff.warranty-queue",
+  },
+  {
+    icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
       </svg>
@@ -667,7 +678,7 @@ const cashierItems: NavItem[] = [
         <circle cx="18" cy="19" r="1.5"></circle>
       </svg>
     ),
-    name: "Point of Sale",
+    name: "Cashier",
     route: "erp.cashier.point-of-sale",
   },
 ];
@@ -767,6 +778,7 @@ const AppSidebar_ERP: React.FC = () => {
     "erp.staff.job-orders": "/erp/staff/job-orders",
     "erp.staff.repair-dashboard": "/erp/staff/repair-dashboard",
     "erp.staff.job-orders-repair": "/erp/staff/job-orders-repair",
+    "erp.staff.warranty-queue": "/erp/staff/warranty-queue",
     "erp.staff.upload-services": "/erp/staff/upload-services",
     "erp.staff.pricing-services": "/erp/staff/pricing-and-services",
     "erp.staff.repair-status": "/erp/staff/repair-status",
@@ -838,6 +850,7 @@ const AppSidebar_ERP: React.FC = () => {
     "erp.staff.job-orders": "/erp/staff/job-orders",
     "erp.staff.repair-dashboard": "/erp/staff/repair-dashboard",
     "erp.staff.job-orders-repair": "/erp/staff/job-orders-repair",
+    "erp.staff.warranty-queue": "/erp/staff/warranty-queue",
     "erp.staff.upload-services": "/erp/staff/upload-services",
     "erp.staff.pricing-services": "/erp/staff/pricing-and-services",
     "erp.repairer.pricing-services": "/erp/repairer/pricing-and-services",
@@ -1445,6 +1458,10 @@ const AppSidebar_ERP: React.FC = () => {
 
       // Job Orders Repair - check simplified permission
       if (item.route === "erp.staff.job-orders-repair") {
+        return permissions.includes('access-repair-job-orders');
+      }
+
+      if (item.route === "erp.staff.warranty-queue") {
         return permissions.includes('access-repair-job-orders');
       }
       

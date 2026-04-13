@@ -2,7 +2,7 @@
 
 > For agentic workers: execute task-by-task with test-first updates and small commits.
 
-**Goal:** Implement Repair Warranty with linked no-charge rework jobs, one-claim limit, same-issue validation, required evidence, and individual repair-owner accountability.
+**Goal:** Implement Repair Warranty with linked no-charge rework jobs, one-claim limit, same-issue validation, required evidence, and registration-type-based handler accountability.
 
 **Architecture:** Extend existing repair workflow with a new warranty claim table and linked warranty job creation path; keep original repair records immutable.
 
@@ -19,23 +19,31 @@
 - Create: database/migrations/2026_04_12_000002_add_warranty_fields_to_repair_requests_and_shop_owners.php
   - Add shop policy and repair linkage fields.
 - Modify: app/Models/RepairRequest.php
-  - Add fillable/casts/relations for warranty linkage and individual repair-owner ownership.
+  - Add fillable/casts/relations for warranty linkage and registration-type handler ownership.
 - Modify: app/Models/ShopOwner.php
   - Add warranty policy fields.
 - Create: app/Http/Controllers/Api/RepairWarrantyClaimController.php
   - Customer filing and read endpoints.
 - Create: app/Http/Controllers/Api/RepairerWarrantyClaimController.php
   - Repairer queue and approve/reject endpoints.
+- Create: app/Http/Controllers/Api/RepairPosWarrantyClaimController.php
+  - Counter-assisted claim filing for manual walk-in POS repairs.
 - Create: app/Services/RepairWarrantyService.php
   - Eligibility checks, approve transaction, linked job creation.
 - Modify: routes/web.php
   - Register customer and repairer warranty claim routes under existing API groups.
+- Modify: routes/api.php
+  - Register /api/repair-pos/warranty-claims under existing repair-pos auth group.
 - Modify: app/Services/NotificationService.php
-  - Add warranty claim notification fan-out including individual repair-owner.
+  - Add registration-type-aware warranty claim notification fan-out.
 - Modify: resources/js/Pages/UserSide/Repairs/myRepairs.tsx
   - Add customer claim CTA and modal flow.
 - Modify: resources/js/Pages/ERP/repairer/JobOrdersRepair.tsx
   - Add warranty claim review queue and actions.
+- Modify: resources/js/Pages/ERP/cashier/POS.tsx
+  - Add manual walk-in warranty claim action in POS history/manual queue.
+- Modify: resources/js/Pages/ShopOwner/Repairs/service management/POS.tsx
+  - Add manual walk-in warranty claim action in POS history/manual queue.
 - Create: tests/Feature/Repair/Warranty/RepairWarrantyClaimFlowTest.php
   - End-to-end backend flow tests.
 - Create: tests/Feature/Repair/Warranty/RepairWarrantyEligibilityTest.php
@@ -59,7 +67,8 @@
   - repair_requests.warranty_claim_id
   - repair_requests.billing_mode
   - repair_requests.warranty_display_alias
-  - repair_requests.individual_repair_owner_user_id
+  - repair_requests.repair_handler_user_id
+  - repair_requests.handler_source
 - [ ] Add indexes and unique guard for one approved claim per original repair.
 - [ ] Add RepairWarrantyClaim model with relationships to RepairRequest/User/ShopOwner.
 - [ ] Extend RepairRequest and ShopOwner models (fillable, casts, relations).
@@ -79,6 +88,7 @@ Commit message:
   - no prior approved claim.
 - [ ] Add customer endpoint POST /api/customer/repairs/{id}/warranty-claims.
 - [ ] Add endpoint to fetch latest claim status per repair.
+- [ ] Add POS walk-in endpoint POST /api/repair-pos/warranty-claims with receipt and walk-in contact verification.
 - [ ] Add feature tests for pass/fail eligibility matrix.
 
 Commit message:
@@ -95,7 +105,8 @@ Commit message:
   - total/final_total forced to 0,
   - payment_enabled false,
   - warranty alias with W1 display convention,
-  - individual_repair_owner_user_id copied.
+  - repair_handler_user_id and handler_source copied,
+  - handler resolution based on shop registration type (individual owner vs business employee).
 - [ ] Add reject endpoint with reason persistence.
 - [ ] Add backend tests:
   - exactly one linked job on approve,
@@ -110,12 +121,11 @@ Commit message:
 - [ ] Add notification events for claim filed/approved/rejected/completed.
 - [ ] Ensure recipients include:
   - customer,
-  - repairer,
+  - handler (owner-as-handler for individual registration, assigned employee for business registration),
   - manager,
-  - shop owner,
-  - individual repair-owner.
+  - shop owner.
 - [ ] Add audit log entries with actor, decision, and timestamps.
-- [ ] Add tests for recipient fan-out including individual repair-owner.
+- [ ] Add tests for recipient fan-out with registration-type routing.
 
 Commit message:
 - feat(repair): wire warranty claim notifications and accountability audit trail
@@ -129,6 +139,7 @@ Commit message:
   - required image upload,
   - return method selection.
 - [ ] Show disabled reason states and latest claim status chips.
+- [ ] Keep customer portal flow scoped to registered-customer repairs (non walk-in).
 - [ ] Add vitest coverage for visibility, validation, and submit behavior.
 
 Commit message:
@@ -137,12 +148,29 @@ Commit message:
 ## Task 6: Repairer UI Queue Integration
 
 - [ ] Add Warranty Claims queue section in repairer Job Orders page.
-- [ ] Show parent reference, evidence previews, expiry snapshot, and individual repair-owner.
+- [ ] Show parent reference, evidence previews, expiry snapshot, and resolved handler tag (individual owner or business employee).
 - [ ] Add approve/reject actions with loading and error states.
+- [ ] Add source tag and filters for customer_portal vs manual_pos_walk_in claims.
 - [ ] Add vitest coverage for queue filtering and decision actions.
 
 Commit message:
 - feat(repair-ui): add repairer warranty claims review queue
+
+## Task 6A: POS Manual Walk-in Warranty Claim Integration
+
+- [ ] Add File Warranty Claim action in ERP cashier POS history/manual queue for REP-POS walk-in jobs.
+- [ ] Add same action in ShopOwner repair POS history/manual queue for REP-POS walk-in jobs.
+- [ ] Add counter-assisted form fields:
+  - receipt_no,
+  - walk_in_phone,
+  - reason,
+  - same issue confirmation,
+  - photo evidence.
+- [ ] Add frontend loading/error states and inline validation for receipt/contact mismatch.
+- [ ] Add vitest coverage for POS claim submission flow and API error handling.
+
+Commit message:
+- feat(repair-pos): add manual walk-in warranty claim filing at POS
 
 ## Task 7: KPI and Reporting Hooks
 
@@ -151,18 +179,19 @@ Commit message:
   - approval rate,
   - repeat issue rate by service/package,
   - resolution duration,
-  - breakdown by individual repair-owner.
+  - breakdown by registration type and resolved handler.
 - [ ] Expose summary endpoint or payload extension for ERP dashboards.
 - [ ] Add tests for metric calculations.
 
 Commit message:
-- feat(repair-analytics): add warranty KPI reporting with owner breakdown
+- feat(repair-analytics): add warranty KPI reporting with registration-type handler breakdown
 
 ## Task 8: Regression and Release Gate
 
 - [ ] Run targeted tests:
   - php artisan test tests/Feature/Repair/Warranty
   - vitest warranty-related tests
+- [ ] Run POS-specific warranty tests for ERP cashier and ShopOwner POS pages.
 - [ ] Run existing repair flow tests to ensure no regressions.
 - [ ] Verify migration up/down on local DB snapshot.
 - [ ] Validate no route collisions and authorization leaks.
@@ -171,7 +200,7 @@ Release gate checklist:
 - [ ] One approved claim max enforced.
 - [ ] Zero-charge warranty billing immutable.
 - [ ] Original repair job remains unchanged.
-- [ ] Individual repair-owner appears in notifications and reporting.
+- [ ] Registration-type handler routing appears in notifications and reporting.
 - [ ] Customer and repairer UI paths are fully functional.
 
 ---

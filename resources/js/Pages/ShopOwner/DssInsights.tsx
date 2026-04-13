@@ -661,7 +661,7 @@ const DssInsights: React.FC = () => {
 
   const content = (
     <>
-      <Head title="DSS Insights - Shop Owner" />
+      <Head title="Assist Center - Shop Owner" />
       <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">

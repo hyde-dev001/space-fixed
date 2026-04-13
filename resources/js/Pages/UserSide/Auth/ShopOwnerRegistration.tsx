@@ -51,6 +51,17 @@ const CAVITE_CITIES = [
 
 const CAVITE_ADDRESS_KEYWORDS = ['cavite', ...CAVITE_CITIES].map((entry) => entry.toLowerCase());
 const MAX_ADDITIONAL_DOCUMENTS = 8;
+const EMAIL_REGEX = /^\S+@\S+\.\S+$/;
+const PHONE_REGEX = /^\d{11}$/;
+
+const escapeHtml = (value: string) => (
+  value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;')
+);
 
 const inferCaviteCity = (text: string) => {
   const normalized = text.toLowerCase();
@@ -94,6 +105,12 @@ export default function ShopOwnerRegistration() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [emailVerificationCode, setEmailVerificationCode] = useState('');
+  const [emailVerificationSent, setEmailVerificationSent] = useState(false);
+  const [emailVerified, setEmailVerified] = useState(false);
+  const [emailVerificationMessage, setEmailVerificationMessage] = useState('');
+  const [isSendingEmailCode, setIsSendingEmailCode] = useState(false);
+  const [isVerifyingEmailCode, setIsVerifyingEmailCode] = useState(false);
 
   // Geofence state
   const [geoLat, setGeoLat] = useState(CAVITE_CENTER.lat);
@@ -117,6 +134,23 @@ export default function ShopOwnerRegistration() {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
 
+    if (name === 'email') {
+      const normalizedEmail = value.trim().toLowerCase();
+      setFormData(prev => ({ ...prev, email: normalizedEmail }));
+
+      setEmailVerificationCode('');
+      setEmailVerificationSent(false);
+      setEmailVerified(false);
+      setEmailVerificationMessage('');
+
+      setErrors(prev => ({
+        ...prev,
+        email: '',
+        email_verification: '',
+      }));
+      return;
+    }
+
     if (name === 'phone') {
       const digitsOnly = value.replace(/\D/g, '').slice(0, 11);
       setFormData(prev => ({ ...prev, phone: digitsOnly }));
@@ -137,13 +171,23 @@ export default function ShopOwnerRegistration() {
       return;
     }
 
+    const errorKeyMap: Record<string, string> = {
+      firstName: 'first_name',
+      lastName: 'last_name',
+      businessName: 'business_name',
+      businessAddress: 'business_address',
+      businessType: 'business_type',
+      registrationType: 'registration_type',
+    };
+
     setFormData(prev => ({ ...prev, [name]: value }));
     if (name === 'businessAddress') {
       setSelectedCity(inferCaviteCity(value));
     }
     // Clear error when user starts typing
-    if (errors[name]) {
-      setErrors(prev => ({ ...prev, [name]: '' }));
+    const resolvedErrorKey = errorKeyMap[name] ?? name;
+    if (errors[resolvedErrorKey]) {
+      setErrors(prev => ({ ...prev, [resolvedErrorKey]: '' }));
     }
 
   };
@@ -151,13 +195,17 @@ export default function ShopOwnerRegistration() {
   const handleSelectChange = (value: string) => {
     setFormData(prev => ({ ...prev, businessType: value }));
     // Clear error when user selects a value
-    if (errors.businessType) {
-      setErrors(prev => ({ ...prev, businessType: '' }));
+    if (errors.business_type) {
+      setErrors(prev => ({ ...prev, business_type: '' }));
     }
   };
 
   const handleRegistrationTypeChange = (value: string) => {
     setFormData(prev => ({ ...prev, registrationType: value }));
+
+    if (errors.registration_type) {
+      setErrors(prev => ({ ...prev, registration_type: '' }));
+    }
   };
 
   const handleAddAdditionalDocument = () => {
@@ -387,57 +435,138 @@ export default function ShopOwnerRegistration() {
     }
   };
 
-  const validateStep = (step: number): boolean => {
-    if (step === 1) {
-      return !!(formData.firstName && formData.lastName && formData.email && formData.phone);
-    } else if (step === 2) {
-      const hasGeo = hasValidGeoCoordinates();
-      return !!(formData.businessName && formData.businessAddress && formData.businessType && hasGeo && caviteLocationState.allowed);
-    } else if (step === 3) {
-      return !!(uploadedDocuments.dti.file && uploadedDocuments.mayors_permit.file &&
-                uploadedDocuments.bir.file && uploadedDocuments.valid_id.file);
-    }
-    return true;
-  };
+  const getStepValidationErrors = (step: number): Record<string, string> => {
+    const stepErrors: Record<string, string> = {};
 
-  const validateForm = () => {
-    const requiredFields = [
-      'firstName', 'lastName', 'email', 'phone',
-      'businessName', 'businessAddress', 'businessType'
-    ];
-    for (const field of requiredFields) {
-      if (!formData[field as keyof typeof formData]) {
-        return { valid: false, message: 'Please fill in all required fields before submitting.' };
+    if (step === 1) {
+      const firstName = formData.firstName.trim();
+      const lastName = formData.lastName.trim();
+      const email = formData.email.trim().toLowerCase();
+      const phone = formData.phone.trim();
+
+      if (!firstName) {
+        stepErrors.first_name = 'Please enter your first name.';
+      } else if (firstName.length < 2) {
+        stepErrors.first_name = 'First name must be at least 2 characters.';
+      }
+
+      if (!lastName) {
+        stepErrors.last_name = 'Please enter your last name.';
+      } else if (lastName.length < 2) {
+        stepErrors.last_name = 'Last name must be at least 2 characters.';
+      }
+
+      if (!email) {
+        stepErrors.email = 'Please enter your email address.';
+      } else if (!EMAIL_REGEX.test(email)) {
+        stepErrors.email = 'Please enter a valid email address (example: name@email.com).';
+      }
+
+      if (!phone) {
+        stepErrors.phone = 'Please enter your phone number.';
+      } else if (!PHONE_REGEX.test(phone)) {
+        stepErrors.phone = 'Phone number must be exactly 11 digits (example: 09171234567).';
+      }
+
+      const hasValidEmail = Boolean(email) && EMAIL_REGEX.test(email);
+      if (hasValidEmail) {
+        if (!emailVerificationSent) {
+          stepErrors.email_verification = 'Click Send Code, then check your email for the 6-digit verification code.';
+        } else if (!emailVerified) {
+          stepErrors.email_verification = 'Please enter and verify the 6-digit code sent to your email before continuing.';
+        }
       }
     }
 
-    if (!/^\d{11}$/.test(formData.phone.trim())) {
-      return { valid: false, message: 'Phone number must be 11 digits.' };
+    if (step === 2) {
+      if (!formData.businessName.trim()) {
+        stepErrors.business_name = 'Please enter your shop name.';
+      }
+
+      if (!formData.businessAddress.trim()) {
+        stepErrors.business_address = 'Please enter your shop address.';
+      }
+
+      if (!formData.businessType) {
+        stepErrors.business_type = 'Please select your shop type (Retail, Repair, or Both).';
+      }
+
+      if (!hasValidGeoCoordinates()) {
+        stepErrors.shop_latitude = 'Please place your shop pin on the map or use GPS to set your exact location.';
+      } else if (!caviteLocationState.allowed) {
+        stepErrors.business_address = caviteLocationState.message || 'Only shops located within Cavite can register.';
+      }
     }
 
-    if (!hasValidGeoCoordinates()) {
-      return { valid: false, message: 'Please set a valid shop location (latitude and longitude).' };
+    if (step === 3) {
+      if (!uploadedDocuments.dti.file) {
+        stepErrors.dti_registration = 'Upload your Shop Registration document (DTI or SEC).';
+      }
+
+      if (!uploadedDocuments.mayors_permit.file) {
+        stepErrors.mayors_permit = "Upload your Mayor's Permit or Shop Permit.";
+      }
+
+      if (!uploadedDocuments.bir.file) {
+        stepErrors.bir_certificate = 'Upload your BIR Certificate of Registration (COR).';
+      }
+
+      if (!uploadedDocuments.valid_id.file) {
+        stepErrors.valid_id = 'Upload a valid government-issued ID of the owner.';
+      }
     }
 
-    if (!caviteLocationState.allowed) {
-      return { valid: false, message: caviteLocationState.message || 'Shop location must be within Cavite.' };
+    return stepErrors;
+  };
+
+  const getAllValidationErrors = (): Record<string, string> => ({
+    ...getStepValidationErrors(1),
+    ...getStepValidationErrors(2),
+    ...getStepValidationErrors(3),
+  });
+
+  const getFirstInvalidStep = (validationErrors: Record<string, string>): number => {
+    const stepOneKeys = ['first_name', 'last_name', 'email', 'phone', 'email_verification'];
+    const stepTwoKeys = ['business_name', 'business_address', 'business_type', 'shop_latitude', 'shop_longitude'];
+    const stepThreeKeys = ['dti_registration', 'mayors_permit', 'bir_certificate', 'valid_id'];
+
+    if (stepOneKeys.some((key) => Boolean(validationErrors[key]))) {
+      return 1;
     }
 
-    // Check if all documents are uploaded
-    if (!uploadedDocuments.dti.file) {
-      return { valid: false, message: 'Shop Registration (DTI) is required' };
-    }
-    if (!uploadedDocuments.mayors_permit.file) {
-      return { valid: false, message: "Mayor's Permit / Shop Permit is required" };
-    }
-    if (!uploadedDocuments.bir.file) {
-      return { valid: false, message: 'BIR Certificate of Registration (COR) is required' };
-    }
-    if (!uploadedDocuments.valid_id.file) {
-      return { valid: false, message: 'Valid ID of Owner is required.' };
+    if (stepTwoKeys.some((key) => Boolean(validationErrors[key]))) {
+      return 2;
     }
 
-    return { valid: true, message: '' };
+    if (stepThreeKeys.some((key) => Boolean(validationErrors[key]))) {
+      return 3;
+    }
+
+    return 4;
+  };
+
+  const showValidationModal = (title: string, validationErrors: Record<string, string>) => {
+    const uniqueMessages = Array.from(new Set(Object.values(validationErrors).filter(Boolean)));
+    const listItems = uniqueMessages
+      .map((message) => `<li style="margin-bottom:6px;">${escapeHtml(message)}</li>`)
+      .join('');
+
+    Swal.fire({
+      icon: 'error',
+      title,
+      html: `<div style="text-align:left;"><p style="margin-bottom:8px;">Please check the following:</p><ul style="padding-left:18px; margin:0;">${listItems}</ul></div>`,
+      confirmButtonColor: '#3085d6',
+    });
+  };
+
+  const validateForm = () => {
+    const validationErrors = getAllValidationErrors();
+
+    return {
+      valid: Object.keys(validationErrors).length === 0,
+      errors: validationErrors,
+      firstInvalidStep: getFirstInvalidStep(validationErrors),
+    };
   };
 
   const checkEmailAvailability = async (email: string): Promise<{ available: boolean; message?: string }> => {
@@ -462,51 +591,162 @@ export default function ShopOwnerRegistration() {
     }
   };
 
-  const handleNext = async () => {
-    if (validateStep(currentStep)) {
-      if (currentStep === 1 && !/^\d{11}$/.test(formData.phone.trim())) {
-        setErrors(prev => ({ ...prev, phone: 'Phone number must be 11 digits.' }));
+  const handleSendEmailVerificationCode = async () => {
+    const trimmedEmail = formData.email.trim().toLowerCase();
+
+    if (!trimmedEmail) {
+      setErrors(prev => ({ ...prev, email: 'Please enter your email address.' }));
+      return;
+    }
+
+    if (!EMAIL_REGEX.test(trimmedEmail)) {
+      setErrors(prev => ({ ...prev, email: 'Please enter a valid email address (example: name@email.com).' }));
+      return;
+    }
+
+    const availability = await checkEmailAvailability(trimmedEmail);
+    if (!availability.available) {
+      const message = availability.message || 'This email is already registered';
+      setErrors(prev => ({ ...prev, email: message }));
+      setEmailVerified(false);
+      setEmailVerificationSent(false);
+      setEmailVerificationMessage('');
+      return;
+    }
+
+    setIsSendingEmailCode(true);
+    setEmailVerificationMessage('');
+
+    try {
+      const response = await fetch('/shop-owner/email-verification/send-code', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({ email: trimmedEmail }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        const message = (data?.message as string) || 'Unable to send verification code.';
+        setErrors(prev => ({ ...prev, email_verification: message }));
+        return;
+      }
+
+      if (Boolean(data?.already_verified)) {
+        setEmailVerificationSent(true);
+        setEmailVerified(true);
+        setEmailVerificationCode('');
+        setErrors(prev => ({ ...prev, email_verification: '', email: '' }));
+        setEmailVerificationMessage((data?.message as string) || 'Email is already verified. You can proceed to the next step.');
+
         Swal.fire({
-          icon: 'error',
-          title: 'Invalid phone number',
-          text: 'Phone number must be 11 digits.',
+          icon: 'success',
+          title: 'Email already verified',
+          text: 'Your email is already verified. You can continue registration.',
           confirmButtonColor: '#3085d6',
         });
         return;
       }
 
-      if (currentStep === 1) {
-        const trimmedEmail = formData.email.trim();
-        const result = await checkEmailAvailability(trimmedEmail);
-
-        if (!result.available) {
-          const message = result.message || 'This email is already registered';
-          setErrors(prev => ({ ...prev, email: message }));
-          Swal.fire({
-            icon: 'error',
-            title: 'Email not available',
-            text: message,
-            confirmButtonColor: '#3085d6',
-          });
-          return;
-        }
-      }
-
-      setCurrentStep(currentStep + 1);
-    } else {
-      const geofenceMessage = currentStep === 2
-        ? (!hasValidGeoCoordinates()
-          ? 'Please place your shop pin on the map or enter valid coordinates before proceeding.'
-          : caviteLocationState.message || 'Only shops located within Cavite can register.')
-        : 'Please fill in all required fields before proceeding.';
+      setEmailVerificationSent(true);
+      setEmailVerified(false);
+      setEmailVerificationCode('');
+      setErrors(prev => ({ ...prev, email_verification: '', email: '' }));
+      setEmailVerificationMessage((data?.message as string) || 'Verification code sent to your email.');
 
       Swal.fire({
-        icon: 'error',
-        title: 'Missing Information',
-        text: geofenceMessage,
+        icon: 'success',
+        title: 'Verification code sent',
+        text: 'Check your email inbox and enter the 6-digit code below.',
         confirmButtonColor: '#3085d6',
       });
+    } catch {
+      setErrors(prev => ({ ...prev, email_verification: 'Unable to send verification code right now.' }));
+    } finally {
+      setIsSendingEmailCode(false);
     }
+  };
+
+  const handleVerifyEmailCode = async () => {
+    const trimmedEmail = formData.email.trim().toLowerCase();
+    const trimmedCode = emailVerificationCode.trim();
+
+    if (!emailVerificationSent) {
+      setErrors(prev => ({ ...prev, email_verification: 'Request a verification code first.' }));
+      return;
+    }
+
+    if (!/^\d{6}$/.test(trimmedCode)) {
+      setErrors(prev => ({ ...prev, email_verification: 'Enter the 6-digit verification code.' }));
+      return;
+    }
+
+    setIsVerifyingEmailCode(true);
+
+    try {
+      const response = await fetch('/shop-owner/email-verification/verify-code', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({ email: trimmedEmail, otp: trimmedCode }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        const message = (data?.message as string) || 'Verification failed. Please try again.';
+        setEmailVerified(false);
+        setErrors(prev => ({ ...prev, email_verification: message }));
+        return;
+      }
+
+      setEmailVerified(true);
+      setErrors(prev => ({ ...prev, email_verification: '' }));
+      setEmailVerificationMessage((data?.message as string) || 'Email verified successfully.');
+
+      Swal.fire({
+        icon: 'success',
+        title: 'Email verified',
+        text: 'You can now continue to the next step.',
+        confirmButtonColor: '#3085d6',
+      });
+    } catch {
+      setErrors(prev => ({ ...prev, email_verification: 'Unable to verify code right now. Please try again.' }));
+      setEmailVerified(false);
+    } finally {
+      setIsVerifyingEmailCode(false);
+    }
+  };
+
+  const handleNext = async () => {
+    const stepErrors = getStepValidationErrors(currentStep);
+    if (Object.keys(stepErrors).length > 0) {
+      setErrors((prev) => ({ ...prev, ...stepErrors }));
+      showValidationModal('Please fix the highlighted fields', stepErrors);
+      return;
+    }
+
+    if (currentStep === 1) {
+      const trimmedEmail = formData.email.trim();
+      const result = await checkEmailAvailability(trimmedEmail);
+
+      if (!result.available) {
+        const message = result.message || 'This email is already registered';
+        const emailError = { email: message };
+        setErrors(prev => ({ ...prev, ...emailError }));
+        showValidationModal('Email not available', emailError);
+        return;
+      }
+    }
+
+    setCurrentStep(currentStep + 1);
   };
 
   const handlePrev = () => {
@@ -516,14 +756,26 @@ export default function ShopOwnerRegistration() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const validation = validateForm();
-    if (!validation.valid) {
+    if (!emailVerified) {
+      setCurrentStep(1);
+      setErrors(prev => ({
+        ...prev,
+        email_verification: 'Please verify your email first before submitting your registration.',
+      }));
       Swal.fire({
         icon: 'error',
-        title: 'Missing Required Information',
-        text: validation.message,
+        title: 'Email verification required',
+        text: 'Verify your email in Step 1 before submitting your registration.',
         confirmButtonColor: '#3085d6',
       });
+      return;
+    }
+
+    const validation = validateForm();
+    if (!validation.valid) {
+      setErrors((prev) => ({ ...prev, ...validation.errors }));
+      setCurrentStep(validation.firstInvalidStep);
+      showValidationModal('Please complete the required details', validation.errors);
       return;
     }
 
@@ -621,14 +873,10 @@ export default function ShopOwnerRegistration() {
               mapped[key] = Array.isArray(val) ? val[0] : String(val);
             });
             setErrors(mapped);
-            
-            const errorMessages = Object.values(mapped).join('\n');
-            Swal.fire({
-              icon: 'error',
-              title: 'Registration Failed',
-              text: errorMessages || 'Please check your information and try again.',
-              confirmButtonColor: '#3085d6',
-            });
+
+            const firstInvalidStep = getFirstInvalidStep(mapped);
+            setCurrentStep(firstInvalidStep);
+            showValidationModal('Registration failed. Please review your details.', mapped);
           },
         });
       } catch (error) {
@@ -763,16 +1011,55 @@ export default function ShopOwnerRegistration() {
                   </div>
                   <div>
                     <Label htmlFor="email">Email</Label>
-                    <Input
-                      type="email"
-                      id="email"
-                      name="email"
-                      value={formData.email}
-                      onChange={handleInputChange}
-                      placeholder="Enter email address"
-                      className={errors.email ? 'border-red-500' : ''}
-                    />
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <div className="w-full">
+                        <Input
+                          type="email"
+                          id="email"
+                          name="email"
+                          value={formData.email}
+                          onChange={handleInputChange}
+                          placeholder="Enter email address"
+                          className={errors.email ? 'border-red-500' : ''}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleSendEmailVerificationCode}
+                        disabled={isSendingEmailCode || emailVerified || !formData.email.trim()}
+                        className="w-full sm:w-auto whitespace-nowrap px-4 py-2 border border-blue-600 text-blue-600 font-semibold text-sm hover:bg-blue-50 transition-colors disabled:opacity-50"
+                      >
+                        {emailVerified ? 'Email Verified' : (isSendingEmailCode ? 'Sending...' : (emailVerificationSent ? 'Resend Code' : 'Send Code'))}
+                      </button>
+                    </div>
                     {errors.email && <p className="mt-1 text-sm text-red-600">{errors.email}</p>}
+                    {emailVerificationMessage && (
+                      <p className={`mt-1 text-sm ${emailVerified ? 'text-green-600' : 'text-blue-600'}`}>
+                        {emailVerificationMessage}
+                      </p>
+                    )}
+                    {emailVerificationSent && (
+                      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <Input
+                          type="text"
+                          id="emailVerificationCode"
+                          name="emailVerificationCode"
+                          value={emailVerificationCode}
+                          onChange={(e) => setEmailVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                          placeholder="Enter 6-digit code"
+                          className={errors.email_verification ? 'border-red-500' : ''}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleVerifyEmailCode}
+                          disabled={isVerifyingEmailCode || emailVerificationCode.trim().length !== 6 || emailVerified}
+                          className="w-full sm:w-auto whitespace-nowrap px-4 py-2 border border-green-600 text-green-700 font-semibold text-sm hover:bg-green-50 transition-colors disabled:opacity-50"
+                        >
+                          {emailVerified ? 'Verified' : (isVerifyingEmailCode ? 'Verifying...' : 'Verify Email')}
+                        </button>
+                      </div>
+                    )}
+                    {errors.email_verification && <p className="mt-1 text-sm text-red-600">{errors.email_verification}</p>}
                   </div>
                   <div>
                     <Label htmlFor="phone">Phone Number</Label>

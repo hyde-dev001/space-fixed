@@ -72,6 +72,10 @@ type RepairOrder = {
   assigned_repairer_id?: number | null;
   repairer_name?: string | null;
   payment_policy?: 'deposit_50' | 'full_upfront';
+  is_warranty_job?: boolean;
+  parent_repair_request_id?: number | null;
+  billing_mode?: string | null;
+  warranty_display_alias?: string | null;
   shop_owner_id?: number | null;
   repair_package_id?: number | null;
   package_price?: number | null;
@@ -83,7 +87,9 @@ type RepairOrder = {
   vat_rate?: number | null;
   grand_total?: number | null;
   total_paid_amount?: number | null;
+  display_total_paid_amount?: number | null;
   total_refunded_amount?: number | null;
+  has_review?: boolean;
   latest_pos_transaction_id?: number | null;
   refund_payment_type?: 'pure_online' | 'mixed' | 'manual_only' | string;
   refund_requires_payout_destination?: boolean;
@@ -131,6 +137,19 @@ type RepairRefundStatus = {
   execution_reference_masked?: string | null;
   execution_proof_urls?: string[];
   executed_at?: string | null;
+};
+
+type RepairWarrantyClaimStatus = {
+  id: number;
+  claim_no: string;
+  status: string;
+  reason_code?: string;
+  source_channel?: string;
+  preferred_return_method?: string;
+  created_at?: string | null;
+  reviewed_at?: string | null;
+  rejection_reason?: string | null;
+  approved_repair_request_id?: number | null;
 };
 
 type ConversationShop = {
@@ -207,6 +226,12 @@ const getOrderGrandTotal = (order: RepairOrder) => {
 };
 
 const getOrderDisplayedPaidAmount = (order: RepairOrder) => {
+  const displayPaid = Number(order.display_total_paid_amount ?? 0);
+  const safeDisplayPaid = Number.isFinite(displayPaid) && displayPaid > 0 ? displayPaid : 0;
+  if (safeDisplayPaid > 0) {
+    return safeDisplayPaid;
+  }
+
   const recordedPaid = Number(order.total_paid_amount ?? 0);
   const safeRecordedPaid = Number.isFinite(recordedPaid) && recordedPaid > 0 ? recordedPaid : 0;
   const paymentStatus = String(order.payment_status ?? '').toLowerCase();
@@ -230,6 +255,10 @@ const getOrderDisplayedPaidAmount = (order: RepairOrder) => {
   }
 
   return 0;
+};
+
+const isWarrantyNoChargeOrder = (order: RepairOrder): boolean => {
+  return Boolean(order.is_warranty_job) || String(order.billing_mode || '').toLowerCase() === 'warranty_no_charge';
 };
 
 const escapeSwalText = (value?: string | null): string => {
@@ -437,7 +466,15 @@ const MyRepairs: React.FC = () => {
   const [refundPayoutConsent, setRefundPayoutConsent] = useState<boolean>(false);
   const [refundNote, setRefundNote] = useState<string>('');
   const [isSubmittingRefund, setIsSubmittingRefund] = useState(false);
+  const [showWarrantyModal, setShowWarrantyModal] = useState(false);
+  const [warrantyOrderId, setWarrantyOrderId] = useState<number | null>(null);
+  const [warrantyReasonCode, setWarrantyReasonCode] = useState<string>('issue_returned');
+  const [warrantyReasonDetails, setWarrantyReasonDetails] = useState<string>('');
+  const [warrantyReturnMethod, setWarrantyReturnMethod] = useState<'walk_in' | 'customer_delivery'>('walk_in');
+  const [warrantyImages, setWarrantyImages] = useState<File[]>([]);
+  const [isSubmittingWarrantyClaim, setIsSubmittingWarrantyClaim] = useState(false);
   const [latestRefundByRepairId, setLatestRefundByRepairId] = useState<Record<number, RepairRefundStatus>>({});
+  const [latestWarrantyClaimByRepairId, setLatestWarrantyClaimByRepairId] = useState<Record<number, RepairWarrantyClaimStatus>>({});
 
   // Review modal states (Phase 10D)
   const [showReviewModal, setShowReviewModal] = useState(false);
@@ -586,11 +623,128 @@ const MyRepairs: React.FC = () => {
     return normalized === 'requested' || normalized === 'approved' || normalized === 'processing' || normalized === 'succeeded';
   };
 
-  const isReturnRefundRepair = (order: RepairOrder): boolean => {
-    const activeRefund = latestRefundByRepairId[order.id];
+  const getWarrantyClaimStatusLabel = (status?: string | null): string => {
+    const normalized = String(status || '').toLowerCase();
+
+    if (normalized === 'pending_repairer') return 'Warranty Claim Under Review';
+    if (normalized === 'approved') return 'Warranty Claim Approved';
+    if (normalized === 'rejected') return 'Warranty Claim Rejected';
+    if (normalized === 'expired') return 'Warranty Claim Expired';
+
+    return normalized ? `Warranty ${normalized.replace(/_/g, ' ')}` : 'Warranty Claim Filed';
+  };
+
+  const canFileWarrantyClaim = (order: RepairOrder): boolean => {
+    if (Boolean(order.is_warranty_job) || String(order.billing_mode || '').toLowerCase() === 'warranty_no_charge') {
+      return false;
+    }
+
+    if (order.status !== 'picked_up' && order.status !== 'received') {
+      return false;
+    }
+
+    const latestClaim = latestWarrantyClaimByRepairId[order.id];
+    if (!latestClaim) {
+      return true;
+    }
+
+    return String(latestClaim.status || '').toLowerCase() === 'rejected';
+  };
+
+  const getWarrantyClaimBlockReason = (order: RepairOrder): string => {
+    if (Boolean(order.is_warranty_job) || String(order.billing_mode || '').toLowerCase() === 'warranty_no_charge') {
+      return 'Warranty rework jobs cannot be filed for another warranty claim.';
+    }
+
+    if (order.status !== 'picked_up' && order.status !== 'received') {
+      return 'Warranty claim is available only after pickup/receipt completion.';
+    }
+
+    const latestClaim = latestWarrantyClaimByRepairId[order.id];
+    if (!latestClaim) {
+      return '';
+    }
+
+    if (String(latestClaim.status || '').toLowerCase() === 'rejected') {
+      return '';
+    }
+
+    return `Warranty claim cannot be re-filed unless the previous claim was rejected (${getWarrantyClaimStatusLabel(latestClaim.status)}).`;
+  };
+
+  const getRefundAnchorRepairId = (order: RepairOrder): number => {
+    const parentRepairId = Number(order.parent_repair_request_id ?? 0);
+
+    if (isWarrantyNoChargeOrder(order) && parentRepairId > 0) {
+      return parentRepairId;
+    }
+
+    return Number(order.id);
+  };
+
+  const getLatestRefundForOrder = (order: RepairOrder): RepairRefundStatus | undefined => {
+    return latestRefundByRepairId[getRefundAnchorRepairId(order)];
+  };
+
+  const hasReviewForOrder = (order: RepairOrder): boolean => {
+    if (Boolean(order.has_review)) {
+      return true;
+    }
+
+    const anchorOrder = orders.find((entry) => entry.id === getRefundAnchorRepairId(order));
+    return Boolean(anchorOrder?.has_review);
+  };
+
+  const hasBlockingRefundForReview = (order: RepairOrder): boolean => {
+    const activeRefund = getLatestRefundForOrder(order);
     const refundStatus = String(activeRefund?.status || '').toLowerCase();
-    const paymentStatus = String(order.payment_status || '').toLowerCase();
-    const refundedAmount = Number(order.total_refunded_amount ?? 0);
+    const refundAnchorOrder = orders.find((entry) => entry.id === getRefundAnchorRepairId(order));
+    const paymentStatus = String(refundAnchorOrder?.payment_status || order.payment_status || '').toLowerCase();
+    const refundedAmount = Number(refundAnchorOrder?.total_refunded_amount ?? order.total_refunded_amount ?? 0);
+
+    return ['requested', 'approved', 'processing', 'succeeded'].includes(refundStatus)
+      || paymentStatus === 'refunded'
+      || refundedAmount > 0;
+  };
+
+  const getOrderDisplayedBasePrice = (order: RepairOrder): number => {
+    const currentPackagePrice = Number(order.package_price ?? 0);
+
+    if (!isWarrantyNoChargeOrder(order)) {
+      return Number.isFinite(currentPackagePrice) ? currentPackagePrice : 0;
+    }
+
+    const parentRepairId = Number(order.parent_repair_request_id ?? 0);
+    const parentOrder = parentRepairId > 0
+      ? orders.find((entry) => entry.id === parentRepairId)
+      : undefined;
+
+    const parentPackagePrice = Number(parentOrder?.package_price ?? 0);
+    if (Number.isFinite(parentPackagePrice) && parentPackagePrice > 0) {
+      return parentPackagePrice;
+    }
+
+    const previouslyPaid = Number(
+      parentOrder?.display_total_paid_amount
+      ?? parentOrder?.total_paid_amount
+      ?? order.display_total_paid_amount
+      ?? order.total_paid_amount
+      ?? 0
+    );
+
+    if (Number.isFinite(previouslyPaid) && previouslyPaid > 0) {
+      return previouslyPaid;
+    }
+
+    return Number.isFinite(currentPackagePrice) ? currentPackagePrice : 0;
+  };
+
+  const isReturnRefundRepair = (order: RepairOrder): boolean => {
+    const activeRefund = getLatestRefundForOrder(order);
+    const refundStatus = String(activeRefund?.status || '').toLowerCase();
+    const refundAnchorOrder = orders.find((entry) => entry.id === getRefundAnchorRepairId(order));
+    const paymentStatus = String(refundAnchorOrder?.payment_status || order.payment_status || '').toLowerCase();
+    const refundedAmount = Number(refundAnchorOrder?.total_refunded_amount ?? order.total_refunded_amount ?? 0);
 
     return (
       ['requested', 'approved', 'processing', 'succeeded', 'failed', 'rejected'].includes(refundStatus)
@@ -853,6 +1007,51 @@ const MyRepairs: React.FC = () => {
     };
   }, []);
 
+  const fetchLatestWarrantyClaims = async (repairList: RepairOrder[]) => {
+    if (!Array.isArray(repairList) || repairList.length === 0) {
+      setLatestWarrantyClaimByRepairId({});
+      return;
+    }
+
+    const claimEntries = await Promise.all(
+      repairList.map(async (repair) => {
+        try {
+          const response = await axios.get(`/api/customer/repairs/${repair.id}/warranty-claims/latest`);
+          const claim = response?.data?.data;
+          if (!claim || typeof claim !== 'object') {
+            return [repair.id, null] as const;
+          }
+
+          const mappedClaim: RepairWarrantyClaimStatus = {
+            id: Number(claim.id || 0),
+            claim_no: String(claim.claim_no || ''),
+            status: String(claim.status || 'pending_repairer'),
+            reason_code: claim.reason_code ? String(claim.reason_code) : undefined,
+            source_channel: claim.source_channel ? String(claim.source_channel) : undefined,
+            preferred_return_method: claim.preferred_return_method ? String(claim.preferred_return_method) : undefined,
+            created_at: claim.created_at || null,
+            reviewed_at: claim.reviewed_at || null,
+            rejection_reason: claim.rejection_reason || null,
+            approved_repair_request_id: claim.approved_repair_request_id ? Number(claim.approved_repair_request_id) : null,
+          };
+
+          return [repair.id, mappedClaim] as const;
+        } catch {
+          return [repair.id, null] as const;
+        }
+      })
+    );
+
+    const nextClaims: Record<number, RepairWarrantyClaimStatus> = {};
+    claimEntries.forEach(([repairId, claim]) => {
+      if (claim) {
+        nextClaims[repairId] = claim;
+      }
+    });
+
+    setLatestWarrantyClaimByRepairId(nextClaims);
+  };
+
   const fetchRepairs = async () => {
     try {
       setLoading(true);
@@ -910,6 +1109,8 @@ const MyRepairs: React.FC = () => {
         } catch {
           setLatestRefundByRepairId({});
         }
+
+        await fetchLatestWarrantyClaims(repairList);
 
         // Fetch capacity for shops that have a repair still waiting for acceptance
         const waitingShopIds = [...new Set(
@@ -1047,6 +1248,240 @@ const MyRepairs: React.FC = () => {
     }
   };
 
+  const resetWarrantyModalState = () => {
+    setWarrantyOrderId(null);
+    setWarrantyReasonCode('issue_returned');
+    setWarrantyReasonDetails('');
+    setWarrantyReturnMethod('walk_in');
+    setWarrantyImages([]);
+  };
+
+  const closeWarrantyModal = () => {
+    if (isSubmittingWarrantyClaim) {
+      return;
+    }
+
+    setShowWarrantyModal(false);
+    resetWarrantyModalState();
+  };
+
+  const handleFileWarrantyClaim = async (order: RepairOrder) => {
+    if (!canFileWarrantyClaim(order)) {
+      await Swal.fire({
+        icon: 'info',
+        title: 'Warranty Claim Unavailable',
+        text: getWarrantyClaimBlockReason(order),
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
+    setWarrantyOrderId(order.id);
+    setWarrantyReasonCode('issue_returned');
+    setWarrantyReasonDetails('');
+    setWarrantyReturnMethod('walk_in');
+    setWarrantyImages([]);
+    setShowWarrantyModal(true);
+  };
+
+  const handleWarrantyImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files) {
+      return;
+    }
+
+    const filesArray = Array.from(e.target.files);
+    const allowedImageMimeTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+
+    const invalidFile = filesArray.find((file) => !allowedImageMimeTypes.includes(file.type.toLowerCase()));
+    if (invalidFile) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Invalid File Type',
+        text: 'Only JPEG, PNG, and WEBP images are allowed for warranty claims.',
+        confirmButtonColor: '#000000',
+      });
+      e.target.value = '';
+      return;
+    }
+
+    const oversizedImage = filesArray.find((file) => file.size > MAX_REFUND_IMAGE_SIZE_BYTES);
+    if (oversizedImage) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Image Too Large',
+        text: 'Each warranty image must be 20MB or smaller.',
+        confirmButtonColor: '#000000',
+      });
+      e.target.value = '';
+      return;
+    }
+
+    if (warrantyImages.length + filesArray.length > 10) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Image Limit Exceeded',
+        text: 'You can upload up to 10 images per warranty claim.',
+        confirmButtonColor: '#000000',
+      });
+      e.target.value = '';
+      return;
+    }
+
+    setWarrantyImages((prev) => [...prev, ...filesArray]);
+    e.target.value = '';
+  };
+
+  const removeWarrantyImage = (index: number) => {
+    setWarrantyImages((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const isWarrantyFormValid = () => {
+    if (!warrantyReasonCode) {
+      return false;
+    }
+
+    if (warrantyReasonCode === 'other' && warrantyReasonDetails.trim().length === 0) {
+      return false;
+    }
+
+    return warrantyImages.length > 0 && warrantyImages.length <= 10;
+  };
+
+  const handleSubmitWarrantyClaim = async () => {
+    if (!warrantyOrderId) {
+      return;
+    }
+
+    if (!warrantyReasonCode) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Please select a reason',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
+    if (warrantyReasonCode === 'other' && warrantyReasonDetails.trim().length === 0) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Please provide details',
+        text: 'Details are required when selecting Other.',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
+    if (warrantyImages.length === 0) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Evidence images are required',
+        text: 'Please upload at least one image before submitting.',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
+    if (warrantyImages.length > 10) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Too many images',
+        text: 'You can upload a maximum of 10 evidence images.',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
+    const modal = await Swal.fire({
+      icon: 'question',
+      title: 'Submit Warranty Claim?',
+      text: 'Please confirm that your details and evidence images are correct before submitting.',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, Submit',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#000000',
+      cancelButtonColor: '#6b7280',
+      reverseButtons: true,
+    });
+
+    if (!modal.isConfirmed) {
+      return;
+    }
+
+    setIsSubmittingWarrantyClaim(true);
+
+    const payload = new FormData();
+    payload.append('reason_code', warrantyReasonCode);
+    payload.append('reason_details', warrantyReasonDetails.trim() || 'Warranty claim filed by customer.');
+    payload.append('same_issue_confirmation', '1');
+    payload.append('preferred_return_method', warrantyReturnMethod);
+
+    warrantyImages.forEach((file: File, index: number) => {
+      payload.append(`images[${index}]`, file);
+    });
+
+    try {
+      const response = await fetch(`/api/customer/repairs/${warrantyOrderId}/warranty-claims`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Accept': 'application/json',
+          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+        },
+        body: payload,
+      });
+
+      const raw = await response.text();
+      let data: any = null;
+      try {
+        data = raw ? JSON.parse(raw) : null;
+      } catch {
+        data = null;
+      }
+
+      if (!response.ok) {
+        const errorMessage = data?.message
+          || data?.errors?.repair?.[0]
+          || data?.errors?.images?.[0]
+          || 'Unable to file warranty claim right now.';
+
+        throw new Error(errorMessage);
+      }
+
+      const createdClaim = data?.data;
+      if (createdClaim && createdClaim.id) {
+        setLatestWarrantyClaimByRepairId((prev) => ({
+          ...prev,
+          [warrantyOrderId]: {
+            id: Number(createdClaim.id),
+            claim_no: String(createdClaim.claim_no || ''),
+            status: String(createdClaim.status || 'pending_repairer'),
+            source_channel: String(createdClaim.source_channel || 'customer_portal'),
+            created_at: new Date().toISOString(),
+          },
+        }));
+      }
+
+      await Swal.fire({
+        icon: 'success',
+        title: 'Warranty Claim Submitted',
+        text: 'Your claim has been submitted for repairer review.',
+        confirmButtonColor: '#000000',
+      });
+
+      setShowWarrantyModal(false);
+      resetWarrantyModalState();
+    } catch (error) {
+      await Swal.fire({
+        icon: 'error',
+        title: 'Failed to Submit Claim',
+        text: error instanceof Error ? error.message : 'Please try again later.',
+        confirmButtonColor: '#000000',
+      });
+    } finally {
+      setIsSubmittingWarrantyClaim(false);
+    }
+  };
+
   const handlePayNow = async (orderId: number) => {
     const selectedOrder = orders.find(o => o.id === orderId);
     if (!selectedOrder) return;
@@ -1144,7 +1579,17 @@ const MyRepairs: React.FC = () => {
       return;
     }
 
-    const activeRefund = latestRefundByRepairId[targetOrder.id];
+    if (hasReviewForOrder(targetOrder)) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Refund Not Allowed',
+        text: 'Refund request is not allowed after a review has been submitted for this repair.',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
+    const activeRefund = getLatestRefundForOrder(targetOrder);
     if (activeRefund && isRefundInProgress(activeRefund.status)) {
       Swal.fire({ icon: 'warning', title: 'Refund Already In Progress', text: 'A refund request is already being processed for this repair.', confirmButtonColor: '#000000' });
       return;
@@ -1425,6 +1870,26 @@ const MyRepairs: React.FC = () => {
         return;
       }
 
+      if (hasBlockingRefundForReview(order)) {
+        Swal.fire({
+          icon: 'info',
+          title: 'Review Not Allowed',
+          text: 'Review is no longer allowed once a refund request has been filed or completed for this repair.',
+          confirmButtonColor: '#000000',
+        });
+        return;
+      }
+
+      if (hasReviewForOrder(order)) {
+        Swal.fire({
+          icon: 'info',
+          title: 'Already Reviewed',
+          text: 'You have already submitted a review for this repair.',
+          confirmButtonColor: '#000000',
+        });
+        return;
+      }
+
       // Navigate to the shop page where they can leave a review
       window.location.href = `/repair-shop/${order.shop_id}`;
     } catch (error) {
@@ -1553,9 +2018,9 @@ const MyRepairs: React.FC = () => {
         popup: '!rounded-3xl !px-6 !py-6 !shadow-[0_30px_80px_-40px_rgba(15,23,42,0.55)] !border !border-slate-200',
         title: '!text-3xl !font-black !text-slate-900 !leading-[1.2] !tracking-[-0.015em] !mb-2',
         htmlContainer: '!mx-0 !mb-0 !mt-2 !p-0',
-        actions: '!mt-6 !w-full !gap-3 !justify-end',
-        confirmButton: '!m-0 !h-11 !rounded-xl !px-5 !text-sm !font-semibold !tracking-[0.01em] !bg-slate-950 hover:!bg-black focus:!ring-2 focus:!ring-slate-400',
-        cancelButton: '!m-0 !h-11 !rounded-xl !px-5 !text-sm !font-semibold !text-slate-700 !bg-slate-100 hover:!bg-slate-200 focus:!ring-2 focus:!ring-slate-300',
+        actions: '!mt-6 !w-full !flex !items-stretch !gap-3',
+        confirmButton: '!m-0 !flex-1 !basis-0 !h-14 !inline-flex !items-center !justify-center !text-center !rounded-xl !px-4 !text-sm !font-semibold !leading-tight !tracking-[0.01em] !whitespace-normal !bg-slate-950 hover:!bg-black focus:!ring-2 focus:!ring-slate-400',
+        cancelButton: '!m-0 !flex-1 !basis-0 !h-14 !inline-flex !items-center !justify-center !text-center !rounded-xl !px-4 !text-sm !font-semibold !leading-tight !tracking-[0.01em] !whitespace-normal !text-slate-700 !bg-slate-100 hover:!bg-slate-200 focus:!ring-2 focus:!ring-slate-300',
       },
     });
 
@@ -2392,7 +2857,9 @@ const MyRepairs: React.FC = () => {
                         </div>
                         <div className="shrink-0 pl-2 text-right">
                           <p className="text-xs text-gray-400">Repair Total</p>
-                          <p className="text-sm font-semibold text-black">{formatCurrency(getOrderGrandTotal(order))}</p>
+                          <p className="text-sm font-semibold text-black">
+                            {isWarrantyNoChargeOrder(order) ? 'No-charge Warranty Rework' : formatCurrency(getOrderGrandTotal(order))}
+                          </p>
                         </div>
                       </div>
                     </div>
@@ -2434,7 +2901,10 @@ const MyRepairs: React.FC = () => {
                               </div>
                               <div className="text-right">
                                 <p className="text-xs uppercase tracking-wide text-gray-500">Base Price</p>
-                                <p className="text-sm font-semibold text-black">{formatCurrency(order.package_price)}</p>
+                                <p className="text-sm font-semibold text-black">{formatCurrency(getOrderDisplayedBasePrice(order))}</p>
+                                {isWarrantyNoChargeOrder(order) && (
+                                  <p className="mt-1 text-[11px] text-gray-500">No additional charge</p>
+                                )}
                               </div>
                             </div>
 
@@ -2573,7 +3043,10 @@ const MyRepairs: React.FC = () => {
                             </div>
                             <div className="text-right">
                               <p className="text-xs uppercase tracking-wide text-gray-500">Base Price</p>
-                              <p className="text-sm font-semibold text-black">{formatCurrency(order.package_price)}</p>
+                              <p className="text-sm font-semibold text-black">{formatCurrency(getOrderDisplayedBasePrice(order))}</p>
+                              {isWarrantyNoChargeOrder(order) && (
+                                <p className="mt-1 text-[11px] text-gray-500">No additional charge</p>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -2698,19 +3171,25 @@ const MyRepairs: React.FC = () => {
                           )}
                         </div>
                         <div className="text-right">
-                          <div className="space-y-1 mb-2 text-xs text-gray-500">
-                            <div className="flex items-center justify-end gap-3">
-                              <span>Subtotal</span>
-                              <span className="text-gray-700">{formatCurrency(getOrderSubtotal(order))}</span>
+                          {isWarrantyNoChargeOrder(order) ? (
+                            <p className="mb-2 text-xs text-amber-700">Warranty rework has no additional charge.</p>
+                          ) : (
+                            <div className="space-y-1 mb-2 text-xs text-gray-500">
+                              <div className="flex items-center justify-end gap-3">
+                                <span>Subtotal</span>
+                                <span className="text-gray-700">{formatCurrency(getOrderSubtotal(order))}</span>
+                              </div>
+                              <div className="flex items-center justify-end gap-3">
+                                <span>{`VAT (${getOrderVatRate(order)}%)`}</span>
+                                <span className="text-gray-700">{formatCurrency(getOrderVatAmount(order))}</span>
+                              </div>
                             </div>
-                            <div className="flex items-center justify-end gap-3">
-                              <span>{`VAT (${getOrderVatRate(order)}%)`}</span>
-                              <span className="text-gray-700">{formatCurrency(getOrderVatAmount(order))}</span>
-                            </div>
-                          </div>
-                          <p className="text-sm text-gray-500 uppercase tracking-wider mb-1">Total Paid</p>
+                          )}
+                          <p className="text-sm text-gray-500 uppercase tracking-wider mb-1">
+                            {isWarrantyNoChargeOrder(order) ? 'Previously Paid' : 'Total Paid'}
+                          </p>
                           <p className="font-bold text-black text-2xl">{formatCurrency(getOrderDisplayedPaidAmount(order))}</p>
-                          {(order.repair_package_id || Number(order.add_ons_total || 0) > 0) && (
+                          {!isWarrantyNoChargeOrder(order) && (order.repair_package_id || Number(order.add_ons_total || 0) > 0) && (
                             <p className="mt-1 text-xs text-gray-500">
                               {order.repair_package_id
                                 ? `Package ${formatCurrency(order.package_price)}${Number(order.add_ons_total || 0) > 0 ? ` + Add-ons ${formatCurrency(order.add_ons_total)}` : ''}`
@@ -2723,35 +3202,49 @@ const MyRepairs: React.FC = () => {
 
                     {/* Action Buttons */}
                     <div className="mt-4 ml-auto flex w-full flex-wrap justify-end gap-2 border-t border-gray-200 pt-4 sm:mt-6 sm:gap-3 sm:pt-6 xl:gap-4">
-                      {latestRefundByRepairId[order.id] && (
-                        <div className="mr-auto w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700 sm:w-auto">
-                          <p className="font-semibold">{getRefundStatusLabel(latestRefundByRepairId[order.id])}</p>
+                      {latestWarrantyClaimByRepairId[order.id] && (
+                        <div className="mr-auto w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 sm:w-auto">
+                          <p className="font-semibold">{getWarrantyClaimStatusLabel(latestWarrantyClaimByRepairId[order.id].status)}</p>
                           <p>
-                            {formatCurrency((latestRefundByRepairId[order.id].approved_amount ?? latestRefundByRepairId[order.id].requested_amount) || 0)}
-                            {latestRefundByRepairId[order.id].failure_reason ? ` • ${latestRefundByRepairId[order.id].failure_reason}` : ''}
+                            {(latestWarrantyClaimByRepairId[order.id].claim_no || 'Warranty claim')}
+                            {latestWarrantyClaimByRepairId[order.id].rejection_reason ? ` • ${latestWarrantyClaimByRepairId[order.id].rejection_reason}` : ''}
                           </p>
-                          {latestRefundByRepairId[order.id].execution_reference_masked && (
-                            <p className="text-[11px] text-gray-500">
-                              Ref: {latestRefundByRepairId[order.id].execution_reference_masked}
-                            </p>
-                          )}
-                          {!!latestRefundByRepairId[order.id].execution_proof_urls?.length && (
-                            <div className="mt-1 flex flex-wrap items-center gap-2">
-                              {latestRefundByRepairId[order.id].execution_proof_urls?.map((proofUrl, proofIndex) => (
-                                <a
-                                  key={`refund-proof-${order.id}-${proofIndex}`}
-                                  href={proofUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="underline text-gray-700 hover:text-black"
-                                >
-                                  Proof {proofIndex + 1}
-                                </a>
-                              ))}
-                            </div>
-                          )}
                         </div>
                       )}
+                      {(() => {
+                        const latestRefund = getLatestRefundForOrder(order);
+                        if (!latestRefund) return null;
+
+                        return (
+                          <div className="mr-auto w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700 sm:w-auto">
+                            <p className="font-semibold">{getRefundStatusLabel(latestRefund)}</p>
+                            <p>
+                              {formatCurrency((latestRefund.approved_amount ?? latestRefund.requested_amount) || 0)}
+                              {latestRefund.failure_reason ? ` • ${latestRefund.failure_reason}` : ''}
+                            </p>
+                            {latestRefund.execution_reference_masked && (
+                              <p className="text-[11px] text-gray-500">
+                                Ref: {latestRefund.execution_reference_masked}
+                              </p>
+                            )}
+                            {!!latestRefund.execution_proof_urls?.length && (
+                              <div className="mt-1 flex flex-wrap items-center gap-2">
+                                {latestRefund.execution_proof_urls?.map((proofUrl, proofIndex) => (
+                                  <a
+                                    key={`refund-proof-${order.id}-${proofIndex}`}
+                                    href={proofUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="underline text-gray-700 hover:text-black"
+                                  >
+                                    Proof {proofIndex + 1}
+                                  </a>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                       {/* Chat with Repairer actions */}
                       {order.status === 'repairer_accepted' && order.conversation_id && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (
                         <>
@@ -2867,11 +3360,22 @@ const MyRepairs: React.FC = () => {
                           })()}
                         </>
                       )}
-                      {order.status === 'picked_up' && !isRefundFlowLocked(latestRefundByRepairId[order.id]?.status) && (
+                      {(order.status === 'picked_up' || order.status === 'received') && (
+                        <button
+                          onClick={() => handleFileWarrantyClaim(order)}
+                          disabled={!canFileWarrantyClaim(order)}
+                          title={canFileWarrantyClaim(order) ? 'File a no-charge warranty claim for this repair.' : getWarrantyClaimBlockReason(order)}
+                          className={`${actionButtonBaseClass} ${canFileWarrantyClaim(order) ? actionButtonSecondaryClass : actionButtonDisabledClass}`}
+                        >
+                          WARRANTY CLAIM
+                        </button>
+                      )}
+                      {order.status === 'picked_up' && (
                         <>
                           <button
                             onClick={() => {
-                              setRefundOrderId(order.id);
+                              const refundTargetRepairId = getRefundAnchorRepairId(order);
+                              setRefundOrderId(refundTargetRepairId);
                               setRefundStep(1);
                               setRefundReason('');
                               setRefundOtherReason('');
@@ -2883,16 +3387,27 @@ const MyRepairs: React.FC = () => {
                               setRefundNote('');
                               setShowRefundModal(true);
                             }}
-                            disabled={isRefundInProgress(latestRefundByRepairId[order.id]?.status)}
-                            className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
+                            disabled={hasReviewForOrder(order) || isRefundFlowLocked(getLatestRefundForOrder(order)?.status) || isRefundInProgress(getLatestRefundForOrder(order)?.status)}
+                            title={hasReviewForOrder(order)
+                              ? 'Refund is not allowed after a review has been submitted.'
+                              : isRefundFlowLocked(getLatestRefundForOrder(order)?.status)
+                                ? 'Refund is already filed or completed for this repair.'
+                                : undefined}
+                            className={`${actionButtonBaseClass} ${(hasReviewForOrder(order) || isRefundFlowLocked(getLatestRefundForOrder(order)?.status) || isRefundInProgress(getLatestRefundForOrder(order)?.status)) ? actionButtonDisabledClass : actionButtonSecondaryClass}`}
                           >
                             REFUND
                           </button>
                           <button
                             onClick={() => openReviewModal(order.id)}
-                            className={`${actionButtonBaseClass} ${actionButtonPrimaryClass}`}
+                            disabled={hasReviewForOrder(order) || hasBlockingRefundForReview(order)}
+                            title={hasReviewForOrder(order)
+                              ? 'You have already submitted a review for this repair.'
+                              : hasBlockingRefundForReview(order)
+                                ? 'Review is unavailable once refund is requested or completed.'
+                                : undefined}
+                            className={`${actionButtonBaseClass} ${(hasReviewForOrder(order) || hasBlockingRefundForReview(order)) ? actionButtonDisabledClass : actionButtonPrimaryClass}`}
                           >
-                            REVIEW
+                            {hasReviewForOrder(order) ? 'REVIEWED' : 'REVIEW'}
                           </button>
                         </>
                       )}
@@ -3365,6 +3880,174 @@ const MyRepairs: React.FC = () => {
                     </button>
                   )}
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showWarrantyModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black opacity-40" onClick={closeWarrantyModal}></div>
+            <div className="bg-white rounded-lg shadow-xl z-50 max-w-5xl w-full max-h-[90vh] flex flex-col">
+              <div className="px-8 py-4 border-b shrink-0">
+                <h3 className="text-xl font-semibold">File Warranty Claim</h3>
+                <p className="text-sm text-gray-500 mt-1">Please provide details for your warranty claim.</p>
+              </div>
+
+              <div className="px-8 py-6 overflow-y-auto flex-1">
+                <div className="space-y-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-3">
+                      Reason for Warranty Claim <span className="text-red-500">*</span>
+                    </label>
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+                      {[
+                        { value: 'issue_returned', label: 'Issue returned after completion' },
+                        { value: 'same_defect', label: 'Same defect not fully fixed' },
+                        { value: 'poor_workmanship', label: 'Workmanship concern' },
+                        { value: 'other', label: 'Other' },
+                      ].map((option) => (
+                        <label key={option.value} className="flex items-center gap-3">
+                          <input
+                            type="radio"
+                            name="warranty_reason"
+                            value={option.value}
+                            checked={warrantyReasonCode === option.value}
+                            onChange={(e) => setWarrantyReasonCode(e.target.value)}
+                            className="form-radio h-4 w-4 text-black shrink-0"
+                          />
+                          <span className="text-sm text-gray-700">{option.label}</span>
+                        </label>
+                      ))}
+                    </div>
+
+                    <div className="mt-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Details {warrantyReasonCode === 'other' && <span className="text-red-500">*</span>}
+                      </label>
+                      <textarea
+                        value={warrantyReasonDetails}
+                        onChange={(e) => setWarrantyReasonDetails(e.target.value)}
+                        className="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-gray-400 focus:outline-none resize-none"
+                        rows={3}
+                        placeholder="Describe the issue you observed..."
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-3">
+                      Preferred Return Method <span className="text-red-500">*</span>
+                    </label>
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        { value: 'walk_in', label: 'Walk-in', hint: 'Bring the item to the shop yourself.' },
+                        { value: 'customer_delivery', label: 'Customer Delivery', hint: 'Arrange your own courier to the shop.' },
+                      ].map((method) => (
+                        <label
+                          key={method.value}
+                          className={`flex items-start gap-3 p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                            warrantyReturnMethod === method.value
+                              ? 'border-black bg-gray-50'
+                              : 'border-gray-200 hover:border-gray-400'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="warranty_return_method"
+                            value={method.value}
+                            checked={warrantyReturnMethod === method.value}
+                            onChange={(e) => setWarrantyReturnMethod(e.target.value as 'walk_in' | 'customer_delivery')}
+                            className="form-radio h-4 w-4 text-black shrink-0 mt-0.5"
+                          />
+                          <span>
+                            <span className="block text-sm font-medium text-gray-900">{method.label}</span>
+                            <span className="block text-xs text-gray-500 mt-1">{method.hint}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Evidence Images <span className="text-red-500">*</span>
+                      {warrantyImages.length > 0 && (
+                        <span className="ml-2 text-xs text-gray-500">
+                          ({warrantyImages.length}/10 files)
+                        </span>
+                      )}
+                    </label>
+                    <p className="text-xs text-gray-600 mb-3">
+                      <strong>Note:</strong> Upload 1 to 10 clear images (JPEG/PNG/WEBP, 20MB max each).
+                    </p>
+
+                    <div className="grid grid-cols-6 gap-3">
+                      {warrantyImages.map((file, index) => (
+                        <div key={`${file.name}-${index}`} className="relative group aspect-square">
+                          <img
+                            src={URL.createObjectURL(file)}
+                            alt={`Warranty evidence ${index + 1}`}
+                            className="w-full h-full object-cover rounded-lg border-2 border-gray-200"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeWarrantyImage(index)}
+                            className="absolute top-2 right-2 bg-black bg-opacity-60 text-white rounded-full w-7 h-7 flex items-center justify-center text-lg hover:bg-opacity-80 opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+
+                      {warrantyImages.length < 10 && (
+                        <div className="relative aspect-square">
+                          <input
+                            id="warranty-images-upload"
+                            type="file"
+                            accept="image/jpeg,image/jpg,image/png,image/webp"
+                            multiple
+                            onChange={handleWarrantyImageUpload}
+                            className="hidden"
+                          />
+                          <label
+                            htmlFor="warranty-images-upload"
+                            className="flex flex-col items-center justify-center w-full h-full border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-gray-400 hover:bg-gray-50 transition-all group"
+                          >
+                            <div className="flex items-center justify-center w-12 h-12 rounded-full bg-gray-100 group-hover:bg-gray-200 transition-colors">
+                              <svg className="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                              </svg>
+                            </div>
+                            <p className="text-xs text-gray-500 mt-2">Add Images</p>
+                          </label>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="px-8 py-4 border-t flex justify-end gap-3 shrink-0">
+                {!isSubmittingWarrantyClaim && (
+                  <button
+                    onClick={closeWarrantyModal}
+                    className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
+                  >
+                    Close
+                  </button>
+                )}
+                <button
+                  onClick={handleSubmitWarrantyClaim}
+                  disabled={!isWarrantyFormValid() || isSubmittingWarrantyClaim}
+                  className={`${actionButtonBaseClass} ${
+                    isWarrantyFormValid() && !isSubmittingWarrantyClaim
+                      ? actionButtonPrimaryClass
+                      : actionButtonDisabledClass
+                  }`}
+                >
+                  {isSubmittingWarrantyClaim ? 'Submitting...' : 'Submit Claim'}
+                </button>
               </div>
             </div>
           </div>

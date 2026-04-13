@@ -5,6 +5,7 @@ namespace Tests\Feature\LocationPolicy;
 use App\Services\CaviteLocationPolicyService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -32,7 +33,7 @@ class ShopOwnerAuthRegistrationTest extends TestCase
         return array_merge([
             'first_name' => 'Juan',
             'last_name' => 'Dela Cruz',
-            'email' => 'auth-register@example.com',
+            'email' => 'auth-register@solespaceph.com',
             'phone' => '09171234567',
             'business_name' => 'Juan Shoes & Repairs',
             'business_address' => 'Dasmariñas, Cavite',
@@ -46,10 +47,27 @@ class ShopOwnerAuthRegistrationTest extends TestCase
         ], $overrides);
     }
 
+    private function markRegistrationEmailVerified(string $email): void
+    {
+        $normalizedEmail = strtolower(trim($email));
+        Cache::put(
+            'shop_owner_registration_email_otp:' . sha1($normalizedEmail),
+            [
+                'verified' => true,
+                'verified_at' => now()->timestamp,
+                'attempts' => 0,
+                'expires_at' => now()->addMinutes(60)->timestamp,
+                'otp_hash' => null,
+            ],
+            now()->addMinutes(60)
+        );
+    }
+
     /** @test */
     public function it_registers_successfully_with_cavite_coordinates(): void
     {
         Storage::fake('public');
+        $this->markRegistrationEmailVerified('auth-register@solespaceph.com');
 
         $response = $this->postJson('/shop-owner/register', array_merge(
             $this->payload(),
@@ -60,7 +78,7 @@ class ShopOwnerAuthRegistrationTest extends TestCase
             ->assertJsonPath('success', true);
 
         $this->assertDatabaseHas('shop_owners', [
-            'email' => 'auth-register@example.com',
+            'email' => 'auth-register@solespaceph.com',
             'status' => 'pending',
         ]);
     }
@@ -69,10 +87,11 @@ class ShopOwnerAuthRegistrationTest extends TestCase
     public function it_blocks_registration_with_ncr_coordinates(): void
     {
         Storage::fake('public');
+        $this->markRegistrationEmailVerified('auth-ncr@solespaceph.com');
 
         $response = $this->postJson('/shop-owner/register', array_merge(
             $this->payload([
-                'email' => 'auth-ncr@example.com',
+                'email' => 'auth-ncr@solespaceph.com',
                 'shop_latitude' => self::LAT_MAKATI,
                 'shop_longitude' => self::LNG_MAKATI,
                 'business_address' => 'Makati, Metro Manila',
@@ -85,7 +104,7 @@ class ShopOwnerAuthRegistrationTest extends TestCase
             ->assertJsonPath('message', CaviteLocationPolicyService::DENIAL_MESSAGE);
 
         $this->assertDatabaseMissing('shop_owners', [
-            'email' => 'auth-ncr@example.com',
+            'email' => 'auth-ncr@solespaceph.com',
         ]);
     }
 
@@ -93,10 +112,11 @@ class ShopOwnerAuthRegistrationTest extends TestCase
     public function it_blocks_registration_without_coordinates_even_if_address_mentions_cavite(): void
     {
         Storage::fake('public');
+        $this->markRegistrationEmailVerified('auth-no-coords@solespaceph.com');
 
         $response = $this->postJson('/shop-owner/register', array_merge(
             $this->payload([
-                'email' => 'auth-no-coords@example.com',
+                'email' => 'auth-no-coords@solespaceph.com',
                 'shop_latitude' => null,
                 'shop_longitude' => null,
                 'business_address' => 'Imus, Cavite',
@@ -109,7 +129,7 @@ class ShopOwnerAuthRegistrationTest extends TestCase
             ->assertJsonPath('message', CaviteLocationPolicyService::DENIAL_MESSAGE);
 
         $this->assertDatabaseMissing('shop_owners', [
-            'email' => 'auth-no-coords@example.com',
+            'email' => 'auth-no-coords@solespaceph.com',
         ]);
     }
 
@@ -117,10 +137,11 @@ class ShopOwnerAuthRegistrationTest extends TestCase
     public function it_blocks_tampered_non_numeric_coordinate_payload(): void
     {
         Storage::fake('public');
+        $this->markRegistrationEmailVerified('auth-tampered@solespaceph.com');
 
         $response = $this->postJson('/shop-owner/register', array_merge(
             $this->payload([
-                'email' => 'auth-tampered@example.com',
+                'email' => 'auth-tampered@solespaceph.com',
                 'shop_latitude' => '14.30; DROP TABLE shop_owners; --',
                 'shop_longitude' => '120.93',
             ]),
@@ -130,7 +151,7 @@ class ShopOwnerAuthRegistrationTest extends TestCase
         $response->assertStatus(422);
 
         $this->assertDatabaseMissing('shop_owners', [
-            'email' => 'auth-tampered@example.com',
+            'email' => 'auth-tampered@solespaceph.com',
         ]);
     }
 
@@ -138,10 +159,11 @@ class ShopOwnerAuthRegistrationTest extends TestCase
     public function ncr_coordinates_still_fail_even_with_cavite_address_text(): void
     {
         Storage::fake('public');
+        $this->markRegistrationEmailVerified('auth-spoof-address@solespaceph.com');
 
         $response = $this->postJson('/shop-owner/register', array_merge(
             $this->payload([
-                'email' => 'auth-spoof-address@example.com',
+                'email' => 'auth-spoof-address@solespaceph.com',
                 'shop_latitude' => self::LAT_MAKATI,
                 'shop_longitude' => self::LNG_MAKATI,
                 'business_address' => 'Dasmariñas, Cavite',
