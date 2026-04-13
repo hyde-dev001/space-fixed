@@ -2279,6 +2279,12 @@ Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manage
     })->middleware('permission:access-staff-time-in')->name('attendance');
 });
 
+// Backward-compatible warranty queue URL for older ERP repairer links.
+Route::middleware(['auth:user', 'manager.staff:staff', 'permission:access-repair-job-orders', 'check.user.business.type:repair,both'])
+    ->get('/erp/repairer/warranty-queue', function () {
+        return redirect()->route('erp.staff.warranty-queue');
+    })->name('erp.repairer.warranty-queue');
+
 // My Payslips — accessible to ALL authenticated ERP employees (every role)
 Route::get('/erp/my-payslips', function () {
     if (Auth::guard('user')->user()?->force_password_change) {

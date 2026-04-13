@@ -35,6 +35,7 @@ class ShopOwnerAuthController extends Controller
     private const REGISTRATION_EMAIL_VERIFIED_TTL_MINUTES = 60;
     private const LOGIN_EMAIL_OTP_TTL_MINUTES = 10;
     private const LOGIN_EMAIL_OTP_MAX_ATTEMPTS = 5;
+    private const LOGIN_TWO_FACTOR_SESSION_KEY = 'shop_owner_2fa_entry';
 
     /**
      * Send verification OTP to a shop owner registration email.
@@ -590,7 +591,7 @@ class ShopOwnerAuthController extends Controller
             return redirect()->route('shop-owner.login.form');
         }
 
-        $entry = Cache::get($this->loginTwoFactorCacheKey((int) $shopOwner->id));
+        $entry = $this->readLoginTwoFactorEntry($request, (int) $shopOwner->id);
         $secondsRemaining = max(0, ((int) ($entry['expires_at'] ?? now()->timestamp)) - now()->timestamp);
 
         return Inertia::render('UserSide/Auth/ShopOwnerTwoFactor', [
@@ -617,8 +618,7 @@ class ShopOwnerAuthController extends Controller
                 ]);
             }
 
-            $cacheKey = $this->loginTwoFactorCacheKey((int) $shopOwner->id);
-            $entry = Cache::get($cacheKey);
+            $entry = $this->readLoginTwoFactorEntry($request, (int) $shopOwner->id);
             if (!is_array($entry)) {
                 throw ValidationException::withMessages([
                     'otp' => ['Verification code expired. Please request a new code.'],
@@ -644,8 +644,7 @@ class ShopOwnerAuthController extends Controller
             $otp = (string) ($validated['otp'] ?? '');
             if (!Hash::check($otp, (string) ($entry['otp_hash'] ?? ''))) {
                 $entry['attempts'] = (int) ($entry['attempts'] ?? 0) + 1;
-                $secondsLeft = max(1, ((int) ($entry['expires_at'] ?? now()->timestamp)) - now()->timestamp);
-                Cache::put($cacheKey, $entry, now()->addSeconds($secondsLeft));
+                $this->storeLoginTwoFactorEntry($request, (int) $shopOwner->id, $entry);
 
                 throw ValidationException::withMessages([
                     'otp' => ['Incorrect verification code. Please try again.'],
@@ -709,7 +708,7 @@ class ShopOwnerAuthController extends Controller
                 ]);
             }
 
-            $this->issueLoginTwoFactorOtp($shopOwner);
+            $this->issueLoginTwoFactorOtp($request, $shopOwner);
 
             if ($request->expectsJson()) {
                 return response()->json([
@@ -749,7 +748,7 @@ class ShopOwnerAuthController extends Controller
         $request->session()->put('shop_owner_2fa_remember', $remember);
         $request->session()->put('shop_owner_2fa_pending_at', now()->timestamp);
 
-        $this->issueLoginTwoFactorOtp($shopOwner);
+        $this->issueLoginTwoFactorOtp($request, $shopOwner);
     }
 
     private function resolvePendingTwoFactorShopOwner(Request $request): ?ShopOwner
@@ -769,18 +768,18 @@ class ShopOwnerAuthController extends Controller
         return $shopOwner;
     }
 
-    private function issueLoginTwoFactorOtp(ShopOwner $shopOwner): void
+    private function issueLoginTwoFactorOtp(Request $request, ShopOwner $shopOwner): void
     {
         $otp = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
         $ttl = now()->addMinutes(self::LOGIN_EMAIL_OTP_TTL_MINUTES);
 
-        Cache::put($this->loginTwoFactorCacheKey((int) $shopOwner->id), [
-            'otp_hash' => Hash::make($otp),
-            'attempts' => 0,
-            'expires_at' => $ttl->timestamp,
-        ], $ttl);
-
         try {
+            $this->storeLoginTwoFactorEntry($request, (int) $shopOwner->id, [
+                'otp_hash' => Hash::make($otp),
+                'attempts' => 0,
+                'expires_at' => $ttl->timestamp,
+            ]);
+
             Mail::raw(
                 "Your SoleSpace login verification code is {$otp}. This code expires in "
                 . self::LOGIN_EMAIL_OTP_TTL_MINUTES
@@ -791,7 +790,7 @@ class ShopOwnerAuthController extends Controller
                 }
             );
         } catch (\Throwable $e) {
-            Cache::forget($this->loginTwoFactorCacheKey((int) $shopOwner->id));
+            $this->clearLoginTwoFactorChallenge($request, (int) $shopOwner->id);
 
             Log::error('Failed to send shop owner login two-factor OTP email', [
                 'shop_owner_id' => $shopOwner->id,
@@ -805,6 +804,64 @@ class ShopOwnerAuthController extends Controller
         }
     }
 
+    private function readLoginTwoFactorEntry(Request $request, int $shopOwnerId): ?array
+    {
+        $entry = $request->session()->get(self::LOGIN_TWO_FACTOR_SESSION_KEY);
+        if (
+            is_array($entry)
+            && (int) ($entry['shop_owner_id'] ?? 0) === $shopOwnerId
+        ) {
+            return $entry;
+        }
+
+        // Backward-compatible fallback for pre-session-based challenges.
+        try {
+            $legacyEntry = Cache::get($this->loginTwoFactorCacheKey($shopOwnerId));
+        } catch (\Throwable $e) {
+            Log::warning('Shop owner 2FA legacy cache read failed', [
+                'shop_owner_id' => $shopOwnerId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+
+        if (!is_array($legacyEntry)) {
+            return null;
+        }
+
+        $normalizedLegacyEntry = [
+            'shop_owner_id' => $shopOwnerId,
+            'otp_hash' => (string) ($legacyEntry['otp_hash'] ?? ''),
+            'attempts' => (int) ($legacyEntry['attempts'] ?? 0),
+            'expires_at' => (int) ($legacyEntry['expires_at'] ?? 0),
+        ];
+
+        $request->session()->put(self::LOGIN_TWO_FACTOR_SESSION_KEY, $normalizedLegacyEntry);
+        try {
+            Cache::forget($this->loginTwoFactorCacheKey($shopOwnerId));
+        } catch (\Throwable $e) {
+            Log::warning('Shop owner 2FA legacy cache cleanup failed', [
+                'shop_owner_id' => $shopOwnerId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return $normalizedLegacyEntry;
+    }
+
+    private function storeLoginTwoFactorEntry(Request $request, int $shopOwnerId, array $entry): void
+    {
+        $normalizedEntry = [
+            'shop_owner_id' => $shopOwnerId,
+            'otp_hash' => (string) ($entry['otp_hash'] ?? ''),
+            'attempts' => (int) ($entry['attempts'] ?? 0),
+            'expires_at' => (int) ($entry['expires_at'] ?? 0),
+        ];
+
+        $request->session()->put(self::LOGIN_TWO_FACTOR_SESSION_KEY, $normalizedEntry);
+    }
+
     private function loginTwoFactorCacheKey(int $shopOwnerId): string
     {
         return 'shop_owner_login_2fa:' . $shopOwnerId;
@@ -814,12 +871,20 @@ class ShopOwnerAuthController extends Controller
     {
         $resolvedShopOwnerId = $shopOwnerId ?? (int) $request->session()->get('shop_owner_2fa_pending_id', 0);
         if ($resolvedShopOwnerId > 0) {
-            Cache::forget($this->loginTwoFactorCacheKey($resolvedShopOwnerId));
+            try {
+                Cache::forget($this->loginTwoFactorCacheKey($resolvedShopOwnerId));
+            } catch (\Throwable $e) {
+                Log::warning('Shop owner 2FA legacy cache clear failed', [
+                    'shop_owner_id' => $resolvedShopOwnerId,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
 
         $request->session()->forget('shop_owner_2fa_pending_id');
         $request->session()->forget('shop_owner_2fa_remember');
         $request->session()->forget('shop_owner_2fa_pending_at');
+        $request->session()->forget(self::LOGIN_TWO_FACTOR_SESSION_KEY);
     }
 
     private function maskEmail(string $email): string

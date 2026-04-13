@@ -871,6 +871,12 @@ const AppSidebar_ERP: React.FC = () => {
         const queryString = url.includes("?") ? url.split("?")[1] : "";
         const baseUrl = url.split("?")[0];
 
+        if (routeName === "erp.staff.warranty-queue") {
+          if (baseUrl === "/erp/staff/warranty-queue" || baseUrl === "/erp/repairer/warranty-queue") {
+            return true;
+          }
+        }
+
         if (routeName.startsWith("erp.staff.")) {
           const staffPath = staffRouteMap[routeName];
           if (staffPath) {
@@ -940,6 +946,15 @@ const AppSidebar_ERP: React.FC = () => {
       return url;
     } catch {
       // Fall back to static maps when route() is unavailable (e.g., missing Ziggy entry)
+      if (routeName === "erp.staff.warranty-queue") {
+        let url = "/erp/repairer/warranty-queue";
+        if (params && Object.keys(params).length > 0) {
+          const queryParams = new URLSearchParams(params).toString();
+          url += `?${queryParams}`;
+        }
+        return url;
+      }
+
       if (allRoutePaths[routeName]) {
         let url = allRoutePaths[routeName];
         if (params && Object.keys(params).length > 0) {

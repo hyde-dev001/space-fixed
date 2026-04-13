@@ -15,7 +15,6 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Auth\Events\Registered;
 use App\Rules\NotDisposableEmail;
 use Inertia\Inertia;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
 
@@ -28,6 +27,7 @@ use Illuminate\Support\Facades\Log;
 class UserController extends Controller
 {
     private const SHOP_OWNER_LOGIN_2FA_TTL_MINUTES = 10;
+    private const SHOP_OWNER_LOGIN_2FA_SESSION_KEY = 'shop_owner_2fa_entry';
 
     /**
      * Check whether an email can be used for public registration flows.
@@ -452,21 +452,22 @@ class UserController extends Controller
         $request->session()->put('shop_owner_2fa_remember', $remember);
         $request->session()->put('shop_owner_2fa_pending_at', now()->timestamp);
 
-        $this->issueShopOwnerLoginOtp($shopOwner);
+        $this->issueShopOwnerLoginOtp($request, $shopOwner);
     }
 
-    private function issueShopOwnerLoginOtp(ShopOwner $shopOwner): void
+    private function issueShopOwnerLoginOtp(Request $request, ShopOwner $shopOwner): void
     {
         $otp = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
         $ttl = now()->addMinutes(self::SHOP_OWNER_LOGIN_2FA_TTL_MINUTES);
 
-        Cache::put($this->shopOwnerTwoFactorCacheKey((int) $shopOwner->id), [
-            'otp_hash' => Hash::make($otp),
-            'attempts' => 0,
-            'expires_at' => $ttl->timestamp,
-        ], $ttl);
-
         try {
+            $request->session()->put(self::SHOP_OWNER_LOGIN_2FA_SESSION_KEY, [
+                'shop_owner_id' => (int) $shopOwner->id,
+                'otp_hash' => Hash::make($otp),
+                'attempts' => 0,
+                'expires_at' => $ttl->timestamp,
+            ]);
+
             Mail::raw(
                 "Your SoleSpace login verification code is {$otp}. This code expires in "
                 . self::SHOP_OWNER_LOGIN_2FA_TTL_MINUTES
@@ -477,7 +478,7 @@ class UserController extends Controller
                 }
             );
         } catch (\Throwable $e) {
-            Cache::forget($this->shopOwnerTwoFactorCacheKey((int) $shopOwner->id));
+            $request->session()->forget(self::SHOP_OWNER_LOGIN_2FA_SESSION_KEY);
 
             Log::error('Failed to send shop owner login 2FA code from unified login', [
                 'shop_owner_id' => $shopOwner->id,
@@ -489,11 +490,6 @@ class UserController extends Controller
                 'email' => ['Unable to send verification code right now. Please try again.'],
             ]);
         }
-    }
-
-    private function shopOwnerTwoFactorCacheKey(int $shopOwnerId): string
-    {
-        return 'shop_owner_login_2fa:' . $shopOwnerId;
     }
 
     /**
