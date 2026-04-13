@@ -734,6 +734,9 @@ export default function RefundApproval() {
 
 	const openRejectModal = (request: RefundRequest) => {
 		const defaultChoice = rejectionReasonChoices[0];
+		setViewModalOpen(false);
+		setSelectedRequest(null);
+		setActiveImage(null);
 		setRejectRequest(request);
 		setRejectReasonChoice(defaultChoice);
 		setRejectCustomReason("");
@@ -1592,9 +1595,9 @@ export default function RefundApproval() {
 				<div className="fixed inset-0 z-[1000002] flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
 					<div className="absolute inset-0" onClick={() => closeRejectModal()} />
 					<div className="relative w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
-						<div className="bg-gradient-to-r from-rose-600 to-orange-500 px-6 py-5 text-white">
-							<p className="text-lg font-semibold">Reject Refund Request</p>
-							<p className="mt-1 text-sm text-white/85">{rejectRequest.orderNumber} • {rejectRequest.customerName}</p>
+						<div className="px-6 py-5 border-b border-slate-200 dark:border-slate-700">
+							<p className="text-lg font-semibold text-slate-900 dark:text-slate-100">Reject Refund Request</p>
+							<p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{rejectRequest.orderNumber} • {rejectRequest.customerName}</p>
 						</div>
 
 						<div className="space-y-5 px-6 py-5">
