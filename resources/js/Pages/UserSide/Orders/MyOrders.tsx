@@ -1356,14 +1356,7 @@ const MyOrders: React.FC = () => {
                             </div>
                           )}
                         </div>
-                        <div className="ml-auto shrink-0 text-right">
-                          <span
-                            className={`inline-flex items-center px-3 py-1 text-[9px] font-semibold tracking-[0.12em] uppercase sm:px-4 sm:py-1.5 sm:text-xs ${getStatusBadge(
-                              displayStatus
-                            )}`}
-                          >
-                            {getStatusText(displayStatus)}
-                          </span>
+                        <div className="ml-auto shrink-0 flex items-center">
                           {shouldShowRefundDetailsIcon && (
                             <button
                               type="button"
@@ -1373,13 +1366,20 @@ const MyOrders: React.FC = () => {
                               }}
                               title="View rejection note"
                               aria-label="View rejection note"
-                              className="mt-2 inline-flex items-center justify-center text-red-600 transition-colors hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
+                              className="mr-3 inline-flex h-8 w-8 items-center justify-center rounded-full border border-red-400 text-red-600 shadow-sm transition-all hover:-translate-y-0.5 hover:border-red-500 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
                             >
-                              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M7 3h10l4 4v14H3V3h4z" />
+                              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86l-8.17 14.14A1 1 0 003 19h18a1 1 0 00.88-1.5L13.71 3.86a1 1 0 00-1.72 0z" />
                               </svg>
                             </button>
                           )}
+                          <span
+                            className={`inline-flex items-center px-3 py-1 text-[9px] font-semibold tracking-[0.12em] uppercase sm:px-4 sm:py-1.5 sm:text-xs ${getStatusBadge(
+                              displayStatus
+                            )}`}
+                          >
+                            {getStatusText(displayStatus)}
+                          </span>
                         </div>
                       </div>
                     </div>
