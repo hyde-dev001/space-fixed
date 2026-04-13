@@ -11,6 +11,7 @@ type FormErrors = Record<string, string>;
 
 const EMAIL_REGEX = /^\S+@\S+\.\S+$/;
 const PHONE_REGEX = /^\d{11}$/;
+const MAX_VALID_ID_SIZE_BYTES = 5 * 1024 * 1024;
 
 const escapeHtml = (value: string) => (
   value
@@ -243,6 +244,19 @@ export default function Register() {
   const handleFileDrop = (acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
       const file = acceptedFiles[0];
+
+      if (file.size > MAX_VALID_ID_SIZE_BYTES) {
+        const sizeError = 'Valid ID must be 5MB or smaller (JPG, PNG, or PDF).';
+        setErrors(prev => ({ ...prev, validId: sizeError }));
+        Swal.fire({
+          icon: 'error',
+          title: 'File too large',
+          text: sizeError,
+          confirmButtonColor: '#000000',
+        });
+        return;
+      }
+
       setFormData(prev => ({
         ...prev,
         validId: file

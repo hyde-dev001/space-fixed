@@ -59,6 +59,23 @@ if (typeof window !== 'undefined') {
             }
         }
 
-        return ziggyRoute(name, params, absolute, config || runtimeZiggy);
+        const resolved = ziggyRoute(name, params, absolute, config || runtimeZiggy);
+
+        // Guard against misconfigured APP_URL in deployment (e.g. localhost),
+        // which can make Inertia perform XHR navigation to the wrong origin.
+        if (typeof resolved === 'string' && /^https?:\/\//i.test(resolved)) {
+            try {
+                const parsedUrl = new URL(resolved);
+                const currentOrigin = window.location?.origin;
+
+                if (currentOrigin && parsedUrl.origin !== currentOrigin) {
+                    return `${parsedUrl.pathname}${parsedUrl.search}${parsedUrl.hash}`;
+                }
+            } catch (_error) {
+                // If URL parsing fails, preserve original behavior.
+            }
+        }
+
+        return resolved;
     };
 }
