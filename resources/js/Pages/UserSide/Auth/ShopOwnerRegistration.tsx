@@ -84,8 +84,12 @@ interface ExistingDocumentPayload {
 
 interface ResubmissionPayload {
   isResubmission: boolean;
-  submitUrl: string;
+  submitUrl: string | null;
   rejectionReason?: string | null;
+  maxAttempts?: number;
+  usedAttempts?: number;
+  remainingAttempts?: number;
+  limitReached?: boolean;
   form: {
     firstName: string;
     lastName: string;
@@ -114,6 +118,10 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
   type AdditionalDocument = { id: number; file: File | null; fileName: string };
 
   const isResubmission = Boolean(resubmission?.isResubmission);
+  const resubmissionMaxAttempts = resubmission?.maxAttempts ?? 3;
+  const resubmissionUsedAttempts = resubmission?.usedAttempts ?? 0;
+  const resubmissionRemainingAttempts = resubmission?.remainingAttempts ?? Math.max(0, resubmissionMaxAttempts - resubmissionUsedAttempts);
+  const resubmissionLimitReached = Boolean(resubmission?.limitReached) || (isResubmission && resubmissionRemainingAttempts <= 0);
   const existingDocuments = {
     dti: resubmission?.documents?.dti_registration ?? null,
     mayors_permit: resubmission?.documents?.mayors_permit ?? null,
@@ -157,6 +165,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
   );
   const [isSendingEmailCode, setIsSendingEmailCode] = useState(false);
   const [isVerifyingEmailCode, setIsVerifyingEmailCode] = useState(false);
+  const [availabilityNote, setAvailabilityNote] = useState('');
 
   // Geofence state
   const [geoLat, setGeoLat] = useState(
@@ -627,7 +636,14 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     };
   };
 
-  const checkEmailAvailability = async (email: string): Promise<{ available: boolean; message?: string }> => {
+  const checkEmailAvailability = async (email: string): Promise<{
+    available: boolean;
+    message?: string;
+    isRejectedShopOwnerEmail?: boolean;
+    maxResubmissionAttempts?: number;
+    rejectedUsedAttempts?: number;
+    rejectedRemainingAttempts?: number;
+  }> => {
     try {
       const response = await fetch(`/auth/check-email-availability?email=${encodeURIComponent(email)}`, {
         method: 'GET',
@@ -640,6 +656,10 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
       return {
         available: Boolean(data?.available),
         message: typeof data?.message === 'string' ? data.message : undefined,
+        isRejectedShopOwnerEmail: Boolean(data?.is_rejected_shop_owner_email),
+        maxResubmissionAttempts: Number(data?.max_resubmission_attempts || 0) || undefined,
+        rejectedUsedAttempts: Number(data?.rejected_used_attempts || 0) || 0,
+        rejectedRemainingAttempts: Number(data?.rejected_remaining_attempts || 0) || 0,
       };
     } catch {
       return {
@@ -663,6 +683,15 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     }
 
     const availability = await checkEmailAvailability(trimmedEmail);
+    if (availability.isRejectedShopOwnerEmail) {
+      const maxAttempts = availability.maxResubmissionAttempts ?? 3;
+      const usedAttempts = availability.rejectedUsedAttempts ?? 0;
+      const remainingAttempts = availability.rejectedRemainingAttempts ?? Math.max(0, maxAttempts - usedAttempts);
+      setAvailabilityNote(`Resubmission policy: ${usedAttempts}/${maxAttempts} used, ${remainingAttempts} remaining.`);
+    } else {
+      setAvailabilityNote('');
+    }
+
     if (!availability.available) {
       const message = availability.message || 'This email is already registered';
       setErrors(prev => ({ ...prev, email: message }));
@@ -795,6 +824,13 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
       const trimmedEmail = formData.email.trim();
       const result = await checkEmailAvailability(trimmedEmail);
 
+      if (result.isRejectedShopOwnerEmail) {
+        const maxAttempts = result.maxResubmissionAttempts ?? 3;
+        const usedAttempts = result.rejectedUsedAttempts ?? 0;
+        const remainingAttempts = result.rejectedRemainingAttempts ?? Math.max(0, maxAttempts - usedAttempts);
+        setAvailabilityNote(`Resubmission policy: ${usedAttempts}/${maxAttempts} used, ${remainingAttempts} remaining.`);
+      }
+
       if (!result.available) {
         const message = result.message || 'This email is already registered';
         const emailError = { email: message };
@@ -813,6 +849,16 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (resubmissionLimitReached) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Resubmission Limit Reached',
+        text: `You have reached the maximum of ${resubmissionMaxAttempts} resubmissions for this application.`,
+        confirmButtonColor: '#3085d6',
+      });
+      return;
+    }
 
     if (!isResubmission && !emailVerified) {
       setCurrentStep(1);
@@ -906,7 +952,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
           }
         });
 
-        const submitEndpoint = isResubmission ? (resubmission?.submitUrl || '') : route('shop-owner.register');
+        const submitEndpoint = isResubmission ? (resubmission?.submitUrl ?? '') : route('shop-owner.register');
         if (!submitEndpoint) {
           setIsSubmitting(false);
           Swal.fire({
@@ -1061,9 +1107,17 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                     <p className="mt-1 text-sm text-amber-800">
                       Your previous application was rejected. Update the details below, replace or add documents, then submit again.
                     </p>
+                    <p className="mt-2 text-sm text-amber-900">
+                      <span className="font-semibold">Attempts:</span> {resubmissionUsedAttempts}/{resubmissionMaxAttempts} used, {resubmissionRemainingAttempts} remaining
+                    </p>
                     {resubmission?.rejectionReason && (
                       <p className="mt-2 text-sm text-amber-900">
                         <span className="font-semibold">Rejection reason:</span> {resubmission.rejectionReason}
+                      </p>
+                    )}
+                    {resubmissionLimitReached && (
+                      <p className="mt-2 text-sm font-semibold text-red-700">
+                        Resubmission limit reached. You can no longer resubmit this application automatically.
                       </p>
                     )}
                   </div>
@@ -1149,6 +1203,9 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                       </div>
                     )}
                     {errors.email_verification && <p className="mt-1 text-sm text-red-600">{errors.email_verification}</p>}
+                    {availabilityNote && !errors.email && (
+                      <p className="mt-1 text-sm text-blue-700">{availabilityNote}</p>
+                    )}
                   </div>
                   <div>
                     <Label htmlFor="phone">Phone Number</Label>
@@ -1717,7 +1774,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                     <button
                       type="submit"
                       onClick={handleSubmit}
-                      disabled={isSubmitting || !caviteLocationState.allowed}
+                      disabled={isSubmitting || !caviteLocationState.allowed || resubmissionLimitReached}
                       className="w-full lg:w-auto px-6 py-3 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {isResubmission ? 'Resubmit Application' : 'Submit Registration'}

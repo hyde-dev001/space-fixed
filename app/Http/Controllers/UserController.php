@@ -26,6 +26,7 @@ use Illuminate\Support\Facades\Log;
  */
 class UserController extends Controller
 {
+    private const MAX_SHOP_OWNER_RESUBMISSION_ATTEMPTS = 3;
     private const SHOP_OWNER_LOGIN_2FA_TTL_MINUTES = 10;
     private const SHOP_OWNER_LOGIN_2FA_SESSION_KEY = 'shop_owner_2fa_entry';
 
@@ -61,6 +62,8 @@ class UserController extends Controller
         $existingShopOwner = ShopOwner::whereRaw('LOWER(email) = ?', [$normalizedEmail])->first();
         $existsInShopOwners = false;
         $isRejectedShopOwnerEmail = false;
+        $rejectedUsedAttempts = 0;
+        $rejectedRemainingAttempts = self::MAX_SHOP_OWNER_RESUBMISSION_ATTEMPTS;
 
         if ($existingShopOwner) {
             $statusValue = $existingShopOwner->status instanceof ShopOwnerStatus
@@ -69,6 +72,12 @@ class UserController extends Controller
 
             if ($statusValue === ShopOwnerStatus::REJECTED->value) {
                 $isRejectedShopOwnerEmail = true;
+                $rejectedUsedAttempts = max(0, (int) ($existingShopOwner->resubmission_count ?? 0));
+                $rejectedRemainingAttempts = max(0, self::MAX_SHOP_OWNER_RESUBMISSION_ATTEMPTS - $rejectedUsedAttempts);
+
+                if ($rejectedRemainingAttempts <= 0) {
+                    $existsInShopOwners = true;
+                }
             } else {
                 $existsInShopOwners = true;
             }
@@ -77,9 +86,14 @@ class UserController extends Controller
         $available = !($existsInEmployees || $existsInUsers || $existsInShopOwners);
 
         if (!$available) {
-            $message = 'This email is already registered';
+            if ($isRejectedShopOwnerEmail && $rejectedRemainingAttempts <= 0) {
+                $message = 'Resubmission limit reached. You can only resubmit up to ' . self::MAX_SHOP_OWNER_RESUBMISSION_ATTEMPTS . ' times.';
+            } else {
+                $message = 'This email is already registered';
+            }
         } elseif ($isRejectedShopOwnerEmail) {
-            $message = 'This email belongs to a previously rejected shop-owner application and can be used again.';
+            $nextAttempt = $rejectedUsedAttempts + 1;
+            $message = 'This email belongs to a previously rejected shop-owner application. Reapply attempt ' . $nextAttempt . ' of ' . self::MAX_SHOP_OWNER_RESUBMISSION_ATTEMPTS . ' is available.';
         } else {
             $message = 'Email is available';
         }
@@ -90,6 +104,9 @@ class UserController extends Controller
             'exists_in_users' => $existsInUsers,
             'exists_in_shop_owners' => $existsInShopOwners,
             'is_rejected_shop_owner_email' => $isRejectedShopOwnerEmail,
+            'max_resubmission_attempts' => self::MAX_SHOP_OWNER_RESUBMISSION_ATTEMPTS,
+            'rejected_used_attempts' => $rejectedUsedAttempts,
+            'rejected_remaining_attempts' => $rejectedRemainingAttempts,
             'message' => $message,
         ]);
     }

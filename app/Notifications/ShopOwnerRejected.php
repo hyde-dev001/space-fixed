@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\URL;
 
 class ShopOwnerRejected extends Notification
 {
+    private const MAX_RESUBMISSION_ATTEMPTS = 3;
+
     protected $shopOwner;
     protected $rejectionReason;
 
@@ -33,6 +35,9 @@ class ShopOwnerRejected extends Notification
      */
     public function toMail($notifiable): MailMessage
     {
+        $usedAttempts = max(0, (int) ($this->shopOwner->resubmission_count ?? 0));
+        $remainingAttempts = max(0, self::MAX_RESUBMISSION_ATTEMPTS - $usedAttempts);
+
         $resubmitUrl = URL::temporarySignedRoute(
             'shop-owner.resubmission.form',
             now()->addDays(14),
@@ -50,9 +55,19 @@ class ShopOwnerRejected extends Notification
             $message->line('**Reason for rejection:** ' . $this->rejectionReason);
         }
 
-        $message->line('You can review your previous submission and resubmit your application after updating your details or replacing/additional documents.')
-            ->action('Review and Resubmit Application', $resubmitUrl)
-            ->line('This resubmission link expires in 14 days for security purposes.')
+        $message->line('**Resubmission policy:** You can resubmit up to ' . self::MAX_RESUBMISSION_ATTEMPTS . ' times after rejection.')
+            ->line('**Attempts used:** ' . $usedAttempts . ' / ' . self::MAX_RESUBMISSION_ATTEMPTS)
+            ->line('**Attempts remaining:** ' . $remainingAttempts);
+
+        if ($remainingAttempts > 0) {
+            $message->line('You can review your previous submission and resubmit your application after updating your details or replacing/additional documents.')
+                ->action('Review and Resubmit Application', $resubmitUrl)
+                ->line('This resubmission link expires in 14 days for security purposes.');
+        } else {
+            $message->line('You have reached the maximum number of resubmissions for this application. Please contact support for manual review.');
+        }
+
+        $message
             ->line('If you believe this decision was made in error or if you have additional information to share, please contact support at [' . $supportEmail . '](mailto:' . $supportEmail . ').')
             ->line('We appreciate your understanding and wish you the best in your business endeavors.');
 

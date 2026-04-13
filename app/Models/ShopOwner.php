@@ -74,6 +74,7 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'operating_hours',      // JSON field storing weekly schedule
         'status',               // pending, approved, or rejected
         'rejection_reason',     // Optional reason if rejected
+        'resubmission_count',   // Number of times applicant has resubmitted after rejection
         'suspension_reason',    // Optional reason if suspended
         // Individual operating hours columns
         'monday_open', 'monday_close',
@@ -115,6 +116,7 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
         'status' => \App\Enums\ShopOwnerStatus::class,
+        'resubmission_count' => 'integer',
         'paymongo_secret_key' => 'encrypted', // Stored encrypted in DB
         'shop_latitude' => 'decimal:8',
         'shop_longitude' => 'decimal:8',

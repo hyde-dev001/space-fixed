@@ -32,6 +32,7 @@ use Illuminate\Support\Facades\Validator;
  */
 class ShopOwnerAuthController extends Controller
 {
+    private const MAX_RESUBMISSION_ATTEMPTS = 3;
     private const REGISTRATION_EMAIL_OTP_TTL_MINUTES = 10;
     private const REGISTRATION_EMAIL_OTP_MAX_ATTEMPTS = 5;
     private const REGISTRATION_EMAIL_VERIFIED_TTL_MINUTES = 60;
@@ -52,6 +53,10 @@ class ShopOwnerAuthController extends Controller
             abort(403, 'Only rejected applications can be resubmitted.');
         }
 
+        $usedAttempts = max(0, (int) ($shopOwner->resubmission_count ?? 0));
+        $remainingAttempts = max(0, self::MAX_RESUBMISSION_ATTEMPTS - $usedAttempts);
+        $limitReached = $remainingAttempts <= 0;
+
         $documents = $shopOwner->documents()->get()->groupBy('document_type');
         $toDocumentPayload = static function ($document) {
             if (!$document) {
@@ -66,17 +71,23 @@ class ShopOwnerAuthController extends Controller
             ];
         };
 
-        $submitUrl = URL::temporarySignedRoute(
-            'shop-owner.resubmission.submit',
-            now()->addDays(14),
-            ['shopOwner' => $shopOwner->id]
-        );
+        $submitUrl = $limitReached
+            ? null
+            : URL::temporarySignedRoute(
+                'shop-owner.resubmission.submit',
+                now()->addDays(14),
+                ['shopOwner' => $shopOwner->id]
+            );
 
         return Inertia::render('UserSide/Auth/ShopOwnerRegistration', [
             'resubmission' => [
                 'isResubmission' => true,
                 'submitUrl' => $submitUrl,
                 'rejectionReason' => $shopOwner->rejection_reason,
+                'maxAttempts' => self::MAX_RESUBMISSION_ATTEMPTS,
+                'usedAttempts' => $usedAttempts,
+                'remainingAttempts' => $remainingAttempts,
+                'limitReached' => $limitReached,
                 'form' => [
                     'firstName' => (string) ($shopOwner->first_name ?? ''),
                     'lastName' => (string) ($shopOwner->last_name ?? ''),
@@ -128,6 +139,17 @@ class ShopOwnerAuthController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Only rejected applications can be resubmitted.',
+            ], 422);
+        }
+
+        $usedAttempts = max(0, (int) ($shopOwner->resubmission_count ?? 0));
+        if ($usedAttempts >= self::MAX_RESUBMISSION_ATTEMPTS) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Resubmission limit reached. You can only resubmit up to ' . self::MAX_RESUBMISSION_ATTEMPTS . ' times.',
+                'errors' => [
+                    'email' => ['Resubmission limit reached. You can only resubmit up to ' . self::MAX_RESUBMISSION_ATTEMPTS . ' times.'],
+                ],
             ], 422);
         }
 
@@ -207,6 +229,7 @@ class ShopOwnerAuthController extends Controller
                 'shop_geofence_radius' => $validated['shop_geofence_radius'] ?? 100,
                 'status' => ShopOwnerStatus::PENDING->value,
                 'rejection_reason' => null,
+                'resubmission_count' => $usedAttempts + 1,
             ]);
 
             $shopOwner->documents()->update(['status' => 'pending']);
@@ -556,6 +579,12 @@ class ShopOwnerAuthController extends Controller
                 : null;
             $isReapplication = $existingRejectedShopOwner instanceof ShopOwner;
 
+            if ($isReapplication && (int) ($existingRejectedShopOwner->resubmission_count ?? 0) >= self::MAX_RESUBMISSION_ATTEMPTS) {
+                throw ValidationException::withMessages([
+                    'email' => ['Resubmission limit reached. You can only resubmit up to ' . self::MAX_RESUBMISSION_ATTEMPTS . ' times.'],
+                ]);
+            }
+
             $caviteLocationPolicy->assertRegistrationLocation(
                 $validated['shop_latitude'] ?? null,
                 $validated['shop_longitude'] ?? null,
@@ -592,6 +621,7 @@ class ShopOwnerAuthController extends Controller
                     'shop_geofence_radius' => $validated['shop_geofence_radius'] ?? 100,
                     'status' => 'pending',
                     'rejection_reason' => null,
+                    'resubmission_count' => (int) ($shopOwner->resubmission_count ?? 0) + 1,
                 ]);
 
                 $oldDocuments = $shopOwner->documents()->get();
@@ -621,6 +651,7 @@ class ShopOwnerAuthController extends Controller
                     'shop_geofence_radius' => $validated['shop_geofence_radius'] ?? 100,
                     // operating_hours intentionally omitted (removed client-side)
                     'status' => 'pending', // Requires admin approval
+                    'resubmission_count' => 0,
                 ]);
             }
 
@@ -754,6 +785,9 @@ class ShopOwnerAuthController extends Controller
 
         $rejectedShopOwnerId = null;
         $existsInShopOwners = false;
+        $isRejectedShopOwnerEmail = false;
+        $rejectedUsedAttempts = 0;
+        $rejectedRemainingAttempts = self::MAX_RESUBMISSION_ATTEMPTS;
 
         if ($existingShopOwner) {
             $statusValue = $existingShopOwner->status instanceof ShopOwnerStatus
@@ -762,6 +796,13 @@ class ShopOwnerAuthController extends Controller
 
             if ($statusValue === ShopOwnerStatus::REJECTED->value) {
                 $rejectedShopOwnerId = (int) $existingShopOwner->id;
+                $isRejectedShopOwnerEmail = true;
+                $rejectedUsedAttempts = max(0, (int) ($existingShopOwner->resubmission_count ?? 0));
+                $rejectedRemainingAttempts = max(0, self::MAX_RESUBMISSION_ATTEMPTS - $rejectedUsedAttempts);
+
+                if ($rejectedRemainingAttempts <= 0) {
+                    $existsInShopOwners = true;
+                }
             } else {
                 $existsInShopOwners = true;
             }
@@ -770,9 +811,14 @@ class ShopOwnerAuthController extends Controller
         $available = !($existsInEmployees || $existsInUsers || $existsInShopOwners);
 
         if (!$available) {
-            $message = 'This email is already registered';
+            if ($isRejectedShopOwnerEmail && $rejectedRemainingAttempts <= 0) {
+                $message = 'Resubmission limit reached. You can only resubmit up to ' . self::MAX_RESUBMISSION_ATTEMPTS . ' times.';
+            } else {
+                $message = 'This email is already registered';
+            }
         } elseif ($rejectedShopOwnerId !== null) {
-            $message = 'This email belongs to a previously rejected application and can be used to apply again.';
+            $nextAttempt = $rejectedUsedAttempts + 1;
+            $message = 'This email belongs to a previously rejected application. Reapply attempt ' . $nextAttempt . ' of ' . self::MAX_RESUBMISSION_ATTEMPTS . ' is available.';
         } else {
             $message = 'Email is available';
         }
@@ -781,6 +827,10 @@ class ShopOwnerAuthController extends Controller
             'available' => $available,
             'message' => $message,
             'rejected_shop_owner_id' => $rejectedShopOwnerId,
+            'is_rejected_shop_owner_email' => $isRejectedShopOwnerEmail,
+            'max_resubmission_attempts' => self::MAX_RESUBMISSION_ATTEMPTS,
+            'rejected_used_attempts' => $rejectedUsedAttempts,
+            'rejected_remaining_attempts' => $rejectedRemainingAttempts,
         ];
     }
 
