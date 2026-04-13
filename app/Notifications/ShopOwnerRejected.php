@@ -2,16 +2,12 @@
 
 namespace App\Notifications;
 
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Facades\URL;
 
-class ShopOwnerRejected extends Notification implements ShouldQueue
+class ShopOwnerRejected extends Notification
 {
-    use Queueable;
-
     protected $shopOwner;
     protected $rejectionReason;
 
