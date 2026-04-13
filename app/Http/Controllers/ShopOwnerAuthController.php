@@ -14,7 +14,6 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
-use Illuminate\Auth\Events\Registered;
 use App\Rules\NotDisposableEmail;
 use Inertia\Inertia;
 use Inertia\Response as InertiaResponse;
@@ -471,7 +470,7 @@ class ShopOwnerAuthController extends Controller
             $validated = $request->validate([
                 'first_name' => 'required|string|max:255|min:2',
                 'last_name' => 'required|string|max:255|min:2',
-                'email' => ['required', 'string', 'email', 'max:255', 'unique:shop_owners,email', new NotDisposableEmail()],
+                'email' => ['required', 'string', 'email', 'max:255', new NotDisposableEmail()],
                 'phone' => ['required', 'regex:/^\d{11}$/'],
                 'business_name' => 'required|string|max:255',
                 'business_address' => 'required|string|max:500',
@@ -500,7 +499,6 @@ class ShopOwnerAuthController extends Controller
                 'last_name.min' => 'Last name must be at least 2 characters.',
                 'email.required' => 'Please enter your email address.',
                 'email.email' => 'Please enter a valid email address (example: name@email.com).',
-                'email.unique' => 'This email is already registered. Try another email or sign in instead.',
                 'phone.required' => 'Please enter your phone number.',
                 'phone.regex' => 'Phone number must be exactly 11 digits (example: 09171234567).',
                 'business_name.required' => 'Please enter your shop name.',
@@ -540,7 +538,23 @@ class ShopOwnerAuthController extends Controller
             ]);
 
             $normalizedEmail = $this->normalizeEmail((string) ($validated['email'] ?? ''));
+
+            $availability = $this->checkRegistrationEmailAvailability($normalizedEmail);
+            if (!$availability['available']) {
+                throw ValidationException::withMessages([
+                    'email' => [$availability['message'] ?? 'This email is already registered'],
+                ]);
+            }
+
             $this->assertRegistrationEmailVerified($normalizedEmail);
+
+            $rejectedShopOwnerId = isset($availability['rejected_shop_owner_id'])
+                ? (int) $availability['rejected_shop_owner_id']
+                : 0;
+            $existingRejectedShopOwner = $rejectedShopOwnerId > 0
+                ? ShopOwner::find($rejectedShopOwnerId)
+                : null;
+            $isReapplication = $existingRejectedShopOwner instanceof ShopOwner;
 
             $caviteLocationPolicy->assertRegistrationLocation(
                 $validated['shop_latitude'] ?? null,
@@ -557,26 +571,58 @@ class ShopOwnerAuthController extends Controller
 
             DB::beginTransaction();
 
-            // Create shop owner with pending status
-            $shopOwner = ShopOwner::create([
-                'first_name' => $validated['first_name'],
-                'last_name' => $validated['last_name'],
-                'email' => $normalizedEmail,
-                'phone' => $validated['phone'],
-                'password' => null, // Will be set after admin approval via email
-                'business_name' => $validated['business_name'],
-                'business_address' => $validated['business_address'],
-                'postal_code' => $validated['postal_code'] ?? $validated['zip_code'] ?? null,
-                'business_type' => $validated['business_type'],
-                'registration_type' => $validated['registration_type'],
-                'attendance_geofence_enabled' => (bool) ($validated['attendance_geofence_enabled'] ?? false),
-                'shop_latitude' => $validated['shop_latitude'] ?? null,
-                'shop_longitude' => $validated['shop_longitude'] ?? null,
-                'shop_address' => $validated['shop_address'] ?? $validated['business_address'],
-                'shop_geofence_radius' => $validated['shop_geofence_radius'] ?? 100,
-                // operating_hours intentionally omitted (removed client-side)
-                'status' => 'pending', // Requires admin approval
-            ]);
+            if ($isReapplication) {
+                $shopOwner = $existingRejectedShopOwner;
+
+                $shopOwner->update([
+                    'first_name' => $validated['first_name'],
+                    'last_name' => $validated['last_name'],
+                    'email' => $normalizedEmail,
+                    'phone' => $validated['phone'],
+                    'password' => null,
+                    'business_name' => $validated['business_name'],
+                    'business_address' => $validated['business_address'],
+                    'postal_code' => $validated['postal_code'] ?? $validated['zip_code'] ?? null,
+                    'business_type' => $validated['business_type'],
+                    'registration_type' => $validated['registration_type'],
+                    'attendance_geofence_enabled' => (bool) ($validated['attendance_geofence_enabled'] ?? false),
+                    'shop_latitude' => $validated['shop_latitude'] ?? null,
+                    'shop_longitude' => $validated['shop_longitude'] ?? null,
+                    'shop_address' => $validated['shop_address'] ?? $validated['business_address'],
+                    'shop_geofence_radius' => $validated['shop_geofence_radius'] ?? 100,
+                    'status' => 'pending',
+                    'rejection_reason' => null,
+                ]);
+
+                $oldDocuments = $shopOwner->documents()->get();
+                foreach ($oldDocuments as $oldDocument) {
+                    if (!empty($oldDocument->file_path)) {
+                        Storage::disk('public')->delete($oldDocument->file_path);
+                    }
+                }
+                $shopOwner->documents()->delete();
+            } else {
+                // Create shop owner with pending status
+                $shopOwner = ShopOwner::create([
+                    'first_name' => $validated['first_name'],
+                    'last_name' => $validated['last_name'],
+                    'email' => $normalizedEmail,
+                    'phone' => $validated['phone'],
+                    'password' => null, // Will be set after admin approval via email
+                    'business_name' => $validated['business_name'],
+                    'business_address' => $validated['business_address'],
+                    'postal_code' => $validated['postal_code'] ?? $validated['zip_code'] ?? null,
+                    'business_type' => $validated['business_type'],
+                    'registration_type' => $validated['registration_type'],
+                    'attendance_geofence_enabled' => (bool) ($validated['attendance_geofence_enabled'] ?? false),
+                    'shop_latitude' => $validated['shop_latitude'] ?? null,
+                    'shop_longitude' => $validated['shop_longitude'] ?? null,
+                    'shop_address' => $validated['shop_address'] ?? $validated['business_address'],
+                    'shop_geofence_radius' => $validated['shop_geofence_radius'] ?? 100,
+                    // operating_hours intentionally omitted (removed client-side)
+                    'status' => 'pending', // Requires admin approval
+                ]);
+            }
 
             // Upload and save documents
             $documents = [
@@ -628,18 +674,17 @@ class ShopOwnerAuthController extends Controller
                 'business_name' => $shopOwner->business_name,
             ]);
 
-            // Send email verification notification
-            event(new Registered($shopOwner));
-
-            // Auto-login the shop owner so they can access the verification page
+            // Auto-login the shop owner so they can access the pending approval page
             Auth::guard('shop_owner')->login($shopOwner);
 
             // Return success response
             if ($request->expectsJson()) {
                 return response()->json([
                     'success' => true,
-                    'message' => 'Registration successful! Please check your email to verify your account.',
-                    'redirect' => route('verification.notice'),
+                    'message' => $isReapplication
+                        ? 'Application resubmitted successfully! Your application is now pending admin review.'
+                        : 'Registration successful! Your application is now pending admin review.',
+                    'redirect' => route('shop-owner.pending-approval'),
                     'shop_owner' => [
                         'id' => $shopOwner->id,
                         'business_name' => $shopOwner->business_name,
@@ -650,8 +695,10 @@ class ShopOwnerAuthController extends Controller
                 ], 201);
             }
 
-            return redirect()->route('verification.notice')->with([
-                'success' => 'Registration successful! Please check your email to verify your account.',
+            return redirect()->route('shop-owner.pending-approval')->with([
+                'success' => $isReapplication
+                    ? 'Application resubmitted successfully! Your application is now pending admin review.'
+                    : 'Registration successful! Your application is now pending admin review.',
                 'email' => $shopOwner->email,
             ]);
         } catch (ValidationException $e) {
@@ -703,12 +750,37 @@ class ShopOwnerAuthController extends Controller
 
         $existsInEmployees = Employee::whereRaw('LOWER(email) = ?', [$normalizedEmail])->exists();
         $existsInUsers = User::whereRaw('LOWER(email) = ?', [$normalizedEmail])->exists();
-        $existsInShopOwners = ShopOwner::whereRaw('LOWER(email) = ?', [$normalizedEmail])->exists();
+        $existingShopOwner = ShopOwner::whereRaw('LOWER(email) = ?', [$normalizedEmail])->first();
+
+        $rejectedShopOwnerId = null;
+        $existsInShopOwners = false;
+
+        if ($existingShopOwner) {
+            $statusValue = $existingShopOwner->status instanceof ShopOwnerStatus
+                ? $existingShopOwner->status->value
+                : (string) $existingShopOwner->status;
+
+            if ($statusValue === ShopOwnerStatus::REJECTED->value) {
+                $rejectedShopOwnerId = (int) $existingShopOwner->id;
+            } else {
+                $existsInShopOwners = true;
+            }
+        }
+
         $available = !($existsInEmployees || $existsInUsers || $existsInShopOwners);
+
+        if (!$available) {
+            $message = 'This email is already registered';
+        } elseif ($rejectedShopOwnerId !== null) {
+            $message = 'This email belongs to a previously rejected application and can be used to apply again.';
+        } else {
+            $message = 'Email is available';
+        }
 
         return [
             'available' => $available,
-            'message' => $available ? 'Email is available' : 'This email is already registered',
+            'message' => $message,
+            'rejected_shop_owner_id' => $rejectedShopOwnerId,
         ];
     }
 
@@ -747,16 +819,6 @@ class ShopOwnerAuthController extends Controller
                 throw ValidationException::withMessages([
                     'email' => ['Invalid email or password.'],
                 ]);
-            }
-
-            // Check if email is verified
-            if (!$shopOwner->hasVerifiedEmail()) {
-                // Auto-login shop owner so they can access verification page
-                Auth::guard('shop_owner')->login($shopOwner);
-                
-                throw ValidationException::withMessages([
-                    'email' => ['Please verify your email address before logging in. Check your inbox for the verification link.'],
-                ])->redirectTo(route('verification.notice'));
             }
 
             // Check if account is approved

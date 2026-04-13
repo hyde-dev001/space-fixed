@@ -57,15 +57,40 @@ class UserController extends Controller
 
         $existsInEmployees = Employee::whereRaw('LOWER(email) = ?', [$normalizedEmail])->exists();
         $existsInUsers = User::whereRaw('LOWER(email) = ?', [$normalizedEmail])->exists();
-        $existsInShopOwners = ShopOwner::whereRaw('LOWER(email) = ?', [$normalizedEmail])->exists();
+
+        $existingShopOwner = ShopOwner::whereRaw('LOWER(email) = ?', [$normalizedEmail])->first();
+        $existsInShopOwners = false;
+        $isRejectedShopOwnerEmail = false;
+
+        if ($existingShopOwner) {
+            $statusValue = $existingShopOwner->status instanceof ShopOwnerStatus
+                ? $existingShopOwner->status->value
+                : (string) $existingShopOwner->status;
+
+            if ($statusValue === ShopOwnerStatus::REJECTED->value) {
+                $isRejectedShopOwnerEmail = true;
+            } else {
+                $existsInShopOwners = true;
+            }
+        }
+
         $available = !($existsInEmployees || $existsInUsers || $existsInShopOwners);
+
+        if (!$available) {
+            $message = 'This email is already registered';
+        } elseif ($isRejectedShopOwnerEmail) {
+            $message = 'This email belongs to a previously rejected shop-owner application and can be used again.';
+        } else {
+            $message = 'Email is available';
+        }
 
         return response()->json([
             'available' => $available,
             'exists_in_employees' => $existsInEmployees,
             'exists_in_users' => $existsInUsers,
             'exists_in_shop_owners' => $existsInShopOwners,
-            'message' => $available ? 'Email is available' : 'This email is already registered',
+            'is_rejected_shop_owner_email' => $isRejectedShopOwnerEmail,
+            'message' => $message,
         ]);
     }
 

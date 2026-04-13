@@ -38,6 +38,7 @@ class ShopOwnerRejected extends Notification
             now()->addDays(14),
             ['shopOwner' => $this->shopOwner->id]
         );
+        $supportEmail = (string) (config('mail.from.address') ?: 'support@solespace.io');
 
         $message = (new MailMessage)
             ->subject('Shop Owner Application Status - ' . config('app.name'))
@@ -52,8 +53,7 @@ class ShopOwnerRejected extends Notification
         $message->line('You can review your previous submission and resubmit your application after updating your details or replacing/additional documents.')
             ->action('Review and Resubmit Application', $resubmitUrl)
             ->line('This resubmission link expires in 14 days for security purposes.')
-            ->line('If you believe this decision was made in error or if you have additional information to share, please feel free to contact our support team.')
-            ->action('Contact Support', url('/contact'))
+            ->line('If you believe this decision was made in error or if you have additional information to share, please contact support at [' . $supportEmail . '](mailto:' . $supportEmail . ').')
             ->line('We appreciate your understanding and wish you the best in your business endeavors.');
 
         return $message;
