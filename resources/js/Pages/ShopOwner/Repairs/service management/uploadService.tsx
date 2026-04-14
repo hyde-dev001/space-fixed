@@ -207,15 +207,28 @@ export default function UploadService() {
 
   const fetchRepairMaterials = async () => {
     try {
-      const response = await axios.get('/api/shop-owner/repair-materials', {
-        params: { category: 'repair_materials' },
+      const response = await axios.get('/api/shop-owner/inventory/items', {
+        params: {
+          category: 'repair_materials',
+          per_page: 200,
+          _t: Date.now(),
+        },
       });
 
-      if (response.data?.success) {
-        setRepairMaterials(response.data.data || []);
-      } else {
-        setRepairMaterials([]);
-      }
+      const rows = Array.isArray(response.data?.data)
+        ? response.data.data
+        : [];
+
+      const normalized = rows
+        .map((item: any) => ({
+          id: Number(item?.id || 0),
+          name: String(item?.name || '').trim(),
+          available_quantity: Number(item?.available_quantity || 0),
+        }))
+        .filter((item: RepairMaterialOption) => item.id > 0 && item.name.length > 0)
+        .sort((a: RepairMaterialOption, b: RepairMaterialOption) => a.name.localeCompare(b.name));
+
+      setRepairMaterials(normalized);
     } catch {
       setRepairMaterials([]);
     }
@@ -526,6 +539,7 @@ export default function UploadService() {
   };
 
   const openEditModal = (service: Service) => {
+    void fetchRepairMaterials();
     const parsedDuration = parseDurationValue(service.duration);
 
     setSelectedService(service);
@@ -630,6 +644,7 @@ export default function UploadService() {
             <button
               onClick={() => {
                 resetForm();
+                void fetchRepairMaterials();
                 setIsAddModalOpen(true);
               }}
               className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"

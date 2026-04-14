@@ -3276,7 +3276,7 @@ class RepairWorkflowController extends Controller
         try {
             $user = Auth::guard('user')->user();
             $shopOwner = Auth::guard('shop_owner')->user();
-            $shopOwnerId = $user?->shop_owner_id ?? $shopOwner?->id;
+            $shopOwnerId = $shopOwner?->id ?? $user?->shop_owner_id;
 
             if (!$shopOwnerId) {
                 return response()->json([
