@@ -2831,9 +2831,6 @@ const PointOfSalePage = () => {
 												.filter((entry) => entry.productId === product.id)
 												.reduce((sum, entry) => sum + entry.qty, 0);
 											const selection = getRetailSelectionForProduct(product);
-											const selectedVariant = resolveRetailVariant(product, selection.size, selection.color);
-											const selectedStock = selectedVariant ? selectedVariant.stock : product.stock;
-											const sizeOptions = Array.from(new Set(product.variants.map((variant) => variant.size).filter((size) => size.length > 0)));
 											const colorOptions = Array.from(new Set(
 												(product.variants.some((variant) => variant.stock > 0)
 													? product.variants.filter((variant) => variant.stock > 0)
@@ -2841,6 +2838,25 @@ const PointOfSalePage = () => {
 													.map((variant) => variant.color)
 													.filter((color) => color.length > 0),
 											));
+											const selectedColor = colorOptions.find((color) => normalizeVariantToken(color) === normalizeVariantToken(selection.color))
+												?? colorOptions[0]
+												?? selection.color;
+											const variantsForSelectedColor = product.variants.filter((variant) => (
+												normalizeVariantToken(variant.color) === normalizeVariantToken(selectedColor)
+											));
+											const sizeSourceVariants = variantsForSelectedColor.length > 0
+												? (variantsForSelectedColor.some((variant) => variant.stock > 0)
+													? variantsForSelectedColor.filter((variant) => variant.stock > 0)
+													: variantsForSelectedColor)
+												: (product.variants.some((variant) => variant.stock > 0)
+													? product.variants.filter((variant) => variant.stock > 0)
+													: product.variants);
+											const sizeOptions = Array.from(new Set(sizeSourceVariants.map((variant) => variant.size).filter((size) => size.length > 0)));
+											const selectedSize = sizeOptions.find((size) => normalizeVariantToken(size) === normalizeVariantToken(selection.size))
+												?? sizeOptions[0]
+												?? selection.size;
+											const selectedVariant = resolveRetailVariant(product, selectedSize, selectedColor);
+											const selectedStock = selectedVariant ? selectedVariant.stock : product.stock;
 
 											return (
 												<div
@@ -2865,19 +2881,19 @@ const PointOfSalePage = () => {
 															<div className="mt-2 grid grid-cols-2 gap-2">
 																<select
 																	title={`Select size for ${product.name}`}
-																	value={selection.size}
+																	value={selectedSize}
 																	onChange={(event) => {
 																		const nextSize = event.target.value;
 																		const hasCurrentColorForSize = product.variants.some((variant) => (
 																			normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize)
-																			&& normalizeVariantToken(variant.color) === normalizeVariantToken(selection.color)
+																			&& normalizeVariantToken(variant.color) === normalizeVariantToken(selectedColor)
 																		));
 																		const firstColorForSize = product.variants.find((variant) => normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize) && variant.stock > 0)?.color
 																			?? product.variants.find((variant) => normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize))?.color
 																			?? "";
 																		updateRetailSelection(product.id, {
 																			size: nextSize,
-																			color: hasCurrentColorForSize ? selection.color : firstColorForSize,
+																			color: hasCurrentColorForSize ? selectedColor : firstColorForSize,
 																		});
 																	}}
 																	className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700 outline-none focus:border-blue-500"
@@ -2888,19 +2904,19 @@ const PointOfSalePage = () => {
 																</select>
 																<select
 																	title={`Select color for ${product.name}`}
-																	value={selection.color}
+																	value={selectedColor}
 																	onChange={(event) => {
 																		const nextColor = event.target.value;
 																		const hasCurrentSizeForColor = product.variants.some((variant) => (
 																			normalizeVariantToken(variant.color) === normalizeVariantToken(nextColor)
-																			&& normalizeVariantToken(variant.size) === normalizeVariantToken(selection.size)
+																			&& normalizeVariantToken(variant.size) === normalizeVariantToken(selectedSize)
 																		));
 																		const firstSizeForColor = product.variants.find((variant) => normalizeVariantToken(variant.color) === normalizeVariantToken(nextColor) && variant.stock > 0)?.size
 																			?? product.variants.find((variant) => normalizeVariantToken(variant.color) === normalizeVariantToken(nextColor))?.size
 																			?? "";
 																		updateRetailSelection(product.id, {
 																			color: nextColor,
-																			size: hasCurrentSizeForColor ? selection.size : firstSizeForColor,
+																			size: hasCurrentSizeForColor ? selectedSize : firstSizeForColor,
 																		});
 																	}}
 																	className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700 outline-none focus:border-blue-500"
@@ -2964,8 +2980,6 @@ const PointOfSalePage = () => {
 													const sourceProduct = retailProducts.find((entry) => entry.id === item.productId);
 													if (!sourceProduct || sourceProduct.variants.length === 0) return null;
 
-													const sizeOptions = Array.from(new Set(sourceProduct.variants.map((variant) => variant.size).filter((size) => size.length > 0)));
-													const selectedSize = item.size ?? sizeOptions[0] ?? "";
 													const colorOptions = Array.from(new Set(
 														(sourceProduct.variants.some((variant) => variant.stock > 0)
 															? sourceProduct.variants.filter((variant) => variant.stock > 0)
@@ -2973,7 +2987,24 @@ const PointOfSalePage = () => {
 															.map((variant) => variant.color)
 															.filter((color) => color.length > 0),
 													));
-													const selectedColor = item.color ?? colorOptions[0] ?? "";
+													const selectedColor = colorOptions.find((color) => normalizeVariantToken(color) === normalizeVariantToken(item.color ?? ""))
+														?? colorOptions[0]
+														?? item.color
+														?? "";
+													const variantsForSelectedColor = sourceProduct.variants.filter((variant) => (
+														normalizeVariantToken(variant.color) === normalizeVariantToken(selectedColor)
+													));
+													const sizeSourceVariants = variantsForSelectedColor.length > 0
+														? (variantsForSelectedColor.some((variant) => variant.stock > 0)
+															? variantsForSelectedColor.filter((variant) => variant.stock > 0)
+															: variantsForSelectedColor)
+														: (sourceProduct.variants.some((variant) => variant.stock > 0)
+															? sourceProduct.variants.filter((variant) => variant.stock > 0)
+															: sourceProduct.variants);
+													const sizeOptions = Array.from(new Set(sizeSourceVariants.map((variant) => variant.size).filter((size) => size.length > 0)));
+													const selectedSize = sizeOptions.find((size) => normalizeVariantToken(size) === normalizeVariantToken(item.size ?? ""))
+														?? sizeOptions[0]
+														?? "";
 
 													return (
 														<div className="mb-2 grid grid-cols-2 gap-2">

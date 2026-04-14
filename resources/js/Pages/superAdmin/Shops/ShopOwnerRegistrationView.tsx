@@ -171,11 +171,22 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [selectedRegistration, setSelectedRegistration] = useState<Registration | null>(null);
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
+  const [selectedRejectReason, setSelectedRejectReason] = useState('');
+  const [otherRejectReason, setOtherRejectReason] = useState('');
   const [rejectionReason, setRejectionReason] = useState('');
   const [registrationToReject, setRegistrationToReject] = useState<Registration | null>(null);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(7);
+
+  const rejectReasonOptions = [
+    'Incomplete documentation',
+    'Invalid business information',
+    'Business type not eligible',
+    'Duplicate application',
+    'Verification failed',
+    'Other'
+  ] as const;
 
   const getDocumentTypeLabel = (documentType?: string, otherIndex = 1) => {
     const normalized = (documentType || '').toLowerCase();
@@ -200,6 +211,12 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
       .split('_')
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
       .join(' ');
+  };
+
+  const buildProfessionalRejectionMessage = (registration: Registration, reason: string) => {
+    const registrationTypeLabel = formatRegistrationType(registration.registrationType);
+
+    return `After reviewing your application for ${registration.businessName} (${registrationTypeLabel}), we regret to inform you that we are unable to approve your registration at this time due to ${reason}. Please review the submission requirements, address the concern, and resubmit your application. If you believe this decision was made in error, you may resubmit with updated and complete information for re-evaluation.`;
   };
 
   const handleApprove = async (id: number) => {
@@ -242,6 +259,8 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
 
   const handleReject = (registration: Registration) => {
     setRegistrationToReject(registration);
+    setSelectedRejectReason('');
+    setOtherRejectReason('');
     setRejectionReason('');
     setIsRejectModalOpen(true);
   };
@@ -277,6 +296,8 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
               prev.map(reg => reg.id === registrationToReject.id ? { ...reg, status: "rejected" as const } : reg)
             );
             setRegistrationToReject(null);
+            setSelectedRejectReason('');
+            setOtherRejectReason('');
             setRejectionReason('');
             Swal.fire({
               icon: 'success',
@@ -793,25 +814,34 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
 
                       <div className="space-y-3">
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                          Select a reason or enter custom reason:
+                          Select a reason:
                         </label>
 
                         <div className="space-y-2">
-                          {[
-                            "Incomplete documentation",
-                            "Invalid business information",
-                            "Business type not eligible",
-                            "Duplicate application",
-                            "Verification failed",
-                            "Other"
-                          ].map((reason) => (
+                          {rejectReasonOptions.map((reason) => (
                             <label key={reason} className="flex items-center space-x-3 cursor-pointer">
                               <input
                                 type="radio"
                                 name="rejectionReason"
                                 value={reason}
-                                checked={rejectionReason === reason}
-                                onChange={(e) => setRejectionReason(e.target.value)}
+                                checked={selectedRejectReason === reason}
+                                onChange={(e) => {
+                                  const selectedReason = e.target.value;
+                                  setSelectedRejectReason(selectedReason);
+
+                                  if (selectedReason === 'Other') {
+                                    const trimmedOtherReason = otherRejectReason.trim();
+                                    setRejectionReason(
+                                      trimmedOtherReason
+                                        ? buildProfessionalRejectionMessage(registrationToReject, trimmedOtherReason)
+                                        : ''
+                                    );
+                                    return;
+                                  }
+
+                                  setOtherRejectReason('');
+                                  setRejectionReason(buildProfessionalRejectionMessage(registrationToReject, selectedReason.toLowerCase()));
+                                }}
                                 className="h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 dark:border-gray-600"
                               />
                               <span className="text-sm text-gray-700 dark:text-gray-300">{reason}</span>
@@ -819,24 +849,40 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
                           ))}
                         </div>
 
+                        {selectedRejectReason === 'Other' && (
+                          <div className="mt-4">
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                              Custom Reason <span className="text-red-500">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={otherRejectReason}
+                              onChange={(e) => {
+                                const customReason = e.target.value;
+                                setOtherRejectReason(customReason);
+
+                                const trimmedReason = customReason.trim();
+                                setRejectionReason(
+                                  trimmedReason
+                                    ? buildProfessionalRejectionMessage(registrationToReject, trimmedReason)
+                                    : ''
+                                );
+                              }}
+                              placeholder="Enter the specific reason for rejection"
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                            />
+                          </div>
+                        )}
+
                         <div className="mt-4">
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            Additional Details (Optional)
+                            Rejection Message to Applicant
                           </label>
                           <textarea
-                            value={rejectionReason.startsWith('Incomplete documentation') ||
-                                   rejectionReason.startsWith('Invalid business information') ||
-                                   rejectionReason.startsWith('Business type not eligible') ||
-                                   rejectionReason.startsWith('Duplicate application') ||
-                                   rejectionReason.startsWith('Verification failed') ||
-                                   rejectionReason === 'Other' ? '' : rejectionReason}
-                            onChange={(e) => {
-                              if (e.target.value) {
-                                setRejectionReason(e.target.value);
-                              }
-                            }}
-                            placeholder="Enter additional details or custom reason..."
-                            rows={3}
+                            value={rejectionReason}
+                            onChange={(e) => setRejectionReason(e.target.value)}
+                            placeholder="Select a reason to auto-generate a professional message"
+                            rows={5}
                             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent dark:bg-gray-700 dark:text-white resize-none"
                           />
                         </div>
@@ -852,7 +898,7 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
                       <Button
                         onClick={handleConfirmReject}
                         className="bg-red-600 hover:bg-red-700 text-white"
-                        disabled={!rejectionReason.trim()}
+                        disabled={!selectedRejectReason || (selectedRejectReason === 'Other' && !otherRejectReason.trim()) || !rejectionReason.trim()}
                       >
                         <AlertIcon className="h-4 w-4 mr-2" />
                         Reject Application
