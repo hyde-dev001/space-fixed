@@ -264,7 +264,7 @@ class NotificationCriticalFlowsTest extends TestCase
     }
 
     #[Test]
-    public function repair_refund_repairer_reject_emits_finance_review_notification(): void
+    public function repair_refund_repairer_reject_emits_owner_review_notification_for_individual_shop(): void
     {
         $fixture = $this->createRepairRefundFixture('online_myrepair');
 
@@ -284,8 +284,9 @@ class NotificationCriticalFlowsTest extends TestCase
         );
 
         $this->assertDatabaseHas('notifications', [
-            'user_id' => $financeUser->id,
-            'title' => 'Repair Refund Needs Finance Review',
+            'shop_owner_id' => $fixture['shop_owner']->id,
+            'title' => 'Repair Refund Requires Review',
+            'type' => 'refund_request',
         ]);
     }
 

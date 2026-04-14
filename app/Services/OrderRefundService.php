@@ -263,8 +263,9 @@ class OrderRefundService
             (float) ($refund->amount ?? 0)
         );
 
-        $registrationType = strtolower(trim((string) ($order->shopOwner?->registration_type ?? '')));
-        $isIndividualRegistration = $registrationType === 'individual';
+        $isIndividualRegistration = $this->isIndividualRegistrationType(
+            (string) ($order->shopOwner?->registration_type ?? '')
+        );
 
         // Individual shops should route refund approvals directly to shop owner without finance pre-approval.
         if ($isIndividualRegistration) {
@@ -1077,8 +1078,9 @@ class OrderRefundService
             (int) ($refund->shop_owner_id ?? 0),
             (float) ($refund->amount ?? 0)
         );
-        $registrationType = strtolower(trim((string) ($order->shopOwner?->registration_type ?? '')));
-        $isIndividualRegistration = $registrationType === 'individual';
+        $isIndividualRegistration = $this->isIndividualRegistrationType(
+            (string) ($order->shopOwner?->registration_type ?? '')
+        );
 
         $data = $this->buildRefundNotificationData($refund, [
             'stage' => 'submitted',
@@ -1174,6 +1176,19 @@ class OrderRefundService
                 'high'
             );
             return;
+        }
+
+        if ($stage === 'shop_owner' && $isIndividualRegistration && $previousShopOwnerStatus !== 'approved' && $currentShopOwnerStatus === 'approved') {
+            $this->notificationService->sendToShopOwner(
+                shopOwnerId: (int) ($refund->shop_owner_id ?? 0),
+                type: NotificationType::REFUND_REQUEST,
+                title: 'Refund Approved',
+                message: "Refund for order #{$data['order_number']} has been approved and is awaiting return shipment confirmation.",
+                data: $data,
+                actionUrl: '/shop-owner/refund-approvals',
+                priority: 'high',
+                requiresAction: true,
+            );
         }
 
         if ($currentFinanceStatus === 'approved' && $currentShopOwnerStatus === 'approved') {
@@ -1288,6 +1303,21 @@ class OrderRefundService
         }
 
         return $filtered;
+    }
+
+    private function isIndividualRegistrationType(string $registrationType): bool
+    {
+        $normalized = strtolower(trim($registrationType));
+
+        if ($normalized === 'individual') {
+            return true;
+        }
+
+        if ($normalized === '' || $normalized === 'company') {
+            return false;
+        }
+
+        return str_contains($normalized, 'individual') || str_contains($normalized, 'sole');
     }
 
     /** @return array<string, bool>|null */

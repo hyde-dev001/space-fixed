@@ -1042,7 +1042,7 @@ class RepairPosRefundService
 
             $orderNumber = (string) ($source->receipt?->receipt_no ?? $source->transaction_no ?? $refund->refund_no);
 
-            $this->notificationService->notifyRefundRequest((int) $refund->shop_owner_id, [
+            $notification = $this->notificationService->notifyRefundRequest((int) $refund->shop_owner_id, [
                 'refund_id' => (int) $refund->id,
                 'refund_no' => (string) $refund->refund_no,
                 'order_number' => $orderNumber,
@@ -1050,6 +1050,27 @@ class RepairPosRefundService
                 'workflow_source' => (string) ($refund->workflow_source ?? 'pos'),
                 'status' => (string) ($refund->status ?? 'requested'),
             ]);
+
+            // Governance notifications must still be visible even if preference resolution returns null.
+            if (!$notification && (int) $refund->shop_owner_id > 0) {
+                Notification::create([
+                    'shop_owner_id' => (int) $refund->shop_owner_id,
+                    'type' => NotificationType::REFUND_REQUEST->value,
+                    'priority' => 'high',
+                    'title' => 'Repair Refund Approval Required',
+                    'message' => "Repair refund request {$refund->refund_no} requires approval.",
+                    'data' => [
+                        'refund_id' => (int) $refund->id,
+                        'refund_no' => (string) $refund->refund_no,
+                        'order_number' => $orderNumber,
+                        'amount' => number_format($requestedAmount, 2, '.', ''),
+                        'workflow_source' => (string) ($refund->workflow_source ?? 'pos'),
+                        'status' => (string) ($refund->status ?? 'requested'),
+                    ],
+                    'action_url' => '/shop-owner/refund-approvals',
+                    'shop_id' => (int) $refund->shop_owner_id,
+                ]);
+            }
         } catch (\Throwable $exception) {
             Log::warning('Failed to dispatch repair refund request notification.', [
                 'refund_id' => (int) $refund->id,
@@ -1082,7 +1103,17 @@ class RepairPosRefundService
             return false;
         }
 
-        return (string) (ShopOwner::query()->whereKey($shopOwnerId)->value('registration_type') ?? '') === 'individual';
+        $registrationType = strtolower(trim((string) (ShopOwner::query()->whereKey($shopOwnerId)->value('registration_type') ?? '')));
+
+        if ($registrationType === 'individual') {
+            return true;
+        }
+
+        if ($registrationType === '' || $registrationType === 'company') {
+            return false;
+        }
+
+        return str_contains($registrationType, 'individual') || str_contains($registrationType, 'sole');
     }
 
     private function sumRepairPosPaidAmount(int $repairId): float
