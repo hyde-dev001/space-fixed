@@ -28,6 +28,8 @@ class ReportShopController extends Controller
             return response()->json(['message' => 'Unauthorized.'], 401);
         }
 
+        $normalizedEmail = strtolower(trim((string) ($user->email ?? '')));
+
         // Rule 3: Check for existing report (before heavy queries)
         $alreadyReported = ShopReport::where('user_id', $user->id)
             ->where('shop_owner_id', $shopId)
@@ -55,16 +57,37 @@ class ReportShopController extends Controller
 
         // Rule 2: Must have a completed transaction with the shop
         $completedOrder = Order::where('shop_owner_id', $shopId)
-            ->where('customer_id', $user->id)
             ->whereIn('status', ['delivered', 'completed'])
+            ->where(function ($query) use ($user, $normalizedEmail) {
+                $query->where('customer_id', $user->id);
+
+                // Legacy support: allow guest/older rows linked only by customer_email.
+                if ($normalizedEmail !== '') {
+                    $query->orWhere(function ($legacy) use ($normalizedEmail) {
+                        $legacy->whereNull('customer_id')
+                            ->whereRaw('LOWER(customer_email) = ?', [$normalizedEmail]);
+                    });
+                }
+            })
             ->first();
 
-        // Repairs: completed jobs only
+        // Repairs: completed customer-side outcomes
+        // (Completed tab in user flow maps to picked_up.)
         $completedRepair = null;
         if (!$completedOrder) {
             $completedRepair = RepairRequest::where('shop_owner_id', $shopId)
-                ->where('user_id', $user->id)
-                ->where('status', 'completed')
+            ->whereIn('status', ['completed', 'picked_up'])
+                ->where(function ($query) use ($user, $normalizedEmail) {
+                    $query->where('user_id', $user->id);
+
+                    // Legacy support: allow rows linked only by customer email.
+                    if ($normalizedEmail !== '') {
+                        $query->orWhere(function ($legacy) use ($normalizedEmail) {
+                            $legacy->whereNull('user_id')
+                                ->whereRaw('LOWER(email) = ?', [$normalizedEmail]);
+                        });
+                    }
+                })
                 ->first();
         }
 

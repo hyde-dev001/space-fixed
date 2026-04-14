@@ -61,6 +61,20 @@ class ShopAndCustomerReportFlowTest extends TestCase
         ]);
     }
 
+    private function createLegacyDeliveredOrderForEmail(string $email, ShopOwner $shopOwner): Order
+    {
+        return Order::create([
+            'shop_owner_id' => $shopOwner->id,
+            'customer_id' => null,
+            'order_number' => 'ORD-LEG-' . uniqid(),
+            'total_amount' => 899.99,
+            'status' => 'delivered',
+            'payment_status' => 'paid',
+            'customer_name' => 'Legacy Customer',
+            'customer_email' => $email,
+        ]);
+    }
+
     public function test_authenticated_customer_can_submit_shop_report(): void
     {
         $shopOwner = ShopOwner::factory()->approved()->create();
@@ -148,6 +162,88 @@ class ShopAndCustomerReportFlowTest extends TestCase
             ]);
 
         $this->assertSame(3, ShopReport::where('user_id', $customer->id)->count());
+    }
+
+    public function test_customer_can_submit_shop_report_with_completed_repair_transaction(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create();
+        $customer = User::factory()->create();
+
+        RepairRequest::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'status' => 'picked_up',
+        ]);
+
+        $response = $this->actingAs($customer, 'user')
+            ->postJson("/api/shops/{$shopOwner->id}/report", [
+                'reason' => 'misconduct',
+                'description' => 'Completed repair transaction exists, so reporting should be allowed for this shop.',
+            ]);
+
+        $response->assertStatus(201);
+
+        $this->assertDatabaseHas('shop_reports', [
+            'user_id' => $customer->id,
+            'shop_owner_id' => $shopOwner->id,
+            'transaction_type' => 'repair',
+            'status' => 'submitted',
+        ]);
+    }
+
+    public function test_customer_can_submit_shop_report_with_legacy_retail_transaction_linked_by_email(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create();
+        $customer = User::factory()->create([
+            'email' => 'legacy-retail@example.com',
+        ]);
+
+        $this->createLegacyDeliveredOrderForEmail($customer->email, $shopOwner);
+
+        $response = $this->actingAs($customer, 'user')
+            ->postJson("/api/shops/{$shopOwner->id}/report", [
+                'reason' => 'other',
+                'description' => 'Legacy email-only retail order should still count as completed transaction proof.',
+            ]);
+
+        $response->assertStatus(201);
+
+        $this->assertDatabaseHas('shop_reports', [
+            'user_id' => $customer->id,
+            'shop_owner_id' => $shopOwner->id,
+            'transaction_type' => 'order',
+            'status' => 'submitted',
+        ]);
+    }
+
+    public function test_customer_can_submit_shop_report_with_legacy_repair_transaction_linked_by_email(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create();
+        $customer = User::factory()->create([
+            'email' => 'legacy-repair@example.com',
+        ]);
+
+        RepairRequest::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => null,
+            'email' => $customer->email,
+            'status' => 'picked_up',
+        ]);
+
+        $response = $this->actingAs($customer, 'user')
+            ->postJson("/api/shops/{$shopOwner->id}/report", [
+                'reason' => 'misconduct',
+                'description' => 'Legacy email-only completed repair should still allow reporting eligibility for this shop.',
+            ]);
+
+        $response->assertStatus(201);
+
+        $this->assertDatabaseHas('shop_reports', [
+            'user_id' => $customer->id,
+            'shop_owner_id' => $shopOwner->id,
+            'transaction_type' => 'repair',
+            'status' => 'submitted',
+        ]);
     }
 
     public function test_authenticated_shop_owner_can_submit_customer_review_report(): void
