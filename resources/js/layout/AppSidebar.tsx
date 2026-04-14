@@ -28,6 +28,19 @@ const AppSidebar: React.FC = () => {
   // Check if user is super admin (from super_admin guard) or has super_admin role
   const isSuperAdmin = auth?.superAdmin?.role === 'super_admin' || auth?.user?.role === 'super_admin';
 
+  const routeFallbacks: Record<string, string> = {
+    'admin.suspension-appeals': '/admin/appeals',
+    landing: '/',
+  };
+
+  const resolveRouteHref = useCallback((routeName: string) => {
+    try {
+      return route(routeName);
+    } catch {
+      return routeFallbacks[routeName] ?? '#';
+    }
+  }, []);
+
   // Filter nav items based on role
   const getNavItems = (): NavItem[] => {
     const items: NavItem[] = [
@@ -250,7 +263,7 @@ const AppSidebar: React.FC = () => {
               ) : (
                 nav.route && (
                   <Link
-                    href={route(nav.route)}
+                    href={resolveRouteHref(nav.route)}
                     className={`menu-item group ${
                       isActive(nav.route) ? "menu-item-active" : "menu-item-inactive"
                     }`}
@@ -288,7 +301,7 @@ const AppSidebar: React.FC = () => {
                     {subItems.map((subItem) => (
                       <li key={subItem.name}>
                         <Link
-                          href={route(subItem.route)}
+                          href={resolveRouteHref(subItem.route)}
                           className={`menu-dropdown-item ${
                             isActive(subItem.route)
                               ? "menu-dropdown-item-active"
@@ -361,7 +374,7 @@ const AppSidebar: React.FC = () => {
           !isExpanded && !isHovered ? "lg:justify-center" : "justify-start"
         }`}
       >
-        <Link href={route("landing")} className="flex items-center gap-2 hover:scale-105 transition-transform duration-200">
+        <Link href={resolveRouteHref("landing")} className="flex items-center gap-2 hover:scale-105 transition-transform duration-200">
           {isExpanded || isHovered || isMobileOpen ? (
             <>
               <ShootingStarIcon className="w-6 h-6 text-yellow-500 animate-pulse" />
