@@ -368,6 +368,10 @@ Route::get('/shop-owner/pending-approval', function () {
     ]);
 })->middleware('auth:shop_owner')->name('shop-owner.pending-approval');
 
+Route::get('/shop-owner/pending-approval/view/{shopOwner}', [ShopOwnerAuthController::class, 'showPendingApprovalFromEmail'])
+    ->middleware('signed')
+    ->name('shop-owner.pending-approval.public');
+
 // Shop Owner Password Setup Routes (no authentication required - validated by token)
 Route::get('/shop-owner/setup-password', [ShopOwnerPasswordSetupController::class, 'show'])
     ->name('shop-owner.password.setup');

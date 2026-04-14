@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Mail\ShopOwnerApplicationUnderReviewMail;
 use App\Services\CaviteLocationPolicyService;
 use App\Models\ShopOwner;
 use App\Enums\ShopOwnerStatus;
@@ -122,6 +123,31 @@ class ShopOwnerAuthController extends Controller
                         })
                         ->all(),
                 ],
+            ],
+        ]);
+    }
+
+    /**
+     * Show pending-approval status page using a signed public email link.
+     */
+    public function showPendingApprovalFromEmail(Request $request, ShopOwner $shopOwner)
+    {
+        $statusValue = $shopOwner->status instanceof ShopOwnerStatus
+            ? $shopOwner->status->value
+            : (string) $shopOwner->status;
+
+        if ($statusValue === ShopOwnerStatus::APPROVED->value && !empty($shopOwner->password)) {
+            return redirect()->route('shop-owner.login.form')->with('success', 'Your application is approved. Please sign in to continue.');
+        }
+
+        return Inertia::render('Auth/PendingApproval', [
+            'shopOwner' => [
+                'email' => $shopOwner->email,
+                'business_name' => $shopOwner->business_name,
+                'status' => $statusValue,
+                'email_verified_at' => $shopOwner->email_verified_at,
+                'created_at' => $shopOwner->created_at,
+                'rejection_reason' => $shopOwner->rejection_reason,
             ],
         ]);
     }
@@ -294,6 +320,8 @@ class ShopOwnerAuthController extends Controller
                 'shop_owner_id' => $shopOwner->id,
                 'email' => $shopOwner->email,
             ]);
+
+            $this->sendApplicationUnderReviewEmail($shopOwner);
 
             if ($request->expectsJson()) {
                 return response()->json([
@@ -705,6 +733,8 @@ class ShopOwnerAuthController extends Controller
                 'business_name' => $shopOwner->business_name,
             ]);
 
+            $this->sendApplicationUnderReviewEmail($shopOwner);
+
             // Auto-login the shop owner so they can access the pending approval page
             Auth::guard('shop_owner')->login($shopOwner);
 
@@ -841,6 +871,29 @@ class ShopOwnerAuthController extends Controller
         if (!is_array($entry) || !($entry['verified'] ?? false)) {
             throw ValidationException::withMessages([
                 'email' => ['Please verify your email first before proceeding to the next step.'],
+            ]);
+        }
+    }
+
+    private function sendApplicationUnderReviewEmail(ShopOwner $shopOwner): void
+    {
+        $pendingApprovalUrl = URL::temporarySignedRoute(
+            'shop-owner.pending-approval.public',
+            now()->addDays(30),
+            ['shopOwner' => $shopOwner->id]
+        );
+
+        try {
+            Mail::to($shopOwner->email)->send(new ShopOwnerApplicationUnderReviewMail(
+                ownerName: trim(((string) $shopOwner->first_name) . ' ' . ((string) $shopOwner->last_name)),
+                businessName: (string) $shopOwner->business_name,
+                pendingApprovalUrl: $pendingApprovalUrl,
+            ));
+        } catch (\Throwable $e) {
+            Log::warning('Failed to send shop owner application under-review email', [
+                'shop_owner_id' => $shopOwner->id,
+                'email' => $shopOwner->email,
+                'error' => $e->getMessage(),
             ]);
         }
     }
