@@ -284,6 +284,10 @@ class UserAccessControlController extends Controller
             // Normalize role to uppercase to match database enum
             $validated['role'] = strtoupper($validated['role']);
 
+            // Keep the legacy users.role column enum-compatible.
+            // Cashier access is enforced via Spatie role + permissions.
+            $legacyUserRole = $validated['role'] === 'CASHIER' ? 'STAFF' : $validated['role'];
+
             // SECURITY: Validate role creation based on business type
             $roleValidation = $this->accessControl->validateRoleCreation($validated['role'], $shopOwner);
             if (!$roleValidation['allowed']) {
@@ -322,7 +326,7 @@ class UserAccessControlController extends Controller
             $inviteToken = Str::random(64);
             $inviteExpiresAt = Carbon::now()->addDays(7);
             
-            [$employee, $user] = DB::transaction(function () use ($validated, $shopOwner, $inviteToken, $inviteExpiresAt) {
+            [$employee, $user] = DB::transaction(function () use ($validated, $shopOwner, $inviteToken, $inviteExpiresAt, $legacyUserRole) {
                 $employeeData = collect($validated)->only([
                     'shop_owner_id','name','email','phone','address','position','department','branch','salary','hire_date','status'
                 ])->toArray();
@@ -345,7 +349,7 @@ class UserAccessControlController extends Controller
                     'phone' => $validated['phone'] ?? '',
                     'address' => $validated['address'] ?? '',
                     'shop_owner_id' => $shopOwner->id,
-                    'role' => $validated['role'], // Keep old role column for backward compatibility
+                    'role' => $legacyUserRole, // Keep old role column enum-compatible for backward compatibility
                     'position' => $validated['position'] ?? null,
                     'password' => null, // No password until invitation is accepted
                     'invite_token' => $inviteToken,

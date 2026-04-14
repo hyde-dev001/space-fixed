@@ -108,18 +108,18 @@ const MetricCard = ({
   tone: MetricTone;
   icon: React.ComponentType<{ className?: string }>;
 }) => {
-  const toneConfig = metricToneClasses[tone];
+  const toneClasses = metricToneClasses[tone];
 
   return (
     <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition-all duration-500 hover:-translate-y-1 hover:border-gray-300 hover:shadow-xl">
-      <div className={`absolute inset-0 bg-linear-to-br ${toneConfig.gradient} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
+      <div className={`absolute inset-0 bg-gradient-to-br ${toneClasses.gradient} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
 
       <div className="relative">
         <div className="mb-4 flex items-center justify-between">
-          <div className={`flex h-11 w-11 items-center justify-center rounded-xl bg-linear-to-br ${toneConfig.gradient} shadow-lg`}>
+          <div className={`flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br ${toneClasses.gradient} shadow-lg`}>
             <Icon className="h-5 w-5 text-white" />
           </div>
-          <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${toneConfig.chip}`}>
+          <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${toneClasses.chip}`}>
             {chip}
           </span>
         </div>
