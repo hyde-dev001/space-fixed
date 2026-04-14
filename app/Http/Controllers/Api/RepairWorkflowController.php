@@ -4193,6 +4193,16 @@ class RepairWorkflowController extends Controller
 
     private function resolveRepairMaterialActorContext(): array
     {
+        $shopOwner = Auth::guard('shop_owner')->user();
+        if ($shopOwner) {
+            return [
+                'shop_owner_id' => (int) ($shopOwner->id ?? 0),
+                'actor_user_id' => 0,
+                'enforce_assignment' => false,
+                'can_manage' => true,
+            ];
+        }
+
         $user = Auth::guard('user')->user();
         if ($user) {
             $isManager = method_exists($user, 'hasRole') ? (bool) $user->hasRole('Manager') : false;
@@ -4202,16 +4212,6 @@ class RepairWorkflowController extends Controller
                 'actor_user_id' => (int) ($user->id ?? 0),
                 'enforce_assignment' => true,
                 'can_manage' => $isManager,
-            ];
-        }
-
-        $shopOwner = Auth::guard('shop_owner')->user();
-        if ($shopOwner) {
-            return [
-                'shop_owner_id' => (int) ($shopOwner->id ?? 0),
-                'actor_user_id' => 0,
-                'enforce_assignment' => false,
-                'can_manage' => true,
             ];
         }
 
@@ -4573,7 +4573,10 @@ class RepairWorkflowController extends Controller
             foreach ($repairRequest->services as $service) {
                 $templateRows = $templateRows->concat($service->materialTemplateItems);
             }
-        } elseif ($repairRequest->repairPackage) {
+        }
+
+        // If no rows were resolved from explicitly attached services, use package services as fallback.
+        if ($templateRows->isEmpty() && $repairRequest->repairPackage) {
             foreach ($repairRequest->repairPackage->services as $packageService) {
                 $templateRows = $templateRows->concat($packageService->materialTemplateItems);
             }
@@ -4587,13 +4590,25 @@ class RepairWorkflowController extends Controller
             );
 
             $snapshotServiceIds = collect($snapshotRows)
-                ->map(fn ($row) => is_array($row) ? (int) ($row['id'] ?? 0) : 0)
+                ->map(function ($row) {
+                    if (!is_array($row)) {
+                        return 0;
+                    }
+
+                    return (int) (
+                        $row['id']
+                        ?? $row['service_id']
+                        ?? $row['repair_service_id']
+                        ?? data_get($row, 'service.id')
+                        ?? 0
+                    );
+                })
                 ->filter(fn ($id) => $id > 0)
                 ->unique()
                 ->values();
 
             if ($snapshotServiceIds->isNotEmpty()) {
-                $snapshotServices = RepairService::query()
+                $snapshotServices = RepairService::withTrashed()
                     ->whereIn('id', $snapshotServiceIds)
                     ->where('shop_owner_id', $repairRequest->shop_owner_id)
                     ->with(['materialTemplateItems'])
