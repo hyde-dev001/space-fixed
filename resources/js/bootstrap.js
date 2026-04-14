@@ -51,6 +51,7 @@ if (typeof window !== 'undefined') {
             if (!runtimeZiggy?.routes?.[trimmed]) {
                 const fallbackNamedRoutes = {
                     'password.request': '/forgot-password',
+                    'admin.suspension-appeals': '/admin/appeals',
                 };
 
                 if (Object.prototype.hasOwnProperty.call(fallbackNamedRoutes, trimmed)) {
