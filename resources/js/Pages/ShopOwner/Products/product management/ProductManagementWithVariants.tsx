@@ -313,6 +313,22 @@ export default function ProductManagement() {
   const normalizeCombinedColorIdentity = (value: string): string =>
     canonicalizeCombinedColorName(value).toLowerCase();
 
+  const toStoredVariantSize = (sizeValue: unknown, sizeSystem?: unknown): string => {
+    const normalizedSize = String(sizeValue ?? '').trim();
+    if (!normalizedSize) return '';
+
+    if (/^(US|UK|EU|AU|CN)\s*[:\-]?\s*/i.test(normalizedSize)) {
+      return normalizedSize.replace(/\s+/g, ' ').trim();
+    }
+
+    const normalizedSystem = String(sizeSystem ?? '').trim().toUpperCase();
+    const safeSystem = ['US', 'UK', 'EU', 'AU', 'CN'].includes(normalizedSystem)
+      ? normalizedSystem
+      : 'US';
+
+    return `${safeSystem} ${normalizedSize}`;
+  };
+
   const categoryOptions = [
     { label: 'SHOES', value: 'shoes' },
     { label: 'Women', value: 'women' },
@@ -570,6 +586,7 @@ export default function ProductManagement() {
               sizes: (cv.sizes || []).map((size: any) => ({
                 id: size.id?.toString() || Date.now().toString(),
                 size: size.size?.toString() || '',
+                size_system: size.size_system ? String(size.size_system).toUpperCase() : undefined,
                 quantity: size.quantity || 0,
                 sku: size.sku || '',
               })),
@@ -1297,7 +1314,11 @@ export default function ProductManagement() {
         sum + cv.sizes.reduce((s, size) => s + size.quantity, 0), 0
       );
 
-      const uniqueSizes = [...new Set(colorVariants.flatMap(cv => cv.sizes.map(s => s.size)))];
+      const uniqueSizes = [
+        ...new Set(
+          colorVariants.flatMap((cv) => cv.sizes.map((s) => toStoredVariantSize(s.size, (s as any).size_system))),
+        ),
+      ];
       const uniqueColors = [
         ...new Set(colorVariants.map((cv) => canonicalizeCombinedColorName(String(cv.color_name || '')))),
       ];
@@ -1308,7 +1329,7 @@ export default function ProductManagement() {
           const canonicalColorName = canonicalizeCombinedColorName(String(cv.color_name || ''));
 
           return {
-            size: size.size,
+            size: toStoredVariantSize(size.size, (size as any).size_system),
             color: canonicalColorName,
             quantity: size.quantity,
             image: '', // Will be set after color variant creation
