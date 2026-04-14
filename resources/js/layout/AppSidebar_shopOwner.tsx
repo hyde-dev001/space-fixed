@@ -194,7 +194,7 @@ const productManagementItems: NavItem[] = [
         <rect x="4" y="4" width="16" height="16" rx="2"></rect>
       </svg>
     ),
-    name: "Upload Stock Materials",
+    name: "Stock Management",
     route: "shop-owner.upload-stock-materials",
     path: "/shop-owner/upload-stock-materials",
   },

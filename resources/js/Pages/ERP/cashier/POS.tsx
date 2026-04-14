@@ -2835,8 +2835,9 @@ const PointOfSalePage = () => {
 											const selectedStock = selectedVariant ? selectedVariant.stock : product.stock;
 											const sizeOptions = Array.from(new Set(product.variants.map((variant) => variant.size).filter((size) => size.length > 0)));
 											const colorOptions = Array.from(new Set(
-												product.variants
-													.filter((variant) => selection.size.length === 0 || normalizeVariantToken(variant.size) === normalizeVariantToken(selection.size))
+												(product.variants.some((variant) => variant.stock > 0)
+													? product.variants.filter((variant) => variant.stock > 0)
+													: product.variants)
 													.map((variant) => variant.color)
 													.filter((color) => color.length > 0),
 											));
@@ -2867,10 +2868,17 @@ const PointOfSalePage = () => {
 																	value={selection.size}
 																	onChange={(event) => {
 																		const nextSize = event.target.value;
+																		const hasCurrentColorForSize = product.variants.some((variant) => (
+																			normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize)
+																			&& normalizeVariantToken(variant.color) === normalizeVariantToken(selection.color)
+																		));
 																		const firstColorForSize = product.variants.find((variant) => normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize) && variant.stock > 0)?.color
 																			?? product.variants.find((variant) => normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize))?.color
 																			?? "";
-																		updateRetailSelection(product.id, { size: nextSize, color: firstColorForSize });
+																		updateRetailSelection(product.id, {
+																			size: nextSize,
+																			color: hasCurrentColorForSize ? selection.color : firstColorForSize,
+																		});
 																	}}
 																	className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700 outline-none focus:border-blue-500"
 																>
@@ -2883,7 +2891,17 @@ const PointOfSalePage = () => {
 																	value={selection.color}
 																	onChange={(event) => {
 																		const nextColor = event.target.value;
-																		updateRetailSelection(product.id, { color: nextColor });
+																		const hasCurrentSizeForColor = product.variants.some((variant) => (
+																			normalizeVariantToken(variant.color) === normalizeVariantToken(nextColor)
+																			&& normalizeVariantToken(variant.size) === normalizeVariantToken(selection.size)
+																		));
+																		const firstSizeForColor = product.variants.find((variant) => normalizeVariantToken(variant.color) === normalizeVariantToken(nextColor) && variant.stock > 0)?.size
+																			?? product.variants.find((variant) => normalizeVariantToken(variant.color) === normalizeVariantToken(nextColor))?.size
+																			?? "";
+																		updateRetailSelection(product.id, {
+																			color: nextColor,
+																			size: hasCurrentSizeForColor ? selection.size : firstSizeForColor,
+																		});
 																	}}
 																	className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700 outline-none focus:border-blue-500"
 																>
@@ -2949,11 +2967,13 @@ const PointOfSalePage = () => {
 													const sizeOptions = Array.from(new Set(sourceProduct.variants.map((variant) => variant.size).filter((size) => size.length > 0)));
 													const selectedSize = item.size ?? sizeOptions[0] ?? "";
 													const colorOptions = Array.from(new Set(
-														sourceProduct.variants
-															.filter((variant) => normalizeVariantToken(variant.size) === normalizeVariantToken(selectedSize))
+														(sourceProduct.variants.some((variant) => variant.stock > 0)
+															? sourceProduct.variants.filter((variant) => variant.stock > 0)
+															: sourceProduct.variants)
 															.map((variant) => variant.color)
 															.filter((color) => color.length > 0),
 													));
+													const selectedColor = item.color ?? colorOptions[0] ?? "";
 
 													return (
 														<div className="mb-2 grid grid-cols-2 gap-2">
@@ -2962,10 +2982,14 @@ const PointOfSalePage = () => {
 																value={selectedSize}
 																onChange={(event) => {
 																	const nextSize = event.target.value;
+																	const hasCurrentColorForSize = sourceProduct.variants.some((variant) => (
+																		normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize)
+																		&& normalizeVariantToken(variant.color) === normalizeVariantToken(selectedColor)
+																	));
 																	const nextColor = sourceProduct.variants.find((variant) => normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize) && variant.stock > 0)?.color
 																		?? sourceProduct.variants.find((variant) => normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize))?.color
 																		?? "";
-																	updateRetailCartVariant(item.lineId, nextSize, nextColor);
+																	updateRetailCartVariant(item.lineId, nextSize, hasCurrentColorForSize ? selectedColor : nextColor);
 																}}
 																className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700 outline-none focus:border-blue-500"
 															>
@@ -2975,8 +2999,18 @@ const PointOfSalePage = () => {
 															</select>
 															<select
 																title={`Cart color for ${item.name}`}
-																value={item.color ?? colorOptions[0] ?? ""}
-																onChange={(event) => updateRetailCartVariant(item.lineId, selectedSize, event.target.value)}
+																value={selectedColor}
+																onChange={(event) => {
+																	const nextColor = event.target.value;
+																	const hasCurrentSizeForColor = sourceProduct.variants.some((variant) => (
+																		normalizeVariantToken(variant.color) === normalizeVariantToken(nextColor)
+																		&& normalizeVariantToken(variant.size) === normalizeVariantToken(selectedSize)
+																	));
+																	const nextSizeForColor = sourceProduct.variants.find((variant) => normalizeVariantToken(variant.color) === normalizeVariantToken(nextColor) && variant.stock > 0)?.size
+																		?? sourceProduct.variants.find((variant) => normalizeVariantToken(variant.color) === normalizeVariantToken(nextColor))?.size
+																		?? selectedSize;
+																	updateRetailCartVariant(item.lineId, hasCurrentSizeForColor ? selectedSize : nextSizeForColor, nextColor);
+																}}
 																className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700 outline-none focus:border-blue-500"
 															>
 																{colorOptions.map((color) => (
