@@ -138,7 +138,11 @@ export default function Ecommerce() {
               : "Overview of your shop's ecommerce performance"}
           </p>
         </div>
-      <EcommerceMetrics stats={stats} showOrdersMetric={!hideOrderMetrics} />
+      <EcommerceMetrics
+        stats={stats}
+        showOrdersMetric={!hideOrderMetrics}
+        isRepairIndividualDashboard={hideOrderMetrics}
+      />
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <MonthlySalesChart revenueTrend={stats?.revenue_trend || []} />

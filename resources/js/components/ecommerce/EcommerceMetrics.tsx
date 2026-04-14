@@ -42,6 +42,7 @@ interface DashboardStats {
 interface EcommerceMetricsProps {
   stats: DashboardStats | null;
   showOrdersMetric?: boolean;
+  isRepairIndividualDashboard?: boolean;
 }
 
 // Icon Components
@@ -71,7 +72,11 @@ const PackageIcon = ({ className = "" }) => (
   </svg>
 );
 
-export default function EcommerceMetrics({ stats, showOrdersMetric = true }: EcommerceMetricsProps) {
+export default function EcommerceMetrics({
+  stats,
+  showOrdersMetric = true,
+  isRepairIndividualDashboard = false,
+}: EcommerceMetricsProps) {
   // Format currency
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-PH', {
@@ -103,7 +108,7 @@ export default function EcommerceMetrics({ stats, showOrdersMetric = true }: Eco
   return (
     <div className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${showOrdersMetric ? "lg:grid-cols-4" : "lg:grid-cols-3"} md:gap-6`}>
       {/* Revenue Metric */}
-      <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] md:p-6">
+      <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/3 md:p-6">
         <div className="flex items-center justify-center w-12 h-12 bg-gray-100 rounded-xl dark:bg-gray-800">
           <DollarIcon className="text-gray-800 size-6 dark:text-white/90" />
         </div>
@@ -126,7 +131,7 @@ export default function EcommerceMetrics({ stats, showOrdersMetric = true }: Eco
 
       {/* Orders Metric */}
       {showOrdersMetric && (
-        <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] md:p-6">
+        <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/3 md:p-6">
           <div className="flex items-center justify-center w-12 h-12 bg-gray-100 rounded-xl dark:bg-gray-800">
             <BoxIconLine className="text-gray-800 size-6 dark:text-white/90" />
           </div>
@@ -149,19 +154,19 @@ export default function EcommerceMetrics({ stats, showOrdersMetric = true }: Eco
       )}
 
       {/* Products Metric */}
-      <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] md:p-6">
+      <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/3 md:p-6">
         <div className="flex items-center justify-center w-12 h-12 bg-gray-100 rounded-xl dark:bg-gray-800">
           <PackageIcon className="text-gray-800 size-6 dark:text-white/90" />
         </div>
         <div className="flex items-end justify-between mt-5">
           <div>
             <span className="text-sm text-gray-500 dark:text-gray-400">
-              Active Products
+              {isRepairIndividualDashboard ? 'Active Services' : 'Active Products'}
             </span>
             <h4 className="mt-2 font-bold text-gray-800 text-title-sm dark:text-white/90">
               {stats ? formatNumber(stats.products.active) : '0'}
             </h4>
-            {stats && stats.products.low_stock > 0 && (
+            {!isRepairIndividualDashboard && stats && stats.products.low_stock > 0 && (
               <span className="text-xs text-orange-500 mt-1 block">
                 {stats.products.low_stock} low stock
               </span>
@@ -171,7 +176,7 @@ export default function EcommerceMetrics({ stats, showOrdersMetric = true }: Eco
       </div>
 
       {/* Customers Metric */}
-      <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] md:p-6">
+      <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/3 md:p-6">
         <div className="flex items-center justify-center w-12 h-12 bg-gray-100 rounded-xl dark:bg-gray-800">
           <GroupIcon className="text-gray-800 size-6 dark:text-white/90" />
         </div>
@@ -179,7 +184,7 @@ export default function EcommerceMetrics({ stats, showOrdersMetric = true }: Eco
         <div className="flex items-end justify-between mt-5">
           <div>
             <span className="text-sm text-gray-500 dark:text-gray-400">
-              Total Customers
+              {isRepairIndividualDashboard ? 'Total Repair Customers' : 'Total Customers'}
             </span>
             <h4 className="mt-2 font-bold text-gray-800 text-title-sm dark:text-white/90">
               {stats ? formatNumber(stats.customers.total) : '0'}

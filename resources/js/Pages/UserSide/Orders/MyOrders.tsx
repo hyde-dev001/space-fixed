@@ -1101,12 +1101,15 @@ const MyOrders: React.FC = () => {
     'border-red-600 bg-red-600 text-white hover:-translate-y-0.5 hover:bg-red-700 focus-visible:ring-red-300';
   const actionButtonDisabledClass = 'border-gray-300 bg-gray-200 text-gray-500 cursor-not-allowed';
   const refundTargetOrder = refundOrderId ? orders.find((order) => order.id === refundOrderId) : null;
-  const refundProductCount = refundTargetOrder
-    ? new Set(
-      (refundTargetOrder.items || []).map((item) => String(item.product_slug || item.product_name || item.id)),
-    ).size
+  const refundLineCount = refundTargetOrder
+    ? (refundTargetOrder.items || []).length
     : 0;
-  const canChooseRefundScope = refundProductCount > 1;
+  const refundTotalUnits = refundTargetOrder
+    ? (refundTargetOrder.items || []).reduce((sum, item) => sum + Math.max(0, Number(item.quantity || 0)), 0)
+    : 0;
+  // Partial refunds are valid when an order has multiple lines (e.g. same product with different color/size)
+  // or when a single line contains multiple purchased units.
+  const canChooseRefundScope = refundLineCount > 1 || refundTotalUnits > 1;
   const refundTargetOrderTotal = refundTargetOrder ? resolveOrderGrandTotal(refundTargetOrder) : 0;
   const refundSelectedLines = refundTargetOrder
     ? (refundTargetOrder.items || [])
@@ -2104,7 +2107,7 @@ const MyOrders: React.FC = () => {
                         </div>
                       ) : (
                         <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
-                          Single-product order detected. Refund scope is automatically set to Full Refund.
+                          Single-unit order detected. Refund scope is automatically set to Full Refund.
                         </div>
                       )}
 

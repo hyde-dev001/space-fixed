@@ -9,6 +9,7 @@ use App\Models\OrderItem;
 use App\Models\OrderRefund;
 use App\Models\PosRefund;
 use App\Models\RepairRequest;
+use App\Models\RepairService;
 use App\Enums\OrderStatus;
 use App\Enums\ApprovalStatus;
 use Illuminate\Http\Request;
@@ -219,6 +220,55 @@ class DashboardController extends Controller
         return $combined;
     }
 
+    private function getRepairCustomerMetrics(int $shopOwnerId): array
+    {
+        $customerBuckets = [];
+
+        $repairRequests = RepairRequest::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->get(['user_id', 'customer_name', 'phone', 'email']);
+
+        foreach ($repairRequests as $repairRequest) {
+            $userId = (int) ($repairRequest->user_id ?? 0);
+            if ($userId > 0) {
+                $key = 'user:' . $userId;
+                $customerBuckets[$key] = ($customerBuckets[$key] ?? 0) + 1;
+                continue;
+            }
+
+            $customerName = strtolower(trim((string) ($repairRequest->customer_name ?? '')));
+            if ($customerName !== '') {
+                $key = 'name:' . $customerName;
+                $customerBuckets[$key] = ($customerBuckets[$key] ?? 0) + 1;
+                continue;
+            }
+
+            $phone = preg_replace('/\s+/', '', trim((string) ($repairRequest->phone ?? '')));
+            if (!empty($phone)) {
+                $key = 'phone:' . strtolower($phone);
+                $customerBuckets[$key] = ($customerBuckets[$key] ?? 0) + 1;
+                continue;
+            }
+
+            $email = strtolower(trim((string) ($repairRequest->email ?? '')));
+            if ($email !== '') {
+                $key = 'email:' . $email;
+                $customerBuckets[$key] = ($customerBuckets[$key] ?? 0) + 1;
+            }
+        }
+
+        $uniqueCustomers = count($customerBuckets);
+        $guestCustomers = count(array_filter(array_keys($customerBuckets), fn ($key) => strncmp($key, 'user:', 5) !== 0));
+        $repeatCustomers = count(array_filter($customerBuckets, fn ($count) => $count > 1));
+
+        return [
+            'total' => $uniqueCustomers,
+            'unique' => $uniqueCustomers,
+            'guests' => $guestCustomers,
+            'repeat' => $repeatCustomers,
+        ];
+    }
+
     /**
      * Get dashboard statistics for shop owner
      * 
@@ -233,6 +283,9 @@ class DashboardController extends Controller
         }
 
         $shopOwnerId = $shopOwner->id;
+    $businessType = strtolower((string) ($shopOwner->business_type ?? ''));
+    $registrationType = strtolower((string) ($shopOwner->registration_type ?? ''));
+    $isIndividualRepairOwner = $businessType === 'repair' && $registrationType === 'individual';
 
         // Get date ranges
         $today = Carbon::today();
@@ -312,24 +365,33 @@ class DashboardController extends Controller
             ? (($thisMonthOrders - $lastMonthOrders) / $lastMonthOrders) * 100 
             : 0;
 
-        // Total Products
-        $totalProducts = Product::where('shop_owner_id', $shopOwnerId)->count();
+        if ($isIndividualRepairOwner) {
+            $totalProducts = RepairService::where('shop_owner_id', $shopOwnerId)->count();
+            $activeProducts = RepairService::where('shop_owner_id', $shopOwnerId)
+                ->whereRaw('LOWER(status) = ?', ['active'])
+                ->count();
+            $lowStockProducts = 0;
+            $outOfStockProducts = 0;
+        } else {
+            // Total Products
+            $totalProducts = Product::where('shop_owner_id', $shopOwnerId)->count();
 
-        // Active Products (in stock)
-        $activeProducts = Product::where('shop_owner_id', $shopOwnerId)
-            ->where('stock_quantity', '>', 0)
-            ->count();
+            // Active Products (in stock)
+            $activeProducts = Product::where('shop_owner_id', $shopOwnerId)
+                ->where('stock_quantity', '>', 0)
+                ->count();
 
-        // Low Stock Products (stock < 10)
-        $lowStockProducts = Product::where('shop_owner_id', $shopOwnerId)
-            ->where('stock_quantity', '<', 10)
-            ->where('stock_quantity', '>', 0)
-            ->count();
+            // Low Stock Products (stock < 10)
+            $lowStockProducts = Product::where('shop_owner_id', $shopOwnerId)
+                ->where('stock_quantity', '<', 10)
+                ->where('stock_quantity', '>', 0)
+                ->count();
 
-        // Out of Stock Products
-        $outOfStockProducts = Product::where('shop_owner_id', $shopOwnerId)
-            ->where('stock_quantity', '<=', 0)
-            ->count();
+            // Out of Stock Products
+            $outOfStockProducts = Product::where('shop_owner_id', $shopOwnerId)
+                ->where('stock_quantity', '<=', 0)
+                ->count();
+        }
 
         // Pending Orders
         $pendingOrders = Order::where('shop_owner_id', $shopOwnerId)
@@ -513,28 +575,36 @@ class DashboardController extends Controller
             ];
         }
 
-        // Unique Customers
-        $uniqueCustomers = Order::where('shop_owner_id', $shopOwnerId)
-            ->distinct('customer_id')
-            ->whereNotNull('customer_id')
-            ->count('customer_id');
+        if ($isIndividualRepairOwner) {
+            $repairCustomerStats = $this->getRepairCustomerMetrics($shopOwnerId);
+            $uniqueCustomers = (int) $repairCustomerStats['unique'];
+            $guestOrders = (int) $repairCustomerStats['guests'];
+            $repeatCustomers = (int) $repairCustomerStats['repeat'];
+            $totalCustomers = (int) $repairCustomerStats['total'];
+        } else {
+            // Unique Customers
+            $uniqueCustomers = Order::where('shop_owner_id', $shopOwnerId)
+                ->distinct('customer_id')
+                ->whereNotNull('customer_id')
+                ->count('customer_id');
 
-        // Guest Orders (no customer_id)
-        $guestOrders = Order::where('shop_owner_id', $shopOwnerId)
-            ->whereNull('customer_id')
-            ->count();
+            // Guest Orders (no customer_id)
+            $guestOrders = Order::where('shop_owner_id', $shopOwnerId)
+                ->whereNull('customer_id')
+                ->count();
 
-        // Total Customers (unique + guests)
-        $totalCustomers = $uniqueCustomers + $guestOrders;
+            // Total Customers (unique + guests)
+            $totalCustomers = $uniqueCustomers + $guestOrders;
 
-        // Repeat Customers (customers with more than 1 order)
-        $repeatCustomers = Order::where('shop_owner_id', $shopOwnerId)
-            ->whereNotNull('customer_id')
-            ->select('customer_id')
-            ->groupBy('customer_id')
-            ->havingRaw('COUNT(*) > 1')
-            ->get()
-            ->count();
+            // Repeat Customers (customers with more than 1 order)
+            $repeatCustomers = Order::where('shop_owner_id', $shopOwnerId)
+                ->whereNotNull('customer_id')
+                ->select('customer_id')
+                ->groupBy('customer_id')
+                ->havingRaw('COUNT(*) > 1')
+                ->get()
+                ->count();
+        }
 
         // Average Order Value
         $avgOrderValue = $totalOrders > 0 ? $totalRevenue / $totalOrders : 0;
