@@ -180,6 +180,14 @@ Route::post('/forgot-password/reset', [ForgotPasswordOtpController::class, 'rese
     ->middleware('throttle:6,1')
     ->name('password.otp.reset');
 
+Route::get('/appeals/{token}', [\App\Http\Controllers\SuspensionAppealPublicController::class, 'show'])
+    ->middleware('signed')
+    ->name('appeals.show');
+
+Route::post('/appeals/{token}', [\App\Http\Controllers\SuspensionAppealPublicController::class, 'submit'])
+    ->middleware(['signed', 'throttle:5,1'])
+    ->name('appeals.submit');
+
 Route::get('/otp', function (Request $request) {
     return Inertia::render('UserSide/Auth/Otp', [
         'email' => $request->query('email'),
@@ -1405,6 +1413,11 @@ Route::middleware('super_admin.auth')->prefix('admin')->name('admin.')->group(fu
     // Shop Reports routes
     Route::get('/shop-reports', [\App\Http\Controllers\superAdmin\ShopReportsController::class, 'index'])->name('shop-reports');
     Route::post('/shop-reports/{id}/action', [\App\Http\Controllers\superAdmin\ShopReportsController::class, 'action'])->name('shop-reports.action');
+
+    // Suspension Appeals routes
+    Route::get('/appeals', [\App\Http\Controllers\superAdmin\SuspensionAppealsController::class, 'index'])->name('suspension-appeals');
+    Route::post('/appeals/{id}/approve', [\App\Http\Controllers\superAdmin\SuspensionAppealsController::class, 'approve'])->name('appeals.approve');
+    Route::post('/appeals/{id}/reject', [\App\Http\Controllers\superAdmin\SuspensionAppealsController::class, 'reject'])->name('appeals.reject');
 
     // Additional admin routes
     Route::get('/notifications', function () {

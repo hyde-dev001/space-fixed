@@ -9,6 +9,7 @@ use App\Models\SuperAdmin;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Models\AuditLog;
+use App\Services\SuspensionAppealService;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rules\Password;
@@ -513,11 +514,22 @@ class SuperAdminController extends Controller
     /**
      * Admin action stubs
      */
-    public function suspendUser(Request $request, $id)
+    public function suspendUser(Request $request, $id, SuspensionAppealService $suspensionAppealService)
     {
+        $validated = $request->validate([
+            'suspension_reason' => 'nullable|string|max:1000',
+        ]);
+
         try {
             $user = User::findOrFail($id);
             $user->update(['status' => 'suspended']);
+
+            $suspensionReason = $validated['suspension_reason'] ?? null;
+            $suspensionAppealService->createAndSendForCustomer(
+                $user,
+                $suspensionReason,
+                auth('super_admin')->id()
+            );
 
             // If this user is associated with an employee record, mark employee as inactive too
             try {
@@ -538,6 +550,7 @@ class SuperAdminController extends Controller
                 'metadata' => [
                     'email' => $user->email,
                     'name' => $user->name,
+                    'suspension_reason' => $suspensionReason,
                 ],
             ]);
 
@@ -724,7 +737,7 @@ class SuperAdminController extends Controller
         }
     }
 
-    public function suspendShop(Request $request, $id)
+    public function suspendShop(Request $request, $id, SuspensionAppealService $suspensionAppealService)
     {
         $validated = $request->validate([
             'suspension_reason' => 'nullable|string|max:1000'
@@ -736,6 +749,12 @@ class SuperAdminController extends Controller
                 'status' => 'suspended',
                 'suspension_reason' => $validated['suspension_reason'] ?? null
             ]);
+
+            $suspensionAppealService->createAndSendForShopOwner(
+                $shop,
+                $validated['suspension_reason'] ?? null,
+                auth('super_admin')->id()
+            );
 
             return redirect()->back()->with('success', 'Shop suspended successfully.');
         } catch (\Exception $e) {

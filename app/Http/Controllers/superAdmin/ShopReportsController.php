@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ShopReport;
 use App\Models\ShopOwner;
 use App\Models\AuditLog;
+use App\Services\SuspensionAppealService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
@@ -74,7 +75,7 @@ class ShopReportsController extends Controller
      *
      * @param  int  $id  The shop_owner_id (we act on ALL open reports for this shop)
      */
-    public function action(Request $request, int $id): \Illuminate\Http\RedirectResponse
+    public function action(Request $request, int $id, SuspensionAppealService $suspensionAppealService): \Illuminate\Http\RedirectResponse
     {
         $validated = $request->validate([
             'action'      => ['required', 'in:dismiss,warn,suspend'],
@@ -113,10 +114,25 @@ class ShopReportsController extends Controller
             $reason = $validated['admin_notes']
                 ?? 'Suspended due to multiple verified reports from customers.';
 
-            ShopOwner::where('id', $id)->update([
-                'status'            => 'suspended',
-                'suspension_reason' => $reason,
-            ]);
+            $shopOwner = ShopOwner::query()->find($id);
+
+            if ($shopOwner) {
+                $shopOwner->update([
+                    'status'            => 'suspended',
+                    'suspension_reason' => $reason,
+                ]);
+
+                $suspensionAppealService->createAndSendForShopOwner(
+                    $shopOwner,
+                    $reason,
+                    $admin?->id
+                );
+            } else {
+                ShopOwner::where('id', $id)->update([
+                    'status'            => 'suspended',
+                    'suspension_reason' => $reason,
+                ]);
+            }
         }
 
         // ── Audit log ─────────────────────────────────────────────────────

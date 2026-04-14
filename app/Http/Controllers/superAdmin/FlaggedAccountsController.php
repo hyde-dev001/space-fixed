@@ -4,8 +4,10 @@ namespace App\Http\Controllers\superAdmin;
 
 use App\Http\Controllers\Controller;
 use App\Models\ReviewReport;
+use App\Services\SuspensionAppealService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -66,17 +68,27 @@ class FlaggedAccountsController extends Controller
     }
 
     /** Ban the customer and resolve the report */
-    public function ban(Request $request, int $id): JsonResponse
+    public function ban(Request $request, int $id, SuspensionAppealService $suspensionAppealService): JsonResponse
     {
-        $report = ReviewReport::findOrFail($id);
+        $report = ReviewReport::with('customer')->findOrFail($id);
+
+        $reason = $request->input('admin_notes')
+            ?: 'Suspended after super admin review of reported customer behavior.';
+
         $report->update([
             'status'      => 'banned',
             'admin_notes' => $request->input('admin_notes'),
             'resolved_at' => now(),
         ]);
 
-        // Suspend the customer's User account if desired:
-        // $report->customer?->update(['is_suspended' => true]);
+        if ($report->customer) {
+            $report->customer->update(['status' => 'suspended']);
+            $suspensionAppealService->createAndSendForCustomer(
+                $report->customer,
+                $reason,
+                Auth::guard('super_admin')->id()
+            );
+        }
 
         return response()->json(['status' => $report->status]);
     }
