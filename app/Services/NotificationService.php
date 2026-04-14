@@ -1151,7 +1151,7 @@ class NotificationService
             title: 'New Order Received',
             message: "New order #{$orderData['order_number']} - ₱{$orderData['total']}",
             data: $orderData,
-            actionUrl: '/shop-owner/orders'
+            actionUrl: '/shop-owner/job-orders-retail'
         );
     }
 
@@ -1174,7 +1174,7 @@ class NotificationService
             title: 'New Repair Request',
             message: "New repair request - {$repairData['service_type']}",
             data: $repairData,
-            actionUrl: '/shop-owner/orders'
+            actionUrl: '/shop-owner/job-orders-repair'
         );
     }
 

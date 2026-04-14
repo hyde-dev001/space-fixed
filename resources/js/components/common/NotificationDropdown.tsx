@@ -112,6 +112,27 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
   };
 
   const getNotificationHref = (notification: { id: number; type?: string; data?: any; action_url?: string | null }) => {
+    const notificationType = String(notification.type || '').toLowerCase();
+    const notificationData = notification.data || {};
+    const isShopOwnerBase = basePath.includes('shop-owner');
+    const isRepairNotification =
+      notificationType.includes('repair')
+      || Boolean(notificationData.repair_id)
+      || Boolean(notificationData.repair_request_id);
+    const isOrderNotification =
+      notificationType.includes('order')
+      || Boolean(notificationData.order_id)
+      || Boolean(notificationData.order_number);
+
+    if (isShopOwnerBase && notification.action_url && /^\/shop-owner\/orders(?:$|[/?#])/.test(notification.action_url)) {
+      if (isRepairNotification) {
+        const repairId = notificationData?.repair_id || notificationData?.repair_request_id || notification.id;
+        return `/shop-owner/job-orders-repair?highlightRepair=${repairId}`;
+      }
+
+      return '/shop-owner/job-orders-retail';
+    }
+
     if (basePath.includes('staff')) {
       const staffRoute = getStaffNotificationRoute(notification);
       if (staffRoute) return staffRoute;
@@ -126,9 +147,14 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
     }
 
     // Shop owner: repair notifications go to Job Orders Repair page
-    if (basePath.includes('shop-owner') && notification.type?.includes('repair')) {
-      const repairId = notification.data?.repair_id || notification.data?.repair_request_id || notification.id;
+    if (isShopOwnerBase && isRepairNotification) {
+      const repairId = notificationData?.repair_id || notificationData?.repair_request_id || notification.id;
       return `/shop-owner/job-orders-repair?highlightRepair=${repairId}`;
+    }
+
+    // Shop owner: retail order notifications go to Job Orders Retail page
+    if (isShopOwnerBase && isOrderNotification) {
+      return '/shop-owner/job-orders-retail';
     }
 
     // Use explicit action_url when set (all live DB notifications have this)
@@ -150,14 +176,14 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
     const type = notification.type?.toLowerCase() || '';
     const data = notification.data || {};
 
-    const isRepairNotification = type.includes('repair') || data.repair_id || data.repair_request_id;
-    if (isRepairNotification) {
+    const isRepairFallback = type.includes('repair') || data.repair_id || data.repair_request_id;
+    if (isRepairFallback) {
       const repairId = data.repair_id ?? data.repair_request_id;
       return repairId ? `/my-repairs?highlightRepair=${repairId}` : '/my-repairs';
     }
 
-    const isOrderNotification = type.includes('order') || data.order_id;
-    if (isOrderNotification) {
+    const isOrderFallback = type.includes('order') || data.order_id;
+    if (isOrderFallback) {
       const orderId = data.order_id;
       return orderId ? `/my-orders?highlightOrder=${orderId}` : '/my-orders';
     }

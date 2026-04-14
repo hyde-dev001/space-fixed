@@ -1,10 +1,11 @@
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import axios from "axios";
 import { useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
 
 type OrderType = "product" | "repair";
+type BusinessType = "retail" | "repair" | "both";
 
 interface CustomerReview {
   id: string;
@@ -116,6 +117,28 @@ const StarIcon = ({ filled, className = "" }: { filled: boolean; className?: str
 );
 
 export default function CustomerReviews() {
+  const { auth } = usePage().props as any;
+
+  const normalizeBusinessType = (rawValue?: string): BusinessType => {
+    const normalized = String(rawValue ?? "").toLowerCase().trim();
+    if (normalized === "retail") return "retail";
+    if (normalized === "repair") return "repair";
+    return "both";
+  };
+
+  const businessType = normalizeBusinessType(
+    auth?.shop_owner?.business_type
+    ?? auth?.user?.shop_owner?.business_type
+    ?? auth?.business_type,
+  );
+
+  const allowedOrderTypes: OrderType[] =
+    businessType === "retail"
+      ? ["product"]
+      : businessType === "repair"
+        ? ["repair"]
+        : ["product", "repair"];
+
   const [reviews, setReviews] = useState<CustomerReview[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -175,14 +198,21 @@ export default function CustomerReviews() {
   };
   const itemsPerPage = 6;
 
+  useEffect(() => {
+    if (orderTypeFilter !== "all" && !allowedOrderTypes.includes(orderTypeFilter)) {
+      setOrderTypeFilter("all");
+    }
+  }, [allowedOrderTypes, orderTypeFilter]);
+
   const filteredReviews = useMemo(() => {
     return reviews.filter((review) => {
       const haystack = `${review.customerName} ${review.comment} ${review.serviceType}`.toLowerCase();
       const matchesSearch = haystack.includes(search.toLowerCase());
       const matchesOrderType = orderTypeFilter === "all" || review.orderType === orderTypeFilter;
-      return matchesSearch && matchesOrderType;
+      const matchesBusinessType = allowedOrderTypes.includes(review.orderType);
+      return matchesBusinessType && matchesSearch && matchesOrderType;
     });
-  }, [reviews, search, orderTypeFilter]);
+  }, [reviews, search, orderTypeFilter, allowedOrderTypes]);
 
   const totalPages = Math.max(1, Math.ceil(filteredReviews.length / itemsPerPage));
   const safeCurrentPage = Math.min(currentPage, totalPages);
@@ -269,8 +299,8 @@ export default function CustomerReviews() {
                 className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white md:w-44"
               >
                 <option value="all">All order types</option>
-                <option value="product">Product</option>
-                <option value="repair">Repair</option>
+                {allowedOrderTypes.includes("product") && <option value="product">Product</option>}
+                {allowedOrderTypes.includes("repair") && <option value="repair">Repair</option>}
               </select>
 
             </div>
