@@ -543,13 +543,16 @@ export default function JobOrdersPage() {
       || String(o.latest_refund?.flow_type || '').toLowerCase() === 'request_approval'
     ).length;
 
-    // Net revenue = order amount minus succeeded refunds (POS + online), clamped at zero.
+    // Net revenue (VAT-excluded) = net order amount minus succeeded refunds, clamped at zero.
     const totalRevenue = orders
       .filter((o) => o.status !== "cancelled")
       .reduce((sum, o) => {
-        const grossAmount = Math.max(0, parseAmount(o.grand_total));
-        const refundedAmount = getCombinedSucceededRefundAmount(o, grossAmount);
-        return sum + Math.max(0, grossAmount - refundedAmount);
+        const vatExcludedAmount = Math.max(
+          0,
+          parseAmount(o.total_amount) + parseAmount(o.shipping_fee),
+        );
+        const refundedAmount = getCombinedSucceededRefundAmount(o, vatExcludedAmount);
+        return sum + Math.max(0, vatExcludedAmount - refundedAmount);
       }, 0);
 
     return { total, pending, processing, shipped, delivered, refund, totalRevenue };
