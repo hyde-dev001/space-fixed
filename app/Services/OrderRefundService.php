@@ -1077,22 +1077,31 @@ class OrderRefundService
             (int) ($refund->shop_owner_id ?? 0),
             (float) ($refund->amount ?? 0)
         );
+        $registrationType = strtolower(trim((string) ($order->shopOwner?->registration_type ?? '')));
+        $isIndividualRegistration = $registrationType === 'individual';
 
         $data = $this->buildRefundNotificationData($refund, [
             'stage' => 'submitted',
             'requires_owner_approval' => $requiresOwnerApproval,
         ]);
 
-        $this->notificationService->sendToErpRole(
-            'Finance',
-            (int) ($refund->shop_owner_id ?? 0),
-            NotificationType::REFUND_REQUEST,
-            'New Refund Approval Request',
-            "Refund request for order #{$data['order_number']} (₱{$data['amount']}) needs finance review.",
-            $data,
-            '/finance?section=refund-approvals',
-            'high'
-        );
+        if ($isIndividualRegistration) {
+            $this->notificationService->notifyRefundRequest(
+                (int) ($refund->shop_owner_id ?? 0),
+                $data,
+            );
+        } else {
+            $this->notificationService->sendToErpRole(
+                'Finance',
+                (int) ($refund->shop_owner_id ?? 0),
+                NotificationType::REFUND_REQUEST,
+                'New Refund Approval Request',
+                "Refund request for order #{$data['order_number']} (₱{$data['amount']}) needs finance review.",
+                $data,
+                '/finance?section=refund-approvals',
+                'high'
+            );
+        }
 
         $customerId = (int) ($refund->customer_id ?? 0);
         if ($customerId > 0) {
