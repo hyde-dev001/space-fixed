@@ -16,9 +16,9 @@ class ReportShopController extends Controller
      *
      * Anti-abuse rules enforced:
      *  1. User must be authenticated.
-     *  2. User account must be at least 7 days old.
-     *  3. User must have at least one completed order OR completed repair with this shop.
-     *  4. User may only report a shop once (unique constraint).
+     *  2. User must have at least one completed order OR completed repair with this shop.
+     *  3. User may only report a shop once (unique constraint).
+     *  4. User may submit only a limited number of shop reports per day.
      */
     public function store(Request $request, int $shopId): \Illuminate\Http\JsonResponse
     {
@@ -28,14 +28,7 @@ class ReportShopController extends Controller
             return response()->json(['message' => 'Unauthorized.'], 401);
         }
 
-        // Rule 2: Account must be at least 7 days old
-        if ($user->created_at->diffInDays(now()) < 7) {
-            return response()->json([
-                'message' => 'Your account must be at least 7 days old to report a shop.',
-            ], 422);
-        }
-
-        // Rule 4: Check for existing report (before heavy queries)
+        // Rule 3: Check for existing report (before heavy queries)
         $alreadyReported = ShopReport::where('user_id', $user->id)
             ->where('shop_owner_id', $shopId)
             ->exists();
@@ -46,19 +39,32 @@ class ReportShopController extends Controller
             ], 422);
         }
 
-        // Rule 3: Must have a verified transaction with the shop
-        // Orders: delivered or shipped (cancelled orders don't count)
+        // Rule 4: Daily limit to reduce report-spam from one account
+        $dailyLimit = (int) config('reporting.shop_report_daily_limit', 3);
+        if ($dailyLimit > 0) {
+            $submittedToday = ShopReport::where('user_id', $user->id)
+                ->whereDate('created_at', now()->toDateString())
+                ->count();
+
+            if ($submittedToday >= $dailyLimit) {
+                return response()->json([
+                    'message' => 'You have reached the daily report limit. Please try again tomorrow.',
+                ], 429);
+            }
+        }
+
+        // Rule 2: Must have a completed transaction with the shop
         $completedOrder = Order::where('shop_owner_id', $shopId)
             ->where('customer_id', $user->id)
-            ->whereNotIn('status', ['cancelled', 'pending'])
+            ->whereIn('status', ['delivered', 'completed'])
             ->first();
 
-        // Repairs: any active or completed repair (scam can happen at any stage)
+        // Repairs: completed jobs only
         $completedRepair = null;
         if (!$completedOrder) {
             $completedRepair = RepairRequest::where('shop_owner_id', $shopId)
                 ->where('user_id', $user->id)
-                ->whereNotIn('status', ['new_request', 'pending'])
+                ->where('status', 'completed')
                 ->first();
         }
 
