@@ -156,7 +156,7 @@ export default function PendingApproval({ shopOwner }: PendingApprovalProps) {
     return (
         <>
             <Head title="Application Status" />
-            <div className="min-h-screen bg-white">
+            <div className="h-screen overflow-y-auto no-scrollbar bg-white">
                 <Navigation />
                 <div className="mx-auto max-w-3xl px-4 pb-8 pt-24 sm:px-6 sm:pt-28 lg:px-8 lg:pb-10 lg:pt-32">
                     <div className="relative overflow-hidden rounded-3xl border border-slate-200/70 bg-white/90 p-5 shadow-[0_30px_75px_-50px_rgba(15,23,42,0.45)] backdrop-blur-sm sm:p-6 lg:p-7">
@@ -281,14 +281,6 @@ export default function PendingApproval({ shopOwner }: PendingApprovalProps) {
                                     >
                                         Back to Home
                                     </Link>
-                                    {shopOwner.status === 'rejected' && (
-                                        <a
-                                            href="mailto:support@solespace.com"
-                                            className="inline-flex w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:bg-slate-100"
-                                        >
-                                            Contact Support
-                                        </a>
-                                    )}
                                 </div>
                             </aside>
                         </div>

@@ -401,6 +401,7 @@ const createRetailLineId = (): string => `retail-line-${Date.now()}-${Math.rando
 const normalizeVariantToken = (value: unknown): string => {
 	return String(value ?? "")
 		.trim()
+		.replace(/\s*\+\s*/g, "+")
 		.replace(/\s+/g, " ")
 		.toLowerCase();
 };
