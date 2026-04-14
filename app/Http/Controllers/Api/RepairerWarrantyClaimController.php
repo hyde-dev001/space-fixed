@@ -73,8 +73,8 @@ class RepairerWarrantyClaimController extends Controller
                     'status' => (string) ($claim->originalRepair?->status ?? ''),
                 ],
                 'approved_repair_request_id' => $claim->approved_repair_request_id,
-                'warranty_expires_at_snapshot' => optional($claim->warranty_expires_at_snapshot)->toDateTimeString(),
-                'created_at' => optional($claim->created_at)->toDateTimeString(),
+                'warranty_expires_at_snapshot' => $this->formatPhpDateTime($claim->warranty_expires_at_snapshot),
+                'created_at' => $this->formatPhpDateTime($claim->created_at),
             ];
         })->values();
 
@@ -146,7 +146,7 @@ class RepairerWarrantyClaimController extends Controller
                 'id' => (int) $updated->id,
                 'status' => (string) $updated->status,
                 'approved_repair_request_id' => $updated->approved_repair_request_id,
-                'reviewed_at' => optional($updated->reviewed_at)->toDateTimeString(),
+                'reviewed_at' => $this->formatPhpDateTime($updated->reviewed_at),
             ],
         ]);
     }
@@ -183,7 +183,7 @@ class RepairerWarrantyClaimController extends Controller
                 'id' => (int) $updated->id,
                 'status' => (string) $updated->status,
                 'rejection_reason' => (string) ($updated->rejection_reason ?? ''),
-                'reviewed_at' => optional($updated->reviewed_at)->toDateTimeString(),
+                'reviewed_at' => $this->formatPhpDateTime($updated->reviewed_at),
             ],
         ]);
     }
@@ -244,6 +244,58 @@ class RepairerWarrantyClaimController extends Controller
      */
     private function resolveActorContext(): array
     {
+        $requestPath = strtolower((string) request()->path());
+        $preferShopOwnerGuard = str_starts_with($requestPath, 'api/shop-owner/');
+        $preferUserGuard = str_starts_with($requestPath, 'api/repairer/');
+
+        if ($preferShopOwnerGuard) {
+            $shopOwnerActor = Auth::guard('shop_owner')->user();
+            if ($shopOwnerActor) {
+                return [
+                    'authenticated' => true,
+                    'is_user_guard' => false,
+                    'actor' => $shopOwnerActor,
+                    'shop_owner_id' => (int) ($shopOwnerActor->id ?? 0),
+                    'actor_user_id' => 0,
+                    'can_view_all' => true,
+                ];
+            }
+
+            return [
+                'authenticated' => false,
+                'is_user_guard' => false,
+                'actor' => null,
+                'shop_owner_id' => 0,
+                'actor_user_id' => 0,
+                'can_view_all' => false,
+            ];
+        }
+
+        if ($preferUserGuard) {
+            $userActor = Auth::guard('user')->user();
+            if ($userActor) {
+                $shopOwnerId = (int) ($userActor->shop_owner_id ?? 0);
+
+                return [
+                    'authenticated' => true,
+                    'is_user_guard' => true,
+                    'actor' => $userActor,
+                    'shop_owner_id' => $shopOwnerId,
+                    'actor_user_id' => (int) ($userActor->id ?? 0),
+                    'can_view_all' => $this->canViewAllClaims($userActor),
+                ];
+            }
+
+            return [
+                'authenticated' => false,
+                'is_user_guard' => true,
+                'actor' => null,
+                'shop_owner_id' => 0,
+                'actor_user_id' => 0,
+                'can_view_all' => false,
+            ];
+        }
+
         $userActor = Auth::guard('user')->user();
         if ($userActor) {
             $shopOwnerId = (int) ($userActor->shop_owner_id ?? 0);
@@ -278,5 +330,14 @@ class RepairerWarrantyClaimController extends Controller
             'actor_user_id' => 0,
             'can_view_all' => false,
         ];
+    }
+
+    private function formatPhpDateTime($value): ?string
+    {
+        if (!$value) {
+            return null;
+        }
+
+        return $value->copy()->timezone(config('app.timezone'))->format('Y-m-d H:i:s');
     }
 }

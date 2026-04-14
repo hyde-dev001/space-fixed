@@ -192,16 +192,22 @@ const normalizeWarrantyEvidenceUrl = (raw: unknown): string | null => {
 };
 
 const formatWarrantyDateTime = (value: string | null | undefined): string => {
-  if (!value) {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) {
     return "N/A";
   }
 
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
+  // API already returns PHP-timezone formatted datetime for queue records.
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(normalized)) {
+    return normalized;
   }
 
-  return parsed.toLocaleString();
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) {
+    return normalized;
+  }
+
+  return parsed.toLocaleString("en-PH", { timeZone: "Asia/Manila" });
 };
 
 export default function WarrantyQueue() {
