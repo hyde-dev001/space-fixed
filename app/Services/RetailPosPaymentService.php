@@ -77,13 +77,18 @@ class RetailPosPaymentService
                 $resolvedVariant = null;
 
                 if ($requestedSize !== '' && $requestedColor !== '') {
+                    $normalizedRequestedSize = $this->normalizeVariantToken($requestedSize);
+                    $normalizedRequestedColor = $this->normalizeVariantToken($requestedColor);
+
                     $resolvedVariant = ProductVariant::query()
                         ->where('product_id', (int) $product->id)
                         ->where('is_active', true)
-                        ->where('size', $requestedSize)
-                        ->where('color', $requestedColor)
                         ->lockForUpdate()
-                        ->first();
+                        ->get()
+                        ->first(function (ProductVariant $variant) use ($normalizedRequestedSize, $normalizedRequestedColor) {
+                            return $this->normalizeVariantToken($variant->size) === $normalizedRequestedSize
+                                && $this->normalizeVariantToken($variant->color) === $normalizedRequestedColor;
+                        });
 
                     if (!$resolvedVariant) {
                         throw ValidationException::withMessages([
@@ -238,5 +243,10 @@ class RetailPosPaymentService
         } while (PosTransaction::query()->where('transaction_no', $transactionNo)->exists());
 
         return $transactionNo;
+    }
+
+    private function normalizeVariantToken(?string $value): string
+    {
+        return strtolower(preg_replace('/\s+/', ' ', trim((string) $value)) ?? '');
     }
 }

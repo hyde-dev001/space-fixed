@@ -327,13 +327,27 @@ const formatPeso = (value: number): string => {
 
 const createRetailLineId = (): string => `retail-line-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
+const normalizeVariantToken = (value: unknown): string => {
+	return String(value ?? "")
+		.trim()
+		.replace(/\s+/g, " ")
+		.toLowerCase();
+};
+
 const getRetailVariantIdentity = (
 	productId: number,
 	variantId: number | null | undefined,
 	size?: string | null,
 	color?: string | null,
 ): string => {
-	return `${productId}:${variantId ?? "none"}:${size ?? ""}:${color ?? ""}`;
+	const parsedVariantId = Number(variantId ?? 0);
+	if (parsedVariantId > 0) {
+		return `${productId}::variant:${parsedVariantId}`;
+	}
+
+	const normalizedSize = normalizeVariantToken(size);
+	const normalizedColor = normalizeVariantToken(color);
+	return `${productId}::option:${normalizedSize}|${normalizedColor}`;
 };
 
 const MANUAL_QUEUE_NEXT_STATUS: Record<ManualQueueStatus, ManualQueueStatus | null> = {
@@ -1255,7 +1269,12 @@ useEffect(() => {
 	};
 
 	const resolveRetailVariant = (product: RetailCatalogProduct, size: string, color: string): RetailProductVariant | null => {
-		const matched = product.variants.find((variant) => variant.size === size && variant.color === color);
+		const normalizedSize = normalizeVariantToken(size);
+		const normalizedColor = normalizeVariantToken(color);
+		const matched = product.variants.find((variant) => (
+			normalizeVariantToken(variant.size) === normalizedSize
+			&& normalizeVariantToken(variant.color) === normalizedColor
+		));
 		return matched ?? null;
 	};
 
@@ -1272,7 +1291,12 @@ useEffect(() => {
 	const addRetailProductToCart = (product: RetailCatalogProduct) => {
 		const selection = getRetailSelectionForProduct(product);
 		const selectedVariant = resolveRetailVariant(product, selection.size, selection.color);
-		const nextVariantIdentity = getRetailVariantIdentity(product.id, selectedVariant?.id ?? null, selection.size, selection.color);
+		const nextVariantIdentity = getRetailVariantIdentity(
+			product.id,
+			selectedVariant?.id ?? null,
+			selectedVariant?.size ?? selection.size,
+			selectedVariant?.color ?? selection.color,
+		);
 		const stock = selectedVariant ? selectedVariant.stock : product.stock;
 		if (stock <= 0) return;
 
@@ -1297,10 +1321,10 @@ useEffect(() => {
 					unitPrice: product.price,
 					qty: 1,
 					stock,
-					image: product.image ?? undefined,
+					image: selectedVariant?.image ?? product.image ?? undefined,
 					variantId: selectedVariant?.id ?? null,
-					size: selection.size || undefined,
-					color: selection.color || undefined,
+					size: selectedVariant?.size ?? (selection.size || undefined),
+					color: selectedVariant?.color ?? (selection.color || undefined),
 				},
 			];
 		});
@@ -1317,7 +1341,7 @@ useEffect(() => {
 				const matched = resolveRetailVariant(product, nextSize, nextColor);
 				if (!matched) return item;
 
-				const nextIdentity = getRetailVariantIdentity(item.productId, matched.id, nextSize, nextColor);
+				const nextIdentity = getRetailVariantIdentity(item.productId, matched.id, matched.size, matched.color);
 				const duplicate = prev.find((entry) => entry.lineId !== lineId && getRetailVariantIdentity(entry.productId, entry.variantId, entry.size, entry.color) === nextIdentity);
 
 				if (duplicate) {
@@ -1325,8 +1349,8 @@ useEffect(() => {
 						...item,
 						qty: Math.min(item.qty + duplicate.qty, matched.stock),
 						variantId: matched.id,
-						size: nextSize,
-						color: nextColor,
+						size: matched.size,
+						color: matched.color,
 					};
 				}
 
@@ -1334,8 +1358,8 @@ useEffect(() => {
 					...item,
 					unitPrice: matched ? matched?.stock >= item.qty ? item.unitPrice : item.unitPrice : item.unitPrice,
 					variantId: matched.id,
-					size: nextSize,
-					color: nextColor,
+					size: matched.size,
+					color: matched.color,
 					stock: matched.stock,
 				};
 			});
@@ -2863,7 +2887,7 @@ useEffect(() => {
 										const sizeOptions = Array.from(new Set(product.variants.map((variant) => variant.size).filter((size) => size.length > 0)));
 										const colorOptions = Array.from(new Set(
 											product.variants
-												.filter((variant) => selection.size.length === 0 || variant.size === selection.size)
+												.filter((variant) => selection.size.length === 0 || normalizeVariantToken(variant.size) === normalizeVariantToken(selection.size))
 												.map((variant) => variant.color)
 												.filter((color) => color.length > 0),
 										));
@@ -2894,8 +2918,8 @@ useEffect(() => {
 																value={selection.size}
 																onChange={(event) => {
 																	const nextSize = event.target.value;
-																	const firstColorForSize = product.variants.find((variant) => variant.size === nextSize && variant.stock > 0)?.color
-																		?? product.variants.find((variant) => variant.size === nextSize)?.color
+																	const firstColorForSize = product.variants.find((variant) => normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize) && variant.stock > 0)?.color
+																		?? product.variants.find((variant) => normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize))?.color
 																		?? "";
 																	updateRetailSelection(product.id, { size: nextSize, color: firstColorForSize });
 																}}
@@ -2977,7 +3001,7 @@ useEffect(() => {
 													const selectedSize = item.size ?? sizeOptions[0] ?? "";
 													const colorOptions = Array.from(new Set(
 														sourceProduct.variants
-														.filter((variant) => variant.size === selectedSize)
+														.filter((variant) => normalizeVariantToken(variant.size) === normalizeVariantToken(selectedSize))
 														.map((variant) => variant.color)
 														.filter((color) => color.length > 0),
 													));
@@ -2989,10 +3013,10 @@ useEffect(() => {
 																value={selectedSize}
 																onChange={(event) => {
 																	const nextSize = event.target.value;
-																	const nextColor = sourceProduct.variants.find((variant) => variant.size === nextSize && variant.stock > 0)?.color
-																		?? sourceProduct.variants.find((variant) => variant.size === nextSize)?.color
+																	const nextColor = sourceProduct.variants.find((variant) => normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize) && variant.stock > 0)?.color
+																		?? sourceProduct.variants.find((variant) => normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize))?.color
 																		?? "";
-																	updateRetailCartVariant(item.lineId, selectedSize, event.target.value);
+																	updateRetailCartVariant(item.lineId, nextSize, nextColor);
 																}}
 																className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700 outline-none focus:border-blue-500"
 															>

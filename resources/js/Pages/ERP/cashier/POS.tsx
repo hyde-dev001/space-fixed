@@ -398,6 +398,13 @@ const resolveCommittedRetailRefundQtyByOrderItem = (receipt: ReceiptSnapshot): M
 
 const createRetailLineId = (): string => `retail-line-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
+const normalizeVariantToken = (value: unknown): string => {
+	return String(value ?? "")
+		.trim()
+		.replace(/\s+/g, " ")
+		.toLowerCase();
+};
+
 const getRetailVariantIdentity = (
 	productId: number,
 	variantId?: number | null,
@@ -409,8 +416,8 @@ const getRetailVariantIdentity = (
 		return `${productId}::variant:${parsedVariantId}`;
 	}
 
-	const normalizedSize = String(size ?? "").trim().toLowerCase();
-	const normalizedColor = String(color ?? "").trim().toLowerCase();
+	const normalizedSize = normalizeVariantToken(size);
+	const normalizedColor = normalizeVariantToken(color);
 	return `${productId}::option:${normalizedSize}|${normalizedColor}`;
 };
 
@@ -2141,7 +2148,13 @@ const PointOfSalePage = () => {
 			return null;
 		}
 
-		return product.variants.find((variant) => variant.size === size && variant.color === color) ?? null;
+		const normalizedSize = normalizeVariantToken(size);
+		const normalizedColor = normalizeVariantToken(color);
+
+		return product.variants.find((variant) => (
+			normalizeVariantToken(variant.size) === normalizedSize
+			&& normalizeVariantToken(variant.color) === normalizedColor
+		)) ?? null;
 	};
 
 	const updateRetailSelection = (productId: number, updates: Partial<{ size: string; color: string }>) => {
@@ -2823,7 +2836,7 @@ const PointOfSalePage = () => {
 											const sizeOptions = Array.from(new Set(product.variants.map((variant) => variant.size).filter((size) => size.length > 0)));
 											const colorOptions = Array.from(new Set(
 												product.variants
-													.filter((variant) => selection.size.length === 0 || variant.size === selection.size)
+													.filter((variant) => selection.size.length === 0 || normalizeVariantToken(variant.size) === normalizeVariantToken(selection.size))
 													.map((variant) => variant.color)
 													.filter((color) => color.length > 0),
 											));
@@ -2854,8 +2867,8 @@ const PointOfSalePage = () => {
 																	value={selection.size}
 																	onChange={(event) => {
 																		const nextSize = event.target.value;
-																		const firstColorForSize = product.variants.find((variant) => variant.size === nextSize && variant.stock > 0)?.color
-																			?? product.variants.find((variant) => variant.size === nextSize)?.color
+																		const firstColorForSize = product.variants.find((variant) => normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize) && variant.stock > 0)?.color
+																			?? product.variants.find((variant) => normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize))?.color
 																			?? "";
 																		updateRetailSelection(product.id, { size: nextSize, color: firstColorForSize });
 																	}}
@@ -2937,7 +2950,7 @@ const PointOfSalePage = () => {
 													const selectedSize = item.size ?? sizeOptions[0] ?? "";
 													const colorOptions = Array.from(new Set(
 														sourceProduct.variants
-															.filter((variant) => variant.size === selectedSize)
+															.filter((variant) => normalizeVariantToken(variant.size) === normalizeVariantToken(selectedSize))
 															.map((variant) => variant.color)
 															.filter((color) => color.length > 0),
 													));
@@ -2949,8 +2962,8 @@ const PointOfSalePage = () => {
 																value={selectedSize}
 																onChange={(event) => {
 																	const nextSize = event.target.value;
-																	const nextColor = sourceProduct.variants.find((variant) => variant.size === nextSize && variant.stock > 0)?.color
-																		?? sourceProduct.variants.find((variant) => variant.size === nextSize)?.color
+																	const nextColor = sourceProduct.variants.find((variant) => normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize) && variant.stock > 0)?.color
+																		?? sourceProduct.variants.find((variant) => normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize))?.color
 																		?? "";
 																	updateRetailCartVariant(item.lineId, nextSize, nextColor);
 																}}

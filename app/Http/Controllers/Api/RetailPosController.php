@@ -23,6 +23,14 @@ class RetailPosController extends Controller
         $this->assertRetailOrBoth($shopOwnerId);
 
         $query = trim((string) $request->query('q', ''));
+        $normalizedQuery = preg_replace('/\s+/', ' ', $query) ?? $query;
+        $queryWithCompactPlus = preg_replace('/\s*\+\s*/', '+', $normalizedQuery) ?? $normalizedQuery;
+        $queryWithSpacedPlus = preg_replace('/\s*\+\s*/', ' + ', $normalizedQuery) ?? $normalizedQuery;
+        $queryTerms = collect([$query, $normalizedQuery, $queryWithCompactPlus, $queryWithSpacedPlus])
+            ->map(fn ($term) => trim((string) $term))
+            ->filter(fn ($term) => $term !== '')
+            ->unique()
+            ->values();
 
         $products = Product::query()
             ->with(['variants' => function ($query) {
@@ -33,8 +41,22 @@ class RetailPosController extends Controller
             }])
             ->where('shop_owner_id', $shopOwnerId)
             ->where('is_active', true)
-            ->when($query !== '', function ($builder) use ($query) {
-                $builder->where('name', 'like', "%{$query}%");
+            ->when($queryTerms->isNotEmpty(), function ($builder) use ($queryTerms) {
+                $builder->where(function ($outerQuery) use ($queryTerms) {
+                    foreach ($queryTerms as $term) {
+                        $outerQuery
+                            ->orWhere('name', 'like', "%{$term}%")
+                            ->orWhereHas('variants', function ($variantQuery) use ($term) {
+                                $variantQuery
+                                    ->where('is_active', true)
+                                    ->where(function ($innerQuery) use ($term) {
+                                        $innerQuery
+                                            ->where('color', 'like', "%{$term}%")
+                                            ->orWhere('size', 'like', "%{$term}%");
+                                    });
+                            });
+                    }
+                });
             })
             ->orderBy('name')
             ->limit(250)

@@ -304,6 +304,20 @@ class UserController extends Controller
 
                 // For employees/staff, only active employment status can access the system.
                 if ($user->shop_owner_id) {
+                    $shopOwner = ShopOwner::find($user->shop_owner_id);
+                    if ($shopOwner) {
+                        $shopOwnerStatus = $shopOwner->status;
+                        $isShopSuspended = $shopOwnerStatus instanceof ShopOwnerStatus
+                            ? $shopOwnerStatus === ShopOwnerStatus::SUSPENDED
+                            : (string) $shopOwnerStatus === ShopOwnerStatus::SUSPENDED->value;
+
+                        if ($isShopSuspended) {
+                            throw ValidationException::withMessages([
+                                'email' => ['Your shop account has been suspended. Please contact your administrator.'],
+                            ]);
+                        }
+                    }
+
                     $employee = Employee::where('email', $user->email)->first();
                     if ($employee) {
                         $employeeStatus = $employee->status;
