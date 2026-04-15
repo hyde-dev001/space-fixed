@@ -3,6 +3,7 @@
 namespace Tests\Feature\SuspensionAppeals;
 
 use App\Mail\SuspensionAppealDecisionMail;
+use App\Mail\SuspensionAppealSubmittedMail;
 use App\Mail\SuspensionNoticeMail;
 use App\Models\ShopOwner;
 use App\Models\SuperAdmin;
@@ -94,6 +95,10 @@ class SuspensionAppealFlowTest extends TestCase
 
     public function test_public_signed_endpoint_submits_suspension_appeal(): void
     {
+        Mail::fake();
+
+        $superAdmin = SuperAdmin::query()->firstOrFail();
+
         $customer = User::factory()->create([
             'status' => 'suspended',
             'email' => 'submit-appeal@example.com',
@@ -133,6 +138,10 @@ class SuspensionAppealFlowTest extends TestCase
             'id' => $appeal->id,
             'status' => 'submitted',
         ]);
+
+        Mail::assertSent(SuspensionAppealSubmittedMail::class, function (SuspensionAppealSubmittedMail $mail) use ($superAdmin) {
+            return $mail->hasTo($superAdmin->email);
+        });
     }
 
     public function test_super_admin_can_approve_submitted_appeal_and_send_decision_email(): void

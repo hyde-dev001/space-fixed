@@ -3,8 +3,10 @@
 namespace App\Services;
 
 use App\Mail\SuspensionAppealDecisionMail;
+use App\Mail\SuspensionAppealSubmittedMail;
 use App\Mail\SuspensionNoticeMail;
 use App\Models\ShopOwner;
+use App\Models\SuperAdmin;
 use App\Models\SuspensionAppeal;
 use App\Models\User;
 use Illuminate\Support\Facades\Log;
@@ -81,6 +83,54 @@ class SuspensionAppealService
                 'email' => $email,
                 'error' => $e->getMessage(),
             ]);
+        }
+    }
+
+    public function sendSubmissionNotificationToSuperAdmins(SuspensionAppeal $appeal): void
+    {
+        if ((string) $appeal->status !== 'submitted') {
+            return;
+        }
+
+        $appealMessage = trim((string) ($appeal->appeal_message ?? ''));
+        if ($appealMessage === '') {
+            return;
+        }
+
+        $recipientEmails = SuperAdmin::query()
+            ->whereNotNull('email')
+            ->pluck('email')
+            ->map(fn ($email) => trim((string) $email))
+            ->filter(fn ($email) => $email !== '')
+            ->unique()
+            ->values();
+
+        if ($recipientEmails->isEmpty()) {
+            return;
+        }
+
+        $typeLabel = $appeal->account_type === 'shop_owner' ? 'shop owner' : 'customer';
+        $reviewUrl = route('admin.suspension-appeals');
+        $submittedAtLabel = ($appeal->submitted_at ?? now())->format('M d, Y h:i A');
+
+        foreach ($recipientEmails as $email) {
+            try {
+                Mail::to($email)->send(new SuspensionAppealSubmittedMail(
+                    accountName: (string) ($appeal->account_name ?: 'User'),
+                    accountTypeLabel: $typeLabel,
+                    recipientEmail: (string) ($appeal->recipient_email ?? ''),
+                    suspensionReason: $appeal->suspension_reason,
+                    appealMessage: $appealMessage,
+                    submittedAtLabel: $submittedAtLabel,
+                    reviewUrl: $reviewUrl
+                ));
+            } catch (\Throwable $e) {
+                Log::error('Failed to send suspension appeal submitted email', [
+                    'appeal_id' => $appeal->id,
+                    'email' => $email,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
     }
 

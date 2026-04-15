@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\SuspensionAppeal;
+use App\Services\SuspensionAppealService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\URL;
@@ -46,7 +47,7 @@ class SuspensionAppealPublicController extends Controller
         ]);
     }
 
-    public function submit(Request $request, string $token): JsonResponse
+    public function submit(Request $request, string $token, SuspensionAppealService $appealService): JsonResponse
     {
         $appeal = SuspensionAppeal::query()
             ->where('appeal_token', $token)
@@ -78,6 +79,8 @@ class SuspensionAppealPublicController extends Controller
             'appeal_message' => $validated['appeal_message'],
             'submitted_at' => now(),
         ]);
+
+        $appealService->sendSubmissionNotificationToSuperAdmins($appeal->fresh());
 
         return response()->json([
             'message' => 'Appeal submitted successfully. Our team will review your request.',
