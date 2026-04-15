@@ -13,6 +13,7 @@ use App\Models\RepairWarrantyClaim;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\RepairPosPaymentService;
+use App\Services\RepairPosReceiptService;
 use App\Services\RepairPosRefundService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -566,7 +567,7 @@ class RepairPosController extends Controller
             ->all();
     }
 
-    public function listTransactions(Request $request)
+    public function listTransactions(Request $request, RepairPosReceiptService $receiptService)
     {
         $repairRequestId = (int) $request->query('repair_request_id');
         $perPage = max(1, min((int) $request->query('per_page', 100), 500));
@@ -580,7 +581,14 @@ class RepairPosController extends Controller
                 'repairRequest' => function ($query) {
                     $query->select(['id', 'status'])
                         ->with([
-                            'latestWarrantyClaim:id,original_repair_request_id,status,approved_once_guard',
+                            'latestWarrantyClaim' => function ($claimQuery) {
+                                $claimQuery->select([
+                                    'repair_warranty_claims.id',
+                                    'repair_warranty_claims.original_repair_request_id',
+                                    'repair_warranty_claims.status',
+                                    'repair_warranty_claims.approved_once_guard',
+                                ]);
+                            },
                         ]);
                 },
                 'paymentLines',
@@ -590,7 +598,12 @@ class RepairPosController extends Controller
             ->orderByDesc('id')
             ->paginate($perPage);
 
-        $rows->getCollection()->transform(function (PosTransaction $transaction) {
+        $rows->getCollection()->transform(function (PosTransaction $transaction) use ($receiptService) {
+            if (!$transaction->receipt) {
+                $generatedReceipt = $receiptService->issue($transaction->loadMissing('paymentLines'));
+                $transaction->setRelation('receipt', $generatedReceipt);
+            }
+
             $latestClaim = $transaction->repairRequest?->latestWarrantyClaim;
             $warrantyClaimData = $this->resolveWarrantyClaimLockData($latestClaim);
 
@@ -949,15 +962,13 @@ class RepairPosController extends Controller
         return array_values(array_unique($executionProofUrls));
     }
 
-    public function showReceipt(PosTransaction $transaction)
+    public function showReceipt(PosTransaction $transaction, RepairPosReceiptService $receiptService)
     {
         $transaction->load(['receipt', 'paymentLines']);
 
         if (!$transaction->receipt) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Receipt not found for this transaction.',
-            ], 404);
+            $generatedReceipt = $receiptService->issue($transaction);
+            $transaction->setRelation('receipt', $generatedReceipt);
         }
 
         return response()->json([

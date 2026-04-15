@@ -22,6 +22,7 @@ use App\Support\Tax\VatInclusiveCalculator;
 use App\Services\NotificationService;
 use App\Services\PaymentSettlementService;
 use App\Services\RepairPosPaymentService;
+use App\Services\RepairPosReceiptService;
 use App\Services\RepairPosRefundService;
 use App\Services\ShopOwnerApprovalPolicyService;
 
@@ -2699,6 +2700,8 @@ class RepairRequestController extends Controller
                 'status' => 'paid',
                 'paid_at' => now(),
             ]);
+
+            app(RepairPosReceiptService::class)->issue($transaction->fresh('paymentLines'));
 
             if (!$repair->latest_pos_transaction_id) {
                 $repair->update(['latest_pos_transaction_id' => $transaction->id]);

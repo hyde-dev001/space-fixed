@@ -10,6 +10,16 @@ class RepairPosReceiptService
 {
     public function issue(PosTransaction $transaction): PosReceipt
     {
+        $existingReceipt = PosReceipt::query()
+            ->where('pos_transaction_id', $transaction->id)
+            ->first();
+
+        if ($existingReceipt) {
+            return $existingReceipt;
+        }
+
+        $transaction->loadMissing('paymentLines');
+
         $receiptNo = 'RCPT-' . now()->format('Ymd') . '-' . str_pad((string) $transaction->id, 6, '0', STR_PAD_LEFT);
 
         $registeredCustomer = null;
