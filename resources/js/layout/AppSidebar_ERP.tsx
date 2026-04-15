@@ -703,6 +703,10 @@ const AppSidebar_ERP: React.FC = () => {
   const normalizedRoles = Array.isArray(roles)
     ? roles.map((value: string) => String(value).toUpperCase())
     : [];
+  const hasRolesArray = normalizedRoles.length > 0;
+  const hasManagerRole = normalizedRoles.includes('MANAGER') || (!hasRolesArray && normalizedRole === 'MANAGER');
+  const hasInventoryManagerRole = normalizedRoles.includes('INVENTORY MANAGER');
+  const hasProcurementManagerRole = normalizedRoles.includes('PROCUREMENT MANAGER');
 
   const [subMenuHeight, setSubMenuHeight] = useState<Record<string, number>>({});
   const subMenuRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -1230,7 +1234,13 @@ const AppSidebar_ERP: React.FC = () => {
 
   // Check if user has manager role or manager-specific permissions
   const hasManagerAccess = () => {
-    if (normalizedRoles.includes('MANAGER') || normalizedRole === 'MANAGER') return true;
+    if (hasManagerRole) return true;
+
+    // Dedicated module managers should stay inside their own module sections unless
+    // they explicitly carry the MANAGER role.
+    if (hasInventoryManagerRole || hasProcurementManagerRole) {
+      return false;
+    }
 
     // Keep manager gate strict: inventory-overview belongs to inventory flows and
     // should not elevate inventory-only users into the manager section.
