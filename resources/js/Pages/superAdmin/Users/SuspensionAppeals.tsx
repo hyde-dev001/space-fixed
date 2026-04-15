@@ -145,6 +145,9 @@ const statusLabel = (status: AppealItem['status']) => status.charAt(0).toUpperCa
 export default function SuspensionAppeals({ appeals = [], stats }: Props) {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | AppealItem['status']>('all');
+  const [selectedAppeal, setSelectedAppeal] = useState<AppealItem | null>(null);
+  const [reviewerNotes, setReviewerNotes] = useState('');
+  const [isActionSubmitting, setIsActionSubmitting] = useState(false);
 
   const safeStats: Stats = {
     total: stats?.total || 0,
@@ -172,12 +175,22 @@ export default function SuspensionAppeals({ appeals = [], stats }: Props) {
     });
   }, [appeals, searchTerm, statusFilter]);
 
-  const handleDecision = async (id: number, action: 'approve' | 'reject') => {
-    const notesPrompt = await Swal.fire({
+  const openActionModal = (item: AppealItem) => {
+    setSelectedAppeal(item);
+    setReviewerNotes(item.reviewer_notes || '');
+  };
+
+  const closeActionModal = () => {
+    setSelectedAppeal(null);
+    setReviewerNotes('');
+  };
+
+  const handleDecision = async (action: 'approve' | 'reject') => {
+    if (!selectedAppeal) return;
+
+    const confirm = await Swal.fire({
       title: action === 'approve' ? 'Approve appeal?' : 'Reject appeal?',
       text: action === 'approve' ? 'This restores account access.' : 'This keeps the account suspended.',
-      input: 'textarea',
-      inputPlaceholder: 'Reviewer notes (optional)',
       icon: action === 'approve' ? 'question' : 'warning',
       showCancelButton: true,
       confirmButtonColor: action === 'approve' ? '#10b981' : '#ef4444',
@@ -185,13 +198,17 @@ export default function SuspensionAppeals({ appeals = [], stats }: Props) {
       confirmButtonText: action === 'approve' ? 'Approve' : 'Reject',
     });
 
-    if (!notesPrompt.isConfirmed) return;
+    if (!confirm.isConfirmed) return;
 
-    router.post(`/admin/appeals/${id}/${action}`, {
-      reviewer_notes: notesPrompt.value || null,
+    setIsActionSubmitting(true);
+
+    router.post(`/admin/appeals/${selectedAppeal.id}/${action}`, {
+      reviewer_notes: reviewerNotes.trim() || null,
     }, {
       preserveScroll: true,
       onSuccess: () => {
+        setIsActionSubmitting(false);
+        closeActionModal();
         Swal.fire({
           icon: 'success',
           title: action === 'approve' ? 'Appeal approved' : 'Appeal rejected',
@@ -200,6 +217,7 @@ export default function SuspensionAppeals({ appeals = [], stats }: Props) {
         });
       },
       onError: () => {
+        setIsActionSubmitting(false);
         Swal.fire({
           icon: 'error',
           title: 'Action failed',
@@ -312,14 +330,13 @@ export default function SuspensionAppeals({ appeals = [], stats }: Props) {
                   <th className="px-4 py-3 text-left font-semibold text-gray-600">Type</th>
                   <th className="px-4 py-3 text-left font-semibold text-gray-600">Status</th>
                   <th className="px-4 py-3 text-left font-semibold text-gray-600">Reason</th>
-                  <th className="px-4 py-3 text-left font-semibold text-gray-600">Appeal Message</th>
                   <th className="px-4 py-3 text-left font-semibold text-gray-600">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filtered.length === 0 && (
                   <tr>
-                    <td className="px-4 py-10 text-center text-gray-500" colSpan={6}>
+                    <td className="px-4 py-10 text-center text-gray-500" colSpan={5}>
                       No appeals found.
                     </td>
                   </tr>
@@ -338,26 +355,13 @@ export default function SuspensionAppeals({ appeals = [], stats }: Props) {
                       </span>
                     </td>
                     <td className="max-w-xs px-4 py-3 text-gray-700">{item.suspension_reason || '-'}</td>
-                    <td className="max-w-sm px-4 py-3 text-gray-700">{item.appeal_message || '-'}</td>
                     <td className="px-4 py-3">
-                      {item.status === 'submitted' ? (
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleDecision(item.id, 'approve')}
-                            className="rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700"
-                          >
-                            Approve
-                          </button>
-                          <button
-                            onClick={() => handleDecision(item.id, 'reject')}
-                            className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
-                          >
-                            Reject
-                          </button>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-gray-400">No action</span>
-                      )}
+                      <button
+                        onClick={() => openActionModal(item)}
+                        className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+                      >
+                        View Action
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -365,6 +369,98 @@ export default function SuspensionAppeals({ appeals = [], stats }: Props) {
             </table>
           </div>
         </div>
+
+        {selectedAppeal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">Appeal Details</h3>
+                  <p className="text-xs text-gray-500">Review appeal message and take action here.</p>
+                </div>
+                <button
+                  onClick={closeActionModal}
+                  className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                  aria-label="Close action modal"
+                >
+                  <XIcon className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4 px-5 py-4">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Account</p>
+                    <p className="text-sm font-medium text-gray-900">{selectedAppeal.account_name || 'Unknown'}</p>
+                    <p className="text-xs text-gray-500">{selectedAppeal.recipient_email}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Status</p>
+                    <span className={`mt-1 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClasses[selectedAppeal.status]}`}>
+                      {statusLabel(selectedAppeal.status)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Suspension Reason</p>
+                  <p className="text-sm text-gray-700">{selectedAppeal.suspension_reason || '-'}</p>
+                </div>
+
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Appeal Message</p>
+                  <p className="text-sm text-gray-700">{selectedAppeal.appeal_message || '-'}</p>
+                </div>
+
+                {selectedAppeal.status === 'submitted' ? (
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Reviewer Notes (Optional)</label>
+                    <textarea
+                      value={reviewerNotes}
+                      onChange={(e) => setReviewerNotes(e.target.value)}
+                      rows={3}
+                      className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      placeholder="Add reviewer notes..."
+                    />
+                  </div>
+                ) : selectedAppeal.reviewer_notes ? (
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Reviewer Notes</p>
+                    <p className="text-sm text-gray-700">{selectedAppeal.reviewer_notes}</p>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="flex items-center justify-end gap-2 border-t border-gray-200 px-5 py-4">
+                <button
+                  onClick={closeActionModal}
+                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                >
+                  Close
+                </button>
+
+                {selectedAppeal.status === 'submitted' && (
+                  <>
+                    <button
+                      onClick={() => handleDecision('approve')}
+                      disabled={isActionSubmitting}
+                      className="rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-60"
+                    >
+                      {isActionSubmitting ? 'Processing...' : 'Approve'}
+                    </button>
+                    <button
+                      onClick={() => handleDecision('reject')}
+                      disabled={isActionSubmitting}
+                      className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+                    >
+                      {isActionSubmitting ? 'Processing...' : 'Reject'}
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </AppLayout>
   );
