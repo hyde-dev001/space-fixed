@@ -1400,6 +1400,7 @@ Route::middleware('super_admin.auth')->prefix('admin')->name('admin.')->group(fu
 
     // Shop management routes
     Route::get('/registered-shops', [SuperAdminController::class, 'showRegisteredShops'])->name('registered-shops');
+    Route::get('/shops/{id}/details', [SuperAdminController::class, 'shopDetails'])->name('shops.details');
     Route::get('/subscription-management', [SuperAdminController::class, 'showSubscriptionManagement'])->name('subscription-management');
         Route::post('/subscriptions/{id}/cancel', [SuperAdminController::class, 'cancelSubscription'])->name('subscriptions.cancel');
         Route::post('/subscriptions/{id}/upgrade', [SuperAdminController::class, 'upgradeSubscription'])->name('subscriptions.upgrade');

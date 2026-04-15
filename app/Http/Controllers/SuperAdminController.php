@@ -13,6 +13,7 @@ use App\Services\SuspensionAppealService;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rules\Password;
+use Illuminate\Http\JsonResponse;
 
 class SuperAdminController extends Controller
 {
@@ -77,9 +78,8 @@ class SuperAdminController extends Controller
      */
     public function showRegisteredShops(): Response
     {
-        // Fetch all approved shop owners (including suspended ones)
+        // Keep list payload lightweight; load document-heavy details on demand.
         $shops = ShopOwner::whereIn('status', ['approved', 'suspended'])
-            ->with('documents')
             ->orderBy('created_at', 'desc')
             ->get()
             ->map(function ($shopOwner) {
@@ -95,14 +95,10 @@ class SuperAdminController extends Controller
                     'business_address' => $shopOwner->business_address,
                     'business_type' => $shopOwner->business_type,
                     'registration_type' => $shopOwner->registration_type,
-                    'operating_hours' => is_array($shopOwner->operating_hours) ? $shopOwner->operating_hours : [],
                     'status' => $shopOwner->status,
                     'suspension_reason' => $shopOwner->suspension_reason,
                     'created_at' => $shopOwner->created_at->format('Y-m-d H:i:s'),
                     'approved_at' => $shopOwner->updated_at->format('Y-m-d H:i:s'),
-                    'documentUrls' => $shopOwner->documents->map(function ($doc) {
-                        return '/storage/' . $doc->file_path;
-                    })->toArray(),
                 ];
             });
 
@@ -120,6 +116,37 @@ class SuperAdminController extends Controller
         return Inertia::render('superAdmin/Shops/RegisteredShops', [
             'shops' => $shops,
             'stats' => $stats
+        ]);
+    }
+
+    public function shopDetails(int $id): JsonResponse
+    {
+        $shopOwner = ShopOwner::query()
+            ->with('documents')
+            ->findOrFail($id);
+
+        return response()->json([
+            'shop' => [
+                'id' => $shopOwner->id,
+                'first_name' => $shopOwner->first_name,
+                'last_name' => $shopOwner->last_name,
+                'fullName' => $shopOwner->full_name,
+                'email' => $shopOwner->email,
+                'contact_number' => $shopOwner->phone,
+                'phone' => $shopOwner->phone,
+                'business_name' => $shopOwner->business_name,
+                'business_address' => $shopOwner->business_address,
+                'business_type' => $shopOwner->business_type,
+                'registration_type' => $shopOwner->registration_type,
+                'operating_hours' => is_array($shopOwner->operating_hours) ? $shopOwner->operating_hours : [],
+                'status' => $shopOwner->status,
+                'suspension_reason' => $shopOwner->suspension_reason,
+                'created_at' => $shopOwner->created_at->format('Y-m-d H:i:s'),
+                'approved_at' => $shopOwner->updated_at->format('Y-m-d H:i:s'),
+                'documentUrls' => $shopOwner->documents->map(function ($doc) {
+                    return '/storage/' . $doc->file_path;
+                })->toArray(),
+            ],
         ]);
     }
 

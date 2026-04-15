@@ -172,21 +172,23 @@ class SuspensionAppealService
             ['token' => $appeal->appeal_token]
         );
 
-        try {
-            Mail::to($recipientEmail)->send(new SuspensionNoticeMail(
-                accountName: $accountName !== '' ? $accountName : 'User',
-                accountTypeLabel: $accountTypeLabel,
-                reason: $reason,
-                appealUrl: $appealUrl,
-                expiresAtLabel: $expiresAt->format('M d, Y h:i A')
-            ));
-        } catch (\Throwable $e) {
-            Log::error('Failed to send suspension notice email', [
-                'appeal_id' => $appeal->id,
-                'email' => $recipientEmail,
-                'error' => $e->getMessage(),
-            ]);
-        }
+        dispatch(function () use ($appeal, $recipientEmail, $accountName, $accountTypeLabel, $reason, $appealUrl, $expiresAt): void {
+            try {
+                Mail::to($recipientEmail)->send(new SuspensionNoticeMail(
+                    accountName: $accountName !== '' ? $accountName : 'User',
+                    accountTypeLabel: $accountTypeLabel,
+                    reason: $reason,
+                    appealUrl: $appealUrl,
+                    expiresAtLabel: $expiresAt->format('M d, Y h:i A')
+                ));
+            } catch (\Throwable $e) {
+                Log::error('Failed to send suspension notice email', [
+                    'appeal_id' => $appeal->id,
+                    'email' => $recipientEmail,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        })->afterResponse();
 
         return $appeal;
     }

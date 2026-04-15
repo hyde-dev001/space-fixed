@@ -130,6 +130,7 @@ function RegisteredShops({ shops, stats }) {
   const [filterType, setFilterType] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [selectedShop, setSelectedShop] = useState(null);
+  const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   const [isSuspendModalOpen, setIsSuspendModalOpen] = useState(false);
   const [shopToSuspend, setShopToSuspend] = useState(null);
   const [selectedSuspensionReason, setSelectedSuspensionReason] = useState('');
@@ -163,8 +164,33 @@ function RegisteredShops({ shops, stats }) {
     setCurrentPage(1);
   }, [searchQuery, filterType, filterStatus]);
 
-  const handleViewDetails = (shop) => {
-    setSelectedShop(shop);
+  const handleViewDetails = async (shop) => {
+    setIsLoadingDetails(true);
+    try {
+      const response = await fetch(`/admin/shops/${shop.id}/details`, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to load shop details.');
+      }
+
+      const payload = await response.json();
+      setSelectedShop(payload?.shop || null);
+    } catch (_error) {
+      Swal.fire({
+        title: 'Error',
+        text: 'Unable to load shop details right now. Please try again.',
+        icon: 'error',
+        confirmButtonColor: '#ef4444',
+      });
+    } finally {
+      setIsLoadingDetails(false);
+    }
   };
 
   const handleSuspendShop = (shopId, shopName) => {
@@ -618,6 +644,16 @@ function RegisteredShops({ shops, stats }) {
         </div>
 
         {/* Details Modal - Matching ShopOwnerRegistrationView */}
+        {isLoadingDetails && (
+          <ModalPortal>
+            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+              <div className="bg-white dark:bg-gray-800 rounded-xl px-6 py-5 shadow-xl border border-gray-200 dark:border-gray-700">
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Loading shop details...</p>
+              </div>
+            </div>
+          </ModalPortal>
+        )}
+
         {selectedShop && (
           <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
             <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
