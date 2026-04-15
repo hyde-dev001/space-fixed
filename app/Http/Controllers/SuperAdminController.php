@@ -783,13 +783,32 @@ class SuperAdminController extends Controller
                 auth('super_admin')->id()
             );
 
+            if ($request->expectsJson() || $request->wantsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Shop suspended successfully.',
+                    'shop' => [
+                        'id' => $shop->id,
+                        'status' => 'suspended',
+                        'suspension_reason' => $validated['suspension_reason'] ?? null,
+                    ],
+                ]);
+            }
+
             return redirect()->back()->with('success', 'Shop suspended successfully.');
         } catch (\Exception $e) {
+            if ($request->expectsJson() || $request->wantsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to suspend shop. Please try again.',
+                ], 500);
+            }
+
             return redirect()->back()->withErrors(['error' => 'Failed to suspend shop. Please try again.']);
         }
     }
 
-    public function activateShop($id)
+    public function activateShop(Request $request, $id)
     {
         try {
             $shop = ShopOwner::findOrFail($id);
@@ -811,8 +830,27 @@ class SuperAdminController extends Controller
                 ],
             ]);
 
+            if ($request->expectsJson() || $request->wantsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Shop activated successfully.',
+                    'shop' => [
+                        'id' => $shop->id,
+                        'status' => 'approved',
+                        'suspension_reason' => null,
+                    ],
+                ]);
+            }
+
             return redirect()->back()->with('success', 'Shop activated successfully.');
         } catch (\Exception $e) {
+            if ($request->expectsJson() || $request->wantsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to activate shop. Please try again.',
+                ], 500);
+            }
+
             return redirect()->back()->withErrors(['error' => 'Failed to activate shop. Please try again.']);
         }
     }

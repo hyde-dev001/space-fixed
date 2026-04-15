@@ -125,6 +125,7 @@ function RegisteredShops({ shops, stats }) {
   const { props } = usePage();
   const auth = (props as any).auth;
   const isSuperAdmin = auth?.user?.role === 'super_admin';
+  const [shopRows, setShopRows] = useState(() => (Array.isArray(shops) ? shops : []));
   
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState('all');
@@ -135,12 +136,18 @@ function RegisteredShops({ shops, stats }) {
   const [shopToSuspend, setShopToSuspend] = useState(null);
   const [selectedSuspensionReason, setSelectedSuspensionReason] = useState('');
   const [otherReasonText, setOtherReasonText] = useState('');
+  const [isActionSubmitting, setIsActionSubmitting] = useState(false);
   const [expandedDocuments, setExpandedDocuments] = useState(new Set());
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(7);
 
+  const csrfToken =
+    typeof document !== 'undefined'
+      ? document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+      : '';
+
   // Filter shops based on search and filters
-  const filteredShops = shops.filter(shop => {
+  const filteredShops = shopRows.filter(shop => {
     const matchesSearch = 
       shop.business_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       shop.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -158,6 +165,18 @@ function RegisteredShops({ shops, stats }) {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
   const paginatedShops = filteredShops.slice(startIndex, endIndex);
+
+  const dashboardStats = React.useMemo(() => {
+    const activeCount = shopRows.filter((shop) => shop.status === 'approved').length;
+    const suspendedCount = shopRows.filter((shop) => shop.status === 'suspended').length;
+
+    return {
+      total: shopRows.length,
+      active: activeCount,
+      suspended: suspendedCount,
+      thisMonth: stats?.thisMonth || 0,
+    };
+  }, [shopRows, stats]);
 
   // Reset to page 1 when filters change
   React.useEffect(() => {
@@ -194,14 +213,14 @@ function RegisteredShops({ shops, stats }) {
   };
 
   const handleSuspendShop = (shopId, shopName) => {
-    const shop = shops.find(s => s.id === shopId);
+    const shop = shopRows.find(s => s.id === shopId);
     setShopToSuspend(shop);
     setIsSuspendModalOpen(true);
     setSelectedSuspensionReason('');
     setOtherReasonText('');
   };
 
-  const confirmSuspendShop = () => {
+  const confirmSuspendShop = async () => {
     let reason = '';
     
     if (selectedSuspensionReason === 'Other') {
@@ -229,30 +248,73 @@ function RegisteredShops({ shops, stats }) {
       return;
     }
 
-    router.post(`/admin/shops/${shopToSuspend.id}/suspend`, {
-      suspension_reason: reason
-    }, {
-      onSuccess: () => {
-        setIsSuspendModalOpen(false);
-        setShopToSuspend(null);
-        setSelectedSuspensionReason('');
-        setOtherReasonText('');
-        Swal.fire({
-          title: 'Suspended!',
-          text: 'Shop has been suspended successfully.',
-          icon: 'success',
-          confirmButtonColor: '#10b981',
-        });
-      },
-      onError: () => {
-        Swal.fire({
-          title: 'Error',
-          text: 'Failed to suspend shop. Please try again.',
-          icon: 'error',
-          confirmButtonColor: '#ef4444',
-        });
-      },
-    });
+    try {
+      setIsActionSubmitting(true);
+
+      const response = await fetch(`/admin/shops/${shopToSuspend.id}/suspend`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'X-CSRF-TOKEN': csrfToken,
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        body: JSON.stringify({
+          suspension_reason: reason,
+        }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(payload?.message || 'Failed to suspend shop. Please try again.');
+      }
+
+      setShopRows((prev) =>
+        prev.map((shop) =>
+          Number(shop.id) === Number(shopToSuspend.id)
+            ? {
+                ...shop,
+                status: 'suspended',
+                suspension_reason: reason,
+              }
+            : shop
+        )
+      );
+
+      setSelectedShop((prev) => {
+        if (!prev || Number(prev.id) !== Number(shopToSuspend.id)) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          status: 'suspended',
+          suspension_reason: reason,
+        };
+      });
+
+      setIsSuspendModalOpen(false);
+      setShopToSuspend(null);
+      setSelectedSuspensionReason('');
+      setOtherReasonText('');
+
+      Swal.fire({
+        title: 'Suspended!',
+        text: payload?.message || 'Shop has been suspended successfully.',
+        icon: 'success',
+        confirmButtonColor: '#10b981',
+      });
+    } catch (error) {
+      Swal.fire({
+        title: 'Error',
+        text: error instanceof Error ? error.message : 'Failed to suspend shop. Please try again.',
+        icon: 'error',
+        confirmButtonColor: '#ef4444',
+      });
+    } finally {
+      setIsActionSubmitting(false);
+    }
   };
 
   const handleActivateShop = (shopId, shopName) => {
@@ -267,24 +329,68 @@ function RegisteredShops({ shops, stats }) {
       cancelButtonText: 'Cancel',
     }).then((result) => {
       if (result.isConfirmed) {
-        router.post(`/admin/shops/${shopId}/activate`, {}, {
-          onSuccess: () => {
+        (async () => {
+          try {
+            setIsActionSubmitting(true);
+
+            const response = await fetch(`/admin/shops/${shopId}/activate`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                'X-CSRF-TOKEN': csrfToken,
+                'X-Requested-With': 'XMLHttpRequest',
+              },
+              body: JSON.stringify({}),
+            });
+
+            const payload = await response.json().catch(() => ({}));
+
+            if (!response.ok) {
+              throw new Error(payload?.message || 'Failed to activate shop. Please try again.');
+            }
+
+            setShopRows((prev) =>
+              prev.map((shop) =>
+                Number(shop.id) === Number(shopId)
+                  ? {
+                      ...shop,
+                      status: 'approved',
+                      suspension_reason: null,
+                    }
+                  : shop
+              )
+            );
+
+            setSelectedShop((prev) => {
+              if (!prev || Number(prev.id) !== Number(shopId)) {
+                return prev;
+              }
+
+              return {
+                ...prev,
+                status: 'approved',
+                suspension_reason: null,
+              };
+            });
+
             Swal.fire({
               title: 'Activated!',
-              text: 'Shop has been activated successfully.',
+              text: payload?.message || 'Shop has been activated successfully.',
               icon: 'success',
               confirmButtonColor: '#10b981',
             });
-          },
-          onError: () => {
+          } catch (error) {
             Swal.fire({
               title: 'Error',
-              text: 'Failed to activate shop. Please try again.',
+              text: error instanceof Error ? error.message : 'Failed to activate shop. Please try again.',
               icon: 'error',
               confirmButtonColor: '#ef4444',
             });
-          },
-        });
+          } finally {
+            setIsActionSubmitting(false);
+          }
+        })();
       }
     });
   };
@@ -358,7 +464,7 @@ function RegisteredShops({ shops, stats }) {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <MetricCard
             title="Total Shops"
-            value={stats?.total || 0}
+            value={dashboardStats.total || 0}
             change={12}
             changeType="increase"
             icon={StoreIcon}
@@ -367,7 +473,7 @@ function RegisteredShops({ shops, stats }) {
           />
           <MetricCard
             title="Active Shops"
-            value={stats?.active || 0}
+            value={dashboardStats.active || 0}
             change={8}
             changeType="increase"
             icon={CheckCircleIcon}
@@ -376,7 +482,7 @@ function RegisteredShops({ shops, stats }) {
           />
           <MetricCard
             title="Suspended"
-            value={stats?.suspended || 0}
+            value={dashboardStats.suspended || 0}
             change={-5}
             changeType="decrease"
             icon={BanIcon}
@@ -385,7 +491,7 @@ function RegisteredShops({ shops, stats }) {
           />
           <MetricCard
             title="This Month"
-            value={stats?.thisMonth || 0}
+            value={dashboardStats.thisMonth || 0}
             change={15}
             changeType="increase"
             icon={StoreIcon}
@@ -441,7 +547,7 @@ function RegisteredShops({ shops, stats }) {
 
           <div className="mt-4 flex items-center justify-between text-sm">
             <p className="text-gray-600 dark:text-gray-400">
-              Showing {filteredShops.length} of {shops.length} shops
+              Showing {filteredShops.length} of {shopRows.length} shops
             </p>
             {(searchQuery || filterType !== 'all' || filterStatus !== 'all') && (
               <button
@@ -536,6 +642,7 @@ function RegisteredShops({ shops, stats }) {
                         <div className="flex gap-1 items-center">
                           <button
                             onClick={() => handleViewDetails(shop)}
+                            disabled={isActionSubmitting}
                             className="inline-flex items-center justify-center w-8 h-8 rounded-md text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
                             title="View Details"
                           >
@@ -544,6 +651,7 @@ function RegisteredShops({ shops, stats }) {
                           {shop.status === 'approved' ? (
                             <button
                               onClick={() => handleSuspendShop(shop.id, shop.business_name)}
+                              disabled={isActionSubmitting}
                               className="inline-flex items-center justify-center w-8 h-8 rounded-md text-orange-600 hover:text-orange-800 dark:text-orange-400 dark:hover:text-orange-300 transition-colors"
                               title="Suspend Shop"
                             >
@@ -552,6 +660,7 @@ function RegisteredShops({ shops, stats }) {
                           ) : (
                             <button
                               onClick={() => handleActivateShop(shop.id, shop.business_name)}
+                              disabled={isActionSubmitting}
                               className="inline-flex items-center justify-center w-8 h-8 rounded-md text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 transition-colors"
                               title="Activate Shop"
                             >
@@ -561,6 +670,7 @@ function RegisteredShops({ shops, stats }) {
                           {isSuperAdmin && (
                             <button
                               onClick={() => handleDeleteShop(shop.id, shop.business_name)}
+                              disabled={isActionSubmitting}
                               className="inline-flex items-center justify-center w-8 h-8 rounded-md text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 transition-colors"
                               title="Delete Shop (Super Admin Only)"
                             >
@@ -941,15 +1051,17 @@ function RegisteredShops({ shops, stats }) {
                       setSelectedSuspensionReason('');
                       setOtherReasonText('');
                     }}
+                    disabled={isActionSubmitting}
                     className="flex-1 px-4 py-2.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 font-medium transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={confirmSuspendShop}
+                    disabled={isActionSubmitting}
                     className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium transition-colors"
                   >
-                    Yes, suspend
+                    {isActionSubmitting ? 'Suspending...' : 'Yes, suspend'}
                   </button>
                 </div>
               </div>
