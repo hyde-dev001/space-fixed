@@ -102,6 +102,8 @@ type ReceiptSnapshot = {
 	transactionId?: number;
 	repairRequestId?: number;
 	repairStatus?: string | null;
+	latestWarrantyClaimStatus?: string | null;
+	warrantyClaimLocked?: boolean;
 	customerType?: "registered" | "walk_in";
 	dueType?: PosDueType | null;
 	paidAmount: number;
@@ -153,6 +155,8 @@ type ManualQueueRow = {
 	customer_name: string;
 	phone: string;
 	status: ManualQueueStatus;
+	latest_warranty_claim_status?: string | null;
+	warranty_claim_locked?: boolean;
 	payment_policy: "deposit_50" | "full_upfront";
 	total: number;
 	paid: number;
@@ -903,6 +907,19 @@ useEffect(() => {
 							? "card"
 							: "cash";
 					const dueType = parseDueType(row?.due_type ?? receiptPayload?.due_type);
+					const latestWarrantyClaimStatusRaw = String(
+						row?.latest_warranty_claim_status
+							?? row?.repair_request?.latest_warranty_claim?.status
+							?? row?.repairRequest?.latestWarrantyClaim?.status
+							?? "",
+					).trim();
+					const latestWarrantyClaimApprovedOnceGuard = Number(
+						row?.repair_request?.latest_warranty_claim?.approved_once_guard
+							?? row?.repairRequest?.latestWarrantyClaim?.approved_once_guard
+							?? 0,
+					);
+					const fallbackWarrantyLock = latestWarrantyClaimStatusRaw !== ""
+						&& latestWarrantyClaimStatusRaw.toLowerCase().replace(/-/g, "_") !== "rejected";
 
 					return {
 						moduleType,
@@ -911,6 +928,11 @@ useEffect(() => {
 						repairStatus: moduleType === "repair"
 							? String(row?.repair_request?.status ?? row?.repairRequest?.status ?? "")
 							: null,
+						latestWarrantyClaimStatus: latestWarrantyClaimStatusRaw !== "" ? latestWarrantyClaimStatusRaw : null,
+						warrantyClaimLocked: Boolean(
+							row?.warranty_claim_locked
+								?? (latestWarrantyClaimApprovedOnceGuard === 1 || fallbackWarrantyLock),
+						),
 						customerType: String(row?.customer_type || "walk_in") === "registered" ? "registered" : "walk_in",
 						dueType: moduleType === "repair" ? dueType : null,
 						paidAmount: Number(row?.paid_amount ?? 0),
@@ -1889,6 +1911,10 @@ useEffect(() => {
 			return false;
 		}
 
+		if (Boolean(receipt.warrantyClaimLocked ?? false)) {
+			return false;
+		}
+
 		return String(receipt.customerPhone || "").trim().length > 0;
 	};
 
@@ -1907,6 +1933,10 @@ useEffect(() => {
 			.replace(/-/g, "_");
 
 		if (normalizedStatus !== "picked_up") {
+			return false;
+		}
+
+		if (Boolean(row.warranty_claim_locked ?? false)) {
 			return false;
 		}
 
@@ -2561,6 +2591,16 @@ useEffect(() => {
 				preferred_return_method: modal.value.preferredReturnMethod,
 				images: modal.value.files,
 			});
+
+			setReceiptHistory((prev) => prev.map((entry) => (
+				Number(entry.repairRequestId ?? 0) === repairRequestId
+					? {
+						...entry,
+						latestWarrantyClaimStatus: "pending_repairer",
+						warrantyClaimLocked: true,
+					}
+					: entry
+			)));
 
 			await Swal.fire({
 				icon: 'success',

@@ -79,6 +79,8 @@ type ReceiptSnapshot = {
 	transactionId?: number;
 	repairRequestId?: number;
 	repairStatus?: string | null;
+	latestWarrantyClaimStatus?: string | null;
+	warrantyClaimLocked?: boolean;
 	customerType?: "registered" | "walk_in";
 	dueType?: PosDueType | null;
 	paidAmount: number;
@@ -193,6 +195,10 @@ const canRequestWarrantyClaimFromReceipt = (receipt: ReceiptSnapshot): boolean =
 	}
 
 	if (!isWarrantyEligibleRepairStatus(receipt.repairStatus)) {
+		return false;
+	}
+
+	if (Boolean(receipt.warrantyClaimLocked ?? false)) {
 		return false;
 	}
 
@@ -943,6 +949,19 @@ const PointOfSalePage = () => {
 							? "card"
 							: "cash";
 					const dueType = parseDueType(row?.due_type ?? receiptPayload?.due_type);
+					const latestWarrantyClaimStatusRaw = String(
+						row?.latest_warranty_claim_status
+							?? row?.repair_request?.latest_warranty_claim?.status
+							?? row?.repairRequest?.latestWarrantyClaim?.status
+							?? "",
+					).trim();
+					const latestWarrantyClaimApprovedOnceGuard = Number(
+						row?.repair_request?.latest_warranty_claim?.approved_once_guard
+							?? row?.repairRequest?.latestWarrantyClaim?.approved_once_guard
+							?? 0,
+					);
+					const fallbackWarrantyLock = latestWarrantyClaimStatusRaw !== ""
+						&& latestWarrantyClaimStatusRaw.toLowerCase().replace(/-/g, "_") !== "rejected";
 
 					return {
 						moduleType,
@@ -951,6 +970,11 @@ const PointOfSalePage = () => {
 						repairStatus: moduleType === "repair"
 							? String(row?.repair_request?.status ?? row?.repairRequest?.status ?? "")
 							: null,
+						latestWarrantyClaimStatus: latestWarrantyClaimStatusRaw !== "" ? latestWarrantyClaimStatusRaw : null,
+						warrantyClaimLocked: Boolean(
+							row?.warranty_claim_locked
+								?? (latestWarrantyClaimApprovedOnceGuard === 1 || fallbackWarrantyLock),
+						),
 						customerType: String(row?.customer_type || "walk_in") === "registered" ? "registered" : "walk_in",
 						dueType: moduleType === "repair" ? dueType : null,
 						paidAmount: Number(row?.paid_amount ?? 0),
@@ -1238,6 +1262,16 @@ const PointOfSalePage = () => {
 				preferred_return_method: modal.value.preferredReturnMethod,
 				images: modal.value.files,
 			});
+
+			setReceiptHistory((prev) => prev.map((entry) => (
+				Number(entry.repairRequestId ?? 0) === repairRequestId
+					? {
+						...entry,
+						latestWarrantyClaimStatus: "pending_repairer",
+						warrantyClaimLocked: true,
+					}
+					: entry
+			)));
 
 			await Swal.fire({
 				icon: 'success',

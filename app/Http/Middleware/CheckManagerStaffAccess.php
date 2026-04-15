@@ -49,7 +49,6 @@ class CheckManagerStaffAccess
             'access-manager-dashboard',
             'access-audit-logs',
             'access-manager-reports',
-            'access-inventory-overview',
             'access-repair-reject-review',
             'access-suspend-account',
         ];

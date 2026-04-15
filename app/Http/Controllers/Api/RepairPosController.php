@@ -9,6 +9,7 @@ use App\Models\PosTransaction;
 use App\Models\RepairPackage;
 use App\Models\RepairRequest;
 use App\Models\RepairService;
+use App\Models\RepairWarrantyClaim;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\RepairPosPaymentService;
@@ -551,13 +552,28 @@ class RepairPosController extends Controller
             ->when($shopOwnerId > 0, fn ($query) => $query->where('shop_owner_id', $shopOwnerId))
             ->when($repairRequestId > 0, fn ($query) => $query->where('module_reference_id', $repairRequestId))
             ->with([
-                'repairRequest:id,status',
+                'repairRequest' => function ($query) {
+                    $query->select(['id', 'status'])
+                        ->with([
+                            'latestWarrantyClaim:id,original_repair_request_id,status,approved_once_guard',
+                        ]);
+                },
                 'paymentLines',
                 'receipt',
                 'refunds' => fn ($query) => $query->orderByDesc('id'),
             ])
             ->orderByDesc('id')
             ->paginate($perPage);
+
+        $rows->getCollection()->transform(function (PosTransaction $transaction) {
+            $latestClaim = $transaction->repairRequest?->latestWarrantyClaim;
+            $warrantyClaimData = $this->resolveWarrantyClaimLockData($latestClaim);
+
+            $transaction->setAttribute('latest_warranty_claim_status', $warrantyClaimData['latest_warranty_claim_status']);
+            $transaction->setAttribute('warranty_claim_locked', $warrantyClaimData['warranty_claim_locked']);
+
+            return $transaction;
+        });
 
         return response()->json([
             'success' => true,
@@ -586,7 +602,10 @@ class RepairPosController extends Controller
             ->where('manual_pos_queue_enabled', true)
             ->where('request_id', 'like', 'REP-POS-%')
             ->whereIn('status', ['pending', 'received', 'in_progress', 'ready_for_pickup'])
-            ->with(['latestPosTransaction.receipt'])
+            ->with([
+                'latestPosTransaction.receipt',
+                'latestWarrantyClaim:id,original_repair_request_id,status,approved_once_guard',
+            ])
             ->when($q !== '', function ($query) use ($q) {
                 $query->where(function ($inner) use ($q) {
                     $inner->where('request_id', 'like', "%{$q}%")
@@ -610,6 +629,7 @@ class RepairPosController extends Controller
             $normalizedPolicy = $policy === 'full_upfront' ? 'full_upfront' : 'deposit_50';
             $status = (string) $repair->status;
             $nextDueType = null;
+            $warrantyClaimData = $this->resolveWarrantyClaimLockData($repair->latestWarrantyClaim);
 
             if ($remaining > 0) {
                 if ($normalizedPolicy === 'deposit_50') {
@@ -636,6 +656,8 @@ class RepairPosController extends Controller
                 'remaining_balance' => $remaining,
                 'next_due_type' => $nextDueType,
                 'receipt_no' => $repair->latestPosTransaction?->receipt?->receipt_no,
+                'latest_warranty_claim_status' => $warrantyClaimData['latest_warranty_claim_status'],
+                'warranty_claim_locked' => $warrantyClaimData['warranty_claim_locked'],
             ];
         })->values();
 
@@ -966,6 +988,25 @@ class RepairPosController extends Controller
         }
 
         return null;
+    }
+
+    private function resolveWarrantyClaimLockData(?RepairWarrantyClaim $latestClaim): array
+    {
+        if (!$latestClaim) {
+            return [
+                'latest_warranty_claim_status' => null,
+                'warranty_claim_locked' => false,
+            ];
+        }
+
+        $status = (string) ($latestClaim->status ?? '');
+        $approvedOnceGuard = (int) ($latestClaim->approved_once_guard ?? 0) === 1;
+        $locked = $approvedOnceGuard || $status !== RepairWarrantyClaim::STATUS_REJECTED;
+
+        return [
+            'latest_warranty_claim_status' => $status !== '' ? $status : null,
+            'warranty_claim_locked' => $locked,
+        ];
     }
 
     private function canRepairerExecuteRefund(object $actor, PosRefund $refund): bool

@@ -258,6 +258,11 @@ class RepairRequest extends Model
         return $this->hasMany(RepairWarrantyClaim::class, 'original_repair_request_id');
     }
 
+    public function latestWarrantyClaim()
+    {
+        return $this->hasOne(RepairWarrantyClaim::class, 'original_repair_request_id')->latestOfMany('id');
+    }
+
     public function approvedWarrantyClaim()
     {
         return $this->hasOne(RepairWarrantyClaim::class, 'approved_repair_request_id');

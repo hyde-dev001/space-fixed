@@ -1232,11 +1232,12 @@ const AppSidebar_ERP: React.FC = () => {
   const hasManagerAccess = () => {
     if (normalizedRoles.includes('MANAGER') || normalizedRole === 'MANAGER') return true;
 
+    // Keep manager gate strict: inventory-overview belongs to inventory flows and
+    // should not elevate inventory-only users into the manager section.
     const managerPermissions = [
       'access-manager-dashboard',
       'access-audit-logs',
       'access-manager-reports',
-      'access-inventory-overview',
       'access-repair-reject-review',
       'access-suspend-account',
     ];

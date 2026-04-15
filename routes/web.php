@@ -1782,7 +1782,7 @@ Route::prefix('crm')->name('crm.')->middleware(['auth:user', 'permission:access-
 // MANAGER routes (Manager role OR manager permissions)
 Route::prefix('erp/manager')->name('erp.manager.')->middleware([
     'auth:user',
-    'role_or_permission:Manager|access-manager-dashboard|access-audit-logs|access-manager-reports|access-inventory-overview|access-repair-reject-review|access-suspend-account'
+    'role_or_permission:Manager|access-manager-dashboard|access-audit-logs|access-manager-reports|access-repair-reject-review|access-suspend-account'
 ])->group(function () {
     Route::get('/dashboard', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
@@ -2408,7 +2408,7 @@ Route::prefix('api/manager')->name('api.manager.')->middleware([
     'web',
     'auth:user',
     'check.suspension',
-    'role_or_permission:Manager|access-manager-dashboard|access-audit-logs|access-manager-reports|access-inventory-overview|access-repair-reject-review|access-suspend-account'
+    'role_or_permission:Manager|access-manager-dashboard|access-audit-logs|access-manager-reports|access-repair-reject-review|access-suspend-account'
 ])->group(function () {
     Route::get('/dashboard/stats', [ManagerController::class, 'getDashboardStats'])->name('dashboard.stats');
     Route::get('/dss-insights', [\App\Http\Controllers\ShopOwner\DssController::class, 'getInsights'])->name('dss-insights');
