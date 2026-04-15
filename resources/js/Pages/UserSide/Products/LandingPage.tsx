@@ -21,9 +21,14 @@ interface Product {
 
 interface Props {
   products: Product[];
+  stats?: {
+    products_count?: number;
+    customers_count?: number;
+    satisfaction_rate?: number;
+  };
 }
 
-const LandingPage: React.FC<Props> = ({ products = [] }) => {
+const LandingPage: React.FC<Props> = ({ products = [], stats }) => {
   const heroSlides = [
     {
       src: '/images/shop/p1.jpg',
@@ -58,20 +63,32 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
   const statsHasAnimatedRef = useRef(false);
   const prefersReducedMotionRef = useRef(false);
 
-  const formatStatValue = (value: number, target: number) => {
-    if (target === 10000) {
-      if (value >= target) {
-        return '10K+';
-      }
+  const statsTargets = [
+    Math.max(0, Number(stats?.products_count ?? 0)),
+    Math.max(0, Number(stats?.customers_count ?? 0)),
+    Math.min(100, Math.max(0, Number(stats?.satisfaction_rate ?? 0))),
+  ];
 
-      return `${Math.floor(value)}`;
+  const formatCompactNumber = (value: number) => {
+    if (value >= 1000000) {
+      const normalized = value >= 10000000 ? (value / 1000000).toFixed(0) : (value / 1000000).toFixed(1);
+      return `${normalized.replace(/\.0$/, '')}M`;
     }
 
-    if (target === 98) {
-      return `${Math.min(value, target)}%`;
+    if (value >= 1000) {
+      const normalized = value >= 10000 ? (value / 1000).toFixed(0) : (value / 1000).toFixed(1);
+      return `${normalized.replace(/\.0$/, '')}K`;
     }
 
-    return `${Math.min(value, target)}+`;
+    return `${Math.floor(value)}`;
+  };
+
+  const formatStatValue = (value: number, index: number) => {
+    if (index === 2) {
+      return `${Math.min(Math.round(value), 100)}%`;
+    }
+
+    return `${formatCompactNumber(value)}+`;
   };
 
   useEffect(() => {
@@ -141,7 +158,15 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
       return;
     }
 
-    const targets = [500, 10000, 98];
+    const targets = statsTargets;
+
+    statsHasAnimatedRef.current = false;
+    setStatsValues([0, 0, 0]);
+
+    if (statsAnimationRef.current !== null) {
+      window.clearInterval(statsAnimationRef.current);
+      statsAnimationRef.current = null;
+    }
 
     const startAnimation = () => {
       if (statsHasAnimatedRef.current) {
@@ -155,7 +180,17 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
         return;
       }
 
-      const increments = [1, 10, 1];
+      const increments = targets.map((target, index) => {
+        if (target <= 0) {
+          return 0;
+        }
+
+        if (index === 2) {
+          return Math.max(1, Math.ceil(target / 60));
+        }
+
+        return Math.max(1, Math.ceil(target / 75));
+      });
 
       statsAnimationRef.current = window.setInterval(() => {
         setStatsValues((currentValues) => {
@@ -200,7 +235,7 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
         window.clearInterval(statsAnimationRef.current);
       }
     };
-  }, []);
+  }, [statsTargets[0], statsTargets[1], statsTargets[2]]);
 
   const getProductImages = (product: Product) => {
     const images = [
@@ -327,15 +362,15 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
         <div className={sectionContainerClass}>
           <div className="grid grid-cols-3 gap-4 text-center sm:gap-10 lg:gap-20">
             <div>
-              <div className="mb-2 text-3xl font-bold sm:mb-4 sm:text-5xl lg:text-7xl">{formatStatValue(statsValues[0], 500)}</div>
+              <div className="mb-2 text-3xl font-bold sm:mb-4 sm:text-5xl lg:text-7xl">{formatStatValue(statsValues[0], 0)}</div>
               <div className="text-sm uppercase tracking-wider text-black/70">Products</div>
             </div>
             <div>
-              <div className="mb-2 text-3xl font-bold sm:mb-4 sm:text-5xl lg:text-7xl">{formatStatValue(statsValues[1], 10000)}</div>
+              <div className="mb-2 text-3xl font-bold sm:mb-4 sm:text-5xl lg:text-7xl">{formatStatValue(statsValues[1], 1)}</div>
               <div className="text-sm uppercase tracking-wider text-black/70">Customers</div>
             </div>
             <div>
-              <div className="mb-2 text-3xl font-bold sm:mb-4 sm:text-5xl lg:text-7xl">{formatStatValue(statsValues[2], 98)}</div>
+              <div className="mb-2 text-3xl font-bold sm:mb-4 sm:text-5xl lg:text-7xl">{formatStatValue(statsValues[2], 2)}</div>
               <div className="text-sm uppercase tracking-wider text-black/70">Satisfaction</div>
             </div>
           </div>

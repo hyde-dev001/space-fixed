@@ -815,15 +815,7 @@ class OrderController extends Controller
                 }
             }
 
-            try {
-                $this->orderRefundService->notifyRefundApprovalRequested($refundRequest);
-            } catch (\Throwable $notifyError) {
-                Log::warning('Refund request created but notification failed', [
-                    'order_id' => $order->id,
-                    'refund_id' => $refundRequest->id,
-                    'error' => $notifyError->getMessage(),
-                ]);
-            }
+            $this->dispatchRefundRequestNotification($refundRequest, $order, $user);
 
             return response()->json([
                 'success' => true,
@@ -860,6 +852,83 @@ class OrderController extends Controller
         }
 
         return $filtered;
+    }
+
+    private function dispatchRefundRequestNotification(OrderRefund $refundRequest, Order $order, $user): void
+    {
+        $shopOwnerId = (int) ($refundRequest->shop_owner_id ?? 0);
+        if ($shopOwnerId <= 0) {
+            return;
+        }
+
+        $orderNumber = (string) ($order->order_number ?? $order->id ?? '');
+        $primarySucceeded = false;
+
+        try {
+            $this->orderRefundService->notifyRefundApprovalRequested($refundRequest);
+            $primarySucceeded = $this->hasRecentRefundRequestNotification($shopOwnerId, $orderNumber);
+        } catch (\Throwable $notifyError) {
+            Log::warning('Refund request created but primary notification dispatch failed', [
+                'order_id' => (int) ($order->id ?? 0),
+                'refund_id' => (int) ($refundRequest->id ?? 0),
+                'shop_owner_id' => $shopOwnerId,
+                'error' => $notifyError->getMessage(),
+            ]);
+        }
+
+        if ($primarySucceeded) {
+            return;
+        }
+
+        try {
+            $customerName = trim((string) ($user->name ?? ''));
+            if ($customerName === '') {
+                $customerName = trim((string) (($user->first_name ?? '') . ' ' . ($user->last_name ?? '')));
+            }
+
+            $this->notificationService->notifyRefundRequest($shopOwnerId, [
+                'order_id' => (int) ($order->id ?? 0),
+                'order_number' => $orderNumber,
+                'amount' => number_format((float) ($refundRequest->amount ?? 0), 2, '.', ''),
+                'customer_name' => $customerName,
+                'refund_id' => (int) ($refundRequest->id ?? 0),
+                'stage' => 'submitted',
+            ]);
+
+            Log::info('Refund request fallback notification dispatched', [
+                'order_id' => (int) ($order->id ?? 0),
+                'refund_id' => (int) ($refundRequest->id ?? 0),
+                'shop_owner_id' => $shopOwnerId,
+            ]);
+        } catch (\Throwable $fallbackError) {
+            Log::error('Refund request notification fallback failed', [
+                'order_id' => (int) ($order->id ?? 0),
+                'refund_id' => (int) ($refundRequest->id ?? 0),
+                'shop_owner_id' => $shopOwnerId,
+                'error' => $fallbackError->getMessage(),
+            ]);
+        }
+    }
+
+    private function hasRecentRefundRequestNotification(int $shopOwnerId, string $orderNumber): bool
+    {
+        try {
+            $query = Notification::query()
+                ->where('shop_owner_id', $shopOwnerId)
+                ->where('type', 'refund_request')
+                ->where('created_at', '>=', now()->subMinutes(5));
+
+            if ($orderNumber !== '') {
+                $query->where(function ($nested) use ($orderNumber) {
+                    $nested->where('message', 'like', "%{$orderNumber}%")
+                        ->orWhere('title', 'like', '%Refund Request%');
+                });
+            }
+
+            return $query->exists();
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     private function buildActiveRefundRequestQuery(int $orderId): \Illuminate\Database\Eloquent\Builder

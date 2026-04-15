@@ -6,6 +6,7 @@ use App\Models\Order;
 use App\Models\RepairRequest;
 use App\Models\RepairReview;
 use App\Models\ReviewReport;
+use App\Models\ShopReview;
 use App\Models\ShopOwner;
 use App\Models\ShopReport;
 use App\Models\SuperAdmin;
@@ -283,6 +284,39 @@ class ShopAndCustomerReportFlowTest extends TestCase
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
             'reason' => 'spam',
+            'status' => 'pending_review',
+        ]);
+    }
+
+    public function test_authenticated_shop_owner_can_submit_shop_review_report(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create();
+        $customer = User::factory()->create();
+
+        $shopReview = ShopReview::create([
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'rating' => 1,
+            'comment' => 'Malicious and misleading review content.',
+            'images' => [],
+        ]);
+
+        $response = $this->actingAs($shopOwner, 'shop_owner')
+            ->postJson('/api/shop-owner/reviews/report', [
+                'review_id' => 'shop_' . $shopReview->id,
+                'reason' => 'fake_review',
+                'notes' => 'This shop-level review contains false claims.',
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('report.status', 'pending_review');
+
+        $this->assertDatabaseHas('review_reports', [
+            'review_type' => 'shop',
+            'review_id' => $shopReview->id,
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'reason' => 'fake_review',
             'status' => 'pending_review',
         ]);
     }

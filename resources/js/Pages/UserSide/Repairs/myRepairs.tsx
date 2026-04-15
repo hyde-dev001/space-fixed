@@ -3180,6 +3180,73 @@ const MyRepairs: React.FC = () => {
                       )}
                     </div>
 
+                    {(() => {
+                      const latestRefund = getLatestRefundForOrder(order);
+                      if (!latestRefund) return null;
+
+                      return (
+                        <div className="mt-6 border-t border-gray-200 pt-6">
+                          <p className="mb-3 text-sm text-gray-500 uppercase tracking-wider">Refund Information</p>
+                          <div className="space-y-3 sm:grid sm:grid-cols-2 sm:gap-y-4 sm:gap-x-10 sm:space-y-0">
+                            <div className="flex items-start justify-between gap-3 sm:block">
+                              <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Status</p>
+                              <p className="text-right text-sm text-black font-medium sm:text-left">
+                                {getRefundStatusLabel(latestRefund)}
+                              </p>
+                            </div>
+
+                            <div className="flex items-start justify-between gap-3 sm:block">
+                              <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Refund Amount</p>
+                              <p className="text-right text-sm text-black font-medium sm:text-left">
+                                {formatCurrency((latestRefund.approved_amount ?? latestRefund.requested_amount) || 0)}
+                              </p>
+                            </div>
+
+                            <div className="flex items-start justify-between gap-3 sm:block">
+                              <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Reference</p>
+                              <p className="text-right text-sm text-black font-medium sm:text-left">
+                                {latestRefund.execution_reference_masked || '-'}
+                              </p>
+                            </div>
+
+                            <div className="flex items-start justify-between gap-3 sm:block">
+                              <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Notes</p>
+                              <p className="text-right text-sm text-black font-medium sm:text-left">
+                                {latestRefund.failure_reason || '-'}
+                              </p>
+                            </div>
+
+                            {!!latestRefund.execution_proof_urls?.length && (
+                              <div className="sm:col-span-2">
+                                <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">Proof Images</p>
+                                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                                  {latestRefund.execution_proof_urls
+                                    .filter((proofUrl) => isProofImageUrl(proofUrl))
+                                    .map((proofUrl, proofIndex) => (
+                                      <a
+                                        key={`refund-proof-thumb-detail-${order.id}-${proofIndex}`}
+                                        href={proofUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="overflow-hidden rounded border border-gray-300 bg-white"
+                                        title={`Open proof ${proofIndex + 1}`}
+                                      >
+                                        <img
+                                          src={proofUrl}
+                                          alt={`Refund proof ${proofIndex + 1}`}
+                                          className="h-16 w-full object-cover"
+                                          loading="lazy"
+                                        />
+                                      </a>
+                                    ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
                     {/* Shop at capacity notice — shown when the shop can't accept new repairs yet */}
                     {(order.status === 'new_request' || order.status === 'assigned_to_repairer') &&
                       order.shop_owner_id != null &&
@@ -3252,50 +3319,6 @@ const MyRepairs: React.FC = () => {
                           </p>
                         </div>
                       )}
-                      {(() => {
-                        const latestRefund = getLatestRefundForOrder(order);
-                        if (!latestRefund) return null;
-
-                        return (
-                          <div className="mr-auto w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700 sm:w-auto">
-                            <p className="font-semibold">{getRefundStatusLabel(latestRefund)}</p>
-                            <p>
-                              {formatCurrency((latestRefund.approved_amount ?? latestRefund.requested_amount) || 0)}
-                              {latestRefund.failure_reason ? ` • ${latestRefund.failure_reason}` : ''}
-                            </p>
-                            {latestRefund.execution_reference_masked && (
-                              <p className="text-[11px] text-gray-500">
-                                Ref: {latestRefund.execution_reference_masked}
-                              </p>
-                            )}
-                            {!!latestRefund.execution_proof_urls?.length && (
-                              <div className="mt-1 space-y-2">
-                                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-                                  {latestRefund.execution_proof_urls
-                                    ?.filter((proofUrl) => isProofImageUrl(proofUrl))
-                                    .map((proofUrl, proofIndex) => (
-                                      <a
-                                        key={`refund-proof-thumb-${order.id}-${proofIndex}`}
-                                        href={proofUrl}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="overflow-hidden rounded border border-gray-300 bg-white"
-                                        title={`Open proof ${proofIndex + 1}`}
-                                      >
-                                        <img
-                                          src={proofUrl}
-                                          alt={`Refund proof ${proofIndex + 1}`}
-                                          className="h-14 w-full object-cover"
-                                          loading="lazy"
-                                        />
-                                      </a>
-                                    ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
                       {/* Chat with Repairer actions */}
                       {order.status === 'repairer_accepted' && order.conversation_id && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (
                         <>

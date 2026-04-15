@@ -6,11 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Models\InventoryItem;
 use App\Models\OrderItem;
 use App\Models\Product;
+use App\Models\ProductReview;
 use App\Models\PromoCampaign;
 use App\Models\RepairPackage;
+use App\Models\RepairReview;
 use App\Models\RepairService;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerSubscription;
+use App\Models\User;
 use App\Models\VoucherClaim;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -93,8 +96,51 @@ class LandingPageController extends Controller
                 ];
             });
 
+        $productsCount = Product::query()
+            ->where('is_active', true)
+            ->whereHas('shopOwner', function ($q) {
+                $q->where('status', 'approved')
+                    ->whereIn('business_type', ['retail', 'both']);
+            })
+            ->count();
+
+        $customersCount = User::query()
+            ->whereNull('shop_owner_id')
+            ->where(function ($q) {
+                $q->whereNull('role')
+                    ->orWhereRaw("TRIM(COALESCE(role, '')) = ''")
+                    ->orWhereRaw('LOWER(role) = ?', ['customer']);
+            })
+            ->count();
+
+        $productReviewStats = ProductReview::query()
+            ->where('is_approved', true)
+            ->selectRaw('COUNT(*) as review_count, COALESCE(AVG(rating), 0) as average_rating')
+            ->first();
+
+        $repairReviewStats = RepairReview::query()
+            ->visible()
+            ->selectRaw('COUNT(*) as review_count, COALESCE(AVG(rating), 0) as average_rating')
+            ->first();
+
+        $productReviewCount = (int) ($productReviewStats->review_count ?? 0);
+        $repairReviewCount = (int) ($repairReviewStats->review_count ?? 0);
+        $totalReviewCount = $productReviewCount + $repairReviewCount;
+
+        $weightedRatingTotal = ((float) ($productReviewStats->average_rating ?? 0) * $productReviewCount)
+            + ((float) ($repairReviewStats->average_rating ?? 0) * $repairReviewCount);
+
+        $satisfactionRate = $totalReviewCount > 0
+            ? (int) round((($weightedRatingTotal / $totalReviewCount) / 5) * 100)
+            : 0;
+
         return Inertia::render('UserSide/Products/LandingPage', [
             'products' => $products,
+            'stats' => [
+                'products_count' => $productsCount,
+                'customers_count' => $customersCount,
+                'satisfaction_rate' => $satisfactionRate,
+            ],
         ]);
     }
 

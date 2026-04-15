@@ -19,7 +19,7 @@ class OrderRefundService
         private readonly PaymongoRefundService $paymongoRefundService,
         private readonly PaymentSettlementService $paymentSettlementService,
         private readonly ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService,
-        private readonly ?NotificationService $notificationService = null,
+        private readonly NotificationService $notificationService,
     ) {
     }
 
@@ -1064,10 +1064,6 @@ class OrderRefundService
 
     public function notifyRefundApprovalRequested(OrderRefund $refund): void
     {
-        if (!$this->notificationService) {
-            return;
-        }
-
         $refund->loadMissing('order.shopOwner', 'customer');
         $order = $refund->order;
         if (!$order) {

@@ -220,6 +220,10 @@ const Payment: React.FC = () => {
   const [isVoucherSuggestionOpen, setIsVoucherSuggestionOpen] = useState(false);
   const [hasVoucherInputInteraction, setHasVoucherInputInteraction] = useState(false);
   const voucherInputContainerRef = useRef<HTMLDivElement | null>(null);
+  const desktopCityDropdownRef = useRef<HTMLDivElement | null>(null);
+  const sheetCityDropdownRef = useRef<HTMLDivElement | null>(null);
+  const [isDesktopCityDropdownOpen, setIsDesktopCityDropdownOpen] = useState(false);
+  const [isSheetCityDropdownOpen, setIsSheetCityDropdownOpen] = useState(false);
   const [paymentRecovery, setPaymentRecovery] = useState<{
     scope: 'order' | 'repair';
     id: number;
@@ -313,6 +317,8 @@ const Payment: React.FC = () => {
     setShippingEstimate(null);
     setShippingEstimateReason(null);
     setIsShippingEstimateLoading(Boolean(selectedCity));
+    setIsDesktopCityDropdownOpen(false);
+    setIsSheetCityDropdownOpen(false);
   };
 
   const formatAddressDisplay = (addr?: Partial<UserAddress> | null) => {
@@ -1133,6 +1139,31 @@ const Payment: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    const handleClickOutsideCityDropdown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node | null;
+      if (!target) {
+        return;
+      }
+
+      if (desktopCityDropdownRef.current && !desktopCityDropdownRef.current.contains(target)) {
+        setIsDesktopCityDropdownOpen(false);
+      }
+
+      if (sheetCityDropdownRef.current && !sheetCityDropdownRef.current.contains(target)) {
+        setIsSheetCityDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutsideCityDropdown);
+    document.addEventListener('touchstart', handleClickOutsideCityDropdown);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutsideCityDropdown);
+      document.removeEventListener('touchstart', handleClickOutsideCityDropdown);
+    };
+  }, []);
+
+  useEffect(() => {
     if (isPremiumPayment || isRepairPayment) {
       return;
     }
@@ -1569,12 +1600,12 @@ const Payment: React.FC = () => {
   return (
     <div className="min-h-screen flex flex-col bg-white">
       <style>{`
-        .voucher-suggestion-scroll {
+        .hide-scrollbar {
           -ms-overflow-style: none;
           scrollbar-width: none;
         }
 
-        .voucher-suggestion-scroll::-webkit-scrollbar {
+        .hide-scrollbar::-webkit-scrollbar {
           width: 0;
           height: 0;
           display: none;
@@ -1923,18 +1954,41 @@ const Payment: React.FC = () => {
                         onChange={e => handlePostalCodeChange(e.target.value, setShippingPostalCode)}
                         className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
                       />
-                      <select
-                        value={shippingCity}
-                        onChange={(e) => handleCityChange(e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
-                        title="City"
-                        aria-label="City"
-                      >
-                        <option value="">Select City</option>
-                        {PH_CITY_OPTIONS.map((cityOption) => (
-                          <option key={cityOption.value} value={cityOption.value}>{cityOption.label}</option>
-                        ))}
-                      </select>
+                      <div ref={sheetCityDropdownRef} className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setIsSheetCityDropdownOpen((prev) => !prev)}
+                          className="flex w-full items-center justify-between rounded border border-gray-300 bg-white px-4 py-3 text-left"
+                          title="City"
+                          aria-label="City"
+                          aria-haspopup="listbox"
+                        >
+                          <span className={shippingCity ? 'text-black' : 'text-gray-500'}>{shippingCity || 'Select City'}</span>
+                          <span className={`text-gray-500 transition-transform ${isSheetCityDropdownOpen ? 'rotate-180' : ''}`}>▾</span>
+                        </button>
+
+                        {isSheetCityDropdownOpen && (
+                          <div className="hide-scrollbar absolute left-0 right-0 top-full z-40 mt-1 max-h-56 overflow-y-auto rounded border border-gray-300 bg-white shadow-lg">
+                            <button
+                              type="button"
+                              onClick={() => handleCityChange('')}
+                              className="w-full border-b border-gray-100 px-4 py-2 text-left text-sm text-gray-600 hover:bg-gray-50"
+                            >
+                              Select City
+                            </button>
+                            {PH_CITY_OPTIONS.map((cityOption) => (
+                              <button
+                                key={cityOption.value}
+                                type="button"
+                                onClick={() => handleCityChange(cityOption.value)}
+                                className={`w-full border-b border-gray-100 px-4 py-2 text-left text-sm hover:bg-gray-50 last:border-b-0 ${shippingCity === cityOption.value ? 'bg-gray-50 font-medium text-black' : 'text-black'}`}
+                              >
+                                {cityOption.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                     <input
                       type="tel"
@@ -2062,18 +2116,41 @@ const Payment: React.FC = () => {
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-black mb-2.5">City</label>
-                          <select
-                            value={shippingCity}
-                            onChange={(e) => handleCityChange(e.target.value)}
-                            className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white text-base"
-                            title="City"
-                            aria-label="City"
-                          >
-                            <option value="">Select City</option>
-                            {PH_CITY_OPTIONS.map((cityOption) => (
-                              <option key={cityOption.value} value={cityOption.value}>{cityOption.label}</option>
-                            ))}
-                          </select>
+                          <div ref={desktopCityDropdownRef} className="relative">
+                            <button
+                              type="button"
+                              onClick={() => setIsDesktopCityDropdownOpen((prev) => !prev)}
+                              className="flex w-full items-center justify-between rounded border border-gray-300 bg-white px-4 py-3 text-left text-base"
+                              title="City"
+                              aria-label="City"
+                              aria-haspopup="listbox"
+                            >
+                              <span className={shippingCity ? 'text-black' : 'text-gray-500'}>{shippingCity || 'Select City'}</span>
+                              <span className={`text-gray-500 transition-transform ${isDesktopCityDropdownOpen ? 'rotate-180' : ''}`}>▾</span>
+                            </button>
+
+                            {isDesktopCityDropdownOpen && (
+                              <div className="hide-scrollbar absolute left-0 right-0 top-full z-40 mt-1 max-h-56 overflow-y-auto rounded border border-gray-300 bg-white shadow-lg">
+                                <button
+                                  type="button"
+                                  onClick={() => handleCityChange('')}
+                                  className="w-full border-b border-gray-100 px-4 py-2 text-left text-sm text-gray-600 hover:bg-gray-50"
+                                >
+                                  Select City
+                                </button>
+                                {PH_CITY_OPTIONS.map((cityOption) => (
+                                  <button
+                                    key={cityOption.value}
+                                    type="button"
+                                    onClick={() => handleCityChange(cityOption.value)}
+                                    className={`w-full border-b border-gray-100 px-4 py-2 text-left text-sm hover:bg-gray-50 last:border-b-0 ${shippingCity === cityOption.value ? 'bg-gray-50 font-medium text-black' : 'text-black'}`}
+                                  >
+                                    {cityOption.label}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </>
@@ -2265,7 +2342,7 @@ const Payment: React.FC = () => {
                             className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-black"
                           />
                           {showVoucherSuggestionDropdown && (
-                            <div className="voucher-suggestion-scroll absolute z-30 mt-1 max-h-44 w-full overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg">
+                            <div className="hide-scrollbar absolute z-30 mt-1 max-h-44 w-full overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg">
                               {filteredVoucherCodeSuggestions.length > 0 ? (
                                 filteredVoucherCodeSuggestions.map((voucher) => {
                                   const displayName = voucher.name || voucher.code || 'Voucher';

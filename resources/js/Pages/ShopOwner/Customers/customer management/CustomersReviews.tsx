@@ -210,9 +210,17 @@ export default function CustomerReviews() {
         zIndex: 300000,
       });
     } catch (err: unknown) {
+      const responseData = (err as { response?: { data?: { error?: string; message?: string; errors?: Record<string, string[] | string> } } })?.response?.data;
+      const validationText = responseData?.errors
+        ? Object.values(responseData.errors)
+            .flatMap((value) => (Array.isArray(value) ? value : [value]))
+            .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+            .join("\n")
+        : "";
       const msg =
-        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ??
-        "Failed to submit report. Please try again.";
+        responseData?.error
+        ?? responseData?.message
+        ?? (validationText !== "" ? validationText : "Failed to submit report. Please try again.");
       void Swal.fire({
         title: "Submission failed",
         text: msg,

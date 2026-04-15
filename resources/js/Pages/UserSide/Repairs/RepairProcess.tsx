@@ -62,20 +62,62 @@ interface RepairProcessPageProps {
 
 const DEFAULT_SHIPPING_REGION = 'Cavite';
 
-const PH_CITY_OPTIONS = [
-  'Bacoor',
-  'Imus',
-  'Dasmariñas',
-  'General Trias',
-  'Trece Martires',
-  'Tagaytay',
-  'City of Cavite',
+interface CityOption {
+  value: string;
+  label: string;
+  aliases?: string[];
+}
+
+const PH_CITY_OPTIONS: CityOption[] = [
+  { value: 'Bacoor', label: 'Bacoor' },
+  { value: 'Cavite City', label: 'Cavite City', aliases: ['City of Cavite'] },
+  { value: 'Dasmariñas', label: 'Dasmariñas', aliases: ['Dasmarinas'] },
+  { value: 'General Trias', label: 'General Trias' },
+  { value: 'Imus', label: 'Imus' },
+  { value: 'Tagaytay', label: 'Tagaytay' },
+  { value: 'Trece Martires', label: 'Trece Martires' },
+  { value: 'Alfonso', label: 'Alfonso' },
+  { value: 'Amadeo', label: 'Amadeo' },
+  { value: 'Carmona', label: 'Carmona' },
+  { value: 'Gen. Emilio Aguinaldo', label: 'Gen. Emilio Aguinaldo', aliases: ['General Emilio Aguinaldo', 'Gen Emilio Aguinaldo'] },
+  { value: 'Gen. Mariano Alvarez', label: 'Gen. Mariano Alvarez', aliases: ['General Mariano Alvarez', 'Gen Mariano Alvarez', 'GMA'] },
+  { value: 'Indang', label: 'Indang' },
+  { value: 'Kawit', label: 'Kawit' },
+  { value: 'Magallanes', label: 'Magallanes' },
+  { value: 'Maragondon', label: 'Maragondon' },
+  { value: 'Mendez', label: 'Mendez' },
+  { value: 'Naic', label: 'Naic' },
+  { value: 'Noveleta', label: 'Noveleta' },
+  { value: 'Rosario', label: 'Rosario' },
+  { value: 'Silang', label: 'Silang' },
+  { value: 'Tanza', label: 'Tanza' },
 ];
 
+const normalizeCityKey = (value: string) => value
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/\./g, '')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .toLowerCase();
+
+const CITY_OPTION_LOOKUP = PH_CITY_OPTIONS.reduce<Map<string, string>>((lookup, option) => {
+  const candidates = [option.value, option.label, ...(option.aliases || [])];
+
+  candidates.forEach((candidate) => {
+    const key = normalizeCityKey(candidate);
+    if (key && !lookup.has(key)) {
+      lookup.set(key, option.value);
+    }
+  });
+
+  return lookup;
+}, new Map<string, string>());
+
 const normalizeCitySelection = (city?: string | null): string => {
-  const trimmedCity = (city || '').trim();
-  if (!trimmedCity) return '';
-  return PH_CITY_OPTIONS.find((option) => option.toLowerCase() === trimmedCity.toLowerCase()) || '';
+  const normalizedCityKey = normalizeCityKey(city || '');
+  if (!normalizedCityKey) return '';
+  return CITY_OPTION_LOOKUP.get(normalizedCityKey) || '';
 };
 
 const getEffectivePackagePrice = (pkg: RepairPackage): number => {
@@ -250,8 +292,10 @@ const RepairProcess: React.FC = () => {
   const [selectedServiceIds, setSelectedServiceIds] = useState<number[]>([]);
   const [selectedAddOnServiceIds, setSelectedAddOnServiceIds] = useState<number[]>([]);
   const [isShoeTypeOpen, setIsShoeTypeOpen] = useState(false);
+  const [isReturnCityDropdownOpen, setIsReturnCityDropdownOpen] = useState(false);
   const [saveInfoForCheckout, setSaveInfoForCheckout] = useState(false);
   const shoeTypeDropdownRef = useRef<HTMLDivElement | null>(null);
+  const returnCityDropdownRef = useRef<HTMLDivElement | null>(null);
 
   // Set selected services once repair services are loaded
   useEffect(() => {
@@ -277,6 +321,10 @@ const RepairProcess: React.FC = () => {
     const handleClickOutside = (event: MouseEvent) => {
       if (shoeTypeDropdownRef.current && !shoeTypeDropdownRef.current.contains(event.target as Node)) {
         setIsShoeTypeOpen(false);
+      }
+
+      if (returnCityDropdownRef.current && !returnCityDropdownRef.current.contains(event.target as Node)) {
+        setIsReturnCityDropdownOpen(false);
       }
     };
 
@@ -552,6 +600,14 @@ const RepairProcess: React.FC = () => {
       returnCity: selectedCity,
       returnRegion: selectedCity ? DEFAULT_SHIPPING_REGION : '',
     }));
+    setIsReturnCityDropdownOpen(false);
+  };
+
+  const getCityLabel = (city?: string | null): string => {
+    const selectedCity = normalizeCitySelection(city);
+    if (!selectedCity) return '';
+    const option = PH_CITY_OPTIONS.find((cityOption) => cityOption.value === selectedCity);
+    return option?.label || selectedCity;
   };
 
   const handleServiceToggle = (serviceId: number) => {
@@ -960,6 +1016,18 @@ const RepairProcess: React.FC = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
+      <style>{`
+        .hide-scrollbar {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+
+        .hide-scrollbar::-webkit-scrollbar {
+          width: 0;
+          height: 0;
+          display: none;
+        }
+      `}</style>
       <Head title="Request Repair Service" />
       <Navigation />
 
@@ -1234,20 +1302,45 @@ const RepairProcess: React.FC = () => {
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-black mb-2">City</label>
-                          <select
-                            name="returnCity"
-                            value={formData.returnCity}
-                            onChange={(e) => handleReturnCityChange(e.target.value)}
-                            className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
-                            title="City"
-                            aria-label="City"
-                            required
-                          >
-                            <option value="">Select City</option>
-                            {PH_CITY_OPTIONS.map((city) => (
-                              <option key={city} value={city}>{city}</option>
-                            ))}
-                          </select>
+                          <div ref={returnCityDropdownRef} className="relative">
+                            <button
+                              type="button"
+                              onClick={() => setIsReturnCityDropdownOpen((prev) => !prev)}
+                              className="flex w-full items-center justify-between rounded border border-gray-300 bg-white px-4 py-3 text-left"
+                              title="City"
+                              aria-label="City"
+                              aria-haspopup="listbox"
+                            >
+                              <span className={formData.returnCity ? 'text-black' : 'text-gray-500'}>
+                                {getCityLabel(formData.returnCity) || 'Select City'}
+                              </span>
+                              <svg className={`h-4 w-4 text-gray-500 transition-transform ${isReturnCityDropdownOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                              </svg>
+                            </button>
+
+                            {isReturnCityDropdownOpen && (
+                              <div className="hide-scrollbar absolute left-0 right-0 top-full z-30 mt-1 max-h-56 overflow-y-auto rounded border border-gray-300 bg-white shadow-lg">
+                                <button
+                                  type="button"
+                                  onClick={() => handleReturnCityChange('')}
+                                  className="w-full border-b border-gray-100 px-4 py-2 text-left text-sm text-gray-600 hover:bg-gray-50"
+                                >
+                                  Select City
+                                </button>
+                                {PH_CITY_OPTIONS.map((cityOption) => (
+                                  <button
+                                    key={cityOption.value}
+                                    type="button"
+                                    onClick={() => handleReturnCityChange(cityOption.value)}
+                                    className={`w-full border-b border-gray-100 px-4 py-2 text-left text-sm hover:bg-gray-50 last:border-b-0 ${formData.returnCity === cityOption.value ? 'bg-gray-50 font-medium text-black' : 'text-black'}`}
+                                  >
+                                    {cityOption.label}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-black mb-2">Postal code</label>

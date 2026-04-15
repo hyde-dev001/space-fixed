@@ -129,7 +129,7 @@ class CustomerReviewController extends Controller
         $shopOwner = Auth::guard('shop_owner')->user();
 
         $validated = $request->validate([
-            'review_id' => 'required|string',   // e.g. "product_42" or "repair_17"
+            'review_id' => 'required|string',   // e.g. "product_42", "repair_17", or "shop_9"
             'reason'    => ['required', Rule::in([
                 'fake_review', 'harassment', 'spam', 'inappropriate_content', 'other',
             ])],
@@ -137,10 +137,14 @@ class CustomerReviewController extends Controller
         ]);
 
         // Parse the prefixed review ID
+        if (!str_contains($validated['review_id'], '_')) {
+            return response()->json(['error' => 'Invalid review ID format.'], 422);
+        }
+
         [$type, $rawId] = explode('_', $validated['review_id'], 2);
         $reviewId = (int) $rawId;
 
-        if (!in_array($type, ['product', 'repair'])) {
+        if (!in_array($type, ['product', 'repair', 'shop'], true)) {
             return response()->json(['error' => 'Invalid review type.'], 422);
         }
 
@@ -162,7 +166,7 @@ class CustomerReviewController extends Controller
                 'customerName' => $review->user?->name ?? 'Unknown',
                 'createdAt'    => $review->created_at?->format('Y-m-d'),
             ];
-        } else {
+        } elseif ($type === 'repair') {
             $review = RepairReview::where('id', $reviewId)
                 ->where('shop_owner_id', $shopOwner->id)
                 ->with('user:id,name,email')
@@ -176,6 +180,23 @@ class CustomerReviewController extends Controller
                 'rating'       => $review->rating,
                 'comment'      => $review->review_text,
                 'images'       => $review->review_images ?? [],
+                'customerName' => $review->user?->name ?? 'Unknown',
+                'createdAt'    => $review->created_at?->format('Y-m-d'),
+            ];
+        } else {
+            $review = ShopReview::where('id', $reviewId)
+                ->where('shop_owner_id', $shopOwner->id)
+                ->with('user:id,name,email')
+                ->first();
+            if (!$review) {
+                return response()->json(['error' => 'Review not found.'], 404);
+            }
+            $customerId = $review->user_id;
+            $snapshot = [
+                'type'         => 'shop',
+                'rating'       => $review->rating,
+                'comment'      => $review->comment,
+                'images'       => $review->images ?? [],
                 'customerName' => $review->user?->name ?? 'Unknown',
                 'createdAt'    => $review->created_at?->format('Y-m-d'),
             ];
