@@ -271,6 +271,34 @@ const escapeSwalText = (value?: string | null): string => {
     .replace(/'/g, '&#39;');
 };
 
+const normalizeProofUrlForBrowser = (value: string): string => {
+  const trimmed = value.trim();
+  if (trimmed === '') return '';
+
+  if (/^(https?:|data:|blob:)/i.test(trimmed)) {
+    return trimmed;
+  }
+
+  if (trimmed.startsWith('//')) {
+    const protocol = typeof window !== 'undefined' ? window.location.protocol : 'https:';
+    return `${protocol}${trimmed}`;
+  }
+
+  const normalizedPath = trimmed.startsWith('/') ? trimmed : `/${trimmed.replace(/^\/+/, '')}`;
+
+  if (typeof window === 'undefined') {
+    return normalizedPath;
+  }
+
+  try {
+    return new URL(normalizedPath, window.location.origin).toString();
+  } catch {
+    return normalizedPath;
+  }
+};
+
+const isProofImageUrl = (value: string): boolean => /\.(png|jpe?g|webp|gif|bmp|svg)(\?.*)?$/i.test(value);
+
 const getIntakeMethod = (order: RepairOrder): 'walk_in' | 'customer_delivery' => {
   if (order.intake_delivery_method === 'walk_in' || order.intake_delivery_method === 'customer_delivery') {
     return order.intake_delivery_method;
@@ -1073,7 +1101,10 @@ const MyRepairs: React.FC = () => {
             const repairId = Number(refund?.module_reference_id || 0);
             if (!Number.isFinite(repairId) || repairId <= 0) return;
             const normalizedProofUrls = Array.isArray(refund?.execution_proof_urls)
-              ? refund.execution_proof_urls.filter((entry: unknown) => typeof entry === 'string' && entry.trim().length > 0)
+              ? refund.execution_proof_urls
+                  .filter((entry: unknown) => typeof entry === 'string' && entry.trim().length > 0)
+                  .map((entry: string) => normalizeProofUrlForBrowser(entry))
+                  .filter((entry: string) => entry.length > 0)
               : [];
 
             const mappedRefund: RepairRefundStatus = {
@@ -3238,18 +3269,28 @@ const MyRepairs: React.FC = () => {
                               </p>
                             )}
                             {!!latestRefund.execution_proof_urls?.length && (
-                              <div className="mt-1 flex flex-wrap items-center gap-2">
-                                {latestRefund.execution_proof_urls?.map((proofUrl, proofIndex) => (
-                                  <a
-                                    key={`refund-proof-${order.id}-${proofIndex}`}
-                                    href={proofUrl}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="underline text-gray-700 hover:text-black"
-                                  >
-                                    Proof {proofIndex + 1}
-                                  </a>
-                                ))}
+                              <div className="mt-1 space-y-2">
+                                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                                  {latestRefund.execution_proof_urls
+                                    ?.filter((proofUrl) => isProofImageUrl(proofUrl))
+                                    .map((proofUrl, proofIndex) => (
+                                      <a
+                                        key={`refund-proof-thumb-${order.id}-${proofIndex}`}
+                                        href={proofUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="overflow-hidden rounded border border-gray-300 bg-white"
+                                        title={`Open proof ${proofIndex + 1}`}
+                                      >
+                                        <img
+                                          src={proofUrl}
+                                          alt={`Refund proof ${proofIndex + 1}`}
+                                          className="h-14 w-full object-cover"
+                                          loading="lazy"
+                                        />
+                                      </a>
+                                    ))}
+                                </div>
                               </div>
                             )}
                           </div>

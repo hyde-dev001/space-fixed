@@ -391,6 +391,9 @@ const ProductShow: React.FC = () => {
   const [userExistingReview, setUserExistingReview] = useState<any>(null);
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
   const [showMyReview, setShowMyReview] = useState(false);
+  const [selectedRatingFilter, setSelectedRatingFilter] = useState<number | 'all'>('all');
+  const [currentReviewPage, setCurrentReviewPage] = useState(1);
+  const reviewsPerPage = 10;
   const [claimedPromoIds, setClaimedPromoIds] = useState<string[]>(() => {
     const claimed = Array.isArray(promoContext?.claimed_campaign_ids) ? promoContext.claimed_campaign_ids : [];
     return claimed.map((id: unknown) => String(id));
@@ -472,6 +475,52 @@ const ProductShow: React.FC = () => {
 
   const variantQuantity = getVariantQuantity();
   const mainPageVariantQuantity = getMainPageVariantQuantity();
+
+  const getReviewRatingValue = (review: any): number => {
+    const numeric = Number(review?.rating ?? 0);
+    if (!Number.isFinite(numeric)) return 0;
+    const rounded = Math.round(numeric);
+    if (rounded < 1 || rounded > 5) return 0;
+    return rounded;
+  };
+
+  const ratingFilterCounts = React.useMemo<Record<number, number>>(() => {
+    const base: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+
+    reviews.forEach((review) => {
+      const rating = getReviewRatingValue(review);
+      if (rating >= 1 && rating <= 5) {
+        base[rating] += 1;
+      }
+    });
+
+    return base;
+  }, [reviews]);
+
+  const filteredReviews = React.useMemo(() => {
+    if (selectedRatingFilter === 'all') {
+      return reviews;
+    }
+
+    return reviews.filter((review) => getReviewRatingValue(review) === selectedRatingFilter);
+  }, [reviews, selectedRatingFilter]);
+
+  const totalReviewPages = Math.max(1, Math.ceil(filteredReviews.length / reviewsPerPage));
+  const safeReviewPage = Math.min(currentReviewPage, totalReviewPages);
+  const paginatedReviews = React.useMemo(() => {
+    const startIndex = (safeReviewPage - 1) * reviewsPerPage;
+    return filteredReviews.slice(startIndex, startIndex + reviewsPerPage);
+  }, [filteredReviews, safeReviewPage]);
+
+  useEffect(() => {
+    setCurrentReviewPage(1);
+  }, [selectedRatingFilter]);
+
+  useEffect(() => {
+    if (currentReviewPage !== safeReviewPage) {
+      setCurrentReviewPage(safeReviewPage);
+    }
+  }, [currentReviewPage, safeReviewPage]);
 
   const buttonBaseClass =
     'group inline-flex w-full items-center justify-center gap-3 rounded-full px-8 py-3.5 text-[15px] font-medium tracking-normal transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 sm:px-10 sm:py-4 sm:text-base disabled:cursor-not-allowed disabled:opacity-50';
@@ -2091,7 +2140,12 @@ const ProductShow: React.FC = () => {
                         </div>
                         <div className="rounded-2xl border border-slate-200 bg-white p-3.5">
                           <p className="text-[10px] uppercase tracking-wide text-slate-500">Code</p>
-                          <p className="mt-2 text-lg font-semibold tracking-[0.18em] text-slate-900">{campaign.code}</p>
+                          <p
+                            className="mt-2 max-w-full truncate text-lg font-semibold tracking-[0.14em] text-slate-900"
+                            title={campaign.code}
+                          >
+                            {campaign.code}
+                          </p>
                         </div>
                       </div>
 
@@ -2283,8 +2337,66 @@ const ProductShow: React.FC = () => {
 
               {/* ── Reviews List ── */}
               <div className="space-y-3 xl:space-y-4">
-                {reviews.length > 0 ? (
-                  reviews.map((review: any) => (
+                {reviews.length > 0 && (
+                  <div className="mb-2 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_10px_32px_-24px_rgba(15,23,42,0.55)]">
+                    <div className="border-b border-gray-100 bg-linear-to-r from-slate-50 via-white to-slate-50 px-4 py-3 sm:px-5">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Filter by Rating</p>
+                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+                          {selectedRatingFilter === 'all' ? 'All reviews' : `${selectedRatingFilter} star only`}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="px-3 py-3 sm:px-4 sm:py-4">
+                      <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-visible sm:pb-0">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedRatingFilter('all')}
+                        className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition-all ${
+                          selectedRatingFilter === 'all'
+                            ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_10px_24px_-16px_rgba(22,35,59,0.9)]'
+                            : 'border-gray-300 bg-white text-gray-700 hover:-translate-y-0.5 hover:border-[#16233b] hover:text-[#16233b]'
+                        }`}
+                      >
+                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h18M6 12h12M10 19h4" />
+                        </svg>
+                        <span>All</span>
+                        <span className="rounded-full bg-black/10 px-1.5 py-0.5 text-[10px] font-bold leading-none text-inherit">{reviews.length}</span>
+                      </button>
+                      {[5, 4, 3, 2, 1].map((rating) => (
+                        <button
+                          key={rating}
+                          type="button"
+                          onClick={() => setSelectedRatingFilter(rating)}
+                          className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition-all ${
+                            selectedRatingFilter === rating
+                              ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_10px_24px_-16px_rgba(22,35,59,0.9)]'
+                              : 'border-gray-300 bg-white text-gray-700 hover:-translate-y-0.5 hover:border-[#16233b] hover:text-[#16233b]'
+                          }`}
+                        >
+                          <svg
+                            className={`h-3.5 w-3.5 ${
+                              selectedRatingFilter === rating ? 'text-yellow-300' : 'text-yellow-500'
+                            }`}
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                            aria-hidden="true"
+                          >
+                            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                          </svg>
+                          <span>{rating} Star</span>
+                          <span className="rounded-full bg-black/10 px-1.5 py-0.5 text-[10px] font-bold leading-none text-inherit">{ratingFilterCounts[rating] || 0}</span>
+                        </button>
+                      ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {paginatedReviews.length > 0 ? (
+                  paginatedReviews.map((review: any) => (
                     <div key={review.id} className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
                       <div className="flex items-start gap-3 p-4">
                         {/* Avatar */}
@@ -2331,6 +2443,23 @@ const ProductShow: React.FC = () => {
                       </div>
                     </div>
                   ))
+                ) : reviews.length > 0 ? (
+                  <div className="flex flex-col items-center rounded-2xl border border-dashed border-gray-300 bg-linear-to-b from-white to-gray-50 px-4 py-10 text-center">
+                    <div className="mb-3 inline-flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+                      <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                      </svg>
+                    </div>
+                    <p className="text-sm font-semibold text-gray-700">No reviews found for this rating.</p>
+                    <p className="mt-1 text-xs text-gray-500">Try another star level or reset to see all customer feedback.</p>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedRatingFilter('all')}
+                      className="mt-4 rounded-full border border-[#16233b] px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-[#16233b] transition-colors hover:bg-[#16233b] hover:text-white"
+                    >
+                      Show all reviews
+                    </button>
+                  </div>
                 ) : (
                   <div className="flex flex-col items-center rounded-2xl bg-gray-50 py-14 text-center">
                     <svg className="mb-3 h-14 w-14 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -2338,6 +2467,37 @@ const ProductShow: React.FC = () => {
                     </svg>
                     <p className="text-sm font-semibold text-gray-600">No Reviews Yet</p>
                     <p className="mt-1 text-xs text-gray-400">Be the first verified buyer to review this product!</p>
+                  </div>
+                )}
+
+                {filteredReviews.length > 10 && (
+                  <div className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm text-gray-600">
+                      Showing {Math.min((safeReviewPage - 1) * reviewsPerPage + 1, filteredReviews.length)} to{' '}
+                      {Math.min(safeReviewPage * reviewsPerPage, filteredReviews.length)} of {filteredReviews.length} reviews
+                    </p>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setCurrentReviewPage((page) => Math.max(1, page - 1))}
+                        disabled={safeReviewPage === 1}
+                        className="rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:border-[#16233b] hover:text-[#16233b] disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        Previous
+                      </button>
+                      <div className="rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700">
+                        Page {safeReviewPage} of {totalReviewPages}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setCurrentReviewPage((page) => Math.min(totalReviewPages, page + 1))}
+                        disabled={safeReviewPage === totalReviewPages}
+                        className="rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:border-[#16233b] hover:text-[#16233b] disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        Next
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>

@@ -2,6 +2,7 @@ import { Head, usePage } from "@inertiajs/react";
 import axios from "axios";
 import { useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
+import Swal from "sweetalert2";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
 
 type OrderType = "product" | "repair";
@@ -176,6 +177,20 @@ export default function CustomerReviews() {
 
   const handleReportReview = async () => {
     if (!selectedReview) return;
+
+    const confirmation = await Swal.fire({
+      title: "Submit this report?",
+      text: "This review will be forwarded to the admin team for investigation.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Yes, submit",
+      cancelButtonText: "Cancel",
+      reverseButtons: true,
+      zIndex: 300000,
+    });
+
+    if (!confirmation.isConfirmed) return;
+
     setSubmittingReport(true);
     try {
       await axios.post(
@@ -186,12 +201,25 @@ export default function CustomerReviews() {
       setReportedIds((prev) => new Set([...prev, selectedReview.id]));
       setShowReportModal(false);
       setReportNotes("");
-      alert("Review reported successfully. Our team will review it shortly.");
+      void Swal.fire({
+        title: "Report submitted",
+        text: "Our team will review this report shortly.",
+        icon: "success",
+        timer: 1800,
+        showConfirmButton: false,
+        zIndex: 300000,
+      });
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { error?: string } } })?.response?.data?.error ??
         "Failed to submit report. Please try again.";
-      alert(msg);
+      void Swal.fire({
+        title: "Submission failed",
+        text: msg,
+        icon: "error",
+        confirmButtonText: "OK",
+        zIndex: 300000,
+      });
     } finally {
       setSubmittingReport(false);
     }

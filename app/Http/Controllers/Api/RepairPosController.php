@@ -16,6 +16,7 @@ use App\Services\RepairPosPaymentService;
 use App\Services\RepairPosRefundService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class RepairPosController extends Controller
@@ -530,7 +531,7 @@ class RepairPosController extends Controller
                 'failure_reason' => $refund->failure_reason,
                 'execution_channel' => $refund->execution_channel,
                 'execution_reference_masked' => $maskedReference,
-                'execution_proof_urls' => is_array($refund->execution_proof_urls) ? $refund->execution_proof_urls : [],
+                'execution_proof_urls' => $this->resolveCustomerExecutionProofUrls($refund),
                 'executed_at' => optional($refund->executed_at)->toDateTimeString(),
             ];
         })->values();
@@ -539,6 +540,30 @@ class RepairPosController extends Controller
             'success' => true,
             'data' => $data,
         ]);
+    }
+
+    private function resolveCustomerExecutionProofUrls(PosRefund $refund): array
+    {
+        $rawUrls = is_array($refund->execution_proof_urls) ? $refund->execution_proof_urls : [];
+
+        return collect($rawUrls)
+            ->map(fn ($value) => trim((string) $value))
+            ->filter(fn (string $value) => $value !== '')
+            ->map(function (string $value): string {
+                if (preg_match('/^https?:\/\//i', $value) === 1 || str_starts_with($value, 'data:') || str_starts_with($value, 'blob:')) {
+                    return $value;
+                }
+
+                if (str_starts_with($value, '//')) {
+                    $scheme = (string) (parse_url(config('app.url'), PHP_URL_SCHEME) ?: 'https');
+                    return $scheme . ':' . $value;
+                }
+
+                return url('/' . ltrim($value, '/'));
+            })
+            ->unique()
+            ->values()
+            ->all();
     }
 
     public function listTransactions(Request $request)
@@ -865,16 +890,28 @@ class RepairPosController extends Controller
             'execution_channel' => ['nullable', 'string', 'max:100'],
             'execution_reference' => ['nullable', 'string', 'max:255'],
             'execution_amount' => ['nullable', 'numeric', 'min:0.01'],
-            'execution_proof_urls' => ['nullable', 'array'],
-            'execution_proof_urls.*' => ['string', 'max:2048'],
+            'execution_proof_images' => ['nullable', 'array'],
+            'execution_proof_images.*' => ['file', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
         ]);
 
         $executionMode = strtolower((string) ($validated['execution_mode'] ?? 'manual'));
+        $requiresProofImages = $executionMode === 'manual'
+            && (string) ($refund->workflow_source ?? '') === 'shop_pos_repair'
+            && $refund->legs()->where('leg_type', 'pos_manual')->exists();
+
+        $executionProofUrls = $this->resolveExecutionProofUrlsFromImages($request, $refund);
+
+        if ($requiresProofImages && empty($executionProofUrls)) {
+            throw ValidationException::withMessages([
+                'execution_proof_images' => ['At least one transaction screenshot is required for manual refund execution.'],
+            ]);
+        }
+
         $executionContext = [
             'execution_channel' => $validated['execution_channel'] ?? null,
             'execution_reference' => $validated['execution_reference'] ?? null,
             'execution_amount' => $validated['execution_amount'] ?? null,
-            'execution_proof_urls' => $validated['execution_proof_urls'] ?? null,
+            'execution_proof_urls' => $executionProofUrls,
         ];
 
         $updated = $service->execute(
@@ -889,6 +926,27 @@ class RepairPosController extends Controller
             'success' => true,
             'data' => $updated,
         ]);
+    }
+
+    private function resolveExecutionProofUrlsFromImages(Request $request, PosRefund $refund): array
+    {
+        $executionProofUrls = [];
+
+        $files = $request->file('execution_proof_images', []);
+        if (!is_array($files)) {
+            $files = [$files];
+        }
+
+        foreach ($files as $file) {
+            if (!$file || !$file->isValid()) {
+                continue;
+            }
+
+            $storedPath = $file->store("refund-evidence/execution/refund-{$refund->id}", 'public');
+            $executionProofUrls[] = Storage::url($storedPath);
+        }
+
+        return array_values(array_unique($executionProofUrls));
     }
 
     public function showReceipt(PosTransaction $transaction)

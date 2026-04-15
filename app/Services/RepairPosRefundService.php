@@ -528,7 +528,7 @@ class RepairPosRefundService
 
             if (empty($executionContext['execution_proof_urls']) || !is_array($executionContext['execution_proof_urls'])) {
                 throw ValidationException::withMessages([
-                    'execution_proof_urls' => ['At least one execution proof URL is required for POS manual refund execution.'],
+                    'execution_proof_urls' => ['At least one transaction screenshot is required for POS manual refund execution.'],
                 ]);
             }
         }

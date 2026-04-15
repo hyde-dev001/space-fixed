@@ -505,8 +505,19 @@ export default function RefundApproval() {
 	const [executeChannel, setExecuteChannel] = useState<RepairExecutionChannel>("gcash");
 	const [executeAmount, setExecuteAmount] = useState(0);
 	const [executeReference, setExecuteReference] = useState("");
-	const [executeProofUrlsText, setExecuteProofUrlsText] = useState("");
+	const [executeProofImages, setExecuteProofImages] = useState<File[]>([]);
+	const [existingExecutionProofUrls, setExistingExecutionProofUrls] = useState<string[]>([]);
 	const [executeError, setExecuteError] = useState("");
+	const selectedExecutionProofPreviews = useMemo(
+		() => executeProofImages.map((file) => ({ name: file.name, url: URL.createObjectURL(file) })),
+		[executeProofImages],
+	);
+
+	useEffect(() => {
+		return () => {
+			selectedExecutionProofPreviews.forEach((preview) => URL.revokeObjectURL(preview.url));
+		};
+	}, [selectedExecutionProofPreviews]);
 	const [rejectModalOpen, setRejectModalOpen] = useState(false);
 	const [rejectRequest, setRejectRequest] = useState<RefundRequest | null>(null);
 	const [rejectReasonChoice, setRejectReasonChoice] = useState<string>(rejectionReasonChoices[0]);
@@ -1053,7 +1064,8 @@ export default function RefundApproval() {
 		setExecuteChannel("gcash");
 		setExecuteAmount(0);
 		setExecuteReference("");
-		setExecuteProofUrlsText("");
+		setExecuteProofImages([]);
+		setExistingExecutionProofUrls([]);
 		setExecuteError("");
 	};
 
@@ -1067,23 +1079,37 @@ export default function RefundApproval() {
 		const channel = resolveExecutionChannel(request);
 		const amount = resolveFixedExecutionAmount(request);
 		const reference = request.financeExecution?.execution_reference || request.preferredReturnAccountRef || "";
-		const proofText = Array.isArray(request.financeExecution?.execution_proof_urls)
-			? (request.financeExecution?.execution_proof_urls ?? []).join("\n")
-			: "";
+		const proofUrls = Array.isArray(request.financeExecution?.execution_proof_urls)
+			? request.financeExecution.execution_proof_urls.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+			: [];
 
 		setExecuteRequest(request);
 		setExecuteMode(mode);
 		setExecuteChannel(channel);
 		setExecuteAmount(amount);
 		setExecuteReference(reference);
-		setExecuteProofUrlsText(proofText);
+		setExecuteProofImages([]);
+		setExistingExecutionProofUrls(proofUrls);
 		setExecuteError("");
 		setExecuteModalOpen(true);
 	};
 
-	const submitExecuteRequest = async (request: RefundRequest, payload: Record<string, unknown>): Promise<boolean> => {
+	const submitExecuteRequest = async (
+		request: RefundRequest,
+		payload: Record<string, unknown> | FormData,
+		isMultipart = false,
+	): Promise<boolean> => {
 		setIsActionProcessing(true);
 		try {
+			const headers: Record<string, string> = {
+				Accept: "application/json",
+				"X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "",
+			};
+
+			if (!isMultipart) {
+				headers["Content-Type"] = "application/json";
+			}
+
 			const response = await fetch(
 				request.refundType === "repair"
 					? `/api/shop-owner/repair-refunds/${request.id}/execute`
@@ -1091,12 +1117,8 @@ export default function RefundApproval() {
 				{
 				method: "POST",
 				credentials: "include",
-				headers: {
-					"Content-Type": "application/json",
-					Accept: "application/json",
-					"X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "",
-				},
-				body: JSON.stringify(payload),
+				headers,
+				body: isMultipart ? (payload as FormData) : JSON.stringify(payload),
 			},
 			);
 
@@ -1148,7 +1170,8 @@ export default function RefundApproval() {
 
 		setExecuteError("");
 
-		let payload: Record<string, unknown>;
+		let payload: Record<string, unknown> | FormData;
+		let isMultipart = false;
 		if (executeMode === "gateway") {
 			payload = buildRepairRefundExecutionPayload({ executionMode: "gateway" });
 		} else {
@@ -1163,26 +1186,25 @@ export default function RefundApproval() {
 				return;
 			}
 
-			const executionProofUrls = executeProofUrlsText
-				.split(/\r?\n|,/)
-				.map((item) => item.trim())
-				.filter(Boolean);
-
-			if (executionProofUrls.length === 0) {
-				setExecuteError("At least one proof URL is required for manual refund execution.");
+			if (executeProofImages.length === 0) {
+				setExecuteError("At least one transaction screenshot is required for manual refund execution.");
 				return;
 			}
 
-			payload = buildRepairRefundExecutionPayload({
-				executionMode: "manual",
-				executionChannel: executeChannel,
-				executionReference: reference,
-				executionAmount: executeAmount,
-				executionProofUrls,
+			const formData = new FormData();
+			formData.append("execution_mode", "manual");
+			formData.append("execution_channel", executeChannel);
+			formData.append("execution_reference", reference);
+			formData.append("execution_amount", String(executeAmount));
+			executeProofImages.forEach((file) => {
+				formData.append("execution_proof_images[]", file);
 			});
+
+			payload = formData;
+			isMultipart = true;
 		}
 
-		const succeeded = await submitExecuteRequest(executeRequest, payload);
+		const succeeded = await submitExecuteRequest(executeRequest, payload, isMultipart);
 		if (succeeded) {
 			closeExecuteModal();
 			window.setTimeout(() => {
@@ -1760,14 +1782,41 @@ export default function RefundApproval() {
 									</div>
 
 									<div>
-										<label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Proof URLs (one per line)</label>
-										<textarea
-											value={executeProofUrlsText}
-											onChange={(event) => setExecuteProofUrlsText(event.target.value)}
-											placeholder="https://..."
-											rows={4}
-											className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+										<label htmlFor="shop-owner-execution-proof-images" className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Transaction Screenshot (Image)</label>
+										<input
+											id="shop-owner-execution-proof-images"
+											type="file"
+											title="Upload transaction screenshot images"
+											accept="image/png,image/jpeg,image/webp"
+											multiple
+											onChange={(event) => setExecuteProofImages(Array.from(event.target.files ?? []))}
+											className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 file:mr-3 file:rounded-md file:border-0 file:bg-indigo-600 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
 										/>
+										<p className="mt-1 text-xs text-gray-500">Upload screenshot(s) of the payout transaction receipt or confirmation.</p>
+										{executeProofImages.length > 0 && (
+											<div className="mt-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-800/60">
+												<p className="text-xs font-semibold text-gray-700 dark:text-gray-200">Selected screenshot preview</p>
+												<div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+													{selectedExecutionProofPreviews.map((preview) => (
+														<button
+															type="button"
+															key={`${preview.name}-${preview.url}`}
+															onClick={() => setActiveImage(preview.url)}
+															className="overflow-hidden rounded-md border border-gray-200 bg-white text-left transition hover:border-indigo-400 dark:border-gray-700 dark:bg-gray-900"
+															title={preview.name}
+														>
+															<img src={preview.url} alt={preview.name} className="h-20 w-full object-cover" />
+															<p className="truncate px-2 py-1 text-[11px] text-gray-600 dark:text-gray-300">{preview.name}</p>
+														</button>
+													))}
+												</div>
+											</div>
+										)}
+										{existingExecutionProofUrls.length > 0 && (
+											<div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-200">
+												Existing proof screenshots: {existingExecutionProofUrls.length}
+											</div>
+										)}
 									</div>
 								</div>
 							)}

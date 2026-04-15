@@ -67,6 +67,8 @@ type PromoFormState = {
 	endDate: string;
 };
 
+const PROMO_CODE_MAX_LENGTH = 7;
+
 const buildInitialForm = (firstProductId: string = ""): PromoFormState => {
 	const today = new Date();
 	const nextWeek = new Date(today);
@@ -429,7 +431,9 @@ export default function VouchersDiscountPage() {
 			...current,
 			kind: campaign.kind,
 			name: campaign.name,
-			code: campaign.kind === "voucher" ? campaign.code : "AUTO-DISCOUNT",
+			code: campaign.kind === "voucher"
+				? campaign.code.slice(0, PROMO_CODE_MAX_LENGTH)
+				: "AUTO-DISCOUNT",
 			productId: targetProductId,
 			discountScheduleEnabled: campaign.kind === "discount",
 			discountMode: campaign.discountMode,
@@ -533,6 +537,10 @@ export default function VouchersDiscountPage() {
 	const handleChange = (field: keyof Omit<PromoFormState, "discountScheduleEnabled">, value: string) => {
 		setForm((current) => {
 			const next = { ...current, [field]: value };
+
+			if (field === "code") {
+				next.code = value.slice(0, PROMO_CODE_MAX_LENGTH);
+			}
 
 			if (field === "kind" && value === "discount") {
 				next.code = "AUTO-DISCOUNT";
@@ -946,10 +954,12 @@ export default function VouchersDiscountPage() {
 									<input
 										value={form.kind === "discount" ? "AUTO-DISCOUNT" : form.code}
 										onChange={(event) => handleChange("code", event.target.value)}
+										maxLength={PROMO_CODE_MAX_LENGTH}
 										disabled={form.kind === "discount"}
 										placeholder="Example: SAVE20"
 										className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none transition disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 focus:border-slate-900 focus:ring-4 focus:ring-slate-200"
 									/>
+									<p className="text-xs text-slate-500">Maximum of {PROMO_CODE_MAX_LENGTH} characters.</p>
 								</label>
 
 								<label className="space-y-2 text-sm text-slate-600">
@@ -1153,7 +1163,10 @@ export default function VouchersDiscountPage() {
 									</div>
 									<div className="rounded-2xl border border-white/10 bg-white/5 p-4">
 										<p className="text-xs uppercase tracking-wide text-slate-400">Code</p>
-										<p className="mt-2 text-xl font-semibold tracking-[0.18em]">
+										<p
+											className="mt-2 max-w-full truncate text-xl font-semibold tracking-[0.14em]"
+											title={form.kind === "voucher" ? (form.code || "NO-CODE") : "AUTO"}
+										>
 											{form.kind === "voucher" ? (form.code || "NO-CODE") : "AUTO"}
 										</p>
 									</div>

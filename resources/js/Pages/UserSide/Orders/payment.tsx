@@ -93,24 +93,67 @@ interface PromoPreviewData {
   voucher_error?: string | null;
 }
 
+interface CityOption {
+  value: string;
+  label: string;
+  aliases?: string[];
+}
+
 type PaymentMethod = 'paymongo';
 
 const DEFAULT_SHIPPING_REGION = 'Cavite';
 
-const PH_CITY_OPTIONS = [
-  'Bacoor',
-  'Imus',
-  'Dasmariñas',
-  'General Trias',
-  'Trece Martires',
-  'Tagaytay',
-  'City of Cavite',
+const PH_CITY_OPTIONS: CityOption[] = [
+  { value: 'Bacoor', label: 'Bacoor' },
+  { value: 'Cavite City', label: 'Cavite City', aliases: ['City of Cavite'] },
+  { value: 'Dasmariñas', label: 'Dasmariñas', aliases: ['Dasmarinas'] },
+  { value: 'General Trias', label: 'General Trias' },
+  { value: 'Imus', label: 'Imus' },
+  { value: 'Tagaytay', label: 'Tagaytay' },
+  { value: 'Trece Martires', label: 'Trece Martires' },
+  { value: 'Alfonso', label: 'Alfonso' },
+  { value: 'Amadeo', label: 'Amadeo' },
+  { value: 'Carmona', label: 'Carmona' },
+  { value: 'General Emilio Aguinaldo', label: 'Gen. Emilio Aguinaldo', aliases: ['Gen Emilio Aguinaldo'] },
+  { value: 'General Mariano Alvarez', label: 'Gen. Mariano Alvarez', aliases: ['Gen Mariano Alvarez', 'GMA'] },
+  { value: 'Indang', label: 'Indang' },
+  { value: 'Kawit', label: 'Kawit' },
+  { value: 'Magallanes', label: 'Magallanes' },
+  { value: 'Maragondon', label: 'Maragondon' },
+  { value: 'Mendez', label: 'Mendez' },
+  { value: 'Naic', label: 'Naic' },
+  { value: 'Noveleta', label: 'Noveleta' },
+  { value: 'Rosario', label: 'Rosario' },
+  { value: 'Silang', label: 'Silang' },
+  { value: 'Tanza', label: 'Tanza' },
+  { value: 'Ternate', label: 'Ternate' },
 ];
 
+const normalizeCityKey = (value: string) => value
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/\./g, '')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .toLowerCase();
+
+const CITY_OPTION_LOOKUP = PH_CITY_OPTIONS.reduce<Map<string, string>>((lookup, option) => {
+  const candidates = [option.value, option.label, ...(option.aliases || [])];
+
+  candidates.forEach((candidate) => {
+    const key = normalizeCityKey(candidate);
+    if (key && !lookup.has(key)) {
+      lookup.set(key, option.value);
+    }
+  });
+
+  return lookup;
+}, new Map<string, string>());
+
 const normalizeCitySelection = (city?: string | null) => {
-  const trimmedCity = (city || '').trim();
-  if (!trimmedCity) return '';
-  return PH_CITY_OPTIONS.find((option) => option.toLowerCase() === trimmedCity.toLowerCase()) || '';
+  const normalizedCityKey = normalizeCityKey(city || '');
+  if (!normalizedCityKey) return '';
+  return CITY_OPTION_LOOKUP.get(normalizedCityKey) || '';
 };
 
 const toFiniteNumber = (value: unknown, fallback = 0): number => {
@@ -293,7 +336,7 @@ const Payment: React.FC = () => {
           address_id: addr.id,
           shipping_region: addr.region || null,
           shipping_province: addr.province || addr.region || null,
-          shipping_city: addr.city || null,
+          shipping_city: selectedCity || addr.city || null,
           shipping_barangay: addr.barangay || null,
           shipping_postal_code: addr.postal_code || null,
           shipping_address_line: addr.address_line || null,
@@ -370,7 +413,7 @@ const Payment: React.FC = () => {
           address_line: shippingAddressLine,
           region: shippingRegion,
           province: shippingRegion,
-          city: shippingCity,
+          city: normalizeCitySelection(shippingCity) || shippingCity,
           barangay: shippingBarangay,
           postal_code: shippingPostalCode,
           is_default: userAddresses.length === 0,
@@ -409,8 +452,9 @@ const Payment: React.FC = () => {
     setCustomerName(addr.name || '');
     setCustomerPhone(addr.phone || '');
     setShippingAddressLine(addr.address_line || '');
-    setShippingRegion(addr.region || (addr.city ? DEFAULT_SHIPPING_REGION : ''));
-    setShippingCity(addr.city || '');
+    const selectedCity = normalizeCitySelection(addr.city);
+    setShippingRegion(addr.region || (selectedCity ? DEFAULT_SHIPPING_REGION : ''));
+    setShippingCity(selectedCity);
     setShippingBarangay(addr.barangay || '');
     setShippingPostalCode(addr.postal_code || '');
     setAddressSheetMode('form');
@@ -1146,7 +1190,7 @@ const Payment: React.FC = () => {
         address_line: shippingAddressLine,
         region: shippingRegion || DEFAULT_SHIPPING_REGION,
         province: shippingRegion || DEFAULT_SHIPPING_REGION, // Use region as province
-        city: shippingCity,
+        city: normalizeCitySelection(shippingCity) || shippingCity,
         barangay: shippingBarangay,
         postal_code: shippingPostalCode,
         is_default: true,
@@ -1273,6 +1317,7 @@ const Payment: React.FC = () => {
       ? Math.max(0, Number(shippingEstimate?.max_fee ?? 0))
       : 0;
     const normalizedSubtotalAmount = Math.max(0, toFiniteNumber(promoPreview?.final_subtotal, checkoutData.total_amount));
+    const normalizedShippingCity = normalizeCitySelection(shippingCity) || shippingCity;
 
     // Validate required fields
     if (!customerEmail || !customerName || !customerPhone) {
@@ -1286,7 +1331,7 @@ const Payment: React.FC = () => {
       return;
     }
 
-    if (!shippingAddressLine || !shippingBarangay || !shippingCity || !shippingRegion || !shippingPostalCode) {
+    if (!shippingAddressLine || !shippingBarangay || !normalizedShippingCity || !shippingRegion || !shippingPostalCode) {
       setPayError('Please fill in all required shipping address fields.');
       Swal.fire({
         icon: 'warning',
@@ -1336,11 +1381,11 @@ const Payment: React.FC = () => {
         customer_name: customerName,
         customer_email: customerEmail,
         customer_phone: customerPhone,
-        shipping_address: `${shippingAddressLine}, ${shippingBarangay}, ${shippingCity}, ${shippingRegion} ${shippingPostalCode}`,
+        shipping_address: `${shippingAddressLine}, ${shippingBarangay}, ${normalizedShippingCity}, ${shippingRegion} ${shippingPostalCode}`,
         address_id: checkoutData.address_id ?? null,
         shipping_region: shippingRegion,
         shipping_province: null,
-        shipping_city: shippingCity,
+        shipping_city: normalizedShippingCity,
         shipping_barangay: shippingBarangay,
         shipping_postal_code: shippingPostalCode,
         shipping_address_line: shippingAddressLine,
@@ -1886,8 +1931,8 @@ const Payment: React.FC = () => {
                         aria-label="City"
                       >
                         <option value="">Select City</option>
-                        {PH_CITY_OPTIONS.map((city) => (
-                          <option key={city} value={city}>{city}</option>
+                        {PH_CITY_OPTIONS.map((cityOption) => (
+                          <option key={cityOption.value} value={cityOption.value}>{cityOption.label}</option>
                         ))}
                       </select>
                     </div>
@@ -2025,8 +2070,8 @@ const Payment: React.FC = () => {
                             aria-label="City"
                           >
                             <option value="">Select City</option>
-                            {PH_CITY_OPTIONS.map((city) => (
-                              <option key={city} value={city}>{city}</option>
+                            {PH_CITY_OPTIONS.map((cityOption) => (
+                              <option key={cityOption.value} value={cityOption.value}>{cityOption.label}</option>
                             ))}
                           </select>
                         </div>

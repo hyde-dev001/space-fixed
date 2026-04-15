@@ -1778,13 +1778,11 @@ const MyOrders: React.FC = () => {
                         </p>
                       )}
 
-                      {['delivered', 'completed'].includes(order.status) && (
+                      {['delivered', 'completed'].includes(order.status) && !reviewSubmitted && (
                         <p className={`mt-3 text-xs sm:text-right ${canRefund ? 'text-gray-500' : 'text-red-600 font-medium'}`}>
-                          {reviewSubmitted
-                            ? 'Refund is no longer available after a review has been submitted for this order.'
-                            : canRefund
-                              ? `You can request a refund until ${formatDeadline(order.cancellation_refund_deadline_at)}.`
-                              : `Refund deadline passed on ${formatDeadline(order.cancellation_refund_deadline_at)}.`}
+                          {canRefund
+                            ? `You can request a refund until ${formatDeadline(order.cancellation_refund_deadline_at)}.`
+                            : `Refund deadline passed on ${formatDeadline(order.cancellation_refund_deadline_at)}.`}
                         </p>
                       )}
                     </div>

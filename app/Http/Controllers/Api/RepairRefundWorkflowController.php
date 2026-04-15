@@ -9,6 +9,8 @@ use App\Services\RepairOnlineRefundWorkflowService;
 use App\Services\RepairPosRefundService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 
 class RepairRefundWorkflowController extends Controller
 {
@@ -159,18 +161,25 @@ class RepairRefundWorkflowController extends Controller
             'execution_channel' => ['nullable', 'in:gcash,card,bank_transfer,manual_cash'],
             'execution_reference' => ['nullable', 'string', 'max:150'],
             'execution_amount' => ['nullable', 'numeric', 'min:0.01'],
-            'execution_proof_urls' => ['nullable', 'array'],
-            'execution_proof_urls.*' => ['url'],
+            'execution_proof_images' => ['nullable', 'array'],
+            'execution_proof_images.*' => ['file', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
         ];
 
         if ($executionMode === 'manual' && $hasPosManualLeg) {
             $rules['execution_channel'] = ['required', 'in:gcash,card,bank_transfer,manual_cash'];
             $rules['execution_reference'] = ['required', 'string', 'max:150'];
             $rules['execution_amount'] = ['required', 'numeric', 'min:0.01'];
-            $rules['execution_proof_urls'] = ['required', 'array', 'min:1'];
+            $rules['execution_proof_images'] = ['required', 'array', 'min:1'];
         }
 
         $validated = $request->validate($rules);
+        $executionProofUrls = $this->resolveExecutionProofUrls($request, $refund);
+
+        if ($executionMode === 'manual' && $hasPosManualLeg && empty($executionProofUrls)) {
+            throw ValidationException::withMessages([
+                'execution_proof_images' => ['At least one transaction screenshot is required for manual refund execution.'],
+            ]);
+        }
 
         $updated = $service->execute(
             refund: $refund,
@@ -181,7 +190,7 @@ class RepairRefundWorkflowController extends Controller
                 'execution_channel' => $validated['execution_channel'] ?? null,
                 'execution_reference' => $validated['execution_reference'] ?? null,
                 'execution_amount' => isset($validated['execution_amount']) ? (float) $validated['execution_amount'] : null,
-                'execution_proof_urls' => $validated['execution_proof_urls'] ?? [],
+                'execution_proof_urls' => $executionProofUrls,
             ],
         );
 
@@ -243,18 +252,25 @@ class RepairRefundWorkflowController extends Controller
             'execution_channel' => ['nullable', 'in:gcash,card,bank_transfer,manual_cash'],
             'execution_reference' => ['nullable', 'string', 'max:150'],
             'execution_amount' => ['nullable', 'numeric', 'min:0.01'],
-            'execution_proof_urls' => ['nullable', 'array'],
-            'execution_proof_urls.*' => ['url'],
+            'execution_proof_images' => ['nullable', 'array'],
+            'execution_proof_images.*' => ['file', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
         ];
 
         if ($executionMode === 'manual' && $hasPosManualLeg) {
             $rules['execution_channel'] = ['required', 'in:gcash,card,bank_transfer,manual_cash'];
             $rules['execution_reference'] = ['required', 'string', 'max:150'];
             $rules['execution_amount'] = ['required', 'numeric', 'min:0.01'];
-            $rules['execution_proof_urls'] = ['required', 'array', 'min:1'];
+            $rules['execution_proof_images'] = ['required', 'array', 'min:1'];
         }
 
         $validated = $request->validate($rules);
+        $executionProofUrls = $this->resolveExecutionProofUrls($request, $refund);
+
+        if ($executionMode === 'manual' && $hasPosManualLeg && empty($executionProofUrls)) {
+            throw ValidationException::withMessages([
+                'execution_proof_images' => ['At least one transaction screenshot is required for manual refund execution.'],
+            ]);
+        }
 
         $updated = $service->execute(
             refund: $refund,
@@ -265,7 +281,7 @@ class RepairRefundWorkflowController extends Controller
                 'execution_channel' => $validated['execution_channel'] ?? null,
                 'execution_reference' => $validated['execution_reference'] ?? null,
                 'execution_amount' => isset($validated['execution_amount']) ? (float) $validated['execution_amount'] : null,
-                'execution_proof_urls' => $validated['execution_proof_urls'] ?? [],
+                'execution_proof_urls' => $executionProofUrls,
             ],
         );
 
@@ -298,6 +314,27 @@ class RepairRefundWorkflowController extends Controller
         return method_exists($actor, 'can')
             ? $actor->can('access-refund-approval')
             : true;
+    }
+
+    private function resolveExecutionProofUrls(Request $request, PosRefund $refund): array
+    {
+        $executionProofUrls = [];
+
+        $files = $request->file('execution_proof_images', []);
+        if (!is_array($files)) {
+            $files = [$files];
+        }
+
+        foreach ($files as $file) {
+            if (!$file || !$file->isValid()) {
+                continue;
+            }
+
+            $storedPath = $file->store("refund-evidence/execution/refund-{$refund->id}", 'public');
+            $executionProofUrls[] = Storage::url($storedPath);
+        }
+
+        return array_values(array_unique($executionProofUrls));
     }
 
     private function buildApprovalListQuery(Request $request, int $shopOwnerId)

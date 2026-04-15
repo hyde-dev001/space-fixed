@@ -10,6 +10,8 @@ use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\PaymongoRefundService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\Test;
 use Spatie\Permission\Models\Permission;
@@ -738,9 +740,94 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
         $this->actingAs($finance, 'user')
             ->postJson("/api/finance/repair-refunds/{$refund->id}/execute", [
                 'execution_mode' => 'manual',
+                'execution_channel' => 'gcash',
+                'execution_reference' => 'AUTH-MISSING-PROOF-001',
+                'execution_amount' => 300,
             ])
             ->assertStatus(422)
-            ->assertJsonValidationErrors(['execution_channel', 'execution_reference', 'execution_proof_urls']);
+            ->assertJsonValidationErrors(['execution_proof_images']);
+    }
+
+    #[Test]
+    public function finance_execute_manual_accepts_uploaded_execution_screenshot_images(): void
+    {
+        Storage::fake('public');
+
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var User $finance */
+        $finance = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+
+        Permission::findOrCreate('access-refund-approval', 'user');
+        $finance->givePermissionTo('access-refund-approval');
+
+        $source = PosTransaction::create([
+            'transaction_no' => 'POS-MIX-EXEC-IMG-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 9991,
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Walk In Screenshot',
+            'walk_in_phone' => '09170000112',
+            'due_type' => 'full',
+            'subtotal' => 300,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 300,
+            'paid_amount' => 300,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $refund = PosRefund::create([
+            'refund_no' => 'RFD-MIX-EXEC-IMG-001',
+            'shop_owner_id' => $shopOwner->id,
+            'source_transaction_id' => $source->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 9991,
+            'workflow_source' => 'shop_pos_repair',
+            'status' => 'approved',
+            'finance_status' => 'approved',
+            'shop_owner_status' => 'skipped',
+            'request_type' => 'full',
+            'requested_amount' => 300,
+            'approved_amount' => 300,
+            'reason_code' => 'mixed_payment_refund',
+            'requested_at' => now(),
+        ]);
+
+        $refund->legs()->create([
+            'leg_type' => 'pos_manual',
+            'requested_amount' => 300,
+            'approved_amount' => 300,
+            'status' => 'approved',
+        ]);
+
+        $response = $this->actingAs($finance, 'user')
+            ->post("/api/finance/repair-refunds/{$refund->id}/execute", [
+                'execution_mode' => 'manual',
+                'execution_channel' => 'gcash',
+                'execution_reference' => 'AUTH-IMG-001',
+                'execution_amount' => 300,
+                'execution_proof_images' => [
+                    UploadedFile::fake()->create('proof-001.png', 80, 'image/png'),
+                ],
+            ]);
+
+        $response->assertStatus(200)->assertJsonPath('success', true);
+
+        $updated = $refund->fresh();
+        $this->assertSame('succeeded', (string) $updated->status);
+        $this->assertSame('manual', (string) $updated->execution_mode);
+
+        $proofUrls = is_array($updated->execution_proof_urls) ? $updated->execution_proof_urls : [];
+        $this->assertNotEmpty($proofUrls);
+
+        $firstProofPath = ltrim((string) parse_url((string) $proofUrls[0], PHP_URL_PATH), '/');
+        if (str_starts_with($firstProofPath, 'storage/')) {
+            $firstProofPath = substr($firstProofPath, strlen('storage/'));
+        }
+
+        $this->assertTrue(Storage::disk('public')->exists($firstProofPath));
     }
 
     #[Test]
@@ -902,12 +989,14 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
         app()->instance(PaymongoRefundService::class, $mockGateway);
 
         $response = $this->actingAs($finance, 'user')
-            ->postJson("/api/finance/repair-refunds/{$refund->id}/execute", [
+            ->post("/api/finance/repair-refunds/{$refund->id}/execute", [
                 'execution_mode' => 'manual',
                 'execution_channel' => 'gcash',
                 'execution_reference' => 'AUTH-SHOP-POS-MIX-001',
                 'execution_amount' => 475,
-                'execution_proof_urls' => ['https://proof.local/rfd-mix-shop-pos-001.png'],
+                'execution_proof_images' => [
+                    UploadedFile::fake()->create('proof-mix-001.png', 80, 'image/png'),
+                ],
             ]);
 
         $response->assertStatus(200)->assertJsonPath('success', true);
@@ -1173,6 +1262,69 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
         $response->assertOk()
             ->assertJsonMissing(['execution_reference' => 'AUTH-1234567890'])
             ->assertJsonPath('data.0.execution_reference_masked', 'AUTH-******7890');
+    }
+
+    #[Test]
+    public function customer_refund_list_normalizes_relative_execution_proof_urls(): void
+    {
+        config()->set('app.url', 'http://localhost');
+
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var User $customer */
+        $customer = User::factory()->create();
+
+        $repair = $this->createRepairRequest($shopOwner, $customer);
+
+        $source = PosTransaction::create([
+            'transaction_no' => 'POS-MIX-VIS-URL-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'due_type' => 'full',
+            'subtotal' => 500,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 500,
+            'paid_amount' => 500,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $refund = PosRefund::create([
+            'refund_no' => 'RFD-MIX-VIS-URL-001',
+            'shop_owner_id' => $shopOwner->id,
+            'source_transaction_id' => $source->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'request_type' => 'full',
+            'requested_amount' => 500,
+            'approved_amount' => 500,
+            'reason_code' => 'mixed_payment_refund',
+            'status' => 'succeeded',
+            'execution_channel' => 'gcash',
+            'execution_reference' => 'AUTH-URL-123456',
+            'execution_proof_urls' => [
+                'storage/refund-evidence/execution/refund-55/proof-1.png',
+                '/storage/refund-evidence/execution/refund-55/proof-2.png',
+                'https://proof.local/rfd-proof-3.png',
+            ],
+            'requested_at' => now(),
+            'approved_at' => now(),
+            'executed_at' => now(),
+        ]);
+
+        $response = $this->actingAs($customer, 'user')->getJson('/api/repair-pos/refunds/mine');
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $refund->id);
+
+        $proofUrls = (array) $response->json('data.0.execution_proof_urls');
+        $this->assertContains('http://localhost/storage/refund-evidence/execution/refund-55/proof-1.png', $proofUrls);
+        $this->assertContains('http://localhost/storage/refund-evidence/execution/refund-55/proof-2.png', $proofUrls);
+        $this->assertContains('https://proof.local/rfd-proof-3.png', $proofUrls);
     }
 
     #[Test]

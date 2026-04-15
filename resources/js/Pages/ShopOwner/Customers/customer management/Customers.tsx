@@ -292,19 +292,6 @@ export default function Customers() {
     });
   };
 
-  const startEdit = () => {
-    if (!selectedCustomer) return;
-    setFormData({
-      name: selectedCustomer.name,
-      email: selectedCustomer.email,
-      phone: selectedCustomer.phone,
-      address: selectedCustomer.address,
-      city: selectedCustomer.city,
-      status: selectedCustomer.status,
-    });
-    setEditing(true);
-  };
-
   const saveEdit = async () => {
     if (!selectedCustomer) return;
     if (!isFormDirty) return;
@@ -584,9 +571,6 @@ export default function Customers() {
                       </>
                     ) : (
                       <>
-                        <button onClick={startEdit} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
-                          Edit Customer
-                        </button>
                         <button
                           onClick={() => {
                             setShowDetailsModal(false);
@@ -866,7 +850,7 @@ export default function Customers() {
                   {activeTab === "notes" && (
                     <div className="space-y-4">
                       <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
-                        <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Add staff note</label>
+                        <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Add note</label>
                         <textarea
                           value={noteDraft}
                           onChange={(event) => setNoteDraft(event.target.value)}
