@@ -99,8 +99,8 @@ class LandingPageController extends Controller
         $productsCount = Product::query()
             ->where('is_active', true)
             ->whereHas('shopOwner', function ($q) {
-                $q->where('status', 'approved')
-                    ->whereIn('business_type', ['retail', 'both']);
+                $q->where('status', 'approved');
+                $this->applyRetailCapableBusinessTypeFilter($q);
             })
             ->count();
 
@@ -253,7 +253,7 @@ class LandingPageController extends Controller
             }
         } elseif ($isRepairQuery) {
             // Repair query should include both pure repair and retail+repair shops.
-            $shopsQuery->whereIn('business_type', ['repair', 'both']);
+            $this->applyRepairCapableBusinessTypeFilter($shopsQuery);
 
             if ($repairQualifier !== '') {
                 $shopsQuery->where(function ($q) use ($repairQualifier) {
@@ -266,7 +266,7 @@ class LandingPageController extends Controller
             }
         } elseif ($isRetailQuery) {
             // Retail query should include both pure retail and retail+repair shops.
-            $shopsQuery->whereIn('business_type', ['retail', 'both']);
+            $this->applyRetailCapableBusinessTypeFilter($shopsQuery);
 
             if ($retailQualifier !== '') {
                 $shopsQuery->where(function ($q) use ($retailQualifier) {
@@ -649,11 +649,10 @@ class LandingPageController extends Controller
     public function repair(): Response
     {
         // Get all approved shop owners who offer repair services
-        $shops = ShopOwner::where('status', 'approved')
-            ->where(function ($query) {
-                $query->where('business_type', 'repair')
-                    ->orWhere('business_type', 'both');
-            })
+        $shopsQuery = ShopOwner::where('status', 'approved');
+        $this->applyRepairCapableBusinessTypeFilter($shopsQuery);
+
+        $shops = $shopsQuery
             ->orderBy('business_name')
             ->get()
             ->map(function ($shop) {
@@ -1190,6 +1189,32 @@ class LandingPageController extends Controller
         }
 
         return 'retail';
+    }
+
+    private function applyRetailCapableBusinessTypeFilter($query): void
+    {
+        $query->where(function ($subQuery) {
+            $subQuery->whereRaw("LOWER(COALESCE(business_type, '')) = 'retail'")
+                ->orWhereRaw("LOWER(COALESCE(business_type, '')) = 'both'")
+                ->orWhereRaw("LOWER(COALESCE(business_type, '')) LIKE '%both%'")
+                ->orWhere(function ($mixedQuery) {
+                    $mixedQuery->whereRaw("LOWER(COALESCE(business_type, '')) LIKE '%retail%'")
+                        ->whereRaw("LOWER(COALESCE(business_type, '')) LIKE '%repair%'");
+                });
+        });
+    }
+
+    private function applyRepairCapableBusinessTypeFilter($query): void
+    {
+        $query->where(function ($subQuery) {
+            $subQuery->whereRaw("LOWER(COALESCE(business_type, '')) = 'repair'")
+                ->orWhereRaw("LOWER(COALESCE(business_type, '')) = 'both'")
+                ->orWhereRaw("LOWER(COALESCE(business_type, '')) LIKE '%both%'")
+                ->orWhere(function ($mixedQuery) {
+                    $mixedQuery->whereRaw("LOWER(COALESCE(business_type, '')) LIKE '%retail%'")
+                        ->whereRaw("LOWER(COALESCE(business_type, '')) LIKE '%repair%'");
+                });
+        });
     }
 
     /**

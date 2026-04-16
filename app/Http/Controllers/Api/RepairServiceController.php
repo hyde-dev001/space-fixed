@@ -318,7 +318,7 @@ class RepairServiceController extends Controller
                 $updateData['change_reason'] = $request->reason;
             }
 
-            $updateData['updated_by'] = Auth::guard('user')->id() ?? Auth::guard('shop_owner')->id();
+            $updateData['updated_by'] = $this->resolveUpdaterUserId();
 
             // Individual shops do not need price-approval workflow metadata.
             $updateData['old_price'] = null;
@@ -327,9 +327,6 @@ class RepairServiceController extends Controller
             $updateData['finance_reviewed_at'] = null;
             $updateData['owner_reviewed_by'] = null;
             $updateData['owner_reviewed_at'] = null;
-            $updateData['approval_id'] = null;
-            $updateData['current_approval_level'] = null;
-            $updateData['approval_workflow_version'] = null;
             $updateData['rejection_reason'] = null;
 
             $service->update($updateData);
@@ -382,7 +379,7 @@ class RepairServiceController extends Controller
                 'description' => $request->description ?? $service->description,
                 'change_reason' => $request->reason ?? $service->change_reason,
                 'duration' => $request->duration ?? $service->duration,
-                'updated_by' => Auth::guard('user')->id() ?? Auth::guard('shop_owner')->id(),
+                'updated_by' => $this->resolveUpdaterUserId(),
                 'finance_reviewed_by' => null,
                 'finance_reviewed_at' => null,
                 'owner_reviewed_by' => null,
@@ -432,7 +429,7 @@ class RepairServiceController extends Controller
         if ($request->filled('status')) {
             $updateData['status'] = $normalizedInputStatus ?? $request->status;
         }
-        $updateData['updated_by'] = Auth::guard('user')->id() ?? Auth::guard('shop_owner')->id();
+        $updateData['updated_by'] = $this->resolveUpdaterUserId();
 
         $service->update($updateData);
 
@@ -1489,6 +1486,13 @@ class RepairServiceController extends Controller
             ->find($shopOwnerId);
 
         return (bool) ($shopOwner && $shopOwner->isIndividual());
+    }
+
+    private function resolveUpdaterUserId(): ?int
+    {
+        // repair_services.updated_by is a foreign key to users.id
+        $staffUserId = Auth::guard('user')->id();
+        return $staffUserId ? (int) $staffUserId : null;
     }
 
     private function resolveProposedPrice(RepairService $service): ?float

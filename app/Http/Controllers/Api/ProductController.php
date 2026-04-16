@@ -90,6 +90,19 @@ class ProductController extends Controller
         return '';
     }
 
+    private function applyRetailCapableBusinessTypeFilter($query): void
+    {
+        $query->where(function ($subQuery) {
+            $subQuery->whereRaw("LOWER(COALESCE(business_type, '')) = 'retail'")
+                ->orWhereRaw("LOWER(COALESCE(business_type, '')) = 'both'")
+                ->orWhereRaw("LOWER(COALESCE(business_type, '')) LIKE '%both%'")
+                ->orWhere(function ($mixedQuery) {
+                    $mixedQuery->whereRaw("LOWER(COALESCE(business_type, '')) LIKE '%retail%'")
+                        ->whereRaw("LOWER(COALESCE(business_type, '')) LIKE '%repair%'");
+                });
+        });
+    }
+
     private function canonicalizeColorName(string $colorName): string
     {
         $parts = preg_split('/\+/', $colorName) ?: [];
@@ -253,11 +266,8 @@ class ProductController extends Controller
 
             // Filter by business type - only show products from retail or both shops
             $query->whereHas('shopOwner', function ($q) {
-                $q->where('status', 'approved')
-                    ->where(function ($subQuery) {
-                        $subQuery->where('business_type', 'retail')
-                            ->orWhere('business_type', 'both');
-                    });
+                $q->where('status', 'approved');
+                $this->applyRetailCapableBusinessTypeFilter($q);
             });
 
             $products = $query->paginate($request->get('per_page', 12));
