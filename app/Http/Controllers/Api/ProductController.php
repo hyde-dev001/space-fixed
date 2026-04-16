@@ -865,7 +865,7 @@ class ProductController extends Controller
                 'sale_starts_at' => 'nullable|date',
                 'sale_ends_at' => 'nullable|date|after_or_equal:sale_starts_at',
                 'brand' => 'nullable|string|max:100',
-                'category' => 'nullable|string|max:50',
+                'category' => 'nullable|string|max:255',
                 'stock_quantity' => 'sometimes|integer|min:0',
                 'is_active' => 'sometimes|boolean',
                 'is_featured' => 'sometimes|boolean',
@@ -1125,9 +1125,16 @@ class ProductController extends Controller
                 DB::rollBack();
                 throw $e;
             }
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->validator->errors()->first() ?: 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422);
         } catch (\Exception $e) {
             Log::error('Error updating product', [
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return response()->json([

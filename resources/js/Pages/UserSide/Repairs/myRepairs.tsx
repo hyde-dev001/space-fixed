@@ -10,6 +10,46 @@ import type { PreferredReturnChannel } from './refundPayloadBuilder';
 const MAX_REFUND_IMAGE_SIZE_BYTES = 20 * 1024 * 1024;
 const MAX_REFUND_VIDEO_SIZE_BYTES = 256 * 1024 * 1024;
 const REPAIR_VAT_RATE_PERCENT = 12;
+const REFUND_ALLOWED_IMAGE_MIME_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+const REFUND_ALLOWED_VIDEO_MIME_TYPES = ['video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/x-matroska', 'video/webm'];
+const REFUND_ALLOWED_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp'];
+const REFUND_ALLOWED_VIDEO_EXTENSIONS = ['mp4', 'mov', 'avi', 'mkv', 'webm'];
+const REFUND_MEDIA_ACCEPT = '.jpg,.jpeg,.png,.webp,.mp4,.mov,.avi,.mkv,.webm';
+
+const getFileExtension = (fileName: string): string => {
+  const pieces = fileName.toLowerCase().split('.');
+  return pieces.length > 1 ? pieces[pieces.length - 1] : '';
+};
+
+const isAllowedRefundImageFile = (file: File): boolean => {
+  const mimeType = String(file.type || '').toLowerCase();
+  const extension = getFileExtension(file.name);
+
+  if (REFUND_ALLOWED_IMAGE_MIME_TYPES.includes(mimeType)) {
+    return true;
+  }
+
+  if (mimeType.startsWith('image/')) {
+    return REFUND_ALLOWED_IMAGE_EXTENSIONS.includes(extension);
+  }
+
+  return REFUND_ALLOWED_IMAGE_EXTENSIONS.includes(extension);
+};
+
+const isAllowedRefundVideoFile = (file: File): boolean => {
+  const mimeType = String(file.type || '').toLowerCase();
+  const extension = getFileExtension(file.name);
+
+  if (REFUND_ALLOWED_VIDEO_MIME_TYPES.includes(mimeType)) {
+    return true;
+  }
+
+  if (mimeType.startsWith('video/')) {
+    return REFUND_ALLOWED_VIDEO_EXTENSIONS.includes(extension);
+  }
+
+  return REFUND_ALLOWED_VIDEO_EXTENSIONS.includes(extension);
+};
 
 
 type RepairStatus = 'new_request' | 'assigned_to_repairer' | 'repairer_accepted' | 'waiting_customer_confirmation' | 'owner_approval_pending' | 'owner_approved' | 'owner_rejected' | 'in_progress' | 'awaiting_parts' | 'completed' | 'ready_for_pickup' | 'shipped' | 'picked_up' | 'pending' | 'received' | 'cancelled' | 'rejected' | 'repairer_rejected';
@@ -1916,9 +1956,23 @@ const MyRepairs: React.FC = () => {
   const handleMediaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const filesArray = Array.from(e.target.files);
+      const invalidFile = filesArray.find(
+        (file) => !isAllowedRefundImageFile(file) && !isAllowedRefundVideoFile(file)
+      );
+
+      if (invalidFile) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'Invalid File Type',
+          text: 'Only JPG, JPEG, PNG, WEBP images and MP4, MOV, AVI, MKV, WEBM videos are allowed.',
+          confirmButtonColor: '#000000',
+        });
+        e.target.value = '';
+        return;
+      }
       
-      const newVideos = filesArray.filter(file => file.type.startsWith('video/'));
-      const newImages = filesArray.filter(file => !file.type.startsWith('video/'));
+      const newVideos = filesArray.filter((file) => isAllowedRefundVideoFile(file));
+      const newImages = filesArray.filter((file) => isAllowedRefundImageFile(file));
 
       const oversizedVideo = newVideos.find(file => file.size > MAX_REFUND_VIDEO_SIZE_BYTES);
       if (oversizedVideo) {
@@ -1968,11 +2022,12 @@ const MyRepairs: React.FC = () => {
   };
 
   const isVideoFile = (file: File) => {
-    return file.type.startsWith('video/');
+    return isAllowedRefundVideoFile(file);
   };
 
   const isMediaRequirementMet = () => {
-    return refundMedia.length >= 1;
+    return refundMedia.length >= 1
+      && refundMedia.every((file) => isAllowedRefundImageFile(file) || isAllowedRefundVideoFile(file));
   };
 
   const isRefundReasonValid = () => {
@@ -3741,7 +3796,7 @@ const MyRepairs: React.FC = () => {
                         )}
                       </label>
                       <p className="text-xs text-gray-600 mb-3">
-                        <strong>Note:</strong> Upload at least one clear photo or video. Images must be 20MB or smaller; video must be 256MB or smaller.
+                        <strong>Note:</strong> Upload at least one clear photo or video. Supported files: JPG, JPEG, PNG, WEBP, MP4, MOV, AVI, MKV, WEBM. Images must be 20MB or smaller; video must be 256MB or smaller.
                       </p>
                       
                       <div className="grid grid-cols-6 gap-3">
@@ -3776,7 +3831,7 @@ const MyRepairs: React.FC = () => {
                           <div className="relative aspect-square">
                             <input
                               type="file"
-                              accept="image/*,video/*"
+                              accept={REFUND_MEDIA_ACCEPT}
                               multiple
                               onChange={handleMediaUpload}
                               className="hidden"
