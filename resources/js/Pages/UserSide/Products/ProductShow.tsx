@@ -381,6 +381,11 @@ const ProductShow: React.FC = () => {
   const [userRating, setUserRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
+  const createImageUploadGroup = () => ({
+    id: Math.random().toString(36).slice(2, 11),
+    file: null,
+    preview: '',
+  });
   const [imageUploadGroups, setImageUploadGroups] = useState<Array<{id: string; file: File | null; preview: string}>>([{id: '0', file: null, preview: ''}]);
   
   // Review system state
@@ -636,11 +641,18 @@ const ProductShow: React.FC = () => {
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setImageUploadGroups(prev => 
-          prev.map(group => 
-            group.id === id ? {id, file, preview: reader.result as string} : group
-          )
-        );
+        setImageUploadGroups((prev) => {
+          const updatedGroups = prev.map((group) =>
+            group.id === id ? { id, file, preview: reader.result as string } : group
+          );
+
+          const hasEmptySlot = updatedGroups.some((group) => !group.preview);
+          if (!hasEmptySlot && updatedGroups.length < 5) {
+            return [...updatedGroups, createImageUploadGroup()];
+          }
+
+          return updatedGroups;
+        });
       };
       reader.readAsDataURL(file);
     }
@@ -714,15 +726,20 @@ const ProductShow: React.FC = () => {
     }
   };
 
-  const addImageUploadBox = () => {
-    if (imageUploadGroups.length < 5) {
-      const newId = Math.random().toString(36).substr(2, 9);
-      setImageUploadGroups(prev => [...prev, {id: newId, file: null, preview: ''}]);
-    }
-  };
-
   const removeImageBox = (id: string) => {
-    setImageUploadGroups(prev => prev.filter(group => group.id !== id));
+    setImageUploadGroups((prev) => {
+      const filtered = prev.filter((group) => group.id !== id);
+      if (filtered.length === 0) {
+        return [{ id: '0', file: null, preview: '' }];
+      }
+
+      const hasEmptySlot = filtered.some((group) => !group.preview);
+      if (!hasEmptySlot && filtered.length < 5) {
+        return [...filtered, createImageUploadGroup()];
+      }
+
+      return filtered;
+    });
   };
 
   // Fetch reviews and check eligibility
@@ -2307,18 +2324,6 @@ const ProductShow: React.FC = () => {
                               )}
                             </div>
                           ))}
-                          {imageUploadGroups.length < 5 && imageUploadGroups.some(g => g.preview) && (
-                            <button
-                              onClick={addImageUploadBox}
-                              className="flex h-20 w-20 shrink-0 items-center justify-center rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 text-gray-400 transition-colors hover:border-[#16233b] hover:text-[#16233b]"
-                              type="button"
-                              title="Add more photos"
-                            >
-                              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                              </svg>
-                            </button>
-                          )}
                         </div>
                       </div>
 

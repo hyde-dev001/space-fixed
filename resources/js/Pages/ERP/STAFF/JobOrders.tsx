@@ -246,18 +246,6 @@ const MagnifyingGlassIcon: React.FC<{ className?: string }> = ({ className }) =>
   </svg>
 );
 
-const FunnelIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-  </svg>
-);
-
-const ArrowDownTrayIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-  </svg>
-);
-
 const ArrowUpIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
@@ -382,10 +370,6 @@ export default function JobOrdersPage() {
   const [selectedTab, setSelectedTab] = useState<string>("pending");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedOrders, setSelectedOrders] = useState<number[]>([]);
-  const [showFilterPanel, setShowFilterPanel] = useState(false);
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [filterPaymentMethod, setFilterPaymentMethod] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [isShippingModalOpen, setIsShippingModalOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
@@ -506,7 +490,7 @@ export default function JobOrdersPage() {
     );
   }
 
-  // Filter orders based on tab, search, date range, and payment method
+  // Filter orders based on tab and search
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
       const hasRetailPosRefund = Boolean(order.retail_pos_refund?.has_activity);
@@ -520,20 +504,9 @@ export default function JobOrdersPage() {
         String(order.id).toLowerCase().includes(searchTerm.toLowerCase()) ||
         order.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (order.product || '').toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesPayment = filterPaymentMethod === "all" || order.paymentMethod === filterPaymentMethod;
-      let matchesDate = true;
-      if (dateFrom || dateTo) {
-        const orderDate = new Date(order.orderedAt);
-        if (dateFrom) matchesDate = matchesDate && orderDate >= new Date(dateFrom);
-        if (dateTo) {
-          const end = new Date(dateTo);
-          end.setHours(23, 59, 59, 999);
-          matchesDate = matchesDate && orderDate <= end;
-        }
-      }
-      return matchesTab && matchesSearch && matchesPayment && matchesDate;
+      return matchesTab && matchesSearch;
     });
-  }, [orders, selectedTab, searchTerm, dateFrom, dateTo, filterPaymentMethod]);
+  }, [orders, selectedTab, searchTerm]);
 
   // Pagination
   const totalPages = Math.ceil(filteredOrders.length / itemsPerPage);
@@ -579,37 +552,6 @@ export default function JobOrdersPage() {
     setSelectedOrders((prev) =>
       prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
     );
-  };
-
-  const handleExportCSV = () => {
-    const headers = ['Order #', 'Customer', 'Email', 'Product', 'Quantity', 'Item Subtotal', 'Shipping Fee', 'VAT Amount', 'VAT Rate', 'Grand Total', 'Payment Method', 'Status', 'Ordered At'];
-    const rows = filteredOrders.map(order => [
-      order.order_number,
-      order.customer,
-      order.email,
-      order.product || '',
-      String(order.quantity || 0),
-      formatOrderTotal(order.total_amount),
-      formatOrderTotal(order.shipping_fee),
-      order.vat_amount != null ? formatOrderTotal(order.vat_amount) : 'N/A',
-      order.vat_rate != null ? `${order.vat_rate}%` : 'N/A',
-      formatOrderTotal(order.grand_total),
-      order.paymentMethod || '',
-      order.status,
-      order.orderedAt,
-    ]);
-    const csvContent = [headers, ...rows]
-      .map(row => row.map(val => `"${String(val).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `orders_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
   };
 
   const handleBulkMarkAsProcessing = async () => {
@@ -1705,82 +1647,9 @@ export default function JobOrdersPage() {
                   />
                 </div>
 
-                {/* Filter Button */}
-                <button
-                  onClick={() => setShowFilterPanel(p => !p)}
-                  className={`flex items-center gap-2 px-4 py-2 border rounded-lg transition-colors ${
-                    showFilterPanel || dateFrom || dateTo || filterPaymentMethod !== 'all'
-                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-                      : 'border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
-                  }`}
-                >
-                  <FunnelIcon className="size-5" />
-                  <span className="hidden sm:inline text-sm font-medium">Filter</span>
-                </button>
-
-                {/* Export Button */}
-                <button
-                  onClick={handleExportCSV}
-                  className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                >
-                  <ArrowDownTrayIcon className="size-5" />
-                  <span className="hidden sm:inline text-sm font-medium">Export</span>
-                </button>
               </div>
             </div>
           </div>
-
-          {/* Filter Panel */}
-          {showFilterPanel && (
-            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30">
-              <div className="flex flex-wrap items-end gap-4">
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Date From</label>
-                  <input
-                    type="date"
-                    aria-label="Date From"
-                    value={dateFrom}
-                    onChange={e => { setDateFrom(e.target.value); setCurrentPage(1); }}
-                    className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Date To</label>
-                  <input
-                    type="date"
-                    aria-label="Date To"
-                    value={dateTo}
-                    onChange={e => { setDateTo(e.target.value); setCurrentPage(1); }}
-                    className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Payment Method</label>
-                  <select
-                    aria-label="Payment Method"
-                    value={filterPaymentMethod}
-                    onChange={e => { setFilterPaymentMethod(e.target.value); setCurrentPage(1); }}
-                    className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="all">All Methods</option>
-                    <option value="cod">Cash on Delivery (COD)</option>
-                    <option value="online">Online Payment</option>
-                  </select>
-                </div>
-                <button
-                  onClick={() => { setDateFrom(''); setDateTo(''); setFilterPaymentMethod('all'); setCurrentPage(1); }}
-                  className="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                >
-                  Clear Filters
-                </button>
-                {(dateFrom || dateTo || filterPaymentMethod !== 'all') && (
-                  <span className="text-xs text-blue-600 dark:text-blue-400 font-medium self-end pb-2">
-                    {filteredOrders.length} result{filteredOrders.length !== 1 ? 's' : ''} found
-                  </span>
-                )}
-              </div>
-            </div>
-          )}
 
           {/* Bulk Action Bar */}
           {selectedOrders.length > 0 && (
