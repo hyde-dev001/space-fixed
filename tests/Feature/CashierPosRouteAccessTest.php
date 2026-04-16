@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\ShopOwner;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Permission;
@@ -18,7 +19,19 @@ class CashierPosRouteAccessTest extends TestCase
         $role = Role::firstOrCreate(['name' => 'Cashier', 'guard_name' => 'user']);
         $role->givePermissionTo($permission);
 
-        $user = User::factory()->create();
+        /** @var ShopOwner $shopOwner */
+        $shopOwner = ShopOwner::factory()->createOne([
+            'status' => 'approved',
+            'registration_type' => 'company',
+            'business_type' => 'retail',
+        ]);
+
+        /** @var User $user */
+        $user = User::factory()->createOne([
+            'shop_owner_id' => $shopOwner->id,
+            // Legacy enum role stays STAFF for cashier accounts.
+            'role' => 'STAFF',
+        ]);
         $user->assignRole('Cashier');
 
         return $user;
@@ -51,9 +64,28 @@ class CashierPosRouteAccessTest extends TestCase
         $response->assertStatus(200);
     }
 
+    public function test_cashier_is_denied_staff_inventory_overview_page(): void
+    {
+        $user = $this->createCashierUser();
+
+        $response = $this->actingAs($user, 'user')->get('/erp/staff/inventory-overview');
+
+        $response->assertStatus(403);
+    }
+
+    public function test_cashier_is_denied_staff_inventory_overview_api(): void
+    {
+        $user = $this->createCashierUser();
+
+        $response = $this->actingAs($user, 'user')->getJson('/api/staff/inventory-overview');
+
+        $response->assertStatus(403);
+    }
+
     public function test_user_without_permission_is_denied_cashier_pos(): void
     {
-        $user = User::factory()->create();
+        /** @var User $user */
+        $user = User::factory()->createOne();
 
         $response = $this->actingAs($user, 'user')->get('/erp/cashier/point-of-sale');
 

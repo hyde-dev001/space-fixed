@@ -22,6 +22,13 @@ class StaffInventoryController extends Controller
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
 
+            if ($user && $this->isCashierOnlyUser($user)) {
+                return response()->json([
+                    'error' => 'Forbidden',
+                    'message' => 'Cashier accounts cannot access staff inventory overview.',
+                ], 403);
+            }
+
             // Determine shop owner ID based on authenticated guard
             $shopOwnerId = null;
             
@@ -131,5 +138,16 @@ class StaffInventoryController extends Controller
         }
 
         return asset('storage/' . ltrim($imagePath, '/'));
+    }
+
+    private function isCashierOnlyUser($user): bool
+    {
+        $normalizedRoleNames = $user->getRoleNames()
+            ->map(fn (string $name) => strtoupper(trim($name)))
+            ->values()
+            ->all();
+
+        return in_array('CASHIER', $normalizedRoleNames, true)
+            && count(array_diff($normalizedRoleNames, ['CASHIER'])) === 0;
     }
 }

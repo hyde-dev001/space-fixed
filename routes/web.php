@@ -845,7 +845,8 @@ Route::get('/api/csrf-token', function () {
 
 // Staff API Routes (session-based authentication)
 Route::middleware('auth:user')->prefix('api/staff')->group(function () {
-    Route::get('inventory-overview', [\App\Http\Controllers\Api\StaffInventoryController::class, 'index']);
+    Route::get('inventory-overview', [\App\Http\Controllers\Api\StaffInventoryController::class, 'index'])
+        ->middleware(['permission:access-staff-dashboard|access-product-management|access-product-upload-staff', 'check.user.business.type:retail,both']);
     Route::get('orders', [\App\Http\Controllers\Api\StaffOrderController::class, 'index'])
         ->middleware('permission:access-staff-job-orders');
     Route::get('orders/{id}', [\App\Http\Controllers\Api\StaffOrderController::class, 'show'])
@@ -2291,11 +2292,25 @@ Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manage
         ->name('customers');
 
     Route::get('/inventory-overview', function () {
-        if (Auth::guard('user')->user()?->force_password_change) {
+        $user = Auth::guard('user')->user();
+
+        if ($user?->force_password_change) {
             return redirect()->route('erp.profile');
         }
+
+        $normalizedRoleNames = $user
+            ? $user->getRoleNames()->map(fn (string $name) => strtoupper(trim($name)))->values()->all()
+            : [];
+
+        $isCashierOnly = in_array('CASHIER', $normalizedRoleNames, true)
+            && count(array_diff($normalizedRoleNames, ['CASHIER'])) === 0;
+
+        if ($isCashierOnly) {
+            abort(403, 'Cashier accounts cannot access staff inventory overview.');
+        }
+
         return Inertia::render('ERP/Manager/InventoryOverview');
-    })->name('inventory-overview');
+    })->middleware(['permission:access-staff-dashboard|access-product-management|access-product-upload-staff', 'check.user.business.type:retail,both'])->name('inventory-overview');
 
     Route::get('/attendance', function () {
         if (Auth::guard('user')->user()?->force_password_change) {

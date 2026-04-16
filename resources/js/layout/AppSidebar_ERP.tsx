@@ -704,6 +704,8 @@ const AppSidebar_ERP: React.FC = () => {
     ? roles.map((value: string) => String(value).toUpperCase())
     : [];
   const hasRolesArray = normalizedRoles.length > 0;
+  const hasCashierRole = normalizedRoles.includes('CASHIER') || (!hasRolesArray && normalizedRole === 'CASHIER');
+  const isCashierOnly = hasCashierRole && normalizedRoles.filter((value) => value !== 'CASHIER').length === 0;
   const hasManagerRole = normalizedRoles.includes('MANAGER') || (!hasRolesArray && normalizedRole === 'MANAGER');
   const hasInventoryManagerRole = normalizedRoles.includes('INVENTORY MANAGER');
   const hasProcurementManagerRole = normalizedRoles.includes('PROCUREMENT MANAGER');
@@ -1257,6 +1259,8 @@ const AppSidebar_ERP: React.FC = () => {
 
   // Check if user has Staff role or staff-specific permissions
   const hasStaffAccess = () => {
+    if (isCashierOnly) return false;
+
     if (normalizedRoles.includes('STAFF') || normalizedRole === 'STAFF') return true;
 
     const staffPermissions = [
@@ -1443,6 +1447,8 @@ const AppSidebar_ERP: React.FC = () => {
 
   // Filter staff items based on user permissions
   const getFilteredStaffItems = () => {
+    if (isCashierOnly) return [];
+
     return staffItems.filter((item) => {
       // Dashboard - check simplified permission
       if (item.route === "erp.staff.dashboard") {
@@ -1466,7 +1472,7 @@ const AppSidebar_ERP: React.FC = () => {
 
       // Inventory Overview - check if user has Staff role or permission
       if (item.route === "erp.staff.inventory-overview") {
-        return normalizedRoles.includes('STAFF') || normalizedRole === 'STAFF' || permissions.includes('access-staff-dashboard');
+        return permissions.includes('access-staff-dashboard') || permissions.includes('access-product-management') || permissions.includes('access-product-upload-staff');
       }
       
       // Hide other items by default (no permissions)
