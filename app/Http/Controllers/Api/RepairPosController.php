@@ -360,7 +360,9 @@ class RepairPosController extends Controller
             ], 403);
         }
 
-        if ($isShopActor && (bool) ($warrantyClaimData['warranty_claim_locked'] ?? false)) {
+        $isIndividualShopActor = $isShopActor && $this->isIndividualShopOwner($actorShopOwnerId);
+
+        if ($isShopActor && !$isIndividualShopActor && (bool) ($warrantyClaimData['warranty_claim_locked'] ?? false)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Refund cannot be requested while a warranty claim is active for this repair.',

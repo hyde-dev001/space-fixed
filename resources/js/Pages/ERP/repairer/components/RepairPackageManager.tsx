@@ -447,7 +447,7 @@ export default function RepairPackageManager({
       if (response.data?.success) {
         await loadData();
         resetAndCloseModal();
-        Swal.fire({ icon: "success", title: "Updated", text: "Repair package updated successfully. Price changes can be made in the Repair Pricing section.", timer: 1800, showConfirmButton: false });
+        Swal.fire({ icon: "success", title: "Updated", text: "Repair package updated successfully.", timer: 1800, showConfirmButton: false });
       }
     } catch (error: any) {
       console.error("Failed to update package", error);
@@ -546,26 +546,21 @@ export default function RepairPackageManager({
                   }}
                   className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
                   placeholder="e.g. 948.00"
-                  disabled={mode === "edit"}
                 />
-                {mode === "add" ? (
-                  <div className="mt-1 space-y-1">
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      Suggested from selected services (reference): <span className="font-semibold">{formatMoney(selectedServicesTotal)}</span>
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setFormState((prev) => ({ ...prev, package_price: String(selectedServicesTotal.toFixed(2)) }));
-                      }}
-                      className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-                    >
-                      Apply suggested price
-                    </button>
-                  </div>
-                ) : (
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Price updates after creation are handled in the Repair Pricing workflow.</p>
-                )}
+                <div className="mt-1 space-y-1">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Manual price input. Service total reference: <span className="font-semibold">{formatMoney(selectedServicesTotal)}</span>
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormState((prev) => ({ ...prev, package_price: String(selectedServicesTotal.toFixed(2)) }));
+                    }}
+                    className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                  >
+                    Apply reference price
+                  </button>
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Starts At (optional)</label>
