@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Refund;
 
+use App\Enums\NotificationType;
 use App\Models\Order;
 use App\Models\OrderRefund;
 use App\Models\ShopOwner;
+use App\Services\NotificationService;
 use App\Services\OrderRefundService;
 use App\Services\PaymentSettlementService;
 use App\Services\PaymongoRefundService;
@@ -28,6 +30,9 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
     /** @var MockObject&ShopOwnerApprovalPolicyService */
     private MockObject $shopOwnerApprovalPolicyService;
 
+    /** @var MockObject&NotificationService */
+    private MockObject $notificationService;
+
     private OrderRefundService $service;
 
     protected function setUp(): void
@@ -37,6 +42,7 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
         $this->paymongoRefundService = $this->createMock(PaymongoRefundService::class);
         $this->paymentSettlementService = $this->createMock(PaymentSettlementService::class);
         $this->shopOwnerApprovalPolicyService = $this->createMock(ShopOwnerApprovalPolicyService::class);
+        $this->notificationService = $this->createMock(NotificationService::class);
         $this->shopOwnerApprovalPolicyService
             ->method('requiresOwnerApprovalForRefund')
             ->willReturnCallback(fn () => $this->requiresOwnerApproval);
@@ -45,6 +51,7 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
             paymongoRefundService: $this->paymongoRefundService,
             paymentSettlementService: $this->paymentSettlementService,
             shopOwnerApprovalPolicyService: $this->shopOwnerApprovalPolicyService,
+            notificationService: $this->notificationService,
         );
     }
 
@@ -179,6 +186,42 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
         $this->assertSame('TRK-STAFF-123', $refund->staff_return_tracking_number);
         $this->assertSame('J&T', $refund->staff_return_carrier);
         $this->assertSame(77, $refund->return_arranged_by_staff_id);
+    }
+
+    #[Test]
+    public function staff_pickup_arrangement_notifies_customer_pickup_is_scheduled(): void
+    {
+        $this->notificationService
+            ->expects($this->once())
+            ->method('sendToUser')
+            ->with(
+                501,
+                NotificationType::ORDER_STATUS_UPDATE,
+                'Refund Return Pickup Arranged',
+                $this->stringContains('Staff arranged your return pickup.'),
+                $this->isType('array'),
+                '/my-orders?tab=return_refund',
+                202
+            );
+
+        $refund = $this->makeRefund([
+            'customer_id' => 501,
+            'shop_owner_id' => 202,
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'pending_customer_shipment',
+            'status' => 'pending_approval',
+        ]);
+
+        $result = $this->service->arrangeStaffReturnPickup($refund, [
+            'tracking_number' => 'TRK-NOTIFY-123',
+            'carrier_company' => 'Lalamove',
+            'rider_name' => 'Pickup Rider',
+            'rider_phone' => '09170000000',
+            'tracking_link' => 'https://track.example/TRK-NOTIFY-123',
+        ], staffId: 55);
+
+        $this->assertSame('pickup_arranged', $result['result']);
     }
 
     #[Test]

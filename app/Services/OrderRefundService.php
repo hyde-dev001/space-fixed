@@ -583,13 +583,16 @@ class OrderRefundService
         ]);
 
         $freshRefund = $refund->fresh();
+        $resolvedRefund = $freshRefund ?? $refund;
+
+        $this->notifyCustomerForStaffPickup($resolvedRefund);
 
         return [
             'result' => 'pickup_arranged',
             'message' => $staffShippedAt
                 ? 'Staff pickup and shipment details saved successfully.'
                 : 'Staff pickup details saved successfully. Waiting for rider pickup.',
-            'refund' => $freshRefund ?? $refund,
+            'refund' => $resolvedRefund,
         ];
     }
 
