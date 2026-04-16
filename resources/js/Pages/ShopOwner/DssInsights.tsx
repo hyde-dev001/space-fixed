@@ -554,12 +554,14 @@ const DssInsights: React.FC = () => {
   const isRepair = !data || data.business_type === "repair" || data.business_type === "both";
   const isRetail = !!data && (data.business_type === "retail" || data.business_type === "both");
 
+  const routeHelper = (globalThis as any)?.route;
+  const hasNamedRoute = typeof routeHelper === "function" && typeof routeHelper?.has === "function";
   const apiUrl = isErpUser
-    ? ((route as any)?.has?.("api.manager.dss-insights")
-      ? route("api.manager.dss-insights")
+    ? (hasNamedRoute && routeHelper.has("api.manager.dss-insights")
+      ? routeHelper("api.manager.dss-insights")
       : "/api/manager/dss-insights")
-    : ((route as any)?.has?.("api.shop_owner.dashboard.dss-insights")
-      ? route("api.shop_owner.dashboard.dss-insights")
+    : (hasNamedRoute && routeHelper.has("api.shop_owner.dashboard.dss-insights")
+      ? routeHelper("api.shop_owner.dashboard.dss-insights")
       : "/api/shop-owner/dashboard/dss-insights");
 
   const fetchData = useCallback(async () => {
