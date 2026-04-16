@@ -27,6 +27,16 @@ class EmployeeController extends Controller
 {
     use LogsHRActivity;
 
+    private function mapLegacyUserRole(string $normalizedRole): string
+    {
+        return match ($normalizedRole) {
+            'CASHIER' => 'STAFF',
+            'INVENTORY', 'INVENTORY_MANAGER' => 'INVENTORY',
+            'PROCUREMENT', 'PROCUREMENT_MANAGER' => 'STAFF',
+            default => $normalizedRole,
+        };
+    }
+
     private function resolveAssignableUserRole(string $preferredRoleName): ?string
     {
         $roleAliases = [
@@ -211,6 +221,7 @@ class EmployeeController extends Controller
                 ],
             ], 422);
         }
+        $legacyUserRole = $this->mapLegacyUserRole($normalizedRole);
 
         // Generate invitation token instead of temporary password
         $inviteToken = Str::random(64);
@@ -222,7 +233,7 @@ class EmployeeController extends Controller
         $fullName = trim($firstName . ' ' . $lastName);
         
         // Create both Employee and User atomically
-        [$employee, $newUser, $inviteUrl] = DB::transaction(function () use ($request, $user, $firstName, $lastName, $fullName, $inviteToken, $inviteExpiresAt, $resolvedSpatieRole) {
+        [$employee, $newUser, $inviteUrl] = DB::transaction(function () use ($request, $user, $firstName, $lastName, $fullName, $inviteToken, $inviteExpiresAt, $resolvedSpatieRole, $legacyUserRole) {
             $data = [
                 'shop_owner_id' => $user->shop_owner_id,
                 'first_name' => $firstName,
@@ -260,7 +271,8 @@ class EmployeeController extends Controller
                 'phone' => $request->phone ?? '',
                 'address' => $request->location ?? $request->address ?? '',
                 'shop_owner_id' => $user->shop_owner_id,
-                'role' => $resolvedSpatieRole,
+                // Keep legacy users.role enum-compatible; source of truth remains Spatie roles.
+                'role' => $legacyUserRole,
                 'position' => $request->position ?? null,
                 'password' => null, // No password until invitation is accepted
                 'invite_token' => $inviteToken,

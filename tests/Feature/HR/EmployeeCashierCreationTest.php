@@ -63,7 +63,7 @@ class EmployeeCashierCreationTest extends TestCase
         $response->assertStatus(201);
         $this->assertDatabaseHas('users', [
             'email' => 'casey.cashier@example.com',
-            'role' => 'Cashier',
+            'role' => 'STAFF',
             'shop_owner_id' => $shopOwner->id,
         ]);
 
@@ -99,6 +99,7 @@ class EmployeeCashierCreationTest extends TestCase
 
         $response->assertStatus(201);
         $createdUser = User::where('email', 'ivy.inventory@example.com')->firstOrFail();
+        $this->assertSame('INVENTORY', $createdUser->role);
         $this->assertTrue($createdUser->hasRole('Inventory Manager'));
     }
 
@@ -131,6 +132,7 @@ class EmployeeCashierCreationTest extends TestCase
 
         $response->assertStatus(201);
         $createdUser = User::where('email', 'paolo.procurement@example.com')->firstOrFail();
+        $this->assertSame('STAFF', $createdUser->role);
         $this->assertTrue($createdUser->hasRole('Procurement'));
     }
 }
