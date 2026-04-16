@@ -177,6 +177,7 @@ export function LeaveRequests() {
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [requestToReject, setRequestToReject] = useState<LeaveRequest | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
+  const [otherRejectionReason, setOtherRejectionReason] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(7);
   const [paginationMeta, setPaginationMeta] = useState<any>(null);
@@ -351,11 +352,15 @@ export function LeaveRequests() {
   const handleReject = (request: LeaveRequest) => {
     setRequestToReject(request);
     setRejectionReason("");
+    setOtherRejectionReason("");
     setIsRejectModalOpen(true);
   };
 
   const handleConfirmReject = async () => {
-    if (!requestToReject || !rejectionReason.trim()) {
+    const finalRejectionReason =
+      rejectionReason === "Other" ? otherRejectionReason.trim() : rejectionReason.trim();
+
+    if (!requestToReject || !finalRejectionReason) {
       Swal.fire({
         icon: "warning",
         title: "Please provide a reason",
@@ -377,7 +382,7 @@ export function LeaveRequests() {
         },
         credentials: 'include',
         body: JSON.stringify({
-          reason: rejectionReason,
+          reason: finalRejectionReason,
         }),
       });
 
@@ -390,7 +395,7 @@ export function LeaveRequests() {
       setLeaveRequestsState((prev) =>
         prev.map((req) =>
           req.id === requestToReject.id
-            ? { ...req, status: "rejected" as LeaveStatus, rejectionReason: rejectionReason }
+            ? { ...req, status: "rejected" as LeaveStatus, rejectionReason: finalRejectionReason }
             : req
         )
       );
@@ -398,6 +403,7 @@ export function LeaveRequests() {
       setIsRejectModalOpen(false);
       setRequestToReject(null);
       setRejectionReason("");
+      setOtherRejectionReason("");
       
       Swal.fire({
         icon: "success",
@@ -915,6 +921,16 @@ export function LeaveRequests() {
                     <option value="Duplicate Request">Duplicate Request</option>
                     <option value="Other">Other</option>
                   </select>
+
+                  {rejectionReason === "Other" && (
+                    <textarea
+                      value={otherRejectionReason}
+                      onChange={(e) => setOtherRejectionReason(e.target.value)}
+                      placeholder="Please specify the rejection reason"
+                      rows={3}
+                      className="mt-3 w-full px-4 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white resize-none"
+                    />
+                  )}
                 </div>
 
                 {/* Rejection Message Preview */}
@@ -924,8 +940,8 @@ export function LeaveRequests() {
                     <div>
                       <p className="text-sm font-semibold text-orange-900 dark:text-orange-300 mb-1">Rejection Message Preview</p>
                       <p className="text-sm text-orange-700 dark:text-orange-400 italic">
-                        {rejectionReason && rejectionReason !== "Select a reason" && rejectionReason !== ""
-                          ? `Your leave request has been rejected. Reason: ${rejectionReason}. Please contact your manager for more details.`
+                        {(rejectionReason !== "" && rejectionReason !== "Other") || (rejectionReason === "Other" && otherRejectionReason.trim())
+                          ? `Your leave request has been rejected. Reason: ${rejectionReason === "Other" ? otherRejectionReason.trim() : rejectionReason}. Please contact your manager for more details.`
                           : "Please select a rejection reason above to preview the message that will be sent to the employee."}
                       </p>
                     </div>
@@ -951,6 +967,7 @@ export function LeaveRequests() {
                       setIsRejectModalOpen(false);
                       setRequestToReject(null);
                       setRejectionReason("");
+                      setOtherRejectionReason("");
                     }}
                     disabled={isActionProcessing}
                     className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
@@ -959,7 +976,7 @@ export function LeaveRequests() {
                   </button>
                   <button
                     onClick={handleConfirmReject}
-                    disabled={isActionProcessing}
+                    disabled={isActionProcessing || (rejectionReason === "Other" && !otherRejectionReason.trim()) || !rejectionReason.trim()}
                     className="px-4 py-2 text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
                   >
                     Reject Request

@@ -6,6 +6,7 @@ use App\Models\Employee;
 use App\Models\HR\OvertimeRequest;
 use App\Models\User;
 use App\Notifications\HR\OvertimeRequestApproved;
+use App\Notifications\HR\OvertimeRequestRejected;
 use App\Services\NotificationService;
 
 class OvertimeApprovalService
@@ -46,22 +47,23 @@ class OvertimeApprovalService
         }
 
         $overtimeRequest->reject($rejector->id, $reason);
-        $freshRequest = $overtimeRequest->fresh(['employee.user']);
+        $freshRequest = $overtimeRequest->fresh(['employee.user', 'approver']);
 
-        $this->dispatchRejectedNotifications($freshRequest, $reason);
+        $this->dispatchRejectedNotifications($freshRequest, $rejector, $reason);
 
         return $freshRequest;
     }
 
     private function dispatchApprovedNotifications(OvertimeRequest $overtimeRequest, User $approver): void
     {
-        $employeeUserId = (int) ($overtimeRequest->employee?->user?->id ?? 0);
+        $employeeUser = $this->resolveEmployeeUser($overtimeRequest->employee);
+        $employeeUserId = (int) ($employeeUser?->id ?? 0);
 
         if ($employeeUserId <= 0) {
             return;
         }
 
-        $overtimeRequest->employee->user->notify(new OvertimeRequestApproved($overtimeRequest, $approver));
+        $employeeUser->notify(new OvertimeRequestApproved($overtimeRequest, $approver));
 
         $this->notificationService->notifyOvertimeApproved($employeeUserId, (int) $overtimeRequest->shop_owner_id, [
             'overtime_id' => $overtimeRequest->id,
@@ -70,13 +72,16 @@ class OvertimeApprovalService
         ]);
     }
 
-    private function dispatchRejectedNotifications(OvertimeRequest $overtimeRequest, string $reason): void
+    private function dispatchRejectedNotifications(OvertimeRequest $overtimeRequest, User $rejector, string $reason): void
     {
-        $employeeUserId = (int) ($overtimeRequest->employee?->user?->id ?? 0);
+        $employeeUser = $this->resolveEmployeeUser($overtimeRequest->employee);
+        $employeeUserId = (int) ($employeeUser?->id ?? 0);
 
         if ($employeeUserId <= 0) {
             return;
         }
+
+        $employeeUser->notify(new OvertimeRequestRejected($overtimeRequest, $rejector, $reason));
 
         $this->notificationService->notifyOvertimeRejected($employeeUserId, (int) $overtimeRequest->shop_owner_id, [
             'overtime_request_id' => $overtimeRequest->id,
@@ -84,5 +89,30 @@ class OvertimeApprovalService
             'hours' => (float) ($overtimeRequest->hours ?? 0),
             'rejection_reason' => $reason,
         ]);
+    }
+
+    private function resolveEmployeeUser(?Employee $employee): ?User
+    {
+        if (! $employee) {
+            return null;
+        }
+
+        $email = trim((string) $employee->email);
+        if ($email === '') {
+            return null;
+        }
+
+        $scopedUser = User::query()
+            ->where('email', $email)
+            ->where('shop_owner_id', $employee->shop_owner_id)
+            ->first();
+
+        if ($scopedUser) {
+            return $scopedUser;
+        }
+
+        return User::query()
+            ->where('email', $email)
+            ->first();
     }
 }

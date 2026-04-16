@@ -421,6 +421,7 @@ Route::prefix('crm/customers')->middleware(['web', 'auth:user', 'permission:acce
  */
 Route::prefix('crm/reviews')->middleware(['web', 'auth:user', 'permission:access-customer-support'])->group(function () {
     Route::get('/',                  [\App\Http\Controllers\Api\CRM\CRMReviewController::class, 'index']);
+    Route::post('/report',           [\App\Http\Controllers\Api\CRM\CRMReviewController::class, 'reportReview']);
 });
 
 /**

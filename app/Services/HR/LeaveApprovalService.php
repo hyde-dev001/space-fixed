@@ -189,9 +189,17 @@ class LeaveApprovalService
             return null;
         }
 
-        return User::query()
+        $scopedUser = User::query()
             ->where('email', $email)
             ->where('shop_owner_id', $employee->shop_owner_id)
+            ->first();
+
+        if ($scopedUser) {
+            return $scopedUser;
+        }
+
+        return User::query()
+            ->where('email', $email)
             ->first();
     }
 }

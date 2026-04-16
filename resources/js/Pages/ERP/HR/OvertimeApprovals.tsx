@@ -224,6 +224,7 @@ export function OvertimeRequests() {
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [requestToReject, setRequestToReject] = useState<OvertimeRequest | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
+  const [otherRejectionReason, setOtherRejectionReason] = useState("");
   const [processingAction, setProcessingAction] = useState<"approve" | "reject" | null>(null);
   const [processingRequestId, setProcessingRequestId] = useState<number | null>(null);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
@@ -409,13 +410,17 @@ export function OvertimeRequests() {
   const handleReject = (request: OvertimeRequest) => {
     setRequestToReject(request);
     setRejectionReason("");
+    setOtherRejectionReason("");
     setIsRejectModalOpen(true);
   };
 
   const handleConfirmReject = async () => {
     if (processingAction) return;
 
-    if (!requestToReject || !rejectionReason.trim()) {
+    const finalRejectionReason =
+      rejectionReason === "Other" ? otherRejectionReason.trim() : rejectionReason.trim();
+
+    if (!requestToReject || !finalRejectionReason) {
       Swal.fire({
         icon: "warning",
         title: "Please provide a reason",
@@ -439,7 +444,7 @@ export function OvertimeRequests() {
         },
         credentials: 'include',
         body: JSON.stringify({
-          rejection_reason: rejectionReason
+          rejection_reason: finalRejectionReason
         }),
       });
 
@@ -453,6 +458,7 @@ export function OvertimeRequests() {
       setIsRejectModalOpen(false);
       setRequestToReject(null);
       setRejectionReason("");
+      setOtherRejectionReason("");
 
       await fetchOvertimeRequests();
       
@@ -1086,6 +1092,16 @@ export function OvertimeRequests() {
                     <option value="Duplicate Request">Duplicate Request</option>
                     <option value="Other">Other</option>
                   </select>
+
+                  {rejectionReason === "Other" && (
+                    <textarea
+                      value={otherRejectionReason}
+                      onChange={(e) => setOtherRejectionReason(e.target.value)}
+                      placeholder="Please specify the rejection reason"
+                      rows={3}
+                      className="mt-3 w-full px-4 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white resize-none"
+                    />
+                  )}
                 </div>
 
                 {/* Rejection Message Preview */}
@@ -1095,8 +1111,8 @@ export function OvertimeRequests() {
                     <div>
                       <p className="text-sm font-semibold text-orange-900 dark:text-orange-300 mb-1">Rejection Message Preview</p>
                       <p className="text-sm text-orange-700 dark:text-orange-400 italic">
-                        {rejectionReason && rejectionReason !== "Select a reason" && rejectionReason !== ""
-                          ? `Your overtime request has been rejected. Reason: ${rejectionReason}. Please contact your manager for more details.`
+                        {(rejectionReason !== "" && rejectionReason !== "Other") || (rejectionReason === "Other" && otherRejectionReason.trim())
+                          ? `Your overtime request has been rejected. Reason: ${rejectionReason === "Other" ? otherRejectionReason.trim() : rejectionReason}. Please contact your manager for more details.`
                           : "Please select a rejection reason above to preview the message that will be sent to the employee."}
                       </p>
                     </div>
@@ -1123,6 +1139,7 @@ export function OvertimeRequests() {
                       setIsRejectModalOpen(false);
                       setRequestToReject(null);
                       setRejectionReason("");
+                      setOtherRejectionReason("");
                     }}
                     disabled={processingAction !== null}
                     className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1131,7 +1148,11 @@ export function OvertimeRequests() {
                   </button>
                   <button
                     onClick={handleConfirmReject}
-                    disabled={!rejectionReason.trim() || processingAction !== null}
+                    disabled={
+                      processingAction !== null ||
+                      !rejectionReason.trim() ||
+                      (rejectionReason === "Other" && !otherRejectionReason.trim())
+                    }
                     className="px-4 py-2 text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {processingAction === "reject" && requestToReject && processingRequestId === requestToReject.id ? "Rejecting..." : "Reject Request"}
