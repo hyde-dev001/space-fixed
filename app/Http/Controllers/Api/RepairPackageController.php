@@ -17,6 +17,7 @@ use Illuminate\Validation\ValidationException;
 class RepairPackageController extends Controller
 {
     private const REPAIR_VAT_RATE_PERCENT = 12.0;
+    private const MATERIAL_TEMPLATE_TABLE = 'repair_material_template_items';
 
     public function __construct(private ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService)
     {
@@ -40,7 +41,7 @@ class RepairPackageController extends Controller
             ->active()
             ->with([
                 'services:id,name,category,price,duration,status,shop_owner_id',
-                'materialTemplateItems:id,shop_owner_id,inventory_item_id,template_type,template_id,default_quantity,is_critical,tolerance_percent,created_by',
+                'materialTemplateItems:' . $this->materialTemplateItemSelectList(),
                 'materialTemplateItems.inventoryItem:id,name,available_quantity',
             ]);
 
@@ -108,7 +109,7 @@ class RepairPackageController extends Controller
     {
         $query = RepairPackage::query()->with([
             'services:id,name,category,price,duration,status,shop_owner_id',
-            'materialTemplateItems:id,shop_owner_id,inventory_item_id,template_type,template_id,default_quantity,is_critical,tolerance_percent,created_by',
+            'materialTemplateItems:' . $this->materialTemplateItemSelectList(),
             'materialTemplateItems.inventoryItem:id,name,available_quantity',
         ]);
 
@@ -400,7 +401,7 @@ class RepairPackageController extends Controller
     {
         $package = RepairPackage::with([
             'services:id,name,category,price,duration,status,shop_owner_id',
-            'materialTemplateItems:id,shop_owner_id,inventory_item_id,template_type,template_id,default_quantity,is_critical,tolerance_percent,created_by',
+            'materialTemplateItems:' . $this->materialTemplateItemSelectList(),
             'materialTemplateItems.inventoryItem:id,name,available_quantity',
         ])->find($id);
 
@@ -522,7 +523,7 @@ class RepairPackageController extends Controller
                 'message' => 'Repair package updated successfully.',
                 'data' => $package->load([
                     'services:id,name,category,price,duration,status,shop_owner_id',
-                    'materialTemplateItems:id,shop_owner_id,inventory_item_id,template_type,template_id,default_quantity,is_critical,tolerance_percent,created_by',
+                    'materialTemplateItems:' . $this->materialTemplateItemSelectList(),
                 ]),
             ]);
         }
@@ -655,7 +656,7 @@ class RepairPackageController extends Controller
             'message' => 'Repair package updated successfully.',
             'data' => $package->load([
                 'services:id,name,category,price,duration,status,shop_owner_id',
-                'materialTemplateItems:id,shop_owner_id,inventory_item_id,template_type,template_id,default_quantity,is_critical,tolerance_percent,created_by',
+                'materialTemplateItems:' . $this->materialTemplateItemSelectList(),
             ]),
         ]);
     }
@@ -816,7 +817,7 @@ class RepairPackageController extends Controller
         $package->materialTemplateItems()->delete();
 
         collect($materialTemplates)->each(function (array $line) use ($package, $createdBy): void {
-            $package->materialTemplateItems()->create([
+            $package->materialTemplateItems()->create($this->onlyExistingMaterialTemplateColumns([
                 'shop_owner_id' => $package->shop_owner_id,
                 'inventory_item_id' => (int) $line['inventory_item_id'],
                 'template_type' => 'repair_package',
@@ -825,8 +826,70 @@ class RepairPackageController extends Controller
                 'is_critical' => (bool) $line['is_critical'],
                 'tolerance_percent' => (float) ($line['tolerance_percent'] ?? 20),
                 'created_by' => $createdBy,
-            ]);
+            ]));
         });
+    }
+
+    private function materialTemplateItemSelectList(): string
+    {
+        return implode(',', $this->materialTemplateItemSelectColumns());
+    }
+
+    private function materialTemplateItemSelectColumns(): array
+    {
+        static $columns = null;
+
+        if ($columns !== null) {
+            return $columns;
+        }
+
+        $desired = [
+            'id',
+            'shop_owner_id',
+            'inventory_item_id',
+            'template_type',
+            'template_id',
+            'default_quantity',
+            'is_critical',
+            'tolerance_percent',
+            'created_by',
+        ];
+
+        $existingLookup = $this->repairMaterialTemplateColumnLookup();
+        $columns = array_values(array_filter(
+            $desired,
+            fn (string $column): bool => isset($existingLookup[$column])
+        ));
+
+        if (!in_array('id', $columns, true)) {
+            $columns[] = 'id';
+        }
+
+        if (!in_array('template_id', $columns, true)) {
+            $columns[] = 'template_id';
+        }
+
+        return $columns;
+    }
+
+    private function onlyExistingMaterialTemplateColumns(array $payload): array
+    {
+        $existingLookup = $this->repairMaterialTemplateColumnLookup();
+
+        return collect($payload)
+            ->filter(fn ($_value, $key) => isset($existingLookup[$key]))
+            ->all();
+    }
+
+    private function repairMaterialTemplateColumnLookup(): array
+    {
+        static $lookup = null;
+
+        if ($lookup === null) {
+            $lookup = array_flip(Schema::getColumnListing(self::MATERIAL_TEMPLATE_TABLE));
+        }
+
+        return $lookup;
     }
 
     private function onlyExistingRepairPackageColumns(array $payload): array
