@@ -310,7 +310,15 @@ class BusinessAccessControlService
         $allowedRoles = [];
 
         // Common roles for all business types (company only)
-        $commonRoles = ['MANAGER', 'Manager', 'FINANCE', 'Finance', 'HR', 'CRM', 'CASHIER', 'Cashier'];
+        $commonRoles = [
+            'MANAGER', 'Manager',
+            'FINANCE', 'Finance',
+            'HR',
+            'CRM',
+            'CASHIER', 'Cashier',
+            'INVENTORY', 'Inventory', 'INVENTORY_MANAGER', 'Inventory Manager',
+            'PROCUREMENT', 'Procurement', 'PROCUREMENT_MANAGER', 'Procurement Manager',
+        ];
 
         if ($businessType === self::BUSINESS_TYPE_RETAIL) {
             $allowedRoles = array_merge($commonRoles, ['STAFF', 'Staff']);

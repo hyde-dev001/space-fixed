@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 use Spatie\Permission\Models\Permission;
@@ -33,6 +34,29 @@ class UserAccessControlController extends Controller
     public function __construct(BusinessAccessControlService $accessControl)
     {
         $this->accessControl = $accessControl;
+    }
+
+    protected function resolveAssignableUserRole(string $preferredRoleName): ?string
+    {
+        $roleAliases = [
+            'Inventory Manager' => ['Inventory Manager', 'Inventory'],
+            'Procurement Manager' => ['Procurement Manager', 'Procurement'],
+        ];
+
+        $candidates = $roleAliases[$preferredRoleName] ?? [$preferredRoleName];
+
+        foreach ($candidates as $candidate) {
+            $exists = Role::query()
+                ->where('guard_name', 'user')
+                ->where('name', $candidate)
+                ->exists();
+
+            if ($exists) {
+                return $candidate;
+            }
+        }
+
+        return null;
     }
 
     protected function isFinancePermission(string $permission): bool
@@ -259,6 +283,13 @@ class UserAccessControlController extends Controller
                 ])->with('upgrade_prompt', true);
             }
 
+            $allowedPrimaryRoles = [
+                'MANAGER', 'FINANCE', 'HR', 'CRM', 'STAFF', 'REPAIRER', 'CASHIER',
+                'INVENTORY', 'INVENTORY_MANAGER', 'PROCUREMENT', 'PROCUREMENT_MANAGER',
+                'Manager', 'Finance', 'HR', 'CRM', 'Staff', 'Repairer', 'Cashier',
+                'Inventory', 'Inventory Manager', 'Procurement', 'Procurement Manager',
+            ];
+
             $validated = $request->validate([
                 'name' => 'required|string|max:255',
                 'email' => 'required|email|unique:employees,email',
@@ -271,22 +302,29 @@ class UserAccessControlController extends Controller
                 'salary' => 'nullable|numeric|min:0',
                 'hire_date' => 'nullable|date',
                 'status' => 'nullable|in:active,inactive,on_leave',
-                'role' => 'required|in:MANAGER,FINANCE,HR,CRM,STAFF,REPAIRER,CASHIER,Manager,Finance,Staff,Repairer,Cashier',
+                'role' => ['required', Rule::in($allowedPrimaryRoles)],
             ], [
                 'name.required' => 'Employee name is required',
                 'email.required' => 'Email is required',
                 'email.unique' => 'This email is already registered',
                 'phone.regex' => 'Phone number must be exactly 11 digits',
                 'salary.numeric' => 'Salary must be a valid number',
-                'role.in' => 'Role must be Manager, Finance, HR, CRM, Staff, Repairer, or Cashier',
+                'role.in' => 'Role must be Manager, Finance, HR, CRM, Staff, Repairer, Cashier, Inventory, or Procurement',
             ]);
 
-            // Normalize role to uppercase to match database enum
-            $validated['role'] = strtoupper($validated['role']);
+            // Normalize role to uppercase snake case to match legacy enum style.
+            $validated['role'] = strtoupper(str_replace(' ', '_', (string) $validated['role']));
 
             // Keep the legacy users.role column enum-compatible.
             // Cashier access is enforced via Spatie role + permissions.
-            $legacyUserRole = $validated['role'] === 'CASHIER' ? 'STAFF' : $validated['role'];
+            $legacyUserRole = match ($validated['role']) {
+                'CASHIER' => 'STAFF',
+                'INVENTORY', 'INVENTORY_MANAGER' => 'INVENTORY',
+                // Procurement roles are represented via Spatie role/permissions.
+                // Legacy users.role stays enum-compatible across old schemas.
+                'PROCUREMENT', 'PROCUREMENT_MANAGER' => 'STAFF',
+                default => $validated['role'],
+            };
 
             // SECURITY: Validate role creation based on business type
             $roleValidation = $this->accessControl->validateRoleCreation($validated['role'], $shopOwner);
@@ -366,18 +404,29 @@ class UserAccessControlController extends Controller
                     'CRM' => 'CRM',
                     'REPAIRER' => 'Repairer',
                     'CASHIER' => 'Cashier',
+                    'INVENTORY' => 'Inventory Manager',
+                    'INVENTORY_MANAGER' => 'Inventory Manager',
+                    'PROCUREMENT' => 'Procurement Manager',
+                    'PROCUREMENT_MANAGER' => 'Procurement Manager',
                     'STAFF' => 'Staff',
                 ];
                 
                 $spatieRole = $roleMap[$validated['role']] ?? 'Staff';
-                $user->assignRole($spatieRole);
+                $resolvedSpatieRole = $this->resolveAssignableUserRole($spatieRole);
+                if (!$resolvedSpatieRole) {
+                    throw ValidationException::withMessages([
+                        'role' => ["Role configuration for '{$spatieRole}' is missing. Please run role seeding."],
+                    ]);
+                }
+
+                $user->assignRole($resolvedSpatieRole);
                 
                 // Permission Audit Log - COMPLIANCE CRITICAL
                 PermissionAuditLog::logRoleAssigned(
                     $user,
-                    $spatieRole,
-                    "New employee created with {$spatieRole} role",
-                    $spatieRole === 'Manager' ? 'medium' : 'low'
+                    $resolvedSpatieRole,
+                    "New employee created with {$resolvedSpatieRole} role",
+                    $resolvedSpatieRole === 'Manager' ? 'medium' : 'low'
                 );
                 
                 // Apply position template permissions if provided (for Staff or department roles)
