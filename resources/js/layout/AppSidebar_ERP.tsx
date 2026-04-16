@@ -1768,7 +1768,10 @@ const AppSidebar_ERP: React.FC = () => {
                     <HorizontaLDots className="size-6" />
                   )}
                 </h2>
-                {renderMenuItems(deduplicateItems([...cashierItems]), "cashier")}
+                {renderMenuItems(
+                  deduplicateItems(withAttendanceForSection("cashier", [...cashierItems, myPayslipsItem])),
+                  "cashier"
+                )}
               </div>
             </div>
           </nav>
