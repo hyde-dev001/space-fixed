@@ -482,7 +482,8 @@ class RepairPackageController extends Controller
             $workflowResetData = [
                 'old_package_price' => null,
                 'change_reason' => $request->filled('reason') ? (string) $request->reason : null,
-                'approval_status' => null,
+                // Keep a valid enum value for non-nullable schema.
+                'approval_status' => 'none',
                 'approval_workflow_version' => null,
                 'current_approval_level' => null,
                 'approval_id' => null,
