@@ -12,6 +12,12 @@ type FormErrors = Record<string, string>;
 const EMAIL_REGEX = /^\S+@\S+\.\S+$/;
 const PHONE_REGEX = /^\d{11}$/;
 const MAX_VALID_ID_SIZE_BYTES = 5 * 1024 * 1024;
+const CUSTOMER_VALID_ID_ACCEPT = {
+  'image/jpeg': ['.jpg', '.jpeg'],
+  'image/png': ['.png'],
+};
+const CUSTOMER_VALID_ID_ALLOWED_EXTENSIONS = new Set(['jpg', 'jpeg', 'png']);
+const CUSTOMER_VALID_ID_ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png']);
 
 const escapeHtml = (value: string) => (
   value
@@ -110,7 +116,7 @@ export default function Register() {
 
     if (step === 3) {
       if (!formData.validId) {
-        newErrors.validId = 'Please upload a valid government-issued ID (JPG, PNG, or PDF up to 5MB).';
+        newErrors.validId = 'Please upload a valid government-issued ID (JPG, JPEG, or PNG up to 5MB).';
       }
 
       if (!formData.termsAccepted) {
@@ -245,8 +251,25 @@ export default function Register() {
     if (acceptedFiles.length > 0) {
       const file = acceptedFiles[0];
 
+      const extension = file.name.split('.').pop()?.toLowerCase() ?? '';
+      const hasAllowedExtension = CUSTOMER_VALID_ID_ALLOWED_EXTENSIONS.has(extension);
+      const mimeType = String(file.type || '').toLowerCase();
+      const hasAllowedMimeType = mimeType === '' || CUSTOMER_VALID_ID_ALLOWED_MIME_TYPES.has(mimeType);
+
+      if (!hasAllowedExtension || !hasAllowedMimeType) {
+        const typeError = 'Valid ID must be JPG, JPEG, or PNG only.';
+        setErrors(prev => ({ ...prev, validId: typeError }));
+        Swal.fire({
+          icon: 'error',
+          title: 'Invalid file type',
+          html: `<p><strong>${escapeHtml(file.name)}</strong> is not allowed.</p><p class="text-sm text-gray-600">Only JPG, JPEG, and PNG image files are accepted for Valid ID.</p>`,
+          confirmButtonColor: '#000000',
+        });
+        return;
+      }
+
       if (file.size > MAX_VALID_ID_SIZE_BYTES) {
-        const sizeError = 'Valid ID must be 5MB or smaller (JPG, PNG, or PDF).';
+        const sizeError = 'Valid ID must be 5MB or smaller (JPG, JPEG, or PNG).';
         setErrors(prev => ({ ...prev, validId: sizeError }));
         Swal.fire({
           icon: 'error',
@@ -655,6 +678,19 @@ export default function Register() {
                     <Label htmlFor="validId">Valid ID {formData.validId && <span className="text-green-600 font-bold ml-2">✓ Uploaded</span>}</Label>
                     <DropzoneComponent
                       onDrop={handleFileDrop}
+                      accept={CUSTOMER_VALID_ID_ACCEPT}
+                      onInvalidFiles={(invalidFiles) => {
+                        if (invalidFiles.length > 0) {
+                          const typeError = 'Valid ID must be JPG, JPEG, or PNG only.';
+                          setErrors(prev => ({ ...prev, validId: typeError }));
+                          Swal.fire({
+                            icon: 'error',
+                            title: 'Invalid file type',
+                            html: `<p><strong>${escapeHtml(invalidFiles[0].name)}</strong> is not allowed.</p><p class="text-sm text-gray-600">Only JPG, JPEG, and PNG image files are accepted for Valid ID.</p>`,
+                            confirmButtonColor: '#000000',
+                          });
+                        }
+                      }}
                       isUploaded={!!formData.validId}
                       fileName={formData.validId?.name}
                     />

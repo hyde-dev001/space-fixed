@@ -53,6 +53,12 @@ const CAVITE_ADDRESS_KEYWORDS = ['cavite', ...CAVITE_CITIES].map((entry) => entr
 const MAX_ADDITIONAL_DOCUMENTS = 8;
 const EMAIL_REGEX = /^\S+@\S+\.\S+$/;
 const PHONE_REGEX = /^\d{11}$/;
+const SHOP_OWNER_IMAGE_ACCEPT = {
+  'image/jpeg': ['.jpg', '.jpeg'],
+  'image/png': ['.png'],
+};
+const SHOP_OWNER_ALLOWED_EXTENSIONS = new Set(['jpg', 'jpeg', 'png']);
+const SHOP_OWNER_ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png']);
 
 const escapeHtml = (value: string) => (
   value
@@ -291,12 +297,35 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     setAdditionalDocuments((prev) => [...prev, { id: newId, file: null, fileName: '' }]);
   };
 
+  const isAllowedShopOwnerImageFile = (file: File) => {
+    const extension = file.name.split('.').pop()?.toLowerCase() ?? '';
+    const hasAllowedExtension = SHOP_OWNER_ALLOWED_EXTENSIONS.has(extension);
+    const mimeType = String(file.type || '').toLowerCase();
+    const hasAllowedMime = mimeType === '' || SHOP_OWNER_ALLOWED_MIME_TYPES.has(mimeType);
+
+    return hasAllowedExtension && hasAllowedMime;
+  };
+
+  const showInvalidImageUploadAlert = (fieldLabel: string, fileName?: string) => {
+    Swal.fire({
+      icon: 'error',
+      title: 'Invalid file type',
+      html: `<p><strong>${escapeHtml(fileName || 'Selected file')}</strong> is not allowed for <strong>${escapeHtml(fieldLabel)}</strong>.</p><p class="text-sm text-gray-600 mt-2">Only JPG, JPEG, and PNG image files are accepted.</p>`,
+      confirmButtonColor: '#3085d6',
+    });
+  };
+
   const handleAdditionalDocumentDrop = (id: number, files: File[]) => {
     if (!files || files.length === 0) {
       return;
     }
 
     const file = files[0];
+    if (!isAllowedShopOwnerImageFile(file)) {
+      showInvalidImageUploadAlert('Other Supporting Documents', file.name);
+      return;
+    }
+
     setAdditionalDocuments((prev) => prev.map((doc) => (
       doc.id === id
         ? { ...doc, file, fileName: file.name }
@@ -1465,6 +1494,11 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                         onDrop={(files) => {
                           if (files && files.length > 0) {
                             const file = files[0];
+                            if (!isAllowedShopOwnerImageFile(file)) {
+                              showInvalidImageUploadAlert('Shop Registration (DTI)', file.name);
+                              return;
+                            }
+
                             setUploadedDocuments(prev => ({
                               ...prev,
                               dti: { file: file, fileName: file.name }
@@ -1482,6 +1516,12 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                             if (errors.dti_registration) {
                               setErrors(prev => ({ ...prev, dti_registration: '' }));
                             }
+                          }
+                        }}
+                        accept={SHOP_OWNER_IMAGE_ACCEPT}
+                        onInvalidFiles={(invalidFiles) => {
+                          if (invalidFiles.length > 0) {
+                            showInvalidImageUploadAlert('Shop Registration (DTI)', invalidFiles[0].name);
                           }
                         }}
                         isUploaded={!!uploadedDocuments.dti.file || !!existingDocuments.dti}
@@ -1508,6 +1548,11 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                         onDrop={(files) => {
                           if (files && files.length > 0) {
                             const file = files[0];
+                            if (!isAllowedShopOwnerImageFile(file)) {
+                              showInvalidImageUploadAlert("Mayor's Permit / Shop Permit", file.name);
+                              return;
+                            }
+
                             setUploadedDocuments(prev => ({
                               ...prev,
                               mayors_permit: { file: file, fileName: file.name }
@@ -1524,6 +1569,12 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                             if (errors.mayors_permit) {
                               setErrors(prev => ({ ...prev, mayors_permit: '' }));
                             }
+                          }
+                        }}
+                        accept={SHOP_OWNER_IMAGE_ACCEPT}
+                        onInvalidFiles={(invalidFiles) => {
+                          if (invalidFiles.length > 0) {
+                            showInvalidImageUploadAlert("Mayor's Permit / Shop Permit", invalidFiles[0].name);
                           }
                         }}
                         isUploaded={!!uploadedDocuments.mayors_permit.file || !!existingDocuments.mayors_permit}
@@ -1550,6 +1601,11 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                         onDrop={(files) => {
                           if (files && files.length > 0) {
                             const file = files[0];
+                            if (!isAllowedShopOwnerImageFile(file)) {
+                              showInvalidImageUploadAlert('BIR Certificate of Registration (COR)', file.name);
+                              return;
+                            }
+
                             setUploadedDocuments(prev => ({
                               ...prev,
                               bir: { file: file, fileName: file.name }
@@ -1566,6 +1622,12 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                             if (errors.bir_certificate) {
                               setErrors(prev => ({ ...prev, bir_certificate: '' }));
                             }
+                          }
+                        }}
+                        accept={SHOP_OWNER_IMAGE_ACCEPT}
+                        onInvalidFiles={(invalidFiles) => {
+                          if (invalidFiles.length > 0) {
+                            showInvalidImageUploadAlert('BIR Certificate of Registration (COR)', invalidFiles[0].name);
                           }
                         }}
                         isUploaded={!!uploadedDocuments.bir.file || !!existingDocuments.bir}
@@ -1592,6 +1654,11 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                         onDrop={(files) => {
                           if (files && files.length > 0) {
                             const file = files[0];
+                            if (!isAllowedShopOwnerImageFile(file)) {
+                              showInvalidImageUploadAlert('Valid ID of Owner', file.name);
+                              return;
+                            }
+
                             setUploadedDocuments(prev => ({
                               ...prev,
                               valid_id: { file: file, fileName: file.name }
@@ -1608,6 +1675,12 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                             if (errors.valid_id) {
                               setErrors(prev => ({ ...prev, valid_id: '' }));
                             }
+                          }
+                        }}
+                        accept={SHOP_OWNER_IMAGE_ACCEPT}
+                        onInvalidFiles={(invalidFiles) => {
+                          if (invalidFiles.length > 0) {
+                            showInvalidImageUploadAlert('Valid ID of Owner', invalidFiles[0].name);
                           }
                         }}
                         isUploaded={!!uploadedDocuments.valid_id.file || !!existingDocuments.valid_id}
@@ -1679,6 +1752,12 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                               </div>
                               <DropzoneComponent
                                 onDrop={(files) => handleAdditionalDocumentDrop(doc.id, files)}
+                                accept={SHOP_OWNER_IMAGE_ACCEPT}
+                                onInvalidFiles={(invalidFiles) => {
+                                  if (invalidFiles.length > 0) {
+                                    showInvalidImageUploadAlert('Other Supporting Documents', invalidFiles[0].name);
+                                  }
+                                }}
                                 isUploaded={!!doc.file}
                                 fileName={doc.fileName}
                               />

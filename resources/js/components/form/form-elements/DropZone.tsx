@@ -4,11 +4,26 @@ interface DropzoneProps {
   onDrop?: (acceptedFiles: File[]) => void;
   isUploaded?: boolean;
   fileName?: string;
+  accept?: {
+    [mimeType: string]: string[];
+  };
+  onInvalidFiles?: (invalidFiles: File[]) => void;
 }
 
-const DropzoneComponent: React.FC<DropzoneProps> = ({ onDrop, isUploaded = false, fileName }) => {
-  const handleDrop = (acceptedFiles: File[]) => {
+const defaultAccept = {
+  "image/png": [".png"],
+  "image/jpeg": [".jpg", ".jpeg"],
+  "application/pdf": [".pdf"],
+};
+
+const DropzoneComponent: React.FC<DropzoneProps> = ({ onDrop, isUploaded = false, fileName, accept, onInvalidFiles }) => {
+  const handleDrop = (acceptedFiles: File[], fileRejections: Array<{ file: File }>) => {
     console.log("Files dropped:", acceptedFiles);
+
+    if (fileRejections.length > 0 && onInvalidFiles) {
+      onInvalidFiles(fileRejections.map((entry) => entry.file));
+    }
+
     if (onDrop) {
       onDrop(acceptedFiles);
     }
@@ -16,11 +31,7 @@ const DropzoneComponent: React.FC<DropzoneProps> = ({ onDrop, isUploaded = false
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop: handleDrop,
-    accept: {
-      "image/png": [],
-      "image/jpeg": [],
-      "application/pdf": [],
-    },
+    accept: accept || defaultAccept,
   });
 
   return (

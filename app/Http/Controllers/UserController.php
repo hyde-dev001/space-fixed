@@ -140,7 +140,7 @@ class UserController extends Controller
                     'regex:/[0-9]/',      // must contain at least one digit
                 ],
                 'address' => 'required|string|max:500',
-                'valid_id' => 'required|file|mimes:jpg,jpeg,png,pdf|max:5120', // 5MB max
+                'valid_id' => 'required|file|mimes:jpg,jpeg,png|max:5120', // 5MB max
             ], [
                 'first_name.required' => 'Please enter your first name.',
                 'first_name.min' => 'First name must be at least 2 characters.',
@@ -163,7 +163,7 @@ class UserController extends Controller
                 'address.max' => 'Address is too long. Maximum allowed is 500 characters.',
                 'valid_id.required' => 'Please upload a valid government-issued ID.',
                 'valid_id.file' => 'Valid ID must be an uploaded file.',
-                'valid_id.mimes' => 'Valid ID must be JPG, JPEG, PNG, or PDF only.',
+                'valid_id.mimes' => 'Valid ID must be JPG, JPEG, or PNG only.',
                 'valid_id.max' => 'Valid ID file size must not exceed 5MB.',
             ]);
 
