@@ -164,6 +164,27 @@ const fmt = (n: number) =>
 const fmtNum = (n: number) =>
   new Intl.NumberFormat("en-PH").format(n);
 
+const normalizeBusinessType = (businessType?: string | null): "repair" | "retail" | "both" => {
+  const normalized = String(businessType ?? "").trim().toLowerCase();
+
+  if (normalized.length === 0) {
+    return "retail";
+  }
+
+  const hasRepair = normalized.includes("repair") || normalized.includes("service");
+  const hasRetail = normalized.includes("retail") || normalized.includes("product") || normalized.includes("shoe");
+
+  if (normalized === "both" || (hasRepair && hasRetail)) {
+    return "both";
+  }
+
+  if (hasRepair) {
+    return "repair";
+  }
+
+  return "retail";
+};
+
 const severityMeta: Record<Recommendation["severity"], { label: string; border: string; dot: string }> = {
   critical: { label: "Critical", border: "border-l-black", dot: "bg-black" },
   warning: { label: "Warning", border: "border-l-gray-700", dot: "bg-gray-700" },
@@ -551,8 +572,20 @@ const DssInsights: React.FC = () => {
   const [recQuery, setRecQuery] = useState("");
   const recDropdownRef = useRef<HTMLDivElement | null>(null);
 
-  const isRepair = !data || data.business_type === "repair" || data.business_type === "both";
-  const isRetail = !!data && (data.business_type === "retail" || data.business_type === "both");
+  const accountBusinessType = normalizeBusinessType(
+    auth?.shop_owner?.business_type
+    ?? auth?.user?.shop_owner?.business_type
+    ?? null
+  );
+  const normalizedBusinessType = normalizeBusinessType(data?.business_type ?? accountBusinessType);
+  const hasRepairData = !!data?.workload || !!data?.services || !!data?.monthly_trend;
+  const hasRetailData = !!data?.retail_sales || !!data?.retail_products || !!data?.retail_trend;
+  const isRepair = !data
+    ? accountBusinessType === "repair" || accountBusinessType === "both"
+    : normalizedBusinessType === "repair" || normalizedBusinessType === "both" || hasRepairData;
+  const isRetail = !data
+    ? accountBusinessType === "retail" || accountBusinessType === "both"
+    : normalizedBusinessType === "retail" || normalizedBusinessType === "both" || hasRetailData;
 
   const routeHelper = (globalThis as any)?.route;
   const hasNamedRoute = typeof routeHelper === "function" && typeof routeHelper?.has === "function";
@@ -578,9 +611,71 @@ const DssInsights: React.FC = () => {
         throw new Error("Invalid DSS response. Please sign in again and refresh the page.");
       }
 
-      setData(payload as DssData);
+      const normalizedPayloadType = normalizeBusinessType(payload.business_type ?? accountBusinessType);
+      const completePayload: DssData = {
+        business_type: normalizedPayloadType,
+        workload_limit: Number(payload.workload_limit ?? 20),
+        period_days: Number(payload.period_days ?? period),
+        recommendations: Array.isArray(payload.recommendations) ? payload.recommendations : [],
+        workload: payload.workload ?? (normalizedPayloadType !== "retail" ? {
+          active_count: 0,
+          workload_limit: Number(payload.workload_limit ?? 20),
+          utilization_pct: 0,
+          avg_days: null,
+          avg_hours: null,
+          intake_rate: 0,
+          throughput: 0,
+          intake_total: 0,
+          completed_total: 0,
+          completion_rate: null,
+          overdue_count: 0,
+          mom_change: null,
+          daily_trend: [],
+        } : undefined),
+        services: payload.services ?? (normalizedPayloadType !== "retail" ? {
+          period_revenue: 0,
+          this_month_revenue: 0,
+          last_month_revenue: 0,
+          rev_mom_change: null,
+          total_services: 0,
+          services: [],
+        } : undefined),
+        packages: payload.packages ?? (normalizedPayloadType !== "retail" ? {
+          period_revenue: 0,
+          this_month_revenue: 0,
+          last_month_revenue: 0,
+          rev_mom_change: null,
+          bookings: 0,
+          total_packages: 0,
+          revenue_share_pct: 0,
+          bookings_share_pct: 0,
+          top_packages: [],
+        } : undefined),
+        monthly_trend: payload.monthly_trend ?? (normalizedPayloadType !== "retail" ? [] : undefined),
+        retail_sales: payload.retail_sales ?? (normalizedPayloadType !== "repair" ? {
+          total_orders: 0,
+          completed_orders: 0,
+          active_orders: 0,
+          period_revenue: 0,
+          this_month_revenue: 0,
+          last_month_revenue: 0,
+          rev_mom_change: null,
+          avg_order_value: 0,
+          completion_rate: null,
+          unique_customers: 0,
+        } : undefined),
+        retail_products: payload.retail_products ?? (normalizedPayloadType !== "repair" ? {
+          top_products: [],
+          low_stock_products: [],
+          total_products_sold: 0,
+          active_products: 0,
+        } : undefined),
+        retail_trend: payload.retail_trend ?? (normalizedPayloadType !== "repair" ? [] : undefined),
+      };
+
+      setData(completePayload);
       // If the shop is retail-only, default to the retail tab
-      if (payload.business_type === "retail") {
+      if (normalizedPayloadType === "retail") {
         setTab("retail");
       } else {
         setTab("workload");
@@ -597,22 +692,22 @@ const DssInsights: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [apiUrl, period]);
+  }, [accountBusinessType, apiUrl, period]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   useEffect(() => {
     if (!data) return;
 
-    if (data.business_type === "retail") {
+    if (normalizedBusinessType === "retail") {
       setTrendView("retail");
       return;
     }
 
-    if (data.business_type === "repair") {
+    if (normalizedBusinessType === "repair") {
       setTrendView("repair");
     }
-  }, [data]);
+  }, [data, normalizedBusinessType]);
 
   useEffect(() => {
     if (!isRecDropdownOpen) return;

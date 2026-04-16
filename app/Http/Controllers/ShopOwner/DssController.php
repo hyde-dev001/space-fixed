@@ -101,6 +101,31 @@ class DssController extends Controller
         return ShopOwner::find($shopOwnerId);
     }
 
+    /**
+     * Normalize raw business_type values into canonical retail|repair|both.
+     */
+    private function normalizeBusinessType(?string $businessType): string
+    {
+        $normalized = strtolower(trim((string) $businessType));
+
+        if ($normalized === '') {
+            return 'retail';
+        }
+
+        $hasRepair = str_contains($normalized, 'repair') || str_contains($normalized, 'service');
+        $hasRetail = str_contains($normalized, 'retail') || str_contains($normalized, 'product') || str_contains($normalized, 'shoe');
+
+        if ($normalized === 'both' || ($hasRepair && $hasRetail)) {
+            return 'both';
+        }
+
+        if ($hasRepair) {
+            return 'repair';
+        }
+
+        return 'retail';
+    }
+
     // ─── main endpoint ──────────────────────────────────────────────────────────
 
     /**
@@ -117,12 +142,12 @@ class DssController extends Controller
 
         $shopOwner      = $this->resolveShopOwner($shopOwnerId);
         $workloadLimit  = (int) ($shopOwner?->repair_workload_limit ?? 20);
-        $businessType   = $shopOwner?->business_type ?? 'repair'; // 'repair', 'retail', 'both'
+        $businessType   = $this->normalizeBusinessType($shopOwner?->business_type); // 'repair', 'retail', 'both'
 
         $period = (int) $request->input('period', 30); // days: 7, 30, 90, 365
 
-        $hasRepair = in_array($businessType, ['repair', 'both']);
-        $hasRetail = in_array($businessType, ['retail', 'both']);
+        $hasRepair = in_array($businessType, ['repair', 'both'], true);
+        $hasRetail = in_array($businessType, ['retail', 'both'], true);
 
         $response = [
             'business_type'  => $businessType,
