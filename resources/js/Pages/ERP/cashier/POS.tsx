@@ -166,6 +166,17 @@ const canExecuteReceiptRefund = (receipt: ReceiptSnapshot): boolean => {
 	return receipt.customerType === "walk_in" && String(receipt.latestRefund?.status || "").toLowerCase() === "approved";
 };
 
+const hasRefundLifecycleRecord = (receipt: ReceiptSnapshot): boolean => {
+	if (hasOpenOrCompletedRefund(receipt)) {
+		return true;
+	}
+
+	return receipt.refundEntries.some((entry) => {
+		const status = String(entry.status || "").toLowerCase();
+		return OPEN_REFUND_STATUSES.includes(status) || COMMITTED_REFUND_STATUSES.includes(status);
+	});
+};
+
 const WARRANTY_ELIGIBLE_REPAIR_STATUSES = new Set(["picked_up", "received"]);
 
 const isWarrantyEligibleRepairStatus = (status: unknown): boolean => {
@@ -179,6 +190,10 @@ const isWarrantyEligibleRepairStatus = (status: unknown): boolean => {
 
 const canRequestWarrantyClaimFromReceipt = (receipt: ReceiptSnapshot): boolean => {
 	if (receipt.moduleType === "retail") {
+		return false;
+	}
+
+	if (hasRefundLifecycleRecord(receipt)) {
 		return false;
 	}
 

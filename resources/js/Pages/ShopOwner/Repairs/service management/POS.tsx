@@ -181,9 +181,23 @@ type RetailRefundDraft = {
 	inspectionDisposition: RetailRefundDisposition;
 };
 
+const OPEN_REFUND_STATUSES = ["requested", "approved", "processing"];
+const COMMITTED_REFUND_STATUSES = ["approved", "processing", "succeeded"];
+
 const hasOpenOrCompletedRefund = (receipt: ReceiptSnapshot): boolean => {
 	const status = String(receipt.latestRefund?.status || "").toLowerCase();
-	return ["requested", "approved", "processing", "succeeded"].includes(status);
+	return [...OPEN_REFUND_STATUSES, "succeeded"].includes(status);
+};
+
+const hasRefundLifecycleRecord = (receipt: ReceiptSnapshot): boolean => {
+	if (hasOpenOrCompletedRefund(receipt)) {
+		return true;
+	}
+
+	return receipt.refundEntries.some((entry) => {
+		const status = String(entry.status || "").toLowerCase();
+		return OPEN_REFUND_STATUSES.includes(status) || COMMITTED_REFUND_STATUSES.includes(status);
+	});
 };
 
 const WARRANTY_ELIGIBLE_REPAIR_STATUSES = new Set(["picked_up", "received"]);
@@ -1896,6 +1910,10 @@ useEffect(() => {
 
 	const canRequestWarrantyClaimFromReceipt = (receipt: ReceiptSnapshot): boolean => {
 		if (receipt.moduleType === "retail") {
+			return false;
+		}
+
+		if (hasRefundLifecycleRecord(receipt)) {
 			return false;
 		}
 

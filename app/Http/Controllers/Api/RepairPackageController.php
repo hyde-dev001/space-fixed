@@ -10,6 +10,7 @@ use App\Models\ShopOwner;
 use App\Services\ShopOwnerApprovalPolicyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 
@@ -477,20 +478,22 @@ class RepairPackageController extends Controller
             }
 
             // Individual shops do not need pending approval metadata on package prices.
-            $updateData['old_package_price'] = null;
-            $updateData['change_reason'] = $request->filled('reason') ? (string) $request->reason : null;
-            $updateData['approval_status'] = null;
-            $updateData['approval_workflow_version'] = null;
-            $updateData['current_approval_level'] = null;
-            $updateData['approval_id'] = null;
-            $updateData['finance_reviewed_by'] = null;
-            $updateData['finance_reviewed_at'] = null;
-            $updateData['finance_notes'] = null;
-            $updateData['owner_reviewed_by'] = null;
-            $updateData['owner_reviewed_at'] = null;
-            $updateData['owner_notes'] = null;
+            $workflowResetData = [
+                'old_package_price' => null,
+                'change_reason' => $request->filled('reason') ? (string) $request->reason : null,
+                'approval_status' => null,
+                'approval_workflow_version' => null,
+                'current_approval_level' => null,
+                'approval_id' => null,
+                'finance_reviewed_by' => null,
+                'finance_reviewed_at' => null,
+                'finance_notes' => null,
+                'owner_reviewed_by' => null,
+                'owner_reviewed_at' => null,
+                'owner_notes' => null,
+            ];
 
-            $package->update($updateData);
+            $package->update($this->onlyExistingRepairPackageColumns(array_merge($updateData, $workflowResetData)));
 
             if ($request->has('service_ids')) {
                 try {
@@ -571,7 +574,7 @@ class RepairPackageController extends Controller
             );
 
             // Store the price change request for approval workflow
-            $package->update([
+            $package->update($this->onlyExistingRepairPackageColumns([
                 'old_package_price' => $package->package_price,
                 'package_price' => $request->package_price,
                 'change_reason' => $request->reason,
@@ -584,7 +587,7 @@ class RepairPackageController extends Controller
                 'owner_reviewed_by' => null,
                 'owner_reviewed_at' => null,
                 'owner_notes' => null,
-            ]);
+            ]));
 
             return response()->json([
                 'success' => true,
@@ -623,7 +626,7 @@ class RepairPackageController extends Controller
             $updateData['updated_by'] = Auth::guard('user')->id();
         }
 
-        $package->update($updateData);
+        $package->update($this->onlyExistingRepairPackageColumns($updateData));
 
         if ($request->has('service_ids')) {
             try {
@@ -824,5 +827,18 @@ class RepairPackageController extends Controller
                 'created_by' => $createdBy,
             ]);
         });
+    }
+
+    private function onlyExistingRepairPackageColumns(array $payload): array
+    {
+        static $repairPackageColumnLookup = null;
+
+        if ($repairPackageColumnLookup === null) {
+            $repairPackageColumnLookup = array_flip(Schema::getColumnListing('repair_packages'));
+        }
+
+        return collect($payload)
+            ->filter(fn ($_value, $key) => isset($repairPackageColumnLookup[$key]))
+            ->all();
     }
 }
