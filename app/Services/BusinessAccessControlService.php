@@ -270,6 +270,16 @@ class BusinessAccessControlService
             }
         }
 
+        // Cashier role is available for retail and repair-capable shops.
+        if (in_array($normalizedRole, ['CASHIER', 'Cashier'])) {
+            if (!in_array($businessType, [self::BUSINESS_TYPE_RETAIL, self::BUSINESS_TYPE_REPAIR, self::BUSINESS_TYPE_BOTH])) {
+                return [
+                    'allowed' => false,
+                    'reason' => "Cannot create 'Cashier' role. Your business type is '{$businessType}'."
+                ];
+            }
+        }
+
         // All good!
         return [
             'allowed' => true,

@@ -21,10 +21,34 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
+use Spatie\Permission\Models\Role;
 
 class EmployeeController extends Controller
 {
     use LogsHRActivity;
+
+    private function resolveAssignableUserRole(string $preferredRoleName): ?string
+    {
+        $roleAliases = [
+            'Inventory Manager' => ['Inventory Manager', 'Inventory'],
+            'Procurement Manager' => ['Procurement Manager', 'Procurement'],
+        ];
+
+        $candidates = $roleAliases[$preferredRoleName] ?? [$preferredRoleName];
+
+        foreach ($candidates as $candidate) {
+            $exists = Role::query()
+                ->where('guard_name', 'user')
+                ->where('name', $candidate)
+                ->exists();
+
+            if ($exists) {
+                return $candidate;
+            }
+        }
+
+        return null;
+    }
 
     /**
      * Keep linked user login status aligned with employee suspension/reactivation.
@@ -137,6 +161,7 @@ class EmployeeController extends Controller
             'FINANCE' => 'Finance',
             'HR' => 'HR',
             'CRM' => 'CRM',
+            'CASHIER' => 'Cashier',
             'REPAIRER' => 'Repairer',
             'INVENTORY' => 'Inventory Manager',
             'INVENTORY_MANAGER' => 'Inventory Manager',
@@ -163,7 +188,8 @@ class EmployeeController extends Controller
 
         $roleToValidate = match ($normalizedRole) {
             'REPAIRER' => 'REPAIRER',
-            'STAFF', 'INVENTORY', 'INVENTORY_MANAGER' => 'STAFF',
+            'CASHIER' => 'CASHIER',
+            'STAFF' => 'STAFF',
             default => 'MANAGER',
         };
 
@@ -177,6 +203,14 @@ class EmployeeController extends Controller
         }
 
         $spatieRole = $canonicalRoleMap[$normalizedRole];
+        $resolvedSpatieRole = $this->resolveAssignableUserRole($spatieRole);
+        if (!$resolvedSpatieRole) {
+            return response()->json([
+                'errors' => [
+                    'role' => ["Role configuration for '{$spatieRole}' is missing. Please run role seeding for ERP roles."],
+                ],
+            ], 422);
+        }
 
         // Generate invitation token instead of temporary password
         $inviteToken = Str::random(64);
@@ -188,7 +222,7 @@ class EmployeeController extends Controller
         $fullName = trim($firstName . ' ' . $lastName);
         
         // Create both Employee and User atomically
-        [$employee, $newUser, $inviteUrl] = DB::transaction(function () use ($request, $user, $firstName, $lastName, $fullName, $inviteToken, $inviteExpiresAt, $spatieRole) {
+        [$employee, $newUser, $inviteUrl] = DB::transaction(function () use ($request, $user, $firstName, $lastName, $fullName, $inviteToken, $inviteExpiresAt, $resolvedSpatieRole) {
             $data = [
                 'shop_owner_id' => $user->shop_owner_id,
                 'first_name' => $firstName,
@@ -226,7 +260,7 @@ class EmployeeController extends Controller
                 'phone' => $request->phone ?? '',
                 'address' => $request->location ?? $request->address ?? '',
                 'shop_owner_id' => $user->shop_owner_id,
-                'role' => $spatieRole,
+                'role' => $resolvedSpatieRole,
                 'position' => $request->position ?? null,
                 'password' => null, // No password until invitation is accepted
                 'invite_token' => $inviteToken,
@@ -235,7 +269,7 @@ class EmployeeController extends Controller
                 'invited_by' => $user->id,
             ]);
 
-            $newUser->assignRole($spatieRole);
+            $newUser->assignRole($resolvedSpatieRole);
 
             // Generate invitation URL
             $inviteUrl = url("/invite/{$inviteToken}");
