@@ -300,9 +300,68 @@ class RepairServiceController extends Controller
         // Determine baseline current price for workflow.
         // If a record is already in review and old_price exists, old_price is the authoritative current price.
         $baselineCurrentPrice = $this->resolveBaselineCurrentPrice($service);
+        $isIndividualShop = $this->isIndividualRegistrationShop((int) $service->shop_owner_id);
 
         // Check if price is being changed against baseline current price
         $isPriceChange = $request->filled('price') && (float)$request->price !== $baselineCurrentPrice;
+
+        if ($isPriceChange && $isIndividualShop) {
+            $updateData = $request->only(['name', 'category', 'price', 'duration', 'description']);
+
+            if ($request->filled('status')) {
+                $updateData['status'] = $normalizedInputStatus ?? $request->status;
+            } elseif (in_array($service->status, ['Under Review', 'Pending Owner Approval', 'Pending Finance Final Approval', 'Rejected'], true)) {
+                $updateData['status'] = 'Active';
+            }
+
+            if ($request->filled('reason')) {
+                $updateData['change_reason'] = $request->reason;
+            }
+
+            $updateData['updated_by'] = Auth::guard('user')->id() ?? Auth::guard('shop_owner')->id();
+
+            // Individual shops do not need price-approval workflow metadata.
+            $updateData['old_price'] = null;
+            $updateData['finance_notes'] = null;
+            $updateData['finance_reviewed_by'] = null;
+            $updateData['finance_reviewed_at'] = null;
+            $updateData['owner_reviewed_by'] = null;
+            $updateData['owner_reviewed_at'] = null;
+            $updateData['approval_id'] = null;
+            $updateData['current_approval_level'] = null;
+            $updateData['approval_workflow_version'] = null;
+            $updateData['rejection_reason'] = null;
+
+            $service->update($updateData);
+
+            if ($request->has('material_templates')) {
+                try {
+                    $this->syncMaterialTemplates($service, (array) $request->input('material_templates', []));
+                } catch (ValidationException $e) {
+                    return response()->json([
+                        'success' => false,
+                        'errors' => $e->errors(),
+                    ], 422);
+                }
+            }
+
+            activity()
+                ->causedBy(Auth::guard('user')->user() ?? Auth::guard('shop_owner')->user())
+                ->performedOn($service)
+                ->withProperties([
+                    'service_name' => $service->name,
+                    'old_price' => $baselineCurrentPrice,
+                    'new_price' => (float) $service->price,
+                    'updated_fields' => array_keys($updateData),
+                ])
+                ->log('Repair service price updated immediately for individual shop owner');
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Service updated successfully',
+                'data' => $service,
+            ]);
+        }
 
         if ($isPriceChange) {
             $proposedPrice = (float) $request->price;
@@ -1421,6 +1480,15 @@ class RepairServiceController extends Controller
             'rejected' => 'Rejected',
             default => null,
         };
+    }
+
+    private function isIndividualRegistrationShop(int $shopOwnerId): bool
+    {
+        $shopOwner = ShopOwner::query()
+            ->select('id', 'registration_type')
+            ->find($shopOwnerId);
+
+        return (bool) ($shopOwner && $shopOwner->isIndividual());
     }
 
     private function resolveProposedPrice(RepairService $service): ?float
