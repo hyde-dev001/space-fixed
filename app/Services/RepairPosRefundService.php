@@ -983,6 +983,7 @@ class RepairPosRefundService
                 message: 'Repair refund execution failed and requires manual review.',
                 actionUrl: '/my-repairs',
                 includeOwner: true,
+                includeCustomer: false,
             );
         }
 
@@ -996,9 +997,18 @@ class RepairPosRefundService
         string $message,
         string $actionUrl,
         bool $includeOwner = true,
+        bool $includeCustomer = true,
     ): void {
         $customerId = (int) ($source->customer_id ?? 0);
-        if ($customerId > 0) {
+
+        // Some legacy or backfilled POS rows may miss customer_id even when
+        // the repair request is customer-owned; fall back to repair owner.
+        if ($customerId <= 0) {
+            $refund->loadMissing('repairRequest:id,user_id');
+            $customerId = (int) ($refund->repairRequest?->user_id ?? 0);
+        }
+
+        if ($includeCustomer && $customerId > 0) {
             $this->notificationService->sendToUser(
                 userId: $customerId,
                 type: NotificationType::MESSAGE_RECEIVED,

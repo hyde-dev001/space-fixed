@@ -343,6 +343,12 @@ class RepairPosController extends Controller
             ], 404);
         }
 
+        $latestWarrantyClaim = RepairWarrantyClaim::query()
+            ->where('original_repair_request_id', (int) $repair->id)
+            ->latest('id')
+            ->first();
+        $warrantyClaimData = $this->resolveWarrantyClaimLockData($latestWarrantyClaim);
+
         $isCustomerOwner = Auth::guard('user')->check() && (int) $repair->user_id === $actorId;
         $actorShopOwnerId = $this->resolveActorShopOwnerId($actor);
         $isShopActor = $actorShopOwnerId > 0 && $actorShopOwnerId === (int) $source->shop_owner_id;
@@ -352,6 +358,16 @@ class RepairPosController extends Controller
                 'success' => false,
                 'message' => 'You are not authorized to request a refund for this transaction.',
             ], 403);
+        }
+
+        if ($isShopActor && (bool) ($warrantyClaimData['warranty_claim_locked'] ?? false)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Refund cannot be requested while a warranty claim is active for this repair.',
+                'errors' => [
+                    'source_transaction_id' => ['Refund cannot be requested while a warranty claim is active for this repair.'],
+                ],
+            ], 422);
         }
 
         if ((string) $source->customer_type === 'walk_in' && $isShopActor) {

@@ -1868,6 +1868,10 @@ useEffect(() => {
 	}, [receiptHistory]);
 
 	const canRequestRepairRefund = (receipt: ReceiptSnapshot): boolean => {
+		if (Boolean(receipt.warrantyClaimLocked ?? false)) {
+			return false;
+		}
+
 		if (hasOpenOrCompletedRefund(receipt)) {
 			return false;
 		}
@@ -2392,6 +2396,16 @@ useEffect(() => {
 	const handleRequestRefund = async (receipt: ReceiptSnapshot) => {
 		if (receipt.moduleType === "retail") {
 			await handleRetailRefund(receipt);
+			return;
+		}
+
+		if (Boolean(receipt.warrantyClaimLocked ?? false)) {
+			await Swal.fire({
+				icon: "info",
+				title: "Refund Unavailable",
+				text: "Refund cannot be requested while a warranty claim is active for this repair.",
+				confirmButtonColor: "#2563eb",
+			});
 			return;
 		}
 

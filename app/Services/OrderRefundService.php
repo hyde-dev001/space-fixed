@@ -583,7 +583,6 @@ class OrderRefundService
         ]);
 
         $freshRefund = $refund->fresh();
-        $this->notifyCustomerForStaffPickup($freshRefund ?? $refund);
 
         return [
             'result' => 'pickup_arranged',
@@ -1101,18 +1100,6 @@ class OrderRefundService
             );
         }
 
-        $customerId = (int) ($refund->customer_id ?? 0);
-        if ($customerId > 0) {
-            $this->notificationService->sendToUser(
-                userId: $customerId,
-                type: NotificationType::ORDER_STATUS_UPDATE,
-                title: 'Refund Request Submitted',
-                message: "Your refund request for order #{$data['order_number']} is pending approval.",
-                data: $data,
-                actionUrl: '/my-orders',
-                shopId: (int) ($refund->shop_owner_id ?? 0),
-            );
-        }
     }
 
     private function dispatchRefundApprovalNotifications(

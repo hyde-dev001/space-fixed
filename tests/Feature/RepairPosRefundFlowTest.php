@@ -150,6 +150,69 @@ class RepairPosRefundFlowTest extends TestCase
         ]);
     }
 
+    #[Test]
+    public function shop_pos_refund_request_is_blocked_when_warranty_claim_is_active(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var \App\Models\User $actor */
+        $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+
+        $repair = $this->createRepairRequest($shopOwner, null, [
+            'shop_owner_id' => $shopOwner->id,
+            'payment_policy_snapshot' => 'deposit_50',
+            'payment_status_derived' => 'completed',
+            'total_paid_amount' => 1120,
+            'total_refunded_amount' => 0,
+            'final_total' => 1120,
+            'status' => 'picked_up',
+        ]);
+
+        $source = \App\Models\PosTransaction::create([
+            'transaction_no' => 'POS-TDD-WARRANTY-RFD-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Walk-in Customer',
+            'walk_in_phone' => '09170000999',
+            'due_type' => 'full',
+            'subtotal' => 1000,
+            'tax_amount' => 120,
+            'discount_amount' => 0,
+            'total_amount' => 1120,
+            'paid_amount' => 1120,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        \App\Models\RepairWarrantyClaim::create([
+            'claim_no' => 'WCL-TDD-' . str_pad((string) random_int(1, 9999), 4, '0', STR_PAD_LEFT),
+            'original_repair_request_id' => $repair->id,
+            'shop_owner_id' => $shopOwner->id,
+            'status' => \App\Models\RepairWarrantyClaim::STATUS_PENDING_REPAIRER,
+            'reason_code' => 'same_issue',
+            'same_issue_confirmation' => true,
+            'source_channel' => 'manual_pos_walk_in',
+        ]);
+
+        $response = $this->actingAs($actor, 'user')->postJson('/api/repair-pos/refunds', [
+            'source_transaction_id' => $source->id,
+            'request_type' => 'full',
+            'requested_amount' => 1120,
+            'reason_code' => 'shop_owner_requested_refund',
+            'receipt_no' => $source->transaction_no,
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('message', 'Refund cannot be requested while a warranty claim is active for this repair.');
+
+        $this->assertDatabaseMissing('pos_refunds', [
+            'source_transaction_id' => $source->id,
+            'module_reference_id' => $repair->id,
+        ]);
+    }
+
     private function createRepairRequest(
         \App\Models\ShopOwner $shopOwner,
         ?\App\Models\User $customer = null,

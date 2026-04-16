@@ -14,6 +14,35 @@ class ShopOwnerDashboardRevenueTest extends TestCase
     use RefreshDatabase;
 
     #[Test]
+    public function dashboard_retail_revenue_excludes_vat_when_order_uses_grand_total(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'retail',
+        ]);
+
+        $this->createOrder($shopOwner->id, [
+            'total_amount' => 100,
+            'vat_amount' => 12,
+            'shipping_fee' => 0,
+            'grand_total' => 112,
+            'status' => 'processing',
+            'payment_status' => 'paid',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = $this->actingAs($shopOwner, 'shop_owner')
+            ->getJson('/api/shop-owner/dashboard/stats');
+
+        $response->assertOk();
+
+        $payload = $response->json();
+
+        $this->assertEqualsWithDelta(100.0, (float) ($payload['revenue']['total'] ?? 0), 0.01);
+        $this->assertEqualsWithDelta(100.0, (float) ($payload['revenue']['this_month'] ?? 0), 0.01);
+    }
+
+    #[Test]
     public function dashboard_revenue_includes_pos_aligned_repair_payments(): void
     {
         $shopOwner = ShopOwner::factory()->approved()->create([

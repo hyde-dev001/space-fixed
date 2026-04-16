@@ -108,9 +108,12 @@ class DashboardController extends Controller
 
     private function computeRetailNetRevenue(int $shopOwnerId, ?Carbon $from = null, ?Carbon $to = null, ?Carbon $onDate = null): float
     {
+        $hasVatAmountColumn = Schema::hasColumn('orders', 'vat_amount');
+
         $ordersQuery = Order::query()
             ->select('id')
             ->selectRaw($this->retailGrossRevenueExpression() . ' as gross_amount')
+            ->selectRaw(($hasVatAmountColumn ? 'COALESCE(vat_amount, 0)' : '0') . ' as vat_amount')
             ->where('shop_owner_id', $shopOwnerId)
             ->where('status', '!=', OrderStatus::CANCELLED->value);
 
@@ -134,7 +137,17 @@ class DashboardController extends Controller
             }
 
             $totalRefunded = max(0.0, (float) ($refundAmountByOrder[$orderId] ?? 0.0));
-            $netRevenue += max(0.0, $grossAmount - min($grossAmount, $totalRefunded));
+            $recognizedAmount = max(0.0, $grossAmount - min($grossAmount, $totalRefunded));
+            if ($recognizedAmount <= 0) {
+                continue;
+            }
+
+            $vatAmount = max(0.0, (float) ($order->vat_amount ?? 0.0));
+            $vatExcludedAmount = ($hasVatAmountColumn && $vatAmount > 0)
+                ? ($recognizedAmount / self::VAT_DIVISOR)
+                : $recognizedAmount;
+
+            $netRevenue += max(0.0, $vatExcludedAmount);
         }
 
         return round($netRevenue, 2);

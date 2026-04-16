@@ -8,6 +8,7 @@ use App\Models\PosTransaction;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Enums\NotificationType;
 use App\Services\PaymongoRefundService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -828,6 +829,73 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
         }
 
         $this->assertTrue(Storage::disk('public')->exists($firstProofPath));
+    }
+
+    #[Test]
+    public function refund_execution_notifies_customer_via_repair_owner_when_source_customer_id_is_missing(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var User $finance */
+        $finance = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        /** @var User $customer */
+        $customer = User::factory()->create();
+
+        $repair = $this->createRepairRequest($shopOwner, $customer, [
+            'total_paid_amount' => 300,
+            'total_refunded_amount' => 0,
+        ]);
+
+        $source = PosTransaction::create([
+            'transaction_no' => 'POS-MIX-NOTIFY-FALLBACK-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'customer_type' => 'registered',
+            'customer_id' => null,
+            'due_type' => 'full',
+            'subtotal' => 300,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 300,
+            'paid_amount' => 300,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $refund = PosRefund::create([
+            'refund_no' => 'RFD-MIX-NOTIFY-FALLBACK-001',
+            'shop_owner_id' => $shopOwner->id,
+            'source_transaction_id' => $source->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'workflow_source' => 'online_myrepair',
+            'status' => 'approved',
+            'finance_status' => 'approved',
+            'shop_owner_status' => 'skipped',
+            'request_type' => 'full',
+            'requested_amount' => 300,
+            'approved_amount' => 300,
+            'reason_code' => 'service_issue_after_pickup',
+            'requested_by' => $customer->id,
+            'requested_at' => now(),
+            'approved_at' => now(),
+        ]);
+
+        $executed = app(\App\Services\RepairPosRefundService::class)->execute(
+            refund: $refund,
+            actorId: (int) $finance->id,
+            executionMode: 'manual',
+            executionNote: 'Executed with customer notification fallback test.',
+        );
+
+        $this->assertSame('succeeded', (string) $executed->status);
+
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => (int) $customer->id,
+            'type' => NotificationType::MESSAGE_RECEIVED->value,
+            'title' => 'Repair Refund Executed',
+            'message' => 'Your repair refund has been executed successfully.',
+        ]);
     }
 
     #[Test]

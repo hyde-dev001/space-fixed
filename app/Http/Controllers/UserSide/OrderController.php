@@ -560,10 +560,16 @@ class OrderController extends Controller
                 $storedMedia[] = Storage::url($path);
             }
 
-            $fullRefundAmount = (float) ($order->total_amount ?? 0) + max(0, (float) ($order->shipping_fee ?? 0));
-            if ($fullRefundAmount <= 0) {
-                $fullRefundAmount = max((float) ($order->total ?? 0), (float) ($order->total_amount ?? 0));
-            }
+            $subtotalAmount = max(0, (float) ($order->total_amount ?? 0));
+            $shippingAmount = max(0, (float) ($order->shipping_fee ?? 0));
+            $vatAmount = max(0, (float) ($order->vat_amount ?? 0));
+            $fullRefundAmount = max(
+                (float) ($order->grand_total ?? 0),
+                (float) ($order->total ?? 0),
+                $subtotalAmount + $shippingAmount + $vatAmount,
+                $subtotalAmount + $shippingAmount,
+                $subtotalAmount,
+            );
 
             if ($fullRefundAmount <= 0) {
                 return response()->json([

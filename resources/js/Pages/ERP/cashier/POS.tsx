@@ -1071,6 +1071,16 @@ const PointOfSalePage = () => {
 	}, [isRefundQueueOpen]);
 
 	const handleRequestRefund = async (receipt: ReceiptSnapshot) => {
+		if (Boolean(receipt.warrantyClaimLocked ?? false)) {
+			await Swal.fire({
+				icon: "info",
+				title: "Refund Unavailable",
+				text: "Refund cannot be requested while a warranty claim is active for this repair.",
+				confirmButtonColor: "#2563eb",
+			});
+			return;
+		}
+
 		if (!canRequestRepairRefund(receipt)) {
 			await Swal.fire({
 				icon: "info",
@@ -2048,6 +2058,10 @@ const PointOfSalePage = () => {
 	}, [receiptHistory]);
 
 	const canRequestRepairRefund = (receipt: ReceiptSnapshot): boolean => {
+		if (Boolean(receipt.warrantyClaimLocked ?? false)) {
+			return false;
+		}
+
 		if (hasOpenOrCompletedRefund(receipt)) {
 			return false;
 		}

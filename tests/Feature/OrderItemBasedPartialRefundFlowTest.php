@@ -19,6 +19,81 @@ class OrderItemBasedPartialRefundFlowTest extends TestCase
     use RefreshDatabase;
 
     #[Test]
+    public function online_partial_refund_can_match_subtotal_when_order_has_vat_on_top(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'retail',
+            'paymongo_secret_key' => 'sk_test_item_refund_vat',
+        ]);
+
+        /** @var User $customer */
+        $customer = User::factory()->create();
+
+        $product = Product::create([
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'VAT Partial Refund Shoe',
+            'slug' => 'vat-partial-refund-shoe-' . random_int(1000, 9999),
+            'price' => 500,
+            'stock_quantity' => 10,
+            'is_active' => true,
+        ]);
+
+        $order = Order::create([
+            'shop_owner_id' => $shopOwner->id,
+            'customer_id' => $customer->id,
+            'order_number' => 'ORD-ITEM-REFUND-VAT-' . random_int(1000, 9999),
+            'customer_name' => $customer->name,
+            'customer_email' => $customer->email,
+            'customer_phone' => '09171234567',
+            'customer_address' => 'Test Address',
+            'total_amount' => 1000,
+            'vat_amount' => 120,
+            'shipping_fee' => 0,
+            'grand_total' => 1120,
+            'status' => 'delivered',
+            'payment_method' => 'paymongo_card',
+            'payment_status' => 'paid',
+            'paymongo_payment_id' => 'pay_item_refund_vat_123',
+            'paid_at' => now()->subDay(),
+            'cancellation_refund_window_started_at' => now()->subMinutes(10),
+            'cancellation_refund_window_minutes' => 1440,
+        ]);
+
+        $orderItem = OrderItem::create([
+            'order_id' => $order->id,
+            'product_id' => $product->id,
+            'product_name' => $product->name,
+            'product_slug' => $product->slug,
+            'price' => 500,
+            'quantity' => 2,
+            'subtotal' => 1000,
+            'size' => '42',
+            'color' => 'Black',
+            'product_image' => null,
+        ]);
+
+        $response = $this->actingAs($customer, 'user')
+            ->post('/orders/request-refund', [
+                'order_id' => $order->id,
+                'reason' => 'damaged_item',
+                'request_type' => 'partial',
+                'refund_lines' => [
+                    [
+                        'order_item_id' => $orderItem->id,
+                        'requested_qty' => 2,
+                    ],
+                ],
+                'media' => $this->buildRefundMedia(),
+            ]);
+
+        $response->assertStatus(200)->assertJsonPath('success', true);
+
+        $refund = OrderRefund::query()->latest('id')->first();
+        $this->assertNotNull($refund);
+        $this->assertSame(1000.0, round((float) ($refund?->amount ?? 0), 2));
+    }
+
+    #[Test]
     public function refund_line_tables_exist(): void
     {
         $this->assertTrue(Schema::hasTable('order_refund_items'));
