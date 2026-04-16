@@ -140,6 +140,7 @@ class RepairWarrantyService
         }
 
         $window = $this->validateEligibility($repair, (int) $customer->id);
+        $this->syncCustomerWarrantyDeliveryAddress($repair, $validated);
 
         return $this->createClaimRecord(
             repair: $repair,
@@ -692,6 +693,39 @@ class RepairWarrantyService
         return strtolower(trim($method)) === 'shop_delivery'
             ? 'shop_delivery'
             : 'walk_in';
+    }
+
+    private function syncCustomerWarrantyDeliveryAddress(RepairRequest $repair, array $validated): void
+    {
+        $preferredReceiveMethod = $this->normalizePreferredReceiveMethod((string) ($validated['preferred_receive_method'] ?? 'walk_in'));
+        if ($preferredReceiveMethod !== 'shop_delivery') {
+            return;
+        }
+
+        $returnAddress = [
+            'address_line' => trim((string) ($validated['receive_address_line'] ?? '')),
+            'barangay' => trim((string) ($validated['receive_barangay'] ?? '')),
+            'city' => trim((string) ($validated['receive_city'] ?? '')),
+            'region' => trim((string) ($validated['receive_region'] ?? '')),
+            'postal_code' => trim((string) ($validated['receive_postal_code'] ?? '')),
+        ];
+
+        $missingAddressFields = collect($returnAddress)
+            ->filter(fn (string $value): bool => $value === '')
+            ->keys()
+            ->values()
+            ->all();
+
+        if (!empty($missingAddressFields)) {
+            throw ValidationException::withMessages([
+                'receive_address' => ['Complete delivery address is required when preferred receive method is shop delivery.'],
+            ]);
+        }
+
+        $repair->forceFill([
+            'return_delivery_method' => 'shop_delivery',
+            'return_address' => $returnAddress,
+        ])->save();
     }
 
     /**

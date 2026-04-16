@@ -48,6 +48,11 @@ class RepairWarrantyEligibilityTest extends TestCase
                 'same_issue_confirmation' => '1',
                 'preferred_return_method' => 'walk_in',
                 'preferred_receive_method' => 'shop_delivery',
+                'receive_address_line' => 'Blk 10 Lot 4',
+                'receive_barangay' => 'San Juan',
+                'receive_city' => 'Bacoor',
+                'receive_region' => 'Cavite',
+                'receive_postal_code' => '4102',
                 'images' => [UploadedFile::fake()->create('proof-1.jpg', 64, 'image/jpeg')],
             ],
             ['Accept' => 'application/json']
@@ -63,6 +68,98 @@ class RepairWarrantyEligibilityTest extends TestCase
             'source_channel' => 'customer_portal',
             'preferred_receive_method' => 'shop_delivery',
         ]);
+    }
+
+    public function test_customer_shop_delivery_claim_requires_delivery_address(): void
+    {
+        Storage::fake('public');
+
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'company',
+            'warranty_enabled' => true,
+            'repair_warranty_days' => 30,
+        ]);
+        /** @var User $customer */
+        $customer = User::factory()->create();
+
+        $repair = RepairRequest::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'status' => 'picked_up',
+            'picked_up_at' => now()->subDays(2),
+            'payment_status' => 'completed',
+            'total_paid_amount' => 900,
+        ]);
+
+        $response = $this->actingAs($customer, 'user')->post(
+            "/api/customer/repairs/{$repair->id}/warranty-claims",
+            [
+                'reason_code' => 'issue_returned',
+                'reason_details' => 'Issue came back after two days.',
+                'same_issue_confirmation' => '1',
+                'preferred_return_method' => 'walk_in',
+                'preferred_receive_method' => 'shop_delivery',
+                'images' => [UploadedFile::fake()->create('proof-1.jpg', 64, 'image/jpeg')],
+            ],
+            ['Accept' => 'application/json']
+        );
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['receive_address_line']);
+    }
+
+    public function test_customer_shop_delivery_claim_persists_delivery_address_on_original_repair(): void
+    {
+        Storage::fake('public');
+
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'company',
+            'warranty_enabled' => true,
+            'repair_warranty_days' => 30,
+        ]);
+        /** @var User $customer */
+        $customer = User::factory()->create();
+
+        $repair = RepairRequest::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'status' => 'picked_up',
+            'picked_up_at' => now()->subDays(2),
+            'payment_status' => 'completed',
+            'total_paid_amount' => 900,
+            'return_address' => null,
+        ]);
+
+        $response = $this->actingAs($customer, 'user')->post(
+            "/api/customer/repairs/{$repair->id}/warranty-claims",
+            [
+                'reason_code' => 'issue_returned',
+                'reason_details' => 'Issue came back after two days.',
+                'same_issue_confirmation' => '1',
+                'preferred_return_method' => 'walk_in',
+                'preferred_receive_method' => 'shop_delivery',
+                'receive_address_line' => 'Blk 1 Lot 2 Phase 3',
+                'receive_barangay' => 'San Isidro',
+                'receive_city' => 'Imus',
+                'receive_region' => 'Cavite',
+                'receive_postal_code' => '4103',
+                'images' => [UploadedFile::fake()->create('proof-1.jpg', 64, 'image/jpeg')],
+            ],
+            ['Accept' => 'application/json']
+        );
+
+        $response->assertStatus(201)
+            ->assertJsonPath('success', true);
+
+        $repair->refresh();
+        $this->assertSame('shop_delivery', (string) ($repair->return_delivery_method ?? ''));
+        $this->assertSame('Blk 1 Lot 2 Phase 3', (string) ($repair->return_address['address_line'] ?? ''));
+        $this->assertSame('San Isidro', (string) ($repair->return_address['barangay'] ?? ''));
+        $this->assertSame('Imus', (string) ($repair->return_address['city'] ?? ''));
+        $this->assertSame('Cavite', (string) ($repair->return_address['region'] ?? ''));
+        $this->assertSame('4103', (string) ($repair->return_address['postal_code'] ?? ''));
     }
 
     public function test_customer_claim_fails_when_warranty_is_expired(): void

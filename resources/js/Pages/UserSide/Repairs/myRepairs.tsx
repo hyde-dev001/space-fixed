@@ -158,6 +158,14 @@ type ConversationShop = {
   unreadCount?: number;
 };
 
+type WarrantyReceiveAddressForm = {
+  address_line: string;
+  barangay: string;
+  city: string;
+  region: string;
+  postal_code: string;
+};
+
 const getMonthKey = (date: Date): string => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -165,6 +173,50 @@ const getMonthKey = (date: Date): string => {
 };
 
 const DELIVERY_METHOD_OVERRIDES_KEY = 'repair_delivery_method_overrides';
+const EMPTY_WARRANTY_RECEIVE_ADDRESS: WarrantyReceiveAddressForm = {
+  address_line: '',
+  barangay: '',
+  city: '',
+  region: '',
+  postal_code: '',
+};
+
+const extractAddressFromUnknown = (value: unknown): WarrantyReceiveAddressForm | null => {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const source = value as Record<string, unknown>;
+  const parsed: WarrantyReceiveAddressForm = {
+    address_line: String(source.address_line ?? '').trim(),
+    barangay: String(source.barangay ?? '').trim(),
+    city: String(source.city ?? '').trim(),
+    region: String(source.region ?? '').trim(),
+    postal_code: String(source.postal_code ?? '').trim(),
+  };
+
+  const hasAnyValue = Object.values(parsed).some((entry) => entry !== '');
+  return hasAnyValue ? parsed : null;
+};
+
+const resolveWarrantyReceiveAddressSeed = (order: RepairOrder): WarrantyReceiveAddressForm => {
+  const fromReturnAddress = extractAddressFromUnknown(order.return_address);
+  if (fromReturnAddress) {
+    return fromReturnAddress;
+  }
+
+  const fromPickupAddress = extractAddressFromUnknown(order.pickup_address);
+  if (fromPickupAddress) {
+    return fromPickupAddress;
+  }
+
+  const fromIntakeAddress = extractAddressFromUnknown(order.intake_address);
+  if (fromIntakeAddress) {
+    return fromIntakeAddress;
+  }
+
+  return { ...EMPTY_WARRANTY_RECEIVE_ADDRESS };
+};
 
 const saveDeliveryMethodOverride = (repairId: number, deliveryMethod: 'walk_in' | 'customer_pickup' | 'shop_delivery') => {
   try {
@@ -501,6 +553,7 @@ const MyRepairs: React.FC = () => {
   const [warrantyReasonDetails, setWarrantyReasonDetails] = useState<string>('');
   const [warrantyIntakeMethod, setWarrantyIntakeMethod] = useState<'walk_in' | 'customer_delivery'>('walk_in');
   const [warrantyReceiveMethod, setWarrantyReceiveMethod] = useState<'walk_in' | 'shop_delivery'>('walk_in');
+  const [warrantyReceiveAddress, setWarrantyReceiveAddress] = useState<WarrantyReceiveAddressForm>({ ...EMPTY_WARRANTY_RECEIVE_ADDRESS });
   const [warrantyImages, setWarrantyImages] = useState<File[]>([]);
   const [isSubmittingWarrantyClaim, setIsSubmittingWarrantyClaim] = useState(false);
   const [latestRefundByRepairId, setLatestRefundByRepairId] = useState<Record<number, RepairRefundStatus>>({});
@@ -1288,6 +1341,7 @@ const MyRepairs: React.FC = () => {
     setWarrantyReasonDetails('');
     setWarrantyIntakeMethod('walk_in');
     setWarrantyReceiveMethod('walk_in');
+    setWarrantyReceiveAddress({ ...EMPTY_WARRANTY_RECEIVE_ADDRESS });
     setWarrantyImages([]);
   };
 
@@ -1316,8 +1370,24 @@ const MyRepairs: React.FC = () => {
     setWarrantyReasonDetails('');
     setWarrantyIntakeMethod('walk_in');
     setWarrantyReceiveMethod('walk_in');
+    setWarrantyReceiveAddress(resolveWarrantyReceiveAddressSeed(order));
     setWarrantyImages([]);
     setShowWarrantyModal(true);
+  };
+
+  const isWarrantyReceiveAddressComplete = () => {
+    if (warrantyReceiveMethod !== 'shop_delivery') {
+      return true;
+    }
+
+    return Object.values(warrantyReceiveAddress).every((entry) => String(entry).trim().length > 0);
+  };
+
+  const updateWarrantyReceiveAddressField = (field: keyof WarrantyReceiveAddressForm, value: string) => {
+    setWarrantyReceiveAddress((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
   };
 
   const handleWarrantyImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1384,6 +1454,10 @@ const MyRepairs: React.FC = () => {
       return false;
     }
 
+    if (!isWarrantyReceiveAddressComplete()) {
+      return false;
+    }
+
     return warrantyImages.length > 0 && warrantyImages.length <= 10;
   };
 
@@ -1406,6 +1480,16 @@ const MyRepairs: React.FC = () => {
         icon: 'warning',
         title: 'Please provide details',
         text: 'Details are required when selecting Other.',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
+    if (!isWarrantyReceiveAddressComplete()) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Delivery Address Required',
+        text: 'Please provide the full delivery address when choosing Repairer Delivery.',
         confirmButtonColor: '#000000',
       });
       return;
@@ -1455,6 +1539,14 @@ const MyRepairs: React.FC = () => {
     payload.append('same_issue_confirmation', '1');
     payload.append('preferred_return_method', warrantyIntakeMethod);
     payload.append('preferred_receive_method', warrantyReceiveMethod);
+
+    if (warrantyReceiveMethod === 'shop_delivery') {
+      payload.append('receive_address_line', warrantyReceiveAddress.address_line.trim());
+      payload.append('receive_barangay', warrantyReceiveAddress.barangay.trim());
+      payload.append('receive_city', warrantyReceiveAddress.city.trim());
+      payload.append('receive_region', warrantyReceiveAddress.region.trim());
+      payload.append('receive_postal_code', warrantyReceiveAddress.postal_code.trim());
+    }
 
     warrantyImages.forEach((file: File, index: number) => {
       payload.append(`images[${index}]`, file);
@@ -4076,6 +4168,66 @@ const MyRepairs: React.FC = () => {
                       ))}
                     </div>
                   </div>
+
+                  {warrantyReceiveMethod === 'shop_delivery' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-3">
+                        Delivery Address For Return Shipping <span className="text-red-500">*</span>
+                      </label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Address Line</label>
+                          <input
+                            type="text"
+                            value={warrantyReceiveAddress.address_line}
+                            onChange={(e) => updateWarrantyReceiveAddressField('address_line', e.target.value)}
+                            className="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-gray-400 focus:outline-none"
+                            placeholder="House no., street, building"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Barangay</label>
+                          <input
+                            type="text"
+                            value={warrantyReceiveAddress.barangay}
+                            onChange={(e) => updateWarrantyReceiveAddressField('barangay', e.target.value)}
+                            className="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-gray-400 focus:outline-none"
+                            placeholder="Barangay"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">City</label>
+                          <input
+                            type="text"
+                            value={warrantyReceiveAddress.city}
+                            onChange={(e) => updateWarrantyReceiveAddressField('city', e.target.value)}
+                            className="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-gray-400 focus:outline-none"
+                            placeholder="City"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Region/Province</label>
+                          <input
+                            type="text"
+                            value={warrantyReceiveAddress.region}
+                            onChange={(e) => updateWarrantyReceiveAddressField('region', e.target.value)}
+                            className="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-gray-400 focus:outline-none"
+                            placeholder="Region or province"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Postal Code</label>
+                          <input
+                            type="text"
+                            value={warrantyReceiveAddress.postal_code}
+                            onChange={(e) => updateWarrantyReceiveAddressField('postal_code', e.target.value)}
+                            className="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-gray-400 focus:outline-none"
+                            placeholder="Postal code"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
