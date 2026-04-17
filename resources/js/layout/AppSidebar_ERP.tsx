@@ -709,7 +709,7 @@ const AppSidebar_ERP: React.FC = () => {
   const hasManagerRole = normalizedRoles.includes('MANAGER') || (!hasRolesArray && normalizedRole === 'MANAGER');
   const hasInventoryManagerRole = normalizedRoles.includes('INVENTORY MANAGER');
   const hasProcurementManagerRole = normalizedRoles.includes('PROCUREMENT MANAGER');
-  const hasExplicitStaffRole = normalizedRoles.includes('STAFF') || normalizedRole === 'STAFF';
+  const hasExplicitStaffRole = normalizedRoles.includes('STAFF') || (!hasRolesArray && normalizedRole === 'STAFF');
 
   const [subMenuHeight, setSubMenuHeight] = useState<Record<string, number>>({});
   const subMenuRefs = useRef<Record<string, HTMLDivElement | null>>({});
