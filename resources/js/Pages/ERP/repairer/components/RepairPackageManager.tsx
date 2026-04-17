@@ -399,7 +399,7 @@ export default function RepairPackageManager({
 
       const payload = {
         ...formState,
-        package_price: Number(formState.package_price),
+        package_price: Number(selectedPackage.package_price),
         starts_at: formState.starts_at || null,
         ends_at: formState.ends_at || null,
         material_templates: materialTemplatesPayload,
@@ -512,6 +512,8 @@ export default function RepairPackageManager({
     const title = mode === "add" ? "Create Repair Package" : "Edit Repair Package";
     const submitHandler = mode === "add" ? submitCreate : submitUpdate;
 
+    const isEditMode = mode === "edit";
+
     return (
       <div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
         <div className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
@@ -568,22 +570,35 @@ export default function RepairPackageManager({
                   onChange={(e) => {
                     setFormState((prev) => ({ ...prev, package_price: e.target.value }));
                   }}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  disabled={isEditMode}
+                  className={`w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white ${
+                    isEditMode
+                      ? "bg-gray-100 dark:bg-gray-700 cursor-not-allowed"
+                      : "bg-white dark:bg-gray-800"
+                  }`}
                   placeholder="e.g. 948.00"
                 />
                 <div className="mt-1 space-y-1">
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    Manual price input. Service total reference: <span className="font-semibold">{formatMoney(selectedServicesTotal)}</span>
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFormState((prev) => ({ ...prev, package_price: String(selectedServicesTotal.toFixed(2)) }));
-                    }}
-                    className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-                  >
-                    Apply reference price
-                  </button>
+                  {isEditMode ? (
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Package price is locked when editing.
+                    </p>
+                  ) : (
+                    <>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        Manual price input. Service total reference: <span className="font-semibold">{formatMoney(selectedServicesTotal)}</span>
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormState((prev) => ({ ...prev, package_price: String(selectedServicesTotal.toFixed(2)) }));
+                        }}
+                        className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                      >
+                        Apply reference price
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
               <div>

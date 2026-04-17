@@ -10,9 +10,12 @@ use App\Http\Requests\StorePurchaseOrderRequest;
 use App\Http\Requests\UpdatePurchaseOrderStatusRequest;
 use App\Http\Requests\CancelPurchaseOrderRequest;
 use App\Events\PurchaseOrderCompleted;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 
 class PurchaseOrderController extends Controller
@@ -110,11 +113,35 @@ class PurchaseOrderController extends Controller
             $data['ordered_by'] = Auth::id();
             $data['ordered_date'] = now();
             $data['status'] = 'draft';
-            
-            // Generate PO number
-            $data['po_number'] = $this->generatePONumber();
 
-            $purchaseOrder = PurchaseOrder::create($data);
+            $data = $this->sanitizePurchaseOrderPayloadForSchema($data);
+
+            $candidatePoNumber = $this->generatePONumber();
+            $purchaseOrder = null;
+
+            for ($attempt = 0; $attempt < 10; $attempt++) {
+                $data['po_number'] = $candidatePoNumber;
+
+                try {
+                    $purchaseOrder = PurchaseOrder::create($data);
+                    break;
+                } catch (QueryException $queryException) {
+                    if (!$this->isPoNumberDuplicateException($queryException) || $attempt === 9) {
+                        throw $queryException;
+                    }
+
+                    Log::warning('PO number collision detected; retrying with next sequence.', [
+                        'candidate_po_number' => $candidatePoNumber,
+                        'attempt' => $attempt + 1,
+                    ]);
+
+                    $candidatePoNumber = $this->incrementPoNumber($candidatePoNumber);
+                }
+            }
+
+            if (!$purchaseOrder) {
+                throw new \RuntimeException('Unable to generate a unique purchase order number.');
+            }
 
             DB::commit();
 
@@ -488,21 +515,56 @@ class PurchaseOrderController extends Controller
      */
     private function generatePONumber()
     {
-        $year = date('Y');
-        $shopOwnerId = Auth::user()->shop_owner_id;
-        
-        $lastPO = PurchaseOrder::where('shop_owner_id', $shopOwnerId)
-            ->where('po_number', 'LIKE', "PO-{$year}-%")
-            ->orderBy('po_number', 'desc')
-            ->first();
+        $year = (int) date('Y');
+        $maxSequence = 0;
 
-        if ($lastPO) {
-            $lastNumber = intval(substr($lastPO->po_number, -3));
-            $newNumber = str_pad($lastNumber + 1, 3, '0', STR_PAD_LEFT);
-        } else {
-            $newNumber = '001';
+        $existingPoNumbers = PurchaseOrder::query()
+            ->where('po_number', 'LIKE', "PO-{$year}-%")
+            ->pluck('po_number');
+
+        foreach ($existingPoNumbers as $poNumber) {
+            if (preg_match('/^PO-(\d{4})-(\d+)$/', (string) $poNumber, $matches) !== 1) {
+                continue;
+            }
+
+            if ((int) $matches[1] !== $year) {
+                continue;
+            }
+
+            $maxSequence = max($maxSequence, (int) $matches[2]);
         }
 
-        return "PO-{$year}-{$newNumber}";
+        return sprintf('PO-%d-%03d', $year, $maxSequence + 1);
+    }
+
+    private function incrementPoNumber(string $poNumber): string
+    {
+        if (preg_match('/^PO-(\d{4})-(\d+)$/', $poNumber, $matches) !== 1) {
+            return $this->generatePONumber();
+        }
+
+        $year = (int) $matches[1];
+        $sequence = (int) $matches[2] + 1;
+
+        return sprintf('PO-%d-%03d', $year, $sequence);
+    }
+
+    private function isPoNumberDuplicateException(QueryException $exception): bool
+    {
+        $message = strtolower($exception->getMessage());
+
+        return str_contains($message, 'duplicate entry')
+            && str_contains($message, 'po_number');
+    }
+
+    private function sanitizePurchaseOrderPayloadForSchema(array $payload): array
+    {
+        static $purchaseOrderColumns = null;
+
+        if (!is_array($purchaseOrderColumns)) {
+            $purchaseOrderColumns = array_flip(Schema::getColumnListing('purchase_orders'));
+        }
+
+        return array_intersect_key($payload, $purchaseOrderColumns);
     }
 }
