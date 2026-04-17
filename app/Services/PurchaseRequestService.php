@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\PurchaseRequest;
 use App\Models\ProcurementSettings;
 use App\Enums\NotificationType;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -29,18 +30,43 @@ class PurchaseRequestService
         DB::beginTransaction();
         
         try {
-            // Generate PR number if not provided
-            if (!isset($data['pr_number'])) {
-                $data['pr_number'] = $this->generatePRNumber($data['shop_owner_id']);
-            }
+            $candidatePrNumber = isset($data['pr_number'])
+                ? (string) $data['pr_number']
+                : $this->generatePRNumber();
 
             // Calculate total cost
             $data['total_cost'] = $data['quantity'] * $data['unit_cost'];
 
+            // Align with DB not-null constraint for service-driven PR creation.
+            $data['requested_date'] = $data['requested_date'] ?? now();
+
             // Set default status
             $data['status'] = $data['status'] ?? 'draft';
 
-            $purchaseRequest = PurchaseRequest::create($data);
+            $purchaseRequest = null;
+            for ($attempt = 0; $attempt < 10; $attempt++) {
+                $data['pr_number'] = $candidatePrNumber;
+
+                try {
+                    $purchaseRequest = PurchaseRequest::create($data);
+                    break;
+                } catch (QueryException $queryException) {
+                    if (!$this->isPrNumberDuplicateException($queryException) || $attempt === 9) {
+                        throw $queryException;
+                    }
+
+                    Log::warning('PurchaseRequestService PR number collision; retrying with next sequence.', [
+                        'candidate_pr_number' => $candidatePrNumber,
+                        'attempt' => $attempt + 1,
+                    ]);
+
+                    $candidatePrNumber = $this->incrementPrNumber($candidatePrNumber);
+                }
+            }
+
+            if (!$purchaseRequest) {
+                throw new \RuntimeException('Unable to generate a unique purchase request number.');
+            }
 
             // Check if auto-approval is enabled for low-value PRs
             $settings = ProcurementSettings::getForShopOwner($data['shop_owner_id']);
@@ -65,23 +91,48 @@ class PurchaseRequestService
     /**
      * Generate unique PR number for shop owner.
      */
-    public function generatePRNumber(int $shopOwnerId): string
+    public function generatePRNumber(): string
     {
-        $year = date('Y');
-        
-        $lastPR = PurchaseRequest::where('shop_owner_id', $shopOwnerId)
-            ->where('pr_number', 'LIKE', "PR-{$year}-%")
-            ->orderBy('pr_number', 'desc')
-            ->first();
+        $year = (int) date('Y');
+        $maxSequence = 0;
 
-        if ($lastPR) {
-            $lastNumber = intval(substr($lastPR->pr_number, -3));
-            $newNumber = str_pad($lastNumber + 1, 3, '0', STR_PAD_LEFT);
-        } else {
-            $newNumber = '001';
+        $existingPrNumbers = PurchaseRequest::query()
+            ->where('pr_number', 'LIKE', "PR-{$year}-%")
+            ->pluck('pr_number');
+
+        foreach ($existingPrNumbers as $prNumber) {
+            if (preg_match('/^PR-(\d{4})-(\d+)$/', (string) $prNumber, $matches) !== 1) {
+                continue;
+            }
+
+            if ((int) $matches[1] !== $year) {
+                continue;
+            }
+
+            $maxSequence = max($maxSequence, (int) $matches[2]);
         }
 
-        return "PR-{$year}-{$newNumber}";
+        return sprintf('PR-%d-%03d', $year, $maxSequence + 1);
+    }
+
+    private function incrementPrNumber(string $prNumber): string
+    {
+        if (preg_match('/^PR-(\d{4})-(\d+)$/', $prNumber, $matches) !== 1) {
+            return $this->generatePRNumber();
+        }
+
+        $year = (int) $matches[1];
+        $sequence = (int) $matches[2] + 1;
+
+        return sprintf('PR-%d-%03d', $year, $sequence);
+    }
+
+    private function isPrNumberDuplicateException(QueryException $exception): bool
+    {
+        $message = strtolower($exception->getMessage());
+
+        return str_contains($message, 'duplicate entry')
+            && str_contains($message, 'pr_number');
     }
 
     /**
