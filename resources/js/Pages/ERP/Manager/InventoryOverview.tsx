@@ -118,6 +118,10 @@ export default function ERPInventoryOverview() {
   const initialQuery = typeof window !== "undefined"
     ? new URLSearchParams(window.location.search)
     : new URLSearchParams();
+  const currentPathname = typeof window !== "undefined" ? window.location.pathname : "";
+  const inventoryApiBasePath = currentPathname.startsWith("/erp/staff/")
+    ? "/api/staff/inventory-overview"
+    : "/api/manager/inventory-overview";
 
   const initialPage = Number(initialQuery.get("page") || "1");
   const requestedStatus = initialQuery.get("status") || "All";
@@ -179,7 +183,7 @@ export default function ERPInventoryOverview() {
         if (forceCategory) params.append("category", forceCategory);
         if (statusFilter !== "All") params.append("status", statusFilter);
 
-        const response = await fetch(`/api/manager/inventory-overview?${params.toString()}`, {
+        const response = await fetch(`${inventoryApiBasePath}?${params.toString()}`, {
           credentials: "include",
           headers: {
             Accept: "application/json",
@@ -205,7 +209,7 @@ export default function ERPInventoryOverview() {
     };
 
     fetchInventoryOverview();
-  }, [currentPage, searchQuery, statusFilter, forceCategory]);
+  }, [currentPage, searchQuery, statusFilter, forceCategory, inventoryApiBasePath]);
 
   const startIndex = (currentPage - 1) * itemsPerPage;
 

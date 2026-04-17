@@ -108,18 +108,10 @@ class RepairPackageSeeder extends Seeder
                 if (!isset($aggregatedLines[$inventoryItemId])) {
                     $aggregatedLines[$inventoryItemId] = [
                         'default_quantity' => 0.0,
-                        'is_critical' => false,
-                        'tolerance_percent' => 0.0,
                     ];
                 }
 
                 $aggregatedLines[$inventoryItemId]['default_quantity'] += (float) $line->default_quantity;
-                $aggregatedLines[$inventoryItemId]['is_critical'] =
-                    $aggregatedLines[$inventoryItemId]['is_critical'] || (bool) $line->is_critical;
-                $aggregatedLines[$inventoryItemId]['tolerance_percent'] = max(
-                    (float) $aggregatedLines[$inventoryItemId]['tolerance_percent'],
-                    (float) $line->tolerance_percent
-                );
             }
         }
 
@@ -130,8 +122,6 @@ class RepairPackageSeeder extends Seeder
                 'template_type' => 'repair_package',
                 'template_id' => $package->id,
                 'default_quantity' => $payload['default_quantity'],
-                'is_critical' => $payload['is_critical'],
-                'tolerance_percent' => $payload['tolerance_percent'] > 0 ? $payload['tolerance_percent'] : 20,
                 'created_by' => null,
             ]);
         }

@@ -30,14 +30,10 @@ class RepairServiceSeeder extends Seeder
                     [
                         'inventory_name' => 'Cleaning Foam Concentrate',
                         'default_quantity' => 0.35,
-                        'is_critical' => true,
-                        'tolerance_percent' => 10,
                     ],
                     [
                         'inventory_name' => 'Sanding Pad',
                         'default_quantity' => 0.20,
-                        'is_critical' => false,
-                        'tolerance_percent' => 25,
                     ],
                 ],
             ],
@@ -52,14 +48,10 @@ class RepairServiceSeeder extends Seeder
                     [
                         'inventory_name' => 'Sole Whitener',
                         'default_quantity' => 0.40,
-                        'is_critical' => true,
-                        'tolerance_percent' => 10,
                     ],
                     [
                         'inventory_name' => 'Cleaning Foam Concentrate',
                         'default_quantity' => 0.15,
-                        'is_critical' => false,
-                        'tolerance_percent' => 20,
                     ],
                 ],
             ],
@@ -74,14 +66,10 @@ class RepairServiceSeeder extends Seeder
                     [
                         'inventory_name' => 'Industrial Shoe Glue',
                         'default_quantity' => 0.60,
-                        'is_critical' => true,
-                        'tolerance_percent' => 10,
                     ],
                     [
                         'inventory_name' => 'Sanding Pad',
                         'default_quantity' => 0.30,
-                        'is_critical' => false,
-                        'tolerance_percent' => 25,
                     ],
                 ],
             ],
@@ -96,20 +84,14 @@ class RepairServiceSeeder extends Seeder
                     [
                         'inventory_name' => 'Leather Patch Sheet',
                         'default_quantity' => 0.50,
-                        'is_critical' => true,
-                        'tolerance_percent' => 10,
                     ],
                     [
                         'inventory_name' => 'Industrial Shoe Glue',
                         'default_quantity' => 0.35,
-                        'is_critical' => true,
-                        'tolerance_percent' => 10,
                     ],
                     [
                         'inventory_name' => 'Stitching Thread (Nylon)',
                         'default_quantity' => 0.25,
-                        'is_critical' => false,
-                        'tolerance_percent' => 20,
                     ],
                 ],
             ],
@@ -124,14 +106,10 @@ class RepairServiceSeeder extends Seeder
                     [
                         'inventory_name' => 'Stitching Thread (Nylon)',
                         'default_quantity' => 0.40,
-                        'is_critical' => true,
-                        'tolerance_percent' => 10,
                     ],
                     [
                         'inventory_name' => 'Leather Patch Sheet',
                         'default_quantity' => 0.30,
-                        'is_critical' => false,
-                        'tolerance_percent' => 20,
                     ],
                 ],
             ],
@@ -146,14 +124,10 @@ class RepairServiceSeeder extends Seeder
                     [
                         'inventory_name' => 'Sanding Pad',
                         'default_quantity' => 0.40,
-                        'is_critical' => true,
-                        'tolerance_percent' => 15,
                     ],
                     [
                         'inventory_name' => 'Cleaning Foam Concentrate',
                         'default_quantity' => 0.10,
-                        'is_critical' => false,
-                        'tolerance_percent' => 25,
                     ],
                 ],
             ],
@@ -238,8 +212,6 @@ class RepairServiceSeeder extends Seeder
                 'template_type' => 'repair_service',
                 'template_id' => $service->id,
                 'default_quantity' => (float) ($line['default_quantity'] ?? 1),
-                'is_critical' => (bool) ($line['is_critical'] ?? false),
-                'tolerance_percent' => (float) ($line['tolerance_percent'] ?? 20),
                 'created_by' => null,
             ]);
 

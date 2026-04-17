@@ -78,6 +78,16 @@ class EmployeeSeeder extends Seeder
                 'salary' => 1461.54,
                 'phone' => '+639174440001',
             ],
+            // Cashier Staff
+            [
+                'first_name' => 'Kevin',
+                'last_name' => 'Lopez',
+                'email' => "cashier.{$shopOwner->id}@solespace.com",
+                'position' => 'Cashier',
+                'department' => 'Cashier',
+                'salary' => 1076.92,
+                'phone' => '+639179990001',
+            ],
             // Inventory Manager
             [
                 'first_name' => 'Robert',
@@ -168,6 +178,7 @@ class EmployeeSeeder extends Seeder
                 'HR' => ['role' => 'HR', 'spatie' => 'HR'],
                 'CRM' => ['role' => 'CRM', 'spatie' => 'CRM'],
                 'Repairer' => ['role' => 'REPAIRER', 'spatie' => 'Repairer'],
+                'Cashier' => ['role' => 'CASHIER', 'spatie' => 'Cashier'],
                 'Inventory Manager' => ['role' => 'INVENTORY_MANAGER', 'spatie' => 'Inventory Manager'],
                 'Procurement Manager' => ['role' => 'PROCUREMENT_MANAGER', 'spatie' => 'Procurement Manager'],
                 'Staff' => ['role' => 'STAFF', 'spatie' => 'Staff'],
