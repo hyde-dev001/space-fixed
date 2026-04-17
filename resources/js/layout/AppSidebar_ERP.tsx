@@ -709,6 +709,7 @@ const AppSidebar_ERP: React.FC = () => {
   const hasManagerRole = normalizedRoles.includes('MANAGER') || (!hasRolesArray && normalizedRole === 'MANAGER');
   const hasInventoryManagerRole = normalizedRoles.includes('INVENTORY MANAGER');
   const hasProcurementManagerRole = normalizedRoles.includes('PROCUREMENT MANAGER');
+  const hasExplicitStaffRole = normalizedRoles.includes('STAFF') || normalizedRole === 'STAFF';
 
   const [subMenuHeight, setSubMenuHeight] = useState<Record<string, number>>({});
   const subMenuRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -1261,7 +1262,12 @@ const AppSidebar_ERP: React.FC = () => {
   const hasStaffAccess = () => {
     if (isCashierOnly) return false;
 
-    if (normalizedRoles.includes('STAFF') || normalizedRole === 'STAFF') return true;
+    if (hasExplicitStaffRole) return true;
+
+    // Procurement-only accounts should not be classified as staff just because they
+    // share the ERP shell. Keep the staff sidebar hidden unless the account truly
+    // carries the STAFF role.
+    if (hasProcurementAccess()) return false;
 
     const staffPermissions = [
       'access-staff-dashboard',

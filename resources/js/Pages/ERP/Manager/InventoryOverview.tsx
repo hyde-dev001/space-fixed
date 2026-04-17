@@ -179,7 +179,7 @@ export default function ERPInventoryOverview() {
         if (forceCategory) params.append("category", forceCategory);
         if (statusFilter !== "All") params.append("status", statusFilter);
 
-        const response = await fetch(`/api/staff/inventory-overview?${params.toString()}`, {
+        const response = await fetch(`/api/manager/inventory-overview?${params.toString()}`, {
           credentials: "include",
           headers: {
             Accept: "application/json",

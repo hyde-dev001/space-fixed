@@ -9,6 +9,7 @@ use App\Enums\EmployeeStatus;
 use App\Enums\NotificationType;
 use App\Enums\SuspensionStatus;
 use App\Services\NotificationService;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -19,6 +20,21 @@ class SuspensionFinalApprovalController extends Controller
         private readonly NotificationService $notificationService,
     ) {}
 
+    private function shopOwnerId(): int
+    {
+        return (int) (auth('shop_owner')->id() ?? 0);
+    }
+
+    private function shopScopedRequestQuery()
+    {
+        $shopOwnerId = $this->shopOwnerId();
+
+        return SuspensionRequest::with(['employee', 'requester', 'manager'])
+            ->whereHas('employee', function ($query) use ($shopOwnerId) {
+                $query->forShopOwner($shopOwnerId);
+            });
+    }
+
     /**
      * Display a listing of suspension requests for shop owner review.
      */
@@ -26,12 +42,12 @@ class SuspensionFinalApprovalController extends Controller
     {
         try {
             Log::info('Shop Owner accessing suspension requests', [
-                'user_id' => auth('shop_owner')->id(),
+                'user_id' => $this->shopOwnerId(),
                 'status_filter' => $request->input('status'),
                 'search' => $request->input('search'),
             ]);
 
-            $query = SuspensionRequest::with(['employee', 'requester', 'manager'])
+            $query = $this->shopScopedRequestQuery()
                 ->where('manager_status', 'approved'); // Only show manager-approved requests
 
             // Filter by owner status if provided
@@ -103,10 +119,10 @@ class SuspensionFinalApprovalController extends Controller
     public function show($id)
     {
         try {
-            $request = SuspensionRequest::with(['employee', 'requester', 'manager', 'owner'])
+            $request = $this->shopScopedRequestQuery()
+                ->with('owner')
                 ->findOrFail($id);
 
-            // Use SuspensionStatus enum's toFrontend() method for mapping
             $frontendStatus = $request->status->toFrontend();
 
             return response()->json([
@@ -129,11 +145,18 @@ class SuspensionFinalApprovalController extends Controller
                     'owner_note' => $request->owner_note,
                 ],
             ]);
+        } catch (ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Suspension request not found',
+            ], 404);
         } catch (\Exception $e) {
             Log::error('Error fetching suspension request: ' . $e->getMessage());
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch suspension request',
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -150,9 +173,10 @@ class SuspensionFinalApprovalController extends Controller
 
         DB::beginTransaction();
         try {
-            $suspensionRequest = SuspensionRequest::with('employee')->findOrFail($id);
+            $suspensionRequest = $this->shopScopedRequestQuery()
+                ->with(['employee.user', 'requester'])
+                ->findOrFail($id);
 
-            // Check if already reviewed by owner
             if (in_array($suspensionRequest->status, [SuspensionStatus::APPROVED, SuspensionStatus::REJECTED_OWNER])) {
                 return response()->json([
                     'success' => false,
@@ -160,7 +184,6 @@ class SuspensionFinalApprovalController extends Controller
                 ], 400);
             }
 
-            // Check if manager approved
             if ($suspensionRequest->manager_status !== 'approved') {
                 return response()->json([
                     'success' => false,
@@ -170,10 +193,8 @@ class SuspensionFinalApprovalController extends Controller
 
             $action = $request->input('action');
             $note = $request->input('note');
-
-            // Update suspension request with proper status
             $newStatus = $action === 'approve' ? SuspensionStatus::APPROVED : SuspensionStatus::REJECTED_OWNER;
-            
+
             $suspensionRequest->update([
                 'status' => $newStatus,
                 'owner_id' => auth('shop_owner')->id(),
@@ -182,7 +203,6 @@ class SuspensionFinalApprovalController extends Controller
                 'owner_reviewed_at' => now(),
             ]);
 
-            // Keep employee status aligned with final owner decision.
             $employee = $suspensionRequest->employee;
             if ($employee) {
                 if ($action === 'approve') {
@@ -240,14 +260,22 @@ class SuspensionFinalApprovalController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => $action === 'approve' 
-                    ? 'Suspension request approved successfully' 
+                'message' => $action === 'approve'
+                    ? 'Suspension request approved successfully'
                     : 'Suspension request rejected successfully',
                 'data' => $suspensionRequest,
             ]);
+        } catch (ModelNotFoundException $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Suspension request not found',
+            ], 404);
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Error reviewing suspension request: ' . $e->getMessage());
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to review suspension request',

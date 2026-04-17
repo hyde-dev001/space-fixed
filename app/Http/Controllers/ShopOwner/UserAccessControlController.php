@@ -464,26 +464,6 @@ class UserAccessControlController extends Controller
                 return [$employee, $user];
             });
 
-            // Audit log (optional)
-            try {
-                AuditLog::create([
-                    'shop_owner_id' => $shopOwner->id,
-                    'actor_user_id' => $shopOwner->id,
-                    'action' => 'employee_created',
-                    'target_type' => 'employee',
-                    'target_id' => $employee->id,
-                    'metadata' => [
-                        'assigned_role' => $validated['role'], // Old role column
-                        'spatie_role' => $user->getRoleNames()->first() ?? null, // New Spatie role
-                        'position' => $user->position ?? null,
-                        'employee_email' => $validated['email'],
-                        'branch' => $validated['branch'] ?? null,
-                    ],
-                ]);
-            } catch (\Exception $e) {
-                // Audit log is optional - don't fail if it errors
-            }
-
             // Generate invitation URL
             $inviteUrl = url("/invite/{$inviteToken}");
 
@@ -509,6 +489,125 @@ class UserAccessControlController extends Controller
         } catch (\Exception $e) {
             return back()->withErrors([
                 'error' => 'Error creating employee: ' . $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Update an existing employee for the authenticated shop owner.
+     */
+    public function updateEmployee(Request $request, Employee $employee)
+    {
+        try {
+            /** @var ShopOwner|null $shopOwner */
+            $shopOwner = Auth::guard('shop_owner')->user();
+
+            if (!$shopOwner) {
+                return back()->withErrors(['error' => 'Not authenticated as shop owner']);
+            }
+
+            if (!$this->accessControl->canManageStaff($shopOwner)) {
+                return back()->withErrors([
+                    'error' => 'Staff management is only available for Business accounts.'
+                ]);
+            }
+
+            if ((int) $employee->shop_owner_id !== (int) $shopOwner->id) {
+                return back()->withErrors([
+                    'error' => 'You cannot edit employees from another shop.'
+                ]);
+            }
+
+            $validated = $request->validate([
+                'name' => 'required|string|max:255',
+                'email' => [
+                    'required',
+                    'email',
+                    Rule::unique('employees', 'email')->ignore($employee->id),
+                    Rule::unique('users', 'email')->ignore(optional($employee->user)->id),
+                ],
+                'phone' => ['nullable', 'regex:/^\d{11}$/'],
+                'address' => 'nullable|string|max:255',
+                'position' => 'nullable|string|max:100',
+                'department' => 'nullable|string|max:100',
+                'salary' => 'nullable|numeric|min:0',
+                'hire_date' => 'nullable|date',
+                'status' => 'nullable|in:active,inactive,on_leave',
+            ], [
+                'name.required' => 'Employee name is required',
+                'email.required' => 'Email is required',
+                'email.unique' => 'This email is already registered',
+                'phone.regex' => 'Phone number must be exactly 11 digits',
+                'salary.numeric' => 'Salary must be a valid number',
+            ]);
+
+            $updatedEmployee = DB::transaction(function () use ($employee, $validated) {
+                $employee->fill([
+                    'name' => $validated['name'],
+                    'email' => $validated['email'],
+                    'phone' => $validated['phone'] ?? '',
+                    'address' => $validated['address'] ?? '',
+                    'position' => $validated['position'] ?? '',
+                    'department' => $validated['department'] ?? $employee->department ?? 'General',
+                    'salary' => $validated['salary'] ?? 0,
+                    'hire_date' => $validated['hire_date'] ?? $employee->hire_date ?? now()->toDateString(),
+                    'status' => $validated['status'] ?? $employee->status,
+                ]);
+                $employee->save();
+
+                $user = $employee->user;
+                if ($user) {
+                    $nameParts = preg_split('/\s+/', trim((string) $validated['name']));
+                    $firstName = $nameParts[0] ?? '';
+                    $lastName = count($nameParts) > 1 ? implode(' ', array_slice($nameParts, 1)) : '';
+
+                    $user->fill([
+                        'name' => $validated['name'],
+                        'first_name' => $firstName,
+                        'last_name' => $lastName,
+                        'email' => $validated['email'],
+                        'phone' => $validated['phone'] ?? '',
+                        'address' => $validated['address'] ?? '',
+                        'position' => $validated['position'] ?? $user->position,
+                    ]);
+                    $user->save();
+                }
+
+                return $employee->fresh('user');
+            });
+
+            try {
+                AuditLog::create([
+                    'shop_owner_id' => $shopOwner->id,
+                    'actor_user_id' => $shopOwner->id,
+                    'action' => 'employee_updated',
+                    'target_type' => 'employee',
+                    'target_id' => $updatedEmployee->id,
+                    'metadata' => [
+                        'employee_email' => $updatedEmployee->email,
+                        'employee_name' => $updatedEmployee->name,
+                        'department' => $updatedEmployee->department,
+                        'position' => $updatedEmployee->position,
+                    ],
+                ]);
+            } catch (\Exception $e) {
+                // Audit log is optional - don't fail the update if it errors
+            }
+
+            return redirect()->back()->with([
+                'success' => true,
+                'employee' => [
+                    'id' => $updatedEmployee->id,
+                    'name' => $updatedEmployee->name,
+                    'email' => $updatedEmployee->email,
+                ],
+                'timestamp' => now()->timestamp,
+            ]);
+        } catch (ValidationException $e) {
+            return back()->withErrors($e->errors());
+        } catch (\Exception $e) {
+            return back()->withErrors([
+                'error' => 'Error updating employee: ' . $e->getMessage()
             ]);
         }
     }

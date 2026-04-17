@@ -80,6 +80,16 @@ Route::middleware([
         'update' => 'inventory.suppliers.update',
         'destroy' => 'inventory.suppliers.destroy',
     ]);
+
+    // =====================================
+    // Stock Replenishment Requests (Inventory)
+    // =====================================
+    Route::prefix('stock-requests')->group(function () {
+        Route::get('/', [StockRequestApprovalController::class, 'index'])->name('inventory.stock-requests.index');
+        Route::get('/metrics', [StockRequestApprovalController::class, 'getMetrics'])->name('inventory.stock-requests.metrics');
+        Route::post('/', [StockRequestApprovalController::class, 'store'])->name('inventory.stock-requests.store');
+        Route::get('/{id}', [StockRequestApprovalController::class, 'show'])->name('inventory.stock-requests.show');
+    });
     
     // =====================================
     // Supplier Orders Management

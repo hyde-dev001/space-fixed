@@ -8,7 +8,11 @@ const Articles: React.FC = () => {
 	const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string } | null>(null);
 	const fromSource = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('from') : null;
 	const useHistoryBackButton = fromSource === 'premium-benefits' || fromSource === 'product-uploader';
-	const backFallbackHref = fromSource === 'premium-benefits' ? '/shop-owner/premium-benefits' : '/services';
+	const backFallbackHref = fromSource === 'premium-benefits'
+		? '/shop-owner/premium-benefits'
+		: fromSource === 'product-uploader'
+			? '/erp/staff/products'
+			: '/services';
 
 	useEffect(() => {
 		if (!selectedImage) {

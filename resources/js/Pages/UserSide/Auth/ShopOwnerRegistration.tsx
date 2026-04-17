@@ -121,7 +121,8 @@ interface ResubmissionPayload {
 }
 
 export default function ShopOwnerRegistration({ resubmission }: { resubmission?: ResubmissionPayload | null }) {
-  type AdditionalDocument = { id: number; file: File | null; fileName: string };
+  type AdditionalDocument = { id: number; file: File | null; fileName: string; previewUrl: string };
+  type UploadedDocumentKey = 'dti' | 'mayors_permit' | 'bir' | 'valid_id';
 
   const isResubmission = Boolean(resubmission?.isResubmission);
   const resubmissionMaxAttempts = resubmission?.maxAttempts ?? 3;
@@ -152,10 +153,10 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
 
 
   const [uploadedDocuments, setUploadedDocuments] = useState({
-    dti: { file: null as File | null, fileName: existingDocuments.dti?.fileName ?? '' },
-    mayors_permit: { file: null as File | null, fileName: existingDocuments.mayors_permit?.fileName ?? '' },
-    bir: { file: null as File | null, fileName: existingDocuments.bir?.fileName ?? '' },
-    valid_id: { file: null as File | null, fileName: existingDocuments.valid_id?.fileName ?? '' },
+    dti: { file: null as File | null, fileName: existingDocuments.dti?.fileName ?? '', previewUrl: existingDocuments.dti?.url ?? '' },
+    mayors_permit: { file: null as File | null, fileName: existingDocuments.mayors_permit?.fileName ?? '', previewUrl: existingDocuments.mayors_permit?.url ?? '' },
+    bir: { file: null as File | null, fileName: existingDocuments.bir?.fileName ?? '', previewUrl: existingDocuments.bir?.url ?? '' },
+    valid_id: { file: null as File | null, fileName: existingDocuments.valid_id?.fileName ?? '', previewUrl: existingDocuments.valid_id?.url ?? '' },
   });
   const [additionalDocuments, setAdditionalDocuments] = useState<AdditionalDocument[]>([]);
   const nextAdditionalDocId = useRef(1);
@@ -294,7 +295,27 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
 
     const newId = nextAdditionalDocId.current;
     nextAdditionalDocId.current += 1;
-    setAdditionalDocuments((prev) => [...prev, { id: newId, file: null, fileName: '' }]);
+    setAdditionalDocuments((prev) => [...prev, { id: newId, file: null, fileName: '', previewUrl: '' }]);
+  };
+
+  const createPreviewUrl = (file: File) => URL.createObjectURL(file);
+
+  const updateUploadedDocument = (key: UploadedDocumentKey, file: File) => {
+    setUploadedDocuments((prev) => {
+      const previousPreviewUrl = prev[key].previewUrl;
+      if (previousPreviewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(previousPreviewUrl);
+      }
+
+      return {
+        ...prev,
+        [key]: {
+          file,
+          fileName: file.name,
+          previewUrl: createPreviewUrl(file),
+        },
+      };
+    });
   };
 
   const isAllowedShopOwnerImageFile = (file: File) => {
@@ -326,11 +347,22 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
       return;
     }
 
-    setAdditionalDocuments((prev) => prev.map((doc) => (
-      doc.id === id
-        ? { ...doc, file, fileName: file.name }
-        : doc
-    )));
+    setAdditionalDocuments((prev) => prev.map((doc) => {
+      if (doc.id !== id) {
+        return doc;
+      }
+
+      if (doc.previewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(doc.previewUrl);
+      }
+
+      return {
+        ...doc,
+        file,
+        fileName: file.name,
+        previewUrl: createPreviewUrl(file),
+      };
+    }));
 
     Swal.fire({
       icon: 'info',
@@ -342,7 +374,14 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
   };
 
   const handleRemoveAdditionalDocument = (id: number) => {
-    setAdditionalDocuments((prev) => prev.filter((doc) => doc.id !== id));
+    setAdditionalDocuments((prev) => {
+      const removed = prev.find((doc) => doc.id === id);
+      if (removed?.previewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(removed.previewUrl);
+      }
+
+      return prev.filter((doc) => doc.id !== id);
+    });
   };
 
   const getCaviteLocationState = () => {
@@ -1499,10 +1538,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                               return;
                             }
 
-                            setUploadedDocuments(prev => ({
-                              ...prev,
-                              dti: { file: file, fileName: file.name }
-                            }));
+                            updateUploadedDocument('dti', file);
 
                             Swal.fire({
                               icon: 'info',
@@ -1526,6 +1562,8 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                         }}
                         isUploaded={!!uploadedDocuments.dti.file || !!existingDocuments.dti}
                         fileName={uploadedDocuments.dti.fileName}
+                        previewUrl={uploadedDocuments.dti.previewUrl || existingDocuments.dti?.url || undefined}
+                        previewAlt="Shop Registration (DTI) preview"
                       />
                       {(uploadedDocuments.dti.file || existingDocuments.dti) && (
                         <p className="mt-2 text-sm text-green-600 font-semibold flex items-center">
@@ -1553,10 +1591,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                               return;
                             }
 
-                            setUploadedDocuments(prev => ({
-                              ...prev,
-                              mayors_permit: { file: file, fileName: file.name }
-                            }));
+                            updateUploadedDocument('mayors_permit', file);
                             Swal.fire({
                               icon: 'info',
                               title: 'File Attached',
@@ -1579,6 +1614,8 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                         }}
                         isUploaded={!!uploadedDocuments.mayors_permit.file || !!existingDocuments.mayors_permit}
                         fileName={uploadedDocuments.mayors_permit.fileName}
+                        previewUrl={uploadedDocuments.mayors_permit.previewUrl || existingDocuments.mayors_permit?.url || undefined}
+                        previewAlt="Mayor's Permit / Shop Permit preview"
                       />
                       {(uploadedDocuments.mayors_permit.file || existingDocuments.mayors_permit) && (
                         <p className="mt-2 text-sm text-green-600 font-semibold flex items-center">
@@ -1606,10 +1643,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                               return;
                             }
 
-                            setUploadedDocuments(prev => ({
-                              ...prev,
-                              bir: { file: file, fileName: file.name }
-                            }));
+                            updateUploadedDocument('bir', file);
                             Swal.fire({
                               icon: 'info',
                               title: 'File Attached',
@@ -1632,6 +1666,8 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                         }}
                         isUploaded={!!uploadedDocuments.bir.file || !!existingDocuments.bir}
                         fileName={uploadedDocuments.bir.fileName}
+                        previewUrl={uploadedDocuments.bir.previewUrl || existingDocuments.bir?.url || undefined}
+                        previewAlt="BIR Certificate of Registration preview"
                       />
                       {(uploadedDocuments.bir.file || existingDocuments.bir) && (
                         <p className="mt-2 text-sm text-green-600 font-semibold flex items-center">
@@ -1659,10 +1695,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                               return;
                             }
 
-                            setUploadedDocuments(prev => ({
-                              ...prev,
-                              valid_id: { file: file, fileName: file.name }
-                            }));
+                            updateUploadedDocument('valid_id', file);
                             Swal.fire({
                               icon: 'info',
                               title: 'File Attached',
@@ -1685,6 +1718,8 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                         }}
                         isUploaded={!!uploadedDocuments.valid_id.file || !!existingDocuments.valid_id}
                         fileName={uploadedDocuments.valid_id.fileName}
+                        previewUrl={uploadedDocuments.valid_id.previewUrl || existingDocuments.valid_id?.url || undefined}
+                        previewAlt="Valid ID of Owner preview"
                       />
                       {(uploadedDocuments.valid_id.file || existingDocuments.valid_id) && (
                         <p className="mt-2 text-sm text-green-600 font-semibold flex items-center">
@@ -1760,6 +1795,8 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                                 }}
                                 isUploaded={!!doc.file}
                                 fileName={doc.fileName}
+                                previewUrl={doc.previewUrl || undefined}
+                                previewAlt={`Supporting document ${index + 1} preview`}
                               />
                               {doc.file && (
                                 <p className="mt-2 text-sm text-green-600 font-semibold flex items-center">

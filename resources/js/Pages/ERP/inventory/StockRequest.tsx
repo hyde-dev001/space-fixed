@@ -392,7 +392,7 @@ export default function StockRequest() {
 		setIsLoading(true);
 		try {
 			const [requestsRes, itemsRes] = await Promise.all([
-				stockRequestApi.getAll({ per_page: 200 }),
+				stockRequestApi.getAllForInventory({ per_page: 200 }),
 				inventoryItemAPI.getAll({ per_page: 200 }),
 			]);
 			setRequests(requestsRes.data ?? []);

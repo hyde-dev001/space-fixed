@@ -202,7 +202,6 @@ type WarrantyReceiveAddressForm = {
   address_line: string;
   barangay: string;
   city: string;
-  region: string;
   postal_code: string;
 };
 
@@ -217,7 +216,6 @@ const EMPTY_WARRANTY_RECEIVE_ADDRESS: WarrantyReceiveAddressForm = {
   address_line: '',
   barangay: '',
   city: '',
-  region: '',
   postal_code: '',
 };
 
@@ -231,7 +229,6 @@ const extractAddressFromUnknown = (value: unknown): WarrantyReceiveAddressForm |
     address_line: String(source.address_line ?? '').trim(),
     barangay: String(source.barangay ?? '').trim(),
     city: String(source.city ?? '').trim(),
-    region: String(source.region ?? '').trim(),
     postal_code: String(source.postal_code ?? '').trim(),
   };
 
@@ -1584,7 +1581,6 @@ const MyRepairs: React.FC = () => {
       payload.append('receive_address_line', warrantyReceiveAddress.address_line.trim());
       payload.append('receive_barangay', warrantyReceiveAddress.barangay.trim());
       payload.append('receive_city', warrantyReceiveAddress.city.trim());
-      payload.append('receive_region', warrantyReceiveAddress.region.trim());
       payload.append('receive_postal_code', warrantyReceiveAddress.postal_code.trim());
     }
 
@@ -2245,10 +2241,6 @@ const MyRepairs: React.FC = () => {
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label for="return_region" class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Region/Province</label>
-                <input id="return_region" class="swal2-input myrepairs-swal-input" placeholder="Region or province" value="${escapeSwalText(fallbackAddress?.region)}" />
-              </div>
-              <div>
                 <label for="return_postal_code" class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Postal Code</label>
                 <input id="return_postal_code" class="swal2-input myrepairs-swal-input" placeholder="Postal code" value="${escapeSwalText(fallbackAddress?.postal_code)}" inputmode="numeric" pattern="[0-9]*" maxlength="10" />
               </div>
@@ -2271,7 +2263,7 @@ const MyRepairs: React.FC = () => {
           validationMessage: '!rounded-xl !bg-rose-50 !text-rose-700 !border !border-rose-200 !px-3 !py-2 !mt-3 !mx-0',
         },
         didOpen: () => {
-          ['return_address_line', 'return_barangay', 'return_city', 'return_region', 'return_postal_code'].forEach((id) => {
+          ['return_address_line', 'return_barangay', 'return_city', 'return_postal_code'].forEach((id) => {
             const el = document.getElementById(id) as HTMLInputElement | null;
             if (!el) return;
             el.classList.add('!m-0', '!w-full', '!h-11', '!rounded-xl', '!border', '!border-slate-200', '!bg-white', '!px-3', '!text-sm', '!text-slate-900', 'focus:!border-slate-400', 'focus:!ring-2', 'focus:!ring-slate-200');
@@ -2288,10 +2280,9 @@ const MyRepairs: React.FC = () => {
           const addressLine = (document.getElementById('return_address_line') as HTMLInputElement | null)?.value?.trim() ?? '';
           const barangay = (document.getElementById('return_barangay') as HTMLInputElement | null)?.value?.trim() ?? '';
           const city = (document.getElementById('return_city') as HTMLInputElement | null)?.value?.trim() ?? '';
-          const region = (document.getElementById('return_region') as HTMLInputElement | null)?.value?.trim() ?? '';
           const postalCode = (document.getElementById('return_postal_code') as HTMLInputElement | null)?.value?.trim() ?? '';
 
-          if (!addressLine || !barangay || !city || !region || !postalCode) {
+          if (!addressLine || !barangay || !city || !postalCode) {
             Swal.showValidationMessage('Please complete all delivery address fields.');
             return null;
           }
@@ -2305,7 +2296,6 @@ const MyRepairs: React.FC = () => {
             return_address_line: addressLine,
             return_barangay: barangay,
             return_city: city,
-            return_region: region,
             return_postal_code: postalCode,
           };
         },
@@ -4258,16 +4248,6 @@ const MyRepairs: React.FC = () => {
                             onChange={(e) => updateWarrantyReceiveAddressField('city', e.target.value)}
                             className="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-gray-400 focus:outline-none"
                             placeholder="City"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Region/Province</label>
-                          <input
-                            type="text"
-                            value={warrantyReceiveAddress.region}
-                            onChange={(e) => updateWarrantyReceiveAddressField('region', e.target.value)}
-                            className="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-gray-400 focus:outline-none"
-                            placeholder="Region or province"
                           />
                         </div>
                         <div>

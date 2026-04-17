@@ -17,7 +17,7 @@ import {
 } from '@/types/procurement';
 
 const BASE_URL = '/api/erp/procurement/stock-requests';
-const INVENTORY_BASE_URL = '/api/erp/inventory/request-material-approvals';
+const INVENTORY_STOCK_REQUEST_URL = '/api/erp/inventory/stock-requests';
 
 export const stockRequestApi = {
     /**
@@ -26,6 +26,17 @@ export const stockRequestApi = {
     async getAll(filters?: StockRequestFilters): Promise<PaginatedResponse<StockRequestApproval>> {
         const response: AxiosResponse<PaginatedResponse<StockRequestApproval>> = await axios.get(
             BASE_URL,
+            { params: filters }
+        );
+        return response.data;
+    },
+
+    /**
+     * Get all inventory stock requests with optional filters
+     */
+    async getAllForInventory(filters?: StockRequestFilters): Promise<PaginatedResponse<StockRequestApproval>> {
+        const response: AxiosResponse<PaginatedResponse<StockRequestApproval>> = await axios.get(
+            INVENTORY_STOCK_REQUEST_URL,
             { params: filters }
         );
         return response.data;
@@ -106,7 +117,7 @@ export const stockRequestApi = {
         requested_color?: string;
         notes?: string;
     }): Promise<StockRequestApproval> {
-        const response: AxiosResponse<ApiResponse<StockRequestApproval>> = await axios.post(INVENTORY_BASE_URL, data);
+        const response: AxiosResponse<ApiResponse<StockRequestApproval>> = await axios.post(INVENTORY_STOCK_REQUEST_URL, data);
         return (response.data as any).stock_request ?? response.data;
     },
 };

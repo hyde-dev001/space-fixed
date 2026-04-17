@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Head, router } from '@inertiajs/react';
 import Swal from '@/Pages/UserSide/Shared/UserModal';
 import Navigation from '../Shared/Navigation';
@@ -30,6 +30,7 @@ const escapeHtml = (value: string) => (
 
 export default function Register() {
   const [currentStep, setCurrentStep] = useState(1);
+  const [validIdPreview, setValidIdPreview] = useState('');
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -46,6 +47,14 @@ export default function Register() {
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
   const [isLoading, setIsLoading] = useState(false);
   const authInputClasses = 'h-12 rounded-xl !border-gray-200 !bg-[#f8fafc] !text-[13px] !text-gray-800 placeholder:!text-gray-400 shadow-none focus:!border-gray-300 focus:!ring-gray-200/70 dark:!border-gray-200 dark:!bg-[#f8fafc] dark:!text-gray-800 dark:placeholder:!text-gray-400 dark:focus:!border-gray-300 dark:focus:!ring-gray-200/70';
+
+  useEffect(() => {
+    return () => {
+      if (validIdPreview) {
+        URL.revokeObjectURL(validIdPreview);
+      }
+    };
+  }, [validIdPreview]);
 
   const getStepValidationErrors = (step: number): FormErrors => {
     const newErrors: FormErrors = {};
@@ -284,6 +293,12 @@ export default function Register() {
         ...prev,
         validId: file
       }));
+      setValidIdPreview((prevPreview) => {
+        if (prevPreview) {
+          URL.revokeObjectURL(prevPreview);
+        }
+        return URL.createObjectURL(file);
+      });
       
       // Show success notification
       Swal.fire({
@@ -693,6 +708,8 @@ export default function Register() {
                       }}
                       isUploaded={!!formData.validId}
                       fileName={formData.validId?.name}
+                      previewUrl={validIdPreview || undefined}
+                      previewAlt="Valid ID preview"
                     />
                     <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
                       <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-700">Why we ask for a valid ID</p>

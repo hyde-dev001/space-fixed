@@ -1004,37 +1004,91 @@ const UserAccessControl: React.FC = () => {
       return;
     }
 
-    setEmployees(employees.map(employee =>
-      employee.id === editingEmployee.id
-        ? {
-          ...employee,
-          name: `${employeeForm.firstName} ${employeeForm.lastName}`,
-          email: employeeForm.email,
-          role: employeeForm.department || employeeForm.role,
-        }
-        : employee
-    ));
+    const trimmedEmail = employeeForm.email.trim();
+    const normalizedPhone = employeeForm.phone.replace(/\D/g, '').slice(0, 11);
 
-    setEditingEmployee(null);
-    setEmployeeForm({
-      firstName: '',
-      lastName: '',
-      email: '',
-      phone: '',
-      address: '',
-      department: '',
-      hire_date: new Date().toISOString().split('T')[0],
-      role: '',
-      salary: '',
-    });
-    setIsEmployeeModalOpen(false);
+    setIsSubmittingEmployee(true);
+
     setTimeout(() => {
-      Swal.fire({
-        icon: 'success',
-        title: 'Success!',
-        text: 'Employee updated successfully!',
-        timer: 2000,
-        showConfirmButton: false
+      router.put(`/shop-owner/employees/${editingEmployee.id}`, {
+        name: `${employeeForm.firstName} ${employeeForm.lastName}`,
+        email: trimmedEmail,
+        phone: normalizedPhone,
+        address: employeeForm.address,
+        department: employeeForm.department || 'General',
+        position: employeeForm.position || '',
+        salary: parseFloat(employeeForm.salary) || 0,
+        hire_date: employeeForm.hire_date || new Date().toISOString().split('T')[0],
+        status: editingEmployee.status,
+      }, {
+        preserveScroll: true,
+        preserveState: true,
+        onSuccess: () => {
+          setEmployees(employees.map((employee) =>
+            employee.id === editingEmployee.id
+              ? {
+                ...employee,
+                name: `${employeeForm.firstName} ${employeeForm.lastName}`,
+                email: trimmedEmail,
+                phone: normalizedPhone,
+                address: employeeForm.address,
+                department: employeeForm.department || 'General',
+                role: employeeForm.department || employeeForm.role,
+                position: employeeForm.position || employee.position,
+                salary: parseFloat(employeeForm.salary) || 0,
+                hire_date: employeeForm.hire_date,
+              }
+              : employee
+          ));
+
+          setIsEmployeeModalOpen(false);
+          setEditingEmployee(null);
+          setEmployeeForm({
+            firstName: '',
+            lastName: '',
+            email: '',
+            phone: '',
+            address: '',
+            department: '',
+            hire_date: new Date().toISOString().split('T')[0],
+            role: '',
+            salary: '',
+          });
+
+          Swal.fire({
+            icon: 'success',
+            title: 'Success!',
+            text: 'Employee updated successfully!',
+            timer: 2000,
+            showConfirmButton: false
+          });
+        },
+        onError: (errors) => {
+          let errorMessage = 'Failed to update employee. Please try again.';
+
+          if (typeof errors === 'object' && errors !== null) {
+            const validationErrors = Object.values(errors).flat();
+            if (validationErrors.length > 0) {
+              errorMessage = validationErrors.join('<br>');
+            } else if (errors.message) {
+              errorMessage = errors.message;
+            } else if (errors.error) {
+              errorMessage = errors.error;
+            }
+          } else if (typeof errors === 'string') {
+            errorMessage = errors;
+          }
+
+          Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            html: errorMessage,
+            showConfirmButton: true
+          });
+        },
+        onFinish: () => {
+          setIsSubmittingEmployee(false);
+        }
       });
     }, 100);
   };
