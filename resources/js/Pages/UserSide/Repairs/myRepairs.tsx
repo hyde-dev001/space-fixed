@@ -54,6 +54,17 @@ const isAllowedRefundVideoFile = (file: File): boolean => {
 
 type RepairStatus = 'new_request' | 'assigned_to_repairer' | 'repairer_accepted' | 'waiting_customer_confirmation' | 'owner_approval_pending' | 'owner_approved' | 'owner_rejected' | 'in_progress' | 'awaiting_parts' | 'completed' | 'ready_for_pickup' | 'shipped' | 'picked_up' | 'pending' | 'received' | 'cancelled' | 'rejected' | 'repairer_rejected';
 type RepairTab = 'new_request' | 'repairer_accepted' | 'waiting_customer_confirmation' | 'owner_approval_pending' | 'in_progress' | 'completed' | 'ready_for_pickup' | 'picked_up' | 'pending' | 'received' | 'cancelled' | 'rejected' | 'return_refund';
+const REPAIR_TABS: RepairTab[] = [
+  'new_request',
+  'pending',
+  'received',
+  'in_progress',
+  'ready_for_pickup',
+  'picked_up',
+  'return_refund',
+  'cancelled',
+  'rejected',
+];
 
 type RepairOrder = {
   id: number;
@@ -212,6 +223,7 @@ const getMonthKey = (date: Date): string => {
 };
 
 const DELIVERY_METHOD_OVERRIDES_KEY = 'repair_delivery_method_overrides';
+const REPAIR_TAB_NOTIFICATION_STORAGE_KEY = 'my_repairs_seen_tab_item_ids_v1';
 const EMPTY_WARRANTY_RECEIVE_ADDRESS: WarrantyReceiveAddressForm = {
   address_line: '',
   barangay: '',
@@ -562,6 +574,7 @@ const MyRepairs: React.FC = () => {
   const [orders, setOrders] = useState<RepairOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTab, setSelectedTab] = useState<RepairTab>('new_request');
+  const [seenRepairIdsByTab, setSeenRepairIdsByTab] = useState<Partial<Record<RepairTab, number[]>>>({});
   const [highlightRepairId, setHighlightRepairId] = useState<number | null>(null);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelTargetOrderId, setCancelTargetOrderId] = useState<number | null>(null);
@@ -948,6 +961,44 @@ const MyRepairs: React.FC = () => {
 
     if (mappedTab) {
       setSelectedTab(mappedTab);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      const raw = localStorage.getItem(REPAIR_TAB_NOTIFICATION_STORAGE_KEY);
+      if (!raw) {
+        return;
+      }
+
+      const parsed = JSON.parse(raw) as Partial<Record<RepairTab, unknown>>;
+      if (!parsed || typeof parsed !== 'object') {
+        return;
+      }
+
+      const restored: Partial<Record<RepairTab, number[]>> = {};
+      REPAIR_TABS.forEach((tab) => {
+        const candidate = parsed[tab];
+        if (!Array.isArray(candidate)) {
+          return;
+        }
+
+        restored[tab] = Array.from(
+          new Set(
+            candidate
+              .map((entry) => Number(entry))
+              .filter((entry) => Number.isFinite(entry) && entry > 0)
+          )
+        ).sort((left, right) => left - right);
+      });
+
+      setSeenRepairIdsByTab(restored);
+    } catch (error) {
+      console.warn('Failed to restore repair tab notification state:', error);
     }
   }, []);
 
@@ -2507,34 +2558,97 @@ const MyRepairs: React.FC = () => {
     return `${totalDays} day${totalDays > 1 ? 's' : ''}`;
   };
 
-  // Count functions for repair statuses
-  const getCountByStatus = (status: RepairTab) => {
+  const normalizeRepairIdList = (ids: number[]): number[] => {
+    return Array.from(new Set(ids.filter((id) => Number.isFinite(id) && id > 0))).sort((left, right) => left - right);
+  };
+
+  const getRepairIdsByStatus = (status: RepairTab): number[] => {
     if (status === 'return_refund') {
-      return orders.filter((order) => isReturnRefundRepair(order)).length;
+      return orders.filter((order) => isReturnRefundRepair(order)).map((order) => order.id);
     }
     if (status === 'new_request') {
       // NEW REQUEST tab includes both new_request and assigned_to_repairer
-      return orders.filter(order => 
-        order.status === 'new_request' || order.status === 'assigned_to_repairer'
-      ).length;
+      return orders
+        .filter((order) => order.status === 'new_request' || order.status === 'assigned_to_repairer')
+        .map((order) => order.id);
     }
     if (status === 'pending') {
       // PENDING tab includes pending, repairer_accepted, waiting_customer_confirmation, and owner_approval_pending
-      return orders.filter(order => 
-        order.status === 'pending' || 
-        order.status === 'repairer_accepted' || 
-        order.status === 'waiting_customer_confirmation' ||
-        order.status === 'owner_approval_pending' ||
-        order.status === 'owner_approved'
-      ).length;
+      return orders
+        .filter((order) =>
+          order.status === 'pending'
+          || order.status === 'repairer_accepted'
+          || order.status === 'waiting_customer_confirmation'
+          || order.status === 'owner_approval_pending'
+          || order.status === 'owner_approved'
+        )
+        .map((order) => order.id);
     }
     if (status === 'ready_for_pickup') {
-      return orders.filter(order =>
-        order.status === 'ready_for_pickup' || order.status === 'shipped'
-      ).length;
+      return orders
+        .filter((order) => order.status === 'ready_for_pickup' || order.status === 'shipped')
+        .map((order) => order.id);
     }
-    return orders.filter(order => order.status === status).length;
+
+    return orders.filter((order) => order.status === status).map((order) => order.id);
   };
+
+  const repairIdsByStatus = useMemo(() => {
+    const next = {} as Record<RepairTab, number[]>;
+
+    REPAIR_TABS.forEach((status) => {
+      next[status] = normalizeRepairIdList(getRepairIdsByStatus(status));
+    });
+
+    return next;
+  }, [latestRefundByRepairId, orders]);
+
+  const getCountByStatus = (status: RepairTab) => repairIdsByStatus[status]?.length ?? 0;
+
+  const notificationCountByStatus = useMemo(() => {
+    const next = {} as Record<RepairTab, number>;
+
+    REPAIR_TABS.forEach((status) => {
+      const currentIds = repairIdsByStatus[status] ?? [];
+      const seenIds = new Set(seenRepairIdsByTab[status] ?? []);
+      next[status] = currentIds.filter((id) => !seenIds.has(id)).length;
+    });
+
+    return next;
+  }, [repairIdsByStatus, seenRepairIdsByTab]);
+
+  const getNotificationCountByStatus = (status: RepairTab) => notificationCountByStatus[status] ?? 0;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const currentIds = repairIdsByStatus[selectedTab] ?? [];
+
+    setSeenRepairIdsByTab((prev) => {
+      const existingIds = prev[selectedTab] ?? [];
+      const hasSameIds = existingIds.length === currentIds.length
+        && existingIds.every((id, index) => id === currentIds[index]);
+
+      if (hasSameIds) {
+        return prev;
+      }
+
+      const next = {
+        ...prev,
+        [selectedTab]: [...currentIds],
+      };
+
+      try {
+        localStorage.setItem(REPAIR_TAB_NOTIFICATION_STORAGE_KEY, JSON.stringify(next));
+      } catch (error) {
+        console.warn('Failed to persist repair tab notification state:', error);
+      }
+
+      return next;
+    });
+  }, [repairIdsByStatus, selectedTab]);
 
   const filteredOrders = orders.filter(order => {
     if (selectedTab === 'return_refund') {
@@ -2606,18 +2720,6 @@ const MyRepairs: React.FC = () => {
   const actionButtonDisabledClass = 'border-gray-300 bg-gray-200 text-gray-500 cursor-not-allowed';
   const mobileHeroFilterButtonBaseClass =
     'relative inline-flex min-w-[96px] shrink-0 flex-col items-center justify-center gap-1.5 overflow-visible rounded-2xl border pl-3 pr-5 py-3 text-[10px] font-semibold tracking-[0.01em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2';
-  const repairTabs: RepairTab[] = [
-    'new_request',
-    'pending',
-    'received',
-    'in_progress',
-    'ready_for_pickup',
-    'picked_up',
-    'return_refund',
-    'cancelled',
-    'rejected',
-  ];
-
   const getTabIcon = (tab: RepairTab) => {
     switch (tab) {
       case 'new_request':
@@ -2700,7 +2802,7 @@ const MyRepairs: React.FC = () => {
 
           {/* Mobile Tabs */}
           <div className="flex w-full gap-2 overflow-x-auto pb-3 pl-4 pr-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden xl:hidden">
-            {repairTabs.map((tab) => (
+            {REPAIR_TABS.map((tab) => (
               <button
                 key={tab}
                 onClick={() => setSelectedTab(tab)}
@@ -2712,7 +2814,7 @@ const MyRepairs: React.FC = () => {
               >
                 {getTabIcon(tab)}
                 <span className="leading-none">{getTabLabel(tab)}</span>
-                {getCountByStatus(tab) > 0 && <span className={tabBadgeClass}>{getCountByStatus(tab)}</span>}
+                {getNotificationCountByStatus(tab) > 0 && <span className={tabBadgeClass}>{getNotificationCountByStatus(tab)}</span>}
               </button>
             ))}
           </div>
@@ -2728,9 +2830,9 @@ const MyRepairs: React.FC = () => {
               }`}
             >
               NEW REQUEST
-              {getCountByStatus('new_request') > 0 && (
+              {getNotificationCountByStatus('new_request') > 0 && (
                 <span className={tabBadgeClass}>
-                  {getCountByStatus('new_request')}
+                  {getNotificationCountByStatus('new_request')}
                 </span>
               )}
             </button>
@@ -2743,9 +2845,9 @@ const MyRepairs: React.FC = () => {
               }`}
             >
               PENDING
-              {getCountByStatus('pending') > 0 && (
+              {getNotificationCountByStatus('pending') > 0 && (
                 <span className={tabBadgeClass}>
-                  {getCountByStatus('pending')}
+                  {getNotificationCountByStatus('pending')}
                 </span>
               )}
             </button>
@@ -2758,9 +2860,9 @@ const MyRepairs: React.FC = () => {
               }`}
             >
               RECEIVED
-              {getCountByStatus('received') > 0 && (
+              {getNotificationCountByStatus('received') > 0 && (
                 <span className={tabBadgeClass}>
-                  {getCountByStatus('received')}
+                  {getNotificationCountByStatus('received')}
                 </span>
               )}
             </button>
@@ -2773,9 +2875,9 @@ const MyRepairs: React.FC = () => {
               }`}
             >
               IN PROGRESS
-              {getCountByStatus('in_progress') > 0 && (
+              {getNotificationCountByStatus('in_progress') > 0 && (
                 <span className={tabBadgeClass}>
-                  {getCountByStatus('in_progress')}
+                  {getNotificationCountByStatus('in_progress')}
                 </span>
               )}
             </button>
@@ -2788,9 +2890,9 @@ const MyRepairs: React.FC = () => {
               }`}
             >
               READY FOR PICKUP
-              {getCountByStatus('ready_for_pickup') > 0 && (
+              {getNotificationCountByStatus('ready_for_pickup') > 0 && (
                 <span className={tabBadgeClass}>
-                  {getCountByStatus('ready_for_pickup')}
+                  {getNotificationCountByStatus('ready_for_pickup')}
                 </span>
               )}
             </button>
@@ -2803,9 +2905,9 @@ const MyRepairs: React.FC = () => {
               }`}
             >
               COMPLETED
-              {getCountByStatus('picked_up') > 0 && (
+              {getNotificationCountByStatus('picked_up') > 0 && (
                 <span className={tabBadgeClass}>
-                  {getCountByStatus('picked_up')}
+                  {getNotificationCountByStatus('picked_up')}
                 </span>
               )}
             </button>
@@ -2818,9 +2920,9 @@ const MyRepairs: React.FC = () => {
               }`}
             >
               RETURN/REFUND
-              {getCountByStatus('return_refund') > 0 && (
+              {getNotificationCountByStatus('return_refund') > 0 && (
                 <span className={tabBadgeClass}>
-                  {getCountByStatus('return_refund')}
+                  {getNotificationCountByStatus('return_refund')}
                 </span>
               )}
             </button>
@@ -2833,9 +2935,9 @@ const MyRepairs: React.FC = () => {
               }`}
             >
               CANCELLED
-              {getCountByStatus('cancelled') > 0 && (
+              {getNotificationCountByStatus('cancelled') > 0 && (
                 <span className={tabBadgeClass}>
-                  {getCountByStatus('cancelled')}
+                  {getNotificationCountByStatus('cancelled')}
                 </span>
               )}
             </button>
@@ -2848,9 +2950,9 @@ const MyRepairs: React.FC = () => {
               }`}
             >
               REJECTED
-              {getCountByStatus('rejected') > 0 && (
+              {getNotificationCountByStatus('rejected') > 0 && (
                 <span className={tabBadgeClass}>
-                  {getCountByStatus('rejected')}
+                  {getNotificationCountByStatus('rejected')}
                 </span>
               )}
             </button>

@@ -48,4 +48,30 @@ class ShopPolicySettingsTest extends TestCase
             'version_number' => 1,
         ]);
     }
+
+    public function test_shop_owner_with_legacy_combined_business_type_can_save_policy_draft(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'both (retail & repair)',
+            'registration_type' => 'individual',
+        ]);
+
+        $this->actingAs($shopOwner, 'shop_owner')
+            ->putJson('/shop-owner/settings/policies/draft', [
+                'policy_sections_json' => [
+                    'refund_payment_terms' => 'Draft refund terms',
+                    'repair_service_terms' => 'Draft repair terms',
+                    'retail_terms' => 'Draft retail terms',
+                ],
+            ])
+            ->assertOk()
+            ->assertJsonPath('success', true);
+
+        $this->assertDatabaseHas('shop_policy_versions', [
+            'shop_owner_id' => $shopOwner->id,
+            'status' => 'draft',
+            'version_number' => 1,
+            'business_type_scope' => 'both',
+        ]);
+    }
 }

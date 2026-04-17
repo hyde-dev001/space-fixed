@@ -1479,7 +1479,7 @@ export default function ProductManagement() {
         colorVariantUploadResult = await uploadColorVariantImages(createdProductId);
       }
 
-      if (createdProductId && editingProduct && !isStaffDetailOnlyEdit && removedShowroomFrameKeys.length > 0) {
+      if (createdProductId && editingProduct && removedShowroomFrameKeys.length > 0) {
         const framesToDelete = existingShowroomFrames.filter((frame) =>
           removedShowroomFrameKeys.includes(getShowroomFrameKey(frame))
         );
@@ -1510,18 +1510,23 @@ export default function ProductManagement() {
         }
       }
 
-      if (createdProductId && !isStaffDetailOnlyEdit && show3DShoeModels && product3DFiles.length > 0) {
+      if (createdProductId && show3DShoeModels && product3DFiles.length > 0) {
         if (!canUse360Uploader) {
           throw new Error('Shoe Spin Viewer uploads are currently unavailable.');
         }
 
-        if (!colorVariantUploadResult?.firstColorVariantId) {
+        const fallbackColorVariantId = Number(
+          colorVariants.find((variant) => Number(variant.id) > 0)?.id ?? 0
+        );
+        const targetColorVariantId = colorVariantUploadResult?.firstColorVariantId ?? (fallbackColorVariantId > 0 ? fallbackColorVariantId : null);
+
+        if (!targetColorVariantId) {
           throw new Error('Please add at least one color variant before uploading Shoe Spin Viewer frames.');
         }
 
         await uploadShowroom360Images(
           createdProductId,
-          colorVariantUploadResult.firstColorVariantId,
+          targetColorVariantId,
         );
       }
 
@@ -1954,7 +1959,7 @@ export default function ProductManagement() {
                 )}
               </div>
 
-              {!isStaffDetailOnlyEdit && show3DShoeModels && (canUse360Uploader || hasExistingShowroomFrames) && (
+              {show3DShoeModels && (canUse360Uploader || hasExistingShowroomFrames) && (
                 <div className="order-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
                   <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 p-4">
                     <div className="flex items-center justify-between gap-3 mb-2">

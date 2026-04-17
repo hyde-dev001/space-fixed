@@ -54,6 +54,22 @@ type NavigationProps = {
   mobileMenuTriggerIcon?: 'people' | 'hamburger';
 };
 
+type HeaderSeenCounts = {
+  orderSeenCount: number;
+  repairSeenCount: number;
+};
+
+const HEADER_SEEN_COUNTS_STORAGE_KEY = 'customer_header_seen_counts_v1';
+
+const toSafeCount = (value: unknown): number => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return 0;
+  }
+
+  return Math.floor(parsed);
+};
+
 const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people' }) => {
   const { cartCount, isLoading: cartLoading } = useCart();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -97,15 +113,68 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
   const repairStatusCount = isAuthenticated 
     ? liveBadgeCounts.repairStatusCount 
     : initialRepairStatusCount;
-  const userIconCount = isAuthenticated 
-    ? liveBadgeCounts.userIconCount 
-    : initialUserIconCount;
   const chatIconCount = isAuthenticated 
     ? liveBadgeCounts.chatIconCount 
     : initialChatIconCount;
   const cartIconCount = Number((page.props as any)?.cartIconCount ?? 0);
+  const [seenHeaderCounts, setSeenHeaderCounts] = useState<HeaderSeenCounts>({
+    orderSeenCount: 0,
+    repairSeenCount: 0,
+  });
   
   const effectiveCartCount = isAuthenticated ? cartIconCount : (cartLoading ? 0 : cartCount);
+
+  const persistSeenHeaderCounts = (next: HeaderSeenCounts) => {
+    try {
+      localStorage.setItem(HEADER_SEEN_COUNTS_STORAGE_KEY, JSON.stringify(next));
+    } catch (error) {
+      console.warn('Failed to persist header seen counts:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      const raw = localStorage.getItem(HEADER_SEEN_COUNTS_STORAGE_KEY);
+      if (!raw) {
+        return;
+      }
+
+      const parsed = JSON.parse(raw) as Partial<HeaderSeenCounts>;
+      setSeenHeaderCounts({
+        orderSeenCount: toSafeCount(parsed?.orderSeenCount),
+        repairSeenCount: toSafeCount(parsed?.repairSeenCount),
+      });
+    } catch (error) {
+      console.warn('Failed to restore header seen counts:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
+
+    setSeenHeaderCounts((prev) => {
+      const clampedOrderSeen = Math.min(prev.orderSeenCount, orderStatusCount);
+      const clampedRepairSeen = Math.min(prev.repairSeenCount, repairStatusCount);
+
+      if (clampedOrderSeen === prev.orderSeenCount && clampedRepairSeen === prev.repairSeenCount) {
+        return prev;
+      }
+
+      const next = {
+        orderSeenCount: clampedOrderSeen,
+        repairSeenCount: clampedRepairSeen,
+      };
+
+      persistSeenHeaderCounts(next);
+      return next;
+    });
+  }, [isAuthenticated, orderStatusCount, repairStatusCount]);
 
   // Shoe categories for dropdown
   const shoeCategories = [
@@ -310,6 +379,37 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
   const isMyOrdersActive = cleanUrl.startsWith('/my-orders');
   const isMyRepairsActive = cleanUrl.startsWith('/my-repairs');
   const isMyProfileActive = cleanUrl.startsWith('/customer-profile');
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
+
+    const viewingOrders = cleanUrl.startsWith('/my-orders');
+    const viewingRepairs = cleanUrl.startsWith('/my-repairs');
+
+    if (!viewingOrders && !viewingRepairs) {
+      return;
+    }
+
+    setSeenHeaderCounts((prev) => {
+      const next = {
+        orderSeenCount: viewingOrders ? orderStatusCount : prev.orderSeenCount,
+        repairSeenCount: viewingRepairs ? repairStatusCount : prev.repairSeenCount,
+      };
+
+      if (next.orderSeenCount === prev.orderSeenCount && next.repairSeenCount === prev.repairSeenCount) {
+        return prev;
+      }
+
+      persistSeenHeaderCounts(next);
+      return next;
+    });
+  }, [cleanUrl, isAuthenticated, orderStatusCount, repairStatusCount]);
+
+  const visibleOrderStatusCount = Math.max(0, orderStatusCount - seenHeaderCounts.orderSeenCount);
+  const visibleRepairStatusCount = Math.max(0, repairStatusCount - seenHeaderCounts.repairSeenCount);
+  const visibleUserIconCount = Math.max(0, visibleOrderStatusCount + visibleRepairStatusCount);
 
   // Function to update underline position
   const updateUnderlinePosition = (index: number) => {
@@ -561,9 +661,9 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                 )}
               </svg>
-              {mobileMenuTriggerIcon === 'people' && isAuthenticated && userIconCount > 0 && (
+              {mobileMenuTriggerIcon === 'people' && isAuthenticated && visibleUserIconCount > 0 && (
                 <span className="absolute top-0 right-0 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white transform translate-x-1/2 -translate-y-1/2 bg-red-500 rounded-full">
-                  {userIconCount}
+                  {visibleUserIconCount}
                 </span>
               )}
             </button>
@@ -973,9 +1073,9 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                 <svg className={headerIconSvgClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                 </svg>
-                {isAuthenticated && userIconCount > 0 && (
+                {isAuthenticated && visibleUserIconCount > 0 && (
                   <span className="absolute top-0 right-0 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white transform translate-x-1/2 -translate-y-1/2 bg-red-500 rounded-full">
-                    {userIconCount}
+                    {visibleUserIconCount}
                   </span>
                 )}
               </button>
@@ -1011,7 +1111,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                           </svg>
                           <span>Orders</span>
                         </span>
-                        {orderStatusCount > 0 && <span className="text-xs font-semibold leading-none text-gray-600">{orderStatusCount}</span>}
+                        {visibleOrderStatusCount > 0 && <span className="text-xs font-semibold leading-none text-gray-600">{visibleOrderStatusCount}</span>}
                       </Link>
                       <Link
                         href="/my-repairs"
@@ -1025,7 +1125,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                           </svg>
                           <span>Repair</span>
                         </span>
-                        {repairStatusCount > 0 && <span className="text-xs font-semibold leading-none text-gray-600">{repairStatusCount}</span>}
+                        {visibleRepairStatusCount > 0 && <span className="text-xs font-semibold leading-none text-gray-600">{visibleRepairStatusCount}</span>}
                       </Link>
                       <Link
                         href="/customer-profile"

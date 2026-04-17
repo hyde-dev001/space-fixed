@@ -159,7 +159,7 @@ const productManagementItems: NavItem[] = [
         <path d="M11 15l1.5 1.5" />
       </svg>
     ),
-    name: "Product Uploder",
+    name: "Product Management",
     route: "shop-owner.product-uploder",
     path: "/shop-owner/product-uploder",
   },
@@ -182,7 +182,7 @@ const productManagementItems: NavItem[] = [
         <path d="M15 13l-3-3m0 0l-3 3m3-3v12"></path>
       </svg>
     ),
-    name: "Services Uploder",
+    name: "Services Management",
     route: "shop-owner.upload-services",
     path: "/shop-owner/upload-services",
   },

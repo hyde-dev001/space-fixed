@@ -362,7 +362,10 @@ class RepairPosController extends Controller
 
         $isIndividualShopActor = $isShopActor && $this->isIndividualShopOwner($actorShopOwnerId);
 
-        if ($isShopActor && !$isIndividualShopActor && (bool) ($warrantyClaimData['warranty_claim_locked'] ?? false)) {
+        $latestWarrantyClaimStatus = strtolower(trim((string) ($warrantyClaimData['latest_warranty_claim_status'] ?? '')));
+        $hasActiveWarrantyClaim = $latestWarrantyClaimStatus === RepairWarrantyClaim::STATUS_PENDING_REPAIRER;
+
+        if ($isShopActor && !$isIndividualShopActor && $hasActiveWarrantyClaim) {
             return response()->json([
                 'success' => false,
                 'message' => 'Refund cannot be requested while a warranty claim is active for this repair.',

@@ -1,5 +1,6 @@
 import { Head } from '@inertiajs/react';
 import { useEffect, useMemo, useState } from 'react';
+import type { ComponentType } from 'react';
 import axios from 'axios';
 import Swal from 'sweetalert2';
 import AppLayoutShopOwner from '../../../../layout/AppLayout_shopOwner';
@@ -18,7 +19,6 @@ type MaterialItem = {
 
 type MaterialForm = {
   name: string;
-  sku: string;
   quantity: string;
   unit: string;
   notes: string;
@@ -26,7 +26,6 @@ type MaterialForm = {
 
 const defaultForm: MaterialForm = {
   name: '',
-  sku: '',
   quantity: '',
   unit: 'pcs',
   notes: '',
@@ -77,6 +76,110 @@ const ArchiveRestoreIcon = ({ className }: { className?: string }) => (
     />
   </svg>
 );
+
+const MaterialsIcon = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M4 7l8-4 8 4-8 4-8-4zm0 5l8 4 8-4m-16 5l8 4 8-4"
+    />
+  </svg>
+);
+
+const QuantityIcon = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M7 20h10M12 4v12m0 0l4-4m-4 4l-4-4"
+    />
+  </svg>
+);
+
+const LowStockIcon = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M12 9v4m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-3L13.73 4c-.77-1.33-2.69-1.33-3.46 0L3.34 16c-.77 1.33.19 3 1.73 3z"
+    />
+  </svg>
+);
+
+const ArrowUpIcon = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+  </svg>
+);
+
+const ArrowDownIcon = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+  </svg>
+);
+
+type MetricTone = 'blue' | 'indigo' | 'amber';
+type ChangeType = 'increase' | 'decrease';
+
+type MetricCardProps = {
+  title: string;
+  value: number | string;
+  change?: number;
+  changeType?: ChangeType;
+  description?: string;
+  icon: ComponentType<{ className?: string }>;
+  tone: MetricTone;
+};
+
+const metricToneStyles: Record<MetricTone, { gradient: string }> = {
+  blue: {
+    gradient: 'from-blue-500 to-indigo-600',
+  },
+  indigo: {
+    gradient: 'from-indigo-500 to-violet-600',
+  },
+  amber: {
+    gradient: 'from-yellow-500 to-orange-600',
+  },
+};
+
+const MetricCard = ({ title, value, change, changeType, description, icon: Icon, tone }: MetricCardProps) => {
+  const palette = metricToneStyles[tone];
+
+  return (
+    <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:-translate-y-1 hover:border-gray-300 hover:shadow-xl dark:border-gray-800 dark:bg-white/3 dark:hover:border-gray-700">
+      <div className={`absolute inset-0 bg-linear-to-br ${palette.gradient} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
+      <div className="relative">
+        <div className="mb-4 flex items-center justify-between">
+          <div className={`flex h-14 w-14 items-center justify-center rounded-2xl bg-linear-to-br ${palette.gradient} shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
+            <Icon className="size-7 text-white drop-shadow-sm" />
+          </div>
+          {change !== undefined && (
+            <div
+              className={`flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold transition-all duration-300 ${
+                changeType === 'decrease'
+                  ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                  : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+              }`}
+            >
+              {changeType === 'decrease' ? <ArrowDownIcon className="size-3" /> : <ArrowUpIcon className="size-3" />}
+              {Math.abs(change)}%
+            </div>
+          )}
+        </div>
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{title}</p>
+          <h3 className="text-3xl font-bold text-gray-900 transition-colors duration-300 dark:text-white">{value}</h3>
+          {description && <p className="text-xs text-gray-500 dark:text-gray-400">{description}</p>}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export default function UploadStockMaterial() {
   const [materials, setMaterials] = useState<MaterialItem[]>([]);
@@ -149,7 +252,6 @@ export default function UploadStockMaterial() {
     setEditing(item);
     setForm({
       name: item.name,
-      sku: item.sku,
       quantity: String(item.available_quantity),
       unit: item.unit || 'pcs',
       notes: item.notes ?? '',
@@ -162,7 +264,7 @@ export default function UploadStockMaterial() {
 
     return {
       name: form.name.trim(),
-      sku: form.sku.trim() || null,
+      sku: editing?.sku?.trim() || null,
       category: 'repair_materials',
       available_quantity: quantity,
       unit: form.unit.trim() || 'pcs',
@@ -324,7 +426,7 @@ export default function UploadStockMaterial() {
               <button
                 type="button"
                 onClick={openCreateModal}
-                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-6 py-3 font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
               >
                 Add Material
               </button>
@@ -333,18 +435,33 @@ export default function UploadStockMaterial() {
         </div>
 
         <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-          <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg dark:border-gray-800 dark:bg-white/3">
-            <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Materials</p>
-            <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{metrics.totalItems}</p>
-          </div>
-          <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg dark:border-gray-800 dark:bg-white/3">
-            <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Quantity</p>
-            <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{metrics.totalQuantity.toLocaleString()}</p>
-          </div>
-          <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg dark:border-gray-800 dark:bg-white/3">
-            <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Low Stock Items</p>
-            <p className="mt-2 text-3xl font-bold text-amber-600 dark:text-amber-400">{metrics.lowStockCount}</p>
-          </div>
+          <MetricCard
+            title="Total Materials"
+            value={metrics.totalItems}
+            change={12}
+            changeType="increase"
+            description={showArchived ? 'Archived materials in view' : 'Active materials in inventory'}
+            icon={MaterialsIcon}
+            tone="blue"
+          />
+          <MetricCard
+            title="Total Quantity"
+            value={metrics.totalQuantity.toLocaleString()}
+            change={8}
+            changeType="increase"
+            description="Combined quantity across listed materials"
+            icon={QuantityIcon}
+            tone="indigo"
+          />
+          <MetricCard
+            title="Low Stock Items"
+            value={metrics.lowStockCount}
+            change={15}
+            changeType="increase"
+            description="Items at or below reorder level"
+            icon={LowStockIcon}
+            tone="amber"
+          />
         </div>
 
         <div className="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/3">
@@ -455,18 +572,6 @@ export default function UploadStockMaterial() {
                   title="Material Name"
                   value={form.name}
                   onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 outline-none ring-blue-500 transition focus:ring-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="material-sku" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">SKU (optional)</label>
-                <input
-                  id="material-sku"
-                  type="text"
-                  title="SKU"
-                  value={form.sku}
-                  onChange={(event) => setForm((prev) => ({ ...prev, sku: event.target.value }))}
                   className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 outline-none ring-blue-500 transition focus:ring-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                 />
               </div>

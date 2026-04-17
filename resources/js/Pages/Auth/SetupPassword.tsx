@@ -27,72 +27,72 @@ export default function SetupPassword({ email, token, shopOwner }: SetupPassword
         post(route('shop-owner.password.setup.store'));
     };
 
-    const getPasswordStrength = (password: string) => {
-        if (!password) return { strength: 0, label: '', color: '' };
-        
-        let strength = 0;
-        if (password.length >= 8) strength++;
-        if (password.length >= 12) strength++;
-        if (/[a-z]/.test(password) && /[A-Z]/.test(password)) strength++;
-        if (/[0-9]/.test(password)) strength++;
-        if (/[^a-zA-Z0-9]/.test(password)) strength++;
-
-        if (strength <= 2) return { strength, label: 'Weak', color: 'bg-red-500' };
-        if (strength <= 3) return { strength, label: 'Fair', color: 'bg-yellow-500' };
-        if (strength <= 4) return { strength, label: 'Good', color: 'bg-blue-500' };
-        return { strength, label: 'Strong', color: 'bg-green-500' };
-    };
-
-    const passwordStrength = getPasswordStrength(data.password);
+    const passwordRequirements = [
+        { met: data.password.length >= 8, text: 'At least 8 characters' },
+        { met: /[A-Z]/.test(data.password) && /[a-z]/.test(data.password), text: 'Mixed case letters (A-z)' },
+        { met: /[0-9]/.test(data.password), text: 'At least one number (0-9)' },
+        { met: /[^a-zA-Z0-9]/.test(data.password), text: 'At least one symbol (!@#$%^&*)' },
+    ];
 
     return (
         <>
             <Head title="Set Up Your Password" />
-            <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
+            <style>{`
+                .password-input::-ms-reveal,
+                .password-input::-ms-clear {
+                    display: none;
+                }
+
+                .password-input::-webkit-credentials-auto-fill-button,
+                .password-input::-webkit-textfield-decoration-container {
+                    visibility: hidden;
+                    pointer-events: none;
+                    position: absolute;
+                    right: 0;
+                }
+            `}</style>
+
+            <div className="min-h-screen bg-white">
                 <Navigation />
-                
-                <div className="max-w-md mx-auto px-4 py-24">
-                    <div className="bg-white rounded-2xl shadow-xl p-8 border border-gray-200">
-                        {/* Icon */}
-                        <div className="flex justify-center mb-6">
-                            <div className="w-20 h-20 bg-gradient-to-br from-green-500 to-green-600 rounded-full flex items-center justify-center shadow-lg">
-                                <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+
+                <div className="relative overflow-hidden px-4 py-14 sm:py-20">
+                    <div className="pointer-events-none absolute inset-0">
+                        <div className="absolute -top-28 -left-24 h-80 w-80 rounded-full bg-gray-100 blur-3xl" />
+                        <div className="absolute -bottom-28 -right-24 h-96 w-96 rounded-full bg-gray-100 blur-3xl" />
+                    </div>
+
+                    <div className="relative max-w-md mx-auto rounded-3xl border border-gray-200 bg-white shadow-2xl p-8">
+                        <div className="text-center mb-8">
+                            <div className="w-16 h-16 bg-black rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
+                                <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                                 </svg>
                             </div>
+
+                            <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                                Welcome, {shopOwner.first_name}!
+                            </h1>
+                            <p className="text-gray-600">Set up your password for</p>
+                            <p className="font-semibold text-black mt-1">{shopOwner.business_name}</p>
                         </div>
 
-                        {/* Title */}
-                        <h1 className="text-3xl font-bold text-gray-900 text-center mb-2">
-                            Welcome, {shopOwner.first_name}!
-                        </h1>
-                        <p className="text-gray-600 text-center mb-2">
-                            Set up your password for
-                        </p>
-                        <p className="text-blue-600 font-semibold text-center mb-8">
-                            {shopOwner.business_name}
-                        </p>
-
-                        {/* Success Message */}
-                        <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
+                        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-6">
                             <div className="flex items-start">
-                                <svg className="w-5 h-5 text-green-600 mt-0.5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                <svg className="w-5 h-5 text-black mt-0.5 mr-2" fill="currentColor" viewBox="0 0 20 20">
                                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                                 </svg>
                                 <div>
-                                    <p className="text-sm font-medium text-green-800">
+                                    <p className="text-sm font-semibold text-black">
                                         Your application has been approved!
                                     </p>
-                                    <p className="text-sm text-green-700 mt-1">
+                                    <p className="text-sm text-gray-700 mt-1">
                                         Create a strong password to access your shop dashboard.
                                     </p>
                                 </div>
                             </div>
                         </div>
 
-                        {/* Form */}
                         <form onSubmit={submit} className="space-y-6">
-                            {/* Password Field */}
                             <div>
                                 <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
                                     Password
@@ -103,16 +103,18 @@ export default function SetupPassword({ email, token, shopOwner }: SetupPassword
                                         type={showPassword ? 'text' : 'password'}
                                         value={data.password}
                                         onChange={(e) => setData('password', e.target.value)}
-                                        className={`w-full px-4 py-3 pr-12 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                                            errors.password ? 'border-red-500' : 'border-gray-300'
+                                        className={`password-input w-full px-4 py-3 pr-12 border rounded-lg appearance-none focus:ring-2 focus:ring-black focus:border-black ${
+                                            errors.password ? 'border-black' : 'border-gray-300'
                                         }`}
                                         placeholder="Enter your password"
+                                        autoComplete="new-password"
                                         required
                                     />
                                     <button
                                         type="button"
                                         onClick={() => setShowPassword(!showPassword)}
-                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-black"
+                                        aria-label={showPassword ? 'Hide password' : 'Show password'}
                                     >
                                         {showPassword ? (
                                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -127,34 +129,10 @@ export default function SetupPassword({ email, token, shopOwner }: SetupPassword
                                     </button>
                                 </div>
                                 {errors.password && (
-                                    <p className="mt-1 text-sm text-red-600">{errors.password}</p>
-                                )}
-
-                                {/* Password Strength Indicator */}
-                                {data.password && (
-                                    <div className="mt-2">
-                                        <div className="flex items-center justify-between text-xs mb-1">
-                                            <span className="text-gray-600">Password Strength:</span>
-                                            <span className={`font-semibold ${
-                                                passwordStrength.strength <= 2 ? 'text-red-600' :
-                                                passwordStrength.strength <= 3 ? 'text-yellow-600' :
-                                                passwordStrength.strength <= 4 ? 'text-blue-600' :
-                                                'text-green-600'
-                                            }`}>
-                                                {passwordStrength.label}
-                                            </span>
-                                        </div>
-                                        <div className="w-full bg-gray-200 rounded-full h-2">
-                                            <div
-                                                className={`h-2 rounded-full transition-all duration-300 ${passwordStrength.color}`}
-                                                style={{ width: `${(passwordStrength.strength / 5) * 100}%` }}
-                                            ></div>
-                                        </div>
-                                    </div>
+                                    <p className="mt-1 text-sm text-black">{errors.password}</p>
                                 )}
                             </div>
 
-                            {/* Confirm Password Field */}
                             <div>
                                 <label htmlFor="password_confirmation" className="block text-sm font-medium text-gray-700 mb-2">
                                     Confirm Password
@@ -165,16 +143,18 @@ export default function SetupPassword({ email, token, shopOwner }: SetupPassword
                                         type={showConfirmPassword ? 'text' : 'password'}
                                         value={data.password_confirmation}
                                         onChange={(e) => setData('password_confirmation', e.target.value)}
-                                        className={`w-full px-4 py-3 pr-12 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                                            errors.password_confirmation ? 'border-red-500' : 'border-gray-300'
+                                        className={`password-input w-full px-4 py-3 pr-12 border rounded-lg appearance-none focus:ring-2 focus:ring-black focus:border-black ${
+                                            errors.password_confirmation ? 'border-black' : 'border-gray-300'
                                         }`}
                                         placeholder="Confirm your password"
+                                        autoComplete="new-password"
                                         required
                                     />
                                     <button
                                         type="button"
                                         onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-black"
+                                        aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
                                     >
                                         {showConfirmPassword ? (
                                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -189,46 +169,29 @@ export default function SetupPassword({ email, token, shopOwner }: SetupPassword
                                     </button>
                                 </div>
                                 {errors.password_confirmation && (
-                                    <p className="mt-1 text-sm text-red-600">{errors.password_confirmation}</p>
+                                    <p className="mt-1 text-sm text-black">{errors.password_confirmation}</p>
                                 )}
                             </div>
 
-                            {/* Password Requirements */}
-                            <div className="bg-gray-50 rounded-lg p-4">
+                            <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
                                 <p className="text-xs font-semibold text-gray-700 mb-2">Password must contain:</p>
-                                <ul className="text-xs text-gray-600 space-y-1">
-                                    <li className="flex items-center">
-                                        <span className={data.password.length >= 8 ? 'text-green-600' : 'text-gray-400'}>
-                                            {data.password.length >= 8 ? '✓' : '○'}
-                                        </span>
-                                        <span className="ml-2">At least 8 characters</span>
-                                    </li>
-                                    <li className="flex items-center">
-                                        <span className={/[A-Z]/.test(data.password) && /[a-z]/.test(data.password) ? 'text-green-600' : 'text-gray-400'}>
-                                            {/[A-Z]/.test(data.password) && /[a-z]/.test(data.password) ? '✓' : '○'}
-                                        </span>
-                                        <span className="ml-2">Mixed case letters (A-z)</span>
-                                    </li>
-                                    <li className="flex items-center">
-                                        <span className={/[0-9]/.test(data.password) ? 'text-green-600' : 'text-gray-400'}>
-                                            {/[0-9]/.test(data.password) ? '✓' : '○'}
-                                        </span>
-                                        <span className="ml-2">At least one number (0-9)</span>
-                                    </li>
-                                    <li className="flex items-center">
-                                        <span className={/[^a-zA-Z0-9]/.test(data.password) ? 'text-green-600' : 'text-gray-400'}>
-                                            {/[^a-zA-Z0-9]/.test(data.password) ? '✓' : '○'}
-                                        </span>
-                                        <span className="ml-2">At least one symbol (!@#$%^&*)</span>
-                                    </li>
+                                <ul className="space-y-1">
+                                    {passwordRequirements.map((requirement, index) => (
+                                        <li
+                                            key={index}
+                                            className={`text-xs flex items-center ${requirement.met ? 'text-black' : 'text-gray-500'}`}
+                                        >
+                                            <span className="mr-2">{requirement.met ? '●' : '○'}</span>
+                                            {requirement.text}
+                                        </li>
+                                    ))}
                                 </ul>
                             </div>
 
-                            {/* Submit Button */}
                             <button
                                 type="submit"
                                 disabled={processing}
-                                className="w-full bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold py-3 px-6 rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg transform hover:-translate-y-0.5"
+                                className="w-full bg-black hover:bg-gray-900 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {processing ? (
                                     <span className="flex items-center justify-center">

@@ -17,7 +17,7 @@ const STAFF_STATIC_NOTIFICATIONS: Notification[] = Array.isArray(staffStaticNoti
 			{
 				id: 980002,
 				type: 'staff_product_uploader',
-				title: 'Product Uploader',
+				title: 'Product Management',
 				message: 'Upload and update product listings for the shop.',
 				data: { profile_icon: 'product_uploader' },
 				action_url: '/erp/staff/products',

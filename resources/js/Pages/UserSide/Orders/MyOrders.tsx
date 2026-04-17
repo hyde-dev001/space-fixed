@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import Swal from '../Shared/UserModal';
@@ -131,12 +131,15 @@ interface MyOrdersProps {
 }
 
 type OrderTab = 'all' | 'pending' | 'processing' | 'shipped' | 'completed' | 'return_refund';
+const ORDER_TAB_NOTIFICATION_STORAGE_KEY = 'my_orders_seen_tab_item_ids_v1';
+const ORDER_TABS: OrderTab[] = ['all', 'pending', 'processing', 'shipped', 'completed', 'return_refund'];
 
 const MyOrders: React.FC = () => {
   const page = usePage();
   const initialOrders = ((page.props as any).orders ?? []) as Order[];
   const [orders, setOrders] = useState<Order[]>(initialOrders || []);
   const [selectedTab, setSelectedTab] = useState<OrderTab>('all');
+  const [seenOrderIdsByTab, setSeenOrderIdsByTab] = useState<Partial<Record<OrderTab, number[]>>>({});
   const [highlightOrderId, setHighlightOrderId] = useState<number | null>(null);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelTargetOrderId, setCancelTargetOrderId] = useState<number | null>(null);
@@ -249,6 +252,44 @@ const MyOrders: React.FC = () => {
 
     if (mappedTab) {
       setSelectedTab(mappedTab);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      const raw = localStorage.getItem(ORDER_TAB_NOTIFICATION_STORAGE_KEY);
+      if (!raw) {
+        return;
+      }
+
+      const parsed = JSON.parse(raw) as Partial<Record<OrderTab, unknown>>;
+      if (!parsed || typeof parsed !== 'object') {
+        return;
+      }
+
+      const restored: Partial<Record<OrderTab, number[]>> = {};
+      ORDER_TABS.forEach((tab) => {
+        const candidate = parsed[tab];
+        if (!Array.isArray(candidate)) {
+          return;
+        }
+
+        restored[tab] = Array.from(
+          new Set(
+            candidate
+              .map((entry) => Number(entry))
+              .filter((entry) => Number.isFinite(entry) && entry > 0)
+          )
+        ).sort((left, right) => left - right);
+      });
+
+      setSeenOrderIdsByTab(restored);
+    } catch (error) {
+      console.warn('Failed to restore order tab notification state:', error);
     }
   }, []);
 
@@ -535,14 +576,85 @@ const MyOrders: React.FC = () => {
     }
   };
 
-  // Count functions for order statuses
-  const getCountByStatus = (status: OrderTab) => {
-    if (status === 'all') return orders.length;
-    if (status === 'return_refund') return orders.filter(isReturnRefundOrder).length;
-    if (status === 'shipped') return orders.filter(o => !isReturnRefundOrder(o) && (o.status === 'shipped' || o.status === 'to_ship')).length;
-    if (status === 'completed') return orders.filter(o => !isReturnRefundOrder(o) && (o.status === 'completed' || o.status === 'delivered')).length;
-    return orders.filter(o => !isReturnRefundOrder(o) && o.status === status).length;
+  const normalizeOrderIdList = (ids: number[]): number[] => {
+    return Array.from(new Set(ids.filter((id) => Number.isFinite(id) && id > 0))).sort((left, right) => left - right);
   };
+
+  const getOrderIdsByStatus = (status: OrderTab): number[] => {
+    if (status === 'all') return orders.map((order) => order.id);
+    if (status === 'return_refund') return orders.filter(isReturnRefundOrder).map((order) => order.id);
+    if (status === 'shipped') {
+      return orders
+        .filter((order) => !isReturnRefundOrder(order) && (order.status === 'shipped' || order.status === 'to_ship'))
+        .map((order) => order.id);
+    }
+    if (status === 'completed') {
+      return orders
+        .filter((order) => !isReturnRefundOrder(order) && (order.status === 'completed' || order.status === 'delivered'))
+        .map((order) => order.id);
+    }
+
+    return orders
+      .filter((order) => !isReturnRefundOrder(order) && order.status === status)
+      .map((order) => order.id);
+  };
+
+  const orderIdsByStatus = useMemo(() => {
+    const next = {} as Record<OrderTab, number[]>;
+
+    ORDER_TABS.forEach((status) => {
+      next[status] = normalizeOrderIdList(getOrderIdsByStatus(status));
+    });
+
+    return next;
+  }, [orders]);
+
+  const getCountByStatus = (status: OrderTab) => orderIdsByStatus[status]?.length ?? 0;
+
+  const notificationCountByStatus = useMemo(() => {
+    const next = {} as Record<OrderTab, number>;
+
+    ORDER_TABS.forEach((status) => {
+      const currentIds = orderIdsByStatus[status] ?? [];
+      const seenIds = new Set(seenOrderIdsByTab[status] ?? []);
+      next[status] = currentIds.filter((id) => !seenIds.has(id)).length;
+    });
+
+    return next;
+  }, [orderIdsByStatus, seenOrderIdsByTab]);
+
+  const getNotificationCountByStatus = (status: OrderTab) => notificationCountByStatus[status] ?? 0;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const currentIds = orderIdsByStatus[selectedTab] ?? [];
+
+    setSeenOrderIdsByTab((prev) => {
+      const existingIds = prev[selectedTab] ?? [];
+      const hasSameIds = existingIds.length === currentIds.length
+        && existingIds.every((id, index) => id === currentIds[index]);
+
+      if (hasSameIds) {
+        return prev;
+      }
+
+      const next = {
+        ...prev,
+        [selectedTab]: [...currentIds],
+      };
+
+      try {
+        localStorage.setItem(ORDER_TAB_NOTIFICATION_STORAGE_KEY, JSON.stringify(next));
+      } catch (error) {
+        console.warn('Failed to persist order tab notification state:', error);
+      }
+
+      return next;
+    });
+  }, [orderIdsByStatus, selectedTab]);
 
   const getTabIcon = (tab: OrderTab) => {
     switch (tab) {
@@ -1230,7 +1342,7 @@ const MyOrders: React.FC = () => {
           </div>
 
           <div className="flex w-full gap-2 overflow-x-auto pb-3 pl-4 pr-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden xl:hidden">
-              {(['all', 'pending', 'processing', 'shipped', 'completed', 'return_refund'] as const).map((tab) => (
+              {ORDER_TABS.map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setSelectedTab(tab)}
@@ -1242,7 +1354,7 @@ const MyOrders: React.FC = () => {
                 >
                   {getTabIcon(tab)}
                   <span className="leading-none">{getTabLabel(tab)}</span>
-                  {getCountByStatus(tab) > 0 && <span className={tabBadgeClass}>{getCountByStatus(tab)}</span>}
+                  {getNotificationCountByStatus(tab) > 0 && <span className={tabBadgeClass}>{getNotificationCountByStatus(tab)}</span>}
                 </button>
               ))}
             </div>
@@ -1259,9 +1371,9 @@ const MyOrders: React.FC = () => {
               }`}
             >
               ALL ORDERS
-              {getCountByStatus('all') > 0 && (
+              {getNotificationCountByStatus('all') > 0 && (
                 <span className={tabBadgeClass}>
-                  {getCountByStatus('all')}
+                  {getNotificationCountByStatus('all')}
                 </span>
               )}
             </button>
@@ -1274,9 +1386,9 @@ const MyOrders: React.FC = () => {
               }`}
             >
               PENDING
-              {getCountByStatus('pending') > 0 && (
+              {getNotificationCountByStatus('pending') > 0 && (
                 <span className={tabBadgeClass}>
-                  {getCountByStatus('pending')}
+                  {getNotificationCountByStatus('pending')}
                 </span>
               )}
             </button>
@@ -1289,9 +1401,9 @@ const MyOrders: React.FC = () => {
               }`}
             >
               PROCESSING
-              {getCountByStatus('processing') > 0 && (
+              {getNotificationCountByStatus('processing') > 0 && (
                 <span className={tabBadgeClass}>
-                  {getCountByStatus('processing')}
+                  {getNotificationCountByStatus('processing')}
                 </span>
               )}
             </button>
@@ -1304,9 +1416,9 @@ const MyOrders: React.FC = () => {
               }`}
             >
               SHIPPED
-              {getCountByStatus('shipped') > 0 && (
+              {getNotificationCountByStatus('shipped') > 0 && (
                 <span className={tabBadgeClass}>
-                  {getCountByStatus('shipped')}
+                  {getNotificationCountByStatus('shipped')}
                 </span>
               )}
             </button>
@@ -1319,9 +1431,9 @@ const MyOrders: React.FC = () => {
               }`}
             >
               COMPLETED
-              {getCountByStatus('completed') > 0 && (
+              {getNotificationCountByStatus('completed') > 0 && (
                 <span className={tabBadgeClass}>
-                  {getCountByStatus('completed')}
+                  {getNotificationCountByStatus('completed')}
                 </span>
               )}
             </button>
@@ -1334,9 +1446,9 @@ const MyOrders: React.FC = () => {
               }`}
             >
               RETURN/REFUND
-              {getCountByStatus('return_refund') > 0 && (
+              {getNotificationCountByStatus('return_refund') > 0 && (
                 <span className={tabBadgeClass}>
-                  {getCountByStatus('return_refund')}
+                  {getNotificationCountByStatus('return_refund')}
                 </span>
               )}
             </button>

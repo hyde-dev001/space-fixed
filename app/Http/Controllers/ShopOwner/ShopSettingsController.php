@@ -11,6 +11,7 @@ use App\Services\CaviteLocationPolicyService;
 use App\Services\ShopPolicyTemplateService;
 use App\Services\ShopPolicyVersionService;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -186,6 +187,45 @@ class ShopSettingsController extends Controller
         return '';
     }
 
+    private function hasPolicyVersionStorageSchema(): bool
+    {
+        if (!Schema::hasTable('shop_policy_versions')) {
+            return false;
+        }
+
+        $requiredColumns = [
+            'shop_owner_id',
+            'version_number',
+            'status',
+            'business_type_scope',
+            'registration_clause_mode',
+            'policy_sections_json',
+            'content_hash',
+        ];
+
+        foreach ($requiredColumns as $column) {
+            if (!Schema::hasColumn('shop_policy_versions', $column)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function normalizePolicySectionValue(mixed $value): string
+    {
+        if (is_null($value)) {
+            return '';
+        }
+
+        if (is_scalar($value)) {
+            return (string) $value;
+        }
+
+        $encoded = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        return $encoded === false ? '' : $encoded;
+    }
+
     /**
      * Update shop settings for the authenticated shop owner account.
      */
@@ -285,28 +325,56 @@ class ShopSettingsController extends Controller
     {
         $shopOwner = Auth::guard('shop_owner')->user();
 
-        $active = ShopPolicyVersion::query()
-            ->where('shop_owner_id', (int) $shopOwner->id)
-            ->where('status', 'published')
-            ->latest('version_number')
-            ->first();
-
-        $draftQuery = ShopPolicyVersion::query()
-            ->where('shop_owner_id', (int) $shopOwner->id)
-            ->where('status', 'draft');
-
-        if ($active) {
-            $draftQuery->where('version_number', '>', (int) $active->version_number);
-        }
-
-        $draft = $draftQuery
-            ->latest('version_number')
-            ->first();
-
         $defaultSections = $templateService->buildSections(
             (string) ($shopOwner->business_type ?? ''),
             (string) ($shopOwner->registration_type ?? '')
         );
+
+        if (!$this->hasPolicyVersionStorageSchema()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Policy storage is not ready yet. Please run the latest migrations.',
+                'data' => [
+                    'active' => null,
+                    'draft' => null,
+                    'default_sections' => $defaultSections,
+                    'storage_ready' => false,
+                ],
+            ]);
+        }
+
+        try {
+            $active = ShopPolicyVersion::query()
+                ->where('shop_owner_id', (int) $shopOwner->id)
+                ->where('status', 'published')
+                ->latest('version_number')
+                ->first();
+
+            $draftQuery = ShopPolicyVersion::query()
+                ->where('shop_owner_id', (int) $shopOwner->id)
+                ->where('status', 'draft');
+
+            if ($active) {
+                $draftQuery->where('version_number', '>', (int) $active->version_number);
+            }
+
+            $draft = $draftQuery
+                ->latest('version_number')
+                ->first();
+        } catch (QueryException $exception) {
+            report($exception);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Policy storage is not ready yet. Please run the latest migrations.',
+                'data' => [
+                    'active' => null,
+                    'draft' => null,
+                    'default_sections' => $defaultSections,
+                    'storage_ready' => false,
+                ],
+            ], 503);
+        }
 
         return response()->json([
             'success' => true,
@@ -314,6 +382,7 @@ class ShopSettingsController extends Controller
                 'active' => $active,
                 'draft' => $draft,
                 'default_sections' => $defaultSections,
+                'storage_ready' => true,
             ],
         ]);
     }
@@ -325,15 +394,42 @@ class ShopSettingsController extends Controller
     {
         $shopOwner = Auth::guard('shop_owner')->user();
 
+        if (!$this->hasPolicyVersionStorageSchema()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Policy storage is not ready yet. Please run the latest migrations.',
+            ], 503);
+        }
+
         $validated = $request->validate([
             'policy_sections_json' => ['required', 'array'],
         ]);
 
         $incomingSections = collect((array) $validated['policy_sections_json'])
-            ->map(fn ($value) => is_null($value) ? '' : (string) $value)
+            ->map(fn ($value) => $this->normalizePolicySectionValue($value))
             ->all();
 
-        $draft = $policyVersionService->saveDraft((int) $shopOwner->id, $incomingSections);
+        try {
+            $draft = $policyVersionService->saveDraft((int) $shopOwner->id, $incomingSections);
+        } catch (QueryException $exception) {
+            report($exception);
+
+            $message = strtolower($exception->getMessage());
+            if (
+                str_contains($message, 'shop_policy_versions')
+                && (str_contains($message, "doesn't exist") || str_contains($message, 'unknown column') || str_contains($message, 'no such table'))
+            ) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Policy storage is not ready yet. Please run the latest migrations.',
+                ], 503);
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to save policy draft. Please try again.',
+            ], 500);
+        }
 
         return response()->json([
             'success' => true,
@@ -348,8 +444,22 @@ class ShopSettingsController extends Controller
     {
         $shopOwner = Auth::guard('shop_owner')->user();
 
+        if (!$this->hasPolicyVersionStorageSchema()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Policy storage is not ready yet. Please run the latest migrations.',
+            ], 503);
+        }
+
         try {
             $published = $policyVersionService->publishLatestDraft((int) $shopOwner->id, (int) $shopOwner->id);
+        } catch (QueryException $exception) {
+            report($exception);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Policy storage is not ready yet. Please run the latest migrations.',
+            ], 503);
         } catch (ModelNotFoundException $exception) {
             return response()->json([
                 'success' => false,

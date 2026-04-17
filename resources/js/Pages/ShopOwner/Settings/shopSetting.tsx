@@ -387,7 +387,7 @@ const ShopSetting: React.FC = () => {
 	const showWideApprovalLimits = !isIndividual && hasRetailSignal && !hasRepairSignal;
 	const requiredSectionKeys = requiredPolicySectionKeys(shop_settings.business_type);
 	const [deletedBasePolicySectionKeys, setDeletedBasePolicySectionKeys] = useState<string[]>([]);
-	const activeRequiredSectionKeys = requiredSectionKeys.filter((key) => !deletedBasePolicySectionKeys.includes(key));
+	const activeRequiredSectionKeys: string[] = [];
 	const [retailCustomPolicySectionKeys, setRetailCustomPolicySectionKeys] = useState<string[]>([]);
 	const [repairCustomPolicySectionKeys, setRepairCustomPolicySectionKeys] = useState<string[]>([]);
 	const [policyComposerState, setPolicyComposerState] = useState<Record<string, PolicySectionComposerState>>(
@@ -620,12 +620,8 @@ const ShopSetting: React.FC = () => {
 	const normalizePolicySections = (source: ShopPolicySections | null | undefined): ShopPolicySections => {
 		const normalized: ShopPolicySections = {};
 
-		requiredSectionKeys.forEach((key) => {
-			normalized[key] = String(source?.[key] ?? '');
-		});
-
 		Object.entries(source ?? {}).forEach(([key, value]) => {
-			if (!requiredSectionKeys.includes(key) && isCustomPolicySectionKey(key)) {
+			if (isCustomPolicySectionKey(key)) {
 				normalized[key] = String(value ?? '');
 			}
 		});
