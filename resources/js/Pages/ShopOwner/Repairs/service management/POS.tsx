@@ -211,6 +211,13 @@ const isWarrantyEligibleRepairStatus = (status: unknown): boolean => {
 	return WARRANTY_ELIGIBLE_REPAIR_STATUSES.has(normalized);
 };
 
+const isActiveWarrantyClaimStatus = (status: unknown): boolean => {
+	return String(status ?? "")
+		.trim()
+		.toLowerCase()
+		.replace(/-/g, "_") === "pending_repairer";
+};
+
 const parseDueType = (value: unknown): PosDueType | null => {
 	const normalized = String(value ?? "").toLowerCase();
 	if (normalized === "deposit" || normalized === "balance" || normalized === "full") {
@@ -932,8 +939,7 @@ useEffect(() => {
 							?? row?.repairRequest?.latestWarrantyClaim?.approved_once_guard
 							?? 0,
 					);
-					const fallbackWarrantyLock = latestWarrantyClaimStatusRaw !== ""
-						&& latestWarrantyClaimStatusRaw.toLowerCase().replace(/-/g, "_") !== "rejected";
+					const fallbackWarrantyLock = isActiveWarrantyClaimStatus(latestWarrantyClaimStatusRaw);
 
 					return {
 						moduleType,
@@ -1882,7 +1888,7 @@ useEffect(() => {
 	}, [receiptHistory]);
 
 	const canRequestRepairRefund = (receipt: ReceiptSnapshot): boolean => {
-		if (Boolean(receipt.warrantyClaimLocked ?? false)) {
+		if (isActiveWarrantyClaimStatus(receipt.latestWarrantyClaimStatus)) {
 			return false;
 		}
 
@@ -2417,7 +2423,7 @@ useEffect(() => {
 			return;
 		}
 
-		if (Boolean(receipt.warrantyClaimLocked ?? false)) {
+		if (isActiveWarrantyClaimStatus(receipt.latestWarrantyClaimStatus)) {
 			await Swal.fire({
 				icon: "info",
 				title: "Refund Unavailable",

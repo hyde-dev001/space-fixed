@@ -14,6 +14,8 @@ use App\Services\PurchaseRequestService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 
 class PurchaseRequestController extends Controller
@@ -140,8 +142,16 @@ class PurchaseRequestController extends Controller
 
             $data = $request->validated();
             $shopOwnerId = (int) Auth::user()->shop_owner_id;
+            if ($shopOwnerId <= 0) {
+                DB::rollBack();
+                return response()->json([
+                    'message' => 'Unable to resolve shop owner context for this account. Please contact support.'
+                ], 422);
+            }
+
             $stockRequestId = isset($data['stock_request_id']) ? (int) $data['stock_request_id'] : null;
             $sourceStockRequest = null;
+            $hasNotesColumn = Schema::hasColumn('purchase_requests', 'notes');
 
             if ($stockRequestId) {
                 $sourceStockRequest = StockRequestApproval::query()
@@ -157,22 +167,24 @@ class PurchaseRequestController extends Controller
                     ], 422);
                 }
 
-                $sourceMarker = "[stock_request_id:{$stockRequestId}]";
-                $alreadyProcessed = PurchaseRequest::query()
-                    ->where('shop_owner_id', $shopOwnerId)
-                    ->where('status', '!=', 'rejected')
-                    ->where('notes', 'LIKE', "%{$sourceMarker}%")
-                    ->exists();
+                if ($hasNotesColumn) {
+                    $sourceMarker = "[stock_request_id:{$stockRequestId}]";
+                    $alreadyProcessed = PurchaseRequest::query()
+                        ->where('shop_owner_id', $shopOwnerId)
+                        ->where('status', '!=', 'rejected')
+                        ->where('notes', 'LIKE', "%{$sourceMarker}%")
+                        ->exists();
 
-                if ($alreadyProcessed) {
-                    DB::rollBack();
-                    return response()->json([
-                        'message' => 'This approved stock request has already been processed into a purchase request.'
-                    ], 422);
+                    if ($alreadyProcessed) {
+                        DB::rollBack();
+                        return response()->json([
+                            'message' => 'This approved stock request has already been processed into a purchase request.'
+                        ], 422);
+                    }
                 }
             }
 
-            if ($sourceStockRequest) {
+            if ($sourceStockRequest && $hasNotesColumn) {
                 $sourceNumber = $sourceStockRequest->request_number ?: (string) $sourceStockRequest->id;
                 $sourceMarker = "[stock_request_id:{$sourceStockRequest->id}]";
                 $sourceSummary = "Source Stock Request: {$sourceNumber}";
@@ -181,6 +193,7 @@ class PurchaseRequestController extends Controller
             }
 
             unset($data['stock_request_id']);
+            $data = $this->sanitizePurchaseRequestPayloadForSchema($data);
 
             $data['shop_owner_id'] = $shopOwnerId;
             $data['requested_by'] = Auth::id();
@@ -191,7 +204,7 @@ class PurchaseRequestController extends Controller
             $data['pr_number'] = $this->generatePRNumber();
 
             // Set status
-            $data['status'] = $request->submit_to_finance ? 'pending_finance' : 'draft';
+            $data['status'] = $request->boolean('submit_to_finance') ? 'pending_finance' : 'draft';
 
             $purchaseRequest = PurchaseRequest::create($data);
 
@@ -211,6 +224,13 @@ class PurchaseRequestController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
+
+            Log::error('Failed to create purchase request', [
+                'user_id' => Auth::id(),
+                'shop_owner_id' => (int) (Auth::user()->shop_owner_id ?? 0),
+                'error' => $e->getMessage(),
+            ]);
+
             return response()->json([
                 'message' => 'Failed to create purchase request.',
                 'error' => $e->getMessage()
@@ -271,6 +291,7 @@ class PurchaseRequestController extends Controller
             DB::beginTransaction();
 
             $data = $request->validated();
+            $data = $this->sanitizePurchaseRequestPayloadForSchema($data);
             $data['total_cost'] = $this->calculatePurchaseRequestTotalCost($data, (int) $purchaseRequest->shop_owner_id);
             
             if ($request->submit_to_finance && $purchaseRequest->status === 'draft') {
@@ -511,6 +532,28 @@ class PurchaseRequestController extends Controller
 
         $normalized = preg_replace('/[\s-]+/', '_', $normalized) ?? $normalized;
         return in_array($normalized, ['all', 'all_sizes', 'all_size', 'any'], true);
+    }
+
+    /**
+     * Remove optional fields that do not exist in the current DB schema.
+     * This avoids 500s on production nodes with pending migrations.
+     */
+    private function sanitizePurchaseRequestPayloadForSchema(array $data): array
+    {
+        $optionalColumns = [
+            'inventory_item_id',
+            'requested_size',
+            'requested_color',
+            'notes',
+        ];
+
+        foreach ($optionalColumns as $column) {
+            if (array_key_exists($column, $data) && !Schema::hasColumn('purchase_requests', $column)) {
+                unset($data[$column]);
+            }
+        }
+
+        return $data;
     }
 
     /**

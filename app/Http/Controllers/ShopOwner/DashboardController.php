@@ -421,9 +421,9 @@ class DashboardController extends Controller
             ->where('status', OrderStatus::SHIPPED)
             ->count();
 
-        // Completed Orders
+        // Completed Orders (include delivered, which is the final fulfilled state after customer confirmation)
         $completedOrders = Order::where('shop_owner_id', $shopOwnerId)
-            ->where('status', OrderStatus::COMPLETED)
+            ->whereIn('status', [OrderStatus::COMPLETED->value, OrderStatus::DELIVERED->value])
             ->count();
 
         // Cancelled Orders

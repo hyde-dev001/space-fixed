@@ -22,8 +22,6 @@ type MaterialTemplateLine = {
   inventory_item_id: number;
   inventory_item_name?: string | null;
   default_quantity: number;
-  is_critical: boolean;
-  tolerance_percent: number;
 };
 
 type RepairMaterialOption = {
@@ -190,8 +188,6 @@ export default function UploadService() {
     material_templates: [] as Array<{
       inventory_item_id: number;
       default_quantity: string;
-      is_critical: boolean;
-      tolerance_percent: string;
     }>,
   });
 
@@ -276,7 +272,6 @@ export default function UploadService() {
 
     for (const line of formData.material_templates) {
       const defaultQuantity = Number(line.default_quantity);
-      const tolerancePercent = Number(line.tolerance_percent || '20');
 
       if (!line.inventory_item_id) {
         return 'Each material template line must select an inventory material.';
@@ -284,10 +279,6 @@ export default function UploadService() {
 
       if (!Number.isFinite(defaultQuantity) || defaultQuantity < 1 || !Number.isInteger(defaultQuantity)) {
         return 'Material default quantity must be a whole number (1, 2, 3...).';
-      }
-
-      if (!Number.isFinite(tolerancePercent) || tolerancePercent < 0 || tolerancePercent > 100) {
-        return 'Material tolerance percent must be between 0 and 100.';
       }
     }
 
@@ -474,8 +465,6 @@ export default function UploadService() {
         material_templates: formData.material_templates.map((line) => ({
           inventory_item_id: Number(line.inventory_item_id),
           default_quantity: Number(line.default_quantity),
-          is_critical: Boolean(line.is_critical),
-          tolerance_percent: Number(line.tolerance_percent || '20'),
         })),
       });
 
@@ -556,8 +545,6 @@ export default function UploadService() {
         material_templates: formData.material_templates.map((line) => ({
           inventory_item_id: Number(line.inventory_item_id),
           default_quantity: Number(line.default_quantity),
-          is_critical: Boolean(line.is_critical),
-          tolerance_percent: Number(line.tolerance_percent || '20'),
         })),
       });
 
@@ -675,8 +662,6 @@ export default function UploadService() {
       material_templates: (service.material_templates || []).map((line) => ({
         inventory_item_id: Number(line.inventory_item_id),
         default_quantity: normalizeWholeQuantity(line.default_quantity),
-        is_critical: Boolean(line.is_critical),
-        tolerance_percent: String(line.tolerance_percent ?? 20),
       })),
     });
     setIsEditModalOpen(true);
@@ -706,8 +691,6 @@ export default function UploadService() {
         {
           inventory_item_id: 0,
           default_quantity: '1',
-          is_critical: false,
-          tolerance_percent: '20',
         },
       ],
     }));
@@ -715,7 +698,7 @@ export default function UploadService() {
 
   const updateMaterialTemplateLine = (
     index: number,
-    field: 'inventory_item_id' | 'default_quantity' | 'is_critical' | 'tolerance_percent',
+    field: 'inventory_item_id' | 'default_quantity',
     value: number | string | boolean,
   ) => {
     setFormData((prev) => ({
@@ -1259,7 +1242,7 @@ export default function UploadService() {
                 ) : (
                   <div className="space-y-3">
                     {formData.material_templates.map((line, index) => (
-                      <div key={`add-service-material-${index}`} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 grid grid-cols-1 md:grid-cols-12 gap-2 items-end">
+                      <div key={`add-service-material-${index}`} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 grid grid-cols-1 md:grid-cols-8 gap-2 items-end">
                         <div className="md:col-span-5">
                           <label className="block text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1">Inventory Material</label>
                           <select
@@ -1289,34 +1272,6 @@ export default function UploadService() {
                             onChange={(e) => updateMaterialTemplateLine(index, 'default_quantity', e.target.value)}
                             className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white"
                           />
-                        </div>
-
-                        <div className="md:col-span-2">
-                          <label className="block text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1">Tolerance %</label>
-                          <input
-                            type="number"
-                            title="Tolerance percent"
-                            placeholder="20"
-                            min="0"
-                            max="100"
-                            step="0.01"
-                            value={line.tolerance_percent}
-                            onChange={(e) => updateMaterialTemplateLine(index, 'tolerance_percent', e.target.value)}
-                            className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white"
-                          />
-                        </div>
-
-                        <div className="md:col-span-2">
-                          <label className="block text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1">Critical</label>
-                          <label className="inline-flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
-                            <input
-                              type="checkbox"
-                              checked={line.is_critical}
-                              onChange={(e) => updateMaterialTemplateLine(index, 'is_critical', e.target.checked)}
-                              className="h-4 w-4"
-                            />
-                            Yes
-                          </label>
                         </div>
 
                         <div className="md:col-span-1 flex justify-end">
@@ -1535,7 +1490,7 @@ export default function UploadService() {
                 ) : (
                   <div className="space-y-3">
                     {formData.material_templates.map((line, index) => (
-                      <div key={`edit-service-material-${index}`} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 grid grid-cols-1 md:grid-cols-12 gap-2 items-end">
+                      <div key={`edit-service-material-${index}`} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 grid grid-cols-1 md:grid-cols-8 gap-2 items-end">
                         <div className="md:col-span-5">
                           <label className="block text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1">Inventory Material</label>
                           <select
@@ -1565,34 +1520,6 @@ export default function UploadService() {
                             onChange={(e) => updateMaterialTemplateLine(index, 'default_quantity', e.target.value)}
                             className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white"
                           />
-                        </div>
-
-                        <div className="md:col-span-2">
-                          <label className="block text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1">Tolerance %</label>
-                          <input
-                            type="number"
-                            title="Tolerance percent"
-                            placeholder="20"
-                            min="0"
-                            max="100"
-                            step="0.01"
-                            value={line.tolerance_percent}
-                            onChange={(e) => updateMaterialTemplateLine(index, 'tolerance_percent', e.target.value)}
-                            className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white"
-                          />
-                        </div>
-
-                        <div className="md:col-span-2">
-                          <label className="block text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1">Critical</label>
-                          <label className="inline-flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
-                            <input
-                              type="checkbox"
-                              checked={line.is_critical}
-                              onChange={(e) => updateMaterialTemplateLine(index, 'is_critical', e.target.checked)}
-                              className="h-4 w-4"
-                            />
-                            Yes
-                          </label>
                         </div>
 
                         <div className="md:col-span-1 flex justify-end">

@@ -13,7 +13,7 @@ class RepairMaterialPlanningGateTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_start_work_is_blocked_when_critical_material_is_unavailable(): void
+    public function test_start_work_is_blocked_when_required_material_is_unavailable(): void
     {
         $shop = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
         $repairer = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'STAFF']);
@@ -41,7 +41,7 @@ class RepairMaterialPlanningGateTest extends TestCase
             'inventory_item_id' => $item->id,
             'planned_quantity' => 1,
             'actual_quantity' => 0,
-            'is_critical' => true,
+            'is_critical' => false,
             'tolerance_percent' => 20,
         ]);
 
@@ -53,7 +53,7 @@ class RepairMaterialPlanningGateTest extends TestCase
             ->assertJsonPath('data.readiness_state', 'blocked');
     }
 
-    public function test_non_critical_shortage_returns_at_risk_not_blocked(): void
+    public function test_start_work_is_blocked_when_any_material_is_short(): void
     {
         $shop = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
         $repairer = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'STAFF']);
@@ -88,8 +88,8 @@ class RepairMaterialPlanningGateTest extends TestCase
         $response = $this->actingAs($repairer, 'user')
             ->postJson("/api/repairer/repairs/{$repair->id}/materials/validate-start");
 
-        $response->assertStatus(200)
-            ->assertJsonPath('success', true)
-            ->assertJsonPath('data.readiness_state', 'at_risk');
+        $response->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('data.readiness_state', 'blocked');
     }
 }

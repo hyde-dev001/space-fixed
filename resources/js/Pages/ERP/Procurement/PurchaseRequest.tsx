@@ -563,6 +563,11 @@ export default function PurchaseRequest() {
 			} else if (error.response?.data?.message) {
 				errorMessage = error.response.data.message;
 			}
+
+			const backendErrorDetail = String(error.response?.data?.error ?? "").trim();
+			if (backendErrorDetail) {
+				errorMessage = `${errorMessage} (${backendErrorDetail})`;
+			}
 			
 			await workflowFeedback.error(errorMessage);
 		} finally {

@@ -127,6 +127,30 @@ class ShopOwnerDashboardRevenueTest extends TestCase
         $this->assertEqualsWithDelta(1975.0, (float) ($payload['revenue']['this_month'] ?? 0), 0.01);
     }
 
+    #[Test]
+    public function dashboard_completed_orders_counts_delivered_status_as_completed(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'retail',
+        ]);
+
+        $this->createOrder($shopOwner->id, [
+            'status' => 'delivered',
+            'payment_status' => 'completed',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = $this->actingAs($shopOwner, 'shop_owner')
+            ->getJson('/api/shop-owner/dashboard/stats');
+
+        $response->assertOk();
+
+        $payload = $response->json();
+
+        $this->assertSame(1, (int) ($payload['orders']['completed'] ?? 0));
+    }
+
     private function createOrder(int $shopOwnerId, array $overrides = []): Order
     {
         return Order::create(array_merge([

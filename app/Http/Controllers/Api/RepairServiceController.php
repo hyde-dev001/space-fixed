@@ -176,7 +176,7 @@ class RepairServiceController extends Controller
             'material_templates' => 'required|array|min:1',
             'material_templates.*.inventory_item_id' => 'required|integer|exists:inventory_items,id',
             'material_templates.*.default_quantity' => 'required|integer|min:1',
-            'material_templates.*.is_critical' => 'required|boolean',
+            'material_templates.*.is_critical' => 'sometimes|boolean',
             'material_templates.*.tolerance_percent' => 'nullable|numeric|min:0|max:100',
         ]);
 
@@ -291,7 +291,7 @@ class RepairServiceController extends Controller
             'material_templates' => 'sometimes|array|min:1',
             'material_templates.*.inventory_item_id' => 'required|integer|exists:inventory_items,id',
             'material_templates.*.default_quantity' => 'required|integer|min:1',
-            'material_templates.*.is_critical' => 'required|boolean',
+            'material_templates.*.is_critical' => 'sometimes|boolean',
             'material_templates.*.tolerance_percent' => 'nullable|numeric|min:0|max:100',
         ]);
 
@@ -1614,7 +1614,7 @@ class RepairServiceController extends Controller
                 'template_type' => 'repair_service',
                 'template_id' => $service->id,
                 'default_quantity' => (int) $line['default_quantity'],
-                'is_critical' => (bool) $line['is_critical'],
+                'is_critical' => (bool) ($line['is_critical'] ?? false),
                 'tolerance_percent' => (float) ($line['tolerance_percent'] ?? 20),
                 'created_by' => $createdBy,
             ]);

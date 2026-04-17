@@ -1420,7 +1420,7 @@ export default function JobOrdersRepair() {
     const confirmProceedWithVariance = async () => {
       const proceedResult = await Swal.fire({
         title: 'Material variance detected',
-        text: 'Some planned vs actual materials exceed tolerance without review notes. Continue anyway?',
+        text: 'Some planned vs actual materials do not match and have no review notes. Continue anyway?',
         icon: 'warning',
         showCancelButton: true,
         confirmButtonText: 'Continue',
@@ -1568,7 +1568,7 @@ export default function JobOrdersRepair() {
     const confirmProceedWithVariance = async () => {
       const proceedResult = await Swal.fire({
         title: 'Material variance detected',
-        text: 'Some planned vs actual materials exceed tolerance without review notes. Continue anyway?',
+        text: 'Some planned vs actual materials do not match and have no review notes. Continue anyway?',
         icon: 'warning',
         showCancelButton: true,
         confirmButtonText: 'Continue',
@@ -3166,7 +3166,6 @@ export default function JobOrdersRepair() {
                                 <div className="min-w-0">
                                   <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
                                     {planItem.inventory_item?.name || `Material #${planItem.inventory_item_id}`}
-                                    {planItem.is_critical ? " (Critical)" : ""}
                                   </p>
                                   <p className="text-xs text-gray-600 dark:text-gray-400">
                                     Planned: {planItem.planned_quantity} • Logged: {planItem.actual_quantity} • Remaining: {planItem.remaining_quantity}

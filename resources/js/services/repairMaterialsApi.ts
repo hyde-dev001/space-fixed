@@ -132,7 +132,7 @@ interface GenericResponse<T = unknown, M = Record<string, unknown>> {
 export type MaterialReadinessResponse = {
   success: boolean;
   data: {
-    readiness_state: "ready" | "at_risk" | "blocked" | "variance_review_needed";
+    readiness_state: "ready" | "blocked" | "variance_review_needed";
     blockers: Array<Record<string, unknown>>;
     warnings: Array<Record<string, unknown>>;
     actions: string[];

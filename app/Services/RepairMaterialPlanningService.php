@@ -9,23 +9,13 @@ class RepairMaterialPlanningService
     public function validateStartReadiness(RepairRequest $repair): array
     {
         $blockers = [];
-        $warnings = [];
 
         foreach ($repair->materialPlanItems()->with('inventoryItem')->get() as $line) {
             $available = (float) ($line->inventoryItem->available_quantity ?? 0);
             $plannedQuantity = (float) $line->planned_quantity;
 
-            if ($line->is_critical && $available < $plannedQuantity) {
+            if ($available < $plannedQuantity) {
                 $blockers[] = [
-                    'inventory_item_id' => $line->inventory_item_id,
-                    'name' => $line->inventoryItem->name ?? 'Unknown',
-                    'needed' => $plannedQuantity,
-                    'available' => $available,
-                ];
-            }
-
-            if (!$line->is_critical && $available < $plannedQuantity) {
-                $warnings[] = [
                     'inventory_item_id' => $line->inventory_item_id,
                     'name' => $line->inventoryItem->name ?? 'Unknown',
                     'needed' => $plannedQuantity,
@@ -35,9 +25,9 @@ class RepairMaterialPlanningService
         }
 
         return [
-            'readiness_state' => empty($blockers) ? (empty($warnings) ? 'ready' : 'at_risk') : 'blocked',
+            'readiness_state' => empty($blockers) ? 'ready' : 'blocked',
             'blockers' => $blockers,
-            'warnings' => $warnings,
+            'warnings' => [],
             'actions' => ['request_materials'],
         ];
     }
@@ -55,8 +45,9 @@ class RepairMaterialPlanningService
                 : $rawPlanned;
             $actual = (float) $line->actual_quantity;
             $variancePercent = abs($actual - $planned) / $planned * 100;
+            $hasMaterialVariance = abs($actual - $planned) > 0.00001;
 
-            if ($variancePercent > (float) $line->tolerance_percent && empty($line->variance_note)) {
+            if ($hasMaterialVariance && empty($line->variance_note)) {
                 $varianceIssues[] = [
                     'inventory_item_id' => $line->inventory_item_id,
                     'name' => $line->inventoryItem->name ?? 'Unknown',

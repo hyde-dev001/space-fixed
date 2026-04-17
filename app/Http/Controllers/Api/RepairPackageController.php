@@ -354,7 +354,7 @@ class RepairPackageController extends Controller
             'material_templates' => 'required|array|min:1',
             'material_templates.*.inventory_item_id' => 'required|integer|distinct|exists:inventory_items,id',
             'material_templates.*.default_quantity' => 'required|integer|min:1',
-            'material_templates.*.is_critical' => 'required|boolean',
+            'material_templates.*.is_critical' => 'sometimes|boolean',
             'material_templates.*.tolerance_percent' => 'nullable|numeric|min:0|max:100',
         ]);
 
@@ -465,7 +465,7 @@ class RepairPackageController extends Controller
                 'material_templates' => 'sometimes|array|min:1',
                 'material_templates.*.inventory_item_id' => 'required_with:material_templates|integer|distinct|exists:inventory_items,id',
                 'material_templates.*.default_quantity' => 'required_with:material_templates|integer|min:1',
-                'material_templates.*.is_critical' => 'required_with:material_templates|boolean',
+                'material_templates.*.is_critical' => 'sometimes|boolean',
                 'material_templates.*.tolerance_percent' => 'nullable|numeric|min:0|max:100',
             ]);
 
@@ -616,7 +616,7 @@ class RepairPackageController extends Controller
             'material_templates' => 'required|array|min:1',
             'material_templates.*.inventory_item_id' => 'required|integer|distinct|exists:inventory_items,id',
             'material_templates.*.default_quantity' => 'required|integer|min:1',
-            'material_templates.*.is_critical' => 'required|boolean',
+            'material_templates.*.is_critical' => 'sometimes|boolean',
             'material_templates.*.tolerance_percent' => 'nullable|numeric|min:0|max:100',
         ]);
 
@@ -859,7 +859,7 @@ class RepairPackageController extends Controller
                 'template_type' => 'repair_package',
                 'template_id' => $package->id,
                 'default_quantity' => (int) $line['default_quantity'],
-                'is_critical' => (bool) $line['is_critical'],
+                'is_critical' => (bool) ($line['is_critical'] ?? false),
                 'tolerance_percent' => (float) ($line['tolerance_percent'] ?? 20),
                 'created_by' => $createdBy,
             ]));

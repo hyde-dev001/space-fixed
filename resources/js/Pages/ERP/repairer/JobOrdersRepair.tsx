@@ -1533,33 +1533,17 @@ export default function JobOrdersRepair() {
       if (!readiness.success || readiness.data.readiness_state === "blocked") {
         await Swal.fire({
           title: "Cannot start work",
-          text: "Critical materials are unavailable. Please request materials first.",
+          text: "Required materials are unavailable. Please request materials first.",
           icon: "warning",
           confirmButtonColor: "#2563eb",
         });
         return;
       }
-
-      if (readiness.data.readiness_state === "at_risk") {
-        const continueAtRisk = await Swal.fire({
-          title: "Materials at risk",
-          text: "Some non-critical materials are short. Continue starting work?",
-          icon: "warning",
-          showCancelButton: true,
-          confirmButtonText: "Continue",
-          cancelButtonText: "Cancel",
-          confirmButtonColor: "#2563eb",
-        });
-
-        if (!continueAtRisk.isConfirmed) {
-          return;
-        }
-      }
     } catch (readinessError: any) {
       if (readinessError?.response?.data?.data?.readiness_state === "blocked") {
         await Swal.fire({
           title: "Cannot start work",
-          text: "Critical materials are unavailable. Please request materials first.",
+          text: "Required materials are unavailable. Please request materials first.",
           icon: "warning",
           confirmButtonColor: "#2563eb",
         });
@@ -1668,7 +1652,7 @@ export default function JobOrdersRepair() {
     const confirmProceedWithVariance = async () => {
       const proceedResult = await Swal.fire({
         title: "Material variance detected",
-        text: "Some planned vs actual materials exceed tolerance without review notes. Continue anyway?",
+        text: "Some planned vs actual materials do not match and have no review notes. Continue anyway?",
         icon: "warning",
         showCancelButton: true,
         confirmButtonText: "Continue",
@@ -1816,7 +1800,7 @@ export default function JobOrdersRepair() {
     const confirmProceedWithVariance = async () => {
       const proceedResult = await Swal.fire({
         title: 'Material variance detected',
-        text: 'Some planned vs actual materials exceed tolerance without review notes. Continue anyway?',
+        text: 'Some planned vs actual materials do not match and have no review notes. Continue anyway?',
         icon: 'warning',
         showCancelButton: true,
         confirmButtonText: 'Continue',
@@ -3464,7 +3448,6 @@ export default function JobOrdersRepair() {
                                 <div className="min-w-0">
                                   <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
                                     {planItem.inventory_item?.name || `Material #${planItem.inventory_item_id}`}
-                                    {planItem.is_critical ? " (Critical)" : ""}
                                   </p>
                                   <p className="text-xs text-gray-600 dark:text-gray-400">
                                     Planned: {planItem.planned_quantity} • Logged: {planItem.actual_quantity} • Remaining: {planItem.remaining_quantity}
