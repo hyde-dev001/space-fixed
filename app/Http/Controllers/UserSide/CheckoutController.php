@@ -12,6 +12,7 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\PromoCampaign;
 use App\Models\ShopOwner;
+use App\Models\ShopPolicyVersion;
 use App\Models\StockMovement;
 use App\Models\User;
 use App\Models\VoucherClaim;
@@ -20,6 +21,7 @@ use App\Models\Finance\InvoiceItem;
 use App\Models\AuditLog;
 use App\Services\NotificationService;
 use App\Services\PaymentSettlementService;
+use App\Services\PolicyAcceptanceService;
 use App\Services\PromoPricingService;
 use App\Support\Tax\VatInclusiveCalculator;
 use Illuminate\Http\Request;
@@ -787,6 +789,32 @@ class CheckoutController extends Controller
                 ], 422);
             }
 
+            $activePolicyVersion = null;
+            if ($selectedShopOwnerIds->count() === 1) {
+                $singleShopOwnerId = (int) $selectedShopOwnerIds->first();
+                $activePolicyVersion = ShopPolicyVersion::query()
+                    ->where('shop_owner_id', $singleShopOwnerId)
+                    ->where('status', 'published')
+                    ->latest('version_number')
+                    ->first();
+
+                if ($activePolicyVersion) {
+                    $providedVersionId = (int) ($request->input('accepted_shop_policy_version_id') ?? 0);
+                    $policyAccepted = filter_var($request->input('policy_accepted'), FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) === true;
+
+                    if (!$policyAccepted || $providedVersionId !== (int) $activePolicyVersion->id) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Please accept the latest shop terms before proceeding to payment.',
+                            'errors' => [
+                                'policy_accepted' => ['Latest shop terms acceptance is required.'],
+                                'accepted_shop_policy_version_id' => ['Active policy version mismatch. Please reopen and accept the latest terms.'],
+                            ],
+                        ], 422);
+                    }
+                }
+            }
+
             // Group items by shop owner (products from same shop go to same order)
             $itemsByShop = [];
             foreach ($validated['items'] as $item) {
@@ -919,6 +947,7 @@ class CheckoutController extends Controller
             }
 
             DB::beginTransaction();
+            $policyAcceptanceService = app(PolicyAcceptanceService::class);
 
             try {
                 // Create separate order for each shop owner
@@ -1034,6 +1063,9 @@ class CheckoutController extends Controller
                         'shipping_barangay' => $validated['shipping_barangay'] ?? null,
                         'shipping_postal_code' => $validated['shipping_postal_code'] ?? null,
                         'shipping_address_line' => $validated['shipping_address_line'] ?? null,
+                        'accepted_shop_policy_version_id' => $activePolicyVersion
+                            ? (int) $activePolicyVersion->id
+                            : null,
                     ];
 
                     $paymentLifecyclePayload = [
@@ -1046,6 +1078,19 @@ class CheckoutController extends Controller
                     ];
 
                     $order = Order::create($this->filterOrderColumns(array_merge($orderPayload, $paymentLifecyclePayload)));
+
+                    if ($activePolicyVersion && (int) $activePolicyVersion->shop_owner_id === (int) $shopOwnerId) {
+                        $policyAcceptanceService->record([
+                            'shop_owner_id' => (int) $shopOwnerId,
+                            'shop_policy_version_id' => (int) $activePolicyVersion->id,
+                            'actor_user_id' => (int) $customerId,
+                            'context_type' => 'order',
+                            'context_id' => (int) $order->id,
+                            'accepted_at' => now(),
+                            'accepted_from_ip' => $request->ip(),
+                            'accepted_user_agent' => (string) $request->userAgent(),
+                        ]);
+                    }
 
                     // Create order items and reduce stock
                     foreach ($shopItems as $shopItem) {

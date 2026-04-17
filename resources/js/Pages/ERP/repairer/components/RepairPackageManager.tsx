@@ -135,9 +135,20 @@ const EditIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-const TrashIcon = ({ className }: { className?: string }) => (
+const ArchiveBoxIcon = ({ className }: { className?: string }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7.5A2.5 2.5 0 016.5 5h11A2.5 2.5 0 0120 7.5v1A2.5 2.5 0 0117.5 11h-11A2.5 2.5 0 014 8.5v-1z" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11v6.5A2.5 2.5 0 009.5 20h5a2.5 2.5 0 002.5-2.5V11" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 15h4" />
+  </svg>
+);
+
+const ArchiveRestoreIcon = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7.5A2.5 2.5 0 016.5 5h11A2.5 2.5 0 0120 7.5v1A2.5 2.5 0 0117.5 11h-11A2.5 2.5 0 014 8.5v-1z" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11v6.5A2.5 2.5 0 009.5 20h5a2.5 2.5 0 002.5-2.5V11" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 14l-2-2-2 2" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 12v4" />
   </svg>
 );
 
@@ -158,17 +169,18 @@ export default function RepairPackageManager({
   const [analytics, setAnalytics] = useState<PackageAnalytics | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
+  const [showArchived, setShowArchived] = useState(false);
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedPackage, setSelectedPackage] = useState<RepairPackage | null>(null);
   const [formState, setFormState] = useState<PackageFormState>(defaultFormState);
 
-  const loadData = async () => {
+  const loadData = async (archived = showArchived) => {
     try {
       setLoading(true);
       const [packagesResponse, servicesResponse] = await Promise.all([
-        axios.get("/api/repair-packages"),
+        axios.get("/api/repair-packages", { params: { archived } }),
         axios.get(serviceEndpoint),
       ]);
 
@@ -205,6 +217,11 @@ export default function RepairPackageManager({
 
     // Analytics is non-critical — fetch separately so a permissions/auth error
     // never blocks the main package list from rendering.
+    if (archived) {
+      setAnalytics(null);
+      return;
+    }
+
     try {
       const analyticsResponse = await axios.get("/api/repair-packages/analytics");
       if (analyticsResponse.data?.success) {
@@ -216,8 +233,8 @@ export default function RepairPackageManager({
   };
 
   useEffect(() => {
-    loadData();
-  }, [serviceEndpoint, materialsEndpoint]);
+    loadData(showArchived);
+  }, [serviceEndpoint, materialsEndpoint, showArchived]);
 
   const filteredPackages = useMemo(() => {
     return packages.filter((item) => {
@@ -405,7 +422,7 @@ export default function RepairPackageManager({
 
       const response = await axios.post("/api/repair-packages", payload);
       if (response.data?.success) {
-        await loadData();
+        await loadData(showArchived);
         resetAndCloseModal();
         Swal.fire({ icon: "success", title: "Created", text: "Repair package created successfully.", timer: 1800, showConfirmButton: false });
       }
@@ -445,7 +462,7 @@ export default function RepairPackageManager({
 
       const response = await axios.put(`/api/repair-packages/${selectedPackage.id}`, payload);
       if (response.data?.success) {
-        await loadData();
+        await loadData(showArchived);
         resetAndCloseModal();
         Swal.fire({ icon: "success", title: "Updated", text: "Repair package updated successfully.", timer: 1800, showConfirmButton: false });
       }
@@ -457,14 +474,14 @@ export default function RepairPackageManager({
     }
   };
 
-  const deletePackage = async (id: number) => {
+  const archivePackage = async (id: number) => {
     const result = await Swal.fire({
-      title: "Delete package?",
-      text: "This will archive/remove the package from active management.",
+      title: "Archive package?",
+      text: "This package will be moved to archived list.",
       icon: "warning",
       showCancelButton: true,
-      confirmButtonText: "Delete",
-      confirmButtonColor: "#d33",
+      confirmButtonText: "Archive",
+      confirmButtonColor: "#7c3aed",
     });
 
     if (!result.isConfirmed) return;
@@ -472,12 +489,36 @@ export default function RepairPackageManager({
     try {
       const response = await axios.delete(`/api/repair-packages/${id}`);
       if (response.data?.success) {
-        await loadData();
-        Swal.fire({ icon: "success", title: "Deleted", timer: 1400, showConfirmButton: false });
+        await loadData(showArchived);
+        Swal.fire({ icon: "success", title: "Archived", timer: 1400, showConfirmButton: false });
       }
     } catch (error: any) {
       console.error("Failed to delete package", error);
-      Swal.fire({ icon: "error", title: "Error", text: error?.response?.data?.message || "Failed to delete package." });
+      Swal.fire({ icon: "error", title: "Error", text: error?.response?.data?.message || "Failed to archive package." });
+    }
+  };
+
+  const restorePackage = async (id: number) => {
+    const result = await Swal.fire({
+      title: "Restore package?",
+      text: "This package will return to active list.",
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Restore",
+      confirmButtonColor: "#2563eb",
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const response = await axios.post(`/api/repair-packages/${id}/restore`);
+      if (response.data?.success) {
+        await loadData(showArchived);
+        Swal.fire({ icon: "success", title: "Restored", timer: 1400, showConfirmButton: false });
+      }
+    } catch (error: any) {
+      console.error("Failed to restore package", error);
+      Swal.fire({ icon: "error", title: "Error", text: error?.response?.data?.message || "Failed to restore package." });
     }
   };
 
@@ -864,14 +905,33 @@ export default function RepairPackageManager({
       <div className="p-6 border-b border-gray-200 dark:border-gray-800 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Repair Packages</h2>
-          <p className="text-sm text-gray-600 dark:text-gray-400">Create bundled service packages (repairer-managed).</p>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            {showArchived ? "Archived package list" : "Create bundled service packages (repairer-managed)."}
+          </p>
         </div>
-        <button
-          onClick={openAddModal}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800"
-        >
-          + Add Package
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setShowArchived((prev) => !prev)}
+            className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
+              showArchived
+                ? "border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100 dark:border-purple-700 dark:bg-purple-900/20 dark:text-purple-300"
+                : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+            }`}
+          >
+            {showArchived ? <ArchiveRestoreIcon className="w-5 h-5" /> : <ArchiveBoxIcon className="w-5 h-5" />}
+            {showArchived ? "Show Active" : "Show Archived"}
+          </button>
+
+          {!showArchived && (
+            <button
+              onClick={openAddModal}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800"
+            >
+              + Add Package
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="p-6 border-b border-gray-200 dark:border-gray-800 grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -907,13 +967,23 @@ export default function RepairPackageManager({
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
-            {!loading && filteredPackages.length === 0 && (
+            {loading && (
               <tr>
-                <td colSpan={6} className="px-6 py-10 text-center text-gray-500 dark:text-gray-400">No repair packages found.</td>
+                <td colSpan={6} className="px-6 py-10 text-center text-gray-500 dark:text-gray-400">
+                  Loading repair packages...
+                </td>
               </tr>
             )}
 
-            {filteredPackages.map((pkg) => (
+            {!loading && filteredPackages.length === 0 && (
+              <tr>
+                <td colSpan={6} className="px-6 py-10 text-center text-gray-500 dark:text-gray-400">
+                  {showArchived ? "No archived repair packages found." : "No repair packages found."}
+                </td>
+              </tr>
+            )}
+
+            {!loading && filteredPackages.map((pkg) => (
               <tr key={pkg.id} className="hover:bg-gray-50 dark:hover:bg-white/2">
                 <td className="px-6 py-4 align-top">
                   <p className="text-sm font-semibold text-gray-900 dark:text-white">{pkg.name}</p>
@@ -931,22 +1001,35 @@ export default function RepairPackageManager({
                 </td>
                 <td className="px-6 py-4 align-top">
                   <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => openEditModal(pkg)}
-                      className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-                      title="Edit package"
-                      aria-label="Edit package"
-                    >
-                      <EditIcon className="w-5 h-5" />
-                    </button>
-                    <button
-                      onClick={() => deletePackage(pkg.id)}
-                      className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                      title="Delete package"
-                      aria-label="Delete package"
-                    >
-                      <TrashIcon className="w-5 h-5" />
-                    </button>
+                    {!showArchived ? (
+                      <>
+                        <button
+                          onClick={() => openEditModal(pkg)}
+                          className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                          title="Edit package"
+                          aria-label="Edit package"
+                        >
+                          <EditIcon className="w-5 h-5" />
+                        </button>
+                        <button
+                          onClick={() => archivePackage(pkg.id)}
+                          className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                          title="Archive package"
+                          aria-label="Archive package"
+                        >
+                          <ArchiveBoxIcon className="w-5 h-5" />
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => restorePackage(pkg.id)}
+                        className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                        title="Restore package"
+                        aria-label="Restore package"
+                      >
+                        <ArchiveRestoreIcon className="w-5 h-5" />
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>

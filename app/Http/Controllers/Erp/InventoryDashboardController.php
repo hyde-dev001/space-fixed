@@ -7,6 +7,7 @@ use App\Models\InventoryItem;
 use App\Models\StockMovement;
 use App\Models\SupplierOrder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
 class InventoryDashboardController extends Controller
@@ -16,7 +17,12 @@ class InventoryDashboardController extends Controller
      */
     public function index(Request $request)
     {
-        $shopOwnerId = $request->user()->shop_owner_id;
+        $shopOwnerId = $this->resolveShopOwnerId($request);
+        if (!$shopOwnerId) {
+            return response()->json([
+                'message' => 'Shop context is missing for this account.'
+            ], 403);
+        }
         
         $metrics = $this->getMetrics($shopOwnerId);
         $chartData = $this->getChartData($shopOwnerId);
@@ -57,7 +63,19 @@ class InventoryDashboardController extends Controller
     public function getMetrics($shopOwnerId = null)
     {
         if (!$shopOwnerId) {
-            $shopOwnerId = request()->user()->shop_owner_id;
+            $shopOwnerId = $this->resolveShopOwnerId();
+            if (!$shopOwnerId) {
+                return [
+                    'total_items' => 0,
+                    'total_value' => 0,
+                    'low_stock_count' => 0,
+                    'out_of_stock_count' => 0,
+                    'stock_in_today' => 0,
+                    'stock_out_today' => 0,
+                    'active_supplier_orders' => 0,
+                    'overdue_orders' => 0,
+                ];
+            }
         }
         
         $totalItems = InventoryItem::where('shop_owner_id', $shopOwnerId)
@@ -117,7 +135,17 @@ class InventoryDashboardController extends Controller
     public function getChartData($shopOwnerId = null)
     {
         if (!$shopOwnerId) {
-            $shopOwnerId = request()->user()->shop_owner_id;
+            $shopOwnerId = $this->resolveShopOwnerId();
+            if (!$shopOwnerId) {
+                return [
+                    'categories' => collect(),
+                    'series' => [
+                        ['name' => 'Available', 'data' => collect()],
+                        ['name' => 'Reserved', 'data' => collect()],
+                        ['name' => 'Reorder Level', 'data' => collect()],
+                    ],
+                ];
+            }
         }
         
         $items = InventoryItem::where('shop_owner_id', $shopOwnerId)
@@ -149,9 +177,14 @@ class InventoryDashboardController extends Controller
     /**
      * Show single inventory item details
      */
-    public function show($id)
+    public function show(Request $request, $id)
     {
-        $shopOwnerId = request()->user()->shop_owner_id;
+        $shopOwnerId = $this->resolveShopOwnerId($request);
+        if (!$shopOwnerId) {
+            return response()->json([
+                'message' => 'Shop context is missing for this account.'
+            ], 403);
+        }
         
         $item = InventoryItem::with(['sizes', 'colorVariants.images', 'images', 'stockMovements' => function ($query) {
                 $query->with('performer')->latest('performed_at')->limit(10);
@@ -160,5 +193,19 @@ class InventoryDashboardController extends Controller
             ->findOrFail($id);
         
         return response()->json($item);
+    }
+
+    private function resolveShopOwnerId(?Request $request = null): ?int
+    {
+        $user = $request?->user() ?? Auth::guard('user')->user() ?? Auth::user();
+        if (!$user) {
+            return null;
+        }
+
+        $shopOwnerId = $user->shop_owner_id
+            ?? $user->shopOwner?->id
+            ?? null;
+
+        return $shopOwnerId ? (int) $shopOwnerId : null;
     }
 }

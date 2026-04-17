@@ -54,6 +54,11 @@ class RepairServiceController extends Controller
             }
         }
 
+        // Archived listing is backoffice-only; customer browsing (`shop_id`) always stays active-only.
+        if ($request->boolean('archived') && !$request->filled('shop_id')) {
+            $query->onlyTrashed();
+        }
+
         // Filter by status if provided
         if ($request->has('status') && $request->status !== 'all') {
             $normalizedStatus = $this->normalizeServiceStatus((string) $request->status);
@@ -466,7 +471,17 @@ class RepairServiceController extends Controller
      */
     public function destroy($id)
     {
-        $service = RepairService::find($id);
+        $shopOwnerId = $this->resolveActingShopOwnerId();
+        if (!$shopOwnerId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to resolve shop owner context.',
+            ], 403);
+        }
+
+        $service = RepairService::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->find($id);
 
         if (!$service) {
             return response()->json([
@@ -489,13 +504,57 @@ class RepairServiceController extends Controller
             ->causedBy(Auth::guard('user')->user() ?? Auth::guard('shop_owner')->user())
             ->performedOn($service)
             ->withProperties($serviceDetails)
-            ->log('Repair service deleted');
+            ->log('Repair service archived');
 
         $service->delete();
 
         return response()->json([
             'success' => true,
-            'message' => 'Service deleted successfully',
+            'message' => 'Service archived successfully',
+        ]);
+    }
+
+    /**
+     * Restore archived repair service.
+     */
+    public function restore($id)
+    {
+        $shopOwnerId = $this->resolveActingShopOwnerId();
+        if (!$shopOwnerId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to resolve shop owner context.',
+            ], 403);
+        }
+
+        $service = RepairService::withTrashed()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->onlyTrashed()
+            ->find($id);
+
+        if (!$service) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Archived service not found',
+            ], 404);
+        }
+
+        $service->restore();
+
+        activity()
+            ->causedBy(Auth::guard('user')->user() ?? Auth::guard('shop_owner')->user())
+            ->performedOn($service)
+            ->withProperties([
+                'service_name' => $service->name,
+                'category' => $service->category,
+                'restored_by' => Auth::guard('user')->user()?->name ?? Auth::guard('shop_owner')->user()?->name,
+            ])
+            ->log('Repair service restored');
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Service restored successfully',
+            'data' => $service,
         ]);
     }
 
@@ -1477,6 +1536,20 @@ class RepairServiceController extends Controller
             'rejected' => 'Rejected',
             default => null,
         };
+    }
+
+    private function resolveActingShopOwnerId(): ?int
+    {
+        if (Auth::guard('shop_owner')->check()) {
+            return (int) Auth::guard('shop_owner')->id();
+        }
+
+        if (Auth::guard('user')->check()) {
+            $shopOwnerId = Auth::guard('user')->user()?->shop_owner_id;
+            return $shopOwnerId ? (int) $shopOwnerId : null;
+        }
+
+        return null;
     }
 
     private function isIndividualRegistrationShop(int $shopOwnerId): bool

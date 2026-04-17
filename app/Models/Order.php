@@ -31,6 +31,7 @@ class Order extends Model
         'customer_phone',
         'customer_address',
         'payment_method',
+        'accepted_shop_policy_version_id',
         'payment_status',
         'paymongo_link_id',
         'paymongo_payment_id',
@@ -215,6 +216,11 @@ class Order extends Model
     public function address(): BelongsTo
     {
         return $this->belongsTo(UserAddress::class, 'address_id');
+    }
+
+    public function acceptedShopPolicyVersion(): BelongsTo
+    {
+        return $this->belongsTo(ShopPolicyVersion::class, 'accepted_shop_policy_version_id');
     }
 
     /**

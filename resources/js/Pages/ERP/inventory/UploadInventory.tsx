@@ -1,4 +1,4 @@
-import React, { FormEvent, useMemo, useState } from 'react';
+import React, { FormEvent, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Head, usePage } from '@inertiajs/react';
 import Swal from 'sweetalert2';
@@ -30,6 +30,7 @@ type StockItem = {
   repairImages: ColorVariantImage[];
   imageUrl?: string;
   createdAt: string;
+  deleted_at?: string | null;
 };
 
 type MetricCardProps = {
@@ -79,6 +80,23 @@ const ExclamationIcon: React.FC<{ className?: string }> = ({ className }) => (
 const TrendingUpIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+  </svg>
+);
+
+const ArchiveBoxIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7.5A2.5 2.5 0 016.5 5h11A2.5 2.5 0 0120 7.5v1A2.5 2.5 0 0117.5 11h-11A2.5 2.5 0 014 8.5v-1z" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11v6.5A2.5 2.5 0 009.5 20h5a2.5 2.5 0 002.5-2.5V11" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 15h4" />
+  </svg>
+);
+
+const ArchiveRestoreIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7.5A2.5 2.5 0 016.5 5h11A2.5 2.5 0 0120 7.5v1A2.5 2.5 0 0117.5 11h-11A2.5 2.5 0 014 8.5v-1z" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11v6.5A2.5 2.5 0 009.5 20h5a2.5 2.5 0 002.5-2.5V11" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 14l-2-2-2 2" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 12v4" />
   </svg>
 );
 
@@ -271,6 +289,7 @@ const mapApiItemToStock = (item: ApiInventoryItem): StockItem | null => {
     repairImages,
     imageUrl: toStorageUrl(item.main_image),
     createdAt: item.created_at,
+    deleted_at: item.deleted_at ?? null,
   };
 };
 
@@ -297,6 +316,7 @@ export default function UploadInventory() {
   const [stocks, setStocks] = useState<StockItem[]>(
     () => mapAndFilterVisibleStocks(initialData?.data ?? [])
   );
+  const [showArchived, setShowArchived] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<'all' | StockCategory>('all');
   const [tablePage, setTablePage] = useState(1);
   const [loadingStocks, setLoadingStocks] = useState(false);
@@ -391,10 +411,10 @@ export default function UploadInventory() {
     notes: '',
   });
 
-  const fetchStocks = async () => {
+  const fetchStocks = async (archived = showArchived) => {
     setLoadingStocks(true);
     try {
-      const res = await inventoryItemAPI.getAll({ per_page: 50 });
+      const res = await inventoryItemAPI.getAll({ per_page: 50, archived });
       setStocks(mapAndFilterVisibleStocks(res.data ?? []));
     } catch (err) {
       console.error('Failed to load inventory items', err);
@@ -571,6 +591,12 @@ export default function UploadInventory() {
     colorVariants.reduce((total, v) => total + v.sizes.reduce((s, sz) => s + sz.quantity, 0), 0),
   [colorVariants]);
 
+  useEffect(() => {
+    setCategoryFilter('all');
+    setTablePage(1);
+    void fetchStocks(showArchived);
+  }, [showArchived]);
+
   const resetForm = () => {
     setFormData({
       name: '',
@@ -619,15 +645,15 @@ export default function UploadInventory() {
     setIsModalOpen(true);
   };
 
-  const handleDelete = async (id: number, productName: string) => {
+  const handleArchive = async (id: number, productName: string) => {
     const confirmation = await Swal.fire({
-      title: 'Delete Product?',
-      html: `You are about to delete <strong>${productName}</strong>.<br/>This action cannot be undone.`,
+      title: 'Archive Product?',
+      html: `You are about to archive <strong>${productName}</strong>.<br/>It will be removed from the active list.`,
       icon: 'warning',
       showCancelButton: true,
-      confirmButtonColor: '#dc2626',
+      confirmButtonColor: '#7c3aed',
       cancelButtonColor: '#6b7280',
-      confirmButtonText: 'Yes, delete it',
+      confirmButtonText: 'Yes, archive it',
       cancelButtonText: 'Cancel',
     });
 
@@ -635,20 +661,54 @@ export default function UploadInventory() {
 
     try {
       await inventoryItemAPI.delete(id);
-      setStocks((previous) => previous.filter((item) => item.id !== id));
+      await fetchStocks(showArchived);
       await Swal.fire({
         icon: 'success',
-        title: 'Deleted',
-        text: `${productName} was deleted successfully.`,
+        title: 'Archived',
+        text: `${productName} was archived successfully.`,
         timer: 1500,
         showConfirmButton: false,
       });
     } catch (err) {
-      console.error('Failed to delete stock item', err);
+      console.error('Failed to archive stock item', err);
       await Swal.fire({
         icon: 'error',
-        title: 'Delete Failed',
-        text: 'Could not delete item. Please try again.',
+        title: 'Archive Failed',
+        text: 'Could not archive item. Please try again.',
+      });
+    }
+  };
+
+  const handleRestore = async (id: number, productName: string) => {
+    const confirmation = await Swal.fire({
+      title: 'Restore Product?',
+      html: `You are about to restore <strong>${productName}</strong>.<br/>It will return to the active list.`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#2563eb',
+      cancelButtonColor: '#6b7280',
+      confirmButtonText: 'Yes, restore it',
+      cancelButtonText: 'Cancel',
+    });
+
+    if (!confirmation.isConfirmed) return;
+
+    try {
+      await inventoryItemAPI.restore(id);
+      await fetchStocks(showArchived);
+      await Swal.fire({
+        icon: 'success',
+        title: 'Restored',
+        text: `${productName} was restored successfully.`,
+        timer: 1500,
+        showConfirmButton: false,
+      });
+    } catch (err) {
+      console.error('Failed to restore stock item', err);
+      await Swal.fire({
+        icon: 'error',
+        title: 'Restore Failed',
+        text: 'Could not restore item. Please try again.',
       });
     }
   };
@@ -856,12 +916,37 @@ export default function UploadInventory() {
                   : 'Manage stock uploads for shoes and repair materials'}
               </p>
             </div>
-            <button
-              onClick={() => handleOpenModal()}
-              className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-            >
-              + Add Stock Entry
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowArchived((prev) => !prev);
+                }}
+                className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
+                  showArchived
+                    ? 'border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100 dark:border-purple-700 dark:bg-purple-900/20 dark:text-purple-300'
+                    : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'
+                }`}
+              >
+                {showArchived ? (
+                  <>
+                    <ArchiveRestoreIcon className="size-5" />
+                    Show Active
+                  </>
+                ) : (
+                  <>
+                    <ArchiveBoxIcon className="size-5" />
+                    Show Archived
+                  </>
+                )}
+              </button>
+              <button
+                onClick={() => handleOpenModal()}
+                className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              >
+                + Add Stock Entry
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -873,7 +958,9 @@ export default function UploadInventory() {
 
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <p className="text-sm text-gray-600 dark:text-gray-400">Filter by category</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                {showArchived ? 'Archived items' : 'Filter by category'}
+              </p>
               <div className="sm:w-56">
                 <select
                   title="Filter stock category"
@@ -963,24 +1050,34 @@ export default function UploadInventory() {
                         </td>
                         <td className="px-6 py-4 text-gray-900 dark:text-white whitespace-nowrap">{formatUploadDate(stock.createdAt)}</td>
                         <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => handleOpenModal(stock)}
-                            className="p-2 text-blue-600 hover:text-blue-700 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-                            title="Edit stock"
-                          >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                            </svg>
-                          </button>
-                          <button
-                            onClick={() => handleDelete(stock.id, stock.name)}
-                            className="p-2 text-red-600 hover:text-red-700 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                            title="Delete stock"
-                          >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
+                          {!showArchived ? (
+                            <>
+                              <button
+                                onClick={() => handleOpenModal(stock)}
+                                className="p-2 text-blue-600 hover:text-blue-700 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                                title="Edit stock"
+                              >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={() => handleArchive(stock.id, stock.name)}
+                                className="p-2 text-red-600 hover:text-red-700 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                                title="Archive stock"
+                              >
+                                <ArchiveBoxIcon className="w-5 h-5" />
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              onClick={() => handleRestore(stock.id, stock.name)}
+                              className="p-2 text-blue-600 hover:text-blue-700 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                              title="Restore stock"
+                            >
+                              <ArchiveRestoreIcon className="w-5 h-5" />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );

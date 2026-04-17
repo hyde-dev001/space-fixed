@@ -204,6 +204,18 @@ export const inventoryItemAPI = {
     },
 
     /**
+     * Restore archived inventory item
+     */
+    async restore(id: number): Promise<{ message?: string; item?: InventoryItem }> {
+        try {
+            const response = await axios.post(`${API_BASE}/items/${id}/restore`);
+            return response.data;
+        } catch (error) {
+            return handleApiError(error);
+        }
+    },
+
+    /**
      * Create new inventory item
      */
     async create(data: CreateInventoryItemData): Promise<InventoryItem> {
@@ -329,7 +341,7 @@ export const inventoryItemAPI = {
     },
 
     /**
-     * Delete inventory item
+     * Archive inventory item
      */
     async delete(id: number): Promise<void> {
         try {

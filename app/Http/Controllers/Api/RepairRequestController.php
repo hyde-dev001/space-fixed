@@ -13,6 +13,7 @@ use App\Models\RepairReview;
 use App\Models\RepairPackage;
 use App\Models\RepairService;
 use App\Models\ShopOwner;
+use App\Models\ShopPolicyVersion;
 use App\Models\User;
 use App\Models\Finance\Invoice;
 use App\Models\Finance\InvoiceItem;
@@ -25,6 +26,7 @@ use App\Services\RepairPosPaymentService;
 use App\Services\RepairPosReceiptService;
 use App\Services\RepairPosRefundService;
 use App\Services\ShopOwnerApprovalPolicyService;
+use App\Services\PolicyAcceptanceService;
 
 class RepairRequestController extends Controller
 {
@@ -34,7 +36,7 @@ class RepairRequestController extends Controller
         private ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService
     ) {}
 
-    public function store(Request $request)
+    public function store(Request $request, PolicyAcceptanceService $policyAcceptanceService)
     {
         if (!Auth::guard('user')->check()) {
             return response()->json([
@@ -72,6 +74,8 @@ class RepairRequestController extends Controller
             'return_city' => 'required_if:return_delivery_method,customer_pickup,shop_delivery|string|max:255',
             'return_region' => 'required_if:return_delivery_method,customer_pickup,shop_delivery|string|max:255',
             'return_postal_code' => 'required_if:return_delivery_method,customer_pickup,shop_delivery|string|max:10',
+            'accepted_shop_policy_version_id' => 'nullable|integer|exists:shop_policy_versions,id',
+            'policy_accepted' => 'nullable|boolean',
         ]);
 
         if ($validator->fails()) {
@@ -249,6 +253,31 @@ class RepairRequestController extends Controller
             if ($requiresOwnerApprovalByPolicy) {
                 $isHighValue = true;
             }
+
+            $activePolicyVersion = null;
+            if ($shopOwner) {
+                $activePolicyVersion = ShopPolicyVersion::query()
+                    ->where('shop_owner_id', (int) $shopOwner->id)
+                    ->where('status', 'published')
+                    ->latest('version_number')
+                    ->first();
+            }
+
+            if ($activePolicyVersion) {
+                $providedVersionId = (int) ($request->input('accepted_shop_policy_version_id') ?? 0);
+                $policyAccepted = filter_var($request->input('policy_accepted'), FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) === true;
+
+                if (!$policyAccepted || $providedVersionId !== (int) $activePolicyVersion->id) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'You must accept the latest shop terms before submitting this repair request.',
+                        'errors' => [
+                            'policy_accepted' => ['Latest shop terms acceptance is required.'],
+                            'accepted_shop_policy_version_id' => ['Active policy version mismatch. Please reopen and accept the latest terms.'],
+                        ],
+                    ], 422);
+                }
+            }
             
             // Determine intake delivery method and address
             // 'walk_in' = customer brings shoes to shop
@@ -311,61 +340,105 @@ class RepairRequestController extends Controller
                 ];
             }
             
-            // Create repair request
-            $repairRequest = RepairRequest::create([
-                'request_id' => $requestId,
-                'customer_name' => $request->customer_name,
-                'email' => $request->email,
-                'phone' => $request->phone,
-                'shoe_type' => $request->shoe_type,
-                'brand' => $request->brand,
-                'description' => $request->description,
-                'shop_owner_id' => $request->shop_owner_id,
-                'repair_package_id' => $selectedPackage?->id,
-                'user_id' => $userId,
-                'images' => json_encode($imagePaths),
-                'total' => $requestTotal,
-                'package_price' => $packageTotal,
-                'add_ons_total' => $addOnsTotal,
-                'final_total' => $requestTotal,
-                'included_services_snapshot' => !empty($includedServicesSnapshot) ? $includedServicesSnapshot : null,
-                'add_on_services_snapshot' => !empty($addOnServicesSnapshot) ? $addOnServicesSnapshot : null,
-                'pricing_breakdown' => [
-                    'mode' => $selectedPackage ? 'package' : 'services',
-                    'package_id' => $selectedPackage?->id,
-                    'package_name' => $selectedPackage?->name,
-                    'included_services_total' => $selectedPackage
-                        ? (float) $selectedPackage->services->sum(fn ($service) => (float) $service->price)
-                        : $requestTotal,
+            // Create request and acceptance evidence atomically.
+            $repairRequest = DB::transaction(function () use (
+                $request,
+                $requestId,
+                $selectedPackage,
+                $userId,
+                $imagePaths,
+                $requestTotal,
+                $packageTotal,
+                $addOnsTotal,
+                $includedServicesSnapshot,
+                $addOnServicesSnapshot,
+                $addOnServiceIds,
+                $deliveryMethod,
+                $pickupAddress,
+                $intakeDeliveryMethod,
+                $intakeAddress,
+                $returnDeliveryMethod,
+                $returnAddress,
+                $isHighValue,
+                $requiresOwnerApproval,
+                $shopOwner,
+                $autoEnableOnlinePayment,
+                $serviceIds,
+                $activePolicyVersion,
+                $policyAcceptanceService
+            ) {
+                $repairRequest = RepairRequest::create([
+                    'request_id' => $requestId,
+                    'customer_name' => $request->customer_name,
+                    'email' => $request->email,
+                    'phone' => $request->phone,
+                    'shoe_type' => $request->shoe_type,
+                    'brand' => $request->brand,
+                    'description' => $request->description,
+                    'shop_owner_id' => $request->shop_owner_id,
+                    'repair_package_id' => $selectedPackage?->id,
+                    'user_id' => $userId,
+                    'images' => json_encode($imagePaths),
+                    'total' => $requestTotal,
                     'package_price' => $packageTotal,
                     'add_ons_total' => $addOnsTotal,
-                    'base_total' => $requestTotal,
-                    'materials_total' => 0.0,
                     'final_total' => $requestTotal,
-                    'add_on_count' => count($addOnServiceIds),
-                    'tax_mode' => 'vat_inclusive',
-                ],
-                'status' => 'new_request',
-                'delivery_method' => $deliveryMethod,
-                'pickup_address' => $pickupAddress,
-                'intake_delivery_method' => $intakeDeliveryMethod,
-                'intake_address' => $intakeAddress,
-                'return_delivery_method' => $returnDeliveryMethod,
-                'return_address' => $returnAddress,
-                'is_high_value' => $isHighValue,
-                'requires_owner_approval' => $requiresOwnerApproval,
-                'scheduled_dropoff_date' => $request->preferred_date ? \Carbon\Carbon::parse($request->preferred_date)->startOfDay() : null,
-                'payment_policy' => $shopOwner
-                    ? $this->normalizeRepairPaymentPolicy($shopOwner->repair_payment_policy ?? 'deposit_50')
-                    : 'deposit_50',
-                'payment_enabled' => $autoEnableOnlinePayment,
-                'payment_enabled_at' => $autoEnableOnlinePayment ? now() : null,
-            ]);
+                    'included_services_snapshot' => !empty($includedServicesSnapshot) ? $includedServicesSnapshot : null,
+                    'add_on_services_snapshot' => !empty($addOnServicesSnapshot) ? $addOnServicesSnapshot : null,
+                    'pricing_breakdown' => [
+                        'mode' => $selectedPackage ? 'package' : 'services',
+                        'package_id' => $selectedPackage?->id,
+                        'package_name' => $selectedPackage?->name,
+                        'included_services_total' => $selectedPackage
+                            ? (float) $selectedPackage->services->sum(fn ($service) => (float) $service->price)
+                            : $requestTotal,
+                        'package_price' => $packageTotal,
+                        'add_ons_total' => $addOnsTotal,
+                        'base_total' => $requestTotal,
+                        'materials_total' => 0.0,
+                        'final_total' => $requestTotal,
+                        'add_on_count' => count($addOnServiceIds),
+                        'tax_mode' => 'vat_inclusive',
+                    ],
+                    'status' => 'new_request',
+                    'delivery_method' => $deliveryMethod,
+                    'pickup_address' => $pickupAddress,
+                    'intake_delivery_method' => $intakeDeliveryMethod,
+                    'intake_address' => $intakeAddress,
+                    'return_delivery_method' => $returnDeliveryMethod,
+                    'return_address' => $returnAddress,
+                    'is_high_value' => $isHighValue,
+                    'requires_owner_approval' => $requiresOwnerApproval,
+                    'scheduled_dropoff_date' => $request->preferred_date ? \Carbon\Carbon::parse($request->preferred_date)->startOfDay() : null,
+                    'payment_policy' => $shopOwner
+                        ? $this->normalizeRepairPaymentPolicy($shopOwner->repair_payment_policy ?? 'deposit_50')
+                        : 'deposit_50',
+                    'payment_enabled' => $autoEnableOnlinePayment,
+                    'payment_enabled_at' => $autoEnableOnlinePayment ? now() : null,
+                ]);
 
-            // Attach services
-            if (!empty($serviceIds)) {
-                $repairRequest->services()->attach($serviceIds);
-            }
+                if (!empty($serviceIds)) {
+                    $repairRequest->services()->attach($serviceIds);
+                }
+
+                if ($activePolicyVersion) {
+                    $repairRequest->accepted_shop_policy_version_id = (int) $activePolicyVersion->id;
+                    $repairRequest->save();
+
+                    $policyAcceptanceService->record([
+                        'shop_owner_id' => (int) $shopOwner?->id,
+                        'shop_policy_version_id' => (int) $activePolicyVersion->id,
+                        'actor_user_id' => (int) $userId,
+                        'context_type' => 'repair_request',
+                        'context_id' => (int) $repairRequest->id,
+                        'accepted_at' => now(),
+                        'accepted_from_ip' => $request->ip(),
+                        'accepted_user_agent' => (string) $request->userAgent(),
+                    ]);
+                }
+
+                return $repairRequest;
+            });
 
             // Get notification service
             $notificationService = app(NotificationService::class);

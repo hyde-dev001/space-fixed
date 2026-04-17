@@ -299,6 +299,7 @@ export interface InventoryFilters {
     category?: string;
     brand?: string;
     status?: 'in_stock' | 'low_stock' | 'out_of_stock';
+    archived?: boolean;
     sort_by?: 'name' | 'sku' | 'quantity' | 'updated_at';
     sort_order?: 'asc' | 'desc';
     page?: number;

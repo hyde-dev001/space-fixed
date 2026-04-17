@@ -113,6 +113,10 @@ class RepairPackageController extends Controller
             'materialTemplateItems.inventoryItem:id,name,available_quantity',
         ]);
 
+        if ($request->boolean('archived')) {
+            $query->onlyTrashed();
+        }
+
         if ($shopOwnerId = $this->resolveShopOwnerId()) {
             $query->where('shop_owner_id', $shopOwnerId);
         }
@@ -676,7 +680,7 @@ class RepairPackageController extends Controller
         if (!$this->canAccessPackage($package)) {
             return response()->json([
                 'success' => false,
-                'message' => 'You are not allowed to delete this package.',
+                'message' => 'You are not allowed to archive this package.',
             ], 403);
         }
 
@@ -684,7 +688,38 @@ class RepairPackageController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Repair package deleted successfully.',
+            'message' => 'Repair package archived successfully.',
+        ]);
+    }
+
+    public function restore(int $id)
+    {
+        $package = RepairPackage::withTrashed()->onlyTrashed()->find($id);
+
+        if (!$package) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Archived repair package not found.',
+            ], 404);
+        }
+
+        if (!$this->canAccessPackage($package)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You are not allowed to restore this package.',
+            ], 403);
+        }
+
+        $package->restore();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Repair package restored successfully.',
+            'data' => $package->load([
+                'services:id,name,category,price,duration,status,shop_owner_id',
+                'materialTemplateItems:' . $this->materialTemplateItemSelectList(),
+                'materialTemplateItems.inventoryItem:id,name,available_quantity',
+            ]),
         ]);
     }
 

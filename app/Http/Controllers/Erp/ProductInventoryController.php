@@ -16,7 +16,12 @@ class ProductInventoryController extends Controller
      */
     public function index(Request $request)
     {
-        $shopOwnerId = $request->user()->shop_owner_id;
+        $shopOwnerId = $this->resolveShopOwnerId($request);
+        if (!$shopOwnerId) {
+            return response()->json([
+                'message' => 'Shop context is missing for this account.'
+            ], 403);
+        }
         
         $query = InventoryItem::with(['sizes', 'colorVariants', 'images'])
             ->where('shop_owner_id', $shopOwnerId)
@@ -75,9 +80,14 @@ class ProductInventoryController extends Controller
     /**
      * Show detailed product with variants and images
      */
-    public function show($id)
+    public function show(Request $request, $id)
     {
-        $shopOwnerId = request()->user()->shop_owner_id;
+        $shopOwnerId = $this->resolveShopOwnerId($request);
+        if (!$shopOwnerId) {
+            return response()->json([
+                'message' => 'Shop context is missing for this account.'
+            ], 403);
+        }
         
         $product = InventoryItem::with([
                 'sizes',
@@ -106,7 +116,12 @@ class ProductInventoryController extends Controller
             'movement_type' => 'required|in:adjustment,stock_in,stock_out'
         ]);
         
-        $shopOwnerId = $request->user()->shop_owner_id;
+        $shopOwnerId = $this->resolveShopOwnerId($request);
+        if (!$shopOwnerId) {
+            return response()->json([
+                'message' => 'Shop context is missing for this account.'
+            ], 403);
+        }
         
         $item = InventoryItem::where('shop_owner_id', $shopOwnerId)
             ->findOrFail($id);
@@ -156,7 +171,12 @@ class ProductInventoryController extends Controller
             'items.*.notes' => 'nullable|string|max:500'
         ]);
         
-        $shopOwnerId = $request->user()->shop_owner_id;
+        $shopOwnerId = $this->resolveShopOwnerId($request);
+        if (!$shopOwnerId) {
+            return response()->json([
+                'message' => 'Shop context is missing for this account.'
+            ], 403);
+        }
         $userId = $request->user()->id;
         
         DB::transaction(function () use ($validated, $shopOwnerId, $userId) {
@@ -232,5 +252,19 @@ class ProductInventoryController extends Controller
     private function publicFileExists(string $path): bool
     {
         return Storage::disk('public')->exists(ltrim($path, '/'));
+    }
+
+    private function resolveShopOwnerId(Request $request): ?int
+    {
+        $user = $request->user();
+        if (!$user) {
+            return null;
+        }
+
+        $shopOwnerId = $user->shop_owner_id
+            ?? $user->shopOwner?->id
+            ?? null;
+
+        return $shopOwnerId ? (int) $shopOwnerId : null;
     }
 }

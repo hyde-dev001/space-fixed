@@ -1264,10 +1264,18 @@ const AppSidebar_ERP: React.FC = () => {
 
     if (hasExplicitStaffRole) return true;
 
-    // Procurement-only accounts should not be classified as staff just because they
-    // share the ERP shell. Keep the staff sidebar hidden unless the account truly
-    // carries the STAFF role.
-    if (hasProcurementAccess()) return false;
+    const isProcurementOnlyAccount =
+      hasProcurementAccess() &&
+      !hasManagerRole &&
+      !hasHRAccess() &&
+      !hasFinanceAccess() &&
+      !hasCRMAccess() &&
+      !hasRepairerAccess();
+
+    // Pure procurement accounts should not be classified as staff just because they
+    // share the ERP shell. Mixed accounts that also have HR or other module access
+    // can still surface staff pages when they carry staff permissions.
+    if (isProcurementOnlyAccount) return false;
 
     const staffPermissions = [
       'access-staff-dashboard',

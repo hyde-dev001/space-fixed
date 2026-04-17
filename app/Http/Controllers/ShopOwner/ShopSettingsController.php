@@ -5,8 +5,12 @@ namespace App\Http\Controllers\ShopOwner;
 use App\Http\Controllers\Controller;
 use App\Models\HR\BranchPayrollSetting;
 use App\Models\ProcurementSettings;
+use App\Models\ShopPolicyVersion;
 use App\Models\ShopOwnerSubscription;
 use App\Services\CaviteLocationPolicyService;
+use App\Services\ShopPolicyTemplateService;
+use App\Services\ShopPolicyVersionService;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -272,6 +276,91 @@ class ShopSettingsController extends Controller
         }
 
         return back()->with('success', 'Shop settings updated successfully.');
+    }
+
+    /**
+     * Return the current policy editor state (latest draft, active published, and defaults).
+     */
+    public function getPolicyEditorState(ShopPolicyTemplateService $templateService): JsonResponse
+    {
+        $shopOwner = Auth::guard('shop_owner')->user();
+
+        $active = ShopPolicyVersion::query()
+            ->where('shop_owner_id', (int) $shopOwner->id)
+            ->where('status', 'published')
+            ->latest('version_number')
+            ->first();
+
+        $draftQuery = ShopPolicyVersion::query()
+            ->where('shop_owner_id', (int) $shopOwner->id)
+            ->where('status', 'draft');
+
+        if ($active) {
+            $draftQuery->where('version_number', '>', (int) $active->version_number);
+        }
+
+        $draft = $draftQuery
+            ->latest('version_number')
+            ->first();
+
+        $defaultSections = $templateService->buildSections(
+            (string) ($shopOwner->business_type ?? ''),
+            (string) ($shopOwner->registration_type ?? '')
+        );
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'active' => $active,
+                'draft' => $draft,
+                'default_sections' => $defaultSections,
+            ],
+        ]);
+    }
+
+    /**
+     * Save a draft policy version for the authenticated shop owner.
+     */
+    public function savePolicyDraft(Request $request, ShopPolicyVersionService $policyVersionService): JsonResponse
+    {
+        $shopOwner = Auth::guard('shop_owner')->user();
+
+        $validated = $request->validate([
+            'policy_sections_json' => ['required', 'array'],
+        ]);
+
+        $incomingSections = collect((array) $validated['policy_sections_json'])
+            ->map(fn ($value) => is_null($value) ? '' : (string) $value)
+            ->all();
+
+        $draft = $policyVersionService->saveDraft((int) $shopOwner->id, $incomingSections);
+
+        return response()->json([
+            'success' => true,
+            'data' => $draft,
+        ]);
+    }
+
+    /**
+     * Publish the latest draft policy version for this shop owner.
+     */
+    public function publishPolicy(ShopPolicyVersionService $policyVersionService): JsonResponse
+    {
+        $shopOwner = Auth::guard('shop_owner')->user();
+
+        try {
+            $published = $policyVersionService->publishLatestDraft((int) $shopOwner->id, (int) $shopOwner->id);
+        } catch (ModelNotFoundException $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No draft policy found to publish. Save a draft first, then publish.',
+            ], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $published,
+        ]);
     }
 
     /**

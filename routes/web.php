@@ -111,6 +111,9 @@ Route::get('/my-repairs', function () {
 Route::get('/repair-process', function () {
     return Inertia::render('UserSide/Repairs/RepairProcess');
 })->name('repair-process');
+Route::get('/api/policies/shops/{shopOwnerId}/active', [\App\Http\Controllers\Api\ShopPolicyController::class, 'active']);
+Route::middleware('auth:user')->get('/api/policies/shops/{shopOwnerId}/prefill', [\App\Http\Controllers\Api\ShopPolicyController::class, 'prefill']);
+Route::middleware('auth:user')->post('/api/policies/checkout/context', [\App\Http\Controllers\Api\ShopPolicyController::class, 'checkoutContext']);
 Route::get('/erp/user/repair-reject-approval', function () {
     return Inertia::render('ShopOwner/Repairs/repairRejectReview');
 })->middleware('auth:user')->name('erp.user.repair-reject-approval');
@@ -572,6 +575,9 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
     // SHOP SETTINGS - Available to ALL
     Route::get('/settings', [ShopSettingsController::class, 'index'])->name('settings');
     Route::put('/settings', [ShopSettingsController::class, 'update'])->name('settings.update');
+    Route::get('/settings/policies', [ShopSettingsController::class, 'getPolicyEditorState'])->name('settings.policies');
+    Route::put('/settings/policies/draft', [ShopSettingsController::class, 'savePolicyDraft'])->name('settings.policies.draft');
+    Route::post('/settings/policies/publish', [ShopSettingsController::class, 'publishPolicy'])->name('settings.policies.publish');
     Route::post('/settings/paymongo-key', [ShopSettingsController::class, 'updatePaymongoKey'])->name('settings.paymongo-key');
     Route::delete('/settings/paymongo-key', [ShopSettingsController::class, 'removePaymongoKey'])->name('settings.paymongo-key.remove');
     Route::post('/settings/geofence', [ShopSettingsController::class, 'updateGeofence'])->name('settings.geofence');
@@ -950,6 +956,10 @@ Route::prefix('api/repair-services')->group(function () {
         Route::delete('{id}', [\App\Http\Controllers\Api\RepairServiceController::class, 'destroy'])
             ->middleware('permission:access-upload-service|access-pricing-services');
 
+        // Restore archived repair service
+        Route::post('{id}/restore', [\App\Http\Controllers\Api\RepairServiceController::class, 'restore'])
+            ->middleware('permission:access-upload-service|access-pricing-services');
+
         // Finance approval routes
         Route::get('finance/pending', [\App\Http\Controllers\Api\RepairServiceController::class, 'financePending'])
             ->middleware('permission:access-repair-price-approval');
@@ -975,6 +985,7 @@ Route::prefix('api/repair-packages')->group(function () {
         Route::get('{id}', [\App\Http\Controllers\Api\RepairPackageController::class, 'show']);
         Route::put('{id}', [\App\Http\Controllers\Api\RepairPackageController::class, 'update']);
         Route::delete('{id}', [\App\Http\Controllers\Api\RepairPackageController::class, 'destroy']);
+        Route::post('{id}/restore', [\App\Http\Controllers\Api\RepairPackageController::class, 'restore']);
     });
 });
 

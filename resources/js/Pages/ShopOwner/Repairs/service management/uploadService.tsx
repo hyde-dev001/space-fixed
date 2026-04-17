@@ -60,9 +60,15 @@ const EditIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
-const TrashIcon: React.FC<{ className?: string }> = ({ className }) => (
+const ArchiveBoxIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V7a2 2 0 00-2-2h-3V3H9v2H6a2 2 0 00-2 2v6m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0H4m5 4h6" />
+  </svg>
+);
+
+const ArchiveRestoreIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7h4v4M3 11l5-5a9 9 0 111.24 12.73M9 17h6" />
   </svg>
 );
 
@@ -151,6 +157,7 @@ export default function UploadService() {
   const [services, setServices] = useState<Service[]>([]);
   const [repairMaterials, setRepairMaterials] = useState<RepairMaterialOption[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showArchivedServices, setShowArchivedServices] = useState(false);
   const [activeTab, setActiveTab] = useState<"services" | "packages">("services");
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -169,7 +176,7 @@ export default function UploadService() {
     duration: "",
     durationFrom: "",
     durationTo: "",
-    durationUnit: "hours" as "hours" | "days",
+    durationUnit: "hours" as "minutes" | "hours" | "days",
     description: "",
     status: "Active" as "Active" | "Inactive" | "Pending",
     material_templates: [] as Array<{
@@ -181,10 +188,12 @@ export default function UploadService() {
   });
 
   // Fetch services from backend
-  const fetchServices = async () => {
+  const fetchServices = async (archived: boolean = showArchivedServices) => {
     try {
       setLoading(true);
-      const response = await axios.get('/api/shop-owner/repair-services');
+      const response = await axios.get('/api/shop-owner/repair-services', {
+        params: archived ? { archived: true } : {},
+      });
       if (response.data.success) {
         // Format price with peso sign for display
         const formattedServices = response.data.data.map((service: any) => ({
@@ -236,9 +245,12 @@ export default function UploadService() {
 
   // Load services on component mount
   useEffect(() => {
-    fetchServices();
     fetchRepairMaterials();
   }, []);
+
+  useEffect(() => {
+    fetchServices(showArchivedServices);
+  }, [showArchivedServices]);
 
   const getMaterialTemplateValidationError = (): string | null => {
     if (formData.material_templates.length === 0) {
@@ -275,25 +287,37 @@ export default function UploadService() {
     return String(Math.max(1, Math.ceil(numericValue)));
   };
 
-  const parseDurationValue = (value: string): { durationFrom: string; durationTo: string; durationUnit: "hours" | "days" } => {
+  const parseDurationValue = (value: string): { durationFrom: string; durationTo: string; durationUnit: "minutes" | "hours" | "days" } => {
     const normalized = value.trim().toLowerCase().replace(/\s+/g, " ");
-    const rangeMatch = normalized.match(/^(\d+(?:\.\d+)?)\s*(?:-|to)\s*(\d+(?:\.\d+)?)\s*(hours?|days?)$/i);
+    const rangeMatch = normalized.match(/^(\d+(?:\.\d+)?)\s*(?:-|to)\s*(\d+(?:\.\d+)?)\s*(minutes?|hours?|days?)$/i);
 
     if (rangeMatch) {
       return {
         durationFrom: rangeMatch[1],
         durationTo: rangeMatch[2],
-        durationUnit: (rangeMatch[3].startsWith("day") ? "days" : "hours") as "hours" | "days",
+        durationUnit: (
+          rangeMatch[3].startsWith("day")
+            ? "days"
+            : rangeMatch[3].startsWith("minute")
+            ? "minutes"
+            : "hours"
+        ) as "minutes" | "hours" | "days",
       };
     }
 
-    const singleMatch = normalized.match(/^(\d+(?:\.\d+)?)\s*(hours?|days?)$/i);
+    const singleMatch = normalized.match(/^(\d+(?:\.\d+)?)\s*(minutes?|hours?|days?)$/i);
 
     if (singleMatch) {
       return {
         durationFrom: singleMatch[1],
         durationTo: "",
-        durationUnit: (singleMatch[2].startsWith("day") ? "days" : "hours") as "hours" | "days",
+        durationUnit: (
+          singleMatch[2].startsWith("day")
+            ? "days"
+            : singleMatch[2].startsWith("minute")
+            ? "minutes"
+            : "hours"
+        ) as "minutes" | "hours" | "days",
       };
     }
 
@@ -304,7 +328,7 @@ export default function UploadService() {
     };
   };
 
-  const buildDurationValue = (durationFrom: string, durationTo: string, durationUnit: "hours" | "days") => {
+  const buildDurationValue = (durationFrom: string, durationTo: string, durationUnit: "minutes" | "hours" | "days") => {
     const fromValue = Number(durationFrom);
 
     if (!Number.isFinite(fromValue) || fromValue <= 0) {
@@ -334,6 +358,41 @@ export default function UploadService() {
       : formData.category
   );
 
+  const normalizePriceInput = (value: string): string => {
+    const cleaned = value.replace(/[^\d.]/g, "");
+
+    if (!cleaned) {
+      return "";
+    }
+
+    const firstDotIndex = cleaned.indexOf(".");
+    if (firstDotIndex === -1) {
+      return cleaned;
+    }
+
+    const wholePart = cleaned.slice(0, firstDotIndex);
+    const decimalPart = cleaned.slice(firstDotIndex + 1).replace(/\./g, "").slice(0, 2);
+
+    return `${wholePart}.${decimalPart}`;
+  };
+
+  const isValidPriceInput = (value: string): boolean => {
+    const trimmed = value.trim();
+    if (!trimmed || trimmed === ".") {
+      return false;
+    }
+
+    const numericValue = Number(trimmed);
+    return Number.isFinite(numericValue) && numericValue >= 0;
+  };
+
+  const handlePriceInputChange = (value: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      price: normalizePriceInput(value),
+    }));
+  };
+
   const getDurationPreview = () => buildDurationValue(formData.durationFrom, formData.durationTo, formData.durationUnit);
 
   const handleAddService = async () => {
@@ -344,6 +403,15 @@ export default function UploadService() {
         icon: "error",
         title: "Validation Error",
         text: "Please fill in all required fields",
+      });
+      return;
+    }
+
+    if (!isValidPriceInput(formData.price)) {
+      Swal.fire({
+        icon: "error",
+        title: "Validation Error",
+        text: "Price must be a valid number.",
       });
       return;
     }
@@ -362,7 +430,7 @@ export default function UploadService() {
       Swal.fire({
         icon: "error",
         title: "Validation Error",
-        text: "Please enter a valid duration and choose hours or days.",
+        text: "Please enter a valid duration and choose minutes, hours, or days.",
       });
       return;
     }
@@ -399,7 +467,7 @@ export default function UploadService() {
       if (response.data.success) {
         setIsAddModalOpen(false);
         resetForm();
-        await fetchServices(); // Refresh the list
+        await fetchServices(showArchivedServices); // Refresh the list
 
         Swal.fire({
           icon: "success",
@@ -433,6 +501,15 @@ export default function UploadService() {
       return;
     }
 
+    if (!isValidPriceInput(formData.price)) {
+      Swal.fire({
+        icon: "error",
+        title: "Validation Error",
+        text: "Price must be a valid number.",
+      });
+      return;
+    }
+
     if (formData.category === "Others" && !effectiveCategory) {
       Swal.fire({
         icon: "error",
@@ -447,7 +524,7 @@ export default function UploadService() {
       Swal.fire({
         icon: "error",
         title: "Validation Error",
-        text: "Please enter a valid duration and choose hours or days.",
+        text: "Please enter a valid duration and choose minutes, hours, or days.",
       });
       return;
     }
@@ -482,7 +559,7 @@ export default function UploadService() {
         setIsEditModalOpen(false);
         setSelectedService(null);
         resetForm();
-        await fetchServices(); // Refresh the list
+        await fetchServices(showArchivedServices); // Refresh the list
 
         Swal.fire({
           icon: "success",
@@ -502,15 +579,15 @@ export default function UploadService() {
     }
   };
 
-  const handleDeleteService = async (id: number) => {
+  const handleArchiveService = async (id: number) => {
     const result = await Swal.fire({
-      title: "Are you sure?",
-      text: "You won't be able to revert this!",
+      title: "Archive this service?",
+      text: "The service will be hidden from active lists until restored.",
       icon: "warning",
       showCancelButton: true,
-      confirmButtonColor: "#3085d6",
-      cancelButtonColor: "#d33",
-      confirmButtonText: "Yes, delete it!",
+      confirmButtonColor: "#dc2626",
+      cancelButtonColor: "#6b7280",
+      confirmButtonText: "Yes, archive it",
     });
 
     if (result.isConfirmed) {
@@ -518,23 +595,59 @@ export default function UploadService() {
         const response = await axios.delete(`/api/shop-owner/repair-services/${id}`);
         
         if (response.data.success) {
-          await fetchServices(); // Refresh the list
+          await fetchServices(showArchivedServices); // Refresh the list
           Swal.fire({
-            title: "Deleted!",
-            text: "The service has been deleted.",
+            title: "Archived!",
+            text: "The service has been archived.",
             icon: "success",
             timer: 2000,
             showConfirmButton: false,
           });
         }
       } catch (error: any) {
-        console.error('Error deleting service:', error);
+        console.error('Error archiving service:', error);
         Swal.fire({
           icon: "error",
           title: "Error",
-          text: error.response?.data?.message || "Failed to delete service",
+          text: error.response?.data?.message || "Failed to archive service",
         });
       }
+    }
+  };
+
+  const handleRestoreService = async (id: number) => {
+    const result = await Swal.fire({
+      title: "Restore this service?",
+      text: "The service will be moved back to active services.",
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonColor: "#2563eb",
+      cancelButtonColor: "#6b7280",
+      confirmButtonText: "Yes, restore it",
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const response = await axios.post(`/api/shop-owner/repair-services/${id}/restore`);
+
+      if (response.data.success) {
+        await fetchServices(showArchivedServices);
+        Swal.fire({
+          title: "Restored!",
+          text: "The service has been restored.",
+          icon: "success",
+          timer: 2000,
+          showConfirmButton: false,
+        });
+      }
+    } catch (error: any) {
+      console.error('Error restoring service:', error);
+      Swal.fire({
+        icon: "error",
+        title: "Error",
+        text: error.response?.data?.message || "Failed to restore service",
+      });
     }
   };
 
@@ -547,7 +660,7 @@ export default function UploadService() {
       name: service.name,
       category: serviceCategoryOptions.includes(service.category) ? service.category : "Others",
       categoryCustom: serviceCategoryOptions.includes(service.category) ? "" : service.category,
-      price: service.price,
+      price: normalizePriceInput(String(service.price ?? "")),
       duration: service.duration,
       durationFrom: parsedDuration.durationFrom,
       durationTo: parsedDuration.durationTo,
@@ -641,17 +754,28 @@ export default function UploadService() {
             </p>
           </div>
           {activeTab === "services" && (
-            <button
-              onClick={() => {
-                resetForm();
-                void fetchRepairMaterials();
-                setIsAddModalOpen(true);
-              }}
-              className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-            >
-              <PlusIcon className="w-5 h-5" />
-              Add Service
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setShowArchivedServices((prev) => !prev)}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-700 text-sm font-medium hover:bg-gray-50 transition-colors dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+              >
+                {showArchivedServices ? 'Show Active' : 'Show Archived'}
+              </button>
+              {!showArchivedServices && (
+                <button
+                  onClick={() => {
+                    resetForm();
+                    void fetchRepairMaterials();
+                    setIsAddModalOpen(true);
+                  }}
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+                >
+                  <PlusIcon className="w-5 h-5" />
+                  Add Service
+                </button>
+              )}
+            </div>
           )}
         </div>
 
@@ -789,7 +913,13 @@ export default function UploadService() {
                     </tr>
                   </thead>
                   <tbody className="bg-white dark:bg-white/[0.02] divide-y divide-gray-200 dark:divide-gray-800">
-                    {filteredServices.length > 0 ? (
+                    {loading ? (
+                      <tr>
+                        <td colSpan={6} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
+                          Loading services...
+                        </td>
+                      </tr>
+                    ) : filteredServices.length > 0 ? (
                       filteredServices.map((service) => (
                         <tr key={service.id} className="hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors">
                           <td className="px-6 py-4 whitespace-nowrap">
@@ -830,20 +960,32 @@ export default function UploadService() {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                             <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => openEditModal(service)}
-                                className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-                                title="Edit"
-                              >
-                                <EditIcon className="w-5 h-5" />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteService(service.id)}
-                                className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                                title="Delete"
-                              >
-                                <TrashIcon className="w-5 h-5" />
-                              </button>
+                              {!showArchivedServices ? (
+                                <>
+                                  <button
+                                    onClick={() => openEditModal(service)}
+                                    className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                                    title="Edit"
+                                  >
+                                    <EditIcon className="w-5 h-5" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleArchiveService(service.id)}
+                                    className="p-2 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors"
+                                    title="Archive"
+                                  >
+                                    <ArchiveBoxIcon className="w-5 h-5" />
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  onClick={() => handleRestoreService(service.id)}
+                                  className="p-2 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-colors"
+                                  title="Restore"
+                                >
+                                  <ArchiveRestoreIcon className="w-5 h-5" />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -853,9 +995,9 @@ export default function UploadService() {
                         <td colSpan={6} className="px-6 py-12 text-center">
                           <div className="flex flex-col items-center justify-center">
                             <UploadIcon className="w-12 h-12 text-gray-400 dark:text-gray-600 mb-4" />
-                            <p className="text-gray-500 dark:text-gray-400">No services found</p>
+                            <p className="text-gray-500 dark:text-gray-400">{showArchivedServices ? 'No archived services found' : 'No services found'}</p>
                             <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
-                              Try adjusting your filters or add a new service
+                              {showArchivedServices ? 'Switch to active services to manage current offerings' : 'Try adjusting your filters or add a new service'}
                             </p>
                           </div>
                         </td>
@@ -968,8 +1110,9 @@ export default function UploadService() {
                   </label>
                   <input
                     type="text"
+                    inputMode="decimal"
                     value={formData.price}
-                    onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                    onChange={(e) => handlePriceInputChange(e.target.value)}
                     className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="₱0.00"
                   />
@@ -1006,16 +1149,17 @@ export default function UploadService() {
                       <select
                         title="Select duration unit"
                         value={formData.durationUnit}
-                        onChange={(e) => setFormData({ ...formData, durationUnit: e.target.value as "hours" | "days" })}
+                        onChange={(e) => setFormData({ ...formData, durationUnit: e.target.value as "minutes" | "hours" | "days" })}
                         className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       >
+                        <option value="minutes">Minutes</option>
                         <option value="hours">Hours</option>
                         <option value="days">Days</option>
                       </select>
                     </div>
                   </div>
                   <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                    Leave the second box empty for an exact estimate. Fill both for a range like 2 to 3 hours or days.
+                    Leave the second box empty for an exact estimate. Fill both for a range like 30 to 45 minutes, 2 to 3 hours, or 1 to 2 days.
                   </p>
                   {getDurationPreview() && (
                     <p className="mt-2 text-xs font-medium text-blue-600 dark:text-blue-400">
@@ -1222,8 +1366,9 @@ export default function UploadService() {
                   </label>
                   <input
                     type="text"
+                    inputMode="decimal"
                     value={formData.price}
-                    onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                    onChange={(e) => handlePriceInputChange(e.target.value)}
                     className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="₱0.00"
                   />
@@ -1260,16 +1405,17 @@ export default function UploadService() {
                       <select
                         title="Select duration unit"
                         value={formData.durationUnit}
-                        onChange={(e) => setFormData({ ...formData, durationUnit: e.target.value as "hours" | "days" })}
+                        onChange={(e) => setFormData({ ...formData, durationUnit: e.target.value as "minutes" | "hours" | "days" })}
                         className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       >
+                        <option value="minutes">Minutes</option>
                         <option value="hours">Hours</option>
                         <option value="days">Days</option>
                       </select>
                     </div>
                   </div>
                   <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                    Leave the second box empty for an exact estimate. Fill both for a range like 2 to 3 hours or days.
+                    Leave the second box empty for an exact estimate. Fill both for a range like 30 to 45 minutes, 2 to 3 hours, or 1 to 2 days.
                   </p>
                   {buildDurationValue(formData.durationFrom, formData.durationTo, formData.durationUnit) && (
                     <p className="mt-2 text-xs font-medium text-blue-600 dark:text-blue-400">

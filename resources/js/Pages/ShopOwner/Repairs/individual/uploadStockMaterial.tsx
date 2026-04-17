@@ -56,13 +56,24 @@ const EditIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-const TrashIcon = ({ className }: { className?: string }) => (
+const ArchiveBoxIcon = ({ className }: { className?: string }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path
       strokeLinecap="round"
       strokeLinejoin="round"
       strokeWidth={2}
-      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+      d="M20 13V7a2 2 0 00-2-2h-3V3H9v2H6a2 2 0 00-2 2v6m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0H4m5 4h6"
+    />
+  </svg>
+);
+
+const ArchiveRestoreIcon = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M3 7h4v4M3 11l5-5a9 9 0 111.24 12.73M9 17h6"
     />
   </svg>
 );
@@ -70,6 +81,7 @@ const TrashIcon = ({ className }: { className?: string }) => (
 export default function UploadStockMaterial() {
   const [materials, setMaterials] = useState<MaterialItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showArchived, setShowArchived] = useState(false);
   const [search, setSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -95,13 +107,14 @@ export default function UploadStockMaterial() {
     return { totalItems, totalQuantity, lowStockCount };
   }, [materials]);
 
-  const fetchMaterials = async () => {
+  const fetchMaterials = async (archived: boolean = showArchived) => {
     try {
       setLoading(true);
       const response = await axios.get('/api/shop-owner/inventory/items', {
         params: {
           category: 'repair_materials',
           per_page: 100,
+          ...(archived ? { archived: true } : {}),
         },
       });
 
@@ -119,8 +132,8 @@ export default function UploadStockMaterial() {
   };
 
   useEffect(() => {
-    fetchMaterials();
-  }, []);
+    fetchMaterials(showArchived);
+  }, [showArchived]);
 
   const resetForm = () => {
     setEditing(null);
@@ -194,7 +207,7 @@ export default function UploadStockMaterial() {
         await axios.post('/api/shop-owner/inventory/items', payload);
       }
 
-      await fetchMaterials();
+      await fetchMaterials(showArchived);
       setIsModalOpen(false);
       resetForm();
 
@@ -224,13 +237,13 @@ export default function UploadStockMaterial() {
     }
   };
 
-  const handleDelete = async (item: MaterialItem) => {
+  const handleArchive = async (item: MaterialItem) => {
     const result = await Swal.fire({
-      title: 'Delete this material?',
-      text: `${item.name} (${item.sku}) will be removed from your inventory list.`,
+      title: 'Archive this material?',
+      text: `${item.name} (${item.sku}) will be hidden from active inventory.`,
       icon: 'warning',
       showCancelButton: true,
-      confirmButtonText: 'Yes, delete',
+      confirmButtonText: 'Yes, archive',
       cancelButtonText: 'Cancel',
       confirmButtonColor: '#dc2626',
     });
@@ -239,18 +252,49 @@ export default function UploadStockMaterial() {
 
     try {
       await axios.delete(`/api/shop-owner/inventory/items/${item.id}`);
-      await fetchMaterials();
+      await fetchMaterials(showArchived);
       await Swal.fire({
         icon: 'success',
-        title: 'Deleted',
+        title: 'Archived',
         timer: 1400,
         showConfirmButton: false,
       });
     } catch (error) {
       await Swal.fire({
         icon: 'error',
-        title: 'Delete failed',
-        text: 'Unable to delete this material right now.',
+        title: 'Archive failed',
+        text: 'Unable to archive this material right now.',
+      });
+    }
+  };
+
+  const handleRestore = async (item: MaterialItem) => {
+    const result = await Swal.fire({
+      title: 'Restore this material?',
+      text: `${item.name} (${item.sku}) will be moved back to active inventory.`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, restore',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#2563eb',
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      await axios.post(`/api/shop-owner/inventory/items/${item.id}/restore`);
+      await fetchMaterials(showArchived);
+      await Swal.fire({
+        icon: 'success',
+        title: 'Restored',
+        timer: 1400,
+        showConfirmButton: false,
+      });
+    } catch {
+      await Swal.fire({
+        icon: 'error',
+        title: 'Restore failed',
+        text: 'Unable to restore this material right now.',
       });
     }
   };
@@ -268,13 +312,24 @@ export default function UploadStockMaterial() {
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={openCreateModal}
-            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-6 py-3 font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
-          >
-            Add Material
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setShowArchived((prev) => !prev)}
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+            >
+              {showArchived ? 'Show Active' : 'Show Archived'}
+            </button>
+            {!showArchived && (
+              <button
+                type="button"
+                onClick={openCreateModal}
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-6 py-3 font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
+              >
+                Add Material
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
@@ -324,7 +379,7 @@ export default function UploadStockMaterial() {
                 ) : filteredMaterials.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-6 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
-                      No materials found.
+                      {showArchived ? 'No archived materials found.' : 'No materials found.'}
                     </td>
                   </tr>
                 ) : (
@@ -346,18 +401,31 @@ export default function UploadStockMaterial() {
                             aria-label={`Edit ${item.name}`}
                             title="Edit"
                             className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                            disabled={showArchived}
                           >
                             <EditIcon className="h-5 w-5" />
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(item)}
-                            aria-label={`Delete ${item.name}`}
-                            title="Delete"
-                            className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                          >
-                            <TrashIcon className="h-5 w-5" />
-                          </button>
+                          {!showArchived ? (
+                            <button
+                              type="button"
+                              onClick={() => handleArchive(item)}
+                              aria-label={`Archive ${item.name}`}
+                              title="Archive"
+                              className="p-2 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors"
+                            >
+                              <ArchiveBoxIcon className="h-5 w-5" />
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleRestore(item)}
+                              aria-label={`Restore ${item.name}`}
+                              title="Restore"
+                              className="p-2 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-colors"
+                            >
+                              <ArchiveRestoreIcon className="h-5 w-5" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

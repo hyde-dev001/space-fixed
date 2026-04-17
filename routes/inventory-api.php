@@ -58,6 +58,7 @@ Route::middleware([
     Route::post('/items', [UploadInventoryController::class, 'store'])->name('inventory.items.store');
     Route::put('/items/{id}', [UploadInventoryController::class, 'update'])->name('inventory.items.update');
     Route::delete('/items/{id}', [UploadInventoryController::class, 'destroy'])->name('inventory.items.destroy');
+    Route::post('/items/{id}/restore', [UploadInventoryController::class, 'restore'])->name('inventory.items.restore');
     // Add a new colour variant to an existing item (auto-syncs to linked product)
     Route::post('/items/{id}/colors', [UploadInventoryController::class, 'addColor'])->name('inventory.items.colors.store');
     // Add size stock to an existing colour variant

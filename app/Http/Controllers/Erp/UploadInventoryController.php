@@ -44,6 +44,9 @@ class UploadInventoryController extends Controller
         $items = InventoryItem::with(['sizes', 'colorVariants.images', 'colorVariants.sizes', 'images'])
             ->where('shop_owner_id', $shopOwnerId)
             ->whereIn('category', $allowedCategories)
+            ->when($request->boolean('archived'), function ($query) {
+                $query->onlyTrashed();
+            })
             ->when($request->search, function ($query, $search) {
                 $query->where(function ($q) use ($search) {
                     $q->where('name', 'like', "%{$search}%")
@@ -418,7 +421,7 @@ class UploadInventoryController extends Controller
     }
     
     /**
-     * Delete inventory item (soft delete)
+     * Archive inventory item (soft delete)
      */
     public function destroy(Request $request, $id)
     {
@@ -439,7 +442,36 @@ class UploadInventoryController extends Controller
         $item->delete();
         
         return response()->json([
-            'message' => 'Inventory item deleted successfully'
+            'message' => 'Inventory item archived successfully'
+        ]);
+    }
+
+    /**
+     * Restore archived inventory item
+     */
+    public function restore(Request $request, $id)
+    {
+        $shopOwnerId = $this->resolveShopOwnerId($request);
+        if (!$shopOwnerId) {
+            return response()->json([
+                'message' => 'Shop context is missing for this account.'
+            ], 403);
+        }
+
+        $item = InventoryItem::withTrashed()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->onlyTrashed()
+            ->findOrFail($id);
+
+        if ($authorizationError = $this->authorizeCategoryForBusinessType($request, $item->category)) {
+            return $authorizationError;
+        }
+
+        $item->restore();
+
+        return response()->json([
+            'message' => 'Inventory item restored successfully',
+            'item' => $item->fresh(['sizes', 'colorVariants.images', 'colorVariants.sizes', 'images'])
         ]);
     }
     

@@ -55,6 +55,7 @@ class RepairRequest extends Model
         'payment_enabled_by',
         'payment_policy',
         'payment_policy_snapshot',
+        'accepted_shop_policy_version_id',
         'payment_status_derived',
         'total_paid_amount',
         'total_refunded_amount',
@@ -146,6 +147,7 @@ class RepairRequest extends Model
         'is_warranty_job' => 'boolean',
         'reassignment_count' => 'integer',
         'warranty_sequence' => 'integer',
+        'accepted_shop_policy_version_id' => 'integer',
         'images' => 'array',
         'pickup_address' => 'array',
         'intake_address' => 'array',
@@ -225,6 +227,11 @@ class RepairRequest extends Model
     public function shopOwner()
     {
         return $this->belongsTo(ShopOwner::class, 'shop_owner_id');
+    }
+
+    public function acceptedShopPolicyVersion()
+    {
+        return $this->belongsTo(ShopPolicyVersion::class, 'accepted_shop_policy_version_id');
     }
 
     public function posTransactions()

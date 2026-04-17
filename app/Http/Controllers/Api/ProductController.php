@@ -401,11 +401,23 @@ class ProductController extends Controller
             }
 
             $shopOwnerId = $this->getAuthenticatedShopOwnerId();
+            $showArchived = $request->boolean('archived');
 
-            $query = Product::where('shop_owner_id', $shopOwnerId);
+            $query = Product::where('shop_owner_id', $shopOwnerId)
+                ->when($showArchived, function ($builder) {
+                    $builder->onlyTrashed();
+                })
+                ->when(!$showArchived, function ($builder) {
+                    $builder->whereNotExists(function ($inventoryQuery) {
+                        $inventoryQuery->select(DB::raw('1'))
+                            ->from('inventory_items as archived_inventory_items')
+                            ->whereColumn('archived_inventory_items.product_id', 'products.id')
+                            ->whereNotNull('archived_inventory_items.deleted_at');
+                    });
+                });
 
             // Include inactive products for owner/staff
-            if (!$request->get('include_inactive')) {
+            if (!$showArchived && !$request->boolean('include_inactive')) {
                 $query->where('is_active', true);
             }
 
@@ -449,6 +461,7 @@ class ProductController extends Controller
                 'user_guard_id' => Auth::guard('user')->id(),
                 'user_guard_shop_owner_id' => Auth::guard('user')->user()?->shop_owner_id,
                 'shop_owner_guard_id' => Auth::guard('shop_owner')->id(),
+                'archived' => $showArchived,
                 'include_inactive' => $request->get('include_inactive'),
                 'products_count' => $products->count(),
             ]);
@@ -1155,7 +1168,7 @@ class ProductController extends Controller
     }
 
     /**
-     * Delete product (soft delete)
+     * Archive product (soft delete)
      */
     public function destroy($id)
     {
@@ -1188,23 +1201,74 @@ class ProductController extends Controller
 
             $product->delete();
 
-            Log::info('Product deleted', [
+            Log::info('Product archived', [
                 'product_id' => $product->id,
                 'shop_owner_id' => $shopOwnerId,
             ]);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Product deleted successfully',
+                'message' => 'Product archived successfully',
             ]);
         } catch (\Exception $e) {
-            Log::error('Error deleting product', [
+            Log::error('Error archiving product', [
                 'error' => $e->getMessage(),
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to delete product',
+                'message' => 'Failed to archive product',
+            ], 500);
+        }
+    }
+
+    /**
+     * Restore archived product.
+     */
+    public function restore($id)
+    {
+        try {
+            $user = Auth::guard('user')->user() ?? Auth::guard('shop_owner')->user();
+
+            if (!$user) {
+                return response()->json(['error' => 'Unauthorized'], 401);
+            }
+
+            $shopOwnerId = $this->getAuthenticatedShopOwnerId();
+
+            $product = Product::withTrashed()
+                ->where('id', $id)
+                ->where('shop_owner_id', $shopOwnerId)
+                ->onlyTrashed()
+                ->first();
+
+            if (!$product) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Archived product not found for this shop.',
+                ], 404);
+            }
+
+            $product->restore();
+
+            Log::info('Product restored', [
+                'product_id' => $product->id,
+                'shop_owner_id' => $shopOwnerId,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Product restored successfully',
+                'product' => $product->fresh(),
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error restoring product', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to restore product',
             ], 500);
         }
     }

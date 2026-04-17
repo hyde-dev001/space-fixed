@@ -3,6 +3,7 @@ import { Head, Link, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import Swal from '@/Pages/UserSide/Shared/UserModal';
 import { buildRepairBreakdown } from '../../../utils/repairPricing';
+import { openTermsPolicyModal } from '../../../utils/termsPolicyModal';
 
 const REPAIR_VAT_RATE_PERCENT = 12;
 
@@ -316,6 +317,10 @@ const RepairProcess: React.FC = () => {
 
   // Shop capacity state
   const [shopCapacity, setShopCapacity] = useState<{ active_count: number; limit: number; is_full: boolean } | null>(null);
+  const [activePolicyVersionId, setActivePolicyVersionId] = useState<number | null>(null);
+  const [activePolicySections, setActivePolicySections] = useState<Record<string, string>>({});
+  const [policyAccepted, setPolicyAccepted] = useState(false);
+  const [isLoadingPolicy, setIsLoadingPolicy] = useState(false);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -333,6 +338,77 @@ const RepairProcess: React.FC = () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
+
+  useEffect(() => {
+    if (!shopId) {
+      setActivePolicyVersionId(null);
+      setActivePolicySections({});
+      setPolicyAccepted(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadPolicyContext = async () => {
+      setIsLoadingPolicy(true);
+
+      try {
+        const activeResponse = await fetch(`/api/policies/shops/${shopId}/active`, {
+          headers: { Accept: 'application/json' },
+        });
+
+        if (!activeResponse.ok) {
+          if (!cancelled) {
+            setActivePolicyVersionId(null);
+            setActivePolicySections({});
+            setPolicyAccepted(false);
+          }
+          return;
+        }
+
+        const activeData = await activeResponse.json();
+        const policyVersionId = Number(activeData?.data?.id || 0);
+        const policySections = (activeData?.data?.policy_sections_json || {}) as Record<string, string>;
+
+        if (!cancelled) {
+          setActivePolicyVersionId(Number.isFinite(policyVersionId) && policyVersionId > 0 ? policyVersionId : null);
+          setActivePolicySections(policySections);
+          setPolicyAccepted(false);
+        }
+
+        if (!authUser || !policyVersionId) {
+          return;
+        }
+
+        const prefillResponse = await fetch(`/api/policies/shops/${shopId}/prefill`, {
+          headers: { Accept: 'application/json' },
+        });
+
+        if (prefillResponse.ok) {
+          const prefillData = await prefillResponse.json();
+          if (!cancelled) {
+            setPolicyAccepted(Boolean(prefillData?.data?.prefill_checked));
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setActivePolicyVersionId(null);
+          setActivePolicySections({});
+          setPolicyAccepted(false);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingPolicy(false);
+        }
+      }
+    };
+
+    void loadPolicyContext();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [shopId, authUser?.id]);
 
   // Fetch shop capacity when shopId is known
   useEffect(() => {
@@ -461,7 +537,15 @@ const RepairProcess: React.FC = () => {
   const subtotalBeforeVat = pricingBreakdown.netSubtotal;
   const vatAmount = pricingBreakdown.vatAmount;
   const grandTotalWithVat = pricingBreakdown.grandTotal;
-  const isSubmitDisabled = isSubmitting || (selectedServiceIds.length === 0 && selectedPackageId === null);
+  const hasVisiblePolicyTerms = Object.entries(activePolicySections).some(([key, value]) => {
+    if (key.startsWith('__')) return false;
+    return String(value || '').trim().length > 0;
+  });
+  const isPolicyAcceptanceRequired = activePolicyVersionId !== null && hasVisiblePolicyTerms;
+  const showPolicyAcceptanceCard = hasVisiblePolicyTerms;
+  const isSubmitDisabled = isSubmitting
+    || (selectedServiceIds.length === 0 && selectedPackageId === null)
+    || (isPolicyAcceptanceRequired && !policyAccepted);
 
   const shopAddressLine = (shopDetails?.shop_address || shopDetails?.business_address || shopDetails?.address || '').trim();
   const shopCityState = (shopDetails?.city_state || '').trim();
@@ -724,6 +808,108 @@ const RepairProcess: React.FC = () => {
     setImageUploadGroups(prev => prev.filter(group => group.id !== id));
   };
 
+  const escapePolicyHtml = (value: string): string => {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  };
+
+  const buildPolicyModalHtml = (): string => {
+    const getSectionTitleOverride = (key: string): string | null => {
+      const override = String(activePolicySections[`__section_title__${key}`] ?? '').trim();
+      return override.length > 0 ? override : null;
+    };
+
+    const getCustomSectionHeading = (key: string): string | null => {
+      if (key.startsWith('custom_terms_repair_')) {
+        return `Additional Terms ${key.replace('custom_terms_repair_', '') || '?'}`;
+      }
+
+      if (key.startsWith('custom_terms_')) {
+        return `Additional Terms ${key.replace('custom_terms_', '') || '?'}`;
+      }
+
+      return null;
+    };
+
+    const scopedCustomSectionKeys = Object.keys(activePolicySections)
+      .filter((key) => key.startsWith('custom_terms_repair_'))
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+    const orderedPolicySectionKeys = ['refund_payment_terms_repair', 'refund_payment_terms', 'repair_service_terms'];
+    const mergedPolicySectionKeys = [...orderedPolicySectionKeys, ...scopedCustomSectionKeys];
+
+    const sectionHeadingMap: Record<string, string> = {
+      refund_payment_terms: 'Refund and Payment Terms',
+      refund_payment_terms_repair: 'Refund and Payment Terms',
+      repair_service_terms: 'Repair Service Terms',
+    };
+
+    const entries = mergedPolicySectionKeys
+      .map((key) => [key, activePolicySections[key]] as const)
+      .filter(([, value]) => String(value || '').trim().length > 0);
+
+    const sectionsHtml = entries.length === 0
+      ? `
+        <h3>1. Terms Unavailable</h3>
+        <p>No applicable repair terms are available right now. Please try again later.</p>
+      `
+      : entries.map(([key, value], index) => {
+        const customSectionHeading = getCustomSectionHeading(key);
+        const heading = getSectionTitleOverride(key)
+          ?? sectionHeadingMap[key]
+          ?? customSectionHeading
+          ?? key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+
+        return `
+          <h3>${index + 1}. ${escapePolicyHtml(heading)}</h3>
+          <p>${escapePolicyHtml(String(value)).replace(/\n/g, '<br/>')}</p>
+        `;
+      }).join('');
+
+    return `
+      <div class="terms-modal">
+        <div class="terms-modal__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="8" y="3" width="8" height="4" rx="1"></rect>
+            <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"></path>
+            <path d="M9 12h6"></path>
+            <path d="M9 16h6"></path>
+          </svg>
+        </div>
+        <p class="terms-modal__intro">Please read these terms before continuing your repair request.</p>
+        <div class="terms-modal__scroll">
+          ${sectionsHtml}
+        </div>
+        <p class="terms-modal__hint">Scroll to the bottom to enable the Accept button.</p>
+      </div>
+    `;
+  };
+
+  const handlePolicyAcceptanceToggle = async (nextChecked: boolean) => {
+    if (!nextChecked) {
+      setPolicyAccepted(false);
+      return;
+    }
+
+    if (!isPolicyAcceptanceRequired || !activePolicyVersionId) {
+      await Swal.fire({
+        title: 'Policy Not Available',
+        text: 'Policy terms are not available right now. Please refresh and try again.',
+        icon: 'warning',
+        confirmButtonColor: '#000000',
+      });
+      setPolicyAccepted(false);
+      return;
+    }
+
+    const modalResult = await openTermsPolicyModal('TERMS OF SERVICE', buildPolicyModalHtml());
+    setPolicyAccepted(Boolean(modalResult.isConfirmed));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -829,6 +1015,16 @@ const RepairProcess: React.FC = () => {
       return;
     }
 
+    if (isPolicyAcceptanceRequired && (!activePolicyVersionId || !policyAccepted)) {
+      await Swal.fire({
+        title: 'Terms Acceptance Required',
+        text: 'Please review and accept the shop terms before submitting your repair request.',
+        icon: 'warning',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
     const confirmSubmit = await Swal.fire({
       title: 'Confirm Submit Request',
       html: `
@@ -908,6 +1104,11 @@ const RepairProcess: React.FC = () => {
       
         // Persist VAT-inclusive final total.
         submitFormData.append('total', grandTotalWithVat.toString());
+
+      if (isPolicyAcceptanceRequired && activePolicyVersionId) {
+        submitFormData.append('accepted_shop_policy_version_id', String(activePolicyVersionId));
+        submitFormData.append('policy_accepted', policyAccepted ? '1' : '0');
+      }
 
       const response = await fetch('/api/repair-requests', {
         method: 'POST',
@@ -1526,6 +1727,45 @@ const RepairProcess: React.FC = () => {
                         ))}
                       </div>
                     </div>
+
+                    {showPolicyAcceptanceCard && (
+                      <div className="rounded-lg border border-gray-300 bg-gray-50 px-4 py-3">
+                        <div className="flex items-start gap-3">
+                          <input
+                            id="repair-policy-acceptance"
+                            type="checkbox"
+                            checked={policyAccepted}
+                            disabled={isLoadingPolicy || !isPolicyAcceptanceRequired}
+                            onChange={(event) => {
+                              void handlePolicyAcceptanceToggle(event.target.checked);
+                            }}
+                            className="mt-1 h-4 w-4"
+                          />
+                          <div>
+                            <label htmlFor="repair-policy-acceptance" className="text-sm font-medium text-black">
+                              I have read and accept this shop&apos;s Terms and Conditions.
+                            </label>
+                            <p className="mt-1 text-xs text-gray-600">
+                              {isLoadingPolicy
+                                ? 'Loading shop terms...'
+                                : isPolicyAcceptanceRequired
+                                  ? 'You must review and accept the latest published policy before submitting this repair request.'
+                                  : 'This shop currently has no active published terms to accept.'}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void handlePolicyAcceptanceToggle(true);
+                              }}
+                              disabled={isLoadingPolicy || !isPolicyAcceptanceRequired}
+                              className="mt-2 text-xs font-semibold text-black underline disabled:cursor-not-allowed disabled:text-gray-400"
+                            >
+                              {isLoadingPolicy ? 'Loading terms...' : 'Read Terms and Conditions'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 

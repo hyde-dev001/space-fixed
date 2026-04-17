@@ -4,10 +4,12 @@ import Navigation from '../Shared/Navigation';
 import Swal from '@/Pages/UserSide/Shared/UserModal';
 import axios from 'axios';
 import { navigateBackOr } from '../Shared/backNavigation';
+import { openTermsPolicyModal } from '../../../utils/termsPolicyModal';
 
 interface CartItem {
   id: string;
   pid: number;
+  shop_owner_id?: number;
   name: string;
   price: number;
   size?: string;
@@ -230,6 +232,11 @@ const Payment: React.FC = () => {
     reason: 'expired' | 'failed' | 'invalid_state';
   } | null>(null);
   const [isRecoveryCreating, setIsRecoveryCreating] = useState(false);
+  const [policyShopOwnerId, setPolicyShopOwnerId] = useState<number | null>(null);
+  const [activePolicyVersionId, setActivePolicyVersionId] = useState<number | null>(null);
+  const [activePolicySections, setActivePolicySections] = useState<Record<string, string>>({});
+  const [isLoadingPolicy, setIsLoadingPolicy] = useState(false);
+  const [policyAccepted, setPolicyAccepted] = useState(false);
 
   const normalizeCheckoutPayload = (rawData: any): CheckoutData | null => {
     if (!rawData || !Array.isArray(rawData.items) || rawData.items.length === 0) {
@@ -240,6 +247,9 @@ const Payment: React.FC = () => {
       .map((item: any) => ({
         id: String(item?.id ?? ''),
         pid: Math.trunc(toFiniteNumber(item?.pid, 0)),
+        shop_owner_id: Number.isFinite(Number(item?.shop_owner_id ?? item?.shop_id))
+          ? Math.trunc(toFiniteNumber(item?.shop_owner_id ?? item?.shop_id, 0))
+          : undefined,
         name: String(item?.name ?? ''),
         price: Math.max(0, toFiniteNumber(item?.price, 0)),
         qty: Math.max(1, Math.trunc(toFiniteNumber(item?.qty, 1))),
@@ -652,6 +662,7 @@ const Payment: React.FC = () => {
               return {
                 id: String(item.id),
                 pid: Math.trunc(toFiniteNumber(item.pid ?? item.product_id, 0)),
+                shop_owner_id: Math.trunc(toFiniteNumber(item.shop_owner_id ?? item.shop_id, 0)) || undefined,
                 name: item.name || '',
                 price: Math.max(0, toFiniteNumber(item.price, 0)),
                 size: item.size,
@@ -672,6 +683,7 @@ const Payment: React.FC = () => {
               return {
                 id: String(c.id),
                 pid: Math.trunc(toFiniteNumber(c.pid ?? c.product_id ?? c.id, 0)),
+                shop_owner_id: Math.trunc(toFiniteNumber(c.shop_owner_id ?? c.shop_id, 0)) || undefined,
                 name: c.name || '',
                 price,
                 size: c.size || undefined,
@@ -1101,6 +1113,423 @@ const Payment: React.FC = () => {
   }, [checkoutData, isPremiumPayment, isRepairPayment, selectedVoucherCampaignId, appliedVoucherCode, isVoucherSelectionEnabled]);
 
   useEffect(() => {
+    if (isPremiumPayment) {
+      setPolicyShopOwnerId(null);
+      setActivePolicyVersionId(null);
+      setActivePolicySections({});
+      setPolicyAccepted(false);
+      return;
+    }
+
+    if (isRepairPayment && repairIdParam) {
+      let cancelled = false;
+
+      const loadRepairShopOwner = async () => {
+        try {
+          const response = await fetch(`/api/customer/repairs/${repairIdParam}`, {
+            headers: { Accept: 'application/json' },
+            credentials: 'include',
+          });
+
+          if (!response.ok) {
+            if (!cancelled) {
+              setPolicyShopOwnerId(null);
+            }
+            return;
+          }
+
+          const data = await response.json();
+          const shopOwnerId = Number(data?.data?.shop_owner_id || data?.data?.shop_id || 0);
+          if (!cancelled) {
+            setPolicyShopOwnerId(Number.isFinite(shopOwnerId) && shopOwnerId > 0 ? shopOwnerId : null);
+          }
+        } catch {
+          if (!cancelled) {
+            setPolicyShopOwnerId(null);
+          }
+        }
+      };
+
+      void loadRepairShopOwner();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const checkoutShopOwnerIds = Array.from(new Set(
+      (checkoutData?.items || [])
+        .map((item) => Number(item.shop_owner_id || 0))
+        .filter((shopOwnerId) => Number.isFinite(shopOwnerId) && shopOwnerId > 0)
+    ));
+
+    if (checkoutShopOwnerIds.length === 1) {
+      setPolicyShopOwnerId(checkoutShopOwnerIds[0]);
+      return;
+    }
+
+    if (checkoutShopOwnerIds.length > 1) {
+      setPolicyShopOwnerId(null);
+      return;
+    }
+
+    const retailShopOwnerId = Number(promoPreview?.shop_owner_id || 0);
+    if (Number.isFinite(retailShopOwnerId) && retailShopOwnerId > 0) {
+      setPolicyShopOwnerId(retailShopOwnerId);
+      return;
+    }
+
+    setPolicyShopOwnerId(null);
+  }, [isPremiumPayment, isRepairPayment, repairIdParam, promoPreview?.shop_owner_id, checkoutData]);
+
+  useEffect(() => {
+    if (isPremiumPayment || isRepairPayment || !user || policyShopOwnerId) {
+      return;
+    }
+
+    const checkoutItems = checkoutData?.items || [];
+    if (checkoutItems.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const resolvePolicyContextFromCheckout = async () => {
+      try {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+        const response = await fetch('/api/policies/checkout/context', {
+          method: 'POST',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': csrfToken,
+          },
+          credentials: 'include',
+          body: JSON.stringify({
+            items: checkoutItems.map((item) => ({ pid: Number(item.pid || 0) })),
+          }),
+        });
+
+        if (!response.ok || cancelled) {
+          return;
+        }
+
+        const payload = await response.json();
+        const resolvedShopOwnerId = Number(payload?.data?.shop_owner_id || 0);
+        if (Number.isFinite(resolvedShopOwnerId) && resolvedShopOwnerId > 0) {
+          setPolicyShopOwnerId(resolvedShopOwnerId);
+        }
+      } catch (error) {
+        console.warn('Failed to resolve checkout policy context:', error);
+      }
+    };
+
+    void resolvePolicyContextFromCheckout();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isPremiumPayment, isRepairPayment, user, policyShopOwnerId, checkoutData]);
+
+  useEffect(() => {
+    if (isPremiumPayment || isRepairPayment || !user || policyShopOwnerId) {
+      return;
+    }
+
+    const checkoutItems = checkoutData?.items || [];
+    if (checkoutItems.length === 0) {
+      return;
+    }
+
+    const hasShopOwnerMetadata = checkoutItems.some((item) => Number(item.shop_owner_id || 0) > 0);
+    if (hasShopOwnerMetadata) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const hydrateShopOwnerFromCart = async () => {
+      try {
+        const response = await fetch('/api/cart', {
+          method: 'GET',
+          headers: {
+            Accept: 'application/json',
+          },
+          credentials: 'include',
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const payload = await response.json();
+        const cartItems = Array.isArray(payload?.items) ? payload.items : [];
+        if (cartItems.length === 0) {
+          return;
+        }
+
+        const checkoutPids = new Set(
+          checkoutItems
+            .map((item) => Number(item.pid || 0))
+            .filter((pid) => Number.isFinite(pid) && pid > 0)
+        );
+
+        const matchingCartItems = cartItems.filter((item: any) => {
+          const pid = Number(item?.pid ?? item?.product_id ?? 0);
+          return Number.isFinite(pid) && checkoutPids.has(pid);
+        });
+
+        if (matchingCartItems.length === 0) {
+          return;
+        }
+
+        const resolvedShopOwnerIds = Array.from(new Set(
+          matchingCartItems
+            .map((item: any) => Number(item?.shop_owner_id ?? item?.shop_id ?? 0))
+            .filter((shopOwnerId: number) => Number.isFinite(shopOwnerId) && shopOwnerId > 0)
+        ));
+
+        if (resolvedShopOwnerIds.length !== 1 || cancelled) {
+          return;
+        }
+
+        const resolvedShopOwnerId = resolvedShopOwnerIds[0];
+        setPolicyShopOwnerId(resolvedShopOwnerId);
+
+        setCheckoutData((prev) => {
+          if (!prev) {
+            return prev;
+          }
+
+          const updatedItems = prev.items.map((checkoutItem) => {
+            const checkoutPid = Number(checkoutItem.pid || 0);
+            const matching = matchingCartItems.find((cartItem: any) => Number(cartItem?.pid ?? cartItem?.product_id ?? 0) === checkoutPid);
+            const matchingShopOwnerId = Number(matching?.shop_owner_id ?? matching?.shop_id ?? 0);
+
+            if (matchingShopOwnerId > 0 && matchingShopOwnerId !== Number(checkoutItem.shop_owner_id || 0)) {
+              return {
+                ...checkoutItem,
+                shop_owner_id: matchingShopOwnerId,
+              };
+            }
+
+            return checkoutItem;
+          });
+
+          return {
+            ...prev,
+            items: updatedItems,
+          };
+        });
+      } catch (error) {
+        console.warn('Failed to resolve checkout shop owner from cart:', error);
+      }
+    };
+
+    void hydrateShopOwnerFromCart();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isPremiumPayment, isRepairPayment, user, policyShopOwnerId, checkoutData]);
+
+  useEffect(() => {
+    if (isPremiumPayment || !policyShopOwnerId) {
+      setActivePolicyVersionId(null);
+      setActivePolicySections({});
+      setPolicyAccepted(false);
+      setIsLoadingPolicy(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadPolicy = async () => {
+      setIsLoadingPolicy(true);
+
+      try {
+        const activeResponse = await fetch(`/api/policies/shops/${policyShopOwnerId}/active`, {
+          headers: { Accept: 'application/json' },
+          credentials: 'include',
+        });
+
+        if (!activeResponse.ok) {
+          if (!cancelled) {
+            setActivePolicyVersionId(null);
+            setActivePolicySections({});
+            setPolicyAccepted(false);
+          }
+          return;
+        }
+
+        const activePayload = await activeResponse.json();
+        const resolvedVersionId = Number(activePayload?.data?.id || 0);
+        const resolvedSections = (activePayload?.data?.policy_sections_json || {}) as Record<string, string>;
+
+        if (!cancelled) {
+          setActivePolicyVersionId(Number.isFinite(resolvedVersionId) && resolvedVersionId > 0 ? resolvedVersionId : null);
+          setActivePolicySections(resolvedSections);
+          setPolicyAccepted(false);
+        }
+
+        if (!user || !resolvedVersionId) {
+          return;
+        }
+
+        const prefillResponse = await fetch(`/api/policies/shops/${policyShopOwnerId}/prefill`, {
+          headers: { Accept: 'application/json' },
+          credentials: 'include',
+        });
+
+        if (prefillResponse.ok) {
+          const prefillPayload = await prefillResponse.json();
+          if (!cancelled) {
+            setPolicyAccepted(Boolean(prefillPayload?.data?.prefill_checked));
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setActivePolicyVersionId(null);
+          setActivePolicySections({});
+          setPolicyAccepted(false);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingPolicy(false);
+        }
+      }
+    };
+
+    void loadPolicy();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isPremiumPayment, policyShopOwnerId, user?.id]);
+
+  const hasVisiblePolicyTerms = Object.entries(activePolicySections).some(([key, value]) => {
+    if (key.startsWith('__')) return false;
+    return String(value || '').trim().length > 0;
+  });
+  const isPolicyAcceptanceRequired = !isPremiumPayment && activePolicyVersionId !== null && hasVisiblePolicyTerms;
+
+  const escapePolicyHtml = (value: string): string => {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  };
+
+  const buildPolicyModalHtml = (): string => {
+    const getSectionTitleOverride = (key: string): string | null => {
+      const override = String(activePolicySections[`__section_title__${key}`] ?? '').trim();
+      return override.length > 0 ? override : null;
+    };
+
+    const getCustomSectionHeading = (key: string): string | null => {
+      if (key.startsWith('custom_terms_retail_')) {
+        return `Additional Terms ${key.replace('custom_terms_retail_', '') || '?'}`;
+      }
+
+      if (key.startsWith('custom_terms_repair_')) {
+        return `Additional Terms ${key.replace('custom_terms_repair_', '') || '?'}`;
+      }
+
+      if (key.startsWith('custom_terms_')) {
+        return `Additional Terms ${key.replace('custom_terms_', '') || '?'}`;
+      }
+
+      return null;
+    };
+
+    const scopedCustomSectionKeys = Object.keys(activePolicySections)
+      .filter((key) => {
+        if (isRepairPayment) {
+          return key.startsWith('custom_terms_repair_');
+        }
+
+        return key.startsWith('custom_terms_retail_') || key.startsWith('custom_terms_');
+      })
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+    const orderedPolicySectionKeys = isRepairPayment
+      ? ['refund_payment_terms_repair', 'refund_payment_terms', 'repair_service_terms']
+      : ['refund_payment_terms_retail', 'refund_payment_terms', 'retail_terms'];
+
+    const mergedPolicySectionKeys = [...orderedPolicySectionKeys, ...scopedCustomSectionKeys];
+
+    const sectionHeadingMap: Record<string, string> = {
+      refund_payment_terms: 'Refund and Payment Terms',
+      refund_payment_terms_retail: 'Refund and Payment Terms',
+      refund_payment_terms_repair: 'Refund and Payment Terms',
+      retail_terms: 'Retail Terms',
+      repair_service_terms: 'Repair Service Terms',
+    };
+
+    const entries = mergedPolicySectionKeys
+      .map((key) => [key, activePolicySections[key]] as const)
+      .filter(([, value]) => String(value || '').trim().length > 0);
+
+    const sectionsHtml = entries.length === 0
+      ? `
+        <h3>1. Terms Unavailable</h3>
+        <p>No applicable terms are available for this payment flow right now. Please try again later.</p>
+      `
+      : entries.map(([key, value], index) => {
+        const customSectionHeading = getCustomSectionHeading(key);
+        const heading = getSectionTitleOverride(key)
+          ?? sectionHeadingMap[key]
+          ?? customSectionHeading
+          ?? key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+
+        return `
+          <h3>${index + 1}. ${escapePolicyHtml(heading)}</h3>
+          <p>${escapePolicyHtml(String(value)).replace(/\n/g, '<br/>')}</p>
+        `;
+      }).join('');
+
+    return `
+      <div class="terms-modal">
+        <div class="terms-modal__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="8" y="3" width="8" height="4" rx="1"></rect>
+            <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"></path>
+            <path d="M9 12h6"></path>
+            <path d="M9 16h6"></path>
+          </svg>
+        </div>
+        <p class="terms-modal__intro">Please read these terms before continuing your payment.</p>
+        <div class="terms-modal__scroll">
+          ${sectionsHtml}
+        </div>
+        <p class="terms-modal__hint">Scroll to the bottom to enable the Accept button.</p>
+      </div>
+    `;
+  };
+
+  const handlePolicyAcceptanceToggle = async (nextChecked: boolean) => {
+    if (!nextChecked) {
+      setPolicyAccepted(false);
+      return;
+    }
+
+    if (!isPolicyAcceptanceRequired || !activePolicyVersionId) {
+      await Swal.fire({
+        icon: 'warning',
+        title: 'Terms Not Available',
+        text: 'No active terms are available for this payment yet. Please refresh and try again.',
+        confirmButtonColor: '#000000',
+      });
+      setPolicyAccepted(false);
+      return;
+    }
+
+    const result = await openTermsPolicyModal('TERMS OF SERVICE', buildPolicyModalHtml());
+    setPolicyAccepted(Boolean(result.isConfirmed));
+  };
+
+  useEffect(() => {
     if (normalizeCitySelection(shippingCity) && !shippingRegion.trim()) {
       setShippingRegion(DEFAULT_SHIPPING_REGION);
     }
@@ -1324,6 +1753,17 @@ const Payment: React.FC = () => {
   const handlePayNow = async () => {
     if (!checkoutData) return;
 
+    if (isPolicyAcceptanceRequired && (!activePolicyVersionId || !policyAccepted)) {
+      setPayError('Please review and accept the latest shop terms before proceeding to payment.');
+      await Swal.fire({
+        icon: 'warning',
+        title: 'Terms Acceptance Required',
+        text: 'Please review and accept the latest shop terms before proceeding to payment.',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
     const normalizedOrderItems = checkoutData.items
       .map((item: any) => ({
         ...item,
@@ -1424,6 +1864,8 @@ const Payment: React.FC = () => {
         disable_voucher: !isVoucherSelectionEnabled,
         voucher_campaign_id: selectedVoucherCampaignId,
         voucher_code: appliedVoucherCode.trim() || null,
+        accepted_shop_policy_version_id: isPolicyAcceptanceRequired ? activePolicyVersionId : null,
+        policy_accepted: isPolicyAcceptanceRequired ? policyAccepted : null,
       };
 
       console.log('Creating order with data:', orderData);
@@ -1596,6 +2038,22 @@ const Payment: React.FC = () => {
   const deliveryName = customerName || user?.name || 'No delivery name yet';
   const deliveryPhone = customerPhone || user?.phone || 'No phone yet';
   const paymentBackFallbackHref = isPremiumPayment ? '/shop-owner/premium-benefits' : '/checkout';
+  const checkoutPolicyShopOwnerIds = Array.from(new Set(
+    (checkoutData?.items || [])
+      .map((item) => Number(item.shop_owner_id || 0))
+      .filter((shopOwnerId) => Number.isFinite(shopOwnerId) && shopOwnerId > 0)
+  ));
+  const hasMixedShopCart = checkoutPolicyShopOwnerIds.length > 1;
+  const policyStatusText = isLoadingPolicy
+    ? 'Loading shop terms...'
+    : hasMixedShopCart
+      ? 'Checkout currently includes multiple shops. Complete one shop per checkout to apply policy terms.'
+      : (!policyShopOwnerId && !isPremiumPayment)
+        ? 'We could not resolve this checkout\'s shop policy yet. Please refresh or return to checkout and try again.'
+    : isPolicyAcceptanceRequired
+      ? 'You must read and accept the latest published terms before payment.'
+      : `No active published terms found for this shop yet${policyShopOwnerId ? ` (Shop ID: ${policyShopOwnerId})` : ''}.`;
+  const showPolicyAcceptanceCard = !isPremiumPayment && hasVisiblePolicyTerms;
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
@@ -1821,9 +2279,40 @@ const Payment: React.FC = () => {
 
             </div>
 
-            <div className="bg-white px-4 py-4 border-y border-gray-200 text-sm text-gray-700">
-              By placing an order, you agree to the Terms of Use and Sale and acknowledge that you have read the Privacy Policy.
-            </div>
+            {showPolicyAcceptanceCard && (
+              <div className="bg-white px-4 py-4 border-y border-gray-200 text-sm text-gray-700">
+                <div className="rounded-lg border border-gray-300 bg-gray-50 px-3 py-3">
+                  <div className="flex items-start gap-3">
+                    <input
+                      id="payment-policy-acceptance-mobile"
+                      type="checkbox"
+                      checked={policyAccepted}
+                      disabled={isLoadingPolicy || !isPolicyAcceptanceRequired}
+                      onChange={(event) => {
+                        void handlePolicyAcceptanceToggle(event.target.checked);
+                      }}
+                      className="mt-1 h-4 w-4"
+                    />
+                    <div>
+                      <label htmlFor="payment-policy-acceptance-mobile" className="text-sm font-medium text-black">
+                        I have read and accept this shop&apos;s Terms and Conditions.
+                      </label>
+                      <p className="mt-1 text-xs text-gray-600">{policyStatusText}</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handlePolicyAcceptanceToggle(true);
+                        }}
+                        disabled={isLoadingPolicy || !isPolicyAcceptanceRequired}
+                        className="mt-2 text-xs font-semibold text-black underline disabled:cursor-not-allowed disabled:text-gray-400"
+                      >
+                        {isLoadingPolicy ? 'Loading terms...' : 'Read Terms and Conditions'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {payError && (
               <div className="mt-2 mx-4 p-4 bg-red-50 border border-red-200 rounded text-red-600 text-sm">
@@ -2239,12 +2728,45 @@ const Payment: React.FC = () => {
                 </div>
               </div>
 
+              {showPolicyAcceptanceCard && (
+                <div className="mb-8 rounded-lg border border-gray-300 bg-gray-50 px-4 py-4">
+                  <div className="flex items-start gap-3">
+                    <input
+                      id="payment-policy-acceptance-desktop"
+                      type="checkbox"
+                      checked={policyAccepted}
+                      disabled={isLoadingPolicy || !isPolicyAcceptanceRequired}
+                      onChange={(event) => {
+                        void handlePolicyAcceptanceToggle(event.target.checked);
+                      }}
+                      className="mt-1 h-4 w-4"
+                    />
+                    <div>
+                      <label htmlFor="payment-policy-acceptance-desktop" className="text-sm font-medium text-black">
+                        I have read and accept this shop&apos;s Terms and Conditions.
+                      </label>
+                      <p className="mt-1 text-xs text-gray-600">{policyStatusText}</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handlePolicyAcceptanceToggle(true);
+                        }}
+                        disabled={isLoadingPolicy || !isPolicyAcceptanceRequired}
+                        className="mt-2 text-xs font-semibold text-black underline disabled:cursor-not-allowed disabled:text-gray-400"
+                      >
+                        {isLoadingPolicy ? 'Loading terms...' : 'Read Terms and Conditions'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Pay Now Button */}
               <button
                 onClick={handlePayNow}
-                disabled={isProcessing}
+                disabled={isProcessing || (isPolicyAcceptanceRequired && !policyAccepted)}
                 className={`w-full py-3 rounded-xl font-bold text-white mb-8 transition-colors text-base ${
-                  isProcessing ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-gray-800'
+                  (isProcessing || (isPolicyAcceptanceRequired && !policyAccepted)) ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-gray-800'
                 }`}
               >
                 {isProcessing ? 'Processing...' : 'Pay now'}
@@ -2457,9 +2979,9 @@ const Payment: React.FC = () => {
               </div>
               <button
                 onClick={handlePayNow}
-                disabled={isProcessing}
+                disabled={isProcessing || (isPolicyAcceptanceRequired && !policyAccepted)}
                 className={`px-6 py-3 rounded-full text-base font-semibold text-white transition-colors ${
-                  isProcessing ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-gray-800'
+                  (isProcessing || (isPolicyAcceptanceRequired && !policyAccepted)) ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-gray-800'
                 }`}
               >
                 {isProcessing ? 'Processing...' : 'Continue to payment'}

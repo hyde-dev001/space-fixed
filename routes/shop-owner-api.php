@@ -173,6 +173,9 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
         Route::delete('/{id}', [\App\Http\Controllers\Api\ProductController::class, 'destroy'])
             ->middleware('throttle:120,1')
             ->name('shop_owner.products.destroy');
+        Route::post('/{id}/restore', [\App\Http\Controllers\Api\ProductController::class, 'restore'])
+            ->middleware('throttle:120,1')
+            ->name('shop_owner.products.restore');
         Route::post('/upload-image', [\App\Http\Controllers\Api\ProductController::class, 'uploadImage'])
             ->middleware('throttle:180,1')
             ->name('shop_owner.products.upload-image');
@@ -211,6 +214,7 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
             Route::post('/items', [UploadInventoryController::class, 'store'])->name('shop_owner.inventory.items.store');
             Route::put('/items/{id}', [UploadInventoryController::class, 'update'])->name('shop_owner.inventory.items.update');
             Route::delete('/items/{id}', [UploadInventoryController::class, 'destroy'])->name('shop_owner.inventory.items.destroy');
+            Route::post('/items/{id}/restore', [UploadInventoryController::class, 'restore'])->name('shop_owner.inventory.items.restore');
 
             Route::post('/items/images', [UploadInventoryController::class, 'uploadImages'])->name('shop_owner.inventory.items.images.upload');
             Route::delete('/items/images/{id}', [UploadInventoryController::class, 'deleteImage'])->name('shop_owner.inventory.items.images.delete');
@@ -264,6 +268,7 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
         Route::get('/{id}', [\App\Http\Controllers\Api\RepairServiceController::class, 'show'])->name('shop_owner.repair-services.show');
         Route::put('/{id}', [\App\Http\Controllers\Api\RepairServiceController::class, 'update'])->name('shop_owner.repair-services.update');
         Route::delete('/{id}', [\App\Http\Controllers\Api\RepairServiceController::class, 'destroy'])->name('shop_owner.repair-services.destroy');
+        Route::post('/{id}/restore', [\App\Http\Controllers\Api\RepairServiceController::class, 'restore'])->name('shop_owner.repair-services.restore');
     });
 
     Route::get('/repair-materials', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'repairStocksOverview'])

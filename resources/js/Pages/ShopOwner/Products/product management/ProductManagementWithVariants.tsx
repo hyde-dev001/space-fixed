@@ -172,6 +172,7 @@ const MetricCard: React.FC<MetricCardProps> = ({
 export default function ProductManagement() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showArchived, setShowArchived] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -395,9 +396,12 @@ export default function ProductManagement() {
   };
 
   useEffect(() => {
-    fetchProducts();
     fetchShowroomEntitlement();
   }, []);
+
+  useEffect(() => {
+    fetchProducts(showArchived);
+  }, [showArchived]);
 
   useEffect(() => {
     if (!canUse360Uploader) {
@@ -421,10 +425,11 @@ export default function ProductManagement() {
     }));
   }, [selectedCategories, customCategoryInput]);
 
-  const fetchProducts = async () => {
+  const fetchProducts = async (archived: boolean = showArchived) => {
     try {
       setLoading(true);
-      const productsResponse = await fetchWith429Retry('/api/shop-owner/products', {
+      const query = archived ? '?archived=1' : '';
+      const productsResponse = await fetchWith429Retry(`/api/shop-owner/products${query}`, {
         credentials: 'include',
         headers: { 'Accept': 'application/json' }
       });
@@ -1410,7 +1415,7 @@ export default function ProductManagement() {
       });
 
       setIsModalOpen(false);
-      fetchProducts();
+      fetchProducts(showArchived);
     } catch (error: any) {
       console.error('Error saving product:', error);
       Swal.fire({
@@ -1424,15 +1429,15 @@ export default function ProductManagement() {
     }
   };
 
-  const handleDelete = async (id: number) => {
+  const handleArchive = async (id: number) => {
     const result = await Swal.fire({
-      title: 'Delete Product?',
-      text: 'This will also delete all product variants. This action cannot be undone',
+      title: 'Archive Product?',
+      text: 'This product will be hidden from active lists until it is restored.',
       icon: 'warning',
       showCancelButton: true,
       confirmButtonColor: '#dc2626',
       cancelButtonColor: '#6b7280',
-      confirmButtonText: 'Yes, delete it',
+      confirmButtonText: 'Yes, archive it',
       cancelButtonText: 'Cancel',
     });
 
@@ -1451,22 +1456,71 @@ export default function ProductManagement() {
       });
 
       if (!response.ok) {
-        const message = await readApiErrorMessage(response, 'Failed to delete product');
+        const message = await readApiErrorMessage(response, 'Failed to archive product');
         throw new Error(message);
       }
 
       await Swal.fire({
-        title: 'Deleted!',
-        text: 'Product has been deleted',
+        title: 'Archived!',
+        text: 'Product has been archived',
         icon: 'success',
         confirmButtonColor: '#000000',
       });
 
-      fetchProducts();
+      fetchProducts(showArchived);
     } catch (error) {
       Swal.fire({
         title: 'Error',
-        text: error instanceof Error ? error.message : 'Failed to delete product',
+        text: error instanceof Error ? error.message : 'Failed to archive product',
+        icon: 'error',
+        confirmButtonColor: '#000000',
+      });
+    }
+  };
+
+  const handleRestore = async (id: number) => {
+    const result = await Swal.fire({
+      title: 'Restore Product?',
+      text: 'This product will be moved back to active products.',
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#2563eb',
+      cancelButtonColor: '#6b7280',
+      confirmButtonText: 'Yes, restore it',
+      cancelButtonText: 'Cancel',
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+
+      const response = await fetch(`/api/shop-owner/products/${id}/restore`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Accept': 'application/json',
+          'X-CSRF-TOKEN': csrfToken || '',
+        },
+      });
+
+      if (!response.ok) {
+        const message = await readApiErrorMessage(response, 'Failed to restore product');
+        throw new Error(message);
+      }
+
+      await Swal.fire({
+        title: 'Restored!',
+        text: 'Product has been restored',
+        icon: 'success',
+        confirmButtonColor: '#000000',
+      });
+
+      fetchProducts(showArchived);
+    } catch (error) {
+      Swal.fire({
+        title: 'Error',
+        text: error instanceof Error ? error.message : 'Failed to restore product',
         icon: 'error',
         confirmButtonColor: '#000000',
       });
@@ -1503,12 +1557,23 @@ export default function ProductManagement() {
                 Manage your shoe inventory with variant-based stock control
               </p>
             </div>
-            <button
-              onClick={() => handleOpenModal()}
-              className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-            >
-              + Add New Product
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setShowArchived((prev) => !prev)}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+              >
+                {showArchived ? 'Show Active' : 'Show Archived'}
+              </button>
+              {!showArchived && (
+                <button
+                  onClick={() => handleOpenModal()}
+                  className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                >
+                  + Add New Product
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Stats */}
@@ -1574,7 +1639,7 @@ export default function ProductManagement() {
                 ) : products.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
-                      No products yet. Create your first product!
+                      {showArchived ? 'No archived products found.' : 'No products yet. Create your first product!'}
                     </td>
                   </tr>
                 ) : (
@@ -1641,24 +1706,38 @@ export default function ProductManagement() {
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => handleOpenModal(product)}
-                          className="p-2 text-blue-600 hover:text-blue-700 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-                          title="Edit product"
-                        >
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={() => handleDelete(product.id)}
-                          className="p-2 text-red-600 hover:text-red-700 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                          title="Delete product"
-                        >
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
+                        {!showArchived ? (
+                          <>
+                            <button
+                              onClick={() => handleOpenModal(product)}
+                              className="p-2 text-blue-600 hover:text-blue-700 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                              title="Edit product"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => handleArchive(product.id)}
+                              className="p-2 text-amber-600 hover:text-amber-700 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors"
+                              title="Archive product"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V7a2 2 0 00-2-2h-3V3H9v2H6a2 2 0 00-2 2v6m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0H4m5 4h6" />
+                              </svg>
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => handleRestore(product.id)}
+                            className="p-2 text-emerald-600 hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-colors"
+                            title="Restore product"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7h4v4M3 11l5-5a9 9 0 111.24 12.73M9 17h6" />
+                            </svg>
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))
