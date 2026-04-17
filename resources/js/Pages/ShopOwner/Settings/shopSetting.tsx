@@ -214,57 +214,9 @@ type PolicySectionComposerState = {
 };
 
 const POLICY_SECTION_TEMPLATE_LIBRARY: Record<PolicySectionKey, PolicyClauseTemplate[]> = {
-	refund_payment_terms: [
-		{
-			id: 'refund-window',
-			title: 'Refund Request Window',
-			body: 'Customers may request a refund within the approved shop refund period, subject to verification and order status.',
-		},
-		{
-			id: 'payment-settlement',
-			title: 'Payment Settlement',
-			body: 'Refund release and payment reversals follow payment channel settlement timelines and may take additional processing days.',
-		},
-		{
-			id: 'refund-exclusions',
-			title: 'Refund Exclusions',
-			body: 'Requests with confirmed misuse, completed services, or policy violations may be rejected based on shop review.',
-		},
-	],
-	repair_service_terms: [
-		{
-			id: 'repair-scope',
-			title: 'Repair Scope and Approval',
-			body: 'Only approved services listed in the repair request are included. Additional work requires customer confirmation.',
-		},
-		{
-			id: 'repair-timeline',
-			title: 'Repair Timeline',
-			body: 'Estimated completion dates may adjust based on parts, workload, and shoe condition updates communicated by the shop.',
-		},
-		{
-			id: 'pickup-and-return',
-			title: 'Pickup and Return Responsibility',
-			body: 'Customers must coordinate pickup or delivery return schedules promptly after repair completion notice.',
-		},
-	],
-	retail_terms: [
-		{
-			id: 'stock-confirmation',
-			title: 'Stock and Order Confirmation',
-			body: 'All orders are subject to stock verification before fulfillment. Out-of-stock items will be replaced, refunded, or cancelled as agreed.',
-		},
-		{
-			id: 'shipping-window',
-			title: 'Shipping and Delivery Window',
-			body: 'Delivery timelines depend on courier operations and destination. Delays may occur during peak periods or weather disruptions.',
-		},
-		{
-			id: 'return-conditions',
-			title: 'Return Conditions',
-			body: 'Returns are accepted for eligible items in original condition and complete packaging, following shop return procedures.',
-		},
-	],
+	refund_payment_terms: [],
+	repair_service_terms: [],
+	retail_terms: [],
 };
 
 const composePolicySectionText = (clauses: PolicyCustomClause[]): string => {
