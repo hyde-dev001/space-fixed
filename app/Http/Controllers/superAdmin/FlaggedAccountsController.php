@@ -242,7 +242,7 @@ class FlaggedAccountsController extends Controller
             ]);
         }
 
-        if (Schema::hasTable('suspension_appeals')) {
+        if ($this->hasSuspensionAppealsTable()) {
             try {
                 $suspensionAppealService->createAndSendForCustomer(
                     $report->customer,
@@ -383,6 +383,19 @@ class FlaggedAccountsController extends Controller
         }
 
         return $this->auditLogColumns = [];
+    }
+
+    private function hasSuspensionAppealsTable(): bool
+    {
+        try {
+            return Schema::hasTable('suspension_appeals');
+        } catch (\Throwable $e) {
+            Log::warning('Unable to inspect suspension_appeals schema', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return false;
     }
 }
 
