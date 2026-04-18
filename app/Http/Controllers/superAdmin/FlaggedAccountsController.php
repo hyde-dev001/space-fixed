@@ -213,18 +213,55 @@ class FlaggedAccountsController extends Controller
             ]);
         }
 
-        $report->update([
-            'status'      => 'banned',
-            'admin_notes' => $validated['admin_notes'] ?? null,
-            'resolved_at' => now(),
-        ]);
+        try {
+            $report->update([
+                'status'      => 'banned',
+                'admin_notes' => $validated['admin_notes'] ?? null,
+                'resolved_at' => now(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to set review report status to banned; falling back to dismissed', [
+                'report_id' => $report->id,
+                'error' => $e->getMessage(),
+            ]);
 
-        $report->customer->update(['status' => 'suspended']);
-        $suspensionAppealService->createAndSendForCustomer(
-            $report->customer,
-            $reason,
-            $superAdminId
-        );
+            $report->update([
+                'status'      => 'dismissed',
+                'admin_notes' => $validated['admin_notes'] ?? null,
+                'resolved_at' => now(),
+            ]);
+        }
+
+        try {
+            $report->customer->update(['status' => 'suspended']);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to set flagged customer status to suspended', [
+                'user_id' => $report->customer->id,
+                'report_id' => $report->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        if (Schema::hasTable('suspension_appeals')) {
+            try {
+                $suspensionAppealService->createAndSendForCustomer(
+                    $report->customer,
+                    $reason,
+                    $superAdminId
+                );
+            } catch (\Throwable $e) {
+                Log::warning('Failed to create/send customer suspension appeal notice', [
+                    'user_id' => $report->customer->id,
+                    'report_id' => $report->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        } else {
+            Log::warning('suspension_appeals table missing; skipping customer suspension appeal creation', [
+                'user_id' => $report->customer->id,
+                'report_id' => $report->id,
+            ]);
+        }
 
         $this->createAuditLogSafely([
             'shop_owner_id' => $report->shop_owner_id,
