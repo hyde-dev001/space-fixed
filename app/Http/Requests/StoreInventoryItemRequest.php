@@ -50,7 +50,7 @@ class StoreInventoryItemRequest extends FormRequest
             
             // Images
             'images' => 'nullable|array|max:10',
-            'images.*' => 'image|mimes:jpeg,png,jpg,gif,webp|max:2048',
+            'images.*' => 'file|mimes:jpeg,png,jpg,gif,webp,avif|max:2048',
         ];
     }
     

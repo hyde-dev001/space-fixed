@@ -295,6 +295,23 @@ const mapApiItemToStock = (item: ApiInventoryItem): StockItem | null => {
 
 export default function UploadInventory() {
   const { initialData, auth } = usePage().props as any;
+  const allowedInventoryImageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif'];
+  const allowedInventoryImageMimeTypes = [
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'image/webp',
+    'image/avif',
+  ];
+  const inventoryImageInputAccept = '.jpg,.jpeg,.png,.gif,.webp,.avif';
+
+  const isAllowedInventoryImageFile = (file: File) => {
+    const mimeType = (file.type || '').toLowerCase();
+    if (mimeType && allowedInventoryImageMimeTypes.includes(mimeType)) return true;
+
+    const extension = file.name.split('.').pop()?.toLowerCase() || '';
+    return allowedInventoryImageExtensions.includes(extension);
+  };
 
   // Resolve the shop's business_type from either shop_owner guard or user guard's shop_owner sub-object
   const rawBusinessType: string =
@@ -499,9 +516,23 @@ export default function UploadInventory() {
 
   const handleUploadColorImages = async (colorVariantId: string, files: File[]) => {
     if (!editingStock || files.length === 0) return;
+
+    const validFiles = files.filter(isAllowedInventoryImageFile);
+    if (validFiles.length !== files.length) {
+      await Swal.fire({
+        icon: 'warning',
+        title: 'Invalid file type',
+        text: 'Only JPG, JPEG, PNG, GIF, WEBP, and AVIF images are allowed.',
+      });
+    }
+
+    if (validFiles.length === 0) {
+      return;
+    }
+
     setColorImageUploading((prev) => ({ ...prev, [colorVariantId]: true }));
     try {
-      const result = await inventoryItemAPI.uploadImages(editingStock.id, files, Number(colorVariantId));
+      const result = await inventoryItemAPI.uploadImages(editingStock.id, validFiles, Number(colorVariantId));
       const newImages: ColorVariantImage[] = (result.images ?? []).map((img: any) => ({
         id: String(img.id),
         file: null,
@@ -515,8 +546,18 @@ export default function UploadInventory() {
           v.id === colorVariantId ? { ...v, images: [...v.images, ...newImages] } : v,
         ),
       );
-    } catch {
-      await Swal.fire({ icon: 'error', title: 'Upload failed', text: 'Could not upload images. Please try again.' });
+    } catch (err: any) {
+      const apiMessage = typeof err?.message === 'string' ? err.message : '';
+      const fieldErrors = err?.errors as Record<string, string[]> | undefined;
+      const firstFieldError = fieldErrors
+        ? Object.values(fieldErrors).flat().find((value) => typeof value === 'string')
+        : undefined;
+
+      await Swal.fire({
+        icon: 'error',
+        title: 'Upload failed',
+        text: firstFieldError || apiMessage || 'Could not upload images. Please try again.',
+      });
     } finally {
       setColorImageUploading((prev) => ({ ...prev, [colorVariantId]: false }));
     }
@@ -1251,7 +1292,7 @@ export default function UploadInventory() {
                                         )}
                                         <input
                                           type="file"
-                                          accept="image/*"
+                                          accept={inventoryImageInputAccept}
                                           multiple
                                           className="hidden"
                                           disabled={!!colorImageUploading[cv.id]}

@@ -138,9 +138,9 @@ class UploadInventoryController extends Controller
             'color_variants.*.sizes.*.size_system' => 'nullable|in:US,UK,EU,AU,CN',
             'color_variants.*.sizes.*.quantity' => 'required|integer|min:1',
             'color_variants.*.images' => 'nullable|array',
-            'color_variants.*.images.*' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+            'color_variants.*.images.*' => 'nullable|file|mimes:jpeg,png,jpg,gif,webp,avif|max:2048',
             'images' => 'nullable|array',
-            'images.*' => 'image|mimes:jpeg,png,jpg,gif|max:2048'
+            'images.*' => 'file|mimes:jpeg,png,jpg,gif,webp,avif|max:2048'
         ]);
 
         if ($authorizationError = $this->authorizeCategoryForBusinessType($request, $validated['category'])) {
@@ -483,7 +483,7 @@ class UploadInventoryController extends Controller
         $request->validate([
             'inventory_item_id' => 'required|exists:inventory_items,id',
             'images' => 'required|array',
-            'images.*' => 'image|mimes:jpeg,png,jpg,gif|max:2048',
+            'images.*' => 'file|mimes:jpeg,png,jpg,gif,webp,avif|max:2048',
             'color_variant_id' => 'nullable|exists:inventory_color_variants,id'
         ]);
         
@@ -613,7 +613,7 @@ class UploadInventoryController extends Controller
             'sizes.*.size_system' => 'nullable|in:US,UK,EU,AU,CN',
             'sizes.*.quantity'  => 'required|integer|min:0',
             'images'            => 'nullable|array',
-            'images.*'          => 'image|mimes:jpeg,png,jpg,gif|max:2048',
+            'images.*'          => 'file|mimes:jpeg,png,jpg,gif,webp,avif|max:2048',
         ]);
 
         $shopOwnerId = $this->resolveShopOwnerId($request);
