@@ -38,6 +38,10 @@ interface ShopGroup {
   latest_reason: string;
   latest_date: string | null;
   pattern_flags: string[];
+  warning_strike: number;
+  warning_limit: number;
+  warnings_until_suspension: number;
+  next_warn_will_suspend: boolean;
   priority: 'high' | 'medium' | 'normal';
   reports: Report[];
 }
@@ -199,6 +203,8 @@ const ActionModal = ({
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  const nextWarnStrike = Math.min(shopGroup.warning_strike + 1, shopGroup.warning_limit);
+
   const handleSubmit = () => {
     if (!action) return;
 
@@ -210,7 +216,9 @@ const ActionModal = ({
 
     const warnings: Record<string, string> = {
       dismiss: 'This will mark all open reports as dismissed.',
-      warn: 'A warning will be recorded for this shop.',
+      warn: shopGroup.next_warn_will_suspend
+        ? `Current warning level is <b>${shopGroup.warning_strike}/${shopGroup.warning_limit}</b>. Applying warn now will auto-escalate this shop to <b>suspension</b>.`
+        : `Current warning level is <b>${shopGroup.warning_strike}/${shopGroup.warning_limit}</b>. This warn action will move the shop to <b>${nextWarnStrike}/${shopGroup.warning_limit}</b>.`,
       suspend: `This will <b>suspend "${shopGroup.business_name}"</b> immediately. The shop will lose access until reactivated.`,
     };
 
@@ -264,6 +272,13 @@ const ActionModal = ({
 
         {/* Body */}
         <div className="p-6 space-y-4">
+          <div className={`rounded-lg border px-3 py-2 text-xs font-medium ${shopGroup.next_warn_will_suspend ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-700 dark:bg-red-900/20 dark:text-red-300' : 'border-yellow-200 bg-yellow-50 text-yellow-700 dark:border-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-300'}`}>
+            Warning Progress: {shopGroup.warning_strike}/{shopGroup.warning_limit}
+            {shopGroup.next_warn_will_suspend
+              ? ' • Next warn will auto-suspend this shop.'
+              : ` • ${shopGroup.warnings_until_suspension} warning(s) before auto-suspension.`}
+          </div>
+
           {/* Action selector */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -298,6 +313,13 @@ const ActionModal = ({
                 );
               })}
             </div>
+            {action === 'warn' && (
+              <p className={`mt-2 text-xs ${shopGroup.next_warn_will_suspend ? 'text-red-500 dark:text-red-400' : 'text-yellow-600 dark:text-yellow-400'}`}>
+                {shopGroup.next_warn_will_suspend
+                  ? 'Warning now will trigger automatic suspension (3/3).'
+                  : `Warning now moves this shop to ${nextWarnStrike}/${shopGroup.warning_limit}.`}
+              </p>
+            )}
           </div>
 
           {/* Notes */}
@@ -426,6 +448,9 @@ const ShopGroupRow = ({
                 {group.business_name}
               </h3>
               <PriorityBadge priority={group.priority} />
+              <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${group.next_warn_will_suspend ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-700' : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 border border-yellow-200 dark:border-yellow-700'}`}>
+                Warning {group.warning_strike}/{group.warning_limit}
+              </span>
               {group.shop_status === 'suspended' && (
                 <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-red-600 text-white">
                   Shop Suspended
@@ -444,6 +469,13 @@ const ShopGroupRow = ({
                 <span className="font-bold text-gray-900 dark:text-white">{group.total_reports}</span>
                 <span className="text-gray-500 dark:text-gray-400"> total</span>
               </span>
+              {group.shop_status !== 'suspended' && (
+                <span className={`text-xs ${group.next_warn_will_suspend ? 'text-red-500 dark:text-red-400' : 'text-gray-400'}`}>
+                  {group.next_warn_will_suspend
+                    ? 'Next warn auto-suspends'
+                    : `${group.warnings_until_suspension} warn(s) left before auto-suspension`}
+                </span>
+              )}
               <span className="text-xs text-gray-400">Latest: {group.latest_reason}</span>
             </div>
 

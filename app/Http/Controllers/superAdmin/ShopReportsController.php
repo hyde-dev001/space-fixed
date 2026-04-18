@@ -32,14 +32,31 @@ class ShopReportsController extends Controller
             ->orderBy('created_at', 'desc')
             ->get();
 
+        $shopOwnerIds = $allReports
+            ->pluck('shop_owner_id')
+            ->filter()
+            ->unique()
+            ->values();
+
+        $warningCountsByShop = AuditLog::query()
+            ->selectRaw('target_id, COUNT(*) AS warning_count')
+            ->where('target_type', 'ShopOwner')
+            ->where('action', 'shop_report_warn')
+            ->when($shopOwnerIds->isNotEmpty(), fn ($query) => $query->whereIn('target_id', $shopOwnerIds->all()))
+            ->groupBy('target_id')
+            ->pluck('warning_count', 'target_id');
+
         // ── 2. Group by shop and build summary rows ────────────────────────
         $shopGroups = $allReports
             ->groupBy('shop_owner_id')
-            ->map(function ($reports, $shopOwnerId) {
+            ->map(function ($reports, $shopOwnerId) use ($warningCountsByShop) {
                 /** @var \App\Models\ShopOwner|null $shop */
                 $shop = $reports->first()->shop;
 
                 $openReports = $reports->whereIn('status', ['submitted', 'under_review']);
+
+                $warningStrike = (int) ($warningCountsByShop->get((int) $shopOwnerId) ?? 0);
+                $warningsUntilSuspension = max(0, self::WARNINGS_BEFORE_SUSPENSION - $warningStrike);
 
                 $patternFlags = ShopReport::detectPatterns($shopOwnerId);
 
@@ -53,6 +70,10 @@ class ShopReportsController extends Controller
                     'latest_reason'   => $reports->first() ? ShopReport::REASON_LABELS[$reports->first()->reason] ?? $reports->first()->reason : '—',
                     'latest_date'     => $reports->first()?->created_at?->toDateTimeString(),
                     'pattern_flags'   => $patternFlags,
+                    'warning_strike'  => $warningStrike,
+                    'warning_limit'   => self::WARNINGS_BEFORE_SUSPENSION,
+                    'warnings_until_suspension' => $warningsUntilSuspension,
+                    'next_warn_will_suspend' => $warningsUntilSuspension <= 1,
                     'priority'        => $openReports->count() >= 5 ? 'high'
                         : ($openReports->count() >= 3 ? 'medium' : 'normal'),
                     'reports'         => $reports->map(fn($r) => self::formatReport($r))->values(),
