@@ -1926,17 +1926,6 @@ class CheckoutController extends Controller
 
             $isExpired = $settlementService->isOrderExpired($order);
 
-            if ($isExpired) {
-                $settlementService->recordOrderPaymentFailure($order, 'paymongo_session_expired');
-
-                return response()->json([
-                    'success' => false,
-                    'payment_verified' => false,
-                    'expired' => true,
-                    'message' => 'Payment session expired. Please create a new payment session.',
-                ], 410);
-            }
-
             if (!$order->paymongo_link_id) {
                 return response()->json([
                     'success'          => false,
@@ -1992,6 +1981,17 @@ class CheckoutController extends Controller
             ]);
 
             if (!$isVerified) {
+                if ($isExpired) {
+                    $settlementService->recordOrderPaymentFailure($order, 'paymongo_session_expired');
+
+                    return response()->json([
+                        'success' => false,
+                        'payment_verified' => false,
+                        'expired' => true,
+                        'message' => 'Payment session expired. Please create a new payment session.',
+                    ], 410);
+                }
+
                 $statusSignals = array_filter([
                     strtolower((string) $paymentStatus),
                     strtolower((string) $firstPaymentStatus),
@@ -2018,7 +2018,7 @@ class CheckoutController extends Controller
                 ]);
             }
 
-            $settlement = $settlementService->settleOrderPaid($order, (string) $paymentId);
+            $settlement = $settlementService->settleOrderPaid($order, (string) $paymentId, true);
             $result = $settlement['result'] ?? 'settled';
             $settledOrder = $settlement['model'] ?? $order;
 

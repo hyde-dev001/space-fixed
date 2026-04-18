@@ -15,7 +15,7 @@ class PaymentSettlementService
     ) {
     }
 
-    public function settleOrderPaid(Order $order, ?string $paymentId = null): array
+    public function settleOrderPaid(Order $order, ?string $paymentId = null, bool $ignoreExpiry = false): array
     {
         if ($this->isOrderSettled($order)) {
             return [
@@ -24,7 +24,7 @@ class PaymentSettlementService
             ];
         }
 
-        if ($this->isOrderExpired($order)) {
+        if (!$ignoreExpiry && $this->isOrderExpired($order)) {
             return [
                 'result' => 'expired',
                 'model' => $order,

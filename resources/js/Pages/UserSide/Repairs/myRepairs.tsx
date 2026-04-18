@@ -1057,7 +1057,7 @@ const MyRepairs: React.FC = () => {
 
       if (isPaymongoFailed) {
         sessionStorage.removeItem('pendingRepairId');
-        fetchRepairs();
+        fetchRepairs({ reconcilePayments: true });
         const retryResult = await Swal.fire({
           icon: 'error',
           title: 'Payment Not Completed',
@@ -1071,6 +1071,8 @@ const MyRepairs: React.FC = () => {
         if (retryResult.isConfirmed && parsedPendingRepairId && Number.isFinite(parsedPendingRepairId)) {
           await handlePayNow(parsedPendingRepairId);
         }
+
+        fetchRepairs({ reconcilePayments: true });
         return;
       }
 
@@ -1118,7 +1120,7 @@ const MyRepairs: React.FC = () => {
             }
           }
 
-          await fetchRepairs();
+          await fetchRepairs({ reconcilePayments: true });
 
           if (result?.success && result?.payment_verified) {
             Swal.fire({
@@ -1153,7 +1155,7 @@ const MyRepairs: React.FC = () => {
           }
         } catch (error) {
           console.error('Payment verification error:', error);
-          await fetchRepairs();
+          await fetchRepairs({ reconcilePayments: true });
           Swal.fire({
             icon: 'error',
             title: 'Verification Error',
@@ -1226,15 +1228,17 @@ const MyRepairs: React.FC = () => {
     setLatestWarrantyClaimByRepairId(nextClaims);
   };
 
-  const fetchRepairs = async (options: { silent?: boolean; lightweight?: boolean } = {}) => {
-    const { silent = false, lightweight = false } = options;
+  const fetchRepairs = async (options: { silent?: boolean; lightweight?: boolean; reconcilePayments?: boolean } = {}) => {
+    const { silent = false, lightweight = false, reconcilePayments = false } = options;
 
     try {
       if (!silent) {
         setLoading(true);
       }
 
-      const response = await axios.get('/api/customer/repairs');
+      const response = await axios.get('/api/customer/repairs', {
+        params: reconcilePayments ? { reconcile_payments: 1 } : undefined,
+      });
       if (response.data.success) {
         const repairList: RepairOrder[] = response.data.data;
         setOrders(repairList);

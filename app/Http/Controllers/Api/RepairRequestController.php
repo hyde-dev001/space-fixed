@@ -553,6 +553,99 @@ class RepairRequestController extends Controller
         ]);
     }
 
+    private function reconcilePendingRepairPaymentWithGateway($repair, PaymentSettlementService $settlementService): bool
+    {
+        if (!$repair instanceof RepairRequest) {
+            return false;
+        }
+
+        $normalizedPolicy = $settlementService->normalizeRepairPaymentPolicy($repair->payment_policy ?? 'deposit_50');
+
+        if ($settlementService->isRepairSettled($repair, $normalizedPolicy)) {
+            return false;
+        }
+
+        if (!$settlementService->isRepairPaymentDueNow($repair, $normalizedPolicy)) {
+            return false;
+        }
+
+        $currentPaymentStatus = strtolower(trim((string) ($repair->payment_status ?? 'pending')));
+        if (in_array($currentPaymentStatus, ['completed', 'refunded', 'partially_refunded'], true)) {
+            return false;
+        }
+
+        if (
+            $normalizedPolicy === 'deposit_50'
+            && $currentPaymentStatus === 'paid'
+            && !$this->isRepairRemainingBalancePhase($repair)
+        ) {
+            return false;
+        }
+
+        $checkoutSessionId = trim((string) ($repair->paymongo_link_id ?? ''));
+        if ($checkoutSessionId === '') {
+            return false;
+        }
+
+        $apiKey = trim((string) ($repair->shopOwner?->paymongo_secret_key ?? ''));
+        if ($apiKey === '') {
+            return false;
+        }
+
+        try {
+            $response = \Illuminate\Support\Facades\Http::withHeaders([
+                'Authorization' => 'Basic ' . base64_encode($apiKey . ':'),
+            ])->get("https://api.paymongo.com/v1/checkout_sessions/{$checkoutSessionId}");
+
+            if ($response->failed()) {
+                return false;
+            }
+
+            $attributes = $response->json('data.attributes') ?? [];
+            $paymentStatus = strtolower((string) ($attributes['payment_status'] ?? ''));
+            $payments = $attributes['payments'] ?? [];
+            $firstPayment = $payments[0] ?? [];
+            $firstPaymentStatus = strtolower((string) ($firstPayment['data']['attributes']['status'] ?? $firstPayment['attributes']['status'] ?? ''));
+            $paymentId = (string) ($firstPayment['data']['id'] ?? $firstPayment['id'] ?? '');
+
+            $isVerified = in_array('paid', [$paymentStatus, $firstPaymentStatus], true);
+
+            if ($isVerified) {
+                $settlement = $settlementService->settleRepairPaid(
+                    repair: $repair,
+                    paymentId: $paymentId !== '' ? $paymentId : null,
+                    ignoreExpiry: true,
+                );
+
+                return ($settlement['result'] ?? null) === 'settled';
+            }
+
+            $isFailed = in_array('failed', [$paymentStatus, $firstPaymentStatus], true);
+            $isExpiredSignal = in_array('expired', [$paymentStatus, $firstPaymentStatus], true);
+            $isCancelled = in_array('cancelled', [$paymentStatus, $firstPaymentStatus], true)
+                || in_array('canceled', [$paymentStatus, $firstPaymentStatus], true);
+
+            if ($isFailed || $isExpiredSignal || $isCancelled) {
+                $settlementService->recordRepairPaymentFailure(
+                    $repair,
+                    $isExpiredSignal
+                        ? 'paymongo_session_expired'
+                        : ($isCancelled ? 'paymongo_payment_cancelled' : 'paymongo_payment_failed')
+                );
+
+                return true;
+            }
+        } catch (\Throwable $e) {
+            \Log::warning('Repair payment reconciliation failed on myRepairs fetch', [
+                'repair_id' => (int) ($repair->id ?? 0),
+                'session_id' => $checkoutSessionId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return false;
+    }
+
     public function updateStatus(Request $request, $requestId)
     {
         $validator = Validator::make($request->all(), [
@@ -684,6 +777,21 @@ class RepairRequestController extends Controller
         }
 
         $repairRequests = $query->orderBy('created_at', 'desc')->get();
+
+        if ($request->boolean('reconcile_payments')) {
+            $settlementService = app(PaymentSettlementService::class);
+            $hasReconciledChanges = false;
+
+            foreach ($repairRequests as $repair) {
+                if ($this->reconcilePendingRepairPaymentWithGateway($repair, $settlementService)) {
+                    $hasReconciledChanges = true;
+                }
+            }
+
+            if ($hasReconciledChanges) {
+                $repairRequests = $query->orderBy('created_at', 'desc')->get();
+            }
+        }
 
         $repairIds = $repairRequests->pluck('id')
             ->map(fn ($value) => (int) $value)
@@ -2322,17 +2430,6 @@ class RepairRequestController extends Controller
 
         $isExpired = $settlementService->isRepairExpired($repair, $normalizedPolicy);
 
-        if ($isExpired) {
-            $settlementService->recordRepairPaymentFailure($repair, 'paymongo_session_expired');
-
-            return response()->json([
-                'success'          => false,
-                'payment_verified' => false,
-                'expired'          => true,
-                'message'          => 'Payment session expired. Please create a new payment session.',
-            ], 410);
-        }
-
         if (!$settlementService->isRepairPaymentDueNow($repair, $normalizedPolicy)) {
             return response()->json([
                 'success' => false,
@@ -2405,6 +2502,17 @@ class RepairRequestController extends Controller
         $isVerified = ($paymentStatus === 'paid') || ($firstPaymentStatus === 'paid');
 
         if (!$isVerified) {
+            if ($isExpired) {
+                $settlementService->recordRepairPaymentFailure($repair, 'paymongo_session_expired');
+
+                return response()->json([
+                    'success'          => false,
+                    'payment_verified' => false,
+                    'expired'          => true,
+                    'message'          => 'Payment session expired. Please create a new payment session.',
+                ], 410);
+            }
+
             $statusSignals = array_filter([
                 strtolower((string) $paymentStatus),
                 strtolower((string) $firstPaymentStatus),
@@ -2432,7 +2540,7 @@ class RepairRequestController extends Controller
         }
 
         // Payment confirmed — apply policy-aware completion
-        $settlement = $settlementService->settleRepairPaid($repair, $paymentId);
+        $settlement = $settlementService->settleRepairPaid($repair, $paymentId, true);
         $settlementResult = $settlement['result'] ?? 'settled';
 
         if ($settlementResult === 'expired') {

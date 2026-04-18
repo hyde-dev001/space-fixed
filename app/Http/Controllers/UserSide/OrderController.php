@@ -100,6 +100,9 @@ class OrderController extends Controller
 
         $orders = $orderCollection
             ->map(function (Order $order) use ($reviewedOrderLookup) {
+                $this->reconcilePendingOrderPaymentWithGateway($order);
+                $order->refresh();
+
                 $itemSubtotal = (float) ($order->total_amount ?? 0);
                 $shippingFee = (float) ($order->shipping_fee ?? 0);
                 $vatAmount = $order->vat_amount !== null ? max(0.0, (float) $order->vat_amount) : null;
@@ -314,6 +317,78 @@ class OrderController extends Controller
             ]);
 
             $this->paymentSettlementService->recordOrderRefundFailure($order, 'paymongo_refund_failed');
+        }
+    }
+
+    private function reconcilePendingOrderPaymentWithGateway(Order $order): void
+    {
+        $currentPaymentStatus = strtolower((string) ($order->payment_status ?? 'pending'));
+        if (in_array($currentPaymentStatus, ['paid', 'completed', 'refunded'], true)) {
+            return;
+        }
+
+        $paymentMethod = strtolower((string) ($order->payment_method ?? ''));
+        $isOnlinePayment = !in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery'], true);
+        if (!$isOnlinePayment) {
+            return;
+        }
+
+        $checkoutSessionId = trim((string) ($order->paymongo_link_id ?? ''));
+        if ($checkoutSessionId === '') {
+            return;
+        }
+
+        $secretKey = trim((string) ($order->shopOwner?->paymongo_secret_key ?? ''));
+        if ($secretKey === '') {
+            return;
+        }
+
+        try {
+            $response = Http::withHeaders([
+                'Authorization' => 'Basic ' . base64_encode($secretKey . ':'),
+            ])->get("https://api.paymongo.com/v1/checkout_sessions/{$checkoutSessionId}");
+
+            if ($response->failed()) {
+                return;
+            }
+
+            $attributes = $response->json('data.attributes') ?? [];
+            $sessionPaymentStatus = strtolower((string) ($attributes['payment_status'] ?? ''));
+            $payments = $attributes['payments'] ?? [];
+            $firstPayment = $payments[0] ?? [];
+            $firstPaymentStatus = strtolower((string) ($firstPayment['data']['attributes']['status'] ?? $firstPayment['attributes']['status'] ?? ''));
+            $paymentId = (string) ($firstPayment['data']['id'] ?? $firstPayment['id'] ?? '');
+
+            $isVerifiedPaid = in_array('paid', [$sessionPaymentStatus, $firstPaymentStatus], true);
+            if ($isVerifiedPaid) {
+                $this->paymentSettlementService->settleOrderPaid(
+                    order: $order,
+                    paymentId: $paymentId !== '' ? $paymentId : null,
+                    ignoreExpiry: true,
+                );
+                return;
+            }
+
+            $isTerminalFailure = in_array($sessionPaymentStatus, ['failed', 'expired', 'cancelled', 'canceled'], true)
+                || in_array($firstPaymentStatus, ['failed', 'expired', 'cancelled', 'canceled'], true);
+
+            if ($isTerminalFailure) {
+                $failureReason = 'paymongo_payment_failed';
+                if (in_array('expired', [$sessionPaymentStatus, $firstPaymentStatus], true)) {
+                    $failureReason = 'paymongo_session_expired';
+                } elseif (in_array('cancelled', [$sessionPaymentStatus, $firstPaymentStatus], true)
+                    || in_array('canceled', [$sessionPaymentStatus, $firstPaymentStatus], true)) {
+                    $failureReason = 'paymongo_payment_cancelled';
+                }
+
+                $this->paymentSettlementService->recordOrderPaymentFailure($order, $failureReason);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('MyOrders pending payment reconciliation failed', [
+                'order_id' => (int) ($order->id ?? 0),
+                'checkout_session_id' => $checkoutSessionId,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 
