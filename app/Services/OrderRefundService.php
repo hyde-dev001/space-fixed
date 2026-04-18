@@ -627,16 +627,56 @@ class OrderRefundService
                     });
 
                 if ($dispositionByOrderItemId->isNotEmpty()) {
-                    $refund->loadMissing('items');
+                    $refund->loadMissing('items', 'order.items');
 
-                    foreach ($refund->items as $itemLine) {
-                        $orderItemId = (int) ($itemLine->order_item_id ?? 0);
-                        if ($orderItemId <= 0 || !$dispositionByOrderItemId->has($orderItemId)) {
+                    $existingLinesByOrderItemId = $refund->items
+                        ->filter(fn ($line) => (int) ($line->order_item_id ?? 0) > 0)
+                        ->keyBy(fn ($line) => (int) ($line->order_item_id ?? 0));
+
+                    $orderItemsById = collect($refund->order?->items ?? [])
+                        ->filter(fn ($item) => (int) ($item->id ?? 0) > 0)
+                        ->keyBy(fn ($item) => (int) ($item->id ?? 0));
+
+                    foreach ($dispositionByOrderItemId as $orderItemId => $disposition) {
+                        $orderItemId = (int) $orderItemId;
+                        if ($orderItemId <= 0) {
                             continue;
                         }
 
-                        $itemLine->inspection_disposition = $dispositionByOrderItemId->get($orderItemId);
-                        $itemLine->save();
+                        $existingLine = $existingLinesByOrderItemId->get($orderItemId);
+                        if ($existingLine) {
+                            $existingLine->inspection_disposition = $disposition;
+                            $existingLine->save();
+                            continue;
+                        }
+
+                        $orderItem = $orderItemsById->get($orderItemId);
+                        $productId = (int) ($orderItem?->product_id ?? 0);
+
+                        if (!$orderItem || $productId <= 0) {
+                            continue;
+                        }
+
+                        $qty = max(1, (int) ($orderItem->quantity ?? 1));
+                        $unitPrice = (float) ($orderItem->price ?? 0);
+                        if ($unitPrice <= 0) {
+                            $unitPrice = round((float) ($orderItem->subtotal ?? 0) / $qty, 2);
+                        }
+
+                        $createdLine = $refund->items()->create([
+                            'order_item_id' => $orderItemId,
+                            'product_id' => $productId,
+                            'product_variant_id' => null,
+                            'requested_qty' => $qty,
+                            'approved_qty' => $qty,
+                            // Keep legacy/full-refund payout amount unchanged; this row is for disposition inventory handling.
+                            'unit_price_snapshot' => round(max($unitPrice, 0), 2),
+                            'line_amount' => 0,
+                            'inspection_disposition' => $disposition,
+                            'inventory_action' => 'pending',
+                        ]);
+
+                        $existingLinesByOrderItemId->put($orderItemId, $createdLine);
                     }
                 }
             } catch (\Throwable $lineDispositionError) {

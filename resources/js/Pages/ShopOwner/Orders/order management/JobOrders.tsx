@@ -1034,19 +1034,35 @@ export default function JobOrdersPage() {
   };
 
   const handleConfirmReturnReceived = async (order: Order) => {
-    const refundLines = Array.isArray(order.latest_refund?.items)
+    const refundLineOptionsFromRefund = Array.isArray(order.latest_refund?.items)
       ? order.latest_refund!.items
           .map((line) => {
-            const approvedQty = Math.max(0, Number(line.approved_qty ?? line.requested_qty ?? 0));
+            const requestedQty = Math.max(0, Number(line.requested_qty ?? 0));
+            const approvedQtyRaw = Number(line.approved_qty ?? 0);
+            const approvedQty = approvedQtyRaw > 0 ? approvedQtyRaw : requestedQty;
+
             return {
               order_item_id: Number(line.order_item_id || 0),
               product_name: String(line.product_name || 'Item'),
-              approved_qty: approvedQty,
+              approved_qty: Math.max(0, approvedQty),
               inspection_disposition: String(line.inspection_disposition || 'pending').toLowerCase(),
             };
           })
           .filter((line) => line.order_item_id > 0 && line.approved_qty > 0)
       : [];
+
+    const refundLines = refundLineOptionsFromRefund.length > 0
+      ? refundLineOptionsFromRefund
+      : (String(order.latest_refund?.flow_type || '').toLowerCase() === 'request_approval'
+          ? (order.items || [])
+              .map((item) => ({
+                order_item_id: Number(item.id || 0),
+                product_name: String(item.product_name || 'Item'),
+                approved_qty: Math.max(1, Number(item.quantity || 1)),
+                inspection_disposition: 'pending',
+              }))
+              .filter((line) => line.order_item_id > 0 && line.approved_qty > 0)
+          : []);
 
     let lineDispositionsPayload: Array<{ order_item_id: number; inspection_disposition: 'resellable' | 'damaged' }> = [];
 
