@@ -55,8 +55,13 @@ const isCodeLikeSubjectLabel = (label: string): boolean => {
   return /^[A-Z]{2,8}-\d{4,}$/i.test(trimmed) || /^[A-Z]{2,8}\d{6,}$/i.test(trimmed);
 };
 
-const humanizeKey = (raw: string): string => {
-  return raw
+const humanizeKey = (raw: unknown): string => {
+  const normalized = String(raw ?? "").trim();
+  if (!normalized) {
+    return "";
+  }
+
+  return normalized
     .replace(/_/g, " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase())
     .trim();
@@ -187,7 +192,7 @@ export function useActivityLogFormatters() {
       case "deleted":
         return `${actor}${actorRole} deleted ${subjectRef}`;
       default:
-        return `${actor}${actorRole} performed ${humanizeKey(log.event)} on ${subjectRef}`;
+        return `${actor}${actorRole} performed ${humanizeKey(log.event) || "an action"} on ${subjectRef}`;
     }
   };
 
@@ -221,7 +226,7 @@ export function useActivityLogFormatters() {
       return `Updated ${subjectRef}`;
     }
 
-    return `${subjectRef} ${humanizeKey(log.event)}`;
+    return `${subjectRef} ${humanizeKey(log.event) || "Updated"}`;
   };
 
   return {
