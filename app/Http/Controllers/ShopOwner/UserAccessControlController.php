@@ -293,7 +293,7 @@ class UserAccessControlController extends Controller
             $validated = $request->validate([
                 'name' => 'required|string|max:255',
                 'email' => 'required|email|unique:employees,email',
-                'phone' => ['nullable', 'regex:/^\d{11}$/'],
+                'phone' => ['nullable', 'regex:/^\d{11}$/', 'unique:employees,phone', 'unique:users,phone'],
                 'address' => 'nullable|string|max:255',
                 'position' => 'nullable|string|max:100',
                 'position_template_id' => 'nullable|exists:position_templates,id',
@@ -308,6 +308,7 @@ class UserAccessControlController extends Controller
                 'email.required' => 'Email is required',
                 'email.unique' => 'This email is already registered',
                 'phone.regex' => 'Phone number must be exactly 11 digits',
+                'phone.unique' => 'This phone number is already registered',
                 'salary.numeric' => 'Salary must be a valid number',
                 'role.in' => 'Role must be Manager, Finance, HR, CRM, Staff, Repairer, Cashier, Inventory, or Procurement',
             ]);

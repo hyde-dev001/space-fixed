@@ -115,9 +115,15 @@ const PlusIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
-const TrashIcon: React.FC<{ className?: string }> = ({ className }) => (
+const ArchiveBoxIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V7a2 2 0 00-2-2h-3V3H9v2H6a2 2 0 00-2 2v6m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0H4m5 4h6" />
+  </svg>
+);
+
+const ArchiveRestoreIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7h4v4M3 11l5-5a9 9 0 111.24 12.73M9 17h6" />
   </svg>
 );
 
@@ -217,9 +223,10 @@ const formatExpenseDate = (value: string) => {
 
 const Expense: React.FC = () => {
   const api = useFinanceApi();
+  const [showArchived, setShowArchived] = useState(false);
   
   // React Query hooks - automatically handle loading, caching, refetching
-  const { data: expensesData = [], isLoading, refetch: refetchExpenses } = useExpenses();
+  const { data: expensesData = [], isLoading, refetch: refetchExpenses } = useExpenses({ archived: showArchived });
   const { data: taxRates = [], isLoading: isLoadingTaxRates } = useTaxRates();
   
   // Normalize expenses data
@@ -266,7 +273,7 @@ const Expense: React.FC = () => {
   // Reset to page 1 when filters change
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, statusFilter]);
+  }, [searchTerm, statusFilter, showArchived]);
 
   const stats = useMemo(() => {
     const total = expenses.reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
@@ -527,13 +534,13 @@ const Expense: React.FC = () => {
     return Boolean(addForm.date && addForm.category.trim() && addForm.amount > 0);
   }, [addForm]);
 
-  const handleDeleteExpense = (id: string) => {
+  const handleArchiveExpense = (id: string) => {
     Swal.fire({
-      title: "Delete Expense",
-      text: "Are you sure you want to delete this expense?",
+      title: "Archive Expense",
+      text: "Are you sure you want to archive this expense?",
       icon: "warning",
       showCancelButton: true,
-      confirmButtonText: "Yes, delete",
+      confirmButtonText: "Yes, archive",
       cancelButtonText: "Cancel",
       confirmButtonColor: "#dc2626",
       cancelButtonColor: "#6b7280",
@@ -542,12 +549,12 @@ const Expense: React.FC = () => {
         (async () => {
           try {
             const response = await api.delete(`/api/finance/session/expenses/${id}`);
-            if (!response.ok) throw new Error(response.error || 'Failed to delete expense');
+            if (!response.ok) throw new Error(response.error || 'Failed to archive expense');
             // React Query will automatically refetch
             refetchExpenses();
             Swal.fire({
-              title: "Deleted",
-              text: "Expense has been deleted",
+              title: "Archived",
+              text: "Expense has been archived",
               icon: "success",
               timer: 1200,
               showConfirmButton: false,
@@ -555,7 +562,43 @@ const Expense: React.FC = () => {
           } catch (err) {
             Swal.fire({
               title: "Error",
-              text: "Failed to delete expense.",
+              text: "Failed to archive expense.",
+              icon: "error",
+            });
+          }
+        })();
+      }
+    });
+  };
+
+  const handleRestoreExpense = (id: string) => {
+    Swal.fire({
+      title: "Restore Expense",
+      text: "Are you sure you want to restore this expense?",
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Yes, restore",
+      cancelButtonText: "Cancel",
+      confirmButtonColor: "#2563eb",
+      cancelButtonColor: "#6b7280",
+    }).then((result) => {
+      if (result.isConfirmed) {
+        (async () => {
+          try {
+            const response = await api.post(`/api/finance/session/expenses/${id}/restore`);
+            if (!response.ok) throw new Error(response.error || 'Failed to restore expense');
+            refetchExpenses();
+            Swal.fire({
+              title: "Restored",
+              text: "Expense has been restored",
+              icon: "success",
+              timer: 1200,
+              showConfirmButton: false,
+            });
+          } catch {
+            Swal.fire({
+              title: "Error",
+              text: "Failed to restore expense.",
               icon: "error",
             });
           }
@@ -579,12 +622,21 @@ const Expense: React.FC = () => {
                 </p>
               </div>
               <div className="flex items-center gap-3">
-                <button 
-                  onClick={openAddModal}
-                  className="inline-flex items-center px-4 py-2 rounded-lg text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 shadow-sm transition-colors">
-                  <PlusIcon className="size-5 mr-2" />
-                  Add Expense
+                <button
+                  type="button"
+                  onClick={() => setShowArchived((prev) => !prev)}
+                  className="inline-flex items-center px-4 py-2 rounded-lg border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:bg-gray-900 dark:hover:bg-gray-800 shadow-sm transition-colors"
+                >
+                  {showArchived ? 'Show Active' : 'Show Archived'}
                 </button>
+                {!showArchived && (
+                  <button 
+                    onClick={openAddModal}
+                    className="inline-flex items-center px-4 py-2 rounded-lg text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 shadow-sm transition-colors">
+                    <PlusIcon className="size-5 mr-2" />
+                    Add Expense
+                  </button>
+                )}
         </div>
       </div>
 
@@ -729,7 +781,13 @@ const Expense: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {paginatedExpenses.map((expense) => (
+              {paginatedExpenses.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-12 px-4 text-center text-sm text-gray-500 dark:text-gray-400">
+                    {showArchived ? 'No archived expenses found.' : 'No expenses found.'}
+                  </td>
+                </tr>
+              ) : paginatedExpenses.map((expense) => (
                 <tr key={expense.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800">
                   <td className="py-4 px-4 text-sm text-gray-700 dark:text-gray-300">
                     <div className="flex flex-col leading-tight">
@@ -755,14 +813,24 @@ const Expense: React.FC = () => {
                       >
                         <EyeIcon className="size-5" />
                       </button>
-                      {expense.status !== "approved" && expense.status !== "posted" && (
+                      {!showArchived && expense.status !== "approved" && expense.status !== "posted" && (
                         <button
                           className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-rose-600 dark:text-rose-400 hover:text-rose-800 dark:hover:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition-colors"
-                          aria-label="Delete expense"
-                          title="Delete"
-                          onClick={() => handleDeleteExpense(expense.id)}
+                          aria-label="Archive expense"
+                          title="Archive"
+                          onClick={() => handleArchiveExpense(expense.id)}
                         >
-                          <TrashIcon className="size-5" />
+                          <ArchiveBoxIcon className="size-5" />
+                        </button>
+                      )}
+                      {showArchived && (
+                        <button
+                          className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-emerald-600 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 transition-colors"
+                          aria-label="Restore expense"
+                          title="Restore"
+                          onClick={() => handleRestoreExpense(expense.id)}
+                        >
+                          <ArchiveRestoreIcon className="size-5" />
                         </button>
                       )}
                     </div>

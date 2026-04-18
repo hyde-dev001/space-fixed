@@ -41,6 +41,11 @@ type MetricCardProps = {
   icon: React.FC<{ className?: string }>;
 };
 
+type FieldValidationState = {
+  status: "idle" | "checking" | "valid" | "error";
+  message: string;
+};
+
 // Portal wrapper to mirror the registration modal layering and avoid navbar stacking issues
 const ModalPortal: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   if (typeof document === "undefined") return null;
@@ -569,6 +574,10 @@ export const EmployeeManagement: React.FC<{
   const [isProcessingId, setIsProcessingId] = useState<number | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [addEmployeeEmailValidation, setAddEmployeeEmailValidation] = useState<FieldValidationState>({ status: "idle", message: "" });
+  const [addEmployeePhoneValidation, setAddEmployeePhoneValidation] = useState<FieldValidationState>({ status: "idle", message: "" });
+  const addEmployeeEmailRequestRef = useRef(0);
+  const addEmployeePhoneRequestRef = useRef(0);
 
   // Suspension Request modal state
   const [isSuspensionRequestModalOpen, setIsSuspensionRequestModalOpen] = useState(false);
@@ -1259,8 +1268,129 @@ export const EmployeeManagement: React.FC<{
   };
 
   const handleAddEmployee = () => {
+    setAddEmployeeEmailValidation({ status: "idle", message: "" });
+    setAddEmployeePhoneValidation({ status: "idle", message: "" });
     setIsAddEmployeeOpen(true);
   };
+
+  const checkEmailAvailability = async (email: string): Promise<{ available: boolean; message?: string }> => {
+    try {
+      const response = await fetch(`/auth/check-email-availability?email=${encodeURIComponent(email)}`, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+        },
+        credentials: 'include',
+      });
+
+      const data = await response.json().catch(() => ({}));
+      return {
+        available: Boolean(data?.available),
+        message: typeof data?.message === 'string' ? data.message : undefined,
+      };
+    } catch {
+      return {
+        available: false,
+        message: 'Unable to verify email right now. Please try again.',
+      };
+    }
+  };
+
+  const checkPhoneAvailability = async (phone: string): Promise<{ available: boolean; message?: string }> => {
+    try {
+      const response = await fetch(`/auth/check-phone-availability?phone=${encodeURIComponent(phone)}`, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+        },
+        credentials: 'include',
+      });
+
+      const data = await response.json().catch(() => ({}));
+      return {
+        available: Boolean(data?.available),
+        message: typeof data?.message === 'string' ? data.message : undefined,
+      };
+    } catch {
+      return {
+        available: false,
+        message: 'Unable to verify phone number right now. Please try again.',
+      };
+    }
+  };
+
+  useEffect(() => {
+    if (!isAddEmployeeOpen) {
+      setAddEmployeeEmailValidation({ status: "idle", message: "" });
+      return;
+    }
+
+    const normalizedEmail = addEmployeeForm.email.trim();
+    if (!normalizedEmail) {
+      setAddEmployeeEmailValidation({ status: "idle", message: "" });
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(normalizedEmail)) {
+      setAddEmployeeEmailValidation({ status: "error", message: "Please enter a valid email address." });
+      return;
+    }
+
+    const requestId = ++addEmployeeEmailRequestRef.current;
+    setAddEmployeeEmailValidation({ status: "checking", message: "Checking email availability..." });
+
+    const timer = window.setTimeout(async () => {
+      const result = await checkEmailAvailability(normalizedEmail);
+      if (requestId !== addEmployeeEmailRequestRef.current) {
+        return;
+      }
+
+      if (result.available) {
+        setAddEmployeeEmailValidation({ status: "valid", message: "" });
+      } else {
+        setAddEmployeeEmailValidation({ status: "error", message: result.message || "This email is already registered." });
+      }
+    }, 350);
+
+    return () => window.clearTimeout(timer);
+  }, [addEmployeeForm.email, isAddEmployeeOpen]);
+
+  useEffect(() => {
+    if (!isAddEmployeeOpen) {
+      setAddEmployeePhoneValidation({ status: "idle", message: "" });
+      return;
+    }
+
+    const normalizedPhone = addEmployeeForm.phone.replace(/\D/g, '').slice(0, 11);
+    if (!normalizedPhone) {
+      setAddEmployeePhoneValidation({ status: "idle", message: "" });
+      return;
+    }
+
+    if (normalizedPhone.length < 11) {
+      setAddEmployeePhoneValidation({ status: "error", message: "Phone number must be exactly 11 digits." });
+      return;
+    }
+
+    const requestId = ++addEmployeePhoneRequestRef.current;
+    setAddEmployeePhoneValidation({ status: "checking", message: "Checking phone number availability..." });
+
+    const timer = window.setTimeout(async () => {
+      const result = await checkPhoneAvailability(normalizedPhone);
+      if (requestId !== addEmployeePhoneRequestRef.current) {
+        return;
+      }
+
+      if (result.available) {
+        setAddEmployeePhoneValidation({ status: "valid", message: "" });
+      } else {
+        setAddEmployeePhoneValidation({ status: "error", message: result.message || "This phone number is already registered." });
+      }
+    }, 350);
+
+    return () => window.clearTimeout(timer);
+  }, [addEmployeeForm.phone, isAddEmployeeOpen]);
 
   // Permission Management Functions
   const openPermissionModal = async (employee: Employee) => {
@@ -1797,16 +1927,39 @@ export const EmployeeManagement: React.FC<{
       return;
     }
 
-    try {
-      const availabilityResponse = await fetch(`/auth/check-email-availability?email=${encodeURIComponent(trimmedEmail)}`, {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json',
-        },
-        credentials: 'include',
+    if (addEmployeeEmailValidation.status === 'checking' || addEmployeePhoneValidation.status === 'checking') {
+      Swal.fire({
+        icon: 'info',
+        title: 'Please wait',
+        text: 'We are still checking email/phone availability.',
+        timer: 2000,
+        showConfirmButton: false,
       });
+      return;
+    }
 
-      const availabilityData = await availabilityResponse.json().catch(() => ({}));
+    if (addEmployeeEmailValidation.status === 'error') {
+      Swal.fire({
+        icon: 'error',
+        title: 'Email not available',
+        text: addEmployeeEmailValidation.message || 'This email is already registered.',
+        confirmButtonColor: '#ef4444'
+      });
+      return;
+    }
+
+    if (normalizedPhone && addEmployeePhoneValidation.status === 'error') {
+      Swal.fire({
+        icon: 'error',
+        title: 'Phone number not available',
+        text: addEmployeePhoneValidation.message || 'This phone number is already registered.',
+        confirmButtonColor: '#ef4444'
+      });
+      return;
+    }
+
+    try {
+      const availabilityData = await checkEmailAvailability(trimmedEmail);
       if (!availabilityData?.available) {
         Swal.fire({
           icon: 'error',
@@ -1815,6 +1968,19 @@ export const EmployeeManagement: React.FC<{
           confirmButtonColor: '#ef4444'
         });
         return;
+      }
+
+      if (normalizedPhone) {
+        const phoneAvailability = await checkPhoneAvailability(normalizedPhone);
+        if (!phoneAvailability.available) {
+          Swal.fire({
+            icon: 'error',
+            title: 'Phone number not available',
+            text: phoneAvailability.message || 'This phone number is already registered.',
+            confirmButtonColor: '#ef4444'
+          });
+          return;
+        }
       }
     } catch {
       Swal.fire({
@@ -2634,8 +2800,14 @@ export const EmployeeManagement: React.FC<{
                               email: e.target.value,
                             })
                           }
-                          className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all"
+                          className={`w-full px-3 py-2.5 rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all ${addEmployeeEmailValidation.status === 'error' ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'}`}
                         />
+                        {addEmployeeEmailValidation.status === 'error' && (
+                          <p className="mt-1 text-xs text-red-600 dark:text-red-400">{addEmployeeEmailValidation.message}</p>
+                        )}
+                        {addEmployeeEmailValidation.status === 'checking' && (
+                          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{addEmployeeEmailValidation.message}</p>
+                        )}
                       </div>
 
                       <div className="grid grid-cols-2 gap-4 mt-4">
@@ -2656,8 +2828,14 @@ export const EmployeeManagement: React.FC<{
                             pattern="[0-9]*"
                             maxLength={11}
                             placeholder="09XXXXXXXXX"
-                            className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all"
+                            className={`w-full px-3 py-2.5 rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all ${addEmployeePhoneValidation.status === 'error' ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'}`}
                           />
+                          {addEmployeePhoneValidation.status === 'error' && (
+                            <p className="mt-1 text-xs text-red-600 dark:text-red-400">{addEmployeePhoneValidation.message}</p>
+                          )}
+                          {addEmployeePhoneValidation.status === 'checking' && (
+                            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{addEmployeePhoneValidation.message}</p>
+                          )}
                         </div>
 
                         <div>

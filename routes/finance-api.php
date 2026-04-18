@@ -64,6 +64,7 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access
         Route::post('/', [ExpenseController::class, 'store'])->name('finance.expenses.store');
         Route::patch('/{id}', [ExpenseController::class, 'update'])->name('finance.expenses.update');
         Route::delete('/{id}', [ExpenseController::class, 'destroy'])->name('finance.expenses.destroy');
+        Route::post('/{id}/restore', [ExpenseController::class, 'restore'])->name('finance.expenses.restore');
         
     });
 

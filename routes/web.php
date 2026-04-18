@@ -323,6 +323,7 @@ Route::get('/shop-owner/login', function () {
 
 // User Authentication Routes
 Route::get('/auth/check-email-availability', [UserController::class, 'checkEmailAvailability'])->name('auth.check-email-availability');
+Route::get('/auth/check-phone-availability', [UserController::class, 'checkPhoneAvailability'])->name('auth.check-phone-availability');
 Route::post('/user/register', [UserController::class, 'register'])->name('user.register');
 Route::post('/user/login', [UserController::class, 'login'])->name('user.login');
 Route::post('/user/logout', [UserController::class, 'logout'])->name('user.logout');
@@ -1284,6 +1285,7 @@ Route::middleware(['auth:user', 'permission:access-finance-dashboard|access-fina
     Route::put('expenses/{id}', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'update']);
     Route::patch('expenses/{id}', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'update']);
     Route::delete('expenses/{id}', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'destroy']);
+    Route::post('expenses/{id}/restore', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'restore']);
 
     // Expense Receipt Management
     Route::post('expenses/{id}/receipt', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'uploadReceipt']);

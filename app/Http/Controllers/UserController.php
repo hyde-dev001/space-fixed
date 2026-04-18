@@ -112,6 +112,47 @@ class UserController extends Controller
     }
 
     /**
+     * Check whether a phone number can be used for registration and employee creation flows.
+     */
+    public function checkPhoneAvailability(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'phone' => ['required', 'regex:/^\d{11}$/'],
+        ], [
+            'phone.required' => 'Please enter your phone number.',
+            'phone.regex' => 'Phone number must be exactly 11 digits.',
+        ]);
+
+        if ($validator->fails()) {
+            $message = (string) ($validator->errors()->first('phone') ?: 'Phone number is not available');
+
+            return response()->json([
+                'available' => false,
+                'exists_in_employees' => false,
+                'exists_in_users' => false,
+                'exists_in_shop_owners' => false,
+                'message' => $message,
+            ], 422);
+        }
+
+        $normalizedPhone = preg_replace('/\D+/', '', (string) $request->input('phone'));
+
+        $existsInEmployees = Employee::where('phone', $normalizedPhone)->exists();
+        $existsInUsers = User::where('phone', $normalizedPhone)->exists();
+        $existsInShopOwners = ShopOwner::where('phone', $normalizedPhone)->exists();
+
+        $available = !($existsInEmployees || $existsInUsers || $existsInShopOwners);
+
+        return response()->json([
+            'available' => $available,
+            'exists_in_employees' => $existsInEmployees,
+            'exists_in_users' => $existsInUsers,
+            'exists_in_shop_owners' => $existsInShopOwners,
+            'message' => $available ? 'Phone number is available' : 'This phone number is already registered',
+        ]);
+    }
+
+    /**
      * Register a new user account
      * 
      * Users are automatically activated upon registration

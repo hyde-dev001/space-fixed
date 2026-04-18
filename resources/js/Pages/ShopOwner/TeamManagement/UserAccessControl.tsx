@@ -97,6 +97,11 @@ interface InvitationModalData {
   wasRegenerated?: boolean;
 }
 
+type FieldValidationState = {
+  status: 'idle' | 'checking' | 'valid' | 'error';
+  message: string;
+};
+
 // Professional Metric Card Component
 const MetricCard: React.FC<MetricData> = ({
   title,
@@ -428,6 +433,10 @@ const UserAccessControl: React.FC = () => {
   const [accountAction, setAccountAction] = useState<'activate' | 'suspend'>('activate');
   const [accountReason, setAccountReason] = useState('');
   const [isSubmittingEmployee, setIsSubmittingEmployee] = useState(false);
+  const [employeeEmailValidation, setEmployeeEmailValidation] = useState<FieldValidationState>({ status: 'idle', message: '' });
+  const [employeePhoneValidation, setEmployeePhoneValidation] = useState<FieldValidationState>({ status: 'idle', message: '' });
+  const emailValidationRequestRef = useRef(0);
+  const phoneValidationRequestRef = useRef(0);
 
   // Permission Management State (Phase 6)
   const [isPermissionModalOpen, setIsPermissionModalOpen] = useState(false);
@@ -845,6 +854,102 @@ const UserAccessControl: React.FC = () => {
     }
   };
 
+  const checkPhoneAvailability = async (phone: string): Promise<{ available: boolean; message?: string }> => {
+    try {
+      const response = await fetch(`/auth/check-phone-availability?phone=${encodeURIComponent(phone)}`, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+        },
+        credentials: 'include',
+      });
+
+      const data = await response.json().catch(() => ({}));
+      return {
+        available: Boolean(data?.available),
+        message: typeof data?.message === 'string' ? data.message : undefined,
+      };
+    } catch {
+      return {
+        available: false,
+        message: 'Unable to verify phone number right now. Please try again.',
+      };
+    }
+  };
+
+  useEffect(() => {
+    if (!isEmployeeModalOpen || Boolean(editingEmployee)) {
+      setEmployeeEmailValidation({ status: 'idle', message: '' });
+      return;
+    }
+
+    const normalizedEmail = employeeForm.email.trim();
+    if (!normalizedEmail) {
+      setEmployeeEmailValidation({ status: 'idle', message: '' });
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(normalizedEmail)) {
+      setEmployeeEmailValidation({ status: 'error', message: 'Please enter a valid email address.' });
+      return;
+    }
+
+    const requestId = ++emailValidationRequestRef.current;
+    setEmployeeEmailValidation({ status: 'checking', message: 'Checking email availability...' });
+
+    const timer = window.setTimeout(async () => {
+      const result = await checkEmailAvailability(normalizedEmail);
+      if (requestId !== emailValidationRequestRef.current) {
+        return;
+      }
+
+      if (result.available) {
+        setEmployeeEmailValidation({ status: 'valid', message: '' });
+      } else {
+        setEmployeeEmailValidation({ status: 'error', message: result.message || 'This email is already registered.' });
+      }
+    }, 350);
+
+    return () => window.clearTimeout(timer);
+  }, [employeeForm.email, isEmployeeModalOpen, editingEmployee]);
+
+  useEffect(() => {
+    if (!isEmployeeModalOpen || Boolean(editingEmployee)) {
+      setEmployeePhoneValidation({ status: 'idle', message: '' });
+      return;
+    }
+
+    const normalizedPhone = employeeForm.phone.replace(/\D/g, '').slice(0, 11);
+    if (!normalizedPhone) {
+      setEmployeePhoneValidation({ status: 'idle', message: '' });
+      return;
+    }
+
+    if (normalizedPhone.length < 11) {
+      setEmployeePhoneValidation({ status: 'error', message: 'Phone number must be exactly 11 digits.' });
+      return;
+    }
+
+    const requestId = ++phoneValidationRequestRef.current;
+    setEmployeePhoneValidation({ status: 'checking', message: 'Checking phone number availability...' });
+
+    const timer = window.setTimeout(async () => {
+      const result = await checkPhoneAvailability(normalizedPhone);
+      if (requestId !== phoneValidationRequestRef.current) {
+        return;
+      }
+
+      if (result.available) {
+        setEmployeePhoneValidation({ status: 'valid', message: '' });
+      } else {
+        setEmployeePhoneValidation({ status: 'error', message: result.message || 'This phone number is already registered.' });
+      }
+    }, 350);
+
+    return () => window.clearTimeout(timer);
+  }, [employeeForm.phone, isEmployeeModalOpen, editingEmployee]);
+
   const handleAddEmployee = async () => {
     // Check required fields
     if (!employeeForm.firstName || !employeeForm.lastName || !employeeForm.email || !employeeForm.department) {
@@ -883,6 +988,35 @@ const UserAccessControl: React.FC = () => {
       return;
     }
 
+    if (employeeEmailValidation.status === 'checking' || employeePhoneValidation.status === 'checking') {
+      Swal.fire({
+        icon: 'info',
+        title: 'Please wait',
+        text: 'We are still checking email/phone availability.',
+        timer: 2000,
+        showConfirmButton: false,
+      });
+      return;
+    }
+
+    if (employeeEmailValidation.status === 'error') {
+      Swal.fire({
+        icon: 'error',
+        title: 'Email not available',
+        text: employeeEmailValidation.message || 'This email is already registered.',
+      });
+      return;
+    }
+
+    if (normalizedPhone && employeePhoneValidation.status === 'error') {
+      Swal.fire({
+        icon: 'error',
+        title: 'Phone number not available',
+        text: employeePhoneValidation.message || 'This phone number is already registered.',
+      });
+      return;
+    }
+
     const emailAvailability = await checkEmailAvailability(trimmedEmail);
     if (!emailAvailability.available) {
       Swal.fire({
@@ -892,6 +1026,19 @@ const UserAccessControl: React.FC = () => {
         showConfirmButton: true,
       });
       return;
+    }
+
+    if (normalizedPhone) {
+      const phoneAvailability = await checkPhoneAvailability(normalizedPhone);
+      if (!phoneAvailability.available) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Phone number not available',
+          text: phoneAvailability.message || 'This phone number is already registered.',
+          showConfirmButton: true,
+        });
+        return;
+      }
     }
 
     setIsEmployeeModalOpen(false);
@@ -1499,6 +1646,8 @@ const UserAccessControl: React.FC = () => {
   // Modal open handlers
   const openAddEmployeeModal = () => {
     setEditingEmployee(null);
+    setEmployeeEmailValidation({ status: 'idle', message: '' });
+    setEmployeePhoneValidation({ status: 'idle', message: '' });
     setEmployeeForm({
       firstName: '',
       lastName: '',
@@ -1516,6 +1665,8 @@ const UserAccessControl: React.FC = () => {
 
   const openEditEmployeeModal = (employee: Employee) => {
     setEditingEmployee(employee);
+    setEmployeeEmailValidation({ status: 'idle', message: '' });
+    setEmployeePhoneValidation({ status: 'idle', message: '' });
     setEmployeeForm({
       firstName: (employee.name || '').split(' ')[0] || '',
       lastName: ((employee.name || '').split(' ').slice(1).join(' ')) || '',
@@ -2031,13 +2182,25 @@ const UserAccessControl: React.FC = () => {
 
                       <div className="mt-4">
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Email *</label>
-                        <input type="email" value={employeeForm.email} onChange={(e) => setEmployeeForm({ ...employeeForm, email: e.target.value })} placeholder="Email address" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white" />
+                        <input type="email" value={employeeForm.email} onChange={(e) => setEmployeeForm({ ...employeeForm, email: e.target.value })} placeholder="Email address" className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white ${employeeEmailValidation.status === 'error' ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'}`} />
+                        {employeeEmailValidation.status === 'error' && (
+                          <p className="mt-1 text-xs text-red-600 dark:text-red-400">{employeeEmailValidation.message}</p>
+                        )}
+                        {employeeEmailValidation.status === 'checking' && (
+                          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{employeeEmailValidation.message}</p>
+                        )}
                       </div>
 
                       <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Phone</label>
-                          <input type="tel" value={employeeForm.phone} onChange={(e) => setEmployeeForm({ ...employeeForm, phone: e.target.value.replace(/\D/g, '').slice(0, 11) })} inputMode="numeric" pattern="[0-9]*" maxLength={11} placeholder="09XXXXXXXXX" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white" />
+                          <input type="tel" value={employeeForm.phone} onChange={(e) => setEmployeeForm({ ...employeeForm, phone: e.target.value.replace(/\D/g, '').slice(0, 11) })} inputMode="numeric" pattern="[0-9]*" maxLength={11} placeholder="09XXXXXXXXX" className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white ${employeePhoneValidation.status === 'error' ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'}`} />
+                          {employeePhoneValidation.status === 'error' && (
+                            <p className="mt-1 text-xs text-red-600 dark:text-red-400">{employeePhoneValidation.message}</p>
+                          )}
+                          {employeePhoneValidation.status === 'checking' && (
+                            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{employeePhoneValidation.message}</p>
+                          )}
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Address</label>

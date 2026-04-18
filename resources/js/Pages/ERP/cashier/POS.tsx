@@ -588,7 +588,7 @@ const PointOfSalePage = () => {
 			try {
 					const [servicesResult, ordersResult, packagesResult, manualQueueResult] = await Promise.allSettled([
 					axios.get("/api/repair-services"),
-					axios.get("/api/repairer/repairs"),
+					axios.get("/api/repairer/repairs", { params: { scope: "pos_checkout" } }),
 					axios.get("/api/repair-packages"),
 						axios.get("/api/repair-pos/manual-queue"),
 				]);

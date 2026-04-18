@@ -307,6 +307,40 @@ class RepairWorkflowController extends Controller
                     'message' => 'Unauthenticated'
                 ], 401);
             }
+
+            $scope = trim((string) $request->query('scope', ''));
+            if ($scope === 'pos_checkout') {
+                $shopOwnerId = (int) ($user->shop_owner_id ?? 0);
+
+                if ($shopOwnerId <= 0) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Shop scope not found for POS checkout context.'
+                    ], 422);
+                }
+
+                $repairs = RepairRequest::with(['user', 'services', 'shopOwner', 'repairer'])
+                    ->withSum(['posTransactions as pos_paid_amount' => function ($query) {
+                        $query->whereIn('status', ['paid', 'partially_refunded', 'refunded']);
+                    }], 'paid_amount')
+                    ->where('shop_owner_id', $shopOwnerId)
+                    ->where($jobOrderVisibleRepairs)
+                    ->whereIn('status', ['pending', 'repairer_accepted', 'waiting_customer_confirmation', 'confirmed', 'owner_approved', 'received', 'in_progress', 'completed', 'ready_for_pickup', 'shipped', 'picked_up'])
+                    ->orderBy('created_at', 'desc')
+                    ->get();
+
+                $repairs->transform(function (RepairRequest $repair): RepairRequest {
+                    $repair->setAttribute('total_paid_amount', $this->resolveJobOrderTotalPaidAmount($repair));
+                    $this->normalizeRepairTaxModeForPayload($repair);
+
+                    return $repair;
+                });
+
+                return response()->json([
+                    'success' => true,
+                    'data' => $repairs,
+                ]);
+            }
             
             // Get repairs assigned to this repairer
             $repairs = RepairRequest::with(['user', 'services', 'shopOwner'])

@@ -37,7 +37,12 @@ class ExpenseController extends Controller
             return response()->json(['message' => 'No shop association found for this account.'], 403);
         }
 
-        $expenses = QueryBuilder::for(Expense::where('shop_id', $shopId))
+        $query = Expense::where('shop_id', $shopId)
+            ->when($request->boolean('archived'), function ($builder) {
+                $builder->onlyTrashed();
+            });
+
+        $expenses = QueryBuilder::for($query)
             ->allowedFilters([
                 'status',
                 'category',
@@ -515,12 +520,52 @@ class ExpenseController extends Controller
             ->causedBy(Auth::user())
             ->performedOn($expense)
             ->withProperties($expenseDetails)
-            ->log('Expense deleted');
+            ->log('Expense archived');
 
         $expense->delete();
-        $this->audit('delete_expense', $expense->id, ['status' => $expense->status]);
+        $this->audit('archive_expense', $expense->id, ['status' => $expense->status]);
 
-        return response()->json(['message' => 'Expense deleted']);
+        return response()->json(['message' => 'Expense archived']);
+    }
+
+    /**
+     * Restore archived expense.
+     */
+    public function restore($id)
+    {
+        $shopId = auth()->user()?->shop_owner_id;
+        if (! $shopId) {
+            return response()->json(['message' => 'No shop association found for this account.'], 403);
+        }
+
+        $expense = Expense::withTrashed()
+            ->where('shop_id', $shopId)
+            ->onlyTrashed()
+            ->where('id', $id)
+            ->firstOrFail();
+
+        $expenseDetails = [
+            'reference' => $expense->reference,
+            'category' => $expense->category,
+            'vendor' => $expense->vendor,
+            'amount' => $expense->amount,
+            'status' => $expense->status,
+            'date' => $expense->date,
+        ];
+
+        activity()
+            ->causedBy(Auth::user())
+            ->performedOn($expense)
+            ->withProperties($expenseDetails)
+            ->log('Expense restored');
+
+        $expense->restore();
+        $this->audit('restore_expense', $expense->id, ['status' => $expense->status]);
+
+        return response()->json([
+            'message' => 'Expense restored',
+            'expense' => $expense->fresh(),
+        ]);
     }
 
     private function audit(string $action, int $targetId, array $metadata = []): void

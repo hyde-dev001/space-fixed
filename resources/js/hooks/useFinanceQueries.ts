@@ -280,6 +280,7 @@ export function useExpenses(filters?: {
   dateTo?: string;
   search?: string;
   sort?: string;
+  archived?: boolean;
 }) {
   const api = useFinanceApi();
   
@@ -298,6 +299,7 @@ export function useExpenses(filters?: {
         if (filters.dateTo) params.append('filter[date_to]', filters.dateTo);
         if (filters.search) params.append('filter[search_all]', filters.search);
         if (filters.sort) params.append('sort', filters.sort);
+        if (filters.archived !== undefined) params.append('archived', filters.archived ? '1' : '0');
         
         const queryString = params.toString();
         if (queryString) url += `?${queryString}`;
