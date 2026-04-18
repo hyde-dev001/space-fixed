@@ -856,13 +856,21 @@ const MyOrders: React.FC = () => {
       return false;
     }
 
+    if (!isOnlinePaymentOrder(order)) {
+      return false;
+    }
+
+    const paymentStatus = String(order.payment_status || '').toLowerCase();
+    if (!['paid', 'completed'].includes(paymentStatus)) {
+      return false;
+    }
+
     if (order.review_submitted) {
       return false;
     }
 
     const refundStatus = String(order.refund_status || '').toLowerCase();
     const refundStageStatus = String(order.refund_stage?.status || '').toLowerCase();
-    const paymentStatus = String(order.payment_status || '').toLowerCase();
 
     const hasExistingRefundFlow = ['processing', 'refunded'].includes(refundStatus)
       || ['requested', 'pending_approval', 'approved', 'processing'].includes(refundStageStatus)
@@ -874,6 +882,43 @@ const MyOrders: React.FC = () => {
 
     // Always honor local status+deadline so the button enables immediately after delivery confirmation.
     return !isDeadlinePassed(order);
+  };
+
+  const getRefundIneligibilityMessage = (order: Order): string => {
+    const isDeliveredOrCompleted = ['delivered', 'completed'].includes(order.status);
+    if (!isDeliveredOrCompleted) {
+      return 'Only delivered or completed orders can request a refund.';
+    }
+
+    if (!isOnlinePaymentOrder(order)) {
+      return 'Only online-paid orders are eligible for refund requests.';
+    }
+
+    const paymentStatus = String(order.payment_status || '').toLowerCase();
+    if (!['paid', 'completed'].includes(paymentStatus)) {
+      return 'Order payment is not eligible for refund processing yet.';
+    }
+
+    if (order.review_submitted) {
+      return 'Refund request is unavailable after submitting a review.';
+    }
+
+    const refundStatus = String(order.refund_status || '').toLowerCase();
+    const refundStageStatus = String(order.refund_stage?.status || '').toLowerCase();
+
+    const hasExistingRefundFlow = ['processing', 'refunded'].includes(refundStatus)
+      || ['requested', 'pending_approval', 'approved', 'processing'].includes(refundStageStatus)
+      || paymentStatus === 'refunded';
+
+    if (hasExistingRefundFlow) {
+      return 'A refund request for this order is already in progress.';
+    }
+
+    if (isDeadlinePassed(order)) {
+      return `Refund deadline passed on ${formatDeadline(order.cancellation_refund_deadline_at)}.`;
+    }
+
+    return 'Request refund';
   };
 
   const formatDeadline = (deadlineIso?: string | null): string => {
@@ -980,6 +1025,33 @@ const MyOrders: React.FC = () => {
   const handleSubmitRefund = async () => {
     if (!refundOrderId) return;
 
+    const currentRefundOrder = orders.find((order) => order.id === refundOrderId);
+    if (!currentRefundOrder) {
+      Swal.fire({ icon: 'error', title: 'Order not found', text: 'Please refresh and try again.', confirmButtonColor: '#000000' });
+      return;
+    }
+
+    if (!isOnlinePaymentOrder(currentRefundOrder)) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Refund Not Eligible',
+        text: 'Only online-paid orders are eligible for gateway refund requests.',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
+    const currentPaymentStatus = String(currentRefundOrder.payment_status || '').toLowerCase();
+    if (!['paid', 'completed'].includes(currentPaymentStatus)) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Refund Not Eligible',
+        text: 'Order payment is not eligible for refund processing.',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
     const effectiveRequestType = canChooseRefundScope ? refundRequestType : 'full';
     
     if (!refundReason) {
@@ -1063,6 +1135,14 @@ const MyOrders: React.FC = () => {
       }
 
       if (!response.ok) {
+        const validationErrors = data?.errors;
+        if (validationErrors && typeof validationErrors === 'object') {
+          const firstErrorList = Object.values(validationErrors).find((entry) => Array.isArray(entry) && entry.length > 0) as string[] | undefined;
+          if (firstErrorList?.[0]) {
+            throw new Error(firstErrorList[0]);
+          }
+        }
+
         if (data?.message) {
           throw new Error(data.message);
         }
@@ -1903,7 +1983,7 @@ const MyOrders: React.FC = () => {
                                   setRefundOtherReasonNote('');
                                   setShowRefundModal(true);
                                 }}
-                                title={canRefund ? 'Request refund' : 'Refund deadline has passed'}
+                                title={canRefund ? 'Request refund' : getRefundIneligibilityMessage(order)}
                                 className={`${actionButtonBaseClass} ${canRefund ? actionButtonSecondaryClass : actionButtonDisabledClass}`}
                               >
                                 REFUND
@@ -1944,7 +2024,7 @@ const MyOrders: React.FC = () => {
                         <p className={`mt-3 text-xs sm:text-right ${canRefund ? 'text-gray-500' : 'text-red-600 font-medium'}`}>
                           {canRefund
                             ? `You can request a refund until ${formatDeadline(order.cancellation_refund_deadline_at)}.`
-                            : `Refund deadline passed on ${formatDeadline(order.cancellation_refund_deadline_at)}.`}
+                            : getRefundIneligibilityMessage(order)}
                         </p>
                       )}
                     </div>
