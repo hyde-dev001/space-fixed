@@ -704,9 +704,7 @@ const ProductShow: React.FC = () => {
       }
 
       if (!response.ok || !payload?.success) {
-        const apiError: any = new Error(payload?.message || 'Failed to claim voucher');
-        apiError.status = response.status;
-        throw apiError;
+        throw new Error(payload?.message || 'Failed to claim voucher');
       }
 
       setClaimedPromoIds((prev) => [...prev, campaign.id]);
@@ -719,11 +717,10 @@ const ProductShow: React.FC = () => {
         timerProgressBar: true,
       });
     } catch (error: any) {
-      const statusSuffix = typeof error?.status === 'number' ? ` (HTTP ${error.status})` : '';
       await Swal.fire({
         icon: 'error',
         title: 'Claim failed',
-        text: `${error?.message || 'Unable to claim voucher right now.'}${statusSuffix}`,
+        text: error?.message || 'Unable to claim voucher right now.',
         confirmButtonText: 'OK',
       });
     }
@@ -937,9 +934,22 @@ const ProductShow: React.FC = () => {
     }, 320);
   };
 
+  const isVoucherStripInteractiveTarget = (target: EventTarget | null): boolean => {
+    if (!(target instanceof Element)) {
+      return false;
+    }
+
+    return Boolean(
+      target.closest('button, a, input, select, textarea, summary, [role="button"], [role="link"], [data-voucher-strip-interactive="true"]')
+    );
+  };
+
   const handleVoucherStripPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     // Let touch devices use native scrolling physics for smoother swipe behavior.
     if (event.pointerType !== 'mouse' || event.button !== 0) return;
+
+    // Preserve normal click behavior for controls inside each voucher card.
+    if (isVoucherStripInteractiveTarget(event.target)) return;
 
     const strip = voucherStripRef.current;
     if (!strip) return;
@@ -2122,7 +2132,6 @@ const ProductShow: React.FC = () => {
                   <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Vouchers</p>
                   <h2 className="mt-1 text-sm font-bold text-slate-900 sm:text-base">Claim Available Vouchers</h2>
                   <p className="mt-1 text-[11px] text-slate-500 lg:hidden">Swipe left to view more offers.</p>
-                  <p className="mt-1 text-[11px] text-slate-500">You can claim vouchers anytime. Minimum spend is checked only when applying discounts at checkout.</p>
                 </div>
               </div>
 

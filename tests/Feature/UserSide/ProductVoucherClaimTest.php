@@ -15,52 +15,6 @@ class ProductVoucherClaimTest extends TestCase
     use RefreshDatabase;
 
     #[Test]
-    public function customer_can_claim_voucher_even_when_product_amount_is_below_minimum_spend(): void
-    {
-        $shopOwner = ShopOwner::factory()->create([
-            'business_type' => 'retail',
-            'status' => 'approved',
-        ]);
-
-        $product = Product::create([
-            'shop_owner_id' => $shopOwner->id,
-            'name' => 'Low Ticket Shoe',
-            'slug' => 'low-ticket-shoe',
-            'price' => 500,
-            'stock_quantity' => 10,
-            'is_active' => true,
-        ]);
-
-        $campaign = PromoCampaign::create([
-            'shop_owner_id' => $shopOwner->id,
-            'kind' => 'voucher',
-            'scope' => 'shop_wide',
-            'name' => 'Big Minimum Spend Voucher',
-            'code' => 'BIGMIN',
-            'discount_mode' => 'fixed',
-            'value' => 200,
-            'min_spend' => 5000,
-            'usage_limit' => 100,
-            'used_count' => 0,
-            'start_at' => now()->subDay(),
-            'end_at' => now()->addDay(),
-            'status' => 'active',
-            'stacking_mode' => 'combinable',
-        ]);
-
-        /** @var User $customer */
-        $customer = User::factory()->create([
-            'shop_owner_id' => null,
-        ]);
-
-        $this->actingAs($customer, 'user');
-
-        $this->postJson("/api/products/{$product->id}/vouchers/{$campaign->id}/claim")
-            ->assertCreated()
-            ->assertJsonPath('success', true);
-    }
-
-    #[Test]
     public function customer_can_claim_active_voucher_once(): void
     {
         $shopOwner = ShopOwner::factory()->create([

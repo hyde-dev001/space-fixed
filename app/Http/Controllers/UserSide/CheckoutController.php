@@ -559,6 +559,64 @@ class CheckoutController extends Controller
     }
 
     /**
+     * @param array<int, array<string, mixed>> $pricedLineItems
+     */
+    private function voucherEligibleSubtotalFromPricedLineItems(PromoCampaign $campaign, array $pricedLineItems): float
+    {
+        $eligibleSubtotal = 0.0;
+
+        foreach ($pricedLineItems as $lineItem) {
+            $productId = (int) ($lineItem['product_id'] ?? 0);
+            if (!$this->isVoucherCampaignApplicableToProduct($campaign, $productId)) {
+                continue;
+            }
+
+            $eligibleSubtotal += max(0.0, (float) ($lineItem['sale_adjusted_total'] ?? $lineItem['base_total'] ?? 0.0));
+        }
+
+        return round($eligibleSubtotal, 2);
+    }
+
+    private function isVoucherCampaignApplicableToProduct(PromoCampaign $campaign, int $productId): bool
+    {
+        if ((string) $campaign->scope === 'shop_wide') {
+            return true;
+        }
+
+        return $campaign->products->pluck('id')->contains($productId);
+    }
+
+    /**
+     * @param array<string, mixed> $pricingResult
+     */
+    private function buildVoucherIneligibilityMessage(?PromoCampaign $selectedVoucher, array $pricingResult): string
+    {
+        if (!$selectedVoucher) {
+            return 'Voucher code is invalid, unavailable, or already redeemed.';
+        }
+
+        $pricedLineItems = is_array($pricingResult['line_items'] ?? null)
+            ? $pricingResult['line_items']
+            : [];
+        $eligibleSubtotal = $this->voucherEligibleSubtotalFromPricedLineItems($selectedVoucher, $pricedLineItems);
+        $minSpend = max(0.0, (float) $selectedVoucher->min_spend);
+
+        if ($eligibleSubtotal <= 0.0) {
+            return 'Selected voucher does not apply to items in your cart.';
+        }
+
+        if ($minSpend > 0.0 && $eligibleSubtotal < $minSpend) {
+            return sprintf(
+                'Minimum spend of PHP %s is required for this voucher (current eligible subtotal: PHP %s).',
+                number_format($minSpend, 2, '.', ','),
+                number_format($eligibleSubtotal, 2, '.', ',')
+            );
+        }
+
+        return 'Selected voucher is not eligible for this checkout.';
+    }
+
+    /**
      * Preview promo-adjusted checkout totals for the current cart.
      */
     public function previewPromoPricing(Request $request)
@@ -686,9 +744,7 @@ class CheckoutController extends Controller
         $voucherError = null;
 
         if (!$disableVoucher && $hasVoucherSelectionIntent && !($appliedVoucher instanceof PromoCampaign)) {
-            $voucherError = $selectedVoucher
-                ? 'Selected voucher is not eligible for this checkout.'
-                : 'Voucher code is invalid, unavailable, or already redeemed.';
+            $voucherError = $this->buildVoucherIneligibilityMessage($selectedVoucher, $pricing);
         }
 
         $vatRatePercent = 12.0;
@@ -972,9 +1028,7 @@ class CheckoutController extends Controller
                     $selectedPricingVoucher = $pricingResult['applied_voucher'] ?? null;
 
                     if (!$disableVoucher && $hasVoucherSelectionIntent && !($selectedPricingVoucher instanceof PromoCampaign)) {
-                        throw new \RuntimeException($selectedVoucher
-                            ? 'Selected voucher is not eligible for this checkout.'
-                            : 'Voucher code is invalid, unavailable, or already redeemed.');
+                        throw new \RuntimeException($this->buildVoucherIneligibilityMessage($selectedVoucher, $pricingResult));
                     }
 
                     $expectedRawTotal = collect($shopItems)->sum(fn ($si) => ((float) $si['item']['price']) * ((int) $si['item']['qty']));

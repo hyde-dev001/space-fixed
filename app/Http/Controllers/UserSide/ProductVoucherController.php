@@ -48,9 +48,6 @@ class ProductVoucherController extends Controller
             return response()->json(['success' => false, 'message' => 'Voucher not applicable to this product.'], 422);
         }
 
-        // Claiming should not enforce minimum spend.
-        // min_spend is validated when the voucher is applied during checkout pricing.
-
         if ($campaign->usage_limit !== null && (int) $campaign->used_count >= (int) $campaign->usage_limit) {
             return response()->json(['success' => false, 'message' => 'Voucher is fully claimed.'], 422);
         }
