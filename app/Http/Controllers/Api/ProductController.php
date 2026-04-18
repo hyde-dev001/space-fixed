@@ -1521,6 +1521,10 @@ class ProductController extends Controller
                 'images.*.is_thumbnail' => 'sometimes|boolean',
                 'images.*.sort_order' => 'sometimes|integer',
                 'images.*.image_type' => 'nullable|string',
+                'thumbnail_image_id' => 'nullable|integer|exists:product_color_variant_images,id',
+                'image_orders' => 'nullable|array',
+                'image_orders.*.id' => 'required|integer|exists:product_color_variant_images,id',
+                'image_orders.*.sort_order' => 'required|integer',
             ]);
 
             $validated['color_name'] = $this->canonicalizeColorName($validated['color_name']);
@@ -1567,23 +1571,61 @@ class ProductController extends Controller
                 );
 
                 $firstImagePath = null;
+                $existingImagesCountBeforeUpload = $colorVariant->images()->count();
+                $newThumbnailImageId = null;
 
                 // Add images if provided
                 if (isset($validated['images']) && is_array($validated['images'])) {
                     foreach ($validated['images'] as $index => $imageData) {
-                        ProductColorVariantImage::create([
+                        $isThumbnail = array_key_exists('is_thumbnail', $imageData)
+                            ? (bool) $imageData['is_thumbnail']
+                            : ($existingImagesCountBeforeUpload === 0 && $index === 0);
+
+                        $createdImage = ProductColorVariantImage::create([
                             'product_color_variant_id' => $colorVariant->id,
                             'image_path' => $imageData['path'],
                             'alt_text' => $imageData['alt_text'] ?? null,
-                            'is_thumbnail' => $imageData['is_thumbnail'] ?? ($index === 0), // First image is thumbnail
+                            'is_thumbnail' => $isThumbnail,
                             'sort_order' => $imageData['sort_order'] ?? $index,
                             'image_type' => $imageData['image_type'] ?? 'product',
                         ]);
+
+                        if ($isThumbnail) {
+                            $newThumbnailImageId = $createdImage->id;
+                        }
 
                         // Save first image path for potential main_image update
                         if ($index === 0) {
                             $firstImagePath = $imageData['path'];
                         }
+                    }
+                }
+
+                if (!empty($validated['image_orders']) && is_array($validated['image_orders'])) {
+                    foreach ($validated['image_orders'] as $imageOrder) {
+                        ProductColorVariantImage::where('id', $imageOrder['id'])
+                            ->where('product_color_variant_id', $colorVariant->id)
+                            ->update(['sort_order' => $imageOrder['sort_order']]);
+                    }
+                }
+
+                $targetThumbnailImageId = null;
+                if (!empty($validated['thumbnail_image_id'])) {
+                    $targetThumbnailImageId = (int) $validated['thumbnail_image_id'];
+                } elseif ($newThumbnailImageId) {
+                    $targetThumbnailImageId = (int) $newThumbnailImageId;
+                }
+
+                if ($targetThumbnailImageId) {
+                    $thumbnailImage = ProductColorVariantImage::where('id', $targetThumbnailImageId)
+                        ->where('product_color_variant_id', $colorVariant->id)
+                        ->first();
+
+                    if ($thumbnailImage) {
+                        ProductColorVariantImage::where('product_color_variant_id', $colorVariant->id)
+                            ->update(['is_thumbnail' => false]);
+
+                        $thumbnailImage->update(['is_thumbnail' => true]);
                     }
                 }
 

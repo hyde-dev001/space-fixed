@@ -2917,21 +2917,6 @@ export const EmployeeManagement: React.FC<{
                           </p>
                         </div>
 
-                        {addEmployeeForm.department === 'Manager' && (
-                          <div className="col-span-2 flex items-start gap-3 p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
-                            <AlertIcon className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
-                            <div>
-                              <p className="text-sm font-semibold text-amber-900 dark:text-amber-300 mb-1">
-                                🔒 Manager Role - Limited Access
-                              </p>
-                              <p className="text-sm text-amber-700 dark:text-amber-400">
-                                Managers can ONLY access <span className="font-semibold">Manager pages</span> (user management, role assignment, system oversight, audit logs, and settings). 
-                                <span className="font-semibold"> Managers do NOT have access to HR, Customer Relationship Management, Finance, or operational modules.</span> 
-                                For full module access, assign specific department roles (HR, Customer Relationship Management, Finance) or grant additional permissions.
-                              </p>
-                            </div>
-                          </div>
-                        )}
                       </div>
 
                       <div className="grid grid-cols-2 gap-4 mt-4">

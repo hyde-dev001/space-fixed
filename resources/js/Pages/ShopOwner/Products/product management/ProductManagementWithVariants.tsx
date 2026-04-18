@@ -993,6 +993,8 @@ export default function ProductManagement() {
           : editingProduct
             ? existingVariantsByColorIdentity.get(normalizedColorIdentity)
             : null;
+        let existingImageOrdersPayload: Array<{ id: number; sort_order: number }> = [];
+        let selectedExistingThumbnailId: number | null = null;
 
         if (editingProduct && matchedExistingVariant?.id) {
           const existingVariantId = toNumericId(matchedExistingVariant.id);
@@ -1009,7 +1011,7 @@ export default function ProductManagement() {
             const currentExistingImageIdSet = new Set(
               currentExistingImages
                 .map(({ image }: { image: any }) => toNumericId(image.id))
-                .filter((id): id is number => id !== null)
+                .filter((id: number | null): id is number => id !== null)
             );
 
             for (const existingImage of existingProductImages) {
@@ -1034,38 +1036,22 @@ export default function ProductManagement() {
               }
             }
 
+            existingImageOrdersPayload = currentExistingImages
+              .map(({ image, imageIndex }: { image: any; imageIndex: number }) => {
+                const id = toNumericId(image.id);
+                if (!id) return null;
+                return {
+                  id,
+                  sort_order: imageIndex,
+                };
+              })
+              .filter((order: { id: number; sort_order: number } | null): order is { id: number; sort_order: number } => order !== null);
+
             const selectedThumbnailImage = colorVariant.images.find((image: any) => image.is_thumbnail);
-            const selectedExistingThumbnailId =
+            selectedExistingThumbnailId =
               selectedThumbnailImage && !selectedThumbnailImage.file
                 ? toNumericId(selectedThumbnailImage.id)
                 : null;
-
-            for (const { image, imageIndex } of currentExistingImages) {
-              const existingImageId = toNumericId(image.id);
-              if (!existingImageId) continue;
-
-              const updateResponse = await fetchWith429Retry(
-                `/api/shop-owner/products/${productId}/color-variants/${existingVariantId}/images/${existingImageId}`,
-                {
-                  method: 'PUT',
-                  credentials: 'include',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                    'X-CSRF-TOKEN': csrfToken || '',
-                  },
-                  body: JSON.stringify({
-                    is_thumbnail: selectedExistingThumbnailId !== null && selectedExistingThumbnailId === existingImageId,
-                    sort_order: imageIndex,
-                  }),
-                }
-              );
-
-              if (!updateResponse.ok) {
-                const message = await readApiErrorMessage(updateResponse, 'Failed to update image');
-                throw new Error(message);
-              }
-            }
           }
         }
 
@@ -1195,6 +1181,12 @@ export default function ProductManagement() {
           is_active: true,
           sort_order: 0,
           images: uploadedImages,
+          ...(editingProduct && existingImageOrdersPayload.length > 0
+            ? { image_orders: existingImageOrdersPayload }
+            : {}),
+          ...(editingProduct && selectedExistingThumbnailId
+            ? { thumbnail_image_id: selectedExistingThumbnailId }
+            : {}),
         };
 
         const cvResponse = await fetchWith429Retry(`/api/shop-owner/products/${productId}/color-variants`, {
