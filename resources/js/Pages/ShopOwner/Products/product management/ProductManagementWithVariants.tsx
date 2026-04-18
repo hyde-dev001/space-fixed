@@ -918,6 +918,13 @@ export default function ProductManagement() {
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
     let firstColorFirstImage: string | null = null;
     let isFirstColor = true;
+    const toNumericId = (value: unknown): number | null => {
+      const parsed = Number.parseInt(String(value ?? ''), 10);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    };
+
+    const existingVariantsById = new Map<number, any>();
+    const existingVariantsByColorIdentity = new Map<string, any>();
     const uploadResult: ColorVariantUploadResult = {
       firstColorVariantId: null,
       firstColorVariantImageCount: 0,
@@ -934,6 +941,20 @@ export default function ProductManagement() {
         if (existingResponse.ok) {
           const existingData = await existingResponse.json();
           const existingVariants = existingData.color_variants || [];
+
+          existingVariants.forEach((variant: any) => {
+            const variantId = toNumericId(variant?.id);
+            const variantColorIdentity = normalizeCombinedColorIdentity(String(variant?.color_name || ''));
+
+            if (variantId) {
+              existingVariantsById.set(variantId, variant);
+            }
+
+            if (variantColorIdentity) {
+              existingVariantsByColorIdentity.set(variantColorIdentity, variant);
+            }
+          });
+
           const keptColorNames = new Set(
             colorVariants
               .map((variant) => normalizeCombinedColorIdentity(String(variant.color_name || '')))
@@ -964,6 +985,89 @@ export default function ProductManagement() {
     for (const colorVariant of colorVariants) {
       try {
         const canonicalColorName = canonicalizeCombinedColorName(String(colorVariant.color_name || ''));
+        const normalizedColorIdentity = normalizeCombinedColorIdentity(canonicalColorName);
+
+        const colorVariantId = toNumericId(colorVariant.id);
+        const matchedExistingVariant = (editingProduct && colorVariantId)
+          ? existingVariantsById.get(colorVariantId)
+          : editingProduct
+            ? existingVariantsByColorIdentity.get(normalizedColorIdentity)
+            : null;
+
+        if (editingProduct && matchedExistingVariant?.id) {
+          const existingVariantId = toNumericId(matchedExistingVariant.id);
+
+          if (existingVariantId) {
+            const existingProductImages = (matchedExistingVariant.images || []).filter(
+              (img: any) => !isShowroomFrameImageType(img?.image_type)
+            );
+
+            const currentExistingImages = colorVariant.images
+              .map((image: any, imageIndex: number) => ({ image, imageIndex }))
+              .filter(({ image }: { image: any }) => !image.file && !!toNumericId(image.id));
+
+            const currentExistingImageIdSet = new Set(
+              currentExistingImages
+                .map(({ image }: { image: any }) => toNumericId(image.id))
+                .filter((id): id is number => id !== null)
+            );
+
+            for (const existingImage of existingProductImages) {
+              const existingImageId = toNumericId(existingImage?.id);
+              if (!existingImageId || currentExistingImageIdSet.has(existingImageId)) continue;
+
+              const deleteResponse = await fetchWith429Retry(
+                `/api/shop-owner/products/${productId}/color-variants/${existingVariantId}/images/${existingImageId}`,
+                {
+                  method: 'DELETE',
+                  credentials: 'include',
+                  headers: {
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': csrfToken || '',
+                  },
+                }
+              );
+
+              if (!deleteResponse.ok) {
+                const message = await readApiErrorMessage(deleteResponse, 'Failed to delete image');
+                throw new Error(message);
+              }
+            }
+
+            const selectedThumbnailImage = colorVariant.images.find((image: any) => image.is_thumbnail);
+            const selectedExistingThumbnailId =
+              selectedThumbnailImage && !selectedThumbnailImage.file
+                ? toNumericId(selectedThumbnailImage.id)
+                : null;
+
+            for (const { image, imageIndex } of currentExistingImages) {
+              const existingImageId = toNumericId(image.id);
+              if (!existingImageId) continue;
+
+              const updateResponse = await fetchWith429Retry(
+                `/api/shop-owner/products/${productId}/color-variants/${existingVariantId}/images/${existingImageId}`,
+                {
+                  method: 'PUT',
+                  credentials: 'include',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': csrfToken || '',
+                  },
+                  body: JSON.stringify({
+                    is_thumbnail: selectedExistingThumbnailId !== null && selectedExistingThumbnailId === existingImageId,
+                    sort_order: imageIndex,
+                  }),
+                }
+              );
+
+              if (!updateResponse.ok) {
+                const message = await readApiErrorMessage(updateResponse, 'Failed to update image');
+                throw new Error(message);
+              }
+            }
+          }
+        }
 
         // First upload all NEW images for this color (skip already uploaded ones)
         const uploadedImages: any[] = [];

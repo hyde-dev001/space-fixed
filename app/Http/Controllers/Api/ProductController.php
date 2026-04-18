@@ -1913,6 +1913,12 @@ class ProductController extends Controller
                 'image_type' => 'nullable|string|max:50',
             ]);
 
+            if (array_key_exists('is_thumbnail', $validated) && $validated['is_thumbnail']) {
+                ProductColorVariantImage::where('product_color_variant_id', $colorVariant->id)
+                    ->where('id', '!=', $image->id)
+                    ->update(['is_thumbnail' => false]);
+            }
+
             $image->update($validated);
 
             return response()->json([
