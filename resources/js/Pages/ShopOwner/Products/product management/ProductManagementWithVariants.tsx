@@ -182,11 +182,18 @@ export default function ProductManagement() {
   const IMAGE_UPLOAD_CONCURRENCY = 2;
   const SHOWROOM_FRAME_UPLOAD_CONCURRENCY = 2;
   const RATE_LIMIT_MAX_RETRIES = 4;
-  const allowedProductImageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+  const allowedProductImageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif'];
+  const allowedProductImageMimeTypes = [
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'image/webp',
+    'image/avif',
+  ];
 
   const isAllowedProductImageFile = (file: File) => {
     const mimeType = (file.type || '').toLowerCase();
-    if (mimeType.startsWith('image/')) return true;
+    if (mimeType && allowedProductImageMimeTypes.includes(mimeType)) return true;
 
     const extension = file.name.split('.').pop()?.toLowerCase() || '';
     return allowedProductImageExtensions.includes(extension);
@@ -813,7 +820,7 @@ export default function ProductManagement() {
       if (!isAllowedProductImageFile(file)) {
         void Swal.fire({
           title: 'Invalid File Type',
-          text: 'Only image files are allowed (JPG, JPEG, PNG, GIF, WEBP).',
+          text: 'Only JPG, JPEG, PNG, GIF, WEBP, and AVIF images are allowed.',
           icon: 'warning',
           confirmButtonColor: '#000000',
         });
@@ -991,8 +998,7 @@ export default function ProductManagement() {
 
             if (!response.ok) {
               const message = await readApiErrorMessage(response, 'Failed to upload image');
-              console.error(`Failed to upload image: ${message}`);
-              return null;
+              throw new Error(message);
             }
 
             const data = await response.json();
@@ -1059,6 +1065,8 @@ export default function ProductManagement() {
               }
               
               isFirstImageInColor = false;
+            } else {
+              throw new Error(`Failed to upload image ${imageIndex + 1} for ${canonicalColorName}.`);
             }
           }
         }
@@ -1098,8 +1106,7 @@ export default function ProductManagement() {
 
         if (!cvResponse.ok) {
           const message = await readApiErrorMessage(cvResponse, 'Failed to create color variant');
-          console.error(`Failed to create color variant: ${message}`);
-          continue;
+          throw new Error(message);
         }
 
         const cvResponseData = await cvResponse.json();
@@ -1126,6 +1133,8 @@ export default function ProductManagement() {
       } catch (error) {
         const canonicalColorName = canonicalizeCombinedColorName(String(colorVariant.color_name || ''));
         console.error(`Error creating color variant for ${canonicalColorName}:`, error);
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        throw new Error(`Failed to process color variant "${canonicalColorName}": ${message}`);
       }
     }
 

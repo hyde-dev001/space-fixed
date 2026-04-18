@@ -28,11 +28,19 @@ export const ColorVariantImageUploader: React.FC<ColorVariantImageUploaderProps>
 }) => {
   const [draggingImageId, setDraggingImageId] = useState<string | null>(null);
 
-  const ALLOWED_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+  const ALLOWED_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif'];
+  const ALLOWED_IMAGE_MIME_TYPES = [
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'image/webp',
+    'image/avif',
+  ];
+  const IMAGE_INPUT_ACCEPT = '.jpg,.jpeg,.png,.gif,.webp,.avif';
 
   const isAllowedImageFile = (file: File) => {
     const mimeType = (file.type || '').toLowerCase();
-    if (mimeType.startsWith('image/')) return true;
+    if (mimeType && ALLOWED_IMAGE_MIME_TYPES.includes(mimeType)) return true;
 
     const extension = file.name.split('.').pop()?.toLowerCase() || '';
     return ALLOWED_IMAGE_EXTENSIONS.includes(extension);
@@ -51,7 +59,7 @@ export const ColorVariantImageUploader: React.FC<ColorVariantImageUploaderProps>
       void Swal.fire({
         icon: 'warning',
         title: 'Invalid file type',
-        text: 'Only image files are allowed (JPG, JPEG, PNG, GIF, WEBP).',
+        text: 'Only JPG, JPEG, PNG, GIF, WEBP, and AVIF images are allowed.',
         confirmButtonColor: '#2563eb',
       });
     }
@@ -171,7 +179,7 @@ export const ColorVariantImageUploader: React.FC<ColorVariantImageUploaderProps>
             Add Images
             <input
               type="file"
-              accept="image/*"
+              accept={IMAGE_INPUT_ACCEPT}
               multiple
               onChange={handleAddImage}
               className="hidden"
@@ -200,7 +208,7 @@ export const ColorVariantImageUploader: React.FC<ColorVariantImageUploaderProps>
               {!readOnly && (
                 <input
                   type="file"
-                  accept="image/*"
+                  accept={IMAGE_INPUT_ACCEPT}
                   multiple
                   onChange={handleAddImage}
                   className="hidden"
