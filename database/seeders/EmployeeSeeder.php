@@ -9,11 +9,15 @@ use App\Models\HR\AttendanceRecord;
 use App\Models\HR\LeaveRequest;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Spatie\Permission\Models\Role;
 use Carbon\Carbon;
 
 class EmployeeSeeder extends Seeder
 {
+    private ?array $usersRoleEnumOptions = null;
+
     /**
      * Run the database seeds.
      */
@@ -186,6 +190,7 @@ class EmployeeSeeder extends Seeder
             
             $department = $employeeData['department'];
             $mappedRole = $roleMap[$department] ?? ['role' => 'STAFF', 'spatie' => 'Staff'];
+            $legacyRole = $this->resolveCompatibleLegacyRole($mappedRole['role']);
             
             // Create corresponding user account
             $user = User::updateOrCreate(
@@ -199,7 +204,7 @@ class EmployeeSeeder extends Seeder
                     'address' => $shopOwner->business_address,
                     'password' => Hash::make($employeeData['email']),
                     'shop_owner_id' => $shopOwner->id, // Link user to shop owner
-                    'role' => $mappedRole['role'], // Set role column (MANAGER, FINANCE, etc.)
+                    'role' => $legacyRole, // Keep enum-compatible users.role while Spatie role handles feature access.
                     'position' => $employeeData['position'],
                     'status' => 'active',
                     'force_password_change' => false, // Since we're using a known password
@@ -218,7 +223,71 @@ class EmployeeSeeder extends Seeder
                 $this->createLeaveRequests($employee, $shopOwner, $hrUser);
             }
         }
+
     }
+
+        /**
+         * Resolve enum-safe value for users.role across environments with schema drift.
+         */
+        private function resolveCompatibleLegacyRole(string $desiredRole): ?string
+        {
+            $desiredRole = strtoupper(trim($desiredRole));
+            $allowed = $this->getUsersRoleEnumOptions();
+
+            // If role column is not enum (or cannot be resolved), keep desired value.
+            if (empty($allowed)) {
+                return $desiredRole;
+            }
+
+            $candidates = match ($desiredRole) {
+                // Cashier is represented by Spatie role; legacy users.role may not support this enum value.
+                'CASHIER' => ['CASHIER', 'STAFF'],
+                'INVENTORY_MANAGER' => ['INVENTORY_MANAGER', 'INVENTORY', 'STAFF'],
+                'PROCUREMENT_MANAGER' => ['PROCUREMENT_MANAGER', 'STAFF'],
+                default => [$desiredRole, 'STAFF'],
+            };
+
+            foreach ($candidates as $candidate) {
+                if (in_array($candidate, $allowed, true)) {
+                    return $candidate;
+                }
+            }
+
+            return $allowed[0] ?? null;
+        }
+
+        /**
+         * Read users.role enum options from the current database schema.
+         */
+        private function getUsersRoleEnumOptions(): array
+        {
+            if (is_array($this->usersRoleEnumOptions)) {
+                return $this->usersRoleEnumOptions;
+            }
+
+            if (!Schema::hasColumn('users', 'role')) {
+                return $this->usersRoleEnumOptions = [];
+            }
+
+            if (DB::getDriverName() === 'sqlite') {
+                return $this->usersRoleEnumOptions = [];
+            }
+
+            $columnRows = DB::select("SHOW COLUMNS FROM `users` LIKE 'role'");
+            if (empty($columnRows)) {
+                return $this->usersRoleEnumOptions = [];
+            }
+
+            $columnType = (string) (($columnRows[0]->Type ?? $columnRows[0]->type ?? ''));
+            if (stripos($columnType, 'enum(') !== 0) {
+                return $this->usersRoleEnumOptions = [];
+            }
+
+            preg_match_all("/'([^']+)'/", $columnType, $matches);
+            $options = array_values(array_unique(array_map(static fn ($value) => strtoupper((string) $value), $matches[1] ?? [])));
+
+            return $this->usersRoleEnumOptions = $options;
+        }
 
     /**
          * Create attendance records for an employee (past 60 days)

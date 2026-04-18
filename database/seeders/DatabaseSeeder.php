@@ -13,7 +13,9 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        User::factory(120)->create();
+        if (!app()->environment('production')) {
+            User::factory(120)->create();
+        }
 
         $this->call([
             ShopOwnerSeeder::class,
