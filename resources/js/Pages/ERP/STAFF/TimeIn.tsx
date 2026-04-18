@@ -1148,6 +1148,22 @@ export default function TimeIn() {
         regularCloseMinutes !== null &&
         adjustedCheckoutMinutes !== null &&
         adjustedCheckoutMinutes > regularCloseMinutes;
+    const expectedCheckInMinutes = timeStringToMinutes(todayAttendance?.expected_check_in ?? null);
+    const actualCheckInMinutes = timeStringToMinutes(todayAttendance?.check_in_time ?? null);
+    const computedTodayMinutesLate =
+        expectedCheckInMinutes !== null &&
+        actualCheckInMinutes !== null &&
+        actualCheckInMinutes > expectedCheckInMinutes
+            ? actualCheckInMinutes - expectedCheckInMinutes
+            : 0;
+    const todayMinutesLate = Math.max(
+        Number(todayAttendance?.minutes_late ?? 0),
+        computedTodayMinutesLate,
+    );
+    const isTodayLate =
+        Boolean(todayAttendance?.is_late)
+        || String(todayAttendance?.status ?? '').toLowerCase() === 'late'
+        || todayMinutesLate > 0;
     const isOnApprovedLeaveToday = Boolean(todayAttendance?.on_leave_today);
     const attendanceRecordsPerPage = 10;
     const attendanceStatusOptions = ['all', ...Array.from(new Set(attendanceRecords.map((record) => record.status)))];
@@ -1490,7 +1506,7 @@ export default function TimeIn() {
 
                     <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 p-6 shadow-sm">
                         <div className="flex items-center gap-3 mb-2">
-                            <div className={`p-2 rounded-lg ${todayAttendance?.is_late ? 'bg-red-100 dark:bg-red-900/30' : 'bg-blue-100 dark:bg-blue-900/30'}`}>
+                            <div className={`p-2 rounded-lg ${isTodayLate ? 'bg-red-100 dark:bg-red-900/30' : 'bg-blue-100 dark:bg-blue-900/30'}`}>
                                 <ClockIcon />
                             </div>
                             <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Today's Status</h3>
@@ -1505,12 +1521,12 @@ export default function TimeIn() {
                                     <span className="text-gray-600 dark:text-gray-400">Actual:</span>
                                     <span className="font-mono font-semibold text-gray-900 dark:text-white">{formatTimeFromString(todayAttendance.check_in_time) || '--:--'}</span>
                                 </div>
-                                {todayAttendance.is_late && todayAttendance.minutes_late > 0 ? (
+                                {isTodayLate ? (
                                     <div className="mt-2 p-2 bg-red-50 dark:bg-red-900/20 rounded-lg">
                                         <p className="text-xs font-semibold text-red-600 dark:text-red-400">
-                                            ⚠️ Late by {todayAttendance.minutes_late} min
+                                            {todayMinutesLate > 0 ? `⚠️ Late by ${todayMinutesLate} min` : '⚠️ Late'}
                                         </p>
-                                        {todayAttendance.minutes_late <= 5 && (
+                                        {todayMinutesLate > 0 && todayMinutesLate <= 5 && (
                                             <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
                                                 Within grace period
                                             </p>

@@ -4,7 +4,7 @@
  */
 
 import React, { useEffect, useMemo, useRef } from 'react';
-import { Link } from '@inertiajs/react';
+import { Link, usePage } from '@inertiajs/react';
 import { X, Bell, CheckCheck } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { useRecentNotifications, useMarkAsRead, useMarkAllAsRead } from '../../hooks/useNotifications';
@@ -16,6 +16,8 @@ interface NotificationDropdownProps {
 }
 
 const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, onClose }) => {
+  const page = usePage();
+  const { auth } = (page.props as any) || {};
   const dropdownRef = useRef<HTMLDivElement>(null);
   const { data: notifications = [], isLoading } = useRecentNotifications(10, basePath);
   const markAsRead = useMarkAsRead(basePath);
@@ -63,6 +65,23 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
     : basePath.includes('staff') || basePath.includes('hr')
       ? '/erp/notifications'
       : '/notifications';
+
+  const hrDashboardPermissions = [
+    'access-hr-dashboard',
+    'access-employee-directory',
+    'access-attendance-records',
+    'access-leave-approvals',
+    'access-overtime-approvals',
+    'access-payslip-generation',
+    'access-view-payslip',
+  ];
+  const rawGrantedPermissions = Array.isArray(auth?.permissions)
+    ? auth.permissions
+    : Array.isArray(auth?.user?.permissions)
+      ? auth.user.permissions
+      : [];
+  const grantedPermissions = rawGrantedPermissions.map((permission: unknown) => String(permission));
+  const canAccessHrDashboard = hrDashboardPermissions.some((permission) => grantedPermissions.includes(permission));
   const archivedListHref = `${notificationsListHref}?archived=1`;
 
   const appendQueryParam = (href: string, key: string, value: string | number | null | undefined) => {
@@ -138,6 +157,10 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
       if (staffRoute) return staffRoute;
 
       if (notification.action_url) {
+        if (!canAccessHrDashboard && /^\/erp\/hr(?:$|[/?#])/.test(notification.action_url)) {
+          return notificationsListHref;
+        }
+
         const repairHighlight = getStaffRepairHighlightValue(notification);
         if (String(notification.type || '').toLowerCase().includes('repair')) {
           return appendQueryParam(notification.action_url, 'highlightRepair', repairHighlight);

@@ -892,6 +892,53 @@ class AttendanceController extends Controller
             ->where('overtime_date', $today)
             ->whereIn('status', ['approved', 'assigned'])
             ->first();
+
+        $isLate = $attendance ? (bool) ($attendance->is_late ?? false) : false;
+        $minutesLate = $attendance ? (int) ($attendance->minutes_late ?? 0) : 0;
+
+        $parseMinutesFromTimeValue = static function ($timeValue): ?int {
+            if ($timeValue === null) {
+                return null;
+            }
+
+            $raw = trim((string) $timeValue);
+            if ($raw === '') {
+                return null;
+            }
+
+            if (!preg_match('/(\d{1,2}):(\d{2})(?::\d{2})?/', $raw, $matches)) {
+                return null;
+            }
+
+            $hour = (int) ($matches[1] ?? -1);
+            $minute = (int) ($matches[2] ?? -1);
+
+            if ($hour < 0 || $hour > 23 || $minute < 0 || $minute > 59) {
+                return null;
+            }
+
+            return ($hour * 60) + $minute;
+        };
+
+        // Fallback lateness derivation for cases where persisted flags are stale.
+        if ($attendance && $attendance->check_in_time && $attendance->expected_check_in) {
+            $actualCheckInMinutes = $parseMinutesFromTimeValue($attendance->check_in_time);
+            $expectedCheckInMinutes = $parseMinutesFromTimeValue($attendance->expected_check_in);
+
+            if (
+                $actualCheckInMinutes !== null
+                && $expectedCheckInMinutes !== null
+                && $actualCheckInMinutes > $expectedCheckInMinutes
+            ) {
+                $computedMinutesLate = $actualCheckInMinutes - $expectedCheckInMinutes;
+                $minutesLate = max($minutesLate, $computedMinutesLate);
+                $isLate = $isLate || $computedMinutesLate > 0;
+            }
+        }
+
+        if (!$isLate && strtolower((string) ($attendance?->status ?? '')) === 'late') {
+            $isLate = true;
+        }
         
         $response = [
             'checked_in' => $attendance && $attendance->check_in_time ? true : false,
@@ -904,8 +951,8 @@ class AttendanceController extends Controller
             'lunch_break_end' => $attendance ? $attendance->lunch_break_end : null,
             'is_on_lunch' => $attendance && $attendance->lunch_break_start && !$attendance->lunch_break_end,
             // Attendance punctuality fields used by the "Today's Status" card in TimeIn.tsx
-            'is_late' => $attendance ? (bool) ($attendance->is_late ?? false) : false,
-            'minutes_late' => $attendance ? (int) ($attendance->minutes_late ?? 0) : 0,
+            'is_late' => $isLate,
+            'minutes_late' => $minutesLate,
             'expected_check_in' => $attendance ? $attendance->expected_check_in : null,
             'is_early_departure' => $attendance ? (bool) ($attendance->is_early_departure ?? false) : false,
             'minutes_early_departure' => $attendance ? (int) ($attendance->minutes_early_departure ?? 0) : 0,

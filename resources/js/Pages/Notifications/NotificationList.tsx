@@ -62,6 +62,23 @@ const NotificationList: React.FC<NotificationListProps> = ({
       ? '/erp/notifications'
       : '/notifications';
 
+  const hrDashboardPermissions = [
+    'access-hr-dashboard',
+    'access-employee-directory',
+    'access-attendance-records',
+    'access-leave-approvals',
+    'access-overtime-approvals',
+    'access-payslip-generation',
+    'access-view-payslip',
+  ];
+  const rawGrantedPermissions = Array.isArray((page.props as any)?.auth?.permissions)
+    ? (page.props as any).auth.permissions
+    : Array.isArray((page.props as any)?.auth?.user?.permissions)
+      ? (page.props as any).auth.user.permissions
+      : [];
+  const grantedPermissions = rawGrantedPermissions.map((permission: unknown) => String(permission));
+  const canAccessHrDashboard = hrDashboardPermissions.some((permission) => grantedPermissions.includes(permission));
+
   const { data, isLoading, error } = useNotifications(
     filters.unread_only,
     currentPage,
@@ -176,6 +193,10 @@ const NotificationList: React.FC<NotificationListProps> = ({
       if (staffRoute) return staffRoute;
 
       if (notification.action_url) {
+        if (!canAccessHrDashboard && /^\/erp\/hr(?:$|[/?#])/.test(notification.action_url)) {
+          return notificationsListHref;
+        }
+
         const repairHighlight = getStaffRepairHighlightValue();
         if (String(notification.type || '').toLowerCase().includes('repair')) {
           return appendQueryParam(notification.action_url, 'highlightRepair', repairHighlight);

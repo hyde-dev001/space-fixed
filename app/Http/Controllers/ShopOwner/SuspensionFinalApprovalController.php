@@ -8,6 +8,7 @@ use App\Models\Employee;
 use App\Enums\EmployeeStatus;
 use App\Enums\NotificationType;
 use App\Enums\SuspensionStatus;
+use App\Models\User;
 use App\Services\NotificationService;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
@@ -239,7 +240,22 @@ class SuspensionFinalApprovalController extends Controller
                 (int) ($suspensionRequest->employee?->user?->id ?? 0),
             ])->filter(fn (int $id): bool => $id > 0)->unique()->values();
 
+            $hrDashboardPermissions = [
+                'access-hr-dashboard',
+                'access-employee-directory',
+                'access-attendance-records',
+                'access-leave-approvals',
+                'access-overtime-approvals',
+                'access-payslip-generation',
+                'access-view-payslip',
+            ];
+
             foreach ($recipientUserIds as $recipientUserId) {
+                $recipientUser = User::find((int) $recipientUserId);
+                $canOpenHrSuspensions = $recipientUser
+                    ? $recipientUser->hasAnyPermission($hrDashboardPermissions)
+                    : false;
+
                 $this->notificationService->sendToUser(
                     userId: (int) $recipientUserId,
                     type: NotificationType::TASK_ASSIGNED,
@@ -252,7 +268,7 @@ class SuspensionFinalApprovalController extends Controller
                         'decision' => $decisionText,
                         'note' => $note,
                     ],
-                    actionUrl: '/erp/hr?section=suspensions',
+                    actionUrl: $canOpenHrSuspensions ? '/erp/hr?section=suspensions' : '/erp/notifications',
                     shopId: $shopOwnerId > 0 ? $shopOwnerId : null,
                     priority: 'high'
                 );
