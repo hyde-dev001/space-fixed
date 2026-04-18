@@ -778,6 +778,10 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
 
     // STAFF/EMPLOYEE MANAGEMENT - Business only
     Route::middleware('check.registration.type:company')->group(function () {
+        Route::get('/suspend-accounts', function () {
+            return Inertia::render('ShopOwner/TeamManagement/suspendAccount');
+        })->name('suspend-accounts');
+
         Route::post('/employees', [UserAccessControlController::class, 'storeEmployee'])->name('employees.store');
         Route::put('/employees/{employee}', [UserAccessControlController::class, 'updateEmployee'])->name('employees.update');
         Route::delete('/employees/{employee}', [\App\Http\Controllers\EmployeeController::class, 'destroy'])->middleware('shop.isolation')->name('employees.destroy');
