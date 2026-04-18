@@ -399,7 +399,7 @@ export default function RepairPackageManager({
 
       const payload = {
         ...formState,
-        package_price: Number(selectedPackage.package_price),
+        package_price: Number(formState.package_price),
         starts_at: formState.starts_at || null,
         ends_at: formState.ends_at || null,
         material_templates: materialTemplatesPayload,

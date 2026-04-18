@@ -125,7 +125,7 @@ class SupplierController extends Controller
     }
 
     /**
-     * Remove the specified supplier (soft delete)
+     * Archive the specified supplier (soft delete)
      */
     public function destroy(Request $request, $id)
     {
@@ -141,7 +141,7 @@ class SupplierController extends Controller
         
         if ($activeOrders > 0) {
             return response()->json([
-                'message' => 'Cannot delete supplier with active orders',
+                'message' => 'Cannot archive supplier with active orders',
                 'active_orders' => $activeOrders
             ], 422);
         }
@@ -149,7 +149,7 @@ class SupplierController extends Controller
         $supplier->delete();
         
         return response()->json([
-            'message' => 'Supplier deleted successfully'
+            'message' => 'Supplier archived successfully'
         ]);
     }
 }

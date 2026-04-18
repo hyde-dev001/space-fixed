@@ -13,9 +13,9 @@ const PencilIcon = ({ className }: { className?: string }) => (
 	</svg>
 );
 
-const TrashIcon = ({ className }: { className?: string }) => (
+const ArchiveBoxIcon = ({ className }: { className?: string }) => (
 	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-		<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+		<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V7a2 2 0 00-2-2h-3V3H9v2H6a2 2 0 00-2 2v6m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0H4m5 4h6" />
 	</svg>
 );
 
@@ -127,15 +127,15 @@ export default function SuppliersManagement() {
 		});
 	};
 
-	const handleDelete = async (supplierId: number) => {
+	const handleArchive = async (supplierId: number) => {
 		const result = await Swal.fire({
-			title: "Delete Supplier?",
-			text: "Are you sure you want to delete this supplier? This action cannot be undone.",
+			title: "Archive Supplier?",
+			text: "Are you sure you want to archive this supplier? You can restore it later if needed.",
 			icon: "warning",
 			showCancelButton: true,
 			confirmButtonColor: "#dc2626",
 			cancelButtonColor: "#6b7280",
-			confirmButtonText: "Delete",
+			confirmButtonText: "Archive",
 			cancelButtonText: "Cancel",
 		});
 
@@ -144,15 +144,15 @@ export default function SuppliersManagement() {
 		try {
 			await supplierApi.delete(supplierId);
 			await Swal.fire({
-				title: "Deleted!",
-				text: "Supplier has been deleted successfully.",
+				title: "Archived!",
+				text: "Supplier has been archived successfully.",
 				icon: "success",
 				timer: 1500,
 			});
 			fetchSuppliers();
 		} catch (error) {
-			console.error("Failed to delete supplier:", error);
-			await Swal.fire("Error", "Failed to delete supplier", "error");
+			console.error("Failed to archive supplier:", error);
+			await Swal.fire("Error", "Failed to archive supplier", "error");
 		}
 	};
 
@@ -331,11 +331,11 @@ export default function SuppliersManagement() {
 														<PencilIcon className="w-5 h-5" />
 													</button>
 													<button
-														onClick={() => handleDelete(supplier.id)}
+														onClick={() => handleArchive(supplier.id)}
 														className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-														title="Delete supplier"
+														title="Archive supplier"
 													>
-														<TrashIcon className="w-5 h-5" />
+														<ArchiveBoxIcon className="w-5 h-5" />
 													</button>
 												</div>
 											</td>
