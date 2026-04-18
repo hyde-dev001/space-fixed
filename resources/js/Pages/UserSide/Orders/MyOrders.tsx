@@ -10,6 +10,7 @@ const REFUND_ALLOWED_VIDEO_MIME_TYPES = ['video/mp4', 'video/quicktime', 'video/
 const REFUND_ALLOWED_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp'];
 const REFUND_ALLOWED_VIDEO_EXTENSIONS = ['mp4', 'mov', 'avi', 'mkv', 'webm'];
 const REFUND_MEDIA_ACCEPT = '.jpg,.jpeg,.png,.webp,.mp4,.mov,.avi,.mkv,.webm';
+const MY_ORDERS_POLL_INTERVAL_MS = 3000;
 
 const getFileExtension = (fileName: string): string => {
   const pieces = fileName.toLowerCase().split('.');
@@ -339,24 +340,19 @@ const MyOrders: React.FC = () => {
     }
   }, [page.props]);
 
-  const hasProcessingRefund = orders.some(
-    (order) => (order.status === 'cancelled' && order.refund_status === 'processing')
-      || ['pending_approval', 'processing', 'requested'].includes(String(order.refund_stage?.status || '').toLowerCase())
-  );
-
   useEffect(() => {
-    if (!hasProcessingRefund) {
-      return;
-    }
-
     const timer = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+        return;
+      }
+
       router.reload({
         only: ['orders'],
       });
-    }, 15000);
+    }, MY_ORDERS_POLL_INTERVAL_MS);
 
     return () => window.clearInterval(timer);
-  }, [hasProcessingRefund]);
+  }, []);
 
   const confirmDelivery = async (orderId: number) => {
     const result = await Swal.fire({

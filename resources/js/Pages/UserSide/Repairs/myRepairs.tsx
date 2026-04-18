@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Head, Link } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import Swal from '@/Pages/UserSide/Shared/UserModal';
@@ -15,6 +15,7 @@ const REFUND_ALLOWED_VIDEO_MIME_TYPES = ['video/mp4', 'video/quicktime', 'video/
 const REFUND_ALLOWED_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp'];
 const REFUND_ALLOWED_VIDEO_EXTENSIONS = ['mp4', 'mov', 'avi', 'mkv', 'webm'];
 const REFUND_MEDIA_ACCEPT = '.jpg,.jpeg,.png,.webp,.mp4,.mov,.avi,.mkv,.webm';
+const MY_REPAIRS_POLL_INTERVAL_MS = 3000;
 
 const getFileExtension = (fileName: string): string => {
   const pieces = fileName.toLowerCase().split('.');
@@ -571,6 +572,7 @@ const getStaticRepairOrders = (): RepairOrder[] => {
 };
 
 const MyRepairs: React.FC = () => {
+  const isPollingRepairsRef = useRef(false);
   const [orders, setOrders] = useState<RepairOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTab, setSelectedTab] = useState<RepairTab>('new_request');
@@ -1224,13 +1226,23 @@ const MyRepairs: React.FC = () => {
     setLatestWarrantyClaimByRepairId(nextClaims);
   };
 
-  const fetchRepairs = async () => {
+  const fetchRepairs = async (options: { silent?: boolean; lightweight?: boolean } = {}) => {
+    const { silent = false, lightweight = false } = options;
+
     try {
-      setLoading(true);
+      if (!silent) {
+        setLoading(true);
+      }
+
       const response = await axios.get('/api/customer/repairs');
       if (response.data.success) {
         const repairList: RepairOrder[] = response.data.data;
         setOrders(repairList);
+
+        if (lightweight) {
+          return;
+        }
+
         await fetchConversationUnreadCounts();
 
         try {
@@ -1317,16 +1329,43 @@ const MyRepairs: React.FC = () => {
       }
     } catch (error) {
       console.error('Failed to fetch repairs:', error);
-      Swal.fire({
-        icon: 'error',
-        title: 'Failed to load repairs',
-        text: 'Please try refreshing the page',
-        confirmButtonColor: '#000000',
-      });
+      if (!silent) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Failed to load repairs',
+          text: 'Please try refreshing the page',
+          confirmButtonColor: '#000000',
+        });
+      }
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   };
+
+  useEffect(() => {
+    const intervalId = window.setInterval(async () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+        return;
+      }
+
+      if (isPollingRepairsRef.current) {
+        return;
+      }
+
+      isPollingRepairsRef.current = true;
+      try {
+        await fetchRepairs({ silent: true, lightweight: true });
+      } finally {
+        isPollingRepairsRef.current = false;
+      }
+    }, MY_REPAIRS_POLL_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   const confirmPickup = async (orderId: number) => {
     const result = await Swal.fire({
