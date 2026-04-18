@@ -193,6 +193,9 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
         Route::post('/{productId}/color-variants/{colorVariantId}/images', [\App\Http\Controllers\Api\ProductController::class, 'uploadColorVariantImage'])
             ->middleware('throttle:240,1')
             ->name('shop_owner.products.color-variants.images.store');
+        Route::put('/{productId}/color-variants/{colorVariantId}/images/{imageId}', [\App\Http\Controllers\Api\ProductController::class, 'updateColorVariantImage'])
+            ->middleware('throttle:240,1')
+            ->name('shop_owner.products.color-variants.images.update');
         Route::delete('/{productId}/color-variants/{colorVariantId}/images/{imageId}', [\App\Http\Controllers\Api\ProductController::class, 'deleteColorVariantImage'])
             ->middleware('throttle:240,1')
             ->name('shop_owner.products.color-variants.images.destroy');
