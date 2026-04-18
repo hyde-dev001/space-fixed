@@ -100,10 +100,7 @@ class SalaryChangeController extends Controller
         if ($shopOwner) {
             $ownerUser = User::where('shop_owner_id', $shopOwner->id)
                 ->where('email', $shopOwner->email)
-                ->first()
-                ?? User::where('shop_owner_id', $shopOwner->id)
-                    ->orderBy('id')
-                    ->first();
+                ->first();
 
             return [
                 'actor' => $ownerUser,
@@ -426,7 +423,7 @@ class SalaryChangeController extends Controller
             ->findOrFail($id);
 
         // Approver must not be the same person who proposed (unless they have override)
-        if ($user && $change->proposed_by === $user->id && !$user->can('override-salary-retroactive')) {
+        if (!$viaShopOwnerGuard && $user && $change->proposed_by === $user->id && !$user->can('override-salary-retroactive')) {
             return response()->json(['error' => 'You cannot approve a salary change you proposed.'], 403);
         }
 

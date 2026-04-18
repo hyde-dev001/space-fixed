@@ -200,6 +200,19 @@ const SalaryAdjustmentApprovalPage: React.FC = () => {
 	const [search, setSearch] = useState("");
 	const [viewAdjustment, setViewAdjustment] = useState<SalaryAdjustment | null>(null);
 
+	const getApiErrorMessage = (payload: any, fallback: string): string => {
+		if (!payload) return fallback;
+		if (typeof payload.error === "string" && payload.error.trim()) return payload.error;
+		if (typeof payload.message === "string" && payload.message.trim()) return payload.message;
+		if (payload.errors && typeof payload.errors === "object") {
+			const firstEntry = Object.values(payload.errors)[0] as unknown;
+			if (Array.isArray(firstEntry) && typeof firstEntry[0] === "string") {
+				return firstEntry[0];
+			}
+		}
+		return fallback;
+	};
+
 	const fetchAdjustments = async () => {
 		try {
 			const params = new URLSearchParams();
@@ -261,9 +274,9 @@ const SalaryAdjustmentApprovalPage: React.FC = () => {
 				body: JSON.stringify(result.value),
 			});
 
-			const data = await res.json();
+			const data = await res.json().catch(() => ({}));
 			if (!res.ok) {
-				Swal.fire("Error", data.message ?? "Approval failed.", "error");
+				Swal.fire("Error", getApiErrorMessage(data, "Approval failed."), "error");
 				return;
 			}
 
@@ -306,9 +319,9 @@ const SalaryAdjustmentApprovalPage: React.FC = () => {
 				body: JSON.stringify(result.value),
 			});
 
-			const data = await res.json();
+			const data = await res.json().catch(() => ({}));
 			if (!res.ok) {
-				Swal.fire("Error", data.message ?? "Rejection failed.", "error");
+				Swal.fire("Error", getApiErrorMessage(data, "Rejection failed."), "error");
 				return;
 			}
 
