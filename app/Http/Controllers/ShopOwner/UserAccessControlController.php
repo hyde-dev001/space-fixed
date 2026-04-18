@@ -380,22 +380,26 @@ class UserAccessControlController extends Controller
                     $lastName = count($parts) > 1 ? implode(' ', array_slice($parts, 1)) : '';
                 }
 
-                $user = User::create([
-                    'name' => $validated['name'],
-                    'first_name' => $firstName,
-                    'last_name' => $lastName,
-                    'email' => $validated['email'],
-                    'phone' => $validated['phone'] ?? '',
-                    'address' => $validated['address'] ?? '',
-                    'shop_owner_id' => $shopOwner->id,
-                    'role' => $legacyUserRole, // Keep old role column enum-compatible for backward compatibility
-                    'position' => $validated['position'] ?? null,
-                    'password' => null, // No password until invitation is accepted
-                    'invite_token' => $inviteToken,
-                    'invite_expires_at' => $inviteExpiresAt,
-                    'invited_at' => now(),
-                    'invited_by' => $shopOwner->id,
-                ]);
+                // Avoid double audit rows (Employee + User) for one employee creation action.
+                // Keep the Employee create log as the business-facing audit entry.
+                $user = activity()->withoutLogs(function () use ($validated, $shopOwner, $inviteToken, $inviteExpiresAt, $legacyUserRole, $firstName, $lastName) {
+                    return User::create([
+                        'name' => $validated['name'],
+                        'first_name' => $firstName,
+                        'last_name' => $lastName,
+                        'email' => $validated['email'],
+                        'phone' => $validated['phone'] ?? '',
+                        'address' => $validated['address'] ?? '',
+                        'shop_owner_id' => $shopOwner->id,
+                        'role' => $legacyUserRole, // Keep old role column enum-compatible for backward compatibility
+                        'position' => $validated['position'] ?? null,
+                        'password' => null, // No password until invitation is accepted
+                        'invite_token' => $inviteToken,
+                        'invite_expires_at' => $inviteExpiresAt,
+                        'invited_at' => now(),
+                        'invited_by' => $shopOwner->id,
+                    ]);
+                });
 
                 // Assign Spatie role based on department
                 $roleMap = [

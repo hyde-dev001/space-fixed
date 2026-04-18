@@ -12,6 +12,52 @@ class ActivityLogController extends Controller
     protected array $subjectLabelCache = [];
 
     /**
+     * Resolve a stable event label for rendering/filtering when Activity.event is null.
+     */
+    protected function normalizeEventLabel($event, $description): string
+    {
+        $normalizedEvent = strtolower(trim((string) ($event ?? '')));
+        if ($normalizedEvent !== '') {
+            return $normalizedEvent;
+        }
+
+        $normalizedDescription = strtolower(trim((string) ($description ?? '')));
+        if ($normalizedDescription === '') {
+            return 'updated';
+        }
+
+        if (str_contains($normalizedDescription, 'archiv')) {
+            return 'archived';
+        }
+
+        if (str_contains($normalizedDescription, 'restor')) {
+            return 'restored';
+        }
+
+        if (str_contains($normalizedDescription, 'approv')) {
+            return 'approved';
+        }
+
+        if (str_contains($normalizedDescription, 'reject')) {
+            return 'rejected';
+        }
+
+        if (str_contains($normalizedDescription, 'delet')) {
+            return 'deleted';
+        }
+
+        if (str_contains($normalizedDescription, 'creat')) {
+            return 'created';
+        }
+
+        if (str_contains($normalizedDescription, 'updat')) {
+            return 'updated';
+        }
+
+        return 'updated';
+    }
+
+    /**
      * Fields that are safe to expose in audit logs per model type
      * All other fields are filtered out for privacy/security
      */
@@ -489,15 +535,21 @@ class ActivityLogController extends Controller
         $stats = [
             'total_logs' => $total,
             'logs_last_24h' => (clone $query)->where('created_at', '>=', now()->subDay())->count(),
-            'event_counts' => (clone $query)->selectRaw('event, COUNT(*) as count')
-                ->groupBy('event')
-                ->pluck('count', 'event')
-                ->toArray(),
+            'event_counts' => [],
             'subject_type_counts' => (clone $query)->selectRaw('subject_type, COUNT(*) as count')
                 ->groupBy('subject_type')
                 ->pluck('count', 'subject_type')
                 ->toArray(),
         ];
+
+        // Build event counts with normalized/fallback labels so null-event rows are still classified.
+        $statsEventRows = (clone $query)->get(['event', 'description']);
+        $normalizedEventCounts = [];
+        foreach ($statsEventRows as $eventRow) {
+            $eventLabel = $this->normalizeEventLabel($eventRow->event, $eventRow->description);
+            $normalizedEventCounts[$eventLabel] = (int) ($normalizedEventCounts[$eventLabel] ?? 0) + 1;
+        }
+        $stats['event_counts'] = $normalizedEventCounts;
         
         // Paginate and transform data
         $logs = $query->paginate($request->get('per_page', 20));
@@ -550,6 +602,7 @@ class ActivityLogController extends Controller
             // Filter changes to only safe/business-relevant fields
             $safeChanges = $this->filterSafeChanges($changes, $log->subject_type);
             $subjectLabel = $this->getSubjectLabel($log);
+            $normalizedEvent = $this->normalizeEventLabel($log->event, $log->description);
             
             return [
                 'id' => $log->id,
@@ -558,7 +611,7 @@ class ActivityLogController extends Controller
                 'subject_type' => $log->subject_type,
                 'subject_id' => $log->subject_id,
                 'subject_label' => $subjectLabel,
-                'event' => $log->event,
+                'event' => $normalizedEvent,
                 'changes' => $safeChanges,  // Only safe, filtered changes
                 'created_at' => $log->created_at,
                 'causer' => $causerInfo,

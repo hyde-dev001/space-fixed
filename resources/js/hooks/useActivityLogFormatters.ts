@@ -191,6 +191,14 @@ export function useActivityLogFormatters() {
         return `${actor}${actorRole} updated ${subjectRef}`;
       case "deleted":
         return `${actor}${actorRole} deleted ${subjectRef}`;
+      case "archived":
+        return `${actor}${actorRole} archived ${subjectRef}`;
+      case "restored":
+        return `${actor}${actorRole} restored ${subjectRef}`;
+      case "approved":
+        return `${actor}${actorRole} approved ${subjectRef}`;
+      case "rejected":
+        return `${actor}${actorRole} rejected ${subjectRef}`;
       default:
         return `${actor}${actorRole} performed ${humanizeKey(log.event) || "an action"} on ${subjectRef}`;
     }
@@ -207,6 +215,22 @@ export function useActivityLogFormatters() {
 
     if (log.event === "deleted") {
       return `${subjectRef} deleted`;
+    }
+
+    if (log.event === "archived") {
+      return `${subjectRef} archived`;
+    }
+
+    if (log.event === "restored") {
+      return `${subjectRef} restored`;
+    }
+
+    if (log.event === "approved") {
+      return `${subjectRef} approved`;
+    }
+
+    if (log.event === "rejected") {
+      return `${subjectRef} rejected`;
     }
 
     if (log.event === "updated") {

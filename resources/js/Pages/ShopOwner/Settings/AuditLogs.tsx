@@ -322,6 +322,10 @@ export default function ShopOwnerAuditLogs() {
       case 'created': return 'bg-green-100 text-green-800';
       case 'updated': return 'bg-blue-100 text-blue-800';
       case 'deleted': return 'bg-red-100 text-red-800';
+      case 'archived': return 'bg-amber-100 text-amber-800';
+      case 'restored': return 'bg-emerald-100 text-emerald-800';
+      case 'approved': return 'bg-indigo-100 text-indigo-800';
+      case 'rejected': return 'bg-rose-100 text-rose-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
@@ -517,11 +521,13 @@ export default function ShopOwnerAuditLogs() {
                     {logs.map((log) => {
                       const formattedDesc = formatDetailedDescription(log);
                       
+                      const eventLabel = String(log.event || '').trim().toLowerCase() || 'updated';
+
                       return (
                         <tr key={log.id} className="hover:bg-gray-50 transition">
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getEventBadgeColor(log.event)}`}>
-                              {log.event}
+                            <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getEventBadgeColor(eventLabel)}`}>
+                              {eventLabel}
                             </span>
                           </td>
                           <td className="px-6 py-4">
