@@ -12,12 +12,16 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class FlaggedAccountsController extends Controller
 {
     private const WARNINGS_BEFORE_SUSPENSION = 3;
+
+    /** @var array<int, string>|null */
+    private ?array $auditLogColumns = null;
 
     public function index(): Response
     {
@@ -124,11 +128,7 @@ class FlaggedAccountsController extends Controller
             ]);
         }
 
-        $priorWarningActions = AuditLog::query()
-            ->where('target_type', 'User')
-            ->where('target_id', $report->customer->id)
-            ->where('action', 'review_report_warn')
-            ->count();
+        $priorWarningActions = $this->countPriorWarningsForCustomer((int) $report->customer->id);
 
         if ($enforcementMode === 'immediate_suspend') {
             $currentWarningStrike = $priorWarningActions;
@@ -158,10 +158,13 @@ class FlaggedAccountsController extends Controller
                 'resolved_at' => now(),
             ]);
 
-            AuditLog::create([
+            $this->createAuditLogSafely([
                 'shop_owner_id' => $report->shop_owner_id,
                 'actor_user_id' => null,
+                'user_id' => null,
                 'action' => 'review_report_warn',
+                'object_type' => 'User',
+                'object_id' => $report->customer->id,
                 'target_type' => 'User',
                 'target_id' => $report->customer->id,
                 'data' => [
@@ -223,10 +226,13 @@ class FlaggedAccountsController extends Controller
             $superAdminId
         );
 
-        AuditLog::create([
+        $this->createAuditLogSafely([
             'shop_owner_id' => $report->shop_owner_id,
             'actor_user_id' => null,
+            'user_id' => null,
             'action' => 'review_report_suspend',
+            'object_type' => 'User',
+            'object_id' => $report->customer->id,
             'target_type' => 'User',
             'target_id' => $report->customer->id,
             'data' => [
@@ -253,6 +259,93 @@ class FlaggedAccountsController extends Controller
             'warning_limit' => self::WARNINGS_BEFORE_SUSPENSION,
             'message' => $message,
         ]);
+    }
+
+    /**
+     * Count previous warning strikes while tolerating legacy audit_log schemas.
+     */
+    private function countPriorWarningsForCustomer(int $customerId): int
+    {
+        try {
+            $columns = $this->getAuditLogColumns();
+            if ($columns === []) {
+                return 0;
+            }
+
+            $query = AuditLog::query()->where('action', 'review_report_warn');
+
+            if (in_array('target_type', $columns, true) && in_array('target_id', $columns, true)) {
+                return (int) $query
+                    ->where('target_type', 'User')
+                    ->where('target_id', $customerId)
+                    ->count();
+            }
+
+            if (in_array('object_type', $columns, true) && in_array('object_id', $columns, true)) {
+                return (int) $query
+                    ->where('object_type', 'User')
+                    ->where('object_id', $customerId)
+                    ->count();
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Unable to count prior warning actions from audit logs', [
+                'customer_id' => $customerId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return 0;
+    }
+
+    /**
+     * Write audit entries without failing moderation when audit schema drifts in production.
+     */
+    private function createAuditLogSafely(array $attributes): void
+    {
+        try {
+            $columns = $this->getAuditLogColumns();
+            if ($columns !== []) {
+                $allowed = array_flip($columns);
+                $attributes = array_intersect_key($attributes, $allowed);
+            }
+
+            if (!array_key_exists('action', $attributes)) {
+                return;
+            }
+
+            AuditLog::create($attributes);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to persist flagged account audit log entry', [
+                'action' => $attributes['action'] ?? null,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Cache audit_logs columns so schema checks are done once per request.
+     *
+     * @return array<int, string>
+     */
+    private function getAuditLogColumns(): array
+    {
+        if (is_array($this->auditLogColumns)) {
+            return $this->auditLogColumns;
+        }
+
+        try {
+            if (!Schema::hasTable('audit_logs')) {
+                return $this->auditLogColumns = [];
+            }
+
+            return $this->auditLogColumns = Schema::getColumnListing('audit_logs');
+        } catch (\Throwable $e) {
+            Log::warning('Unable to inspect audit_logs schema', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return $this->auditLogColumns = [];
     }
 }
 
