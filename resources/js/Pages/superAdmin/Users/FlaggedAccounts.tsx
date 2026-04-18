@@ -35,6 +35,8 @@ interface FlaggedAccount {
   reportNotes?: string;
   reportedBy?: string;
   adminNotes?: string;
+  warningCount?: number;
+  warningLimit?: number;
 }
 
 interface PageProps {
@@ -99,16 +101,32 @@ const FlaggedAccounts: React.FC = () => {
     }
   };
 
-  const patchStatus = (id: string, newStatus: string) =>
+  const patchAccount = (id: string, updates: Partial<FlaggedAccount>) =>
     setFlaggedAccounts(prev =>
-      prev.map(a => (a.id === id ? { ...a, status: newStatus } : a)),
+      prev.map(a => (a.id === id ? { ...a, ...updates } : a)),
     );
+
+  const getWarningLimit = (account: FlaggedAccount) => account.warningLimit ?? 3;
+
+  const getNextWarningStrike = (account: FlaggedAccount) => {
+    const warningLimit = getWarningLimit(account);
+    const warningCount = account.warningCount ?? 0;
+    return Math.min(warningCount + 1, warningLimit);
+  };
+
+  const getEnforcementButtonLabel = (account: FlaggedAccount) => {
+    const warningLimit = getWarningLimit(account);
+    const nextStrike = getNextWarningStrike(account);
+    return nextStrike >= warningLimit
+      ? `Suspend (${nextStrike}/${warningLimit})`
+      : `Warn (${nextStrike}/${warningLimit})`;
+  };
 
   const handleMarkReviewed = async (account: FlaggedAccount) => {
     try {
       await axios.post(`/superAdmin/flagged-accounts/${account.id}/mark-reviewed`);
-      patchStatus(account.id, 'under_investigation');
-      setDetailAccount(a => a ? { ...a, status: 'under_investigation' } : null);
+      patchAccount(account.id, { status: 'under_investigation' });
+      setDetailAccount(a => (a && a.id === account.id ? { ...a, status: 'under_investigation' } : a));
       Swal.fire({ title: 'Marked as Under Investigation', icon: 'success', confirmButtonColor: '#10B981', timer: 1800, showConfirmButton: false });
     } catch {
       Swal.fire({ title: 'Error', text: 'Could not update status.', icon: 'error' });
@@ -128,8 +146,8 @@ const FlaggedAccounts: React.FC = () => {
       if (!result.isConfirmed) return;
       try {
         await axios.post(`/superAdmin/flagged-accounts/${account.id}/dismiss`);
-        patchStatus(account.id, 'dismissed');
-        setDetailAccount(a => a ? { ...a, status: 'dismissed' } : null);
+        patchAccount(account.id, { status: 'dismissed' });
+        setDetailAccount(a => (a && a.id === account.id ? { ...a, status: 'dismissed' } : a));
         Swal.fire({ title: 'Report Dismissed', icon: 'success', confirmButtonColor: '#10B981', timer: 1800, showConfirmButton: false });
       } catch {
         Swal.fire({ title: 'Error', text: 'Could not dismiss report.', icon: 'error' });
@@ -138,23 +156,87 @@ const FlaggedAccounts: React.FC = () => {
   };
 
   const handleBan = (account: FlaggedAccount) => {
+    const warningLimit = getWarningLimit(account);
+    const nextStrike = getNextWarningStrike(account);
+    const policyWillSuspend = nextStrike >= warningLimit;
+    const canImmediateSuspend = !policyWillSuspend;
+
     Swal.fire({
-      title: 'Ban Customer Account',
-      text: `Ban "${account.username}"? This will flag their account for suspension.`,
+      title: 'Choose Enforcement Action',
+      text: policyWillSuspend
+        ? `Policy strike ${nextStrike}/${warningLimit} will suspend "${account.username}".`
+        : `Apply strike ${nextStrike}/${warningLimit} policy warning to "${account.username}" or suspend immediately?`,
       icon: 'warning',
       showCancelButton: true,
-      confirmButtonColor: '#DC2626',
+      showDenyButton: canImmediateSuspend,
+      confirmButtonColor: policyWillSuspend ? '#DC2626' : '#D97706',
+      denyButtonColor: '#DC2626',
       cancelButtonColor: '#6B7280',
-      confirmButtonText: 'Ban Account',
+      confirmButtonText: policyWillSuspend
+        ? 'Apply Policy (Suspend)'
+        : `Apply Policy (Warn ${nextStrike}/${warningLimit})`,
+      denyButtonText: 'Suspend Immediately',
+      cancelButtonText: 'Cancel',
     }).then(async result => {
-      if (!result.isConfirmed) return;
+      const enforcementMode = result.isConfirmed
+        ? 'policy'
+        : result.isDenied
+          ? 'immediate_suspend'
+          : null;
+
+      if (!enforcementMode) return;
+
       try {
-        await axios.post(`/superAdmin/flagged-accounts/${account.id}/ban`);
-        patchStatus(account.id, 'banned');
-        setDetailAccount(a => a ? { ...a, status: 'banned' } : null);
-        Swal.fire({ title: 'Account Banned', icon: 'success', confirmButtonColor: '#10B981', timer: 1800, showConfirmButton: false });
+        const response = await axios.post(`/superAdmin/flagged-accounts/${account.id}/ban`, {
+          enforcement_mode: enforcementMode,
+        });
+
+        const payload = (response.data ?? {}) as {
+          status?: string;
+          applied_action?: 'warn' | 'suspend';
+          enforcement_mode?: 'policy' | 'immediate_suspend';
+          warning_strike?: number;
+          warning_limit?: number;
+          message?: string;
+        };
+
+        const appliedEnforcementMode = payload.enforcement_mode ?? enforcementMode;
+        const appliedAction = payload.applied_action ?? (
+          appliedEnforcementMode === 'immediate_suspend'
+            ? 'suspend'
+            : (policyWillSuspend ? 'suspend' : 'warn')
+        );
+        const warningStrike = typeof payload.warning_strike === 'number' ? payload.warning_strike : nextStrike;
+        const updatedWarningLimit = typeof payload.warning_limit === 'number' ? payload.warning_limit : warningLimit;
+        const nextStatus = payload.status ?? (appliedAction === 'suspend' ? 'banned' : 'dismissed');
+
+        patchAccount(account.id, {
+          status: nextStatus,
+          warningCount: Math.min(warningStrike, updatedWarningLimit),
+          warningLimit: updatedWarningLimit,
+        });
+
+        setDetailAccount(a => (a && a.id === account.id
+          ? {
+              ...a,
+              status: nextStatus,
+              warningCount: Math.min(warningStrike, updatedWarningLimit),
+              warningLimit: updatedWarningLimit,
+            }
+          : a));
+
+        Swal.fire({
+          title: appliedAction === 'suspend'
+            ? (appliedEnforcementMode === 'immediate_suspend' ? 'Account Suspended Immediately' : 'Account Suspended')
+            : `Warning Issued (${warningStrike}/${updatedWarningLimit})`,
+          text: payload.message,
+          icon: 'success',
+          confirmButtonColor: '#10B981',
+          timer: 2200,
+          showConfirmButton: false,
+        });
       } catch {
-        Swal.fire({ title: 'Error', text: 'Could not ban account.', icon: 'error' });
+        Swal.fire({ title: 'Error', text: 'Could not process this account action.', icon: 'error' });
       }
     });
   };
@@ -269,7 +351,12 @@ const FlaggedAccounts: React.FC = () => {
                           <div className="flex items-center justify-center w-10 h-10 bg-red-100 rounded-xl dark:bg-red-900/30">
                             <UserIcon className="text-red-600 size-5 dark:text-red-400" />
                           </div>
-                          <h4 className="font-semibold text-gray-900 dark:text-white">{account.username}</h4>
+                          <div>
+                            <h4 className="font-semibold text-gray-900 dark:text-white">{account.username}</h4>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                              Warnings: {account.warningCount ?? 0}/{getWarningLimit(account)}
+                            </p>
+                          </div>
                         </div>
                       </TableCell>
                       <TableCell className="px-4 py-3 text-gray-500 text-start text-theme-sm dark:text-gray-400">
@@ -309,7 +396,7 @@ const FlaggedAccounts: React.FC = () => {
                                 onClick={() => handleBan(account)}
                                 className="px-3 py-1 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-800/50 text-sm"
                               >
-                                Ban
+                                {getEnforcementButtonLabel(account)}
                               </button>
                             </>
                           )}
@@ -410,7 +497,7 @@ const FlaggedAccounts: React.FC = () => {
                     onClick={() => handleBan(detailAccount)}
                     className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
                   >
-                    Ban Customer
+                    {getEnforcementButtonLabel(detailAccount)}
                   </button>
                 </div>
               )}

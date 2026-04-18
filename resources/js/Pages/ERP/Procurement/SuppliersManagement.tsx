@@ -19,6 +19,13 @@ const ArchiveBoxIcon = ({ className }: { className?: string }) => (
 	</svg>
 );
 
+const RestoreIcon = ({ className }: { className?: string }) => (
+	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+		<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h7V3" />
+		<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10a9 9 0 109 9" />
+	</svg>
+);
+
 const ChevronLeftIcon = ({ className }: { className?: string }) => (
 	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
 		<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -53,6 +60,7 @@ export default function SuppliersManagement() {
 	const { initialData } = usePage().props as any;
 	const [suppliers, setSuppliers] = useState<Supplier[]>(initialData?.data ?? []);
 	const [loading, setLoading] = useState(false);
+	const [showArchived, setShowArchived] = useState(false);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [currentPage, setCurrentPage] = useState(1);
 	const [isModalOpen, setIsModalOpen] = useState(false);
@@ -78,7 +86,7 @@ export default function SuppliersManagement() {
 	const fetchSuppliers = async () => {
 		setLoading(true);
 		try {
-			const response = await supplierApi.getAll({ page: 1, per_page: 100 });
+			const response = await supplierApi.getAll({ page: 1, per_page: 100, archived: showArchived });
 			setSuppliers(response.data || []);
 		} catch (error) {
 			console.error("Failed to fetch suppliers:", error);
@@ -90,7 +98,7 @@ export default function SuppliersManagement() {
 
 	useEffect(() => {
 		void fetchSuppliers();
-	}, []);
+	}, [showArchived]);
 
 	const filteredData = useMemo(() => {
 		if (!suppliers || !Array.isArray(suppliers)) return [];
@@ -149,10 +157,39 @@ export default function SuppliersManagement() {
 				icon: "success",
 				timer: 1500,
 			});
-			fetchSuppliers();
+			await fetchSuppliers();
 		} catch (error) {
 			console.error("Failed to archive supplier:", error);
 			await Swal.fire("Error", "Failed to archive supplier", "error");
+		}
+	};
+
+	const handleRestore = async (supplierId: number) => {
+		const result = await Swal.fire({
+			title: "Restore Supplier?",
+			text: "Are you sure you want to restore this supplier to active records?",
+			icon: "question",
+			showCancelButton: true,
+			confirmButtonColor: "#2563eb",
+			cancelButtonColor: "#6b7280",
+			confirmButtonText: "Restore",
+			cancelButtonText: "Cancel",
+		});
+
+		if (!result.isConfirmed) return;
+
+		try {
+			await supplierApi.restore(supplierId);
+			await Swal.fire({
+				title: "Restored!",
+				text: "Supplier has been restored successfully.",
+				icon: "success",
+				timer: 1500,
+			});
+			await fetchSuppliers();
+		} catch (error) {
+			console.error("Failed to restore supplier:", error);
+			await Swal.fire("Error", "Failed to restore supplier", "error");
 		}
 	};
 
@@ -182,7 +219,7 @@ export default function SuppliersManagement() {
 			await Swal.fire("Success", "Supplier updated successfully", "success");
 			setEditingSupplier(null);
 			setFormData(initialFormState);
-			fetchSuppliers();
+			await fetchSuppliers();
 		} catch (error) {
 			console.error("Failed to update supplier:", error);
 			await Swal.fire("Error", getApiErrorMessage(error, "Failed to update supplier"), "error");
@@ -230,7 +267,7 @@ export default function SuppliersManagement() {
 
 			await Swal.fire("Success", "Supplier created successfully", "success");
 			handleCloseModal();
-			fetchSuppliers();
+			await fetchSuppliers();
 		} catch (error) {
 			console.error("Failed to create supplier:", error);
 			await Swal.fire("Error", getApiErrorMessage(error, "Failed to create supplier"), "error");
@@ -248,14 +285,37 @@ export default function SuppliersManagement() {
 				<div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
 					<div>
 						<h1 className="text-2xl font-semibold mb-1">Suppliers Management</h1>
-						<p className="text-gray-600 dark:text-gray-400">View and manage supplier records, contact info, and purchase history</p>
+						<p className="text-gray-600 dark:text-gray-400">
+							{showArchived
+								? "View archived supplier records, contact info, and purchase history"
+								: "View and manage supplier records, contact info, and purchase history"}
+						</p>
 					</div>
-					<button
-						onClick={handleOpenModal}
-						className="px-4 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 text-white rounded-lg font-medium transition-colors whitespace-nowrap"
-					>
-						+ Add Supplier
-					</button>
+					<div className="flex items-center gap-2">
+						<button
+							type="button"
+							onClick={() => {
+								setShowArchived((prev) => !prev);
+								setCurrentPage(1);
+							}}
+							className={`px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap border ${
+								showArchived
+									? "border-blue-200 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300"
+									: "border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300"
+							}`}
+						>
+							{showArchived ? "Show Active" : "Show Archived"}
+						</button>
+
+						{!showArchived && (
+							<button
+								onClick={handleOpenModal}
+								className="px-4 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 text-white rounded-lg font-medium transition-colors whitespace-nowrap"
+							>
+								+ Add Supplier
+							</button>
+						)}
+					</div>
 				</div>
 
 				<div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6 shadow-sm">
@@ -323,20 +383,32 @@ export default function SuppliersManagement() {
 															<circle cx="12" cy="12" r="3" />
 														</svg>
 													</button>
-													<button
-														onClick={() => handleEdit(supplier)}
-														className="p-2 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors"
-														title="Edit supplier"
-													>
-														<PencilIcon className="w-5 h-5" />
-													</button>
-													<button
-														onClick={() => handleArchive(supplier.id)}
-														className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-														title="Archive supplier"
-													>
-														<ArchiveBoxIcon className="w-5 h-5" />
-													</button>
+													{showArchived ? (
+														<button
+															onClick={() => handleRestore(supplier.id)}
+															className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+															title="Restore supplier"
+														>
+															<RestoreIcon className="w-5 h-5" />
+														</button>
+													) : (
+														<>
+															<button
+																onClick={() => handleEdit(supplier)}
+																className="p-2 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors"
+																title="Edit supplier"
+															>
+																<PencilIcon className="w-5 h-5" />
+															</button>
+															<button
+																onClick={() => handleArchive(supplier.id)}
+																className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+																title="Archive supplier"
+															>
+																<ArchiveBoxIcon className="w-5 h-5" />
+															</button>
+														</>
+													)}
 												</div>
 											</td>
 										</tr>
@@ -344,7 +416,7 @@ export default function SuppliersManagement() {
 								) : (
 									<tr>
 										<td colSpan={5} className="px-4 py-10 text-center text-sm text-gray-500">
-											No supplier records found.
+											{showArchived ? "No archived supplier records found." : "No supplier records found."}
 										</td>
 									</tr>
 								)}

@@ -14,8 +14,12 @@ class SupplierController extends Controller
     public function index(Request $request)
     {
         $shopOwnerId = $request->user()->shop_owner_id;
+        $showArchived = $request->boolean('archived');
         
         $suppliers = Supplier::where('shop_owner_id', $shopOwnerId)
+            ->when($showArchived, function ($query) {
+                $query->onlyTrashed();
+            })
             ->withCount([
                 'purchaseOrders as purchase_order_count' => function ($query) use ($shopOwnerId) {
                     $query->where('shop_owner_id', $shopOwnerId);
@@ -150,6 +154,24 @@ class SupplierController extends Controller
         
         return response()->json([
             'message' => 'Supplier archived successfully'
+        ]);
+    }
+
+    /**
+     * Restore an archived supplier
+     */
+    public function restore(Request $request, $id)
+    {
+        $shopOwnerId = $request->user()->shop_owner_id;
+
+        $supplier = Supplier::onlyTrashed()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->findOrFail($id);
+
+        $supplier->restore();
+
+        return response()->json([
+            'message' => 'Supplier restored successfully'
         ]);
     }
 }

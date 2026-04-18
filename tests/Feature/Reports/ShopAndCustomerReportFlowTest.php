@@ -2,6 +2,10 @@
 
 namespace Tests\Feature\Reports;
 
+use App\Mail\CustomerReviewWarningMail;
+use App\Mail\ShopReportWarningMail;
+use App\Mail\SuspensionNoticeMail;
+use App\Models\AuditLog;
 use App\Models\Order;
 use App\Models\RepairRequest;
 use App\Models\RepairReview;
@@ -12,6 +16,7 @@ use App\Models\ShopReport;
 use App\Models\SuperAdmin;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
 class ShopAndCustomerReportFlowTest extends TestCase
@@ -73,6 +78,40 @@ class ShopAndCustomerReportFlowTest extends TestCase
             'payment_status' => 'paid',
             'customer_name' => 'Legacy Customer',
             'customer_email' => $email,
+        ]);
+    }
+
+    private function createSubmittedShopReport(ShopOwner $shopOwner, User $customer, string $reason = 'misconduct'): ShopReport
+    {
+        return ShopReport::create([
+            'user_id' => $customer->id,
+            'shop_owner_id' => $shopOwner->id,
+            'reason' => $reason,
+            'description' => 'Escalation-path test report submitted for warning strike evaluation.',
+            'status' => 'submitted',
+            'transaction_type' => null,
+            'transaction_id' => null,
+        ]);
+    }
+
+    private function createPendingReviewReport(ShopOwner $shopOwner, User $customer, string $reason = 'harassment'): ReviewReport
+    {
+        return ReviewReport::create([
+            'review_type' => 'repair',
+            'review_id' => random_int(1000, 999999),
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'reason' => $reason,
+            'notes' => 'Flagged review test payload for warning escalation.',
+            'review_snapshot' => [
+                'type' => 'repair',
+                'rating' => 1,
+                'comment' => 'Potentially abusive review content.',
+                'images' => [],
+                'customerName' => $customer->name,
+                'createdAt' => now()->toISOString(),
+            ],
+            'status' => 'pending_review',
         ]);
     }
 
@@ -324,6 +363,7 @@ class ShopAndCustomerReportFlowTest extends TestCase
     public function test_super_admin_can_view_and_process_submitted_shop_and_review_reports(): void
     {
         $superAdmin = SuperAdmin::query()->firstOrFail();
+        Mail::fake();
 
         $shopOwner = ShopOwner::factory()->approved()->create();
         $customer = $this->createEligibleCustomer();
@@ -380,6 +420,11 @@ class ShopAndCustomerReportFlowTest extends TestCase
             'admin_notes' => 'Reviewed and warned the shop owner based on submitted evidence.',
         ])->assertRedirect();
 
+        Mail::assertSent(ShopReportWarningMail::class, function (ShopReportWarningMail $mail) use ($shopOwner) {
+            return $mail->hasTo($shopOwner->email)
+                && $mail->reportCount >= 1;
+        });
+
         $this->assertDatabaseHas('shop_reports', [
             'shop_owner_id' => $shopOwner->id,
             'status' => 'warned',
@@ -412,5 +457,180 @@ class ShopAndCustomerReportFlowTest extends TestCase
             'id' => $reviewReport->id,
             'status' => 'dismissed',
         ]);
+    }
+
+    public function test_third_warn_auto_suspends_shop_in_shop_reports_flow(): void
+    {
+        Mail::fake();
+
+        $superAdmin = SuperAdmin::query()->firstOrFail();
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'email' => 'three-warn-shop@example.com',
+        ]);
+
+        $this->actingAs($superAdmin, 'super_admin');
+
+        for ($strike = 1; $strike <= 3; $strike++) {
+            $customer = $this->createEligibleCustomer();
+            $this->createSubmittedShopReport($shopOwner, $customer);
+
+            $this->postWithCsrf("/admin/shop-reports/{$shopOwner->id}/action", [
+                'action' => 'warn',
+                'admin_notes' => "Warning strike {$strike}",
+            ])->assertRedirect();
+        }
+
+        $this->assertDatabaseHas('shop_owners', [
+            'id' => $shopOwner->id,
+            'status' => 'suspended',
+        ]);
+
+        $this->assertSame(2, AuditLog::query()
+            ->where('target_type', 'ShopOwner')
+            ->where('target_id', $shopOwner->id)
+            ->where('action', 'shop_report_warn')
+            ->count());
+
+        $this->assertSame(1, AuditLog::query()
+            ->where('target_type', 'ShopOwner')
+            ->where('target_id', $shopOwner->id)
+            ->where('action', 'shop_report_suspend')
+            ->count());
+
+        Mail::assertSent(ShopReportWarningMail::class, function (ShopReportWarningMail $mail) use ($shopOwner) {
+            return $mail->hasTo($shopOwner->email);
+        });
+
+        Mail::assertSent(SuspensionNoticeMail::class, function (SuspensionNoticeMail $mail) use ($shopOwner) {
+            return $mail->hasTo($shopOwner->email);
+        });
+    }
+
+    public function test_flagged_accounts_ban_warns_twice_then_suspends_on_third_strike(): void
+    {
+        Mail::fake();
+
+        $superAdmin = SuperAdmin::query()->firstOrFail();
+        $shopOwner = ShopOwner::factory()->approved()->create();
+        $customer = User::factory()->create([
+            'status' => 'active',
+            'email' => 'flagged-three-warn@example.com',
+        ]);
+
+        $this->actingAs($superAdmin, 'super_admin');
+
+        for ($strike = 1; $strike <= 3; $strike++) {
+            $report = $this->createPendingReviewReport($shopOwner, $customer);
+
+            $response = $this->postWithCsrf("/superAdmin/flagged-accounts/{$report->id}/ban", [
+                'admin_notes' => "Escalation strike {$strike}",
+            ])->assertOk();
+
+            if ($strike < 3) {
+                $response
+                    ->assertJsonPath('applied_action', 'warn')
+                    ->assertJsonPath('status', 'dismissed')
+                    ->assertJsonPath('warning_strike', $strike)
+                    ->assertJsonPath('warning_limit', 3);
+
+                $this->assertDatabaseHas('review_reports', [
+                    'id' => $report->id,
+                    'status' => 'dismissed',
+                ]);
+            } else {
+                $response
+                    ->assertJsonPath('applied_action', 'suspend')
+                    ->assertJsonPath('status', 'banned')
+                    ->assertJsonPath('warning_strike', 3)
+                    ->assertJsonPath('warning_limit', 3);
+
+                $this->assertDatabaseHas('review_reports', [
+                    'id' => $report->id,
+                    'status' => 'banned',
+                ]);
+            }
+        }
+
+        $this->assertDatabaseHas('users', [
+            'id' => $customer->id,
+            'status' => 'suspended',
+        ]);
+
+        $this->assertSame(2, AuditLog::query()
+            ->where('target_type', 'User')
+            ->where('target_id', $customer->id)
+            ->where('action', 'review_report_warn')
+            ->count());
+
+        $this->assertSame(1, AuditLog::query()
+            ->where('target_type', 'User')
+            ->where('target_id', $customer->id)
+            ->where('action', 'review_report_suspend')
+            ->count());
+
+        $warningMails = Mail::sent(CustomerReviewWarningMail::class);
+        $suspensionMails = Mail::sent(SuspensionNoticeMail::class)->filter(function (object $mail) use ($customer) {
+            return method_exists($mail, 'hasTo') && $mail->hasTo($customer->email);
+        });
+
+        $this->assertCount(2, $warningMails);
+        $this->assertCount(1, $suspensionMails);
+    }
+
+    public function test_flagged_accounts_can_suspend_immediately_with_super_admin_override(): void
+    {
+        Mail::fake();
+
+        $superAdmin = SuperAdmin::query()->firstOrFail();
+        $shopOwner = ShopOwner::factory()->approved()->create();
+        $customer = User::factory()->create([
+            'status' => 'active',
+            'email' => 'flagged-immediate-ban@example.com',
+        ]);
+
+        $report = $this->createPendingReviewReport($shopOwner, $customer);
+
+        $this->actingAs($superAdmin, 'super_admin');
+
+        $this->postWithCsrf("/superAdmin/flagged-accounts/{$report->id}/ban", [
+            'admin_notes' => 'Immediate suspension by super admin due to severe violation.',
+            'enforcement_mode' => 'immediate_suspend',
+        ])
+            ->assertOk()
+            ->assertJsonPath('applied_action', 'suspend')
+            ->assertJsonPath('enforcement_mode', 'immediate_suspend')
+            ->assertJsonPath('status', 'banned')
+            ->assertJsonPath('warning_strike', 0)
+            ->assertJsonPath('warning_limit', 3);
+
+        $this->assertDatabaseHas('review_reports', [
+            'id' => $report->id,
+            'status' => 'banned',
+        ]);
+
+        $this->assertDatabaseHas('users', [
+            'id' => $customer->id,
+            'status' => 'suspended',
+        ]);
+
+        $this->assertSame(0, AuditLog::query()
+            ->where('target_type', 'User')
+            ->where('target_id', $customer->id)
+            ->where('action', 'review_report_warn')
+            ->count());
+
+        $suspensionLogs = AuditLog::query()
+            ->where('target_type', 'User')
+            ->where('target_id', $customer->id)
+            ->where('action', 'review_report_suspend')
+            ->get();
+
+        $this->assertCount(1, $suspensionLogs);
+        $this->assertSame('immediate_suspend', data_get($suspensionLogs->first(), 'data.enforcement_mode'));
+
+        Mail::assertNotSent(CustomerReviewWarningMail::class);
+        Mail::assertSent(SuspensionNoticeMail::class, function (SuspensionNoticeMail $mail) use ($customer) {
+            return $mail->hasTo($customer->email);
+        });
     }
 }

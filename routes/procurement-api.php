@@ -88,6 +88,7 @@ Route::middleware([
         Route::get('/{id}', [SupplierController::class, 'show'])->name('procurement.suppliers.show');
         Route::put('/{id}', [SupplierController::class, 'update'])->name('procurement.suppliers.update');
         Route::delete('/{id}', [SupplierController::class, 'destroy'])->name('procurement.suppliers.destroy');
+        Route::post('/{id}/restore', [SupplierController::class, 'restore'])->name('procurement.suppliers.restore');
         Route::get('/{id}/purchase-history', [SupplierController::class, 'getPurchaseHistory'])->name('procurement.suppliers.purchase-history');
         Route::get('/{id}/performance', [SupplierController::class, 'getPerformanceMetrics'])->name('procurement.suppliers.performance');
         Route::post('/{id}/rating', [SupplierController::class, 'updatePerformanceRating'])->name('procurement.suppliers.rating');

@@ -55,10 +55,18 @@ export const supplierApi = {
     },
 
     /**
-     * Delete a supplier
+     * Archive a supplier
      */
     async delete(id: number): Promise<ApiResponse> {
         const response: AxiosResponse<ApiResponse> = await axios.delete(`${BASE_URL}/${id}`);
+        return response.data;
+    },
+
+    /**
+     * Restore an archived supplier
+     */
+    async restore(id: number): Promise<ApiResponse> {
+        const response: AxiosResponse<ApiResponse> = await axios.post(`${BASE_URL}/${id}/restore`);
         return response.data;
     },
 

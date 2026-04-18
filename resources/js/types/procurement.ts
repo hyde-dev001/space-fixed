@@ -239,6 +239,7 @@ export interface StockRequestFilters {
 export interface SupplierFilters {
     search?: string;
     is_active?: boolean;
+    archived?: boolean;
     page?: number;
     per_page?: number;
 }

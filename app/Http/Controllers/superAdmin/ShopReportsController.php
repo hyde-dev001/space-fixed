@@ -3,17 +3,22 @@
 namespace App\Http\Controllers\superAdmin;
 
 use App\Http\Controllers\Controller;
+use App\Mail\ShopReportWarningMail;
 use App\Models\ShopReport;
 use App\Models\ShopOwner;
 use App\Models\AuditLog;
 use App\Services\SuspensionAppealService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class ShopReportsController extends Controller
 {
+    private const WARNINGS_BEFORE_SUSPENSION = 3;
+
     /**
      * Show the shop reports dashboard.
      *
@@ -93,7 +98,24 @@ class ShopReportsController extends Controller
             return back()->with('error', 'No open reports found for this shop.');
         }
 
-        $newStatus = match ($validated['action']) {
+        $priorWarningActions = AuditLog::query()
+            ->where('target_type', 'ShopOwner')
+            ->where('target_id', $id)
+            ->where('action', 'shop_report_warn')
+            ->count();
+
+        $effectiveAction = $validated['action'];
+        $currentWarningStrike = null;
+
+        if ($validated['action'] === 'warn') {
+            $currentWarningStrike = $priorWarningActions + 1;
+
+            if ($currentWarningStrike >= self::WARNINGS_BEFORE_SUSPENSION) {
+                $effectiveAction = 'suspend';
+            }
+        }
+
+        $newStatus = match ($effectiveAction) {
             'dismiss'  => 'dismissed',
             'warn'     => 'warned',
             'suspend'  => 'suspended',
@@ -109,10 +131,52 @@ class ShopReportsController extends Controller
                 'reviewed_at' => now(),
             ]);
 
+        // ── If warning: notify the shop owner by email ───────────────────
+        if ($effectiveAction === 'warn') {
+            $shopOwner = ShopOwner::query()->find($id);
+            $email = trim((string) ($shopOwner?->email ?? ''));
+
+            if ($shopOwner && $email !== '') {
+                $accountName = trim((string) (
+                    ($shopOwner->business_name ?? '')
+                    ?: (($shopOwner->first_name ?? '') . ' ' . ($shopOwner->last_name ?? ''))
+                ));
+
+                $firstReason = (string) ($openReports->first()?->reason ?? '');
+                $primaryReason = ShopReport::REASON_LABELS[$firstReason] ?? ($firstReason !== '' ? $firstReason : 'Policy violation');
+
+                try {
+                    Mail::to($email)->send(new ShopReportWarningMail(
+                        accountName: $accountName !== '' ? $accountName : 'Shop Owner',
+                        reportCount: $openReports->count(),
+                        primaryReason: $primaryReason,
+                        adminNotes: $validated['admin_notes'] ?? null,
+                        reviewedAtLabel: now()->format('M d, Y h:i A')
+                    ));
+
+                    Log::info('Shop report warning email sent', [
+                        'shop_owner_id' => $shopOwner->id,
+                        'email' => $email,
+                        'report_count' => $openReports->count(),
+                    ]);
+                } catch (\Throwable $e) {
+                    Log::error('Failed to send shop report warning email', [
+                        'shop_owner_id' => $shopOwner->id,
+                        'email' => $email,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        }
+
         // ── If suspension: update the shop ─────────────────────────────────
-        if ($validated['action'] === 'suspend') {
+        if ($effectiveAction === 'suspend') {
             $reason = $validated['admin_notes']
-                ?? 'Suspended due to multiple verified reports from customers.';
+                ?? (
+                    $validated['action'] === 'warn'
+                        ? 'Suspended automatically after reaching 3 warnings from shop report reviews.'
+                        : 'Suspended due to multiple verified reports from customers.'
+                );
 
             $shopOwner = ShopOwner::query()->find($id);
 
@@ -139,23 +203,28 @@ class ShopReportsController extends Controller
         AuditLog::create([
             'shop_owner_id' => $id,
             'actor_user_id' => null,
-            'action'        => 'shop_report_' . $validated['action'],
+            'action'        => 'shop_report_' . $effectiveAction,
             'target_type'   => 'ShopOwner',
             'target_id'     => $id,
             'data'          => [
-                'action'       => $validated['action'],
-                'report_count' => $openReports->count(),
-                'admin_id'     => $admin?->id,
-                'admin_email'  => $admin?->email,
-                'notes'        => $validated['admin_notes'] ?? null,
+                'requested_action' => $validated['action'],
+                'applied_action'   => $effectiveAction,
+                'report_count'     => $openReports->count(),
+                'admin_id'         => $admin?->id,
+                'admin_email'      => $admin?->email,
+                'notes'            => $validated['admin_notes'] ?? null,
+                'warning_strike'   => $currentWarningStrike,
+                'warning_limit'    => self::WARNINGS_BEFORE_SUSPENSION,
             ],
         ]);
 
-        $message = match ($validated['action']) {
-            'dismiss' => 'Reports dismissed successfully.',
-            'warn'    => 'Shop has been warned and reports updated.',
-            'suspend' => 'Shop has been suspended and reports resolved.',
-        };
+        $message = $effectiveAction === 'suspend' && $validated['action'] === 'warn'
+            ? 'Shop reached 3 warnings and has been suspended automatically.'
+            : match ($effectiveAction) {
+                'dismiss' => 'Reports dismissed successfully.',
+                'warn'    => 'Shop has been warned and reports updated.',
+                'suspend' => 'Shop has been suspended and reports resolved.',
+            };
 
         return back()->with('success', $message);
     }
