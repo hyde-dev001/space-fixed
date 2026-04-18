@@ -164,9 +164,15 @@ const getPolicySectionKeyMetaKey = (sectionKey: string): string => `${POLICY_SEC
 const getPolicySectionCustomClausesMetaKey = (sectionKey: string): string => `${POLICY_SECTION_CUSTOM_CLAUSES_META_PREFIX}${sectionKey}`;
 const getPolicySectionDeletedMetaKey = (sectionKey: string): string => `${POLICY_SECTION_DELETED_META_PREFIX}${sectionKey}`;
 
+const isLegacyCustomPolicySectionKey = (sectionKey: string): boolean => (
+	sectionKey.startsWith(CUSTOM_POLICY_SECTION_PREFIX_LEGACY)
+		&& !sectionKey.startsWith(CUSTOM_POLICY_SECTION_PREFIX_RETAIL)
+		&& !sectionKey.startsWith(CUSTOM_POLICY_SECTION_PREFIX_REPAIR)
+);
+
 const isRetailScopedCustomSectionKey = (sectionKey: string): boolean => (
 	sectionKey.startsWith(CUSTOM_POLICY_SECTION_PREFIX_RETAIL)
-		|| sectionKey.startsWith(CUSTOM_POLICY_SECTION_PREFIX_LEGACY)
+		|| isLegacyCustomPolicySectionKey(sectionKey)
 );
 
 const isRepairScopedCustomSectionKey = (sectionKey: string): boolean => (
@@ -186,7 +192,7 @@ const getCustomPolicySectionDisplayNumber = (sectionKey: string): string => {
 		return sectionKey.replace(CUSTOM_POLICY_SECTION_PREFIX_REPAIR, '') || '?';
 	}
 
-	if (sectionKey.startsWith(CUSTOM_POLICY_SECTION_PREFIX_LEGACY)) {
+	if (isLegacyCustomPolicySectionKey(sectionKey)) {
 		return sectionKey.replace(CUSTOM_POLICY_SECTION_PREFIX_LEGACY, '') || '?';
 	}
 
@@ -387,7 +393,7 @@ const ShopSetting: React.FC = () => {
 	const showWideApprovalLimits = !isIndividual && hasRetailSignal && !hasRepairSignal;
 	const requiredSectionKeys = requiredPolicySectionKeys(shop_settings.business_type);
 	const [deletedBasePolicySectionKeys, setDeletedBasePolicySectionKeys] = useState<string[]>([]);
-	const activeRequiredSectionKeys: string[] = [];
+	const activeRequiredSectionKeys = requiredSectionKeys.filter((key) => !deletedBasePolicySectionKeys.includes(key));
 	const [retailCustomPolicySectionKeys, setRetailCustomPolicySectionKeys] = useState<string[]>([]);
 	const [repairCustomPolicySectionKeys, setRepairCustomPolicySectionKeys] = useState<string[]>([]);
 	const [policyComposerState, setPolicyComposerState] = useState<Record<string, PolicySectionComposerState>>(
@@ -612,6 +618,18 @@ const ShopSetting: React.FC = () => {
 	useEffect(() => {
 		setAutoRenewalEnabled(Boolean(shop_settings.premium?.auto_renew ?? shop_settings.premium?.has_active ?? false));
 	}, [shop_settings.premium?.auto_renew, shop_settings.premium?.has_active]);
+
+	useEffect(() => {
+		setRetailCustomPolicySectionKeys((prev) => {
+			const next = prev.filter((key) => isRetailScopedCustomSectionKey(key));
+			return next.length === prev.length ? prev : next;
+		});
+
+		setRepairCustomPolicySectionKeys((prev) => {
+			const next = prev.filter((key) => isRepairScopedCustomSectionKey(key));
+			return next.length === prev.length ? prev : next;
+		});
+	}, []);
 
 	useEffect(() => {
 		setTwoFactorEmailEnabled(Boolean(shop_settings.two_factor_email_enabled));
@@ -840,11 +858,11 @@ const ShopSetting: React.FC = () => {
 
 			const normalizedRetailCustomSectionKeys = hasRetailSignal
 				? loadedRetailCustomSectionKeys
-				: loadedRetailCustomSectionKeys.filter((key) => !key.startsWith(CUSTOM_POLICY_SECTION_PREFIX_LEGACY));
+				: loadedRetailCustomSectionKeys.filter((key) => !isLegacyCustomPolicySectionKey(key));
 			const normalizedRepairCustomSectionKeys = (!hasRetailSignal && hasRepairSignal)
 				? Array.from(new Set([
 					...loadedRepairCustomSectionKeys,
-					...loadedRetailCustomSectionKeys.filter((key) => key.startsWith(CUSTOM_POLICY_SECTION_PREFIX_LEGACY)),
+					...loadedRetailCustomSectionKeys.filter((key) => isLegacyCustomPolicySectionKey(key)),
 				]))
 				: loadedRepairCustomSectionKeys;
 			const sectionsWithDetectedCustomKeys: ShopPolicySections = { ...normalizedSections };
@@ -2129,7 +2147,19 @@ const ShopSetting: React.FC = () => {
 											type="button"
 											onClick={() => {
 												setPolicyBusinessView('retail');
-												setActivePolicySectionKey(retailPolicySectionKeys[0] ?? commonPolicySectionKeys[0] ?? null);
+												setActivePolicySectionKey((previous) => {
+													const nextVisibleKeys = [
+														...commonPolicySectionKeys,
+														...retailPolicySectionKeys,
+														...retailCustomPolicySectionKeys,
+													];
+
+													if (previous && nextVisibleKeys.includes(previous)) {
+														return previous;
+													}
+
+													return nextVisibleKeys[0] ?? null;
+												});
 											}}
 											className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${policyBusinessView === 'retail' ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
 										>
@@ -2139,7 +2169,19 @@ const ShopSetting: React.FC = () => {
 											type="button"
 											onClick={() => {
 												setPolicyBusinessView('repair');
-												setActivePolicySectionKey(repairPolicySectionKeys[0] ?? commonPolicySectionKeys[0] ?? null);
+												setActivePolicySectionKey((previous) => {
+													const nextVisibleKeys = [
+														...commonPolicySectionKeys,
+														...repairPolicySectionKeys,
+														...repairCustomPolicySectionKeys,
+													];
+
+													if (previous && nextVisibleKeys.includes(previous)) {
+														return previous;
+													}
+
+													return nextVisibleKeys[0] ?? null;
+												});
 											}}
 											className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${policyBusinessView === 'repair' ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
 										>
