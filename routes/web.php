@@ -156,6 +156,130 @@ Route::get('/shop-profile/{id}/virtual-showroom', [LandingPageController::class,
 Route::get('/api/shop-owners/{id}/reviews', [\App\Http\Controllers\Api\RepairReviewController::class, 'getShopReviews']);
 
 Route::get('/services', [LandingPageController::class, 'services'])->name('services');
+Route::get('/download', [LandingPageController::class, 'download'])->name('download');
+Route::get('/apk/scan-download', function () {
+    $downloadUrl = route('apk.download');
+    $safeDownloadUrl = htmlspecialchars($downloadUrl, ENT_QUOTES, 'UTF-8');
+
+    $html = <<<'HTML'
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex,nofollow">
+    <title>SoleSpace APK Download</title>
+    <style>
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            padding: 24px;
+            font-family: Arial, sans-serif;
+            background: #f7f8fb;
+            color: #171717;
+        }
+
+        .card {
+            width: min(420px, 100%);
+            background: #ffffff;
+            border: 1px solid #e6e8ee;
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 16px 40px -22px rgba(0, 0, 0, 0.28);
+        }
+
+        h1 {
+            margin: 0 0 10px;
+            font-size: 1.15rem;
+        }
+
+        p {
+            margin: 0;
+            line-height: 1.5;
+            color: #4a4a4a;
+        }
+
+        a {
+            display: inline-block;
+            margin-top: 16px;
+            padding: 10px 14px;
+            border-radius: 10px;
+            background: #171717;
+            color: #ffffff;
+            text-decoration: none;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <main class="card">
+        <h1>Preparing your APK download...</h1>
+        <p>If the download does not start automatically, tap the button below.</p>
+        <a id="apk-download-link" href="__DOWNLOAD_URL__">Download SoleSpace APK</a>
+    </main>
+
+    <script>
+        (function () {
+            var downloadUrl = __DOWNLOAD_URL_JSON__;
+            var attempts = 0;
+
+            function startDownload() {
+                if (attempts > 1) {
+                    return;
+                }
+
+                attempts += 1;
+                window.location.href = downloadUrl;
+            }
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', startDownload, { once: true });
+            } else {
+                startDownload();
+            }
+
+            setTimeout(startDownload, 1200);
+        })();
+    </script>
+</body>
+</html>
+HTML;
+
+    $html = str_replace('__DOWNLOAD_URL__', $safeDownloadUrl, $html);
+    $html = str_replace(
+        '__DOWNLOAD_URL_JSON__',
+        json_encode($downloadUrl, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT),
+        $html
+    );
+
+    return response($html, 200, [
+        'Content-Type' => 'text/html; charset=UTF-8',
+        'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
+        'Pragma' => 'no-cache',
+        'Expires' => '0',
+    ]);
+})->name('apk.scan.download');
+Route::get('/apk/download', function () {
+    $externalApkUrl = trim((string) env('VITE_APK_URL', ''));
+
+    if ($externalApkUrl !== '' && preg_match('/^https?:\/\//i', $externalApkUrl)) {
+        return redirect()->away($externalApkUrl);
+    }
+
+    $apkFilePath = public_path('APK/solespace-release.apk');
+
+    if (is_file($apkFilePath)) {
+        return response()->download(
+            $apkFilePath,
+            'solespace-release.apk',
+            ['Content-Type' => 'application/vnd.android.package-archive']
+        );
+    }
+
+    abort(404, 'APK file not found.');
+})->name('apk.download');
 Route::get('/services/product-image-spin-tutorial', [LandingPageController::class, 'productImageSpinTutorial'])
     ->name('services.product-image-spin-tutorial');
 // Route::get('/contact', [LandingPageController::class, 'contact'])->name('contact');

@@ -698,6 +698,14 @@ class LandingPageController extends Controller
     }
 
     /**
+     * Display the app download page.
+     */
+    public function download(): Response
+    {
+        return Inertia::render('UserSide/app/apk');
+    }
+
+    /**
      * Display the product image spin tutorial page.
      */
     public function productImageSpinTutorial(): Response

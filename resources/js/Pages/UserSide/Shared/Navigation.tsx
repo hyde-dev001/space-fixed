@@ -282,6 +282,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
     { route: 'products', label: 'Kids', params: { category: 'kids' }, dropdownKey: 'kids' },
     { route: 'products', label: 'Sports', params: { category: 'sports' }, dropdownKey: 'sports' },
     { route: 'repair', label: 'Repair' },
+    { route: 'download', label: 'Download' },
     ...(isAuthenticated ? [] : [{ route: 'services', label: 'Services' }]),
     ...(isAuthenticated ? [] : [{ route: 'login', label: 'ACCOUNT' }])
   ];
@@ -293,6 +294,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
     '/': 'landing',
     '/products': 'products',
     '/repair-services': 'repair',
+    '/download': 'download',
     '/services': 'services',
     '/services/product-image-spin-tutorial': 'services',
     '/register': 'login', // Register page should highlight ACCOUNT
