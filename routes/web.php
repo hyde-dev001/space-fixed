@@ -266,7 +266,33 @@ Route::get('/apk/download', function () {
     $externalApkUrl = trim((string) env('VITE_APK_URL', ''));
 
     if ($externalApkUrl !== '' && preg_match('/^https?:\/\//i', $externalApkUrl)) {
-        return redirect()->away($externalApkUrl);
+        $externalHost = parse_url($externalApkUrl, PHP_URL_HOST);
+        $externalPath = parse_url($externalApkUrl, PHP_URL_PATH);
+        $requestHost = app(\Illuminate\Http\Request::class)->getHost();
+
+        $normalizeHost = static function (?string $host): ?string {
+            if (! is_string($host)) {
+                return null;
+            }
+
+            return preg_replace('/^www\./i', '', $host);
+        };
+
+        $downloadPath = rtrim(route('apk.download', [], false), '/');
+        $scanDownloadPath = rtrim(route('apk.scan.download', [], false), '/');
+        $normalizedExternalPath = is_string($externalPath) ? rtrim($externalPath, '/') : null;
+
+        $normalizedExternalHost = $normalizeHost($externalHost);
+        $normalizedRequestHost = $normalizeHost($requestHost);
+        $isSameHost = is_string($normalizedExternalHost)
+            && is_string($normalizedRequestHost)
+            && strcasecmp($normalizedExternalHost, $normalizedRequestHost) === 0;
+        $isLoopTarget = $isSameHost && is_string($normalizedExternalPath)
+            && in_array($normalizedExternalPath, [$downloadPath, $scanDownloadPath], true);
+
+        if (! $isLoopTarget) {
+            return redirect()->away($externalApkUrl);
+        }
     }
 
     $apkFilePath = public_path('APK/solespace-release.apk');
