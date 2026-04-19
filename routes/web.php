@@ -224,15 +224,28 @@ Route::get('/apk/scan-download', function () {
     <script>
         (function () {
             var downloadUrl = __DOWNLOAD_URL_JSON__;
-            var attempts = 0;
+            var started = false;
+
+            function triggerDownload() {
+                var frame = document.getElementById('apk-download-frame');
+
+                if (!frame) {
+                    frame = document.createElement('iframe');
+                    frame.id = 'apk-download-frame';
+                    frame.style.display = 'none';
+                    document.body.appendChild(frame);
+                }
+
+                frame.src = downloadUrl;
+            }
 
             function startDownload() {
-                if (attempts > 1) {
+                if (started) {
                     return;
                 }
 
-                attempts += 1;
-                window.location.href = downloadUrl;
+                started = true;
+                triggerDownload();
             }
 
             if (document.readyState === 'loading') {
@@ -240,8 +253,6 @@ Route::get('/apk/scan-download', function () {
             } else {
                 startDownload();
             }
-
-            setTimeout(startDownload, 1200);
         })();
     </script>
 </body>
