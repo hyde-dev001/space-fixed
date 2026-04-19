@@ -14,7 +14,7 @@ const isAbsoluteHttpUrl = (value: string) => /^https?:\/\//i.test(value);
 
 const ApkPage: React.FC = () => {
 	const runtimeOrigin = typeof window !== 'undefined' ? stripTrailingSlash(window.location.origin) : '';
-	const apkBaseUrl = configuredApkBaseUrl ? stripTrailingSlash(configuredApkBaseUrl) : runtimeOrigin;
+	const apkBaseUrl = runtimeOrigin || (configuredApkBaseUrl ? stripTrailingSlash(configuredApkBaseUrl) : '');
 	const fullApkUrl =
 		configuredApkFileUrl && isAbsoluteHttpUrl(configuredApkFileUrl)
 			? configuredApkFileUrl

@@ -158,7 +158,8 @@ Route::get('/api/shop-owners/{id}/reviews', [\App\Http\Controllers\Api\RepairRev
 Route::get('/services', [LandingPageController::class, 'services'])->name('services');
 Route::get('/download', [LandingPageController::class, 'download'])->name('download');
 Route::get('/apk/scan-download', function () {
-    $downloadUrl = route('apk.download');
+    // Use a relative path so mobile browsers stay on the same host that served the QR page.
+    $downloadUrl = route('apk.download', [], false);
     $safeDownloadUrl = htmlspecialchars($downloadUrl, ENT_QUOTES, 'UTF-8');
 
     $html = <<<'HTML'
