@@ -339,6 +339,47 @@ const normalizeRefundRequestForDisplay = (item: RefundRequest): RefundRequest =>
 	};
 };
 
+const resolveFinanceDisplayStatus = (item: RefundRequest): RefundRequest["status"] => {
+	const rawStatus = String(item.rawStatus || "").toLowerCase();
+	const financeStatus = String(item.financeStatus || "").toLowerCase();
+	const shopOwnerStatus = String(item.shopOwnerStatus || "").toLowerCase();
+
+	if (rawStatus === "rejected") {
+		return "Rejected";
+	}
+
+	if (["processing", "succeeded", "completed", "paid"].includes(rawStatus)) {
+		return "Approved";
+	}
+
+	if (financeStatus === "approved") {
+		return "Approved";
+	}
+
+	if (financeStatus === "approved_initial" && shopOwnerStatus !== "approved") {
+		return "Approved";
+	}
+
+	if (financeStatus === "approved_initial" && shopOwnerStatus === "approved") {
+		return "Pending";
+	}
+
+	if (financeStatus === "pending") {
+		return "Pending";
+	}
+
+	return item.status;
+};
+
+const normalizeFinanceRefundRequest = (item: RefundRequest): RefundRequest => {
+	const normalized = normalizeRefundRequestForDisplay(item);
+
+	return {
+		...normalized,
+		status: resolveFinanceDisplayStatus(normalized),
+	};
+};
+
 const formatPayoutChannelLabel = (channel?: string): string => {
 	switch (String(channel || "").toLowerCase()) {
 		case "gcash":
@@ -587,14 +628,14 @@ export default function RefundApproval() {
 			const normalizedOrderRefunds: RefundRequest[] = (Array.isArray(orderData?.data) ? orderData.data : []).map((item: any) => ({
 				...item,
 				refundType: "order",
-			})).map(normalizeRefundRequestForDisplay);
+			})).map(normalizeFinanceRefundRequest);
 
 			const normalizedRepairRefunds: RefundRequest[] = (Array.isArray(repairData?.data) ? repairData.data : [])
 				.map((item: any) => ({
 					...item,
 					refundType: "repair",
 				}))
-				.map(normalizeRefundRequestForDisplay)
+				.map(normalizeFinanceRefundRequest)
 				.filter(shouldShowRepairRefundInFinanceQueue);
 
 			setRequests(
@@ -656,13 +697,11 @@ export default function RefundApproval() {
 		const requiresOwnerApproval = (request as any).requiresOwnerApproval !== false;
 
 		if (request.refundType === "repair") {
-			return request.status === "Pending"
-				&& financeStatus === "pending"
+			return financeStatus === "pending"
 				&& !["rejected", "failed", "succeeded", "completed", "paid"].includes(rawStatus);
 		}
 
-		return request.status === "Pending"
-			&& (
+		return (
 				financeStatus === "pending"
 				|| (requiresOwnerApproval && financeStatus === "approved_initial" && shopOwnerStatus === "approved")
 			)
@@ -671,9 +710,10 @@ export default function RefundApproval() {
 
 	const canFinanceReject = (request: RefundRequest): boolean => {
 		const financeStatus = String(request.financeStatus || "").toLowerCase();
+		const rawStatus = String(request.rawStatus || "").toLowerCase();
 		
-		return request.status === "Pending"
-			&& ["pending", "approved_initial"].includes(financeStatus);
+		return financeStatus === "pending"
+			&& !["rejected", "failed", "succeeded", "completed", "paid"].includes(rawStatus);
 	};
 
 	const handleApprove = async (request: RefundRequest) => {
@@ -732,7 +772,10 @@ export default function RefundApproval() {
 					throw new Error(data?.message || "Failed to approve refund request.");
 				}
 
-				const updatedRefund = { ...request, ...(data?.refund || data?.data || {}), status: "Approved" };
+				const updatedRefund = normalizeFinanceRefundRequest({
+					...request,
+					...(data?.refund || data?.data || {}),
+				} as RefundRequest);
 				setRequests((prev) =>
 					prev.map((r) => (isSameRefundRequest(r, request) ? updatedRefund : r))
 				);
@@ -759,6 +802,16 @@ export default function RefundApproval() {
 	};
 
 	const handleReject = async (request: RefundRequest) => {
+		if (!canFinanceReject(request)) {
+			await Swal.fire({
+				title: "Rejection Not Allowed",
+				text: "This refund is already approved in finance stage or is no longer rejectable.",
+				icon: "info",
+				confirmButtonColor: "#2563eb",
+			});
+			return;
+		}
+
 		setViewModalOpen(false);
 		setSelectedRequest(null);
 		setActiveImage(null);

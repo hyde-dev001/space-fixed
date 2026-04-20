@@ -875,7 +875,7 @@ export default function RefundApproval() {
 					confirmButtonColor: "#2563eb",
 				});
 
-				if (request.refundType !== "repair") {
+				if (request.refundType !== "repair" && isIndividualRegistration) {
 					router.visit(
 						`/shop-owner/job-orders-retail?tab=refund&focus_order=${encodeURIComponent(request.orderNumber)}`,
 					);
