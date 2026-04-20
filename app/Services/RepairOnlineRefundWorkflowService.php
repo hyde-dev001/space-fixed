@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\NotificationType;
+use App\Models\Notification;
 use App\Models\PosRefund;
 use App\Models\ShopOwner;
 use Illuminate\Support\Str;
@@ -60,7 +61,7 @@ class RepairOnlineRefundWorkflowService
                     'refund_no' => (string) $refund->refund_no,
                     'repairer_status' => 'approved',
                 ],
-                actionUrl: '/erp/finance/repair-refunds',
+                actionUrl: '/finance?section=refund-approvals',
                 priority: 'high',
             );
         }
@@ -86,8 +87,28 @@ class RepairOnlineRefundWorkflowService
             'failed_at' => now(),
         ]);
 
+        $customerId = $this->resolveCustomerUserId($refund);
+        if ($customerId > 0) {
+            $this->notificationService->sendToUser(
+                userId: $customerId,
+                type: NotificationType::REFUND_REQUEST,
+                title: 'Repair Refund Rejected',
+                message: 'Your repair refund request was rejected after repairer inspection. Please check the details in My Repairs.',
+                data: [
+                    'refund_id' => (int) $refund->id,
+                    'refund_no' => (string) $refund->refund_no,
+                    'repairer_status' => 'rejected',
+                    'status' => 'rejected',
+                    'reason' => trim($reason),
+                ],
+                actionUrl: '/my-repairs',
+                shopId: (int) $refund->shop_owner_id,
+                priority: 'high',
+            );
+        }
+
         if ($this->isIndividualShopOwner((int) $refund->shop_owner_id)) {
-            $this->notificationService->sendToShopOwner(
+            $this->notifyShopOwnerWithFallback(
                 shopOwnerId: (int) $refund->shop_owner_id,
                 type: NotificationType::REFUND_REQUEST,
                 title: 'Repair Refund Requires Review',
@@ -103,20 +124,20 @@ class RepairOnlineRefundWorkflowService
                 requiresAction: true,
             );
         } else {
-            $this->notificationService->sendToErpRole(
-                roleName: 'Finance',
-                shopId: (int) $refund->shop_owner_id,
+            $this->notifyShopOwnerWithFallback(
+                shopOwnerId: (int) $refund->shop_owner_id,
                 type: NotificationType::REFUND_REQUEST,
-                title: 'Repair Refund Needs Finance Review',
-                message: "Repair refund {$refund->refund_no} was rejected by repairer and needs finance follow-up.",
+                title: 'Repair Refund Rejected By Repairer',
+                message: "Repair refund {$refund->refund_no} was rejected by repairer after inspection.",
                 data: [
                     'refund_id' => (int) $refund->id,
                     'refund_no' => (string) $refund->refund_no,
                     'repairer_status' => 'rejected',
                     'reason' => trim($reason),
                 ],
-                actionUrl: '/erp/finance/repair-refunds',
+                actionUrl: '/shop-owner/refund-approvals',
                 priority: 'high',
+                requiresAction: true,
             );
         }
 
@@ -140,5 +161,58 @@ class RepairOnlineRefundWorkflowService
         }
 
         return str_contains($registrationType, 'individual') || str_contains($registrationType, 'sole');
+    }
+
+    private function resolveCustomerUserId(PosRefund $refund): int
+    {
+        $refund->loadMissing([
+            'sourceTransaction:id,customer_id',
+            'repairRequest:id,user_id',
+        ]);
+
+        $customerId = (int) ($refund->sourceTransaction?->customer_id ?? 0);
+        if ($customerId > 0) {
+            return $customerId;
+        }
+
+        return (int) ($refund->repairRequest?->user_id ?? 0);
+    }
+
+    private function notifyShopOwnerWithFallback(
+        int $shopOwnerId,
+        NotificationType $type,
+        string $title,
+        string $message,
+        array $data,
+        string $actionUrl,
+        string $priority = 'high',
+        bool $requiresAction = true,
+    ): void {
+        $notification = $this->notificationService->sendToShopOwner(
+            shopOwnerId: $shopOwnerId,
+            type: $type,
+            title: $title,
+            message: $message,
+            data: $data,
+            actionUrl: $actionUrl,
+            priority: $priority,
+            requiresAction: $requiresAction,
+        );
+
+        if ($notification) {
+            return;
+        }
+
+        Notification::create([
+            'shop_owner_id' => $shopOwnerId,
+            'type' => $type->value,
+            'priority' => $priority,
+            'title' => $title,
+            'message' => $message,
+            'data' => $data,
+            'action_url' => $actionUrl,
+            'requires_action' => $requiresAction,
+            'shop_id' => $shopOwnerId,
+        ]);
     }
 }

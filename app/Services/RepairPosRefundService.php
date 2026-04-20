@@ -314,6 +314,9 @@ class RepairPosRefundService
                 message: 'Your repair refund request was approved by finance.',
                 actionUrl: '/my-repairs',
                 includeOwner: true,
+                ownerTitle: 'Repair Refund Approved By Finance',
+                ownerMessage: "Repair refund {$refund->refund_no} was approved by finance.",
+                ownerActionUrl: '/shop-owner/refund-approvals',
             );
 
             return $refund->fresh();
@@ -998,6 +1001,9 @@ class RepairPosRefundService
         string $actionUrl,
         bool $includeOwner = true,
         bool $includeCustomer = true,
+        ?string $ownerTitle = null,
+        ?string $ownerMessage = null,
+        ?string $ownerActionUrl = null,
     ): void {
         $customerId = (int) ($source->customer_id ?? 0);
 
@@ -1027,19 +1033,25 @@ class RepairPosRefundService
         }
 
         if ($includeOwner) {
+            $resolvedOwnerTitle = trim((string) $ownerTitle) !== '' ? trim((string) $ownerTitle) : $title;
+            $resolvedOwnerMessage = trim((string) $ownerMessage) !== '' ? trim((string) $ownerMessage) : $message;
+            $resolvedOwnerActionUrl = trim((string) $ownerActionUrl) !== ''
+                ? trim((string) $ownerActionUrl)
+                : '/shop-owner/refund-approvals';
+
             Notification::create([
                 'shop_owner_id' => (int) $refund->shop_owner_id,
                 'type' => NotificationType::REFUND_REQUEST->value,
                 'priority' => 'high',
-                'title' => $title,
-                'message' => $message,
+                'title' => $resolvedOwnerTitle,
+                'message' => $resolvedOwnerMessage,
                 'data' => [
                     'refund_id' => (int) $refund->id,
                     'refund_no' => (string) $refund->refund_no,
                     'status' => (string) $refund->status,
                     'approved_amount' => (float) ($refund->approved_amount ?? 0),
                 ],
-                'action_url' => '/shop-owner/refund-approvals',
+                'action_url' => $resolvedOwnerActionUrl,
                 'shop_id' => (int) $refund->shop_owner_id,
             ]);
         }

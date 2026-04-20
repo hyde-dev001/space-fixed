@@ -12,4 +12,15 @@ describe('myRepairs refund workflow labels', () => {
 
     expect(label).toBe('Under Repairer Review');
   });
+
+  it('renders rejected when overall refund status is rejected', async () => {
+    const label = refundStageLabel({
+      overall_status: 'rejected',
+      repairer_status: 'rejected',
+      finance_status: 'pending',
+      shop_owner_status: 'pending',
+    });
+
+    expect(label).toBe('Rejected');
+  });
 });
