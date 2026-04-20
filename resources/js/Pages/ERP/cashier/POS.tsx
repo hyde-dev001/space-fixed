@@ -532,7 +532,6 @@ const PointOfSalePage = () => {
 	const [servicePage, setServicePage] = useState<number>(1);
 
 	const [items, setItems] = useState<POSItem[]>([]);
-	const [discountInput, setDiscountInput] = useState<string>("0");
 	const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
 	const [cashReceivedInput, setCashReceivedInput] = useState<string>("");
 	const [proofReference, setProofReference] = useState<string>("");
@@ -1881,7 +1880,6 @@ const PointOfSalePage = () => {
 
 	const resetOrderInputs = () => {
 		setItems([]);
-		setDiscountInput("0");
 		setPaymentMethod("cash");
 		setCashReceivedInput("");
 		setProofReference("");
@@ -3613,19 +3611,6 @@ const PointOfSalePage = () => {
 									</>
 								)}
 							</div>
-
-							<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Discount (PHP)</label>
-							<input
-								title="Discount in PHP"
-								type="text"
-								inputMode="numeric"
-								pattern="[0-9]*"
-								min={0}
-								value={discountInput}
-								onChange={(event) => setDiscountInput(toDigitsOnly(event.target.value))}
-								disabled
-								className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500"
-							/>
 
 							<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Payment Method</label>
 							{isManualStandaloneCheckout && (

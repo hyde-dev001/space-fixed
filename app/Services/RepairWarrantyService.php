@@ -710,7 +710,14 @@ class RepairWarrantyService
             'postal_code' => trim((string) ($validated['receive_postal_code'] ?? '')),
         ];
 
-        $missingAddressFields = collect($returnAddress)
+        $requiredDeliveryAddress = [
+            'address_line' => $returnAddress['address_line'],
+            'barangay' => $returnAddress['barangay'],
+            'city' => $returnAddress['city'],
+            'postal_code' => $returnAddress['postal_code'],
+        ];
+
+        $missingAddressFields = collect($requiredDeliveryAddress)
             ->filter(fn (string $value): bool => $value === '')
             ->keys()
             ->values()

@@ -29,7 +29,7 @@ class RepairWarrantyClaimController extends Controller
             'receive_address_line' => ['nullable', 'string', 'max:255', 'required_if:preferred_receive_method,shop_delivery'],
             'receive_barangay' => ['nullable', 'string', 'max:120', 'required_if:preferred_receive_method,shop_delivery'],
             'receive_city' => ['nullable', 'string', 'max:120', 'required_if:preferred_receive_method,shop_delivery'],
-            'receive_region' => ['nullable', 'string', 'max:120', 'required_if:preferred_receive_method,shop_delivery'],
+            'receive_region' => ['nullable', 'string', 'max:120'],
             'receive_postal_code' => ['nullable', 'string', 'max:20', 'required_if:preferred_receive_method,shop_delivery'],
             'images' => ['required', 'array', 'min:1', 'max:10'],
             'images.*' => ['file', 'image', 'mimes:jpeg,jpg,png,webp', 'max:20480'],
@@ -37,7 +37,6 @@ class RepairWarrantyClaimController extends Controller
             'receive_address_line.required_if' => 'Delivery address is required when you choose repairer delivery.',
             'receive_barangay.required_if' => 'Barangay is required for repairer delivery.',
             'receive_city.required_if' => 'City is required for repairer delivery.',
-            'receive_region.required_if' => 'Region/Province is required for repairer delivery.',
             'receive_postal_code.required_if' => 'Postal code is required for repairer delivery.',
         ]);
 
