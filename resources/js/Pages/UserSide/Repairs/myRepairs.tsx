@@ -778,6 +778,10 @@ const MyRepairs: React.FC = () => {
       return false;
     }
 
+    if (hasBlockingRefundForReview(order)) {
+      return false;
+    }
+
     const latestClaim = latestWarrantyClaimByRepairId[order.id];
     if (!latestClaim) {
       return true;
@@ -793,6 +797,10 @@ const MyRepairs: React.FC = () => {
 
     if (order.status !== 'picked_up' && order.status !== 'received') {
       return 'Warranty claim is available only after pickup/receipt completion.';
+    }
+
+    if (hasBlockingRefundForReview(order)) {
+      return 'Warranty claim is unavailable while a refund request is active or after a refund has been completed for this repair.';
     }
 
     const latestClaim = latestWarrantyClaimByRepairId[order.id];
