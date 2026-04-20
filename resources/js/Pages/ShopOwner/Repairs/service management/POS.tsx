@@ -2863,13 +2863,6 @@ useEffect(() => {
 						)}
 						<button
 							type="button"
-							onClick={() => setIsRefundQueueOpen(true)}
-							className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-						>
-							Refund Queue
-						</button>
-						<button
-							type="button"
 							onClick={() => setIsHistoryModalOpen(true)}
 							className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
 						>
