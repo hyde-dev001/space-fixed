@@ -1047,16 +1047,41 @@ const MyRepairs: React.FC = () => {
       const urlParams         = new URLSearchParams(window.location.search);
       const isPaymongoSuccess = urlParams.get('paymongo_success') === '1';
       const isPaymongoFailed  = urlParams.get('paymongo_failed')  === '1';
-      const pendingRepairId   = sessionStorage.getItem('pendingRepairId');
-      const parsedPendingRepairId = pendingRepairId ? Number(pendingRepairId) : null;
+      const pendingRepairIdFromSession = Number(sessionStorage.getItem('pendingRepairId') || '0');
+      const pendingRepairIdFromQuery = Number(urlParams.get('pending_repair_id') || '0');
+      const returnTs = Number(urlParams.get('return_ts') || '0');
+      const returnSig = String(urlParams.get('return_sig') || '');
+      const usedSessionPendingId = Number.isFinite(pendingRepairIdFromSession) && pendingRepairIdFromSession > 0;
+      const usedQueryFallback = !usedSessionPendingId && Number.isFinite(pendingRepairIdFromQuery) && pendingRepairIdFromQuery > 0;
+      const parsedPendingRepairId = Number.isFinite(pendingRepairIdFromSession) && pendingRepairIdFromSession > 0
+        ? pendingRepairIdFromSession
+        : (Number.isFinite(pendingRepairIdFromQuery) && pendingRepairIdFromQuery > 0 ? pendingRepairIdFromQuery : null);
 
       // Always clean up URL params and session storage
       if (isPaymongoSuccess || isPaymongoFailed) {
-        window.history.replaceState({}, '', '/my-repairs');
+        const cleanedParams = new URLSearchParams(urlParams);
+        cleanedParams.delete('paymongo_success');
+        cleanedParams.delete('paymongo_failed');
+        cleanedParams.delete('pending_repair_id');
+        cleanedParams.delete('return_ts');
+        cleanedParams.delete('return_sig');
+        const cleanedQuery = cleanedParams.toString();
+        window.history.replaceState({}, '', `/my-repairs${cleanedQuery ? `?${cleanedQuery}` : ''}`);
       }
 
       if (isPaymongoFailed) {
         sessionStorage.removeItem('pendingRepairId');
+        if (usedQueryFallback) {
+          await Swal.fire({
+            icon: 'warning',
+            title: 'Payment Not Completed',
+            text: 'You can continue browsing now. Sign in later if you want to retry this repair payment.',
+            confirmButtonColor: '#000000',
+          });
+          window.location.href = '/';
+          return;
+        }
+
         fetchRepairs({ reconcilePayments: true });
         const retryResult = await Swal.fire({
           icon: 'error',
@@ -1076,7 +1101,7 @@ const MyRepairs: React.FC = () => {
         return;
       }
 
-      if (pendingRepairId && isPaymongoSuccess) {
+      if (parsedPendingRepairId && isPaymongoSuccess) {
         sessionStorage.removeItem('pendingRepairId');
         Swal.fire({
           icon: 'info',
@@ -1097,7 +1122,7 @@ const MyRepairs: React.FC = () => {
           let result: any = null;
 
           for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-            const response = await fetch(`/api/customer/repairs/${pendingRepairId}/verify-payment`, {
+            const response = await fetch(`/api/customer/repairs/${parsedPendingRepairId}/verify-payment-return`, {
               method: 'POST',
               credentials: 'include',
               headers: {
@@ -1105,6 +1130,10 @@ const MyRepairs: React.FC = () => {
                 'Accept': 'application/json',
                 'X-CSRF-TOKEN': csrfToken || '',
               },
+              body: JSON.stringify({
+                return_ts: returnTs,
+                return_sig: returnSig,
+              }),
             });
             result = await response.json();
 
@@ -1120,18 +1149,37 @@ const MyRepairs: React.FC = () => {
             }
           }
 
-          await fetchRepairs({ reconcilePayments: true });
+          if (!usedQueryFallback) {
+            await fetchRepairs({ reconcilePayments: true });
+          }
 
           if (result?.success && result?.payment_verified) {
-            Swal.fire({
+            await Swal.fire({
               icon: 'success',
               title: 'Payment Confirmed!',
-              text: 'Your payment has been received. Your repair will begin shortly.',
+              text: usedQueryFallback
+                ? 'Your payment has been confirmed. You can continue browsing now and sign in later to view full repair details.'
+                : 'Your payment has been received. Your repair will begin shortly.',
               confirmButtonColor: '#000000',
               timer: 3000,
               timerProgressBar: true,
             });
+
+            if (usedQueryFallback) {
+              window.location.href = '/';
+            }
           } else if (result?.expired) {
+            if (usedQueryFallback) {
+              await Swal.fire({
+                icon: 'warning',
+                title: 'Payment Session Expired',
+                text: 'Your payment session expired. Sign in later to create a new payment session.',
+                confirmButtonColor: '#000000',
+              });
+              window.location.href = '/';
+              return;
+            }
+
             const retryResult = await Swal.fire({
               icon: 'warning',
               title: 'Payment Session Expired',
@@ -1146,22 +1194,32 @@ const MyRepairs: React.FC = () => {
               await handlePayNow(parsedPendingRepairId);
             }
           } else {
-            Swal.fire({
+            await Swal.fire({
               icon: 'warning',
               title: 'Payment Not Verified',
               text: result?.message || 'We could not confirm your payment yet. Please try again or contact support.',
               confirmButtonColor: '#000000',
             });
+
+            if (usedQueryFallback) {
+              window.location.href = '/';
+            }
           }
         } catch (error) {
           console.error('Payment verification error:', error);
-          await fetchRepairs({ reconcilePayments: true });
-          Swal.fire({
+          if (!usedQueryFallback) {
+            await fetchRepairs({ reconcilePayments: true });
+          }
+          await Swal.fire({
             icon: 'error',
             title: 'Verification Error',
             text: 'There was an issue verifying your payment. Please contact support.',
             confirmButtonColor: '#000000',
           });
+
+          if (usedQueryFallback) {
+            window.location.href = '/';
+          }
         }
       } else {
         sessionStorage.removeItem('pendingRepairId');

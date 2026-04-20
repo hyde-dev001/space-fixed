@@ -33,6 +33,8 @@ use Illuminate\Support\Facades\Schema;
 
 class CheckoutController extends Controller
 {
+    private const PAYMENT_RETURN_TOKEN_TTL_SECONDS = 86400;
+
     protected NotificationService $notificationService;
     protected PromoPricingService $promoPricingService;
 
@@ -1744,8 +1746,20 @@ class CheckoutController extends Controller
             }
 
             $description = 'SoleSpace Order #' . $order->order_number;
-            $successUrl = url('/order-success') . '?paymongo_success=1';
-            $failedUrl = url('/order-success') . '?paymongo_failed=1';
+            $returnTimestamp = now()->timestamp;
+            $returnSignature = $this->buildPaymentReturnSignature('order', (int) $order->id, $returnTimestamp);
+            $successUrl = route('payment-return.order', [
+                'paymongo_success' => 1,
+                'pending_order_id' => $order->id,
+                'return_ts' => $returnTimestamp,
+                'return_sig' => $returnSignature,
+            ]);
+            $failedUrl = route('payment-return.order', [
+                'paymongo_failed' => 1,
+                'pending_order_id' => $order->id,
+                'return_ts' => $returnTimestamp,
+                'return_sig' => $returnSignature,
+            ]);
 
             $lineItems = [];
             if ($itemSubtotal > 0) {
@@ -1901,14 +1915,20 @@ class CheckoutController extends Controller
             $settlementService = app(PaymentSettlementService::class);
 
             $user = Auth::guard('user')->user();
-            if (!$user) {
+            $hasValidPublicReturnSignature = $this->hasValidPublicPaymentReturnSignature($request, 'order', (int) $orderId);
+
+            if (!$user && !$hasValidPublicReturnSignature) {
                 return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
             }
 
-            $order = Order::with('shopOwner')
-                ->where('id', $orderId)
-                ->where('customer_id', $user->id)
-                ->first();
+            $orderQuery = Order::with('shopOwner')
+                ->where('id', $orderId);
+
+            if ($user) {
+                $orderQuery->where('customer_id', $user->id);
+            }
+
+            $order = $orderQuery->first();
 
             if (!$order) {
                 return response()->json(['success' => false, 'message' => 'Order not found'], 404);
@@ -2068,6 +2088,37 @@ class CheckoutController extends Controller
                 'message'          => 'Verification error: ' . $e->getMessage(),
             ], 500);
         }
+    }
+
+    private function buildPaymentReturnSignature(string $scope, int $resourceId, int $timestamp): string
+    {
+        return hash_hmac(
+            'sha256',
+            sprintf('%s:return:%d:%d', trim($scope), $resourceId, $timestamp),
+            (string) config('app.key')
+        );
+    }
+
+    private function hasValidPublicPaymentReturnSignature(Request $request, string $scope, int $resourceId): bool
+    {
+        $timestamp = (int) $request->input('return_ts', 0);
+        $signature = trim((string) $request->input('return_sig', ''));
+
+        if ($timestamp <= 0 || $signature === '') {
+            return false;
+        }
+
+        $now = now()->timestamp;
+        if ($timestamp > ($now + 300)) {
+            return false;
+        }
+
+        if (($now - $timestamp) > self::PAYMENT_RETURN_TOKEN_TTL_SECONDS) {
+            return false;
+        }
+
+        $expected = $this->buildPaymentReturnSignature($scope, $resourceId, $timestamp);
+        return hash_equals($expected, $signature);
     }
 
     /**

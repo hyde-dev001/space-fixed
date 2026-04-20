@@ -11,8 +11,16 @@ export default function OrderSuccess() {
       const urlParams         = new URLSearchParams(window.location.search);
       const isPaymongoSuccess = urlParams.get('paymongo_success') === '1';
       const isPaymongoFailed  = urlParams.get('paymongo_failed')  === '1';
-      const pendingOrderIdRaw = sessionStorage.getItem('pendingOrderId');
-      const pendingOrderId = Number(pendingOrderIdRaw || '0');
+      const pendingOrderIdFromSession = Number(sessionStorage.getItem('pendingOrderId') || '0');
+      const pendingOrderIdFromQuery = Number(urlParams.get('pending_order_id') || '0');
+      const returnTs = Number(urlParams.get('return_ts') || '0');
+      const returnSig = String(urlParams.get('return_sig') || '');
+      const usedSessionPendingId = Number.isFinite(pendingOrderIdFromSession) && pendingOrderIdFromSession > 0;
+      const pendingOrderId = Number.isFinite(pendingOrderIdFromSession) && pendingOrderIdFromSession > 0
+        ? pendingOrderIdFromSession
+        : (Number.isFinite(pendingOrderIdFromQuery) && pendingOrderIdFromQuery > 0 ? pendingOrderIdFromQuery : 0);
+      const pendingOrderIdRaw = pendingOrderId > 0 ? String(pendingOrderId) : null;
+      const postReturnDestination = usedSessionPendingId ? '/my-orders' : '/';
 
       const cancelPendingOrder = async () => {
         if (!Number.isFinite(pendingOrderId) || pendingOrderId <= 0) {
@@ -36,7 +44,16 @@ export default function OrderSuccess() {
         });
       };
 
-      window.history.replaceState({}, '', '/order-success');
+      if (isPaymongoSuccess || isPaymongoFailed) {
+        const cleanedParams = new URLSearchParams(urlParams);
+        cleanedParams.delete('paymongo_success');
+        cleanedParams.delete('paymongo_failed');
+        cleanedParams.delete('pending_order_id');
+        cleanedParams.delete('return_ts');
+        cleanedParams.delete('return_sig');
+        const cleanedQuery = cleanedParams.toString();
+        window.history.replaceState({}, '', `/order-success${cleanedQuery ? `?${cleanedQuery}` : ''}`);
+      }
 
       if (isPaymongoFailed) {
         try {
@@ -45,12 +62,12 @@ export default function OrderSuccess() {
           console.warn('Failed to auto-cancel pending order after failed PayMongo return:', error);
         }
         sessionStorage.removeItem('pendingOrderId');
-        router.visit('/my-orders', { replace: true });
+        router.visit(postReturnDestination, { replace: true });
         return;
       }
 
       if (!pendingOrderIdRaw || !isPaymongoSuccess) {
-        router.visit('/my-orders', { replace: true });
+        router.visit(postReturnDestination, { replace: true });
         return;
       }
 
@@ -64,7 +81,7 @@ export default function OrderSuccess() {
         let data: any = null;
 
         for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-          const res = await fetch(`/api/orders/${pendingOrderIdRaw}/verify-payment`, {
+          const res = await fetch(`/api/orders/${pendingOrderIdRaw}/verify-payment-return`, {
             method: 'POST',
             credentials: 'include',
             headers: {
@@ -72,6 +89,10 @@ export default function OrderSuccess() {
               'Accept': 'application/json',
               'X-CSRF-TOKEN': csrfToken || '',
             },
+            body: JSON.stringify({
+              return_ts: returnTs,
+              return_sig: returnSig,
+            }),
           });
           data = await res.json();
 
@@ -90,7 +111,7 @@ export default function OrderSuccess() {
 
         if (data?.success && data?.payment_verified) {
           sessionStorage.removeItem('pendingOrderId');
-          router.visit('/my-orders', { replace: true });
+          router.visit(postReturnDestination, { replace: true });
           return;
         } else {
           try {
@@ -99,12 +120,12 @@ export default function OrderSuccess() {
             console.warn('Failed to auto-cancel unpaid order after verification:', error);
           }
           sessionStorage.removeItem('pendingOrderId');
-          router.visit('/my-orders', { replace: true });
+          router.visit(postReturnDestination, { replace: true });
           return;
         }
       } catch (e) {
         sessionStorage.removeItem('pendingOrderId');
-        router.visit('/my-orders', { replace: true });
+        router.visit(postReturnDestination, { replace: true });
         return;
       } finally {
         setLoading(false);

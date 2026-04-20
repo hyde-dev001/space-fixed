@@ -183,10 +183,19 @@ type RetailRefundDraft = {
 
 const OPEN_REFUND_STATUSES = ["requested", "approved", "processing"];
 const COMMITTED_REFUND_STATUSES = ["approved", "processing", "succeeded"];
+const NON_BLOCKING_REFUND_STATUSES = ["rejected", "failed", "cancelled", "canceled"];
+
+const isBlockingRefundStatus = (status: unknown): boolean => {
+	const normalized = String(status ?? "").trim().toLowerCase();
+	if (normalized === "") {
+		return false;
+	}
+
+	return !NON_BLOCKING_REFUND_STATUSES.includes(normalized);
+};
 
 const hasOpenOrCompletedRefund = (receipt: ReceiptSnapshot): boolean => {
-	const status = String(receipt.latestRefund?.status || "").toLowerCase();
-	return [...OPEN_REFUND_STATUSES, "succeeded"].includes(status);
+	return isBlockingRefundStatus(receipt.latestRefund?.status);
 };
 
 const hasRefundLifecycleRecord = (receipt: ReceiptSnapshot): boolean => {
@@ -195,8 +204,7 @@ const hasRefundLifecycleRecord = (receipt: ReceiptSnapshot): boolean => {
 	}
 
 	return receipt.refundEntries.some((entry) => {
-		const status = String(entry.status || "").toLowerCase();
-		return OPEN_REFUND_STATUSES.includes(status) || COMMITTED_REFUND_STATUSES.includes(status);
+		return isBlockingRefundStatus(entry.status);
 	});
 };
 

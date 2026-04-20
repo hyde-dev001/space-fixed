@@ -82,6 +82,38 @@ Route::get('/payment', function () {
 Route::get('/order-success', function () {
     return Inertia::render('UserSide/Orders/OrderSuccess');
 })->name('order-success');
+Route::get('/payment-return/order', function (Request $request) {
+    $query = array_filter([
+        'paymongo_success' => $request->query('paymongo_success'),
+        'paymongo_failed' => $request->query('paymongo_failed'),
+        'pending_order_id' => $request->query('pending_order_id'),
+        'return_ts' => $request->query('return_ts'),
+        'return_sig' => $request->query('return_sig'),
+    ], static fn ($value) => $value !== null && $value !== '');
+
+    $target = '/order-success';
+    if (!empty($query)) {
+        $target .= '?' . http_build_query($query);
+    }
+
+    return redirect($target);
+})->name('payment-return.order');
+Route::get('/payment-return/repair', function (Request $request) {
+    $query = array_filter([
+        'paymongo_success' => $request->query('paymongo_success'),
+        'paymongo_failed' => $request->query('paymongo_failed'),
+        'pending_repair_id' => $request->query('pending_repair_id'),
+        'return_ts' => $request->query('return_ts'),
+        'return_sig' => $request->query('return_sig'),
+    ], static fn ($value) => $value !== null && $value !== '');
+
+    $target = '/my-repairs';
+    if (!empty($query)) {
+        $target .= '?' . http_build_query($query);
+    }
+
+    return redirect($target);
+})->name('payment-return.repair');
 Route::get('/payment-failed', function () {
     return Inertia::render('UserSide/Orders/PaymentFailed');
 })->name('payment-failed');
@@ -1168,6 +1200,9 @@ Route::prefix('api/repair-requests')->group(function () {
         Route::post('{requestId}/status', [\App\Http\Controllers\Api\RepairRequestController::class, 'updateStatus']);
     });
 });
+
+Route::post('/api/customer/repairs/{id}/verify-payment-return', [\App\Http\Controllers\Api\RepairRequestController::class, 'verifyPayment'])
+    ->middleware('throttle:20,1');
 
 // Customer Repair Management API Routes (Phase 2)
 Route::middleware('auth:user')->prefix('api/customer/repairs')->group(function () {

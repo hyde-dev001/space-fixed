@@ -31,6 +31,7 @@ use App\Services\PolicyAcceptanceService;
 class RepairRequestController extends Controller
 {
     private const REPAIR_VAT_RATE_PERCENT = 12.0;
+    private const PAYMENT_RETURN_TOKEN_TTL_SECONDS = 86400;
 
     public function __construct(
         private ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService
@@ -2011,8 +2012,20 @@ class RepairRequestController extends Controller
             }
 
             $description = 'SoleSpace Repair #' . ($repair->request_id ?: $repair->id) . ' (' . $phase . ')';
-            $successUrl = url('/my-repairs') . '?paymongo_success=1';
-            $failedUrl = url('/my-repairs') . '?paymongo_failed=1';
+            $returnTimestamp = now()->timestamp;
+            $returnSignature = $this->buildPaymentReturnSignature('repair', (int) $repair->id, $returnTimestamp);
+            $successUrl = route('payment-return.repair', [
+                'paymongo_success' => 1,
+                'pending_repair_id' => $repair->id,
+                'return_ts' => $returnTimestamp,
+                'return_sig' => $returnSignature,
+            ]);
+            $failedUrl = route('payment-return.repair', [
+                'paymongo_failed' => 1,
+                'pending_repair_id' => $repair->id,
+                'return_ts' => $returnTimestamp,
+                'return_sig' => $returnSignature,
+            ]);
 
             $paymentMethodTypes = ['card', 'gcash', 'paymaya', 'grab_pay'];
 
@@ -2386,13 +2399,19 @@ class RepairRequestController extends Controller
         $settlementService = app(PaymentSettlementService::class);
 
         $user = Auth::guard('user')->user();
-        if (!$user) {
+        $hasValidPublicReturnSignature = $this->hasValidPublicPaymentReturnSignature($request, 'repair', (int) $id);
+
+        if (!$user && !$hasValidPublicReturnSignature) {
             return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
         }
 
-        $repair = RepairRequest::where('id', $id)
-            ->forCustomer($user->id)
-            ->first();
+        $repairQuery = RepairRequest::where('id', $id);
+
+        if ($user) {
+            $repairQuery->forCustomer($user->id);
+        }
+
+        $repair = $repairQuery->first();
 
         if (!$repair) {
             return response()->json(['success' => false, 'message' => 'Repair request not found'], 404);
@@ -2572,6 +2591,37 @@ class RepairRequestController extends Controller
             'payment_verified' => true,
             'data'             => $repair->fresh(['services', 'shopOwner', 'repairer']),
         ]);
+    }
+
+    private function buildPaymentReturnSignature(string $scope, int $resourceId, int $timestamp): string
+    {
+        return hash_hmac(
+            'sha256',
+            sprintf('%s:return:%d:%d', trim($scope), $resourceId, $timestamp),
+            (string) config('app.key')
+        );
+    }
+
+    private function hasValidPublicPaymentReturnSignature(Request $request, string $scope, int $resourceId): bool
+    {
+        $timestamp = (int) $request->input('return_ts', 0);
+        $signature = trim((string) $request->input('return_sig', ''));
+
+        if ($timestamp <= 0 || $signature === '') {
+            return false;
+        }
+
+        $now = now()->timestamp;
+        if ($timestamp > ($now + 300)) {
+            return false;
+        }
+
+        if (($now - $timestamp) > self::PAYMENT_RETURN_TOKEN_TTL_SECONDS) {
+            return false;
+        }
+
+        $expected = $this->buildPaymentReturnSignature($scope, $resourceId, $timestamp);
+        return hash_equals($expected, $signature);
     }
 
     /**
