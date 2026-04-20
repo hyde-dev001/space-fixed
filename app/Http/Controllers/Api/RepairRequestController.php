@@ -2014,13 +2014,13 @@ class RepairRequestController extends Controller
             $description = 'SoleSpace Repair #' . ($repair->request_id ?: $repair->id) . ' (' . $phase . ')';
             $returnTimestamp = now()->timestamp;
             $returnSignature = $this->buildPaymentReturnSignature('repair', (int) $repair->id, $returnTimestamp);
-            $successUrl = route('payment-return.repair', [
+            $successUrl = url('/my-repairs') . '?' . http_build_query([
                 'paymongo_success' => 1,
                 'pending_repair_id' => $repair->id,
                 'return_ts' => $returnTimestamp,
                 'return_sig' => $returnSignature,
             ]);
-            $failedUrl = route('payment-return.repair', [
+            $failedUrl = url('/my-repairs') . '?' . http_build_query([
                 'paymongo_failed' => 1,
                 'pending_repair_id' => $repair->id,
                 'return_ts' => $returnTimestamp,

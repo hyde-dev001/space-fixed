@@ -1748,13 +1748,13 @@ class CheckoutController extends Controller
             $description = 'SoleSpace Order #' . $order->order_number;
             $returnTimestamp = now()->timestamp;
             $returnSignature = $this->buildPaymentReturnSignature('order', (int) $order->id, $returnTimestamp);
-            $successUrl = route('payment-return.order', [
+            $successUrl = url('/order-success') . '?' . http_build_query([
                 'paymongo_success' => 1,
                 'pending_order_id' => $order->id,
                 'return_ts' => $returnTimestamp,
                 'return_sig' => $returnSignature,
             ]);
-            $failedUrl = route('payment-return.order', [
+            $failedUrl = url('/order-success') . '?' . http_build_query([
                 'paymongo_failed' => 1,
                 'pending_order_id' => $order->id,
                 'return_ts' => $returnTimestamp,

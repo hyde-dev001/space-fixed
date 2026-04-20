@@ -320,7 +320,7 @@ export default function Register() {
     const { name, checked } = e.target;
     if (name === 'termsAccepted' && checked) {
       const result = await Swal.fire({
-        title: 'TERMS OF SERVICE',
+        title: 'TERMS AND CONDITIONS',
         html: `
           <div class="terms-modal">
             <div class="terms-modal__icon" aria-hidden="true">
@@ -338,7 +338,7 @@ export default function Register() {
             <div class="terms-modal__scroll">
               <h3>1. Acceptance of Terms</h3>
               <p>
-                By continuing registration, you confirm that you have read, understood, and agreed to these Terms of Service and our account verification requirements.
+                By continuing registration, you confirm that you have read, understood, and agreed to these Terms and Conditions and our account verification requirements.
               </p>
 
               <h3>2. Information We Request</h3>
