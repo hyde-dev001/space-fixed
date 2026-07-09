@@ -286,8 +286,10 @@ class UserAccessControlController extends Controller
             $allowedPrimaryRoles = [
                 'MANAGER', 'FINANCE', 'HR', 'CRM', 'STAFF', 'REPAIRER', 'CASHIER',
                 'INVENTORY', 'INVENTORY_MANAGER', 'PROCUREMENT', 'PROCUREMENT_MANAGER',
+                'LOGISTICS_DISPATCHER', 'LOGISTICS_RIDER',
                 'Manager', 'Finance', 'HR', 'CRM', 'Staff', 'Repairer', 'Cashier',
                 'Inventory', 'Inventory Manager', 'Procurement', 'Procurement Manager',
+                'Logistics Dispatcher', 'Logistics Rider',
             ];
 
             $validated = $request->validate([
@@ -310,7 +312,7 @@ class UserAccessControlController extends Controller
                 'phone.regex' => 'Phone number must be exactly 11 digits',
                 'phone.unique' => 'This phone number is already registered',
                 'salary.numeric' => 'Salary must be a valid number',
-                'role.in' => 'Role must be Manager, Finance, HR, CRM, Staff, Repairer, Cashier, Inventory, or Procurement',
+                'role.in' => 'Role must be Manager, Finance, HR, CRM, Staff, Repairer, Cashier, Inventory, Procurement, or Logistics',
             ]);
 
             // Normalize role to uppercase snake case to match legacy enum style.
@@ -323,7 +325,7 @@ class UserAccessControlController extends Controller
                 'INVENTORY', 'INVENTORY_MANAGER' => 'INVENTORY',
                 // Procurement roles are represented via Spatie role/permissions.
                 // Legacy users.role stays enum-compatible across old schemas.
-                'PROCUREMENT', 'PROCUREMENT_MANAGER' => 'STAFF',
+                'PROCUREMENT', 'PROCUREMENT_MANAGER', 'LOGISTICS_DISPATCHER', 'LOGISTICS_RIDER' => 'STAFF',
                 default => $validated['role'],
             };
 
@@ -413,6 +415,8 @@ class UserAccessControlController extends Controller
                     'INVENTORY_MANAGER' => 'Inventory Manager',
                     'PROCUREMENT' => 'Procurement Manager',
                     'PROCUREMENT_MANAGER' => 'Procurement Manager',
+                    'LOGISTICS_DISPATCHER' => 'Logistics Dispatcher',
+                    'LOGISTICS_RIDER' => 'Logistics Rider',
                     'STAFF' => 'Staff',
                 ];
                 

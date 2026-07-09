@@ -2892,6 +2892,8 @@ export const EmployeeManagement: React.FC<{
                             {isRepairCapableBusiness && <option value="Repairer">Repairer</option>}
                             <option value="Inventory">Inventory</option>
                             <option value="Procurement">Procurement</option>
+                            <option value="Logistics Dispatcher">Logistics Dispatcher</option>
+                            <option value="Logistics Rider">Logistics Rider</option>
                             {isRetailCapableBusiness && <option value="Staff">Staff</option>}
                           </select>
                         </div>

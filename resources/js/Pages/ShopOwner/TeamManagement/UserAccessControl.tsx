@@ -336,6 +336,8 @@ const UserAccessControl: React.FC = () => {
     Repairer: 'Repairer',
     Inventory: 'Inventory',
     Procurement: 'Procurement',
+    'Logistics Dispatcher': 'Logistics Dispatcher',
+    'Logistics Rider': 'Logistics Rider',
     'Inventory Manager': 'Inventory',
     'Procurement Manager': 'Procurement',
     Staff: 'Staff',
@@ -343,6 +345,8 @@ const UserAccessControl: React.FC = () => {
     FINANCE: 'Finance',
     INVENTORY: 'Inventory',
     PROCUREMENT: 'Procurement',
+    LOGISTICS_DISPATCHER: 'Logistics Dispatcher',
+    LOGISTICS_RIDER: 'Logistics Rider',
     REPAIRER: 'Repairer',
     INVENTORY_MANAGER: 'Inventory',
     PROCUREMENT_MANAGER: 'Procurement',
@@ -365,9 +369,13 @@ const UserAccessControl: React.FC = () => {
       REPAIRER: 'Repairer',
       INVENTORY: 'Inventory',
       PROCUREMENT: 'Procurement',
+      LOGISTICS_DISPATCHER: 'Logistics Dispatcher',
+      LOGISTICS_RIDER: 'Logistics Rider',
       STAFF: 'Staff',
       'INVENTORY MANAGER': 'Inventory',
       'PROCUREMENT MANAGER': 'Procurement',
+      'LOGISTICS DISPATCHER': 'Logistics Dispatcher',
+      'LOGISTICS RIDER': 'Logistics Rider',
     };
 
     return aliases[normalizedKey] || role.trim();
@@ -702,6 +710,8 @@ const UserAccessControl: React.FC = () => {
       'Repairer': 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 text-indigo-800 dark:text-indigo-300',
       'Inventory': 'bg-teal-50 dark:bg-teal-900/20 border-teal-200 dark:border-teal-800 text-teal-800 dark:text-teal-300',
       'Procurement': 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300',
+      'Logistics Dispatcher': 'bg-sky-50 dark:bg-sky-900/20 border-sky-200 dark:border-sky-800 text-sky-800 dark:text-sky-300',
+      'Logistics Rider': 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300',
       'Inventory Manager': 'bg-teal-50 dark:bg-teal-900/20 border-teal-200 dark:border-teal-800 text-teal-800 dark:text-teal-300',
       'Procurement Manager': 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300',
       'Staff': 'bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-800 text-gray-800 dark:text-gray-300',
@@ -782,6 +792,8 @@ const UserAccessControl: React.FC = () => {
       { value: 'Repairer', label: 'Repairer' },
       { value: 'Inventory', label: 'Inventory' },
       { value: 'Procurement', label: 'Procurement' },
+      { value: 'Logistics Dispatcher', label: 'Logistics Dispatcher' },
+      { value: 'Logistics Rider', label: 'Logistics Rider' },
       { value: 'Staff', label: 'Staff' },
     ];
 

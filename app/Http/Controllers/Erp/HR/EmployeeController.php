@@ -32,7 +32,7 @@ class EmployeeController extends Controller
         return match ($normalizedRole) {
             'CASHIER' => 'STAFF',
             'INVENTORY', 'INVENTORY_MANAGER' => 'INVENTORY',
-            'PROCUREMENT', 'PROCUREMENT_MANAGER' => 'STAFF',
+            'PROCUREMENT', 'PROCUREMENT_MANAGER', 'LOGISTICS_DISPATCHER', 'LOGISTICS_RIDER' => 'STAFF',
             default => $normalizedRole,
         };
     }
@@ -177,6 +177,8 @@ class EmployeeController extends Controller
             'INVENTORY_MANAGER' => 'Inventory Manager',
             'PROCUREMENT' => 'Procurement Manager',
             'PROCUREMENT_MANAGER' => 'Procurement Manager',
+            'LOGISTICS_DISPATCHER' => 'Logistics Dispatcher',
+            'LOGISTICS_RIDER' => 'Logistics Rider',
             'STAFF' => 'Staff',
         ];
 
