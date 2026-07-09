@@ -178,6 +178,9 @@ Route::get('/notifications', function () {
 Route::get('/notifications/settings', function () {
     return Inertia::render('Notifications/CustomerPreferences');
 })->middleware('auth:user')->name('notifications.settings');
+Route::get('/tracking/shipments/{shipment}', [\App\Http\Controllers\Logistics\CustomerTrackingController::class, 'show'])
+    ->middleware('auth:user')
+    ->name('tracking.shipments.show');
 
 Route::get('/shop-profile/{id}', [LandingPageController::class, 'shopProfile'])->name('shop-profile');
 Route::get('/shop-profile/{id}/virtual-showroom', [LandingPageController::class, 'virtualShowroom'])
@@ -419,6 +422,20 @@ Route::post('/api/cart/remove', [CartController::class, 'remove'])->middleware('
 Route::post('/api/cart/update', [CartController::class, 'update'])->middleware('auth:user')->name('cart.update');
 Route::post('/api/cart/clear', [CartController::class, 'clear'])->middleware('auth:user')->name('cart.clear');
 Route::post('/api/cart/sync', [CartController::class, 'sync'])->middleware('auth:user')->name('cart.sync');
+
+Route::prefix('api/logistics')->middleware(['auth:user,shop_owner'])->group(function () {
+    Route::get('/shipments', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'index']);
+    Route::get('/shipments/{shipment}', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'show']);
+    Route::post('/legs/{leg}/assign', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'assign']);
+    Route::post('/legs/{leg}/proof', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'proof']);
+    Route::post('/legs/{leg}/picked-up', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'pickedUp']);
+    Route::post('/legs/{leg}/in-transit', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'inTransit']);
+    Route::post('/legs/{leg}/delivered', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'delivered']);
+    Route::post('/legs/{leg}/attempts', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'attempts']);
+    Route::get('/riders', [\App\Http\Controllers\Api\Logistics\RiderProfileController::class, 'index']);
+    Route::post('/riders', [\App\Http\Controllers\Api\Logistics\RiderProfileController::class, 'store']);
+    Route::patch('/riders/{rider}', [\App\Http\Controllers\Api\Logistics\RiderProfileController::class, 'update']);
+});
 
 // Customer Conversation Routes - Customer-side chat with shops
 Route::prefix('api/customer/conversations')->middleware(['auth:user', 'customer.account'])->group(function () {
@@ -686,6 +703,12 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
         $shopOwner = Auth::guard('shop_owner')->user();
         return Inertia::render('ShopOwner/Dashboard', ['shop_owner' => $shopOwner]);
     })->name('dashboard');
+
+    Route::prefix('logistics')->name('logistics.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Logistics\ShopOwnerLogisticsController::class, 'dashboard'])->name('dashboard');
+        Route::get('/shipments', [\App\Http\Controllers\Logistics\ShopOwnerLogisticsController::class, 'shipments'])->name('shipments');
+        Route::get('/riders', [\App\Http\Controllers\Logistics\ShopOwnerLogisticsController::class, 'riders'])->name('riders');
+    });
 
     Route::get('/point-of-sale', function () {
         return Inertia::render('ShopOwner/Repairs/service management/POS');
@@ -1664,6 +1687,12 @@ Route::get('/erp/notifications', function () {
 Route::get('/erp/notifications/settings', function () {
     return Inertia::render('Notifications/ERPPreferences');
 })->middleware(['auth:user', 'check.suspension'])->name('erp.notifications.settings');
+
+Route::prefix('erp/logistics')->name('erp.logistics.')->middleware(['auth:user', 'check.suspension', 'permission:access-logistics-dashboard'])->group(function () {
+    Route::get('/', [\App\Http\Controllers\Logistics\ErpLogisticsController::class, 'dashboard'])->name('dashboard');
+    Route::get('/shipments', [\App\Http\Controllers\Logistics\ErpLogisticsController::class, 'shipments'])->name('shipments');
+    Route::get('/riders', [\App\Http\Controllers\Logistics\ErpLogisticsController::class, 'riders'])->name('riders');
+});
 
 // Time In/Out - First thing staff see after login
 Route::middleware(['auth:user', 'check.suspension'])->get('/erp/time-in', function () {

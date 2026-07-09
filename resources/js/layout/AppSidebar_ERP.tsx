@@ -572,6 +572,18 @@ const staffItems: NavItem[] = [
     name: "Inventory Overview",
     route: "erp.staff.inventory-overview",
   },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 7h11v10H3z"></path>
+        <path d="M14 10h4l3 3v4h-7z"></path>
+        <circle cx="7" cy="19" r="2"></circle>
+        <circle cx="17" cy="19" r="2"></circle>
+      </svg>
+    ),
+    name: "Logistics",
+    route: "erp.logistics.dashboard",
+  },
 ];
 
 const repairItems: NavItem[] = [
@@ -792,6 +804,9 @@ const AppSidebar_ERP: React.FC = () => {
     "erp.staff.products": "/erp/staff/products",
     "erp.staff.shoe-pricing": "/erp/staff/shoe-pricing",
     "erp.staff.inventory-overview": "/erp/staff/inventory-overview",
+    "erp.logistics.dashboard": "/erp/logistics",
+    "erp.logistics.shipments": "/erp/logistics/shipments",
+    "erp.logistics.riders": "/erp/logistics/riders",
     "erp.staff.stocks-overview": "/erp/staff/stocks-overview",
     "erp.staff.request-material": "/erp/staff/request-material",
     "erp.staff.attendance": "/erp/staff/attendance",
@@ -865,6 +880,9 @@ const AppSidebar_ERP: React.FC = () => {
     "erp.staff.products": "/erp/staff/products",
     "erp.staff.shoe-pricing": "/erp/staff/shoe-pricing",
     "erp.staff.inventory-overview": "/erp/staff/inventory-overview",
+    "erp.logistics.dashboard": "/erp/logistics",
+    "erp.logistics.shipments": "/erp/logistics/shipments",
+    "erp.logistics.riders": "/erp/logistics/riders",
     "erp.staff.stocks-overview": "/erp/staff/stocks-overview",
     "erp.staff.request-material": "/erp/staff/request-material",
     "erp.staff.attendance": "/erp/staff/attendance",
@@ -1487,6 +1505,10 @@ const AppSidebar_ERP: React.FC = () => {
       // Inventory Overview - check if user has Staff role or permission
       if (item.route === "erp.staff.inventory-overview") {
         return permissions.includes('access-staff-dashboard') || permissions.includes('access-product-management') || permissions.includes('access-product-upload-staff');
+      }
+
+      if (item.route === "erp.logistics.dashboard") {
+        return permissions.includes('access-logistics-dashboard');
       }
       
       // Hide other items by default (no permissions)

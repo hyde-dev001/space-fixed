@@ -909,6 +909,11 @@ class RepairerWorkflowTest extends TestCase
         $this->assertFalse((bool) $repairRequest->pickup_enabled);
         $this->assertSame('SHIP-12345', $repairRequest->tracking_number);
         $this->assertSame('Lalamove', $repairRequest->carrier_company);
+        $this->assertDatabaseHas('shipments', [
+            'source_type' => 'repair_request',
+            'source_id' => $repairRequest->id,
+            'purpose' => 'repair_return',
+        ]);
 
         $confirmBeforeActivation = $this->actingAs($customer, 'user')->postJson(
             "/api/customer/repairs/{$repairRequest->id}/confirm-pickup"

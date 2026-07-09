@@ -435,6 +435,10 @@ class OrderController extends Controller
             );
         }
 
+        if ($oldStatusValue !== 'shipped' && (string) $request->status === 'shipped') {
+            app(\App\Services\Logistics\SourceShipmentService::class)->ensureRetailOrderShipment($order->fresh());
+        }
+
         $finalStatus = $order->fresh()->status;
         $finalStatusValue = $finalStatus instanceof OrderStatus ? $finalStatus->value : (string) $finalStatus;
 
@@ -697,4 +701,3 @@ class OrderController extends Controller
     }
 
 }
-

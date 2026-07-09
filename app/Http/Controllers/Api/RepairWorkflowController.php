@@ -26,6 +26,7 @@ use Illuminate\Support\Facades\DB;
 use App\Services\NotificationService;
 use App\Services\PaymentSettlementService;
 use App\Services\ShopOwnerApprovalPolicyService;
+use App\Services\Logistics\SourceShipmentService;
 
 class RepairWorkflowController extends Controller
 {
@@ -45,7 +46,8 @@ class RepairWorkflowController extends Controller
     public function __construct(
         NotificationService $notificationService,
         private ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService,
-        private PaymentSettlementService $paymentSettlementService
+        private PaymentSettlementService $paymentSettlementService,
+        private SourceShipmentService $sourceShipmentService
     )
     {
         $this->notificationService = $notificationService;
@@ -3221,6 +3223,8 @@ class RepairWorkflowController extends Controller
                 'pickup_enabled_at' => null,
                 'pickup_enabled_by' => null,
             ]));
+
+            $this->sourceShipmentService->ensureRepairReturnShipment($repairRequest->fresh(['shopOwner']));
 
             $this->notifyCustomerRepairLifecycle($repairRequest, 'shipped');
 

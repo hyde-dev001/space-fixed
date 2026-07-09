@@ -548,6 +548,11 @@ class OrderRefundService
         ];
     }
 
+    public function ensureReturnShipment(OrderRefund $refund): \App\Models\Logistics\Shipment
+    {
+        return app(\App\Services\Logistics\SourceShipmentService::class)->ensureRefundReturnShipment($refund);
+    }
+
     public function arrangeStaffReturnPickup(OrderRefund $refund, array $pickupData, ?int $staffId = null): array
     {
         if ((string) ($refund->shop_owner_status ?? 'pending') !== 'approved' || (string) ($refund->finance_status ?? 'pending') !== 'approved') {

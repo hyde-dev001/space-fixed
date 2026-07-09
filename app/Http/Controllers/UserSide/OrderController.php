@@ -7,6 +7,7 @@ use App\Models\InventoryColorVariant;
 use App\Models\InventoryItem;
 use App\Models\InventorySize;
 use App\Models\Notification;
+use App\Models\Logistics\Shipment;
 use App\Models\Order;
 use App\Models\OrderRefund;
 use App\Models\ProductReview;
@@ -98,8 +99,18 @@ class OrderController extends Controller
             ->mapWithKeys(fn ($orderId) => [(int) $orderId => true])
             ->all();
 
+        $logisticsShipmentLookup = Shipment::query()
+            ->where('source_type', 'order')
+            ->where('purpose', 'retail_delivery')
+            ->whereIn('source_id', $orderCollection->pluck('id')->all())
+            ->orderByDesc('id')
+            ->get(['id', 'source_id'])
+            ->unique('source_id')
+            ->mapWithKeys(fn (Shipment $shipment) => [(int) $shipment->source_id => (int) $shipment->id])
+            ->all();
+
         $orders = $orderCollection
-            ->map(function (Order $order) use ($reviewedOrderLookup) {
+            ->map(function (Order $order) use ($reviewedOrderLookup, $logisticsShipmentLookup) {
                 $this->reconcilePendingOrderPaymentWithGateway($order);
                 $order->refresh();
 
@@ -221,6 +232,7 @@ class OrderController extends Controller
                     'carrier_company' => $order->carrier_company,
                     'carrier_name' => $order->carrier_name,
                     'tracking_link' => $order->tracking_link,
+                    'logistics_shipment_id' => $logisticsShipmentLookup[(int) $order->id] ?? null,
                     'eta' => $order->eta,
                     'pickup_enabled' => $order->pickup_enabled ?? false,
                     'review_submitted' => isset($reviewedOrderLookup[(int) $order->id]),
@@ -560,6 +572,20 @@ class OrderController extends Controller
                     'success' => false,
                     'message' => 'Only delivered or completed orders can request a refund.',
                 ], 422);
+            }
+
+            if (!$order->isCancellationRefundWindowOpen()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Refund deadline has passed for this order.',
+                    'deadline_at' => $order->cancellation_refund_deadline_at?->toIso8601String(),
+                ], 422);
+            }
+
+            if (Str::slug((string) $validated['reason'], '_') === 'other' && trim((string) ($validated['other_reason_note'] ?? '')) === '') {
+                throw ValidationException::withMessages([
+                    'other_reason_note' => ['Please provide more details for the other refund reason.'],
+                ]);
             }
 
             $paymentMethod = strtolower((string) ($order->payment_method ?? ''));
@@ -1280,6 +1306,7 @@ class OrderController extends Controller
             'order_item_id' => 'nullable|integer',
             'reason' => 'nullable|string|max:500',
             'note' => 'nullable|string|max:1000',
+            'other_reason_note' => 'nullable|string|max:1000',
         ]);
 
         $user = Auth::guard('user')->user();
@@ -1323,8 +1350,27 @@ class OrderController extends Controller
                 \Illuminate\Support\Facades\DB::rollBack();
                 return response()->json([
                     'success' => false,
-                    'message' => 'Only pending orders can be cancelled.',
+                    'message' => 'You cannot cancel order once it is processed.',
                 ], 400);
+            }
+
+            if (Str::slug((string) ($validated['reason'] ?? ''), '_') === 'other' && trim((string) ($validated['other_reason_note'] ?? '')) === '') {
+                \Illuminate\Support\Facades\DB::rollBack();
+                return response()->json([
+                    'message' => 'Please provide more details for the other cancellation reason.',
+                    'errors' => [
+                        'other_reason_note' => ['Please provide more details for the other cancellation reason.'],
+                    ],
+                ], 422);
+            }
+
+            if (!$order->isCancellationRefundWindowOpen()) {
+                \Illuminate\Support\Facades\DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cancellation deadline has passed for this order.',
+                    'deadline_at' => $order->cancellation_refund_deadline_at?->toIso8601String(),
+                ], 422);
             }
 
             $paymentMethod = strtolower((string) ($order->payment_method ?? ''));
@@ -1418,6 +1464,7 @@ class OrderController extends Controller
             }
 
             $order->status = OrderStatus::CANCELLED;
+            $order->cancellation_other_reason_note = trim((string) ($validated['other_reason_note'] ?? '')) ?: null;
             $order->save();
 
             \Illuminate\Support\Facades\DB::commit();

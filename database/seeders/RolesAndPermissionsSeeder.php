@@ -99,6 +99,12 @@ class RolesAndPermissionsSeeder extends Seeder
             // ===== RBAC & ADMIN MANAGEMENT =====
             'manage-employee-permissions',
             'access-unified-pos',
+            'access-logistics-dashboard',
+            'view-logistics-shipments',
+            'assign-logistics-deliveries',
+            'manage-logistics-riders',
+            'update-logistics-status',
+            'record-logistics-proof',
 
             // ===== COMMON/GLOBAL =====
             'access-global-search',
@@ -278,6 +284,30 @@ class RolesAndPermissionsSeeder extends Seeder
         ]);
         $this->command->info('✓ Cashier role: ' . $cashier->permissions->count() . ' permissions (Unified POS access)');
 
+        $logisticsDispatcher = Role::firstOrCreate(['name' => 'Logistics Dispatcher', 'guard_name' => 'user']);
+        $logisticsDispatcher->syncPermissions([
+            'access-logistics-dashboard',
+            'view-logistics-shipments',
+            'assign-logistics-deliveries',
+            'manage-logistics-riders',
+            'update-logistics-status',
+            'record-logistics-proof',
+            'access-global-search',
+            'access-notification-center',
+            'access-profile',
+        ]);
+
+        $logisticsRider = Role::firstOrCreate(['name' => 'Logistics Rider', 'guard_name' => 'user']);
+        $logisticsRider->syncPermissions([
+            'view-logistics-shipments',
+            'update-logistics-status',
+            'record-logistics-proof',
+            'access-notification-center',
+            'access-profile',
+        ]);
+
+        $this->seedShippingMethods();
+
         // ===== SHOP OWNER GUARD =====
         
         $this->command->info('Creating Shop Owner role...');
@@ -312,5 +342,23 @@ class RolesAndPermissionsSeeder extends Seeder
         $this->command->info('');
         $this->command->info('💡 HR/Shop Owner can grant additional permissions on top of role!');
         $this->command->info('========================================');
+    }
+
+    private function seedShippingMethods(): void
+    {
+        $methods = [
+            ['code' => 'shop_owned_delivery', 'name' => 'Shop Owned Delivery', 'carrier_type' => 'internal', 'requires_assignment' => true, 'requires_tracking' => false, 'requires_pickup_proof' => true, 'requires_delivery_proof' => true],
+            ['code' => 'third_party_courier', 'name' => 'Third Party Courier', 'carrier_type' => 'external', 'requires_assignment' => false, 'requires_tracking' => true, 'requires_pickup_proof' => false, 'requires_delivery_proof' => true],
+            ['code' => 'customer_pickup', 'name' => 'Customer Pickup', 'carrier_type' => 'customer_controlled', 'requires_assignment' => false, 'requires_tracking' => false, 'requires_pickup_proof' => false, 'requires_delivery_proof' => true],
+            ['code' => 'customer_arranged_courier', 'name' => 'Customer Arranged Courier', 'carrier_type' => 'customer_controlled', 'requires_assignment' => false, 'requires_tracking' => true, 'requires_pickup_proof' => false, 'requires_delivery_proof' => true],
+            ['code' => 'walk_in_dropoff', 'name' => 'Walk-in Dropoff', 'carrier_type' => 'customer_controlled', 'requires_assignment' => false, 'requires_tracking' => false, 'requires_pickup_proof' => false, 'requires_delivery_proof' => true],
+        ];
+
+        foreach ($methods as $method) {
+            \App\Models\Logistics\ShippingMethod::firstOrCreate(
+                ['shop_owner_id' => null, 'code' => $method['code']],
+                [...$method, 'active' => true]
+            );
+        }
     }
 }

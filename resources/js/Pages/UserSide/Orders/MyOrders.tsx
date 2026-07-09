@@ -93,6 +93,7 @@ type Order = {
   carrier_company?: string;
   carrier_name?: string;
   tracking_link?: string;
+  logistics_shipment_id?: number | null;
   eta?: string;
   pickup_enabled?: boolean;
   refund_stage?: {
@@ -1917,6 +1918,14 @@ const MyOrders: React.FC = () => {
 
                       {/* Order Actions */}
                       <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-gray-200 pt-4 sm:mt-6 sm:pt-6 sm:gap-3">
+                        {order.logistics_shipment_id && (
+                          <Link
+                            href={`/tracking/shipments/${order.logistics_shipment_id}`}
+                            className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
+                          >
+                            Track Shipment
+                          </Link>
+                        )}
                         {order.status === 'pending' && (
                           <div className="w-full flex justify-end">
                             <button

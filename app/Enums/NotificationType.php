@@ -88,6 +88,15 @@ enum NotificationType: string
     case OPPORTUNITY_CREATED = 'opportunity_created';
     case CUSTOMER_SUPPORT_TICKET = 'customer_support_ticket';
 
+    // ==================== LOGISTICS NOTIFICATIONS ====================
+    case LOGISTICS_SHIPMENT_REQUESTED = 'logistics_shipment_requested';
+    case LOGISTICS_ASSIGNED = 'logistics_assigned';
+    case LOGISTICS_PICKUP_SCHEDULED = 'logistics_pickup_scheduled';
+    case LOGISTICS_IN_TRANSIT = 'logistics_in_transit';
+    case LOGISTICS_DELIVERY_FAILED = 'logistics_delivery_failed';
+    case LOGISTICS_PROOF_REQUIRED = 'logistics_proof_required';
+    case LOGISTICS_DELIVERED = 'logistics_delivered';
+
     /**
      * Get human-readable label for notification type
      */
@@ -177,6 +186,15 @@ enum NotificationType: string
             self::LEAD_UPDATED => 'Lead Updated',
             self::OPPORTUNITY_CREATED => 'Opportunity Created',
             self::CUSTOMER_SUPPORT_TICKET => 'Customer Support Ticket',
+
+            // Logistics notifications
+            self::LOGISTICS_SHIPMENT_REQUESTED => 'Shipment Requested',
+            self::LOGISTICS_ASSIGNED => 'Delivery Assigned',
+            self::LOGISTICS_PICKUP_SCHEDULED => 'Pickup Scheduled',
+            self::LOGISTICS_IN_TRANSIT => 'Delivery In Transit',
+            self::LOGISTICS_DELIVERY_FAILED => 'Delivery Attempt Failed',
+            self::LOGISTICS_PROOF_REQUIRED => 'Delivery Proof Required',
+            self::LOGISTICS_DELIVERED => 'Delivered',
         };
     }
 
@@ -216,6 +234,11 @@ enum NotificationType: string
             self::NEW_LEAD, self::LEAD_UPDATED, self::OPPORTUNITY_CREATED,
             self::CUSTOMER_SUPPORT_TICKET => 'crm',
 
+            self::LOGISTICS_SHIPMENT_REQUESTED, self::LOGISTICS_ASSIGNED,
+            self::LOGISTICS_PICKUP_SCHEDULED, self::LOGISTICS_IN_TRANSIT,
+            self::LOGISTICS_DELIVERY_FAILED, self::LOGISTICS_PROOF_REQUIRED,
+            self::LOGISTICS_DELIVERED => 'logistics',
+
             self::SHOP_REGISTRATION_PENDING, self::SHOP_REPORT_FILED, self::REVIEW_REPORTED => 'admin',
             
             default => 'general',
@@ -242,6 +265,9 @@ enum NotificationType: string
             self::REPAIR_COMPLETED,
             self::REPAIR_READY_PICKUP,
             self::REPAIR_STATUS_UPDATE,
+            self::LOGISTICS_IN_TRANSIT,
+            self::LOGISTICS_DELIVERY_FAILED,
+            self::LOGISTICS_DELIVERED,
             self::PAYMENT_RECEIVED,
             self::PAYMENT_FAILED,
             self::MESSAGE_RECEIVED,
