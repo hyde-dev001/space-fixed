@@ -58,7 +58,7 @@ class ShipmentLegService
     public function recordFailedAttempt(ShipmentLeg $leg, array $payload): DeliveryAttempt
     {
         $leg->loadMissing('shipment');
-        $this->assertTransitionAllowed($leg, ['picked_up', 'in_transit', 'delivery_attempted'], 'delivery attempted');
+        $this->assertTransitionAllowed($leg, ['assigned', 'picked_up', 'in_transit', 'delivery_attempted'], 'delivery attempted');
 
         if (empty($payload['reason_code'])) {
             throw ValidationException::withMessages(['reason_code' => 'Attempt reason is required.']);

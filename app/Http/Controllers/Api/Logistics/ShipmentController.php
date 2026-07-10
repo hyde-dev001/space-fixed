@@ -101,6 +101,35 @@ class ShipmentController extends Controller
         return response()->json(['leg' => $legs->markDelivered($leg)]);
     }
 
+    public function reportIssue(Request $request, ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse
+    {
+        $user = $this->authorizeAssignedRiderLeg($leg);
+        $payload = $request->validate([
+            'reason_code' => ['required', 'in:recipient_unavailable,wrong_or_incomplete_address,recipient_refused,vehicle_or_delivery_problem,other'],
+            'notes' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        return response()->json([
+            'attempt' => $legs->recordFailedAttempt($leg, [
+                ...$payload,
+                'attempt_type' => 'delivery',
+                'recorded_by_type' => $user::class,
+                'recorded_by_id' => $user->id,
+            ]),
+        ], 201);
+    }
+
+    public function cancel(ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse
+    {
+        $shop = $this->authorizedShop('assign-logistics-deliveries');
+        $leg->loadMissing('shipment');
+        $this->abortUnlessTenant($leg->shipment->shop_owner_id, $shop);
+
+        return response()->json([
+            'leg' => $legs->cancel($leg, Auth::guard('user')->user() ?? $shop),
+        ]);
+    }
+
     public function approveProof(HandoffProof $proof, ShipmentLegService $legs): JsonResponse
     {
         $shop = $this->authorizedShopForProofApproval();
@@ -211,5 +240,30 @@ class ShipmentController extends Controller
         if (!$isAssignedToUser) {
             abort(403);
         }
+    }
+
+    private function authorizeAssignedRiderLeg(ShipmentLeg $leg): User
+    {
+        $user = Auth::guard('user')->user();
+        if (!$user instanceof User || !$user->shopOwner || !$user->can('update-logistics-status')) {
+            abort(403);
+        }
+
+        $leg->loadMissing('shipment');
+        $this->abortUnlessTenant($leg->shipment->shop_owner_id, $user->shopOwner);
+
+        $isAssignedToUser = $leg->assignments()
+            ->whereIn('status', ['assigned', 'accepted'])
+            ->whereHas('riderProfile', function ($query) use ($user) {
+                $query->where('linked_type', User::class)
+                    ->where('linked_id', $user->id);
+            })
+            ->exists();
+
+        if (!$isAssignedToUser) {
+            abort(403);
+        }
+
+        return $user;
     }
 }
