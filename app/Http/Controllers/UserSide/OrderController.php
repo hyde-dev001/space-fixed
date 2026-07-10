@@ -109,8 +109,17 @@ class OrderController extends Controller
             ->mapWithKeys(fn (Shipment $shipment) => [(int) $shipment->source_id => (int) $shipment->id])
             ->all();
 
+        $refundShipmentLookup = Shipment::query()
+            ->where('source_type', 'order_refund')
+            ->whereIn('source_id', $orderCollection->flatMap(fn (Order $order) => $order->refunds->pluck('id'))->all())
+            ->orderByDesc('id')
+            ->get(['id', 'source_id'])
+            ->unique('source_id')
+            ->mapWithKeys(fn (Shipment $shipment) => [(int) $shipment->source_id => (int) $shipment->id])
+            ->all();
+
         $orders = $orderCollection
-            ->map(function (Order $order) use ($reviewedOrderLookup, $logisticsShipmentLookup) {
+            ->map(function (Order $order) use ($reviewedOrderLookup, $logisticsShipmentLookup, $refundShipmentLookup) {
                 $this->reconcilePendingOrderPaymentWithGateway($order);
                 $order->refresh();
 
@@ -240,6 +249,7 @@ class OrderController extends Controller
                     'refund_status_note' => $refundStatusNote,
                     'refund_stage' => $latestRefund ? [
                         'id' => $latestRefund->id,
+                        'logistics_shipment_id' => $refundShipmentLookup[(int) $latestRefund->id] ?? null,
                         'status' => (string) ($latestRefund->status ?? ''),
                         'shop_owner_status' => (string) ($latestRefund->shop_owner_status ?? 'pending'),
                         'finance_status' => (string) ($latestRefund->finance_status ?? 'pending'),

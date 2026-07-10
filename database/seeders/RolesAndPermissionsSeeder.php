@@ -299,6 +299,7 @@ class RolesAndPermissionsSeeder extends Seeder
 
         $logisticsRider = Role::firstOrCreate(['name' => 'Logistics Rider', 'guard_name' => 'user']);
         $logisticsRider->syncPermissions([
+            'access-logistics-dashboard',
             'view-logistics-shipments',
             'update-logistics-status',
             'record-logistics-proof',

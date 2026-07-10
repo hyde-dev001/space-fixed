@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\Logistics\SourceShipmentService;
 use App\Services\OrderRefundService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 class SourceModuleShipmentRequestTest extends TestCase
@@ -31,6 +32,42 @@ class SourceModuleShipmentRequestTest extends TestCase
         $this->actingAs($shop, 'shop_owner')
             ->patchJson("/api/shop-owner/orders/{$order->id}/status", [
                 'status' => 'shipped',
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('shipments', [
+            'source_type' => 'order',
+            'source_id' => $order->id,
+            'purpose' => 'retail_delivery',
+        ]);
+        $this->assertDatabaseHas('shipment_legs', [
+            'leg_type' => 'outbound',
+        ]);
+    }
+
+    public function test_staff_marking_order_shipped_requests_outbound_shipment(): void
+    {
+        $shop = ShopOwner::factory()->create([
+            'business_type' => 'retail',
+            'registration_type' => 'company',
+            'status' => 'approved',
+        ]);
+        $staff = User::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'role' => 'STAFF',
+        ]);
+        Permission::findOrCreate('access-staff-job-orders', 'user');
+        $staff->givePermissionTo('access-staff-job-orders');
+        $order = Order::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'status' => 'processing',
+        ]);
+
+        $this->actingAs($staff, 'user')
+            ->patchJson("/api/staff/orders/{$order->id}/status", [
+                'status' => 'shipped',
+                'carrier_company' => 'Shop-owned logistics',
+                'eta' => '1-2 business days',
             ])
             ->assertOk();
 

@@ -32,6 +32,17 @@ class AssignmentService
         }
 
         return DB::transaction(function () use ($leg, $rider, $actor) {
+            $leg = ShipmentLeg::query()->lockForUpdate()->findOrFail($leg->id);
+            $leg->loadMissing('shipment');
+
+            if (in_array($leg->status->value, ['delivered', 'cancelled'], true)) {
+                throw ValidationException::withMessages(['shipment_leg_id' => 'Completed or cancelled legs cannot be assigned.']);
+            }
+
+            if ($leg->assignments()->whereIn('status', ['assigned', 'accepted'])->exists()) {
+                throw ValidationException::withMessages(['shipment_leg_id' => 'This leg already has an active assignment.']);
+            }
+
             $assignment = DeliveryAssignment::create([
                 'shipment_leg_id' => $leg->id,
                 'assignment_type' => 'internal_rider',
@@ -43,11 +54,13 @@ class AssignmentService
             ]);
 
             $leg->update(['status' => 'assigned']);
+            $leg->shipment->update(['status' => 'active']);
 
             $this->events->record($leg->shipment, $leg, [
                 'event_type' => 'leg_assigned',
                 'visibility' => 'internal',
                 'message' => "Assigned to {$rider->name}.",
+                'metadata' => ['rider_profile_id' => $rider->id],
             ]);
 
             return $assignment;

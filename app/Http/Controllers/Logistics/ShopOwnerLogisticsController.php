@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Logistics;
 use App\Http\Controllers\Controller;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
+use App\Services\Logistics\RiderProfileSyncService;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -37,6 +38,7 @@ class ShopOwnerLogisticsController extends Controller
     public function riders(): Response
     {
         $shop = Auth::guard('shop_owner')->user() ?? abort(403);
+        app(RiderProfileSyncService::class)->syncShop((int) $shop->id);
 
         return Inertia::render('ShopOwner/Logistics/Riders', [
             'riders' => RiderProfile::query()

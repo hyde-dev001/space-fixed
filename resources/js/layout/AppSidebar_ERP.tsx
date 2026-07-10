@@ -582,7 +582,19 @@ const staffItems: NavItem[] = [
       </svg>
     ),
     name: "Logistics",
-    route: "erp.logistics.dashboard",
+    route: "erp.logistics.shipments",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+        <circle cx="9" cy="7" r="4"></circle>
+        <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
+        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+      </svg>
+    ),
+    name: "Riders",
+    route: "erp.logistics.riders",
   },
 ];
 
@@ -1302,6 +1314,8 @@ const AppSidebar_ERP: React.FC = () => {
       'access-product-upload-staff',
       'access-shoe-pricing',
       'access-staff-customers',
+      'access-logistics-dashboard',
+      'view-logistics-shipments',
     ];
 
     return staffPermissions.some((perm) => permissions.includes(perm));
@@ -1507,8 +1521,12 @@ const AppSidebar_ERP: React.FC = () => {
         return permissions.includes('access-staff-dashboard') || permissions.includes('access-product-management') || permissions.includes('access-product-upload-staff');
       }
 
-      if (item.route === "erp.logistics.dashboard") {
-        return permissions.includes('access-logistics-dashboard');
+      if (item.route === "erp.logistics.shipments") {
+        return permissions.includes('view-logistics-shipments') || permissions.includes('access-logistics-dashboard');
+      }
+
+      if (item.route === "erp.logistics.riders") {
+        return permissions.includes('manage-logistics-riders');
       }
       
       // Hide other items by default (no permissions)

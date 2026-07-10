@@ -4,6 +4,7 @@ namespace App\Services\Logistics;
 
 use App\Enums\NotificationType;
 use App\Models\Logistics\DeliveryEvent;
+use App\Models\Logistics\RiderProfile;
 use App\Models\Notification;
 use App\Models\Order;
 use App\Models\OrderRefund;
@@ -22,6 +23,14 @@ class LogisticsNotificationService
         $type = $this->notificationType($event->event_type);
         if (!$type) {
             return;
+        }
+
+        if ($event->event_type === 'shipment_requested') {
+            $this->notifyDispatchers($event, $type);
+        }
+
+        if ($event->event_type === 'leg_assigned') {
+            $this->notifyRider($event, $type);
         }
 
         $customer = $this->resolveCustomer($event);
@@ -47,7 +56,61 @@ class LogisticsNotificationService
     private function shouldNotify(DeliveryEvent $event): bool
     {
         return $event->visibility === 'customer'
-            || in_array($event->event_type, ['leg_assigned', 'delivery_attempt_failed', 'proof_required'], true);
+            || in_array($event->event_type, ['shipment_requested', 'leg_assigned', 'delivery_attempt_failed', 'proof_required'], true);
+    }
+
+    private function notifyDispatchers(DeliveryEvent $event, NotificationType $type): void
+    {
+        User::query()
+            ->where('shop_owner_id', $event->shipment->shop_owner_id)
+            ->whereHas('roles', fn ($query) => $query->where('name', 'Logistics Dispatcher'))
+            ->each(function (User $dispatcher) use ($event, $type) {
+                Notification::create([
+                    'user_id' => $dispatcher->id,
+                    'shop_id' => $event->shipment->shop_owner_id,
+                    'type' => $type->value,
+                    'priority' => 'high',
+                    'title' => $type->label(),
+                    'message' => 'A new shipment needs rider assignment.',
+                    'data' => $this->eventData($event),
+                    'action_url' => '/erp/logistics/shipments',
+                    'requires_action' => true,
+                ]);
+            });
+    }
+
+    private function notifyRider(DeliveryEvent $event, NotificationType $type): void
+    {
+        $riderProfileId = (int) ($event->metadata['rider_profile_id'] ?? 0);
+        $rider = RiderProfile::query()
+            ->whereKey($riderProfileId)
+            ->where('linked_type', User::class)
+            ->first();
+
+        if (!$rider || (int) $rider->shop_owner_id !== (int) $event->shipment->shop_owner_id) {
+            return;
+        }
+
+        Notification::create([
+            'user_id' => $rider->linked_id,
+            'shop_id' => $event->shipment->shop_owner_id,
+            'type' => $type->value,
+            'priority' => 'high',
+            'title' => $type->label(),
+            'message' => 'A delivery has been assigned to you.',
+            'data' => $this->eventData($event),
+            'action_url' => '/erp/logistics/shipments',
+            'requires_action' => true,
+        ]);
+    }
+
+    private function eventData(DeliveryEvent $event): array
+    {
+        return [
+            'shipment_id' => $event->shipment_id,
+            'shipment_leg_id' => $event->shipment_leg_id,
+            'event_type' => $event->event_type,
+        ];
     }
 
     private function notificationType(string $eventType): ?NotificationType

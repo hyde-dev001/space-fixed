@@ -22,6 +22,7 @@ use Spatie\Permission\Models\Role;
 use App\Models\PositionTemplate;
 use App\Models\PositionTemplatePermission;
 use App\Services\BusinessAccessControlService;
+use App\Services\Logistics\RiderProfileSyncService;
 use Carbon\Carbon;
 
 class UserAccessControlController extends Controller
@@ -429,6 +430,7 @@ class UserAccessControlController extends Controller
                 }
 
                 $user->assignRole($resolvedSpatieRole);
+                app(RiderProfileSyncService::class)->syncUser($user);
                 
                 // Permission Audit Log - COMPLIANCE CRITICAL
                 PermissionAuditLog::logRoleAssigned(
@@ -1252,6 +1254,7 @@ class UserAccessControlController extends Controller
                 array_unshift($rolesToSync, $primaryRole);
             }
             $user->syncRoles($rolesToSync);
+            app(RiderProfileSyncService::class)->syncShop((int) $user->shop_owner_id);
             
             // Re-enable automatic logging
             activity()->enableLogging();

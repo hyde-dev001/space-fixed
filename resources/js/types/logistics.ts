@@ -11,6 +11,11 @@ export type TrackingShipmentLeg = {
   scheduled_pickup_at?: string | null;
   picked_up_at?: string | null;
   delivered_at?: string | null;
+  assignments?: Array<{
+    id: number;
+    status: string;
+    rider_profile?: LogisticsRider | null;
+  }>;
 };
 
 export type TrackingShipmentEvent = {
@@ -36,6 +41,22 @@ export type LogisticsStats = {
   active: number;
   completed: number;
   cancelled: number;
+};
+
+export type PaginationLink = {
+  url: string | null;
+  label: string;
+  active: boolean;
+};
+
+export type PaginatedResponse<T> = {
+  data: T[];
+  links: PaginationLink[];
+  from: number | null;
+  to: number | null;
+  total: number;
+  current_page: number;
+  last_page: number;
 };
 
 export type LogisticsShipment = {

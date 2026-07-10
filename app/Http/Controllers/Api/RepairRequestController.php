@@ -15,6 +15,7 @@ use App\Models\RepairService;
 use App\Models\ShopOwner;
 use App\Models\ShopPolicyVersion;
 use App\Models\User;
+use App\Models\Logistics\Shipment;
 use App\Models\Finance\Invoice;
 use App\Models\Finance\InvoiceItem;
 use App\Models\PosPaymentLine;
@@ -805,6 +806,18 @@ class RepairRequestController extends Controller
 
         $allRelevantRepairIds = array_values(array_unique(array_merge($repairIds, $parentRepairIds)));
 
+        $logisticsShipmentLookup = Shipment::query()
+            ->where('source_type', 'repair_request')
+            ->whereIn('source_id', $allRelevantRepairIds)
+            ->orderByDesc('id')
+            ->get(['id', 'source_id', 'purpose'])
+            ->groupBy('source_id')
+            ->map(fn ($shipments) => $shipments->map(fn (Shipment $shipment) => [
+                'id' => (int) $shipment->id,
+                'purpose' => $shipment->purpose,
+            ])->values()->all())
+            ->all();
+
         $childrenByParent = [];
         foreach ($repairRequests as $repairRow) {
             $parentId = (int) ($repairRow->parent_repair_request_id ?? 0);
@@ -829,7 +842,7 @@ class RepairRequestController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $repairRequests->map(function (RepairRequest $repair) use ($childrenByParent, $reviewedLookup) {
+            'data' => $repairRequests->map(function (RepairRequest $repair) use ($childrenByParent, $reviewedLookup, $logisticsShipmentLookup) {
                 // Images are already cast as array, so no need to json_decode
                 $images = is_array($repair->images) ? $repair->images : (is_string($repair->images) ? json_decode($repair->images, true) : []);
                 $pricingSnapshot = $this->calculateRepairPricingSnapshot($repair);
@@ -903,6 +916,7 @@ class RepairRequestController extends Controller
                     'carrier_name' => $repair->carrier_name,
                     'carrier_phone' => $repair->carrier_phone,
                     'tracking_link' => $repair->tracking_link,
+                    'logistics_shipments' => $logisticsShipmentLookup[(int) $repair->id] ?? [],
                     'shipped_at' => $repair->shipped_at ? $repair->shipped_at->toISOString() : null,
                     'assigned_repairer_id' => $repair->assigned_repairer_id,
                     'repairer_name' => $repair->repairer ? $repair->repairer->name : null,

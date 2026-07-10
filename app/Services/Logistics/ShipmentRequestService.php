@@ -47,7 +47,17 @@ class ShipmentRequestService
             foreach (array_values($data['legs']) as $index => $legData) {
                 $method = null;
                 if (!empty($legData['shipping_method_id'])) {
-                    $method = \App\Models\Logistics\ShippingMethod::find($legData['shipping_method_id']);
+                    $method = \App\Models\Logistics\ShippingMethod::query()
+                        ->whereKey($legData['shipping_method_id'])
+                        ->where(function ($query) use ($data) {
+                            $query->whereNull('shop_owner_id')
+                                ->orWhere('shop_owner_id', $data['shop_owner_id']);
+                        })
+                        ->first();
+
+                    if (!$method) {
+                        throw ValidationException::withMessages(['legs' => 'Selected shipping method is not available for this shop.']);
+                    }
                 }
 
                 $shipment->legs()->create([

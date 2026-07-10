@@ -98,6 +98,7 @@ type Order = {
   pickup_enabled?: boolean;
   refund_stage?: {
     id: number;
+    logistics_shipment_id?: number | null;
     status: string;
     reason_code?: string | null;
     reason_note?: string | null;
@@ -1924,6 +1925,14 @@ const MyOrders: React.FC = () => {
                             className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
                           >
                             Track Shipment
+                          </Link>
+                        )}
+                        {order.refund_stage?.logistics_shipment_id && (
+                          <Link
+                            href={`/tracking/shipments/${order.refund_stage.logistics_shipment_id}`}
+                            className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
+                          >
+                            Track Return
                           </Link>
                         )}
                         {order.status === 'pending' && (

@@ -449,6 +449,10 @@ class StaffOrderController extends Controller
             'user_role' => $user->role,
         ]);
 
+        if ($oldStatus !== 'shipped' && $validated['status'] === 'shipped') {
+            app(\App\Services\Logistics\SourceShipmentService::class)->ensureRetailOrderShipment($order->fresh());
+        }
+
         return response()->json([
             'success' => true,
             'message' => 'Order status updated successfully',
@@ -744,4 +748,3 @@ class StaffOrderController extends Controller
     }
 
 }
-
