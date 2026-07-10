@@ -829,7 +829,7 @@ export default function JobOrdersPage() {
     const isBlocked = ['rejected', 'failed'].includes(String(latestRefund.status || '').toLowerCase());
 
     return flowType === 'request_approval'
-      && ['pending_customer_shipment', 'pending_staff_pickup'].includes(returnStatus)
+      && returnStatus === 'pending_customer_shipment'
       && !isBlocked;
   };
 

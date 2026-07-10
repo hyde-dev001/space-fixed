@@ -141,6 +141,12 @@ class SourceModuleShipmentRequestTest extends TestCase
             'source_id' => $refund->id,
             'purpose' => 'refund_return',
         ]);
+
+        $this->actingAs($staff, 'user')
+            ->postJson("/api/staff/orders/{$order->id}/arrange-return-pickup", [
+                'delivery_method' => 'shop_owned',
+            ])
+            ->assertStatus(422);
     }
 
     public function test_repair_pickup_creates_inbound_shipment(): void
