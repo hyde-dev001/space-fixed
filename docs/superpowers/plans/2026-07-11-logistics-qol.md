@@ -47,6 +47,7 @@ $this->assertDatabaseHas('delivery_events', [
 ```
 
 Add separate cases proving: all cancelled legs cancel the shipment; a delivered/cancelled terminal mix completes it; a cancelled leg plus a non-terminal leg leaves it active; and non-`delivery_attempted` source statuses throw `ValidationException`.
+Also assert that cancellation writes both the customer-visible `delivery_cancelled` event and an internal `delivery_cancelled` audit event with the dispatcher's actor fields.
 
 - [ ] **Step 2: Run the focused test file to verify it fails**
 
@@ -65,6 +66,14 @@ $attempt = $leg->attempts()->latest('attempted_at')->firstOrFail();
 return DB::transaction(function () use ($leg, $attempt, $actor) {
     $leg->update(['status' => 'cancelled']);
     $this->syncShipmentStatus($leg);
+    $this->events->record($leg->shipment, $leg, [
+        'event_type' => 'delivery_cancelled',
+        'visibility' => 'internal',
+        'message' => 'Delivery cancelled by dispatcher.',
+        'metadata' => ['reason_code' => $attempt->reason_code],
+        'created_by_type' => $actor::class,
+        'created_by_id' => $actor->id,
+    ]);
     $this->events->record($leg->shipment, $leg, [
         'event_type' => 'delivery_cancelled',
         'visibility' => 'customer',
@@ -98,6 +107,7 @@ git commit -m "feat: add dispatcher delivery cancellation"
 - Modify: `tests/Feature/Logistics/LogisticsApiTest.php`
 - Modify: `routes/web.php:426-439`
 - Modify: `app/Http/Controllers/Api/Logistics/ShipmentController.php`
+- Modify: `app/Services/Logistics/ShipmentLegService.php`
 
 - [ ] **Step 1: Write failing API tests**
 
@@ -126,7 +136,7 @@ Route::post('/legs/{leg}/report-issue', [ShipmentController::class, 'reportIssue
 Route::post('/legs/{leg}/cancel', [ShipmentController::class, 'cancel']);
 ```
 
-Implement `reportIssue()` with a dedicated assigned-rider authorisation helper: require an authenticated user with `update-logistics-status`, reject a shop-owner/dispatcher bypass, enforce the current active assignment belongs to that user, then validate only the five approved reason codes plus nullable `notes` (maximum 1000 characters). Call the existing `recordFailedAttempt()` with `attempt_type => 'delivery'`, `recorded_by_type`, and `recorded_by_id` set from the user.
+Implement `reportIssue()` with a dedicated assigned-rider authorisation helper: require an authenticated user with `update-logistics-status`, reject a shop-owner/dispatcher bypass, enforce the current active assignment belongs to that user, then validate only the five approved reason codes plus nullable `notes` (maximum 1000 characters). Call the existing `recordFailedAttempt()` with `attempt_type => 'delivery'`, `recorded_by_type`, and `recorded_by_id` set from the user. In that existing service method, add `assigned` to its allowed source statuses so the approved rider-report flow can move an assigned leg to `delivery_attempted`; preserve its rejection of awaiting-proof, delivered, and cancelled legs.
 
 Implement `cancel()` with `authorizedShop('assign-logistics-deliveries')`, tenant validation, and `ShipmentLegService::cancel($leg, $actor)`. Do not accept a second cancellation reason: the approved rider report is the source of truth.
 
@@ -139,7 +149,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit endpoint changes**
 
 ```bash
-git add routes/web.php app/Http/Controllers/Api/Logistics/ShipmentController.php tests/Feature/Logistics/LogisticsApiTest.php
+git add routes/web.php app/Http/Controllers/Api/Logistics/ShipmentController.php app/Services/Logistics/ShipmentLegService.php tests/Feature/Logistics/LogisticsApiTest.php
 git commit -m "feat: add rider delivery issue reporting"
 ```
 
@@ -219,7 +229,7 @@ Expected: PASS.
 - Render the rider-only `Status` and `Today / This week` selects; send both values through the existing `router.get()` helper and reset `page` to 1.
 - For rider-owned legs in `assigned`, `picked_up`, `in_transit`, or `delivery_attempted`, add **Report issue / Request cancellation**. Open a SweetAlert select using `workflowFeedback.alert`, require an approved reason, accept an optional short note, then post to `/api/logistics/legs/{id}/report-issue`.
 - For dispatcher legs in `delivery_attempted`, display the latest attempt reason/note with a **Needs attention** badge and add the red-outline **Cancel delivery** button. Require `workflowFeedback.confirm()` before posting to `/api/logistics/legs/{id}/cancel`.
-- Require `workflowFeedback.confirm()` before reassigning a rider and approving proof. Use `workflowFeedback.success({ toast: true, ... })` and `workflowFeedback.error(...)` around every mutation; reload only `shipments` (and `assignableRiders` after assignment) after success.
+- Require `workflowFeedback.confirm()` before reassigning a rider, approving proof, and every direct delivery-confirmation (`delivered`) action. Use `workflowFeedback.success({ toast: true, ... })` and `workflowFeedback.error(...)` around every mutation; reload only `shipments` (and `assignableRiders` after assignment) after success.
 - Keep the existing table, expanded delivery cards, controls, and dark-mode classes. Improve visual hierarchy with status pills, grouped leg sections, and clear primary/destructive button styles; do not introduce a dashboard, drag/drop, or a second page component.
 
 - [ ] **Step 4: Build and run focused backend regression tests**
