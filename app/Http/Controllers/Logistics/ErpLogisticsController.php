@@ -39,7 +39,7 @@ class ErpLogisticsController extends Controller
         return Inertia::render('ERP/Logistics/Shipments', [
             'shipments' => Shipment::query()
                 ->with(['legs' => function ($query) use ($user, $isDispatcher) {
-                    $query->with(['assignments.riderProfile', 'proofs']);
+                    $query->with(['assignments.riderProfile', 'proofs', 'attempts' => fn ($attempts) => $attempts->latest('attempted_at')]);
 
                     if (!$isDispatcher) {
                         $query->whereHas('assignments', function ($assignments) use ($user) {
