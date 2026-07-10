@@ -8,6 +8,9 @@ use App\Models\Logistics\ShipmentLeg;
 use App\Models\ShopOwner;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
+use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 class LogisticsApiTest extends TestCase
@@ -41,5 +44,204 @@ class LogisticsApiTest extends TestCase
             ])
             ->assertOk()
             ->assertJsonPath('assignment.status', 'assigned');
+    }
+
+    public function test_leg_cannot_have_duplicate_active_rider_assignments(): void
+    {
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+        $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'pending']);
+        $first = RiderProfile::factory()->create(['shop_owner_id' => $shop->id]);
+        $second = RiderProfile::factory()->create(['shop_owner_id' => $shop->id]);
+
+        $this->actingAs($shop, 'shop_owner')
+            ->postJson("/api/logistics/legs/{$leg->id}/assign", [
+                'assignment_type' => 'internal_rider',
+                'rider_profile_id' => $first->id,
+            ])
+            ->assertOk();
+
+        $this->actingAs($shop, 'shop_owner')
+            ->postJson("/api/logistics/legs/{$leg->id}/assign", [
+                'assignment_type' => 'internal_rider',
+                'rider_profile_id' => $second->id,
+            ])
+            ->assertUnprocessable();
+    }
+
+    public function test_rider_cannot_update_leg_assigned_to_another_rider(): void
+    {
+        Permission::firstOrCreate(['name' => 'update-logistics-status', 'guard_name' => 'user']);
+
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+        $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'picked_up']);
+        $assignedRider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $otherRider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $riderProfile = RiderProfile::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'linked_type' => User::class,
+            'linked_id' => $assignedRider->id,
+        ]);
+
+        $leg->assignments()->create([
+            'assignment_type' => 'internal_rider',
+            'rider_profile_id' => $riderProfile->id,
+            'status' => 'assigned',
+            'assigned_at' => now(),
+        ]);
+        $otherRider->givePermissionTo('update-logistics-status');
+
+        $this->actingAs($otherRider, 'user')
+            ->postJson("/api/logistics/legs/{$leg->id}/in-transit")
+            ->assertForbidden();
+    }
+
+    public function test_shop_owner_can_upload_delivery_proof_before_delivery(): void
+    {
+        Storage::fake('public');
+
+        $shop = ShopOwner::factory()->create();
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+        $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'in_transit']);
+
+        $response = $this->actingAs($shop, 'shop_owner')
+            ->postJson("/api/logistics/legs/{$leg->id}/proof", [
+                'handoff_type' => 'delivery',
+                'proof_type' => 'photo',
+                'proof_file' => UploadedFile::fake()->create('proof.jpg', 10, 'image/jpeg'),
+            ])
+            ->assertCreated();
+
+        Storage::disk('public')->assertExists($response->json('proof.file_path'));
+    }
+
+    public function test_proof_cannot_be_changed_after_delivery(): void
+    {
+        $shop = ShopOwner::factory()->create();
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+        $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'delivered']);
+
+        $this->actingAs($shop, 'shop_owner')
+            ->postJson("/api/logistics/legs/{$leg->id}/proof", [
+                'handoff_type' => 'delivery',
+                'proof_type' => 'photo',
+                'file_path' => 'proof.jpg',
+            ])
+            ->assertUnprocessable();
+    }
+
+    public function test_assigned_rider_submits_proof_and_only_proof_approver_can_complete_delivery(): void
+    {
+        Permission::findOrCreate('record-logistics-proof', 'user');
+        Permission::findOrCreate('update-logistics-status', 'user');
+        Permission::findOrCreate('approve-proof-of-delivery', 'user');
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id, 'status' => 'active']);
+        $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'in_transit']);
+        $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $approver = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $rider->givePermissionTo(['record-logistics-proof', 'update-logistics-status']);
+        $approver->givePermissionTo('approve-proof-of-delivery');
+        $profile = RiderProfile::factory()->create(['shop_owner_id' => $shop->id, 'linked_type' => User::class, 'linked_id' => $rider->id]);
+        $leg->assignments()->create(['assignment_type' => 'internal_rider', 'rider_profile_id' => $profile->id, 'status' => 'assigned', 'assigned_at' => now()]);
+        $proof = $this->actingAs($rider, 'user')->postJson("/api/logistics/legs/{$leg->id}/proof", ['handoff_type' => 'delivery', 'proof_type' => 'photo', 'file_path' => 'proof.jpg'])->assertCreated()->json('proof');
+        $this->assertSame('awaiting_proof_approval', $leg->fresh()->status->value);
+        $this->actingAs($rider, 'user')->postJson("/api/logistics/legs/{$leg->id}/delivered")->assertUnprocessable();
+        $this->actingAs($approver, 'user')->postJson("/api/logistics/proofs/{$proof['id']}/approve")->assertOk();
+        $this->assertSame('delivered', $leg->fresh()->status->value);
+        $this->assertDatabaseHas('handoff_proofs', ['id' => $proof['id'], 'review_status' => 'approved']);
+    }
+
+    public function test_assigned_rider_can_report_delivery_issue(): void
+    {
+        Permission::findOrCreate('update-logistics-status', 'user');
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id, 'status' => 'active']);
+        $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'assigned']);
+        $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $rider->givePermissionTo('update-logistics-status');
+        $profile = RiderProfile::factory()->create(['shop_owner_id' => $shop->id, 'linked_type' => User::class, 'linked_id' => $rider->id]);
+        $leg->assignments()->create(['assignment_type' => 'internal_rider', 'rider_profile_id' => $profile->id, 'status' => 'assigned', 'assigned_at' => now()]);
+
+        $this->actingAs($rider, 'user')
+            ->postJson("/api/logistics/legs/{$leg->id}/report-issue", [
+                'reason_code' => 'recipient_unavailable',
+                'notes' => 'No answer at the address.',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('attempt.reason_code', 'recipient_unavailable');
+
+        $this->assertSame('delivery_attempted', $leg->fresh()->status->value);
+    }
+
+    public function test_rider_cannot_report_issue_for_another_rider_leg(): void
+    {
+        Permission::findOrCreate('update-logistics-status', 'user');
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+        $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'in_transit']);
+        $assignedRider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $otherRider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $otherRider->givePermissionTo('update-logistics-status');
+        $profile = RiderProfile::factory()->create(['shop_owner_id' => $shop->id, 'linked_type' => User::class, 'linked_id' => $assignedRider->id]);
+        $leg->assignments()->create(['assignment_type' => 'internal_rider', 'rider_profile_id' => $profile->id, 'status' => 'assigned', 'assigned_at' => now()]);
+
+        $this->actingAs($otherRider, 'user')
+            ->postJson("/api/logistics/legs/{$leg->id}/report-issue", ['reason_code' => 'recipient_refused'])
+            ->assertForbidden();
+    }
+
+    public function test_report_issue_rejects_terminal_delivery_statuses(): void
+    {
+        Permission::findOrCreate('update-logistics-status', 'user');
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $rider->givePermissionTo('update-logistics-status');
+        $profile = RiderProfile::factory()->create(['shop_owner_id' => $shop->id, 'linked_type' => User::class, 'linked_id' => $rider->id]);
+
+        foreach (['awaiting_proof_approval', 'delivered', 'cancelled'] as $status) {
+            $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+            $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => $status]);
+            $leg->assignments()->create(['assignment_type' => 'internal_rider', 'rider_profile_id' => $profile->id, 'status' => 'assigned', 'assigned_at' => now()]);
+
+            $this->actingAs($rider, 'user')
+                ->postJson("/api/logistics/legs/{$leg->id}/report-issue", ['reason_code' => 'other'])
+                ->assertUnprocessable();
+        }
+    }
+
+    public function test_dispatcher_can_cancel_only_a_reported_delivery(): void
+    {
+        Permission::findOrCreate('assign-logistics-deliveries', 'user');
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $dispatcher->givePermissionTo('assign-logistics-deliveries');
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id, 'status' => 'active']);
+        $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'delivery_attempted']);
+        $leg->attempts()->create(['attempt_type' => 'delivery', 'status' => 'failed', 'reason_code' => 'recipient_unavailable', 'attempted_at' => now()]);
+
+        $this->actingAs($dispatcher, 'user')
+            ->postJson("/api/logistics/legs/{$leg->id}/cancel")
+            ->assertOk()
+            ->assertJsonPath('leg.status', 'cancelled');
+
+        $this->assertDatabaseHas('delivery_events', ['shipment_leg_id' => $leg->id, 'event_type' => 'delivery_cancelled', 'visibility' => 'customer']);
+    }
+
+    public function test_rider_cannot_cancel_delivery_and_dispatcher_cannot_cancel_unreported_leg(): void
+    {
+        Permission::findOrCreate('update-logistics-status', 'user');
+        Permission::findOrCreate('assign-logistics-deliveries', 'user');
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $rider->givePermissionTo('update-logistics-status');
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $dispatcher->givePermissionTo('assign-logistics-deliveries');
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+        $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'in_transit']);
+
+        $this->actingAs($rider, 'user')->postJson("/api/logistics/legs/{$leg->id}/cancel")->assertForbidden();
+        $this->actingAs($dispatcher, 'user')->postJson("/api/logistics/legs/{$leg->id}/cancel")->assertUnprocessable();
     }
 }
