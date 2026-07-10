@@ -68,6 +68,16 @@ class LogisticsPageAccessTest extends TestCase
         $this->actingAs($rider->fresh(), 'user')->get('/erp/logistics/riders')->assertForbidden();
     }
 
+    public function test_dispatcher_cannot_access_my_deliveries(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        $shop = ShopOwner::factory()->create();
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $dispatcher->assignRole('Logistics Dispatcher');
+
+        $this->actingAs($dispatcher, 'user')->get('/erp/logistics/deliveries')->assertForbidden();
+    }
+
     public function test_logistics_rider_only_sees_assigned_shipments(): void
     {
         $this->seed(RolesAndPermissionsSeeder::class);

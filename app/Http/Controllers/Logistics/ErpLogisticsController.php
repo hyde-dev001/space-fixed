@@ -95,7 +95,7 @@ class ErpLogisticsController extends Controller
     public function deliveries(Request $request): Response
     {
         $user = Auth::guard('user')->user();
-        if (!$user || !$user->shop_owner_id || !($user->can('operate-logistics-deliveries') || ($user->can('update-logistics-status') && $user->can('record-logistics-proof')))) {
+        if (!$user || !$user->shop_owner_id || !$user->can('operate-logistics-deliveries')) {
             abort(403);
         }
         $shopOwnerId = (int) $user->shop_owner_id;

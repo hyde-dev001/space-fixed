@@ -1540,7 +1540,7 @@ const AppSidebar_ERP: React.FC = () => {
       }
 
       if (item.route === "erp.logistics.deliveries") {
-        return permissions.includes('operate-logistics-deliveries') || (permissions.includes('update-logistics-status') && permissions.includes('record-logistics-proof'));
+        return permissions.includes('operate-logistics-deliveries');
       }
 
       if (item.route === "erp.logistics.riders") {

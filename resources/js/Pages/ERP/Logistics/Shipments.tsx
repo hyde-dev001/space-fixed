@@ -197,10 +197,10 @@ export default function Shipments() {
                                   {canUpdateStatus && leg.status === 'assigned' && <button type="button" onClick={() => void act(`/api/logistics/legs/${leg.id}/picked-up`)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">Picked up</button>}
                                   {canUpdateStatus && leg.status === 'picked_up' && <button type="button" onClick={() => void act(`/api/logistics/legs/${leg.id}/in-transit`)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">In transit</button>}
                                   {canRecordProof && leg.status === 'in_transit' && <><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setProofFiles({ ...proofFiles, [leg.id]: event.target.files?.[0] ?? null })} className="text-sm" /><button type="button" onClick={() => submitProof(leg.id)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">Submit proof</button></>}
-                                  {canApproveProof && leg.status === 'awaiting_proof_approval' && leg.proofs?.filter((proof) => proof.review_status === 'pending').map((proof) => (
+                                  {canApproveProof && leg.proofs?.filter((proof) => ['delivery', 'receive'].includes(proof.handoff_type)).map((proof) => (
                                     <div key={proof.id} className="flex items-center gap-2">
                                       {proof.file_path && <a href={`/storage/${proof.file_path}`} target="_blank" rel="noreferrer" aria-label="Open uploaded delivery proof"><img src={`/storage/${proof.file_path}`} alt="Uploaded delivery proof" className="h-12 w-12 rounded border border-gray-200 object-cover" /></a>}
-                                      <button type="button" onClick={() => void act(`/api/logistics/proofs/${proof.id}/approve`)} className="rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white">Confirm delivery</button>
+                                      {leg.status === 'awaiting_proof_approval' && proof.review_status === 'pending' && <button type="button" onClick={() => void act(`/api/logistics/proofs/${proof.id}/approve`)} className="rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white">Confirm delivery</button>}
                                     </div>
                                   ))}
                                 </div>
@@ -232,7 +232,7 @@ export default function Shipments() {
                               </div>
                             );
                           })}
-                          {assignableRiders.length === 0 && <p className="text-sm text-amber-700">No active available riders. Create or make a logistics rider available first.</p>}
+                          {canAssign && assignableRiders.length === 0 && (shipment.legs ?? []).some((leg) => !leg.assignments?.some((assignment) => ['assigned', 'accepted'].includes(assignment.status)) && !['delivered', 'cancelled'].includes(leg.status)) && <p className="text-sm text-amber-700">No active available riders. Create or make a logistics rider available first.</p>}
                           {assignmentError && <p className="text-sm text-red-600">{assignmentError}</p>}
                           {actionError && <p className="text-sm text-red-600">{actionError}</p>}
                         </div>
