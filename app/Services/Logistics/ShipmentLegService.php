@@ -4,6 +4,7 @@ namespace App\Services\Logistics;
 
 use App\Models\Logistics\DeliveryAttempt;
 use App\Models\Logistics\ShipmentLeg;
+use App\Models\Order;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -119,11 +120,25 @@ class ShipmentLegService
 
         if ($shipment->legs()->exists() && !$shipment->legs()->where('status', '!=', 'delivered')->exists()) {
             $shipment->update(['status' => 'completed', 'completed_at' => now()]);
+            $this->completeShopOwnedRetailOrder($shipment);
             return;
         }
 
         if (in_array($leg->status->value, ['assigned', 'picked_up', 'in_transit', 'delivery_attempted'], true)) {
             $shipment->update(['status' => 'active']);
         }
+    }
+
+    private function completeShopOwnedRetailOrder($shipment): void
+    {
+        if ($shipment->source_type !== 'order') {
+            return;
+        }
+
+        Order::query()
+            ->whereKey($shipment->source_id)
+            ->whereRaw('LOWER(carrier_company) = ?', ['shop-owned logistics'])
+            ->where('status', 'shipped')
+            ->update(['status' => 'completed']);
     }
 }

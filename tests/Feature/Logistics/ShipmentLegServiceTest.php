@@ -5,6 +5,8 @@ namespace Tests\Feature\Logistics;
 use App\Models\Logistics\HandoffProof;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
+use App\Models\Order;
+use App\Models\ShopOwner;
 use App\Services\Logistics\ShipmentLegService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
@@ -96,5 +98,41 @@ class ShipmentLegServiceTest extends TestCase
 
         $this->assertSame('completed', $shipment->fresh()->status->value);
         $this->assertNotNull($shipment->fresh()->completed_at);
+    }
+
+    public function test_completed_shop_owned_delivery_completes_its_order(): void
+    {
+        $shop = ShopOwner::factory()->create();
+        $order = Order::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'status' => 'shipped',
+            'carrier_company' => 'Shop-owned logistics',
+        ]);
+        $shipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+            'source_id' => $order->id,
+            'status' => 'active',
+        ]);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id,
+            'status' => 'in_transit',
+            'requires_delivery_proof' => false,
+        ]);
+
+        app(ShipmentLegService::class)->markDelivered($leg);
+
+        $this->assertSame('completed', $order->fresh()->status->value);
+    }
+
+    public function test_completed_third_party_delivery_keeps_order_shipped_for_staff_activation(): void
+    {
+        $order = Order::factory()->create(['status' => 'shipped', 'carrier_company' => 'Third Party Courier']);
+        $shipment = Shipment::factory()->create(['source_type' => 'order', 'source_id' => $order->id, 'status' => 'active']);
+        $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'in_transit', 'requires_delivery_proof' => false]);
+
+        app(ShipmentLegService::class)->markDelivered($leg);
+
+        $this->assertSame('shipped', $order->fresh()->status->value);
     }
 }
