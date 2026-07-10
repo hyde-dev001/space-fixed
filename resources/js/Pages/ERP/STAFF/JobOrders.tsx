@@ -881,27 +881,27 @@ export default function JobOrdersPage() {
                </select>
              </div>
 
-            <div id="swal-third-party-fields" style="display:grid;gap:10px;">
+             <div class="swal-third-party-field" style="display:grid;gap:10px;">
               <label style="font-size:13px;font-weight:600;color:#334155;">Carrier Company</label>
               <input id="swal-carrier-company" class="swal2-input" placeholder="e.g. J&T, LBC, Ninja Van" value="${escapeHtml(defaultCarrier)}" style="margin:0;border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;" />
             </div>
 
-            <div style="display:grid;gap:6px;">
+             <div class="swal-third-party-field" style="display:grid;gap:6px;">
               <label style="font-size:13px;font-weight:600;color:#334155;">Rider Name</label>
               <input id="swal-rider-name" class="swal2-input" placeholder="Rider full name" value="${escapeHtml(defaultRiderName)}" style="margin:0;border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;" />
             </div>
 
-            <div style="display:grid;gap:6px;">
+             <div class="swal-third-party-field" style="display:grid;gap:6px;">
               <label style="font-size:13px;font-weight:600;color:#334155;">Rider Number</label>
               <input id="swal-rider-phone" class="swal2-input" placeholder="09XXXXXXXXX" value="${escapeHtml(defaultRiderPhone)}" inputmode="numeric" pattern="[0-9]*" maxlength="11" style="margin:0;border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;" />
             </div>
 
-            <div style="display:grid;gap:6px;">
+             <div class="swal-third-party-field" style="display:grid;gap:6px;">
               <label style="font-size:13px;font-weight:600;color:#334155;">Tracking Number</label>
               <input id="swal-tracking-number" class="swal2-input" placeholder="Tracking number" value="${escapeHtml(defaultTrackingNumber)}" style="margin:0;border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;" />
             </div>
 
-            <div style="display:grid;gap:6px;">
+             <div class="swal-third-party-field" style="display:grid;gap:6px;">
               <label style="font-size:13px;font-weight:600;color:#334155;">Tracking Link</label>
               <input id="swal-tracking-link" class="swal2-input" placeholder="https://..." value="${escapeHtml(defaultTrackingLink)}" style="margin:0;border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;" />
             </div>
@@ -919,11 +919,11 @@ export default function JobOrdersPage() {
       focusConfirm: false,
       didOpen: () => {
         const deliveryMethodInput = document.getElementById('swal-delivery-method') as HTMLSelectElement | null;
-        const thirdPartyFields = document.getElementById('swal-third-party-fields');
+        const thirdPartyFields = document.querySelectorAll<HTMLElement>('.swal-third-party-field');
         const pickupTip = document.getElementById('swal-pickup-tip');
         const toggleThirdPartyFields = () => {
           const isThirdParty = deliveryMethodInput?.value === 'third_party';
-          if (thirdPartyFields) thirdPartyFields.style.display = isThirdParty ? 'grid' : 'none';
+          thirdPartyFields.forEach((field) => { field.style.display = isThirdParty ? 'grid' : 'none'; });
           if (pickupTip) pickupTip.textContent = isThirdParty
             ? 'Tip: You can save initial rider details now, then update later with final tracking status.'
             : 'Dispatcher assigns a rider from Logistics after you save.';
