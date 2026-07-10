@@ -38,6 +38,9 @@ class LogisticsPageAccessTest extends TestCase
         $staff->givePermissionTo('access-logistics-dashboard');
 
         $this->actingAs($staff->fresh(), 'user')->get('/erp/logistics')->assertOk();
+        $this->actingAs($staff->fresh(), 'user')->get('/erp/logistics/shipments')->assertForbidden();
+        Permission::findOrCreate('view-logistics-shipments', 'user');
+        $staff->givePermissionTo('view-logistics-shipments');
         $this->actingAs($staff->fresh(), 'user')->get('/erp/logistics/shipments')->assertOk();
         $this->actingAs($staff->fresh(), 'user')->get('/erp/logistics/riders')->assertForbidden();
 

@@ -90,7 +90,7 @@ class ErpLogisticsController extends Controller
 
     public function riders(Request $request): Response
     {
-        $shopOwnerId = $this->authorizedShopOwnerId('manage-logistics-riders', false);
+        $shopOwnerId = $this->authorizedShopOwnerId('manage-logistics-riders');
         $availability = $request->query('availability', 'all');
         $type = $request->query('type', 'all');
         app(RiderProfileSyncService::class)->syncShop($shopOwnerId);
@@ -114,13 +114,10 @@ class ErpLogisticsController extends Controller
         ]);
     }
 
-    private function authorizedShopOwnerId(string $permission, bool $allowDashboardAccess = true): int
+    private function authorizedShopOwnerId(string $permission): int
     {
         $user = Auth::guard('user')->user();
-        $hasAccess = $user && (
-            $user->can($permission) ||
-            ($allowDashboardAccess && $user->can('access-logistics-dashboard'))
-        );
+        $hasAccess = $user && $user->can($permission);
 
         if (!$user || !$user->shop_owner_id || !$hasAccess) {
             abort(403);

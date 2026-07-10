@@ -19,12 +19,18 @@ class HandoffProof extends Model
         'confirmed_by_id',
         'notes',
         'metadata',
+        'review_status',
+        'reviewed_by_type',
+        'reviewed_by_id',
+        'reviewed_at',
+        'rejection_reason',
         'recorded_at',
     ];
 
     protected $casts = [
         'metadata' => 'array',
         'recorded_at' => 'datetime',
+        'reviewed_at' => 'datetime',
     ];
 
     public function leg(): BelongsTo

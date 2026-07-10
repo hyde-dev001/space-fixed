@@ -737,6 +737,10 @@ class UserAccessControlController extends Controller
                 $grouped['inventory'][] = $permission;
             }
             // Staff Module: access-staff-* permissions
+            elseif (str_contains($permission, 'logistics') || str_contains($permission, 'delivery') || str_contains($permission, 'rider') || str_contains($permission, 'courier') || str_contains($permission, 'shipping-method') || str_contains($permission, 'proof-of-delivery')) {
+                $grouped['logistics'][] = $permission;
+            }
+            // Staff Module: access-staff-* permissions
             elseif (str_starts_with($permission, 'access-staff-') ||
                     str_contains($permission, 'staff-job-orders') ||
                     str_contains($permission, 'product-management') ||

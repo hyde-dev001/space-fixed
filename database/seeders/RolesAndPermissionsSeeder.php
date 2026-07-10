@@ -105,6 +105,12 @@ class RolesAndPermissionsSeeder extends Seeder
             'manage-logistics-riders',
             'update-logistics-status',
             'record-logistics-proof',
+            'approve-proof-of-delivery',
+            'view-proof-of-delivery',
+            'manage-logistics-deliveries',
+            'manage-logistics-courier-providers',
+            'manage-logistics-shipping-methods',
+            'configure-logistics-settings',
 
             // ===== COMMON/GLOBAL =====
             'access-global-search',

@@ -130,4 +130,26 @@ class LogisticsApiTest extends TestCase
             ])
             ->assertUnprocessable();
     }
+
+    public function test_assigned_rider_submits_proof_and_only_proof_approver_can_complete_delivery(): void
+    {
+        Permission::findOrCreate('record-logistics-proof', 'user');
+        Permission::findOrCreate('update-logistics-status', 'user');
+        Permission::findOrCreate('approve-proof-of-delivery', 'user');
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id, 'status' => 'active']);
+        $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'in_transit']);
+        $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $approver = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $rider->givePermissionTo(['record-logistics-proof', 'update-logistics-status']);
+        $approver->givePermissionTo('approve-proof-of-delivery');
+        $profile = RiderProfile::factory()->create(['shop_owner_id' => $shop->id, 'linked_type' => User::class, 'linked_id' => $rider->id]);
+        $leg->assignments()->create(['assignment_type' => 'internal_rider', 'rider_profile_id' => $profile->id, 'status' => 'assigned', 'assigned_at' => now()]);
+        $proof = $this->actingAs($rider, 'user')->postJson("/api/logistics/legs/{$leg->id}/proof", ['handoff_type' => 'delivery', 'proof_type' => 'photo', 'file_path' => 'proof.jpg'])->assertCreated()->json('proof');
+        $this->assertSame('awaiting_proof_approval', $leg->fresh()->status->value);
+        $this->actingAs($rider, 'user')->postJson("/api/logistics/legs/{$leg->id}/delivered")->assertUnprocessable();
+        $this->actingAs($approver, 'user')->postJson("/api/logistics/proofs/{$proof['id']}/approve")->assertOk();
+        $this->assertSame('delivered', $leg->fresh()->status->value);
+        $this->assertDatabaseHas('handoff_proofs', ['id' => $proof['id'], 'review_status' => 'approved']);
+    }
 }

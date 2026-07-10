@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Logistics\AssignShipmentLegRequest;
 use App\Http\Requests\Logistics\RecordHandoffProofRequest;
 use App\Models\Logistics\RiderProfile;
+use App\Models\Logistics\HandoffProof;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\ShopOwner;
@@ -98,6 +99,20 @@ class ShipmentController extends Controller
         $this->authorizeLegUpdate($leg);
 
         return response()->json(['leg' => $legs->markDelivered($leg)]);
+    }
+
+    public function approveProof(HandoffProof $proof, ShipmentLegService $legs): JsonResponse
+    {
+        $shop = $this->authorizedShop('approve-proof-of-delivery');
+        $proof->loadMissing('leg.shipment');
+        $this->abortUnlessTenant($proof->leg->shipment->shop_owner_id, $shop);
+        abort_unless(Auth::guard('shop_owner')->check() || Auth::guard('user')->user()?->can('approve-proof-of-delivery'), 403);
+        abort_unless($proof->review_status === 'pending', 422);
+
+        $actor = Auth::guard('user')->user() ?? $shop;
+        $proof->update(['review_status' => 'approved', 'reviewed_by_type' => $actor::class, 'reviewed_by_id' => $actor->id, 'reviewed_at' => now()]);
+
+        return response()->json(['leg' => $legs->markDelivered($proof->leg->fresh())]);
     }
 
     public function attempts(Request $request, ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse
