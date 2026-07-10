@@ -105,6 +105,7 @@ class OrderController extends Controller
             ->whereIn('source_id', $orderCollection->pluck('id')->all())
             ->orderByDesc('id')
             ->with('legs.assignments.riderProfile')
+            ->get()
             ->unique('source_id')
             ->mapWithKeys(function (Shipment $shipment) {
                 $assignment = $shipment->legs
