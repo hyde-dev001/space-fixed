@@ -10,7 +10,7 @@ Improve the working ERP logistics pages without redesigning the module: riders c
 - `/erp/logistics/shipments` (dispatcher mode): retain the existing filters and surface legs requiring attention.
 - Add a rider **Report issue / Request cancellation** action with a required reason: `recipient_unavailable`, `wrong_or_incomplete_address`, `recipient_refused`, `vehicle_or_delivery_problem`, or `other`; a note is optional.
 - A rider report uses the existing delivery-attempt record and moves the leg to `delivery_attempted`. It is a request, not a final cancellation. Rider reporting is allowed only from `assigned`, `picked_up`, `in_transit`, or `delivery_attempted`.
-- Dispatchers can finalise cancellation for a reported leg. The leg becomes `cancelled`; delivered, awaiting-proof-approval, or already-cancelled legs cannot be cancelled.
+- Dispatchers can finalise cancellation only for a `delivery_attempted` leg. The leg becomes `cancelled`; assigned, picked-up, in-transit, awaiting-proof-approval, delivered, or already-cancelled legs cannot be cancelled.
 - Final cancellation records a customer-visible tracking event with a plain-language cancellation reason. The customer never sees the rider's internal note.
 - Use the project’s existing SweetAlert dependency for confirmation before cancellation, reassignment, and delivery confirmation. Show success/error toasts after actions; do not show alerts for filters or routine reloads.
 - Improve hierarchy only: status pills, a visible **Needs attention** badge, grouped expanded-leg details, clearer action hierarchy, and a destructive-action style.
@@ -45,7 +45,7 @@ Improve the working ERP logistics pages without redesigning the module: riders c
 ## Backend rules
 
 - The existing ownership check remains the boundary for rider updates: a rider can report an issue only on their own assigned leg.
-- Dispatcher cancellation is permission-protected and validates that the leg is not terminal.
+- Dispatcher cancellation is permission-protected and validates that the leg is in `delivery_attempted`.
 - The cancellation service records an internal event and a customer-visible reason event. It synchronises shipment status as follows: all-cancelled legs make the shipment `cancelled`; all-terminal legs with at least one delivered leg make it `completed`; all other combinations remain `active`.
 - Errors are returned by the API and shown to the user as toasts without clearing the visible page data.
 
@@ -54,6 +54,6 @@ Improve the working ERP logistics pages without redesigning the module: riders c
 - Rider filters return only the requested status and time range.
 - A rider cannot report an issue on another rider’s leg.
 - An eligible rider report creates the existing failure-attempt audit record and sets `delivery_attempted`.
-- Only an authorised dispatcher can cancel; delivered and cancelled legs are rejected.
+- Only an authorised dispatcher can cancel a `delivery_attempted` leg; assigned, picked-up, in-transit, awaiting-proof-approval, delivered, and cancelled legs are rejected.
 - Final cancellation creates the correct customer-visible reason event and synchronises all-cancelled, mixed terminal, and active shipments.
 - Existing assignment, proof submission, proof approval, and delivery transitions remain covered.
