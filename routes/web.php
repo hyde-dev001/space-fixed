@@ -1692,6 +1692,7 @@ Route::get('/erp/notifications/settings', function () {
 Route::prefix('erp/logistics')->name('erp.logistics.')->middleware(['auth:user', 'check.suspension'])->group(function () {
     Route::get('/', [\App\Http\Controllers\Logistics\ErpLogisticsController::class, 'dashboard'])->name('dashboard');
     Route::get('/shipments', [\App\Http\Controllers\Logistics\ErpLogisticsController::class, 'shipments'])->name('shipments');
+    Route::get('/deliveries', [\App\Http\Controllers\Logistics\ErpLogisticsController::class, 'deliveries'])->name('deliveries');
     Route::get('/riders', [\App\Http\Controllers\Logistics\ErpLogisticsController::class, 'riders'])->name('riders');
 });
 

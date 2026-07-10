@@ -587,6 +587,15 @@ const staffItems: NavItem[] = [
   {
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+      </svg>
+    ),
+    name: "My Deliveries",
+    route: "erp.logistics.deliveries",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
         <circle cx="9" cy="7" r="4"></circle>
         <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
@@ -818,6 +827,7 @@ const AppSidebar_ERP: React.FC = () => {
     "erp.staff.inventory-overview": "/erp/staff/inventory-overview",
     "erp.logistics.dashboard": "/erp/logistics",
     "erp.logistics.shipments": "/erp/logistics/shipments",
+    "erp.logistics.deliveries": "/erp/logistics/deliveries",
     "erp.logistics.riders": "/erp/logistics/riders",
     "erp.staff.stocks-overview": "/erp/staff/stocks-overview",
     "erp.staff.request-material": "/erp/staff/request-material",
@@ -894,6 +904,7 @@ const AppSidebar_ERP: React.FC = () => {
     "erp.staff.inventory-overview": "/erp/staff/inventory-overview",
     "erp.logistics.dashboard": "/erp/logistics",
     "erp.logistics.shipments": "/erp/logistics/shipments",
+    "erp.logistics.deliveries": "/erp/logistics/deliveries",
     "erp.logistics.riders": "/erp/logistics/riders",
     "erp.staff.stocks-overview": "/erp/staff/stocks-overview",
     "erp.staff.request-material": "/erp/staff/request-material",
@@ -1316,6 +1327,9 @@ const AppSidebar_ERP: React.FC = () => {
       'access-staff-customers',
       'access-logistics-dashboard',
       'view-logistics-shipments',
+      'operate-logistics-deliveries',
+      'update-logistics-status',
+      'record-logistics-proof',
     ];
 
     return staffPermissions.some((perm) => permissions.includes(perm));
@@ -1522,7 +1536,11 @@ const AppSidebar_ERP: React.FC = () => {
       }
 
       if (item.route === "erp.logistics.shipments") {
-        return permissions.includes('view-logistics-shipments') || permissions.includes('access-logistics-dashboard');
+        return permissions.includes('assign-logistics-deliveries');
+      }
+
+      if (item.route === "erp.logistics.deliveries") {
+        return permissions.includes('operate-logistics-deliveries') || (permissions.includes('update-logistics-status') && permissions.includes('record-logistics-proof'));
       }
 
       if (item.route === "erp.logistics.riders") {

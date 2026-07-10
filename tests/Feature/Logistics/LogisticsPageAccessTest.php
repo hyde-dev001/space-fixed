@@ -39,8 +39,8 @@ class LogisticsPageAccessTest extends TestCase
 
         $this->actingAs($staff->fresh(), 'user')->get('/erp/logistics')->assertOk();
         $this->actingAs($staff->fresh(), 'user')->get('/erp/logistics/shipments')->assertForbidden();
-        Permission::findOrCreate('view-logistics-shipments', 'user');
-        $staff->givePermissionTo('view-logistics-shipments');
+        Permission::findOrCreate('assign-logistics-deliveries', 'user');
+        $staff->givePermissionTo('assign-logistics-deliveries');
         $this->actingAs($staff->fresh(), 'user')->get('/erp/logistics/shipments')->assertOk();
         $this->actingAs($staff->fresh(), 'user')->get('/erp/logistics/riders')->assertForbidden();
 
@@ -50,7 +50,7 @@ class LogisticsPageAccessTest extends TestCase
         $this->actingAs($staff->fresh(), 'user')->get('/erp/logistics/riders')->assertOk();
     }
 
-    public function test_logistics_rider_can_access_shipments_page_only(): void
+    public function test_logistics_rider_can_access_my_deliveries_but_not_dispatcher_shipments(): void
     {
         $this->seed(RolesAndPermissionsSeeder::class);
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -63,7 +63,8 @@ class LogisticsPageAccessTest extends TestCase
         $this->assertTrue($rider->fresh()->can('access-logistics-dashboard'));
 
         $this->actingAs($rider->fresh(), 'user')->get('/erp/logistics')->assertOk();
-        $this->actingAs($rider->fresh(), 'user')->get('/erp/logistics/shipments')->assertOk();
+        $this->actingAs($rider->fresh(), 'user')->get('/erp/logistics/shipments')->assertForbidden();
+        $this->actingAs($rider->fresh(), 'user')->get('/erp/logistics/deliveries')->assertOk();
         $this->actingAs($rider->fresh(), 'user')->get('/erp/logistics/riders')->assertForbidden();
     }
 
@@ -103,7 +104,7 @@ class LogisticsPageAccessTest extends TestCase
         ]);
 
         $response = $this->actingAs($riderUser->fresh(), 'user')
-            ->get('/erp/logistics/shipments')
+            ->get('/erp/logistics/deliveries')
             ->assertOk();
 
         $shipmentIds = collect($response->viewData('page')['props']['shipments']['data'])

@@ -39,7 +39,7 @@ function statusClass(status: string) {
 }
 
 export default function Shipments() {
-  const { shipments, filters, assignableRiders, canAssign, canUpdateStatus, canRecordProof, canApproveProof } = usePage<{
+  const { shipments, filters, assignableRiders, canAssign, canUpdateStatus, canRecordProof, canApproveProof, riderMode } = usePage<{
     shipments: PaginatedResponse<LogisticsShipment>;
     filters: ShipmentFilters;
     assignableRiders: Array<{ id: number; name: string; phone?: string | null }>;
@@ -47,6 +47,7 @@ export default function Shipments() {
     canUpdateStatus: boolean;
     canRecordProof: boolean;
     canApproveProof: boolean;
+    riderMode: boolean;
   }>().props;
   const [expandedShipmentId, setExpandedShipmentId] = useState<number | null>(null);
   const [selectedRiders, setSelectedRiders] = useState<Record<number, string>>({});
@@ -104,14 +105,14 @@ export default function Shipments() {
 
   return (
     <AppLayoutERP>
-      <Head title="ERP Logistics Shipments" />
+      <Head title={riderMode ? "My Deliveries" : "ERP Logistics Shipments"} />
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-950 dark:text-white">Shipments</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Track delivery legs and fulfillment status.</p>
+          <h1 className="text-2xl font-bold text-gray-950 dark:text-white">{riderMode ? 'My Deliveries' : 'Shipments'}</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400">{riderMode ? 'Process your assigned deliveries.' : 'Assign riders and approve delivery proof.'}</p>
         </div>
 
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        {!riderMode && <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap items-center gap-3">
             <select
               value={filters.status}
@@ -130,7 +131,7 @@ export default function Shipments() {
               {purposeOptions.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
             </select>
           </div>
-        </div>
+        </div>}
 
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
           <div className="overflow-x-auto">

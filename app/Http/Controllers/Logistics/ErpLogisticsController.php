@@ -25,7 +25,7 @@ class ErpLogisticsController extends Controller
 
     public function shipments(Request $request): Response
     {
-        $shopOwnerId = $this->authorizedShopOwnerId('view-logistics-shipments');
+        $shopOwnerId = $this->authorizedShopOwnerId('assign-logistics-deliveries');
         $user = Auth::guard('user')->user();
         $isDispatcher = $user && (
             $user->can('assign-logistics-deliveries') ||
@@ -77,9 +77,10 @@ class ErpLogisticsController extends Controller
                 'purpose' => $purpose,
             ],
             'canAssign' => $canAssign,
-            'canUpdateStatus' => $user && $user->can('update-logistics-status'),
-            'canRecordProof' => $user && $user->can('record-logistics-proof'),
-            'canApproveProof' => $user && $user->can('approve-proof-of-delivery'),
+            'canUpdateStatus' => false,
+            'canRecordProof' => false,
+            'canApproveProof' => $user && ($user->can('approve-proof-of-delivery') || $user->can('assign-logistics-deliveries')),
+            'riderMode' => false,
             'assignableRiders' => $canAssign
                 ? RiderProfile::query()
                     ->where('shop_owner_id', $shopOwnerId)
@@ -88,6 +89,43 @@ class ErpLogisticsController extends Controller
                     ->orderBy('name')
                     ->get(['id', 'name', 'phone', 'rider_type', 'availability_status'])
                 : [],
+        ]);
+    }
+
+    public function deliveries(Request $request): Response
+    {
+        $user = Auth::guard('user')->user();
+        if (!$user || !$user->shop_owner_id || !($user->can('operate-logistics-deliveries') || ($user->can('update-logistics-status') && $user->can('record-logistics-proof')))) {
+            abort(403);
+        }
+        $shopOwnerId = (int) $user->shop_owner_id;
+
+        return Inertia::render('ERP/Logistics/MyDeliveries', [
+            'shipments' => Shipment::query()
+                ->where('shop_owner_id', $shopOwnerId)
+                ->whereHas('legs.assignments', function ($assignments) use ($user) {
+                    $assignments->whereIn('status', ['assigned', 'accepted'])
+                        ->whereHas('riderProfile', fn ($riders) => $riders
+                            ->where('linked_type', User::class)
+                            ->where('linked_id', $user->id));
+                })
+                ->with(['legs' => function ($query) use ($user) {
+                    $query->with(['assignments.riderProfile', 'proofs'])
+                        ->whereHas('assignments', function ($assignments) use ($user) {
+                            $assignments->whereIn('status', ['assigned', 'accepted'])
+                                ->whereHas('riderProfile', fn ($riders) => $riders
+                                    ->where('linked_type', User::class)
+                                    ->where('linked_id', $user->id));
+                        });
+                }])
+                ->latest()->paginate(10),
+            'filters' => ['status' => 'all', 'purpose' => 'all'],
+            'canAssign' => false,
+            'canUpdateStatus' => $user->can('update-logistics-status'),
+            'canRecordProof' => $user->can('record-logistics-proof'),
+            'canApproveProof' => false,
+            'riderMode' => true,
+            'assignableRiders' => [],
         ]);
     }
 

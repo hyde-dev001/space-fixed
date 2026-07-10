@@ -103,10 +103,10 @@ class ShipmentController extends Controller
 
     public function approveProof(HandoffProof $proof, ShipmentLegService $legs): JsonResponse
     {
-        $shop = $this->authorizedShop('approve-proof-of-delivery');
+        $shop = $this->authorizedShopForProofApproval();
         $proof->loadMissing('leg.shipment');
         $this->abortUnlessTenant($proof->leg->shipment->shop_owner_id, $shop);
-        abort_unless(Auth::guard('shop_owner')->check() || Auth::guard('user')->user()?->can('approve-proof-of-delivery'), 403);
+        abort_unless(Auth::guard('shop_owner')->check() || $this->canApproveProof(Auth::guard('user')->user()), 403);
         abort_unless($proof->review_status === 'pending', 422);
 
         $actor = Auth::guard('user')->user() ?? $shop;
@@ -157,6 +157,25 @@ class ShipmentController extends Controller
         }
 
         return $user->shopOwner;
+    }
+
+    private function authorizedShopForProofApproval(): ShopOwner
+    {
+        if ($shop = Auth::guard('shop_owner')->user()) {
+            return $shop;
+        }
+
+        $user = Auth::guard('user')->user();
+        if (!$user instanceof User || !$user->shopOwner || !$this->canApproveProof($user)) {
+            abort(403);
+        }
+
+        return $user->shopOwner;
+    }
+
+    private function canApproveProof(?User $user): bool
+    {
+        return $user && ($user->can('approve-proof-of-delivery') || $user->can('assign-logistics-deliveries'));
     }
 
     private function abortUnlessTenant(int $shopOwnerId, ShopOwner $shop): void
