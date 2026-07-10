@@ -23,6 +23,12 @@ export type TrackingShipmentLeg = {
     file_path?: string | null;
     review_status?: string;
   }>;
+  attempts?: Array<{
+    id: number;
+    reason_code?: string | null;
+    notes?: string | null;
+    attempted_at?: string | null;
+  }>;
 };
 
 export type TrackingShipmentEvent = {

@@ -186,6 +186,13 @@ class LogisticsPageAccessTest extends TestCase
             'status' => 'active',
             'purpose' => 'retail_delivery',
         ]);
+        $wantedLeg = ShipmentLeg::factory()->create(['shipment_id' => $wanted->id, 'status' => 'delivery_attempted']);
+        $wantedLeg->attempts()->create([
+            'attempt_type' => 'delivery',
+            'status' => 'failed',
+            'reason_code' => 'recipient_unavailable',
+            'attempted_at' => now(),
+        ]);
         Shipment::factory()->create([
             'shop_owner_id' => $shop->id,
             'status' => 'completed',
@@ -206,6 +213,7 @@ class LogisticsPageAccessTest extends TestCase
             ->all();
 
         $this->assertSame([$wanted->id], $shipmentIds);
+        $this->assertArrayHasKey('attempts', $response->viewData('page')['props']['shipments']['data'][0]['legs'][0]);
     }
 
     public function test_dispatcher_shipments_include_available_riders_for_assignment(): void
