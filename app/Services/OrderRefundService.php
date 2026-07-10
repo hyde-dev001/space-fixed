@@ -608,6 +608,17 @@ class OrderRefundService
         ?array $lineDispositions = null,
     ): array
     {
+        $isShopOwnedPickup = (string) ($refund->return_source ?? '') === 'staff'
+            && strtolower((string) ($refund->staff_return_carrier ?? '')) === 'shop-owned logistics';
+
+        if ($isShopOwnedPickup && (string) ($refund->return_status ?? '') === 'pending_staff_pickup') {
+            return [
+                'result' => 'invalid_state',
+                'message' => 'Wait for the assigned rider to complete the return delivery before confirming receipt.',
+                'refund' => $refund,
+            ];
+        }
+
         if (!in_array((string) ($refund->return_status ?? 'awaiting_approval'), ['pending_customer_shipment', 'pending_staff_pickup', 'in_transit'], true)) {
             return [
                 'result' => 'invalid_state',

@@ -5,6 +5,7 @@ namespace App\Services\Logistics;
 use App\Models\Logistics\DeliveryAttempt;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\Order;
+use App\Models\OrderRefund;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -121,6 +122,7 @@ class ShipmentLegService
         if ($shipment->legs()->exists() && !$shipment->legs()->where('status', '!=', 'delivered')->exists()) {
             $shipment->update(['status' => 'completed', 'completed_at' => now()]);
             $this->completeShopOwnedRetailOrder($shipment);
+            $this->completeShopOwnedReturn($shipment);
             return;
         }
 
@@ -140,5 +142,19 @@ class ShipmentLegService
             ->whereRaw('LOWER(carrier_company) = ?', ['shop-owned logistics'])
             ->where('status', 'shipped')
             ->update(['status' => 'completed']);
+    }
+
+    private function completeShopOwnedReturn($shipment): void
+    {
+        if ($shipment->source_type !== 'order_refund' || $shipment->purpose !== 'refund_return') {
+            return;
+        }
+
+        OrderRefund::query()
+            ->whereKey($shipment->source_id)
+            ->where('return_source', 'staff')
+            ->whereRaw('LOWER(staff_return_carrier) = ?', ['shop-owned logistics'])
+            ->where('return_status', 'pending_staff_pickup')
+            ->update(['return_status' => 'in_transit', 'staff_return_shipped_at' => now()]);
     }
 }

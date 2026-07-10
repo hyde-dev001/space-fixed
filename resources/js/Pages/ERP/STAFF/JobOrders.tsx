@@ -811,9 +811,12 @@ export default function JobOrdersPage() {
   const canConfirmReturnReceived = (order: Order) => {
     const latestRefund = order.latest_refund;
     if (!latestRefund) return false;
+    const isShopOwnedPickup = String(latestRefund.return_source || '').toLowerCase() === 'staff'
+      && String(latestRefund.staff_return_carrier || '').toLowerCase() === 'shop-owned logistics';
 
     return String(latestRefund.flow_type || '').toLowerCase() === 'request_approval'
-      && ['pending_staff_pickup', 'in_transit'].includes(String(latestRefund.return_status || '').toLowerCase())
+      && (String(latestRefund.return_status || '').toLowerCase() === 'in_transit'
+        || (!isShopOwnedPickup && String(latestRefund.return_status || '').toLowerCase() === 'pending_staff_pickup'))
       && !['rejected', 'failed'].includes(String(latestRefund.status || '').toLowerCase());
   };
 

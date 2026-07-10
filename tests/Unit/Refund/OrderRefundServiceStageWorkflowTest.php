@@ -261,6 +261,24 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
     }
 
     #[Test]
+    public function staff_cannot_confirm_shop_owned_return_before_rider_delivery(): void
+    {
+        $refund = $this->makeRefund([
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'pending_staff_pickup',
+            'return_source' => 'staff',
+            'staff_return_carrier' => 'Shop-owned logistics',
+            'status' => 'pending_approval',
+        ]);
+
+        $result = $this->service->confirmReturnReceived($refund, staffId: 88);
+
+        $this->assertSame('invalid_state', $result['result']);
+        $this->assertSame('pending_staff_pickup', $refund->return_status);
+    }
+
+    #[Test]
     public function execute_refund_attempts_payout_when_return_is_in_transit(): void
     {
         $refund = $this->makeRefund([

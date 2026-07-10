@@ -6,6 +6,7 @@ use App\Models\Logistics\HandoffProof;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\Order;
+use App\Models\OrderRefund;
 use App\Models\ShopOwner;
 use App\Services\Logistics\ShipmentLegService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -134,5 +135,29 @@ class ShipmentLegServiceTest extends TestCase
         app(ShipmentLegService::class)->markDelivered($leg);
 
         $this->assertSame('shipped', $order->fresh()->status->value);
+    }
+
+    public function test_completed_shop_owned_return_allows_staff_confirmation(): void
+    {
+        $refund = OrderRefund::factory()->create([
+            'return_status' => 'pending_staff_pickup',
+            'return_source' => 'staff',
+            'staff_return_carrier' => 'Shop-owned logistics',
+        ]);
+        $shipment = Shipment::factory()->create([
+            'source_type' => 'order_refund',
+            'source_id' => $refund->id,
+            'purpose' => 'refund_return',
+            'status' => 'active',
+        ]);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id,
+            'status' => 'in_transit',
+            'requires_delivery_proof' => false,
+        ]);
+
+        app(ShipmentLegService::class)->markDelivered($leg);
+
+        $this->assertSame('in_transit', $refund->fresh()->return_status);
     }
 }
