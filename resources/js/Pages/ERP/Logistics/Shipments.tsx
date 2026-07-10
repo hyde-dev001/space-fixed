@@ -197,7 +197,12 @@ export default function Shipments() {
                                   {canUpdateStatus && leg.status === 'assigned' && <button type="button" onClick={() => void act(`/api/logistics/legs/${leg.id}/picked-up`)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">Picked up</button>}
                                   {canUpdateStatus && leg.status === 'picked_up' && <button type="button" onClick={() => void act(`/api/logistics/legs/${leg.id}/in-transit`)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">In transit</button>}
                                   {canRecordProof && leg.status === 'in_transit' && <><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setProofFiles({ ...proofFiles, [leg.id]: event.target.files?.[0] ?? null })} className="text-sm" /><button type="button" onClick={() => submitProof(leg.id)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">Submit proof</button></>}
-                                  {canApproveProof && leg.status === 'awaiting_proof_approval' && leg.proofs?.filter((proof) => proof.review_status === 'pending').map((proof) => <button key={proof.id} type="button" onClick={() => void act(`/api/logistics/proofs/${proof.id}/approve`)} className="rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white">Approve delivery proof</button>)}
+                                  {canApproveProof && leg.status === 'awaiting_proof_approval' && leg.proofs?.filter((proof) => proof.review_status === 'pending').map((proof) => (
+                                    <div key={proof.id} className="flex items-center gap-2">
+                                      {proof.file_path && <a href={`/storage/${proof.file_path}`} target="_blank" rel="noreferrer" aria-label="Open uploaded delivery proof"><img src={`/storage/${proof.file_path}`} alt="Uploaded delivery proof" className="h-12 w-12 rounded border border-gray-200 object-cover" /></a>}
+                                      <button type="button" onClick={() => void act(`/api/logistics/proofs/${proof.id}/approve`)} className="rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white">Confirm delivery</button>
+                                    </div>
+                                  ))}
                                 </div>
                                 {activeAssignment ? (
                                   <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Assigned to {activeAssignment.rider_profile?.name ?? 'rider'}</p>
