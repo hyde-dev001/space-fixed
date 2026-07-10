@@ -124,6 +124,55 @@ class LogisticsPageAccessTest extends TestCase
         $this->assertSame([$assignedShipment->id], $shipmentIds);
     }
 
+    public function test_logistics_rider_can_filter_deliveries_by_status_and_today_assignment(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        $shop = ShopOwner::factory()->create();
+        $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $rider->assignRole('Logistics Rider');
+        $profile = RiderProfile::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'linked_type' => User::class,
+            'linked_id' => $rider->id,
+        ]);
+        $todayShipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+        $todayLeg = ShipmentLeg::factory()->create([
+            'shipment_id' => $todayShipment->id,
+            'status' => 'in_transit',
+        ]);
+        $todayLeg->attempts()->create([
+            'attempt_type' => 'delivery',
+            'status' => 'failed',
+            'reason_code' => 'recipient_unavailable',
+            'attempted_at' => now(),
+        ]);
+        DeliveryAssignment::factory()->create([
+            'shipment_leg_id' => $todayLeg->id,
+            'rider_profile_id' => $profile->id,
+            'assigned_at' => now(config('app.shop_timezone', 'Asia/Manila')),
+        ]);
+        $oldShipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+        $oldLeg = ShipmentLeg::factory()->create([
+            'shipment_id' => $oldShipment->id,
+            'status' => 'in_transit',
+        ]);
+        DeliveryAssignment::factory()->create([
+            'shipment_leg_id' => $oldLeg->id,
+            'rider_profile_id' => $profile->id,
+            'assigned_at' => now(config('app.shop_timezone', 'Asia/Manila'))->subDay(),
+        ]);
+
+        $response = $this->actingAs($rider->fresh(), 'user')
+            ->get('/erp/logistics/deliveries?status=in_transit&window=today')
+            ->assertOk();
+
+        $shipments = $response->viewData('page')['props']['shipments']['data'];
+        $this->assertSame([$todayShipment->id], collect($shipments)->pluck('id')->all());
+        $this->assertSame('in_transit', $response->viewData('page')['props']['filters']['status']);
+        $this->assertSame('today', $response->viewData('page')['props']['filters']['window']);
+        $this->assertArrayHasKey('attempts', $shipments[0]['legs'][0]);
+    }
+
     public function test_dispatcher_can_filter_shipments_by_status_and_purpose(): void
     {
         $this->seed(RolesAndPermissionsSeeder::class);

@@ -7,6 +7,7 @@ use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\User;
 use App\Services\Logistics\RiderProfileSyncService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
@@ -99,27 +100,38 @@ class ErpLogisticsController extends Controller
             abort(403);
         }
         $shopOwnerId = (int) $user->shop_owner_id;
+        $status = $request->query('status', 'all');
+        $window = $request->query('window', 'all');
+        $status = in_array($status, ['all', 'assigned', 'picked_up', 'in_transit', 'delivery_attempted', 'awaiting_proof_approval', 'delivered', 'cancelled'], true) ? $status : 'all';
+        $window = in_array($window, ['all', 'today', 'week'], true) ? $window : 'all';
+        $now = Carbon::now(config('app.shop_timezone', 'Asia/Manila'));
+        [$windowStart, $windowEnd] = match ($window) {
+            'today' => [$now->copy()->startOfDay()->utc(), $now->copy()->endOfDay()->utc()],
+            'week' => [$now->copy()->startOfWeek()->utc(), $now->copy()->endOfWeek()->utc()],
+            default => [null, null],
+        };
+        $assignedToRider = function ($assignments) use ($user, $windowStart, $windowEnd) {
+            $assignments->whereIn('status', ['assigned', 'accepted'])
+                ->whereHas('riderProfile', fn ($riders) => $riders
+                    ->where('linked_type', User::class)
+                    ->where('linked_id', $user->id))
+                ->when($windowStart, fn ($query) => $query->whereBetween('assigned_at', [$windowStart, $windowEnd]));
+        };
 
         return Inertia::render('ERP/Logistics/MyDeliveries', [
             'shipments' => Shipment::query()
                 ->where('shop_owner_id', $shopOwnerId)
-                ->whereHas('legs.assignments', function ($assignments) use ($user) {
-                    $assignments->whereIn('status', ['assigned', 'accepted'])
-                        ->whereHas('riderProfile', fn ($riders) => $riders
-                            ->where('linked_type', User::class)
-                            ->where('linked_id', $user->id));
+                ->whereHas('legs', function ($legs) use ($status, $assignedToRider) {
+                    $legs->when($status !== 'all', fn ($query) => $query->where('status', $status))
+                        ->whereHas('assignments', $assignedToRider);
                 })
-                ->with(['legs' => function ($query) use ($user) {
-                    $query->with(['assignments.riderProfile', 'proofs'])
-                        ->whereHas('assignments', function ($assignments) use ($user) {
-                            $assignments->whereIn('status', ['assigned', 'accepted'])
-                                ->whereHas('riderProfile', fn ($riders) => $riders
-                                    ->where('linked_type', User::class)
-                                    ->where('linked_id', $user->id));
-                        });
+                ->with(['legs' => function ($query) use ($status, $assignedToRider) {
+                    $query->with(['assignments.riderProfile', 'proofs', 'attempts' => fn ($attempts) => $attempts->latest('attempted_at')])
+                        ->when($status !== 'all', fn ($legs) => $legs->where('status', $status))
+                        ->whereHas('assignments', $assignedToRider);
                 }])
                 ->latest()->paginate(10),
-            'filters' => ['status' => 'all', 'purpose' => 'all'],
+            'filters' => ['status' => $status, 'purpose' => 'all', 'window' => $window],
             'canAssign' => false,
             'canUpdateStatus' => $user->can('update-logistics-status'),
             'canRecordProof' => $user->can('record-logistics-proof'),
