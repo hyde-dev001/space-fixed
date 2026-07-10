@@ -38,7 +38,7 @@ class ErpLogisticsController extends Controller
         return Inertia::render('ERP/Logistics/Shipments', [
             'shipments' => Shipment::query()
                 ->with(['legs' => function ($query) use ($user, $isDispatcher) {
-                    $query->with('assignments.riderProfile');
+                    $query->with(['assignments.riderProfile', 'proofs']);
 
                     if (!$isDispatcher) {
                         $query->whereHas('assignments', function ($assignments) use ($user) {
@@ -77,6 +77,9 @@ class ErpLogisticsController extends Controller
                 'purpose' => $purpose,
             ],
             'canAssign' => $canAssign,
+            'canUpdateStatus' => $user && $user->can('update-logistics-status'),
+            'canRecordProof' => $user && $user->can('record-logistics-proof'),
+            'canApproveProof' => $user && $user->can('approve-proof-of-delivery'),
             'assignableRiders' => $canAssign
                 ? RiderProfile::query()
                     ->where('shop_owner_id', $shopOwnerId)
