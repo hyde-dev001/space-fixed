@@ -536,15 +536,21 @@ class StaffOrderController extends Controller
 
     public function arrangeReturnPickup(Request $request, $id)
     {
+        $isShopOwned = $request->input('delivery_method') === 'shop_owned';
         $validated = $request->validate([
-            'tracking_number' => 'required|string|max:255',
-            'carrier_company' => 'required|string|max:255',
-            'rider_name' => 'required|string|max:255',
-            'rider_phone' => 'required|string|max:30',
-            'tracking_link' => 'required|url|max:500',
+            'delivery_method' => 'nullable|in:shop_owned,third_party',
+            'tracking_number' => ($isShopOwned ? 'nullable' : 'required') . '|string|max:255',
+            'carrier_company' => ($isShopOwned ? 'nullable' : 'required') . '|string|max:255',
+            'rider_name' => ($isShopOwned ? 'nullable' : 'required') . '|string|max:255',
+            'rider_phone' => ($isShopOwned ? 'nullable' : 'required') . '|string|max:30',
+            'tracking_link' => ($isShopOwned ? 'nullable' : 'required') . '|url|max:500',
             'note' => 'nullable|string|max:1000',
             'shipped_at' => 'nullable|date',
         ]);
+
+        if ($isShopOwned) {
+            $validated['carrier_company'] = 'Shop-owned logistics';
+        }
 
         $user = Auth::guard('user')->user();
 
@@ -593,6 +599,10 @@ class StaffOrderController extends Controller
                 'success' => false,
                 'message' => $result['message'] ?? 'Return pickup cannot be arranged right now.',
             ], 422);
+        }
+
+        if ($isShopOwned) {
+            $this->orderRefundService->ensureReturnShipment($result['refund']);
         }
 
         return response()->json([

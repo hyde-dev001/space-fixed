@@ -870,10 +870,18 @@ export default function JobOrdersPage() {
             </div>
           </div>
 
-          <div style="display:grid;gap:10px;">
-            <p style="margin:0;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#475569;">Courier Assignment</p>
+           <div style="display:grid;gap:10px;">
+             <p style="margin:0;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#475569;">Courier Assignment</p>
 
-            <div style="display:grid;gap:6px;">
+             <div style="display:grid;gap:6px;">
+               <label style="font-size:13px;font-weight:600;color:#334155;">Delivery Method</label>
+               <select id="swal-delivery-method" style="border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;">
+                 <option value="third_party">Third-party courier</option>
+                 <option value="shop_owned">Shop-owned logistics</option>
+               </select>
+             </div>
+
+            <div id="swal-third-party-fields" style="display:grid;gap:10px;">
               <label style="font-size:13px;font-weight:600;color:#334155;">Carrier Company</label>
               <input id="swal-carrier-company" class="swal2-input" placeholder="e.g. J&T, LBC, Ninja Van" value="${escapeHtml(defaultCarrier)}" style="margin:0;border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;" />
             </div>
@@ -899,7 +907,7 @@ export default function JobOrdersPage() {
             </div>
           </div>
 
-          <p style="margin:0;font-size:12px;color:#64748b;">Tip: You can save initial rider details now, then update later with final tracking status.</p>
+          <p id="swal-pickup-tip" style="margin:0;font-size:12px;color:#64748b;">Tip: You can save initial rider details now, then update later with final tracking status.</p>
         </div>
       `,
       showCancelButton: true,
@@ -910,6 +918,19 @@ export default function JobOrdersPage() {
       cancelButtonColor: '#6b7280',
       focusConfirm: false,
       didOpen: () => {
+        const deliveryMethodInput = document.getElementById('swal-delivery-method') as HTMLSelectElement | null;
+        const thirdPartyFields = document.getElementById('swal-third-party-fields');
+        const pickupTip = document.getElementById('swal-pickup-tip');
+        const toggleThirdPartyFields = () => {
+          const isThirdParty = deliveryMethodInput?.value === 'third_party';
+          if (thirdPartyFields) thirdPartyFields.style.display = isThirdParty ? 'grid' : 'none';
+          if (pickupTip) pickupTip.textContent = isThirdParty
+            ? 'Tip: You can save initial rider details now, then update later with final tracking status.'
+            : 'Dispatcher assigns a rider from Logistics after you save.';
+        };
+        deliveryMethodInput?.addEventListener('change', toggleThirdPartyFields);
+        toggleThirdPartyFields();
+
         const riderPhoneInput = document.getElementById('swal-rider-phone') as HTMLInputElement | null;
         if (!riderPhoneInput) return;
 
@@ -923,6 +944,9 @@ export default function JobOrdersPage() {
         }
       },
       preConfirm: () => {
+        const deliveryMethod = (document.getElementById('swal-delivery-method') as HTMLSelectElement | null)?.value || 'third_party';
+        if (deliveryMethod === 'shop_owned') return { deliveryMethod };
+
         const carrierCompany = (document.getElementById('swal-carrier-company') as HTMLInputElement | null)?.value?.trim() || '';
         const riderName = (document.getElementById('swal-rider-name') as HTMLInputElement | null)?.value?.trim() || '';
         const riderPhone = (document.getElementById('swal-rider-phone') as HTMLInputElement | null)?.value?.trim() || '';
@@ -947,6 +971,7 @@ export default function JobOrdersPage() {
         }
 
         return {
+          deliveryMethod,
           carrierCompany,
           riderName,
           riderPhone,
@@ -974,6 +999,7 @@ export default function JobOrdersPage() {
           'X-CSRF-TOKEN': csrfData.csrf_token,
         },
         body: JSON.stringify({
+          delivery_method: shipmentInput.value.deliveryMethod,
           tracking_number: shipmentInput.value.trackingNumber,
           carrier_company: shipmentInput.value.carrierCompany,
           rider_name: shipmentInput.value.riderName,

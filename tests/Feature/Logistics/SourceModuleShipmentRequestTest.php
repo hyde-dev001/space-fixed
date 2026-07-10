@@ -108,6 +108,41 @@ class SourceModuleShipmentRequestTest extends TestCase
         ]);
     }
 
+    public function test_staff_can_arrange_a_shop_owned_return_pickup(): void
+    {
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $staff = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'STAFF']);
+        Permission::findOrCreate('access-staff-job-orders', 'user');
+        $staff->givePermissionTo('access-staff-job-orders');
+        $order = Order::factory()->create(['shop_owner_id' => $shop->id]);
+        $refund = OrderRefund::factory()->create([
+            'order_id' => $order->id,
+            'shop_owner_id' => $shop->id,
+            'flow_type' => 'request_approval',
+            'status' => 'processing',
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'pending_customer_shipment',
+        ]);
+
+        $this->actingAs($staff, 'user')
+            ->postJson("/api/staff/orders/{$order->id}/arrange-return-pickup", [
+                'delivery_method' => 'shop_owned',
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('order_refunds', [
+            'id' => $refund->id,
+            'staff_return_carrier' => 'Shop-owned logistics',
+            'return_status' => 'pending_staff_pickup',
+        ]);
+        $this->assertDatabaseHas('shipments', [
+            'source_type' => 'order_refund',
+            'source_id' => $refund->id,
+            'purpose' => 'refund_return',
+        ]);
+    }
+
     public function test_repair_pickup_creates_inbound_shipment(): void
     {
         $shop = ShopOwner::factory()->create();
