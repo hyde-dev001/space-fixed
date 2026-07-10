@@ -30,10 +30,16 @@ class ProofService
         $data = $validator->validated();
         $this->assertCanRecord($leg, $data['handoff_type']);
 
-        return $leg->proofs()->create([
+        $proof = $leg->proofs()->create([
             ...$data,
             'recorded_at' => now(),
         ]);
+
+        if ($data['handoff_type'] === 'delivery') {
+            $leg->update(['status' => 'awaiting_proof_approval']);
+        }
+
+        return $proof;
     }
 
     public function hasRequiredPickupProof(ShipmentLeg $leg): bool
@@ -53,6 +59,7 @@ class ProofService
 
         return $leg->proofs()
             ->whereIn('handoff_type', ['delivery', 'receive'])
+            ->where('review_status', 'approved')
             ->exists();
     }
 

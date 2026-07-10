@@ -38,7 +38,7 @@ class ErpLogisticsController extends Controller
         return Inertia::render('ERP/Logistics/Shipments', [
             'shipments' => Shipment::query()
                 ->with(['legs' => function ($query) use ($user, $isDispatcher) {
-                    $query->with('assignments.riderProfile');
+                    $query->with(['assignments.riderProfile', 'proofs']);
 
                     if (!$isDispatcher) {
                         $query->whereHas('assignments', function ($assignments) use ($user) {
@@ -77,6 +77,9 @@ class ErpLogisticsController extends Controller
                 'purpose' => $purpose,
             ],
             'canAssign' => $canAssign,
+            'canUpdateStatus' => $user && $user->can('update-logistics-status'),
+            'canRecordProof' => $user && $user->can('record-logistics-proof'),
+            'canApproveProof' => $user && $user->can('approve-proof-of-delivery'),
             'assignableRiders' => $canAssign
                 ? RiderProfile::query()
                     ->where('shop_owner_id', $shopOwnerId)
@@ -90,7 +93,7 @@ class ErpLogisticsController extends Controller
 
     public function riders(Request $request): Response
     {
-        $shopOwnerId = $this->authorizedShopOwnerId('manage-logistics-riders', false);
+        $shopOwnerId = $this->authorizedShopOwnerId('manage-logistics-riders');
         $availability = $request->query('availability', 'all');
         $type = $request->query('type', 'all');
         app(RiderProfileSyncService::class)->syncShop($shopOwnerId);
@@ -114,13 +117,10 @@ class ErpLogisticsController extends Controller
         ]);
     }
 
-    private function authorizedShopOwnerId(string $permission, bool $allowDashboardAccess = true): int
+    private function authorizedShopOwnerId(string $permission): int
     {
         $user = Auth::guard('user')->user();
-        $hasAccess = $user && (
-            $user->can($permission) ||
-            ($allowDashboardAccess && $user->can('access-logistics-dashboard'))
-        );
+        $hasAccess = $user && $user->can($permission);
 
         if (!$user || !$user->shop_owner_id || !$hasAccess) {
             abort(403);

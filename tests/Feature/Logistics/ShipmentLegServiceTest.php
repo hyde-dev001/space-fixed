@@ -29,7 +29,7 @@ class ShipmentLegServiceTest extends TestCase
     public function test_leg_cannot_be_delivered_without_required_delivery_proof(): void
     {
         $leg = ShipmentLeg::factory()->create([
-            'status' => 'in_transit',
+            'status' => 'awaiting_proof_approval',
             'requires_delivery_proof' => true,
         ]);
 
@@ -41,7 +41,7 @@ class ShipmentLegServiceTest extends TestCase
     public function test_leg_can_be_delivered_after_delivery_proof_is_recorded(): void
     {
         $leg = ShipmentLeg::factory()->create([
-            'status' => 'in_transit',
+            'status' => 'awaiting_proof_approval',
             'requires_delivery_proof' => true,
         ]);
 
@@ -49,6 +49,7 @@ class ShipmentLegServiceTest extends TestCase
             'shipment_leg_id' => $leg->id,
             'handoff_type' => 'delivery',
             'proof_type' => 'photo',
+            'review_status' => 'approved',
         ]);
 
         app(ShipmentLegService::class)->markDelivered($leg);

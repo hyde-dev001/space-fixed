@@ -37,7 +37,11 @@ class ShipmentLegService
     public function markDelivered(ShipmentLeg $leg): ShipmentLeg
     {
         $leg->loadMissing('shipment');
-        $this->assertTransitionAllowed($leg, ['in_transit', 'delivery_attempted'], 'delivered');
+        $this->assertTransitionAllowed(
+            $leg,
+            $leg->requires_delivery_proof ? ['awaiting_proof_approval'] : ['in_transit', 'delivery_attempted'],
+            'delivered'
+        );
 
         if (!$this->proofs->hasRequiredDeliveryProof($leg)) {
             throw ValidationException::withMessages(['proof' => 'Delivery proof is required before marking this leg delivered.']);

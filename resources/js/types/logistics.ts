@@ -16,6 +16,13 @@ export type TrackingShipmentLeg = {
     status: string;
     rider_profile?: LogisticsRider | null;
   }>;
+  proofs?: Array<{
+    id: number;
+    handoff_type: string;
+    proof_type: string;
+    file_path?: string | null;
+    review_status?: string;
+  }>;
 };
 
 export type TrackingShipmentEvent = {

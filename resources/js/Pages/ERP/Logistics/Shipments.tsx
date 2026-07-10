@@ -39,22 +39,47 @@ function statusClass(status: string) {
 }
 
 export default function Shipments() {
-  const { shipments, filters, assignableRiders, canAssign } = usePage<{
+  const { shipments, filters, assignableRiders, canAssign, canUpdateStatus, canRecordProof, canApproveProof } = usePage<{
     shipments: PaginatedResponse<LogisticsShipment>;
     filters: ShipmentFilters;
     assignableRiders: Array<{ id: number; name: string; phone?: string | null }>;
     canAssign: boolean;
+    canUpdateStatus: boolean;
+    canRecordProof: boolean;
+    canApproveProof: boolean;
   }>().props;
   const [expandedShipmentId, setExpandedShipmentId] = useState<number | null>(null);
   const [selectedRiders, setSelectedRiders] = useState<Record<number, string>>({});
   const [assigningLegId, setAssigningLegId] = useState<number | null>(null);
   const [assignmentError, setAssignmentError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [proofFiles, setProofFiles] = useState<Record<number, File | null>>({});
 
   const updateFilter = (key: keyof ShipmentFilters, value: string) => {
     router.get('/erp/logistics/shipments', { ...filters, [key]: value, page: 1 }, {
       preserveScroll: true,
       preserveState: true,
     });
+  };
+
+  const act = async (url: string, body?: FormData) => {
+    setActionError(null);
+    try {
+      await axios.post(url, body, body ? { headers: { 'Content-Type': 'multipart/form-data' } } : undefined);
+      router.reload({ only: ['shipments'] });
+    } catch (error: any) {
+      setActionError(error.response?.data?.message ?? 'Unable to update this delivery.');
+    }
+  };
+
+  const submitProof = (legId: number) => {
+    const file = proofFiles[legId];
+    if (!file) return setActionError('Select a proof image first.');
+    const form = new FormData();
+    form.append('handoff_type', 'delivery');
+    form.append('proof_type', 'photo');
+    form.append('proof_file', file);
+    void act(`/api/logistics/legs/${legId}/proof`, form);
   };
 
   const assignRider = async (legId: number) => {
@@ -117,7 +142,7 @@ export default function Shipments() {
                   <TableCell isHeader className="px-6 py-4 font-semibold text-gray-900 dark:text-white">Status</TableCell>
                   <TableCell isHeader className="px-6 py-4 font-semibold text-gray-900 dark:text-white">Source</TableCell>
                   <TableCell isHeader className="px-6 py-4 font-semibold text-gray-900 dark:text-white">Legs</TableCell>
-                  {canAssign && <TableCell isHeader className="px-6 py-4 font-semibold text-gray-900 dark:text-white">Action</TableCell>}
+                  {(canAssign || canUpdateStatus || canRecordProof || canApproveProof) && <TableCell isHeader className="px-6 py-4 font-semibold text-gray-900 dark:text-white">Action</TableCell>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -141,19 +166,19 @@ export default function Shipments() {
                     </TableCell>
                     <TableCell className="px-6 py-4 text-gray-600 dark:text-gray-300">{shipment.source_type} #{shipment.source_id}</TableCell>
                     <TableCell className="px-6 py-4 text-gray-600 dark:text-gray-300">{shipment.legs?.length ?? 0}</TableCell>
-                    {canAssign && (
+                    {(canAssign || canUpdateStatus || canRecordProof || canApproveProof) && (
                       <TableCell className="px-6 py-4">
                         <button
                           type="button"
                           onClick={() => setExpandedShipmentId(expandedShipmentId === shipment.id ? null : shipment.id)}
                           className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100"
                         >
-                          {expandedShipmentId === shipment.id ? 'Close' : 'Assign rider'}
+                          {expandedShipmentId === shipment.id ? 'Close' : 'Open delivery'}
                         </button>
                       </TableCell>
                     )}
                   </TableRow>
-                  {canAssign && expandedShipmentId === shipment.id && (
+                  {(canAssign || canUpdateStatus || canRecordProof || canApproveProof) && expandedShipmentId === shipment.id && (
                     <TableRow>
                       <TableCell colSpan={6} className="bg-gray-50 px-6 py-5 dark:bg-gray-900/40">
                         <div className="space-y-3">
@@ -166,6 +191,12 @@ export default function Shipments() {
                                 <div>
                                   <p className="text-sm font-semibold text-gray-900 dark:text-white">{label(leg.leg_type)} leg</p>
                                   <p className="text-xs text-gray-500 dark:text-gray-400">{label(leg.status)}</p>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {canUpdateStatus && leg.status === 'assigned' && <button type="button" onClick={() => void act(`/api/logistics/legs/${leg.id}/picked-up`)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">Picked up</button>}
+                                  {canUpdateStatus && leg.status === 'picked_up' && <button type="button" onClick={() => void act(`/api/logistics/legs/${leg.id}/in-transit`)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">In transit</button>}
+                                  {canRecordProof && leg.status === 'in_transit' && <><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setProofFiles({ ...proofFiles, [leg.id]: event.target.files?.[0] ?? null })} className="text-sm" /><button type="button" onClick={() => submitProof(leg.id)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">Submit proof</button></>}
+                                  {canApproveProof && leg.status === 'awaiting_proof_approval' && leg.proofs?.filter((proof) => proof.review_status === 'pending').map((proof) => <button key={proof.id} type="button" onClick={() => void act(`/api/logistics/proofs/${proof.id}/approve`)} className="rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white">Approve delivery proof</button>)}
                                 </div>
                                 {activeAssignment ? (
                                   <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Assigned to {activeAssignment.rider_profile?.name ?? 'rider'}</p>
@@ -197,6 +228,7 @@ export default function Shipments() {
                           })}
                           {assignableRiders.length === 0 && <p className="text-sm text-amber-700">No active available riders. Create or make a logistics rider available first.</p>}
                           {assignmentError && <p className="text-sm text-red-600">{assignmentError}</p>}
+                          {actionError && <p className="text-sm text-red-600">{actionError}</p>}
                         </div>
                       </TableCell>
                     </TableRow>
