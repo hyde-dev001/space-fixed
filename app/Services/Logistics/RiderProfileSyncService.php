@@ -9,7 +9,7 @@ class RiderProfileSyncService
 {
     public function syncUser(User $user): void
     {
-        if (!$user->shop_owner_id || !$user->hasRole('Logistics Rider')) {
+        if (!$user->shop_owner_id || !$this->canRide($user)) {
             return;
         }
 
@@ -33,23 +33,26 @@ class RiderProfileSyncService
     {
         User::query()
             ->where('shop_owner_id', $shopOwnerId)
-            ->whereHas('roles', function ($query) {
-                $query->where('name', 'Logistics Rider')
-                    ->where('guard_name', 'user');
-            })
+            ->with(['roles.permissions', 'permissions'])
             ->get()
+            ->filter(fn (User $user) => $this->canRide($user))
             ->each(fn (User $user) => $this->syncUser($user));
 
         RiderProfile::query()
             ->where('shop_owner_id', $shopOwnerId)
             ->where('rider_type', 'employee')
             ->where('linked_type', User::class)
-            ->whereDoesntHaveMorph('linked', [User::class], function ($query) {
-                $query->whereHas('roles', function ($roles) {
-                    $roles->where('name', 'Logistics Rider')
-                        ->where('guard_name', 'user');
-                });
-            })
-            ->update(['active' => false]);
+            ->get()
+            ->each(function (RiderProfile $profile) {
+                $user = User::find($profile->linked_id);
+                if (!$user || !$this->canRide($user)) {
+                    $profile->update(['active' => false]);
+                }
+            });
+    }
+
+    private function canRide(User $user): bool
+    {
+        return $user->can('operate-logistics-deliveries');
     }
 }

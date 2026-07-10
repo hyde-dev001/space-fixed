@@ -108,6 +108,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'approve-proof-of-delivery',
             'view-proof-of-delivery',
             'manage-logistics-deliveries',
+            'operate-logistics-deliveries',
             'manage-logistics-courier-providers',
             'manage-logistics-shipping-methods',
             'configure-logistics-settings',
@@ -309,6 +310,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'view-logistics-shipments',
             'update-logistics-status',
             'record-logistics-proof',
+            'operate-logistics-deliveries',
             'access-notification-center',
             'access-profile',
         ]);

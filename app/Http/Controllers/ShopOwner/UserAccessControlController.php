@@ -663,6 +663,7 @@ class UserAccessControlController extends Controller
             'inventory' => [],
             'procurement' => [],
             'staff' => [],
+            'logistics' => [],
             'common' => [],
         ];
 
