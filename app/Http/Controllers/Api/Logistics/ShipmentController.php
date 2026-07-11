@@ -131,6 +131,51 @@ class ShipmentController extends Controller
         ], 201);
     }
 
+    public function reportIssue(Request $request, ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse
+    {
+        $this->authorizeLegUpdate($leg);
+        $payload = $request->validate([
+            'reason_code' => ['required', 'in:recipient_unavailable,wrong_or_incomplete_address,recipient_refused,vehicle_or_delivery_problem,other'],
+            'notes' => ['nullable', 'string'],
+        ]);
+        $actor = Auth::guard('user')->user() ?? Auth::guard('shop_owner')->user();
+
+        $payload['attempt_type'] = 'delivery';
+        $payload['recorded_by_type'] = $actor::class;
+        $payload['recorded_by_id'] = $actor->id;
+
+        return response()->json([
+            'attempt' => $legs->recordFailedAttempt($leg, $payload),
+        ], 201);
+    }
+
+    public function cancel(ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse
+    {
+        $shop = $this->authorizedShop('assign-logistics-deliveries');
+        $leg->loadMissing('shipment');
+        $this->abortUnlessTenant($leg->shipment->shop_owner_id, $shop);
+
+        $attempt = $leg->attempts()
+            ->where('attempt_type', 'delivery')
+            ->where('status', 'failed')
+            ->latest('attempted_at')
+            ->latest('id')
+            ->first();
+        $reasons = [
+            'recipient_unavailable' => 'Recipient was unavailable',
+            'wrong_or_incomplete_address' => 'Address could not be completed',
+            'recipient_refused' => 'Recipient refused the delivery',
+            'vehicle_or_delivery_problem' => 'A delivery problem prevented completion',
+            'other' => 'Delivery could not be completed',
+        ];
+
+        abort_unless($attempt && isset($reasons[$attempt->reason_code]), 422);
+
+        return response()->json([
+            'leg' => $legs->cancel($leg, $reasons[$attempt->reason_code]),
+        ]);
+    }
+
     private function authorizeLegUpdate(ShipmentLeg $leg): ShopOwner
     {
         $shop = $this->authorizedShop('update-logistics-status');
