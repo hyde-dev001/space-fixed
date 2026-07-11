@@ -63,6 +63,15 @@ export default function ShipmentTracking() {
           </div>
         </section>
 
+        {currentLeg?.schedule_status === 'scheduled' && (
+          <section className="mb-6 rounded-lg border border-gray-200 bg-white p-5">
+            <p className="text-xs font-semibold uppercase text-gray-500">Estimated delivery</p>
+            <p className="mt-1 text-sm font-semibold text-gray-900">
+              {currentLeg.scheduled_delivery_date} · {titleCase(currentLeg.delivery_window || '')}
+            </p>
+          </section>
+        )}
+
         <section className="mb-6 rounded-lg border border-gray-200 bg-white">
           <div className="border-b border-gray-200 px-5 py-4">
             <h2 className="text-base font-bold text-gray-950">{itemLabel} Movement</h2>

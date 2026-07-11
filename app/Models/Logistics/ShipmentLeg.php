@@ -29,6 +29,13 @@ class ShipmentLeg extends Model
         'failed_at',
         'requires_pickup_proof',
         'requires_delivery_proof',
+        'scheduled_delivery_date',
+        'delivery_window',
+        'schedule_status',
+        'schedule_override_reason',
+        'distance_km',
+        'estimated_at',
+        'delivery_batch_id', 'stop_sequence', 'attempt_number', 'out_for_delivery_at', 'urgent_at',
     ];
 
     protected $casts = [
@@ -41,6 +48,11 @@ class ShipmentLeg extends Model
         'failed_at' => 'datetime',
         'requires_pickup_proof' => 'boolean',
         'requires_delivery_proof' => 'boolean',
+        'scheduled_delivery_date' => 'date',
+        'distance_km' => 'decimal:2',
+        'estimated_at' => 'datetime',
+        'stop_sequence' => 'integer', 'attempt_number' => 'integer',
+        'out_for_delivery_at' => 'datetime', 'urgent_at' => 'datetime',
     ];
 
     public function shipment(): BelongsTo
@@ -71,5 +83,10 @@ class ShipmentLeg extends Model
     public function events(): HasMany
     {
         return $this->hasMany(DeliveryEvent::class);
+    }
+
+    public function deliveryBatch(): BelongsTo
+    {
+        return $this->belongsTo(DeliveryBatch::class);
     }
 }

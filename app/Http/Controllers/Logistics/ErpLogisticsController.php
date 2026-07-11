@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Logistics;
 use App\Http\Controllers\Controller;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
+use App\Models\Logistics\LogisticsSetting;
+use App\Models\Logistics\DeliveryBatch;
 use App\Models\User;
 use App\Services\Logistics\RiderProfileSyncService;
 use Illuminate\Http\Request;
@@ -151,6 +153,10 @@ class ErpLogisticsController extends Controller
             'canApproveProof' => false,
             'riderMode' => true,
             'assignableRiders' => [],
+            'batches' => DeliveryBatch::query()->with(['legs', 'riderProfile'])
+                ->where('shop_owner_id', $shopOwnerId)
+                ->whereHas('riderProfile', fn ($query) => $query->where('linked_type', User::class)->where('linked_id', $user->id))
+                ->whereIn('status', ['offered', 'accepted', 'in_progress'])->orderBy('delivery_date')->get(),
         ]);
     }
 
@@ -177,6 +183,27 @@ class ErpLogisticsController extends Controller
                 'availability' => $availability,
                 'type' => $type,
             ],
+        ]);
+    }
+
+    public function settings(): Response
+    {
+        $shopOwnerId = $this->authorizedShopOwnerId('configure-logistics-settings');
+
+        return Inertia::render('ERP/Logistics/Settings', [
+            'settings' => LogisticsSetting::firstOrCreate(['shop_owner_id' => $shopOwnerId]),
+        ]);
+    }
+
+    public function batches(): Response
+    {
+        $shopOwnerId = $this->authorizedShopOwnerId('manage-logistics-batches');
+        return Inertia::render('ERP/Logistics/Batches', [
+            'batches' => DeliveryBatch::with(['riderProfile', 'legs'])->where('shop_owner_id', $shopOwnerId)->latest()->get(),
+            'pool' => \App\Models\Logistics\ShipmentLeg::with('shipment')
+                ->whereHas('shipment', fn ($query) => $query->where('shop_owner_id', $shopOwnerId))
+                ->whereNull('delivery_batch_id')->where('schedule_status', 'scheduled')->where('status', 'pending')->get(),
+            'riders' => RiderProfile::where('shop_owner_id', $shopOwnerId)->where('active', true)->where('availability_status', 'available')->get(),
         ]);
     }
 

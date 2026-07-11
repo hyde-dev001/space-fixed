@@ -54,6 +54,9 @@ class CustomerTrackingService
                 'scheduled_pickup_at' => optional($leg->scheduled_pickup_at)->toISOString(),
                 'picked_up_at' => optional($leg->picked_up_at)->toISOString(),
                 'delivered_at' => optional($leg->delivered_at)->toISOString(),
+                'scheduled_delivery_date' => optional($leg->scheduled_delivery_date)->toDateString(),
+                'delivery_window' => $leg->delivery_window,
+                'schedule_status' => $leg->schedule_status,
             ])->values()->all(),
             'events' => $shipment->events->map(fn ($event) => [
                 'id' => $event->id,

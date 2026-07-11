@@ -10,4 +10,12 @@ export const logisticsApi = {
     }),
   recordProof: (legId: number, payload: Record<string, unknown>) =>
     axios.post(`/api/logistics/legs/${legId}/proof`, payload),
+  batches: () => axios.get('/api/logistics/batches'),
+  suggestions: (deliveryDate: string, deliveryWindow: string) =>
+    axios.get('/api/logistics/batch-suggestions', { params: { delivery_date: deliveryDate, delivery_window: deliveryWindow } }),
+  createBatch: (payload: Record<string, unknown>) => axios.post('/api/logistics/batches', payload),
+  offerBatch: (id: number, riderProfileId: number) => axios.post(`/api/logistics/batches/${id}/offer`, { rider_profile_id: riderProfileId }),
+  acceptBatch: (id: number) => axios.post(`/api/logistics/batches/${id}/accept`),
+  rejectBatch: (id: number, rejectionReason: string) => axios.post(`/api/logistics/batches/${id}/reject`, { rejection_reason: rejectionReason }),
+  startBatch: (id: number) => axios.post(`/api/logistics/batches/${id}/start`),
 };

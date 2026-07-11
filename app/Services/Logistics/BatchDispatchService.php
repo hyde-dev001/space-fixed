@@ -1,0 +1,124 @@
+<?php
+
+namespace App\Services\Logistics;
+
+use App\Models\Logistics\DeliveryBatch;
+use App\Models\Logistics\RiderProfile;
+use App\Models\Logistics\ShipmentLeg;
+use App\Models\ShopOwner;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
+
+class BatchDispatchService
+{
+    public function __construct(private AssignmentService $assignments, private DeliveryEventService $events)
+    {
+    }
+
+    public function createDraft(ShopOwner $shop, string $date, string $window, array $legIds, ?string $overrideReason = null): DeliveryBatch
+    {
+        return DB::transaction(function () use ($shop, $date, $window, $legIds, $overrideReason) {
+            ShopOwner::query()->whereKey($shop->id)->lockForUpdate()->firstOrFail();
+            $legs = ShipmentLeg::query()->with('shipment')->whereIn('id', $legIds)->orderBy('id')->lockForUpdate()->get();
+            if ($legs->count() !== count(array_unique($legIds)) || $legs->contains(fn ($leg) =>
+                $leg->shipment->shop_owner_id !== $shop->id || $leg->delivery_batch_id
+                || $leg->status->value !== 'pending' || $leg->schedule_status !== 'scheduled'
+                || $leg->scheduled_delivery_date?->toDateString() !== $date || $leg->delivery_window !== $window)) {
+                throw ValidationException::withMessages(['legs' => 'One or more legs are not eligible for this batch.']);
+            }
+            $capacity = $shop->logisticsSetting()->firstOrCreate([])->daily_rider_capacity;
+            if ($legs->count() > $capacity && !filled($overrideReason)) {
+                throw ValidationException::withMessages(['dispatcher_override_reason' => 'Capacity override reason is required.']);
+            }
+            $batch = DeliveryBatch::create([
+                'shop_owner_id' => $shop->id, 'delivery_date' => $date, 'delivery_window' => $window,
+                'capacity' => $capacity, 'assigned_stop_count' => $legs->count(),
+                'dispatcher_override_reason' => $overrideReason,
+            ]);
+            foreach ($legIds as $index => $id) {
+                $legs->firstWhere('id', $id)->update(['delivery_batch_id' => $batch->id, 'stop_sequence' => $index + 1]);
+            }
+            return $batch->fresh('legs');
+        });
+    }
+
+    public function offer(DeliveryBatch $batch, RiderProfile $rider, ShopOwner $actor): DeliveryBatch
+    {
+        return DB::transaction(function () use ($batch, $rider, $actor) {
+            $batch = DeliveryBatch::query()->lockForUpdate()->findOrFail($batch->id);
+            if ($batch->status === 'offered' && $batch->rider_profile_id === $rider->id) {
+                return $batch->load('legs.assignments');
+            }
+            if ($batch->status !== 'draft' || $rider->shop_owner_id !== $batch->shop_owner_id) {
+                throw ValidationException::withMessages(['batch' => 'Batch cannot be offered to this rider.']);
+            }
+            foreach ($batch->legs()->orderBy('id')->lockForUpdate()->get() as $leg) {
+                $this->assignments->assignInternalRider($leg, $rider, $actor);
+            }
+            $batch->update(['rider_profile_id' => $rider->id, 'status' => 'offered', 'offered_at' => now()]);
+            return $batch->fresh('legs.assignments');
+        });
+    }
+
+    public function accept(DeliveryBatch $batch, RiderProfile $rider): DeliveryBatch
+    {
+        return $this->riderTransition($batch, $rider, 'offered', function ($locked) use ($rider) {
+            $locked->legs()->each(fn ($leg) => $leg->assignments()->where('rider_profile_id', $rider->id)
+                ->where('status', 'assigned')->update(['status' => 'accepted', 'accepted_at' => now()]));
+            $locked->update(['status' => 'accepted', 'accepted_at' => now()]);
+        });
+    }
+
+    public function reject(DeliveryBatch $batch, RiderProfile $rider, string $reason): DeliveryBatch
+    {
+        if (!filled($reason)) {
+            throw ValidationException::withMessages(['rejection_reason' => 'Rejection reason is required.']);
+        }
+        return $this->riderTransition($batch, $rider, 'offered', function ($locked) use ($rider, $reason) {
+            $locked->legs()->each(fn ($leg) => $leg->assignments()->where('rider_profile_id', $rider->id)
+                ->where('status', 'assigned')->update(['status' => 'rejected', 'rejection_reason' => $reason, 'rejected_at' => now()]));
+            $locked->update([
+                'status' => 'draft', 'rider_profile_id' => null, 'rejection_reason' => $reason,
+                'rejected_at' => now(), 'offered_at' => null,
+            ]);
+        });
+    }
+
+    public function start(DeliveryBatch $batch, RiderProfile $rider): DeliveryBatch
+    {
+        return $this->riderTransition($batch, $rider, 'accepted', fn ($locked) =>
+            $locked->update(['status' => 'in_progress', 'started_at' => now()]));
+    }
+
+    public function cancel(DeliveryBatch $batch, string $reason): DeliveryBatch
+    {
+        if (!filled($reason)) {
+            throw ValidationException::withMessages(['reason' => 'Cancellation reason is required.']);
+        }
+        return DB::transaction(function () use ($batch, $reason) {
+            $batch = DeliveryBatch::query()->lockForUpdate()->findOrFail($batch->id);
+            if ($batch->status === 'cancelled') return $batch->load('legs');
+            if ($batch->status === 'completed') throw ValidationException::withMessages(['batch' => 'Completed batch cannot be cancelled.']);
+            $batch->legs()->each(function ($leg) {
+                $leg->assignments()->whereIn('status', ['assigned', 'accepted'])->update(['status' => 'cancelled', 'cancelled_at' => now()]);
+                if (!in_array($leg->status->value, ['delivered', 'cancelled'], true)) {
+                    $leg->update(['delivery_batch_id' => null, 'stop_sequence' => null, 'status' => 'pending']);
+                }
+            });
+            $batch->update(['status' => 'cancelled', 'cancelled_at' => now(), 'dispatcher_override_reason' => $reason]);
+            return $batch->fresh('legs');
+        });
+    }
+
+    private function riderTransition(DeliveryBatch $batch, RiderProfile $rider, string $from, callable $change): DeliveryBatch
+    {
+        return DB::transaction(function () use ($batch, $rider, $from, $change) {
+            $batch = DeliveryBatch::query()->lockForUpdate()->findOrFail($batch->id);
+            if ($batch->rider_profile_id !== $rider->id || $batch->status !== $from) {
+                throw ValidationException::withMessages(['batch' => 'Batch action is stale or not assigned to this rider.']);
+            }
+            $change($batch);
+            return $batch->fresh('legs.assignments');
+        });
+    }
+}

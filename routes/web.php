@@ -424,6 +424,16 @@ Route::post('/api/cart/clear', [CartController::class, 'clear'])->middleware('au
 Route::post('/api/cart/sync', [CartController::class, 'sync'])->middleware('auth:user')->name('cart.sync');
 
 Route::prefix('api/logistics')->middleware(['auth:user,shop_owner'])->group(function () {
+    Route::get('/batches', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'index']);
+    Route::get('/batch-suggestions', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'suggestions']);
+    Route::post('/batches', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'store']);
+    Route::post('/batches/{batch}/offer', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'offer']);
+    Route::post('/batches/{batch}/accept', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'accept']);
+    Route::post('/batches/{batch}/reject', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'reject']);
+    Route::post('/batches/{batch}/start', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'start']);
+    Route::post('/batches/{batch}/cancel', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'cancel']);
+    Route::get('/settings', [\App\Http\Controllers\Api\Logistics\LogisticsSettingController::class, 'show']);
+    Route::put('/settings', [\App\Http\Controllers\Api\Logistics\LogisticsSettingController::class, 'update']);
     Route::get('/shipments', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'index']);
     Route::get('/shipments/{shipment}', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'show']);
     Route::post('/legs/{leg}/assign', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'assign']);
@@ -1696,6 +1706,8 @@ Route::prefix('erp/logistics')->name('erp.logistics.')->middleware(['auth:user',
     Route::get('/shipments', [\App\Http\Controllers\Logistics\ErpLogisticsController::class, 'shipments'])->name('shipments');
     Route::get('/deliveries', [\App\Http\Controllers\Logistics\ErpLogisticsController::class, 'deliveries'])->name('deliveries');
     Route::get('/riders', [\App\Http\Controllers\Logistics\ErpLogisticsController::class, 'riders'])->name('riders');
+    Route::get('/settings', [\App\Http\Controllers\Logistics\ErpLogisticsController::class, 'settings'])->name('settings');
+    Route::get('/batches', [\App\Http\Controllers\Logistics\ErpLogisticsController::class, 'batches'])->name('batches');
 });
 
 // Time In/Out - First thing staff see after login
