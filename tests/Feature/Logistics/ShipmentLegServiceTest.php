@@ -81,6 +81,72 @@ class ShipmentLegServiceTest extends TestCase
         app(ShipmentLegService::class)->markDelivered($leg);
     }
 
+    public function test_delivery_attempted_leg_can_be_cancelled_with_internal_and_customer_events(): void
+    {
+        $shipment = Shipment::factory()->create(['status' => 'active']);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id,
+            'status' => 'delivery_attempted',
+        ]);
+
+        app(ShipmentLegService::class)->cancel($leg, 'Recipient was unavailable');
+
+        $this->assertSame('cancelled', $leg->fresh()->status->value);
+        $this->assertSame('cancelled', $shipment->fresh()->status->value);
+        $this->assertNull($shipment->fresh()->completed_at);
+        $this->assertDatabaseHas('delivery_events', [
+            'shipment_id' => $shipment->id,
+            'shipment_leg_id' => $leg->id,
+            'event_type' => 'delivery_cancelled',
+            'visibility' => 'internal',
+            'message' => 'Dispatcher cancelled the delivery.',
+        ]);
+        $this->assertDatabaseHas('delivery_events', [
+            'shipment_id' => $shipment->id,
+            'shipment_leg_id' => $leg->id,
+            'event_type' => 'delivery_cancelled',
+            'visibility' => 'customer',
+            'message' => 'Delivery cancelled: Recipient was unavailable.',
+        ]);
+    }
+
+    public function test_only_delivery_attempted_leg_can_be_cancelled(): void
+    {
+        foreach (['assigned', 'picked_up', 'in_transit', 'awaiting_proof_approval', 'delivered', 'cancelled'] as $status) {
+            $leg = ShipmentLeg::factory()->create(['status' => $status]);
+
+            try {
+                app(ShipmentLegService::class)->cancel($leg, 'Recipient was unavailable');
+                $this->fail("{$status} leg was cancelled.");
+            } catch (ValidationException) {
+                $this->assertSame($status, $leg->fresh()->status->value);
+            }
+        }
+    }
+
+    public function test_mixed_terminal_shipment_completes_after_cancellation(): void
+    {
+        $shipment = Shipment::factory()->create(['status' => 'active']);
+        ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'delivered']);
+        $attemptedLeg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'delivery_attempted']);
+
+        app(ShipmentLegService::class)->cancel($attemptedLeg, 'Recipient was unavailable');
+
+        $this->assertSame('completed', $shipment->fresh()->status->value);
+        $this->assertNotNull($shipment->fresh()->completed_at);
+    }
+
+    public function test_shipment_with_non_terminal_leg_stays_active_after_cancellation(): void
+    {
+        $shipment = Shipment::factory()->create(['status' => 'active']);
+        ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'in_transit']);
+        $attemptedLeg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'delivery_attempted']);
+
+        app(ShipmentLegService::class)->cancel($attemptedLeg, 'Recipient was unavailable');
+
+        $this->assertSame('active', $shipment->fresh()->status->value);
+    }
+
     public function test_shipment_completes_when_all_legs_are_delivered(): void
     {
         $shipment = Shipment::factory()->create(['status' => 'active']);
