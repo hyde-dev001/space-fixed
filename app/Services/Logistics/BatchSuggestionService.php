@@ -16,7 +16,10 @@ class BatchSuggestionService
             ->whereHas('shipment', fn ($query) => $query->where('shop_owner_id', $shop->id))
             ->whereNull('delivery_batch_id')->where('status', 'pending')
             ->where('schedule_status', 'scheduled')->whereDate('scheduled_delivery_date', $date->toDateString())
-            ->where('delivery_window', $window)->get();
+            ->where('delivery_window', $window)->get()
+            ->filter(fn ($leg) => is_numeric(data_get($leg->destination_snapshot, 'latitude'))
+                && is_numeric(data_get($leg->destination_snapshot, 'longitude')))
+            ->values();
         $orderedIds = $this->nearest(
             $legs->all(), (float) $shop->shop_latitude, (float) $shop->shop_longitude,
         );

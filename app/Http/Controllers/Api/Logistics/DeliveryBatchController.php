@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Logistics;
 use App\Http\Controllers\Controller;
 use App\Models\Logistics\DeliveryBatch;
 use App\Models\Logistics\RiderProfile;
+use App\Models\Logistics\ShipmentLeg;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\Logistics\BatchDispatchService;
@@ -46,6 +47,27 @@ class DeliveryBatchController extends Controller
         $data = $request->validate(['rider_profile_id' => ['required', 'integer']]);
         $rider = RiderProfile::where('shop_owner_id', $shop->id)->findOrFail($data['rider_profile_id']);
         return response()->json(['batch' => $service->offer($batch, $rider, $shop)]);
+    }
+
+    public function update(Request $request, DeliveryBatch $batch, BatchDispatchService $service): JsonResponse
+    {
+        $this->dispatcherShop($batch);
+        $ids = $request->validate(['leg_ids' => ['required', 'array', 'min:1'], 'leg_ids.*' => ['integer', 'distinct']])['leg_ids'];
+        return response()->json(['batch' => $service->replaceStops($batch, $ids)]);
+    }
+
+    public function remove(DeliveryBatch $batch, ShipmentLeg $leg, BatchDispatchService $service): JsonResponse
+    {
+        $this->dispatcherShop($batch);
+        return response()->json(['batch' => $service->removeStop($batch, $leg)]);
+    }
+
+    public function urgent(Request $request, ShipmentLeg $leg, BatchDispatchService $service): JsonResponse
+    {
+        $shop = $this->dispatcherShop();
+        $leg->loadMissing('shipment');
+        abort_unless($leg->shipment->shop_owner_id === $shop->id, 403);
+        return response()->json(['leg' => $service->markUrgent($leg, $request->boolean('urgent', true))]);
     }
 
     public function accept(DeliveryBatch $batch, BatchDispatchService $service): JsonResponse

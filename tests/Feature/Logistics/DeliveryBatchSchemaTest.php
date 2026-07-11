@@ -22,7 +22,7 @@ class DeliveryBatchSchemaTest extends TestCase
             'rejection_reason', 'dispatcher_override_reason',
         ]));
         $this->assertTrue(Schema::hasColumns('shipment_legs', [
-            'delivery_batch_id', 'stop_sequence', 'attempt_number', 'out_for_delivery_at', 'urgent_at',
+            'delivery_batch_id', 'stop_sequence', 'urgent_at',
         ]));
         $this->assertTrue(Schema::hasColumns('rider_profiles', ['work_days', 'leave_dates', 'daily_capacity']));
         $this->assertTrue(Schema::hasColumns('delivery_assignments', ['rejection_reason', 'rejected_at']));

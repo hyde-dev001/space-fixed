@@ -3,6 +3,7 @@
 namespace Tests\Feature\Logistics;
 
 use App\Models\Logistics\RiderProfile;
+use App\Models\Logistics\DeliveryEvent;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\ShopOwner;
@@ -71,5 +72,63 @@ class BatchDispatchServiceTest extends TestCase
         $cancelled = $service->cancel($rejected, 'No longer required');
         $this->assertSame('cancelled', $cancelled->status);
         $this->assertNull($leg->fresh()->delivery_batch_id);
+    }
+
+    public function test_draft_stops_can_be_reordered_removed_and_marked_urgent(): void
+    {
+        [$shop, $legs, $service] = $this->draftFixture(2);
+        $batch = $service->createDraft($shop, '2026-07-15', 'morning', $legs->pluck('id')->all());
+
+        $updated = $service->replaceStops($batch, $legs->pluck('id')->reverse()->values()->all());
+        $this->assertSame($legs->pluck('id')->reverse()->values()->all(), $updated->legs->pluck('id')->all());
+        $service->markUrgent($legs->first(), true);
+        $this->assertNotNull($legs->first()->fresh()->urgent_at);
+        $service->removeStop($updated, $legs->first());
+        $this->assertSame(1, $updated->fresh()->assigned_stop_count);
+    }
+
+    public function test_accept_and_start_are_idempotent_but_started_batch_cannot_be_cancelled(): void
+    {
+        [$shop, $legs, $service] = $this->draftFixture();
+        $rider = RiderProfile::factory()->create(['shop_owner_id' => $shop->id, 'active' => true, 'availability_status' => 'available']);
+        $batch = $service->offer($service->createDraft($shop, '2026-07-15', 'morning', $legs->pluck('id')->all()), $rider, $shop);
+
+        $accepted = $service->accept($batch, $rider);
+        $this->assertSame('accepted', $service->accept($accepted, $rider)->status);
+        $started = $service->start($accepted->fresh(), $rider);
+        $this->assertSame('in_progress', $service->start($started, $rider)->status);
+        $this->assertSame(2, DeliveryEvent::whereIn('event_type', ['batch_accepted', 'batch_started'])->count());
+        $this->assertDatabaseHas('delivery_events', ['event_type' => 'batch_accepted', 'visibility' => 'internal']);
+        $this->assertDatabaseHas('delivery_events', ['event_type' => 'batch_started', 'visibility' => 'internal']);
+
+        $this->expectException(ValidationException::class);
+        $service->cancel($started, 'Unsafe cancellation');
+    }
+
+    public function test_offer_rejects_unavailable_or_off_schedule_rider(): void
+    {
+        [$shop, $legs, $service] = $this->draftFixture();
+        $rider = RiderProfile::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'active' => true,
+            'availability_status' => 'busy',
+            'work_days' => [1],
+        ]);
+        $batch = $service->createDraft($shop, '2026-07-15', 'morning', $legs->pluck('id')->all());
+
+        $this->expectException(ValidationException::class);
+        $service->offer($batch, $rider, $shop);
+    }
+
+    private function draftFixture(int $count = 1): array
+    {
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+        $legs = ShipmentLeg::factory()->count($count)->create([
+            'shipment_id' => $shipment->id, 'scheduled_delivery_date' => '2026-07-15',
+            'delivery_window' => 'morning', 'schedule_status' => 'scheduled', 'status' => 'pending',
+        ]);
+
+        return [$shop, $legs, app(BatchDispatchService::class)];
     }
 }

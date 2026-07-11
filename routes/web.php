@@ -427,6 +427,9 @@ Route::prefix('api/logistics')->middleware(['auth:user,shop_owner'])->group(func
     Route::get('/batches', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'index']);
     Route::get('/batch-suggestions', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'suggestions']);
     Route::post('/batches', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'store']);
+    Route::put('/batches/{batch}', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'update']);
+    Route::delete('/batches/{batch}/legs/{leg}', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'remove']);
+    Route::post('/legs/{leg}/urgent', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'urgent']);
     Route::post('/batches/{batch}/offer', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'offer']);
     Route::post('/batches/{batch}/accept', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'accept']);
     Route::post('/batches/{batch}/reject', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'reject']);
