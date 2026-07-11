@@ -11,6 +11,7 @@ use App\Models\ShopOwner;
 use App\Services\Logistics\ShipmentLegService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class ShipmentLegServiceTest extends TestCase
@@ -159,5 +160,82 @@ class ShipmentLegServiceTest extends TestCase
         app(ShipmentLegService::class)->markDelivered($leg);
 
         $this->assertSame('in_transit', $refund->fresh()->return_status);
+    }
+
+    public function test_delivery_attempted_leg_can_be_cancelled_and_records_internal_and_customer_events(): void
+    {
+        $leg = ShipmentLeg::factory()->create(['status' => 'delivery_attempted']);
+
+        app(ShipmentLegService::class)->cancel($leg, 'Customer is unavailable');
+
+        $this->assertSame('cancelled', $leg->fresh()->status->value);
+        $this->assertDatabaseHas('delivery_events', [
+            'shipment_id' => $leg->shipment_id,
+            'shipment_leg_id' => $leg->id,
+            'event_type' => 'delivery_cancelled',
+            'visibility' => 'internal',
+            'message' => 'Dispatcher cancelled the delivery.',
+        ]);
+        $this->assertDatabaseHas('delivery_events', [
+            'shipment_id' => $leg->shipment_id,
+            'shipment_leg_id' => $leg->id,
+            'event_type' => 'delivery_cancelled',
+            'visibility' => 'customer',
+            'message' => 'Delivery cancelled: Customer is unavailable.',
+        ]);
+    }
+
+    #[DataProvider('nonCancellableStatuses')]
+    public function test_only_delivery_attempted_legs_can_be_cancelled(string $status): void
+    {
+        $leg = ShipmentLeg::factory()->create(['status' => $status]);
+
+        $this->expectException(ValidationException::class);
+
+        app(ShipmentLegService::class)->cancel($leg, 'Customer requested cancellation');
+    }
+
+    public static function nonCancellableStatuses(): array
+    {
+        return array_map(
+            fn ($status) => [$status],
+            ['pending', 'assigned', 'pickup_scheduled', 'picked_up', 'in_transit', 'awaiting_proof_approval', 'delivered', 'failed', 'cancelled'],
+        );
+    }
+
+    public function test_cancelling_last_active_leg_cancels_shipment_when_all_legs_are_cancelled(): void
+    {
+        $shipment = Shipment::factory()->create(['status' => 'active']);
+        ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'cancelled']);
+        $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'delivery_attempted']);
+
+        app(ShipmentLegService::class)->cancel($leg, 'Customer cancelled');
+
+        $this->assertSame('cancelled', $shipment->fresh()->status->value);
+        $this->assertNull($shipment->fresh()->completed_at);
+    }
+
+    public function test_cancelling_last_active_leg_completes_shipment_when_another_leg_was_delivered(): void
+    {
+        $shipment = Shipment::factory()->create(['status' => 'active']);
+        ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'delivered']);
+        $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'delivery_attempted']);
+
+        app(ShipmentLegService::class)->cancel($leg, 'Customer cancelled');
+
+        $this->assertSame('completed', $shipment->fresh()->status->value);
+        $this->assertNotNull($shipment->fresh()->completed_at);
+    }
+
+    public function test_cancelling_leg_keeps_shipment_active_when_another_leg_is_in_transit(): void
+    {
+        $shipment = Shipment::factory()->create(['status' => 'completed', 'completed_at' => now()]);
+        ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'in_transit']);
+        $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'delivery_attempted']);
+
+        app(ShipmentLegService::class)->cancel($leg, 'Customer cancelled');
+
+        $this->assertSame('active', $shipment->fresh()->status->value);
+        $this->assertNull($shipment->fresh()->completed_at);
     }
 }

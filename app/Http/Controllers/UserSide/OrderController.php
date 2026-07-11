@@ -124,9 +124,20 @@ class OrderController extends Controller
             ->where('source_type', 'order_refund')
             ->whereIn('source_id', $orderCollection->flatMap(fn (Order $order) => $order->refunds->pluck('id'))->all())
             ->orderByDesc('id')
-            ->get(['id', 'source_id'])
+            ->with('legs.assignments.riderProfile')
+            ->get()
             ->unique('source_id')
-            ->mapWithKeys(fn (Shipment $shipment) => [(int) $shipment->source_id => (int) $shipment->id])
+            ->mapWithKeys(function (Shipment $shipment) {
+                $assignment = $shipment->legs
+                    ->flatMap(fn ($leg) => $leg->assignments)
+                    ->first(fn ($assignment) => in_array($assignment->status, ['assigned', 'accepted'], true));
+
+                return [(int) $shipment->source_id => [
+                    'id' => (int) $shipment->id,
+                    'rider_name' => $assignment?->riderProfile?->name,
+                    'rider_phone' => $assignment?->riderProfile?->phone,
+                ]];
+            })
             ->all();
 
         $orders = $orderCollection
@@ -163,6 +174,9 @@ class OrderController extends Controller
                     $order->loadMissing(['refunds' => fn ($query) => $query->orderByDesc('id')]);
                     $latestRefund = $order->refunds->first();
                 }
+
+                $refundShipment = $latestRefund ? ($refundShipmentLookup[(int) $latestRefund->id] ?? null) : null;
+                $isShopOwnedReturn = strtolower((string) ($latestRefund?->staff_return_carrier ?? '')) === 'shop-owned logistics';
 
                 $refundStatus = null;
                 $refundStatusNote = null;
@@ -266,7 +280,11 @@ class OrderController extends Controller
                     'refund_status_note' => $refundStatusNote,
                     'refund_stage' => $latestRefund ? [
                         'id' => $latestRefund->id,
-                        'logistics_shipment_id' => $refundShipmentLookup[(int) $latestRefund->id] ?? null,
+                        'logistics_shipment_id' => $refundShipment['id'] ?? null,
+                        'is_shop_owned_return' => $isShopOwnedReturn,
+                        'delivery_rider_name' => $isShopOwnedReturn ? ($refundShipment['rider_name'] ?? null) : null,
+                        'delivery_rider_phone' => $isShopOwnedReturn ? ($refundShipment['rider_phone'] ?? null) : null,
+                        'delivery_reference' => $isShopOwnedReturn && $refundShipment ? 'RET-' . $refundShipment['id'] : null,
                         'status' => (string) ($latestRefund->status ?? ''),
                         'shop_owner_status' => (string) ($latestRefund->shop_owner_status ?? 'pending'),
                         'finance_status' => (string) ($latestRefund->finance_status ?? 'pending'),

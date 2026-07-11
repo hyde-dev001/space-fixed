@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\OrderRefund;
+use App\Models\Logistics\Shipment;
 use App\Models\User;
 use App\Services\OrderRefundService;
 use App\Services\RetailPosRefundSummaryService;
@@ -77,8 +78,22 @@ class StaffOrderController extends Controller
             (int) $shopOwnerId,
             $orders->pluck('id')->map(fn ($id) => (int) $id)->all(),
         );
+        $deliveryCancellations = Shipment::query()
+            ->with(['events' => fn ($events) => $events
+                ->where('event_type', 'delivery_cancelled')
+                ->where('visibility', 'customer')
+                ->latest('id')])
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where('source_type', 'order')
+            ->whereIn('source_id', $orders->pluck('id'))
+            ->where('status', 'cancelled')
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->get()
+            ->groupBy('source_id')
+            ->map(fn ($shipments) => $shipments->first());
 
-        $orders = $orders->map(function ($order) use ($retailPosRefundSummaries, $includeRefundItems) {
+        $orders = $orders->map(function ($order) use ($retailPosRefundSummaries, $includeRefundItems, $deliveryCancellations) {
                 $itemSubtotal = (float) ($order->total_amount ?? 0);
                 $shippingFee = (float) ($order->shipping_fee ?? 0);
                 $hasStoredVat = $order->vat_amount !== null;
@@ -87,6 +102,7 @@ class StaffOrderController extends Controller
                     ? round((float) $order->vat_rate, 2)
                     : null;
                 $latestRefund = $order->refunds->first();
+                $cancelledShipment = $deliveryCancellations->get($order->id);
 
                 $latestRefundItems = [];
                 if ($includeRefundItems && $latestRefund) {
@@ -136,6 +152,10 @@ class StaffOrderController extends Controller
                     'carrier_phone' => $order->carrier_phone ?? '',
                     'tracking_link' => $order->tracking_link ?? '',
                     'eta' => $order->eta ?? null,
+                    'delivery_cancellation' => $cancelledShipment ? [
+                        'status' => 'cancelled',
+                        'message' => $cancelledShipment->events->first()?->message,
+                    ] : null,
                     'retail_pos_refund' => $retailPosRefundSummaries[(int) $order->id] ?? null,
                     'latest_refund' => $latestRefund ? [
                         'id' => (int) $latestRefund->id,

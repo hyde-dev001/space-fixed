@@ -131,6 +131,52 @@ class ShipmentController extends Controller
         ], 201);
     }
 
+    public function reportIssue(Request $request, ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse
+    {
+        $actor = $this->authorizeIssueReport($leg);
+        $payload = $request->validate([
+            'reason_code' => ['required', 'in:recipient_unavailable,wrong_or_incomplete_address,recipient_refused,vehicle_or_delivery_problem,other'],
+            'notes' => ['nullable', 'string'],
+        ]);
+
+        return response()->json([
+            'attempt' => $legs->recordFailedAttempt($leg, [
+                ...$payload,
+                'attempt_type' => 'delivery',
+                'recorded_by_type' => $actor::class,
+                'recorded_by_id' => $actor->id,
+            ], true),
+        ], 201);
+    }
+
+    public function cancel(ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse
+    {
+        $shop = $this->authorizedShop('assign-logistics-deliveries');
+        $leg->loadMissing('shipment');
+        $this->abortUnlessTenant($leg->shipment->shop_owner_id, $shop);
+
+        $attempt = $leg->attempts()
+            ->where('attempt_type', 'delivery')
+            ->where('status', 'failed')
+            ->orderByDesc('attempted_at')
+            ->orderByDesc('id')
+            ->first();
+        abort_unless($attempt, 422);
+
+        $message = [
+            'recipient_unavailable' => 'Recipient was unavailable',
+            'wrong_or_incomplete_address' => 'Address could not be completed',
+            'recipient_refused' => 'Recipient refused the delivery',
+            'vehicle_or_delivery_problem' => 'A delivery problem prevented completion',
+            'other' => 'Delivery could not be completed',
+        ][$attempt->reason_code] ?? 'Delivery could not be completed';
+
+        return response()->json([
+            'leg' => $legs->cancel($leg, $message),
+            'message' => $message,
+        ]);
+    }
+
     private function authorizeLegUpdate(ShipmentLeg $leg): ShopOwner
     {
         $shop = $this->authorizedShop('update-logistics-status');
@@ -139,6 +185,20 @@ class ShipmentController extends Controller
         $this->abortIfUserCannotOperateLeg($leg);
 
         return $shop;
+    }
+
+    private function authorizeIssueReport(ShipmentLeg $leg): User
+    {
+        $user = Auth::guard('user')->user();
+        if (!$user instanceof User || !$user->can('update-logistics-status') || !$user->shopOwner) {
+            abort(403);
+        }
+
+        $leg->loadMissing('shipment');
+        $this->abortUnlessTenant($leg->shipment->shop_owner_id, $user->shopOwner);
+        abort_unless($this->userHasActiveAssignment($leg, $user), 403);
+
+        return $user;
     }
 
     private function authorizedShop(string $permission): ShopOwner
@@ -200,16 +260,19 @@ class ShipmentController extends Controller
             return;
         }
 
-        $isAssignedToUser = $leg->assignments()
+        if (!$this->userHasActiveAssignment($leg, $user)) {
+            abort(403);
+        }
+    }
+
+    private function userHasActiveAssignment(ShipmentLeg $leg, User $user): bool
+    {
+        return $leg->assignments()
             ->whereIn('status', ['assigned', 'accepted'])
             ->whereHas('riderProfile', function ($query) use ($user) {
                 $query->where('linked_type', User::class)
                     ->where('linked_id', $user->id);
             })
             ->exists();
-
-        if (!$isAssignedToUser) {
-            abort(403);
-        }
     }
 }

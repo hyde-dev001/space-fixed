@@ -44,6 +44,7 @@ type Order = {
   cancellation_reason?: string | null;
   cancellation_note?: string | null;
   cancellation_other_reason_note?: string | null;
+  delivery_cancellation?: { status: "cancelled"; message: string | null } | null;
   eta?: string;
   orderedAt: string;
   processedAt?: string;
@@ -426,6 +427,7 @@ export default function JobOrdersPage() {
       cancellation_reason: order.cancellation_reason || null,
       cancellation_note: order.cancellation_note || null,
       cancellation_other_reason_note: order.cancellation_other_reason_note || null,
+      delivery_cancellation: order.delivery_cancellation || null,
       eta: order.eta || undefined,
       orderedAt: new Date(order.created_at).toLocaleString(),
       carrierCompany: order.carrier_company || undefined,
@@ -2378,6 +2380,12 @@ export default function JobOrdersPage() {
                         </div>
                       )}
                     </div>
+                  </div>
+                )}
+                {viewOrder.delivery_cancellation && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
+                    <p className="font-semibold">Delivery cancelled</p>
+                    <p>{viewOrder.delivery_cancellation.message || 'The delivery was cancelled. Coordinate with Logistics to reassign it if needed.'}</p>
                   </div>
                 )}
               </div>

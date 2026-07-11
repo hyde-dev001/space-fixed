@@ -4,6 +4,8 @@ namespace Tests\Feature\Logistics;
 
 use App\Models\Order;
 use App\Models\OrderRefund;
+use App\Models\Logistics\DeliveryEvent;
+use App\Models\Logistics\Shipment;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\User;
@@ -79,6 +81,47 @@ class SourceModuleShipmentRequestTest extends TestCase
         $this->assertDatabaseHas('shipment_legs', [
             'leg_type' => 'outbound',
         ]);
+    }
+
+    public function test_staff_orders_include_the_latest_cancelled_delivery_reason(): void
+    {
+        $shop = ShopOwner::factory()->create(['business_type' => 'retail']);
+        $staff = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'STAFF']);
+        Permission::findOrCreate('access-staff-job-orders', 'user');
+        $staff->givePermissionTo('access-staff-job-orders');
+        $order = Order::factory()->create(['shop_owner_id' => $shop->id, 'status' => 'shipped']);
+        $olderShipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+            'source_id' => $order->id,
+            'status' => 'cancelled',
+            'created_at' => now()->subMinute(),
+        ]);
+        $latestShipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+            'source_id' => $order->id,
+            'status' => 'cancelled',
+        ]);
+        DeliveryEvent::factory()->create([
+            'shipment_id' => $olderShipment->id,
+            'event_type' => 'delivery_cancelled',
+            'visibility' => 'customer',
+            'message' => 'Delivery cancelled: Old reason.',
+        ]);
+        DeliveryEvent::factory()->create([
+            'shipment_id' => $latestShipment->id,
+            'event_type' => 'delivery_cancelled',
+            'visibility' => 'customer',
+            'message' => 'Delivery cancelled: Recipient was unavailable.',
+        ]);
+
+        $this->actingAs($staff, 'user')
+            ->getJson('/api/staff/orders')
+            ->assertOk()
+            ->assertJsonPath('0.status', 'shipped')
+            ->assertJsonPath('0.delivery_cancellation.status', 'cancelled')
+            ->assertJsonPath('0.delivery_cancellation.message', 'Delivery cancelled: Recipient was unavailable.');
     }
 
     public function test_approved_refund_return_creates_inbound_shipment(): void

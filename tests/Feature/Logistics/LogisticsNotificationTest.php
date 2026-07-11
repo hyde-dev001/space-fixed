@@ -14,6 +14,7 @@ use App\Services\Logistics\DeliveryEventService;
 use App\Services\Logistics\ShipmentRequestService;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 class LogisticsNotificationTest extends TestCase
@@ -88,6 +89,38 @@ class LogisticsNotificationTest extends TestCase
             'user_id' => $riderUser->id,
             'type' => 'logistics_assigned',
             'action_url' => '/erp/logistics/shipments',
+        ]);
+    }
+
+    public function test_retail_order_staff_is_notified_once_when_a_delivery_is_cancelled(): void
+    {
+        $shop = ShopOwner::factory()->create();
+        $staff = User::factory()->create(['shop_owner_id' => $shop->id]);
+        Permission::findOrCreate('access-staff-job-orders', 'user');
+        $staff->givePermissionTo('access-staff-job-orders');
+        $order = Order::factory()->create(['shop_owner_id' => $shop->id, 'status' => 'shipped']);
+        $shipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+            'source_id' => $order->id,
+        ]);
+        $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id]);
+
+        app(DeliveryEventService::class)->record($shipment, $leg, [
+            'event_type' => 'delivery_cancelled',
+            'visibility' => 'customer',
+            'message' => 'Delivery cancelled: Recipient was unavailable.',
+        ]);
+
+        $this->assertSame('shipped', $order->fresh()->status->value);
+        $this->assertSame(1, Notification::query()->where('user_id', $staff->id)->count());
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $staff->id,
+            'type' => 'logistics_delivery_failed',
+            'priority' => 'high',
+            'message' => 'Delivery cancelled: Recipient was unavailable.',
+            'action_url' => '/erp/staff/job-orders',
+            'requires_action' => true,
         ]);
     }
 }

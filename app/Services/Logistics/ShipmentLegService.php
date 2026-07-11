@@ -52,10 +52,33 @@ class ShipmentLegService
         return $this->transition($leg, 'delivered', ['delivered_at' => now()], 'delivered', 'Shipment leg delivered.');
     }
 
-    public function recordFailedAttempt(ShipmentLeg $leg, array $payload): DeliveryAttempt
+    public function cancel(ShipmentLeg $leg, string $customerReason): ShipmentLeg
     {
         $leg->loadMissing('shipment');
-        $this->assertTransitionAllowed($leg, ['picked_up', 'in_transit', 'delivery_attempted'], 'delivery attempted');
+        $this->assertTransitionAllowed($leg, ['delivery_attempted'], 'cancelled');
+
+        return DB::transaction(function () use ($leg, $customerReason) {
+            $leg->update(['status' => 'cancelled']);
+            $this->syncShipmentStatus($leg);
+
+            $this->events->record($leg->shipment, $leg, [
+                'event_type' => 'delivery_cancelled',
+                'message' => 'Dispatcher cancelled the delivery.',
+            ]);
+            $this->events->record($leg->shipment, $leg, [
+                'event_type' => 'delivery_cancelled',
+                'visibility' => 'customer',
+                'message' => "Delivery cancelled: {$customerReason}.",
+            ]);
+
+            return $leg->fresh();
+        });
+    }
+
+    public function recordFailedAttempt(ShipmentLeg $leg, array $payload, bool $allowAssigned = false): DeliveryAttempt
+    {
+        $leg->loadMissing('shipment');
+        $this->assertTransitionAllowed($leg, $allowAssigned ? ['assigned', 'picked_up', 'in_transit', 'delivery_attempted'] : ['picked_up', 'in_transit', 'delivery_attempted'], 'delivery attempted');
 
         if (empty($payload['reason_code'])) {
             throw ValidationException::withMessages(['reason_code' => 'Attempt reason is required.']);
@@ -118,17 +141,23 @@ class ShipmentLegService
     private function syncShipmentStatus(ShipmentLeg $leg): void
     {
         $shipment = $leg->shipment;
+        $statuses = $shipment->legs()->pluck('status')->map(fn ($status) => $status->value ?? $status);
 
-        if ($shipment->legs()->exists() && !$shipment->legs()->where('status', '!=', 'delivered')->exists()) {
+        if ($statuses->isNotEmpty() && $statuses->every(fn ($status) => $status === 'cancelled')) {
+            $shipment->update(['status' => 'cancelled', 'completed_at' => null]);
+            return;
+        }
+
+        if ($statuses->isNotEmpty()
+            && $statuses->contains('delivered')
+            && $statuses->every(fn ($status) => in_array($status, ['delivered', 'cancelled'], true))) {
             $shipment->update(['status' => 'completed', 'completed_at' => now()]);
             $this->completeShopOwnedRetailOrder($shipment);
             $this->completeShopOwnedReturn($shipment);
             return;
         }
 
-        if (in_array($leg->status->value, ['assigned', 'picked_up', 'in_transit', 'delivery_attempted'], true)) {
-            $shipment->update(['status' => 'active']);
-        }
+        $shipment->update(['status' => 'active', 'completed_at' => null]);
     }
 
     private function completeShopOwnedRetailOrder($shipment): void

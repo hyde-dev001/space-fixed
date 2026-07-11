@@ -33,6 +33,12 @@ class LogisticsNotificationService
             $this->notifyRider($event, $type);
         }
 
+        if ($event->event_type === 'delivery_cancelled'
+            && $event->visibility === 'customer'
+            && $event->shipment->source_type === 'order') {
+            $this->notifyOrderStaff($event, $type);
+        }
+
         $customer = $this->resolveCustomer($event);
         if ($customer && $event->visibility === 'customer') {
             Notification::create([
@@ -104,6 +110,29 @@ class LogisticsNotificationService
         ]);
     }
 
+    private function notifyOrderStaff(DeliveryEvent $event, NotificationType $type): void
+    {
+        User::query()
+            ->where('shop_owner_id', $event->shipment->shop_owner_id)
+            ->each(function (User $staff) use ($event, $type) {
+                if (! $staff->can('access-staff-job-orders')) {
+                    return;
+                }
+
+                Notification::create([
+                    'user_id' => $staff->id,
+                    'shop_id' => $event->shipment->shop_owner_id,
+                    'type' => $type->value,
+                    'priority' => 'high',
+                    'title' => 'Delivery Cancelled',
+                    'message' => $event->message ?: 'Delivery cancelled.',
+                    'data' => $this->eventData($event) + ['order_id' => $event->shipment->source_id],
+                    'action_url' => '/erp/staff/job-orders',
+                    'requires_action' => true,
+                ]);
+            });
+    }
+
     private function eventData(DeliveryEvent $event): array
     {
         return [
@@ -121,6 +150,7 @@ class LogisticsNotificationService
             'pickup_scheduled' => NotificationType::LOGISTICS_PICKUP_SCHEDULED,
             'in_transit' => NotificationType::LOGISTICS_IN_TRANSIT,
             'delivery_attempt_failed' => NotificationType::LOGISTICS_DELIVERY_FAILED,
+            'delivery_cancelled' => NotificationType::LOGISTICS_DELIVERY_FAILED,
             'proof_required' => NotificationType::LOGISTICS_PROOF_REQUIRED,
             'delivered' => NotificationType::LOGISTICS_DELIVERED,
             default => null,

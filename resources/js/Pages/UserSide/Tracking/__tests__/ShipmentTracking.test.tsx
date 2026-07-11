@@ -61,4 +61,15 @@ describe('ShipmentTracking', () => {
     expect(screen.getByText('Customer Name - Customer Address')).toBeInTheDocument();
     expect(screen.getByText('Your order is in transit.')).toBeInTheDocument();
   });
+
+  it('labels refund returns as returns', () => {
+    mockPageState.props.shipment.purpose = 'refund_return';
+
+    render(<ShipmentTracking />);
+
+    expect(screen.getByText('Return #7')).toBeInTheDocument();
+    expect(screen.getByText('Return Movement')).toBeInTheDocument();
+    expect(screen.getByText('RET-7')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open return tracking' })).toHaveAttribute('href', '/tracking/shipments/7');
+  });
 });

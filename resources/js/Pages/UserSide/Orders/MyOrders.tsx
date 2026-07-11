@@ -103,6 +103,10 @@ type Order = {
   refund_stage?: {
     id: number;
     logistics_shipment_id?: number | null;
+    is_shop_owned_return?: boolean;
+    delivery_rider_name?: string | null;
+    delivery_rider_phone?: string | null;
+    delivery_reference?: string | null;
     status: string;
     reason_code?: string | null;
     reason_note?: string | null;
@@ -1816,6 +1820,7 @@ const MyOrders: React.FC = () => {
                         const hasShippingInfo = !isRefundProcessing && !isRefundedOrder && ['shipped', 'to_ship', 'delivered', 'completed'].includes(order.status);
                         const returnStatus = String(stage?.return_status || '').toLowerCase();
                         const returnSource = String(stage?.return_source || 'customer').toLowerCase();
+                        const isShopOwnedReturn = Boolean(stage?.is_shop_owned_return);
                         const hasStaffPickupDetails = returnSource === 'staff' || returnStatus === 'pending_staff_pickup';
                         const hasStaffPickup = !isCancelledRefundOrder && (isRefundProcessing || hasStaffPickupDetails || (isRefundedOrder && Boolean(stage)));
                         const hasBothDetailSections = hasShippingInfo && hasStaffPickup;
@@ -1884,21 +1889,21 @@ const MyOrders: React.FC = () => {
                                     </div>
                                     <div className="flex items-start justify-between gap-3 sm:block">
                                       <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Rider Name</p>
-                                      <p className="text-sm text-black font-medium text-right sm:text-left">{stage?.staff_return_rider_name || '-'}</p>
+                                      <p className="text-sm text-black font-medium text-right sm:text-left">{isShopOwnedReturn ? (stage?.delivery_rider_name || 'Awaiting rider assignment') : (stage?.staff_return_rider_name || '-')}</p>
                                     </div>
                                     <div className="flex items-start justify-between gap-3 sm:block">
                                       <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Rider Phone</p>
-                                      <p className="text-sm text-black font-medium text-right sm:text-left">{stage?.staff_return_rider_phone || '-'}</p>
+                                      <p className="text-sm text-black font-medium text-right sm:text-left">{isShopOwnedReturn ? (stage?.delivery_rider_phone || '-') : (stage?.staff_return_rider_phone || '-')}</p>
                                     </div>
                                     <div className="flex items-start justify-between gap-3 sm:block">
-                                      <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Tracking Number</p>
-                                      <p className="text-sm text-black font-medium text-right sm:text-left">{stage?.staff_return_tracking_number || '-'}</p>
+                                      <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">{isShopOwnedReturn ? 'Return Reference' : 'Tracking Number'}</p>
+                                      <p className="text-sm text-black font-medium text-right sm:text-left">{isShopOwnedReturn ? (stage?.delivery_reference || '-') : (stage?.staff_return_tracking_number || '-')}</p>
                                     </div>
                                     <div className="flex items-start justify-between gap-3 sm:block">
                                       <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Arranged At</p>
                                       <p className="text-sm text-black font-medium text-right sm:text-left">{formatStaffPickupDateTime(stage?.return_arranged_by_staff_at)}</p>
                                     </div>
-                                    <div className="sm:col-span-2">
+                                    {!isShopOwnedReturn && <div className="sm:col-span-2">
                                       <div className="flex items-start justify-between gap-3 sm:block">
                                         <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Tracking Link</p>
                                         {stage?.staff_return_tracking_link ? (
@@ -1914,7 +1919,7 @@ const MyOrders: React.FC = () => {
                                           <p className="text-right text-sm text-black font-medium sm:text-left">-</p>
                                         )}
                                       </div>
-                                    </div>
+                                    </div>}
                                   </div>
                                 </div>
                               )}

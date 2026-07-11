@@ -38,9 +38,14 @@ class ErpLogisticsController extends Controller
         return Inertia::render('ERP/Logistics/Shipments', [
             'shipments' => Shipment::query()
                 ->with(['legs' => function ($query) use ($user, $isDispatcher) {
-                    $query->with(['assignments.riderProfile', 'proofs']);
+                    $query->with(['assignments.riderProfile', 'proofs', 'attempts' => fn ($attempts) => $attempts
+                        ->where('attempt_type', 'delivery')
+                        ->where('status', 'failed')
+                        ->latest('attempted_at')
+                        ->latest('id')
+                        ->limit(1)]);
 
-                    if (!$isDispatcher) {
+                    if (! $isDispatcher) {
                         $query->whereHas('assignments', function ($assignments) use ($user) {
                             $assignments->whereIn('status', ['assigned', 'accepted'])
                                 ->whereHas('riderProfile', function ($riders) use ($user) {
@@ -60,7 +65,7 @@ class ErpLogisticsController extends Controller
                 ->when($purpose !== 'all', function ($query) use ($purpose) {
                     $query->where('purpose', $purpose);
                 })
-                ->when(!$isDispatcher, function ($query) use ($user) {
+                ->when(! $isDispatcher, function ($query) use ($user) {
                     $query->whereHas('legs.assignments', function ($assignments) use ($user) {
                         $assignments->whereIn('status', ['assigned', 'accepted'])
                             ->whereHas('riderProfile', function ($riders) use ($user) {
@@ -95,31 +100,51 @@ class ErpLogisticsController extends Controller
     public function deliveries(Request $request): Response
     {
         $user = Auth::guard('user')->user();
-        if (!$user || !$user->shop_owner_id || !$user->can('operate-logistics-deliveries')) {
+        if (! $user || ! $user->shop_owner_id || ! $user->can('operate-logistics-deliveries')) {
             abort(403);
         }
         $shopOwnerId = (int) $user->shop_owner_id;
+        $status = in_array($request->query('status'), ['assigned', 'picked_up', 'in_transit', 'delivery_attempted', 'awaiting_proof_approval', 'delivered', 'cancelled'], true)
+            ? $request->query('status')
+            : 'all';
+        $window = in_array($request->query('window'), ['today', 'week'], true) ? $request->query('window') : 'all';
+        $shopTimezone = config('app.shop_timezone', 'Asia/Manila');
+        $databaseTimezone = config('database.connections.'.config('database.default').'.timezone', config('app.timezone', 'UTC'));
+        $dates = match ($window) {
+            'today' => [now($shopTimezone)->startOfDay(), now($shopTimezone)->endOfDay()],
+            'week' => [now($shopTimezone)->startOfWeek(), now($shopTimezone)->endOfWeek()],
+            default => null,
+        };
+        $assignmentMatches = function ($assignments) use ($user, $dates, $databaseTimezone) {
+            $assignments->whereIn('status', ['assigned', 'accepted'])
+                ->whereHas('riderProfile', fn ($riders) => $riders
+                    ->where('linked_type', User::class)
+                    ->where('linked_id', $user->id))
+                ->when($dates, fn ($query) => $query->whereBetween('assigned_at', [
+                    $dates[0]->setTimezone($databaseTimezone),
+                    $dates[1]->setTimezone($databaseTimezone),
+                ]));
+        };
+        $legMatches = function ($legs) use ($assignmentMatches, $status) {
+            $legs->when($status !== 'all', fn ($query) => $query->where('status', $status))
+                ->whereHas('assignments', $assignmentMatches);
+        };
 
         return Inertia::render('ERP/Logistics/MyDeliveries', [
             'shipments' => Shipment::query()
                 ->where('shop_owner_id', $shopOwnerId)
-                ->whereHas('legs.assignments', function ($assignments) use ($user) {
-                    $assignments->whereIn('status', ['assigned', 'accepted'])
-                        ->whereHas('riderProfile', fn ($riders) => $riders
-                            ->where('linked_type', User::class)
-                            ->where('linked_id', $user->id));
-                })
-                ->with(['legs' => function ($query) use ($user) {
-                    $query->with(['assignments.riderProfile', 'proofs'])
-                        ->whereHas('assignments', function ($assignments) use ($user) {
-                            $assignments->whereIn('status', ['assigned', 'accepted'])
-                                ->whereHas('riderProfile', fn ($riders) => $riders
-                                    ->where('linked_type', User::class)
-                                    ->where('linked_id', $user->id));
-                        });
+                ->whereHas('legs', $legMatches)
+                ->with(['legs' => function ($query) use ($legMatches) {
+                    $legMatches($query);
+                    $query->with(['assignments.riderProfile', 'proofs', 'attempts' => fn ($attempts) => $attempts
+                        ->where('attempt_type', 'delivery')
+                        ->where('status', 'failed')
+                        ->latest('attempted_at')
+                        ->latest('id')
+                        ->limit(1)]);
                 }])
-                ->latest()->paginate(10),
-            'filters' => ['status' => 'all', 'purpose' => 'all'],
+                ->latest()->paginate(10)->withQueryString(),
+            'filters' => ['status' => $status, 'window' => $window],
             'canAssign' => false,
             'canUpdateStatus' => $user->can('update-logistics-status'),
             'canRecordProof' => $user->can('record-logistics-proof'),
@@ -160,7 +185,7 @@ class ErpLogisticsController extends Controller
         $user = Auth::guard('user')->user();
         $hasAccess = $user && $user->can($permission);
 
-        if (!$user || !$user->shop_owner_id || !$hasAccess) {
+        if (! $user || ! $user->shop_owner_id || ! $hasAccess) {
             abort(403);
         }
 
