@@ -62,6 +62,15 @@ class LogisticsEmployeeRoleAccessTest extends TestCase
 
         $this->assertTrue($user->hasRole('Logistics Rider'));
         $this->assertSame('STAFF', $user->role);
+        $this->assertDatabaseHas('rider_profiles', [
+            'shop_owner_id' => $shop->id,
+            'linked_type' => User::class,
+            'linked_id' => $user->id,
+            'rider_type' => 'employee',
+            'name' => 'Logistics Rider One',
+            'availability_status' => 'available',
+            'active' => true,
+        ]);
     }
 
     public function test_hr_employee_can_create_logistics_dispatcher_employee_account(): void
@@ -97,5 +106,45 @@ class LogisticsEmployeeRoleAccessTest extends TestCase
 
         $this->assertTrue($user->hasRole('Logistics Dispatcher'));
         $this->assertSame('STAFF', $user->role);
+    }
+
+    public function test_dispatcher_riders_page_backfills_existing_logistics_rider_profiles(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+
+        $shop = ShopOwner::factory()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $dispatcher->assignRole('Logistics Dispatcher');
+
+        $rider = User::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'name' => 'Existing Rider',
+            'phone' => '09171234569',
+        ]);
+        $rider->assignRole('Logistics Rider');
+
+        $this->assertDatabaseMissing('rider_profiles', [
+            'linked_type' => User::class,
+            'linked_id' => $rider->id,
+        ]);
+
+        $this->actingAs($dispatcher, 'user')
+            ->get('/erp/logistics/riders')
+            ->assertOk();
+
+        $this->assertDatabaseHas('rider_profiles', [
+            'shop_owner_id' => $shop->id,
+            'linked_type' => User::class,
+            'linked_id' => $rider->id,
+            'rider_type' => 'employee',
+            'name' => 'Existing Rider',
+            'phone' => '09171234569',
+            'availability_status' => 'available',
+            'active' => true,
+        ]);
     }
 }

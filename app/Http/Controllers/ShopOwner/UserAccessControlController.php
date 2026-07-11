@@ -22,6 +22,7 @@ use Spatie\Permission\Models\Role;
 use App\Models\PositionTemplate;
 use App\Models\PositionTemplatePermission;
 use App\Services\BusinessAccessControlService;
+use App\Services\Logistics\RiderProfileSyncService;
 use Carbon\Carbon;
 
 class UserAccessControlController extends Controller
@@ -429,6 +430,7 @@ class UserAccessControlController extends Controller
                 }
 
                 $user->assignRole($resolvedSpatieRole);
+                app(RiderProfileSyncService::class)->syncUser($user);
                 
                 // Permission Audit Log - COMPLIANCE CRITICAL
                 PermissionAuditLog::logRoleAssigned(
@@ -661,6 +663,7 @@ class UserAccessControlController extends Controller
             'inventory' => [],
             'procurement' => [],
             'staff' => [],
+            'logistics' => [],
             'common' => [],
         ];
 
@@ -733,6 +736,10 @@ class UserAccessControlController extends Controller
                     str_contains($permission, 'stock-movement') ||
                     str_contains($permission, 'upload-inventory')) {
                 $grouped['inventory'][] = $permission;
+            }
+            // Staff Module: access-staff-* permissions
+            elseif (str_contains($permission, 'logistics') || str_contains($permission, 'delivery') || str_contains($permission, 'rider') || str_contains($permission, 'courier') || str_contains($permission, 'shipping-method') || str_contains($permission, 'proof-of-delivery')) {
+                $grouped['logistics'][] = $permission;
             }
             // Staff Module: access-staff-* permissions
             elseif (str_starts_with($permission, 'access-staff-') ||
@@ -1252,6 +1259,7 @@ class UserAccessControlController extends Controller
                 array_unshift($rolesToSync, $primaryRole);
             }
             $user->syncRoles($rolesToSync);
+            app(RiderProfileSyncService::class)->syncShop((int) $user->shop_owner_id);
             
             // Re-enable automatic logging
             activity()->enableLogging();

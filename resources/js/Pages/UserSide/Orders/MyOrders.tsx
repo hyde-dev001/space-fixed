@@ -94,10 +94,19 @@ type Order = {
   carrier_name?: string;
   tracking_link?: string;
   logistics_shipment_id?: number | null;
+  is_shop_owned_delivery?: boolean;
+  delivery_rider_name?: string | null;
+  delivery_rider_phone?: string | null;
+  delivery_reference?: string | null;
   eta?: string;
   pickup_enabled?: boolean;
   refund_stage?: {
     id: number;
+    logistics_shipment_id?: number | null;
+    is_shop_owned_return?: boolean;
+    delivery_rider_name?: string | null;
+    delivery_rider_phone?: string | null;
+    delivery_reference?: string | null;
     status: string;
     reason_code?: string | null;
     reason_note?: string | null;
@@ -1811,6 +1820,7 @@ const MyOrders: React.FC = () => {
                         const hasShippingInfo = !isRefundProcessing && !isRefundedOrder && ['shipped', 'to_ship', 'delivered', 'completed'].includes(order.status);
                         const returnStatus = String(stage?.return_status || '').toLowerCase();
                         const returnSource = String(stage?.return_source || 'customer').toLowerCase();
+                        const isShopOwnedReturn = Boolean(stage?.is_shop_owned_return);
                         const hasStaffPickupDetails = returnSource === 'staff' || returnStatus === 'pending_staff_pickup';
                         const hasStaffPickup = !isCancelledRefundOrder && (isRefundProcessing || hasStaffPickupDetails || (isRefundedOrder && Boolean(stage)));
                         const hasBothDetailSections = hasShippingInfo && hasStaffPickup;
@@ -1834,17 +1844,19 @@ const MyOrders: React.FC = () => {
                                       <p className="text-sm text-black font-medium text-right sm:text-left">{order.carrier_company || '-'}</p>
                                     </div>
                                     <div className="flex items-start justify-between gap-3 sm:block">
-                                      <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Carrier Name </p>
-                                      <p className="text-sm text-black font-medium text-right sm:text-left">{order.carrier_name || '-'}</p>
+                                      <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">{order.is_shop_owned_delivery ? 'Assigned Rider' : 'Carrier Name'}</p>
+                                      <p className="text-sm text-black font-medium text-right sm:text-left">{order.is_shop_owned_delivery ? (order.delivery_rider_name || 'Awaiting rider assignment') : (order.carrier_name || '-')}</p>
                                     </div>
                                     <div className="flex items-start justify-between gap-3 sm:block">
-                                      <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Tracking Number </p>
-                                      <p className="text-sm text-black font-medium text-right sm:text-left">{order.tracking_number || '-'}</p>
+                                      <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">{order.is_shop_owned_delivery ? 'Rider Phone' : 'Tracking Number'}</p>
+                                      <p className="text-sm text-black font-medium text-right sm:text-left">{order.is_shop_owned_delivery ? (order.delivery_rider_phone || '-') : (order.tracking_number || '-')}</p>
                                     </div>
                                     <div className="sm:col-span-2">
                                       <div className="flex items-start justify-between gap-3 sm:block">
-                                        <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Tracking Link</p>
-                                        {order.tracking_link ? (
+                                        <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">{order.is_shop_owned_delivery ? 'Delivery Reference' : 'Tracking Link'}</p>
+                                        {order.is_shop_owned_delivery ? (
+                                          <p className="text-right text-sm text-black font-medium sm:text-left">{order.delivery_reference || '-'}</p>
+                                        ) : order.tracking_link ? (
                                           <a
                                             href={order.tracking_link}
                                             target="_blank"
@@ -1877,21 +1889,21 @@ const MyOrders: React.FC = () => {
                                     </div>
                                     <div className="flex items-start justify-between gap-3 sm:block">
                                       <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Rider Name</p>
-                                      <p className="text-sm text-black font-medium text-right sm:text-left">{stage?.staff_return_rider_name || '-'}</p>
+                                      <p className="text-sm text-black font-medium text-right sm:text-left">{isShopOwnedReturn ? (stage?.delivery_rider_name || 'Awaiting rider assignment') : (stage?.staff_return_rider_name || '-')}</p>
                                     </div>
                                     <div className="flex items-start justify-between gap-3 sm:block">
                                       <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Rider Phone</p>
-                                      <p className="text-sm text-black font-medium text-right sm:text-left">{stage?.staff_return_rider_phone || '-'}</p>
+                                      <p className="text-sm text-black font-medium text-right sm:text-left">{isShopOwnedReturn ? (stage?.delivery_rider_phone || '-') : (stage?.staff_return_rider_phone || '-')}</p>
                                     </div>
                                     <div className="flex items-start justify-between gap-3 sm:block">
-                                      <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Tracking Number</p>
-                                      <p className="text-sm text-black font-medium text-right sm:text-left">{stage?.staff_return_tracking_number || '-'}</p>
+                                      <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">{isShopOwnedReturn ? 'Return Reference' : 'Tracking Number'}</p>
+                                      <p className="text-sm text-black font-medium text-right sm:text-left">{isShopOwnedReturn ? (stage?.delivery_reference || '-') : (stage?.staff_return_tracking_number || '-')}</p>
                                     </div>
                                     <div className="flex items-start justify-between gap-3 sm:block">
                                       <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Arranged At</p>
                                       <p className="text-sm text-black font-medium text-right sm:text-left">{formatStaffPickupDateTime(stage?.return_arranged_by_staff_at)}</p>
                                     </div>
-                                    <div className="sm:col-span-2">
+                                    {!isShopOwnedReturn && <div className="sm:col-span-2">
                                       <div className="flex items-start justify-between gap-3 sm:block">
                                         <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Tracking Link</p>
                                         {stage?.staff_return_tracking_link ? (
@@ -1907,7 +1919,7 @@ const MyOrders: React.FC = () => {
                                           <p className="text-right text-sm text-black font-medium sm:text-left">-</p>
                                         )}
                                       </div>
-                                    </div>
+                                    </div>}
                                   </div>
                                 </div>
                               )}
@@ -1918,12 +1930,20 @@ const MyOrders: React.FC = () => {
 
                       {/* Order Actions */}
                       <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-gray-200 pt-4 sm:mt-6 sm:pt-6 sm:gap-3">
-                        {order.logistics_shipment_id && (
+                        {order.logistics_shipment_id && !order.is_shop_owned_delivery && (
                           <Link
                             href={`/tracking/shipments/${order.logistics_shipment_id}`}
                             className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
                           >
                             Track Shipment
+                          </Link>
+                        )}
+                        {order.refund_stage?.logistics_shipment_id && (
+                          <Link
+                            href={`/tracking/shipments/${order.refund_stage.logistics_shipment_id}`}
+                            className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
+                          >
+                            Track Return
                           </Link>
                         )}
                         {order.status === 'pending' && (

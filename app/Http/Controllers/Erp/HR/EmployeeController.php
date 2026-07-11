@@ -10,6 +10,7 @@ use App\Models\HR\AuditLog;
 use App\Mail\EmployeeInvitation;
 use App\Models\ShopOwner;
 use App\Services\BusinessAccessControlService;
+use App\Services\Logistics\RiderProfileSyncService;
 use App\Traits\HR\LogsHRActivity;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -284,6 +285,7 @@ class EmployeeController extends Controller
             ]);
 
             $newUser->assignRole($resolvedSpatieRole);
+            app(RiderProfileSyncService::class)->syncUser($newUser);
 
             // Generate invitation URL
             $inviteUrl = url("/invite/{$inviteToken}");

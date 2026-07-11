@@ -2,14 +2,15 @@
 
 namespace Tests\Feature\Logistics;
 
-use App\Models\ShopOwner;
-use App\Models\User;
 use App\Models\Logistics\DeliveryAssignment;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
+use App\Models\ShopOwner;
+use App\Models\User;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
@@ -124,53 +125,116 @@ class LogisticsPageAccessTest extends TestCase
         $this->assertSame([$assignedShipment->id], $shipmentIds);
     }
 
-    public function test_logistics_rider_can_filter_deliveries_by_status_and_today_assignment(): void
+    public function test_logistics_rider_filters_to_their_matching_leg_status_and_today_assignment(): void
     {
         $this->seed(RolesAndPermissionsSeeder::class);
-        $shop = ShopOwner::factory()->create();
-        $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
-        $rider->assignRole('Logistics Rider');
-        $profile = RiderProfile::factory()->create([
-            'shop_owner_id' => $shop->id,
-            'linked_type' => User::class,
-            'linked_id' => $rider->id,
-        ]);
-        $todayShipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
-        $todayLeg = ShipmentLeg::factory()->create([
-            'shipment_id' => $todayShipment->id,
-            'status' => 'in_transit',
-        ]);
-        $todayLeg->attempts()->create([
-            'attempt_type' => 'delivery',
-            'status' => 'failed',
-            'reason_code' => 'recipient_unavailable',
-            'attempted_at' => now(),
-        ]);
-        DeliveryAssignment::factory()->create([
-            'shipment_leg_id' => $todayLeg->id,
-            'rider_profile_id' => $profile->id,
-            'assigned_at' => now(config('app.shop_timezone', 'Asia/Manila')),
-        ]);
-        $oldShipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
-        $oldLeg = ShipmentLeg::factory()->create([
-            'shipment_id' => $oldShipment->id,
-            'status' => 'in_transit',
-        ]);
-        DeliveryAssignment::factory()->create([
-            'shipment_leg_id' => $oldLeg->id,
-            'rider_profile_id' => $profile->id,
-            'assigned_at' => now(config('app.shop_timezone', 'Asia/Manila'))->subDay(),
-        ]);
+        Carbon::setTestNow('2026-07-15 01:00:00 UTC');
+        config(['app.shop_timezone' => 'Asia/Manila', 'app.timezone' => 'UTC']);
 
-        $response = $this->actingAs($rider->fresh(), 'user')
-            ->get('/erp/logistics/deliveries?status=in_transit&window=today')
+        try {
+            $shop = ShopOwner::factory()->create();
+            $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
+            $rider->assignRole('Logistics Rider');
+            $otherRider = User::factory()->create(['shop_owner_id' => $shop->id]);
+            $riderProfile = RiderProfile::factory()->create(['shop_owner_id' => $shop->id, 'linked_type' => User::class, 'linked_id' => $rider->id]);
+            $otherProfile = RiderProfile::factory()->create(['shop_owner_id' => $shop->id, 'linked_type' => User::class, 'linked_id' => $otherRider->id]);
+
+            $wanted = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+            $wantedLeg = ShipmentLeg::factory()->create(['shipment_id' => $wanted->id, 'status' => 'in_transit']);
+            DeliveryAssignment::factory()->create(['shipment_leg_id' => $wantedLeg->id, 'rider_profile_id' => $riderProfile->id, 'assigned_at' => '2026-07-15 00:30:00 UTC']);
+            $siblingLeg = ShipmentLeg::factory()->create(['shipment_id' => $wanted->id, 'status' => 'picked_up']);
+            DeliveryAssignment::factory()->create(['shipment_leg_id' => $siblingLeg->id, 'rider_profile_id' => $riderProfile->id, 'assigned_at' => '2026-07-15 00:30:00 UTC']);
+
+            $wrongStatus = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+            $wrongStatusLeg = ShipmentLeg::factory()->create(['shipment_id' => $wrongStatus->id, 'status' => 'picked_up']);
+            DeliveryAssignment::factory()->create(['shipment_leg_id' => $wrongStatusLeg->id, 'rider_profile_id' => $riderProfile->id, 'assigned_at' => '2026-07-15 00:30:00 UTC']);
+
+            $otherRiderShipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+            $otherRiderLeg = ShipmentLeg::factory()->create(['shipment_id' => $otherRiderShipment->id, 'status' => 'in_transit']);
+            DeliveryAssignment::factory()->create(['shipment_leg_id' => $otherRiderLeg->id, 'rider_profile_id' => $otherProfile->id, 'assigned_at' => '2026-07-15 00:30:00 UTC']);
+
+            $excludedStatus = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+            $excludedLeg = ShipmentLeg::factory()->create(['shipment_id' => $excludedStatus->id, 'status' => 'pending']);
+            DeliveryAssignment::factory()->create(['shipment_leg_id' => $excludedLeg->id, 'rider_profile_id' => $riderProfile->id, 'assigned_at' => '2026-07-15 00:30:00 UTC']);
+
+            $response = $this->actingAs($rider->fresh(), 'user')
+                ->get('/erp/logistics/deliveries?status=in_transit&window=today')
+                ->assertOk();
+
+            $shipments = $response->viewData('page')['props']['shipments']['data'];
+            $this->assertSame([$wanted->id], collect($shipments)->pluck('id')->all());
+            $this->assertSame([$wantedLeg->id], collect($shipments[0]['legs'])->pluck('id')->all());
+            $this->assertSame(['status' => 'in_transit', 'window' => 'today'], $response->viewData('page')['props']['filters']);
+
+            foreach (['pending', 'not-a-status'] as $status) {
+                $response = $this->actingAs($rider->fresh(), 'user')
+                    ->get("/erp/logistics/deliveries?status={$status}&window=today")
+                    ->assertOk();
+
+                $this->assertEqualsCanonicalizing(
+                    [$wanted->id, $wrongStatus->id, $excludedStatus->id],
+                    collect($response->viewData('page')['props']['shipments']['data'])->pluck('id')->all(),
+                );
+                $this->assertSame('all', $response->viewData('page')['props']['filters']['status']);
+            }
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_logistics_rider_week_filter_uses_monday_to_sunday_in_shop_timezone(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        Carbon::setTestNow('2026-07-15 01:00:00 UTC');
+        config(['app.shop_timezone' => 'Asia/Manila', 'app.timezone' => 'UTC']);
+
+        try {
+            $shop = ShopOwner::factory()->create();
+            $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
+            $rider->assignRole('Logistics Rider');
+            $profile = RiderProfile::factory()->create(['shop_owner_id' => $shop->id, 'linked_type' => User::class, 'linked_id' => $rider->id]);
+
+            $monday = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+            $mondayLeg = ShipmentLeg::factory()->create(['shipment_id' => $monday->id, 'status' => 'in_transit']);
+            DeliveryAssignment::factory()->create(['shipment_leg_id' => $mondayLeg->id, 'rider_profile_id' => $profile->id, 'assigned_at' => '2026-07-12 16:00:00 UTC']);
+
+            $sunday = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+            $sundayLeg = ShipmentLeg::factory()->create(['shipment_id' => $sunday->id, 'status' => 'in_transit']);
+            DeliveryAssignment::factory()->create(['shipment_leg_id' => $sundayLeg->id, 'rider_profile_id' => $profile->id, 'assigned_at' => '2026-07-19 15:59:59 UTC']);
+
+            $outside = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+            $outsideLeg = ShipmentLeg::factory()->create(['shipment_id' => $outside->id, 'status' => 'in_transit']);
+            DeliveryAssignment::factory()->create(['shipment_leg_id' => $outsideLeg->id, 'rider_profile_id' => $profile->id, 'assigned_at' => '2026-07-19 16:00:00 UTC']);
+
+            $response = $this->actingAs($rider->fresh(), 'user')
+                ->get('/erp/logistics/deliveries?window=week')
+                ->assertOk();
+
+            $this->assertEqualsCanonicalizing([$monday->id, $sunday->id], collect($response->viewData('page')['props']['shipments']['data'])->pluck('id')->all());
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_dispatcher_shipments_include_only_the_latest_failed_delivery_attempt_per_leg(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+
+        $shop = ShopOwner::factory()->create();
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $dispatcher->assignRole('Logistics Dispatcher');
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+        $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id]);
+        $leg->attempts()->create(['attempt_type' => 'delivery', 'status' => 'failed', 'reason_code' => 'old', 'attempted_at' => '2026-07-14 10:00:00']);
+        $latest = $leg->attempts()->create(['attempt_type' => 'delivery', 'status' => 'failed', 'reason_code' => 'latest', 'attempted_at' => '2026-07-14 11:00:00']);
+        $leg->attempts()->create(['attempt_type' => 'pickup', 'status' => 'failed', 'reason_code' => 'pickup', 'attempted_at' => '2026-07-14 12:00:00']);
+
+        $response = $this->actingAs($dispatcher->fresh(), 'user')
+            ->get('/erp/logistics/shipments')
             ->assertOk();
 
-        $shipments = $response->viewData('page')['props']['shipments']['data'];
-        $this->assertSame([$todayShipment->id], collect($shipments)->pluck('id')->all());
-        $this->assertSame('in_transit', $response->viewData('page')['props']['filters']['status']);
-        $this->assertSame('today', $response->viewData('page')['props']['filters']['window']);
-        $this->assertArrayHasKey('attempts', $shipments[0]['legs'][0]);
+        $attempts = collect($response->viewData('page')['props']['shipments']['data'][0]['legs'][0]['attempts']);
+        $this->assertSame([$latest->id], $attempts->pluck('id')->all());
     }
 
     public function test_dispatcher_can_filter_shipments_by_status_and_purpose(): void
@@ -185,13 +249,6 @@ class LogisticsPageAccessTest extends TestCase
             'shop_owner_id' => $shop->id,
             'status' => 'active',
             'purpose' => 'retail_delivery',
-        ]);
-        $wantedLeg = ShipmentLeg::factory()->create(['shipment_id' => $wanted->id, 'status' => 'delivery_attempted']);
-        $wantedLeg->attempts()->create([
-            'attempt_type' => 'delivery',
-            'status' => 'failed',
-            'reason_code' => 'recipient_unavailable',
-            'attempted_at' => now(),
         ]);
         Shipment::factory()->create([
             'shop_owner_id' => $shop->id,
@@ -213,7 +270,6 @@ class LogisticsPageAccessTest extends TestCase
             ->all();
 
         $this->assertSame([$wanted->id], $shipmentIds);
-        $this->assertArrayHasKey('attempts', $response->viewData('page')['props']['shipments']['data'][0]['legs'][0]);
     }
 
     public function test_dispatcher_shipments_include_available_riders_for_assignment(): void

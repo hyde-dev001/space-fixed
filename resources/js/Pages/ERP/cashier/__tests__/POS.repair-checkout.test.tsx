@@ -3,13 +3,11 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const usePageMock = vi.fn();
-const axiosGetMock = vi.fn();
 const axiosPostMock = vi.fn();
 const swalFireMock = vi.fn();
 
 vi.mock("axios", () => ({
   default: {
-    get: (...args: unknown[]) => axiosGetMock(...args),
     post: (...args: unknown[]) => axiosPostMock(...args),
   },
 }));
@@ -34,7 +32,6 @@ import CashierPOS from "../POS";
 describe("Cashier POS repair checkout", () => {
   beforeEach(() => {
     usePageMock.mockReset();
-    axiosGetMock.mockReset();
     axiosPostMock.mockReset();
     swalFireMock.mockReset();
 
@@ -44,7 +41,6 @@ describe("Cashier POS repair checkout", () => {
           user: {
             shop_owner: {
               business_type: "both",
-              repair_payment_policy: "deposit_50",
             },
           },
         },
@@ -57,11 +53,6 @@ describe("Cashier POS repair checkout", () => {
         transaction_no: "POS-TEST-123",
       },
     });
-    axiosGetMock.mockImplementation((url: string) => Promise.resolve({
-      data: {
-        data: url === "/api/repair-services" ? [{ id: 1, name: "Sole reglue", price: 1000, category: "Repair" }] : [],
-      },
-    }));
 
     swalFireMock.mockResolvedValue({ isConfirmed: true });
   });
@@ -69,14 +60,19 @@ describe("Cashier POS repair checkout", () => {
   it("submits walk-in repair checkout payload to repair-pos endpoint", async () => {
     render(<CashierPOS />);
 
-    fireEvent.change(screen.getByTitle(/customer name/i), {
+    fireEvent.change(screen.getByLabelText(/walk-in customer name/i), {
       target: { value: "Walk In Customer" },
     });
 
-    fireEvent.change(screen.getByTitle(/customer phone number/i), { target: { value: "09171234567" } });
-    fireEvent.click(await screen.findByRole("button", { name: /sole reglue/i }));
-    fireEvent.change(screen.getByTitle(/cash received/i), { target: { value: "500" } });
-    fireEvent.click(screen.getByRole("button", { name: "Pay" }));
+    fireEvent.change(screen.getByLabelText(/repair subtotal/i), {
+      target: { value: "1000" },
+    });
+
+    fireEvent.change(screen.getByLabelText(/amount to collect/i), {
+      target: { value: "500" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /process walk-in repair checkout/i }));
 
     await waitFor(() => {
       expect(axiosPostMock).toHaveBeenCalledTimes(1);

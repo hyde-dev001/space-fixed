@@ -6,6 +6,7 @@ use App\Models\Logistics\DeliveryEvent;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\Order;
+use App\Models\RepairRequest;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -45,5 +46,23 @@ class CustomerTrackingTest extends TestCase
         $this->actingAs($customer, 'user')
             ->get("/tracking/shipments/{$shipment->id}")
             ->assertOk();
+    }
+
+    public function test_customer_repair_listing_includes_logistics_tracking_shipments(): void
+    {
+        $customer = User::factory()->create();
+        $repair = RepairRequest::factory()->create(['user_id' => $customer->id]);
+        $shipment = Shipment::factory()->create([
+            'shop_owner_id' => $repair->shop_owner_id,
+            'source_type' => 'repair_request',
+            'source_id' => $repair->id,
+            'purpose' => 'repair_return',
+        ]);
+
+        $this->actingAs($customer, 'user')
+            ->getJson('/api/customer/repairs')
+            ->assertOk()
+            ->assertJsonPath('data.0.logistics_shipments.0.id', $shipment->id)
+            ->assertJsonPath('data.0.logistics_shipments.0.purpose', 'repair_return');
     }
 }

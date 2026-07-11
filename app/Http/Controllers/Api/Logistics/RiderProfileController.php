@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Logistics\RiderProfile;
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Services\Logistics\RiderProfileSyncService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -15,6 +16,7 @@ class RiderProfileController extends Controller
     public function index(): JsonResponse
     {
         $shop = $this->authorizedShop('manage-logistics-riders');
+        app(RiderProfileSyncService::class)->syncShop((int) $shop->id);
 
         return response()->json([
             'riders' => RiderProfile::query()

@@ -9,6 +9,7 @@ export type TrackingShipmentLeg = {
   tracking_url?: string | null;
   requires_delivery_proof?: boolean;
   scheduled_pickup_at?: string | null;
+  assigned_at?: string | null;
   picked_up_at?: string | null;
   delivered_at?: string | null;
   assignments?: Array<{

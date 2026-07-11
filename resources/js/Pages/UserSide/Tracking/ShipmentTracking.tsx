@@ -19,16 +19,20 @@ const snapshotText = (snapshot?: Record<string, unknown> | null) => {
 export default function ShipmentTracking() {
   const { shipment } = usePage<{ shipment: TrackingShipment }>().props;
   const currentLeg = shipment.legs[shipment.legs.length - 1];
+  const isReturn = shipment.purpose === 'refund_return';
+  const itemLabel = isReturn ? 'Return' : 'Shipment';
+  const trackingNumber = isReturn ? `RET-${shipment.id}` : (currentLeg?.tracking_number || '-');
+  const trackingUrl = isReturn ? `/tracking/shipments/${shipment.id}` : currentLeg?.tracking_url;
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Head title={`Tracking #${shipment.id}`} />
+      <Head title={`${itemLabel} Tracking #${shipment.id}`} />
       <Navigation />
 
       <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-sm font-medium text-gray-500">Shipment #{shipment.id}</p>
+            <p className="text-sm font-medium text-gray-500">{itemLabel} #{shipment.id}</p>
             <h1 className="text-2xl font-bold text-gray-950">{titleCase(shipment.purpose)}</h1>
           </div>
           <span className="w-fit rounded-full border border-gray-300 bg-white px-3 py-1 text-sm font-semibold text-gray-800">
@@ -44,13 +48,13 @@ export default function ShipmentTracking() {
             </div>
             <div>
               <p className="text-xs font-semibold uppercase text-gray-500">Tracking Number</p>
-              <p className="mt-1 text-sm font-medium text-gray-900">{currentLeg?.tracking_number || '-'}</p>
+              <p className="mt-1 text-sm font-medium text-gray-900">{trackingNumber}</p>
             </div>
             <div>
               <p className="text-xs font-semibold uppercase text-gray-500">Tracking Link</p>
-              {currentLeg?.tracking_url ? (
-                <a className="mt-1 inline-block text-sm font-semibold text-black underline" href={currentLeg.tracking_url}>
-                  Open courier page
+              {trackingUrl ? (
+                <a className="mt-1 inline-block text-sm font-semibold text-black underline" href={trackingUrl}>
+                  {isReturn ? 'Open return tracking' : 'Open courier page'}
                 </a>
               ) : (
                 <p className="mt-1 text-sm font-medium text-gray-900">-</p>
@@ -61,7 +65,7 @@ export default function ShipmentTracking() {
 
         <section className="mb-6 rounded-lg border border-gray-200 bg-white">
           <div className="border-b border-gray-200 px-5 py-4">
-            <h2 className="text-base font-bold text-gray-950">Movement</h2>
+            <h2 className="text-base font-bold text-gray-950">{itemLabel} Movement</h2>
           </div>
           <div className="divide-y divide-gray-100">
             {shipment.legs.map((leg) => (

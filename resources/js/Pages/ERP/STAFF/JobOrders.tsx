@@ -5,6 +5,8 @@ import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import ErrorModal from "../../../components/common/ErrorModal";
 import axios from "axios";
 
+const SHOP_OWNED_LOGISTICS = "Shop-owned logistics";
+
 type OrderItem = {
   id: number;
   product_id: number | null;
@@ -42,6 +44,7 @@ type Order = {
   cancellation_reason?: string | null;
   cancellation_note?: string | null;
   cancellation_other_reason_note?: string | null;
+  delivery_cancellation?: { status: "cancelled"; message: string | null } | null;
   eta?: string;
   orderedAt: string;
   processedAt?: string;
@@ -424,6 +427,7 @@ export default function JobOrdersPage() {
       cancellation_reason: order.cancellation_reason || null,
       cancellation_note: order.cancellation_note || null,
       cancellation_other_reason_note: order.cancellation_other_reason_note || null,
+      delivery_cancellation: order.delivery_cancellation || null,
       eta: order.eta || undefined,
       orderedAt: new Date(order.created_at).toLocaleString(),
       carrierCompany: order.carrier_company || undefined,
@@ -472,6 +476,9 @@ export default function JobOrdersPage() {
   const getShippingMessage = () => {
     if (!selectedOrder) return "";
     const etaText = etaPreset || "(ETA not set)";
+    if (carrierCompany === SHOP_OWNED_LOGISTICS) {
+      return `Thank you for your purchase! We are arranging delivery through our shop-owned logistics and you will receive the item by ${etaText}.`;
+    }
     const carrierText = carrierCompany ? `${carrierCompany}${carrierName ? ` - ${carrierName}` : ""}` : "(carrier not set)";
     const base = `Thank you for your purchase! We already shipped your item via ${carrierText} and you will receive the item by ${etaText}.`;
     const trackingPart = trackingNumber ? ` Tracking Number: ${trackingNumber}.` : "";
@@ -806,9 +813,12 @@ export default function JobOrdersPage() {
   const canConfirmReturnReceived = (order: Order) => {
     const latestRefund = order.latest_refund;
     if (!latestRefund) return false;
+    const isShopOwnedPickup = String(latestRefund.return_source || '').toLowerCase() === 'staff'
+      && String(latestRefund.staff_return_carrier || '').toLowerCase() === 'shop-owned logistics';
 
     return String(latestRefund.flow_type || '').toLowerCase() === 'request_approval'
-      && ['pending_staff_pickup', 'in_transit'].includes(String(latestRefund.return_status || '').toLowerCase())
+      && (String(latestRefund.return_status || '').toLowerCase() === 'in_transit'
+        || (!isShopOwnedPickup && String(latestRefund.return_status || '').toLowerCase() === 'pending_staff_pickup'))
       && !['rejected', 'failed'].includes(String(latestRefund.status || '').toLowerCase());
   };
 
@@ -821,7 +831,7 @@ export default function JobOrdersPage() {
     const isBlocked = ['rejected', 'failed'].includes(String(latestRefund.status || '').toLowerCase());
 
     return flowType === 'request_approval'
-      && ['pending_customer_shipment', 'pending_staff_pickup'].includes(returnStatus)
+      && returnStatus === 'pending_customer_shipment'
       && !isBlocked;
   };
 
@@ -865,36 +875,44 @@ export default function JobOrdersPage() {
             </div>
           </div>
 
-          <div style="display:grid;gap:10px;">
-            <p style="margin:0;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#475569;">Courier Assignment</p>
+           <div style="display:grid;gap:10px;">
+             <p style="margin:0;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#475569;">Courier Assignment</p>
 
-            <div style="display:grid;gap:6px;">
+             <div style="display:grid;gap:6px;">
+               <label style="font-size:13px;font-weight:600;color:#334155;">Delivery Method</label>
+               <select id="swal-delivery-method" style="border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;">
+                 <option value="third_party">Third-party courier</option>
+                 <option value="shop_owned">Shop-owned logistics</option>
+               </select>
+             </div>
+
+             <div class="swal-third-party-field" style="display:grid;gap:10px;">
               <label style="font-size:13px;font-weight:600;color:#334155;">Carrier Company</label>
               <input id="swal-carrier-company" class="swal2-input" placeholder="e.g. J&T, LBC, Ninja Van" value="${escapeHtml(defaultCarrier)}" style="margin:0;border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;" />
             </div>
 
-            <div style="display:grid;gap:6px;">
+             <div class="swal-third-party-field" style="display:grid;gap:6px;">
               <label style="font-size:13px;font-weight:600;color:#334155;">Rider Name</label>
               <input id="swal-rider-name" class="swal2-input" placeholder="Rider full name" value="${escapeHtml(defaultRiderName)}" style="margin:0;border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;" />
             </div>
 
-            <div style="display:grid;gap:6px;">
+             <div class="swal-third-party-field" style="display:grid;gap:6px;">
               <label style="font-size:13px;font-weight:600;color:#334155;">Rider Number</label>
               <input id="swal-rider-phone" class="swal2-input" placeholder="09XXXXXXXXX" value="${escapeHtml(defaultRiderPhone)}" inputmode="numeric" pattern="[0-9]*" maxlength="11" style="margin:0;border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;" />
             </div>
 
-            <div style="display:grid;gap:6px;">
+             <div class="swal-third-party-field" style="display:grid;gap:6px;">
               <label style="font-size:13px;font-weight:600;color:#334155;">Tracking Number</label>
               <input id="swal-tracking-number" class="swal2-input" placeholder="Tracking number" value="${escapeHtml(defaultTrackingNumber)}" style="margin:0;border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;" />
             </div>
 
-            <div style="display:grid;gap:6px;">
+             <div class="swal-third-party-field" style="display:grid;gap:6px;">
               <label style="font-size:13px;font-weight:600;color:#334155;">Tracking Link</label>
               <input id="swal-tracking-link" class="swal2-input" placeholder="https://..." value="${escapeHtml(defaultTrackingLink)}" style="margin:0;border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;" />
             </div>
           </div>
 
-          <p style="margin:0;font-size:12px;color:#64748b;">Tip: You can save initial rider details now, then update later with final tracking status.</p>
+          <p id="swal-pickup-tip" style="margin:0;font-size:12px;color:#64748b;">Tip: You can save initial rider details now, then update later with final tracking status.</p>
         </div>
       `,
       showCancelButton: true,
@@ -905,6 +923,19 @@ export default function JobOrdersPage() {
       cancelButtonColor: '#6b7280',
       focusConfirm: false,
       didOpen: () => {
+        const deliveryMethodInput = document.getElementById('swal-delivery-method') as HTMLSelectElement | null;
+        const thirdPartyFields = document.querySelectorAll<HTMLElement>('.swal-third-party-field');
+        const pickupTip = document.getElementById('swal-pickup-tip');
+        const toggleThirdPartyFields = () => {
+          const isThirdParty = deliveryMethodInput?.value === 'third_party';
+          thirdPartyFields.forEach((field) => { field.style.display = isThirdParty ? 'grid' : 'none'; });
+          if (pickupTip) pickupTip.textContent = isThirdParty
+            ? 'Tip: You can save initial rider details now, then update later with final tracking status.'
+            : 'Dispatcher assigns a rider from Logistics after you save.';
+        };
+        deliveryMethodInput?.addEventListener('change', toggleThirdPartyFields);
+        toggleThirdPartyFields();
+
         const riderPhoneInput = document.getElementById('swal-rider-phone') as HTMLInputElement | null;
         if (!riderPhoneInput) return;
 
@@ -918,6 +949,9 @@ export default function JobOrdersPage() {
         }
       },
       preConfirm: () => {
+        const deliveryMethod = (document.getElementById('swal-delivery-method') as HTMLSelectElement | null)?.value || 'third_party';
+        if (deliveryMethod === 'shop_owned') return { deliveryMethod };
+
         const carrierCompany = (document.getElementById('swal-carrier-company') as HTMLInputElement | null)?.value?.trim() || '';
         const riderName = (document.getElementById('swal-rider-name') as HTMLInputElement | null)?.value?.trim() || '';
         const riderPhone = (document.getElementById('swal-rider-phone') as HTMLInputElement | null)?.value?.trim() || '';
@@ -942,6 +976,7 @@ export default function JobOrdersPage() {
         }
 
         return {
+          deliveryMethod,
           carrierCompany,
           riderName,
           riderPhone,
@@ -969,6 +1004,7 @@ export default function JobOrdersPage() {
           'X-CSRF-TOKEN': csrfData.csrf_token,
         },
         body: JSON.stringify({
+          delivery_method: shipmentInput.value.deliveryMethod,
           tracking_number: shipmentInput.value.trackingNumber,
           carrier_company: shipmentInput.value.carrierCompany,
           rider_name: shipmentInput.value.riderName,
@@ -1265,27 +1301,29 @@ export default function JobOrdersPage() {
     if (!carrierCompany) {
       await Swal.fire({
         title: "Missing Information",
-        text: "Please select a Carrier Business",
+        text: "Please select a Shipping Business",
         icon: "warning",
         confirmButtonColor: "#2563eb",
       });
       return;
     }
 
-    if (!carrierName) {
+    const usesShopOwnedLogistics = carrierCompany === SHOP_OWNED_LOGISTICS;
+
+    if (!usesShopOwnedLogistics && !carrierName) {
       await Swal.fire({
         title: "Missing Information",
-        text: "Please enter the Carrier Name",
+        text: "Please enter the Rider Name",
         icon: "warning",
         confirmButtonColor: "#2563eb",
       });
       return;
     }
 
-    if (!carrierPhone) {
+    if (!usesShopOwnedLogistics && !carrierPhone) {
       await Swal.fire({
         title: "Missing Information",
-        text: "Please enter the Carrier Phone Number",
+        text: "Please enter the Rider Phone",
         icon: "warning",
         confirmButtonColor: "#2563eb",
       });
@@ -1293,10 +1331,10 @@ export default function JobOrdersPage() {
     }
 
     const normalizedCarrierPhone = carrierPhone.trim();
-    if (!/^\d{11}$/.test(normalizedCarrierPhone)) {
+    if (!usesShopOwnedLogistics && !/^\d{11}$/.test(normalizedCarrierPhone)) {
       await Swal.fire({
-        title: "Invalid Carrier Phone",
-        text: "Carrier phone number must be exactly 11 digits.",
+        title: "Invalid Rider Phone",
+        text: "Rider phone number must be exactly 11 digits.",
         icon: "warning",
         confirmButtonColor: "#2563eb",
       });
@@ -1305,7 +1343,7 @@ export default function JobOrdersPage() {
 
     const normalizedTrackingNumber = trackingNumber.trim();
 
-    if (!normalizedTrackingNumber) {
+    if (!usesShopOwnedLogistics && !normalizedTrackingNumber) {
       await Swal.fire({
         title: "Missing Information",
         text: "Please enter a Tracking Number",
@@ -1315,7 +1353,7 @@ export default function JobOrdersPage() {
       return;
     }
 
-    if (!/^\d+$/.test(normalizedTrackingNumber)) {
+    if (!usesShopOwnedLogistics && !/^\d+$/.test(normalizedTrackingNumber)) {
       await Swal.fire({
         title: "Invalid Tracking Number",
         text: "Tracking Number must contain numbers only.",
@@ -1327,7 +1365,7 @@ export default function JobOrdersPage() {
 
     const trackingLinkValue = trackingLink.trim();
 
-    if (!trackingLinkValue) {
+    if (!usesShopOwnedLogistics && !trackingLinkValue) {
       await Swal.fire({
         title: "Missing Information",
         text: "Please enter a Tracking Link",
@@ -1337,16 +1375,18 @@ export default function JobOrdersPage() {
       return;
     }
 
-    try {
-      new URL(trackingLinkValue);
-    } catch {
-      await Swal.fire({
-        title: "Invalid Tracking Link",
-        text: "Please enter a valid URL (include https://)",
-        icon: "warning",
-        confirmButtonColor: "#2563eb",
-      });
-      return;
+    if (!usesShopOwnedLogistics) {
+      try {
+        new URL(trackingLinkValue);
+      } catch {
+        await Swal.fire({
+          title: "Invalid Tracking Link",
+          text: "Please enter a valid URL (include https://)",
+          icon: "warning",
+          confirmButtonColor: "#2563eb",
+        });
+        return;
+      }
     }
 
     try {
@@ -1370,11 +1410,11 @@ export default function JobOrdersPage() {
         },
         body: JSON.stringify({
           status: 'shipped',
-          tracking_number: normalizedTrackingNumber,
+          tracking_number: usesShopOwnedLogistics ? null : normalizedTrackingNumber,
           carrier_company: carrierCompany,
-          carrier_name: carrierName,
-          carrier_phone: carrierPhone,
-          tracking_link: trackingLinkValue,
+          carrier_name: usesShopOwnedLogistics ? null : carrierName,
+          carrier_phone: usesShopOwnedLogistics ? null : carrierPhone,
+          tracking_link: usesShopOwnedLogistics ? null : trackingLinkValue,
           eta: etaPreset,
         })
       });
@@ -1409,10 +1449,10 @@ export default function JobOrdersPage() {
                   status: "shipped",
                   shippedAt: new Date().toLocaleString(),
                   carrierCompany,
-                  carrierName,
-                  carrierPhone,
-                  trackingNumber: normalizedTrackingNumber,
-                  trackingLink,
+                  carrierName: usesShopOwnedLogistics ? undefined : carrierName,
+                  carrierPhone: usesShopOwnedLogistics ? undefined : carrierPhone,
+                  trackingNumber: usesShopOwnedLogistics ? undefined : normalizedTrackingNumber,
+                  trackingLink: usesShopOwnedLogistics ? undefined : trackingLink,
                   eta: etaPreset,
                 }
               : o
@@ -2032,68 +2072,76 @@ export default function JobOrdersPage() {
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="">Select shipping</option>
+                      <option value={SHOP_OWNED_LOGISTICS}>Shop-owned logistics</option>
                       <option value="Lalamove">Lalamove</option>
                       <option value="J&T">J&amp;T</option>
                       <option value="Express Padala">Express Padala</option>
                     </select>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        Rider Name *
-                      </label>
-                      <input
-                        type="text"
-                        value={carrierName}
-                        onChange={(e) => setCarrierName(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
+                  {carrierCompany === SHOP_OWNED_LOGISTICS ? (
+                    <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800 dark:border-blue-900/40 dark:bg-blue-900/20 dark:text-blue-300">
+                      A logistics shipment will be created for this order. Assign the rider from Logistics &gt; Shipments.
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        Rider Phone *
-                      </label>
-                      <input
-                        type="tel"
-                        value={carrierPhone}
-                        onChange={(e) => {
-                          // Allow digits only and limit to 10 characters
-                          const digits = e.target.value.replace(/\D/g, '').slice(0, 11);
-                          setCarrierPhone(digits);
-                        }}
-                        maxLength={11}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                  </div>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Rider Name *
+                          </label>
+                          <input
+                            type="text"
+                            value={carrierName}
+                            onChange={(e) => setCarrierName(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Rider Phone *
+                          </label>
+                          <input
+                            type="tel"
+                            value={carrierPhone}
+                            onChange={(e) => {
+                              const digits = e.target.value.replace(/\D/g, '').slice(0, 11);
+                              setCarrierPhone(digits);
+                            }}
+                            maxLength={11}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                      </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tracking Number *</label>
-                    <input
-                      type="text"
-                      value={trackingNumber}
-                      onChange={(e) => setTrackingNumber(e.target.value.replace(/\D/g, ''))}
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      disabled={selectedOrder.status === 'shipped'}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <p className="text-xs text-gray-500 mt-1">Record tracking number from the courier. This field is required before confirming shipping.</p>
-                  </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tracking Number *</label>
+                        <input
+                          type="text"
+                          value={trackingNumber}
+                          onChange={(e) => setTrackingNumber(e.target.value.replace(/\D/g, ''))}
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          disabled={selectedOrder.status === 'shipped'}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Record tracking number from the courier. This field is required before confirming shipping.</p>
+                      </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tracking Link *</label>
-                    <input
-                      type="url"
-                      value={trackingLink}
-                      onChange={(e) => setTrackingLink(e.target.value)}
-                      required
-                      disabled={selectedOrder.status === 'shipped'}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <p className="text-xs text-gray-500 mt-1">Provide the tracking link so customers can track delivery in real time.</p>
-                  </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tracking Link *</label>
+                        <input
+                          type="url"
+                          value={trackingLink}
+                          onChange={(e) => setTrackingLink(e.target.value)}
+                          required
+                          disabled={selectedOrder.status === 'shipped'}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Provide the tracking link so customers can track delivery in real time.</p>
+                      </div>
+                    </>
+                  )}
 
                   <div>
                     <div className="flex items-center justify-between mb-2">
@@ -2332,6 +2380,12 @@ export default function JobOrdersPage() {
                         </div>
                       )}
                     </div>
+                  </div>
+                )}
+                {viewOrder.delivery_cancellation && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
+                    <p className="font-semibold">Delivery cancelled</p>
+                    <p>{viewOrder.delivery_cancellation.message || 'The delivery was cancelled. Coordinate with Logistics to reassign it if needed.'}</p>
                   </div>
                 )}
               </div>

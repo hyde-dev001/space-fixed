@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\OrderRefund;
+use App\Models\Logistics\Shipment;
 use App\Models\User;
 use App\Services\OrderRefundService;
 use App\Services\RetailPosRefundSummaryService;
@@ -77,8 +78,22 @@ class StaffOrderController extends Controller
             (int) $shopOwnerId,
             $orders->pluck('id')->map(fn ($id) => (int) $id)->all(),
         );
+        $deliveryCancellations = Shipment::query()
+            ->with(['events' => fn ($events) => $events
+                ->where('event_type', 'delivery_cancelled')
+                ->where('visibility', 'customer')
+                ->latest('id')])
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where('source_type', 'order')
+            ->whereIn('source_id', $orders->pluck('id'))
+            ->where('status', 'cancelled')
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->get()
+            ->groupBy('source_id')
+            ->map(fn ($shipments) => $shipments->first());
 
-        $orders = $orders->map(function ($order) use ($retailPosRefundSummaries, $includeRefundItems) {
+        $orders = $orders->map(function ($order) use ($retailPosRefundSummaries, $includeRefundItems, $deliveryCancellations) {
                 $itemSubtotal = (float) ($order->total_amount ?? 0);
                 $shippingFee = (float) ($order->shipping_fee ?? 0);
                 $hasStoredVat = $order->vat_amount !== null;
@@ -87,6 +102,7 @@ class StaffOrderController extends Controller
                     ? round((float) $order->vat_rate, 2)
                     : null;
                 $latestRefund = $order->refunds->first();
+                $cancelledShipment = $deliveryCancellations->get($order->id);
 
                 $latestRefundItems = [];
                 if ($includeRefundItems && $latestRefund) {
@@ -136,6 +152,10 @@ class StaffOrderController extends Controller
                     'carrier_phone' => $order->carrier_phone ?? '',
                     'tracking_link' => $order->tracking_link ?? '',
                     'eta' => $order->eta ?? null,
+                    'delivery_cancellation' => $cancelledShipment ? [
+                        'status' => 'cancelled',
+                        'message' => $cancelledShipment->events->first()?->message,
+                    ] : null,
                     'retail_pos_refund' => $retailPosRefundSummaries[(int) $order->id] ?? null,
                     'latest_refund' => $latestRefund ? [
                         'id' => (int) $latestRefund->id,
@@ -449,6 +469,10 @@ class StaffOrderController extends Controller
             'user_role' => $user->role,
         ]);
 
+        if ($oldStatus !== 'shipped' && $validated['status'] === 'shipped') {
+            app(\App\Services\Logistics\SourceShipmentService::class)->ensureRetailOrderShipment($order->fresh());
+        }
+
         return response()->json([
             'success' => true,
             'message' => 'Order status updated successfully',
@@ -532,15 +556,21 @@ class StaffOrderController extends Controller
 
     public function arrangeReturnPickup(Request $request, $id)
     {
+        $isShopOwned = $request->input('delivery_method') === 'shop_owned';
         $validated = $request->validate([
-            'tracking_number' => 'required|string|max:255',
-            'carrier_company' => 'required|string|max:255',
-            'rider_name' => 'required|string|max:255',
-            'rider_phone' => 'required|string|max:30',
-            'tracking_link' => 'required|url|max:500',
+            'delivery_method' => 'nullable|in:shop_owned,third_party',
+            'tracking_number' => ($isShopOwned ? 'nullable' : 'required') . '|string|max:255',
+            'carrier_company' => ($isShopOwned ? 'nullable' : 'required') . '|string|max:255',
+            'rider_name' => ($isShopOwned ? 'nullable' : 'required') . '|string|max:255',
+            'rider_phone' => ($isShopOwned ? 'nullable' : 'required') . '|string|max:30',
+            'tracking_link' => ($isShopOwned ? 'nullable' : 'required') . '|url|max:500',
             'note' => 'nullable|string|max:1000',
             'shipped_at' => 'nullable|date',
         ]);
+
+        if ($isShopOwned) {
+            $validated['carrier_company'] = 'Shop-owned logistics';
+        }
 
         $user = Auth::guard('user')->user();
 
@@ -589,6 +619,10 @@ class StaffOrderController extends Controller
                 'success' => false,
                 'message' => $result['message'] ?? 'Return pickup cannot be arranged right now.',
             ], 422);
+        }
+
+        if ($isShopOwned) {
+            $this->orderRefundService->ensureReturnShipment($result['refund']);
         }
 
         return response()->json([
@@ -744,4 +778,3 @@ class StaffOrderController extends Controller
     }
 
 }
-

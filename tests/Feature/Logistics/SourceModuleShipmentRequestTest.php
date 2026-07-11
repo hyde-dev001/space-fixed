@@ -4,12 +4,15 @@ namespace Tests\Feature\Logistics;
 
 use App\Models\Order;
 use App\Models\OrderRefund;
+use App\Models\Logistics\DeliveryEvent;
+use App\Models\Logistics\Shipment;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\Logistics\SourceShipmentService;
 use App\Services\OrderRefundService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 class SourceModuleShipmentRequestTest extends TestCase
@@ -44,6 +47,83 @@ class SourceModuleShipmentRequestTest extends TestCase
         ]);
     }
 
+    public function test_staff_marking_order_shipped_requests_outbound_shipment(): void
+    {
+        $shop = ShopOwner::factory()->create([
+            'business_type' => 'retail',
+            'registration_type' => 'company',
+            'status' => 'approved',
+        ]);
+        $staff = User::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'role' => 'STAFF',
+        ]);
+        Permission::findOrCreate('access-staff-job-orders', 'user');
+        $staff->givePermissionTo('access-staff-job-orders');
+        $order = Order::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'status' => 'processing',
+        ]);
+
+        $this->actingAs($staff, 'user')
+            ->patchJson("/api/staff/orders/{$order->id}/status", [
+                'status' => 'shipped',
+                'carrier_company' => 'Shop-owned logistics',
+                'eta' => '1-2 business days',
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('shipments', [
+            'source_type' => 'order',
+            'source_id' => $order->id,
+            'purpose' => 'retail_delivery',
+        ]);
+        $this->assertDatabaseHas('shipment_legs', [
+            'leg_type' => 'outbound',
+        ]);
+    }
+
+    public function test_staff_orders_include_the_latest_cancelled_delivery_reason(): void
+    {
+        $shop = ShopOwner::factory()->create(['business_type' => 'retail']);
+        $staff = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'STAFF']);
+        Permission::findOrCreate('access-staff-job-orders', 'user');
+        $staff->givePermissionTo('access-staff-job-orders');
+        $order = Order::factory()->create(['shop_owner_id' => $shop->id, 'status' => 'shipped']);
+        $olderShipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+            'source_id' => $order->id,
+            'status' => 'cancelled',
+            'created_at' => now()->subMinute(),
+        ]);
+        $latestShipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+            'source_id' => $order->id,
+            'status' => 'cancelled',
+        ]);
+        DeliveryEvent::factory()->create([
+            'shipment_id' => $olderShipment->id,
+            'event_type' => 'delivery_cancelled',
+            'visibility' => 'customer',
+            'message' => 'Delivery cancelled: Old reason.',
+        ]);
+        DeliveryEvent::factory()->create([
+            'shipment_id' => $latestShipment->id,
+            'event_type' => 'delivery_cancelled',
+            'visibility' => 'customer',
+            'message' => 'Delivery cancelled: Recipient was unavailable.',
+        ]);
+
+        $this->actingAs($staff, 'user')
+            ->getJson('/api/staff/orders')
+            ->assertOk()
+            ->assertJsonPath('0.status', 'shipped')
+            ->assertJsonPath('0.delivery_cancellation.status', 'cancelled')
+            ->assertJsonPath('0.delivery_cancellation.message', 'Delivery cancelled: Recipient was unavailable.');
+    }
+
     public function test_approved_refund_return_creates_inbound_shipment(): void
     {
         $shop = ShopOwner::factory()->create();
@@ -69,6 +149,47 @@ class SourceModuleShipmentRequestTest extends TestCase
         $this->assertDatabaseHas('shipment_legs', [
             'leg_type' => 'inbound',
         ]);
+    }
+
+    public function test_staff_can_arrange_a_shop_owned_return_pickup(): void
+    {
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $staff = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'STAFF']);
+        Permission::findOrCreate('access-staff-job-orders', 'user');
+        $staff->givePermissionTo('access-staff-job-orders');
+        $order = Order::factory()->create(['shop_owner_id' => $shop->id]);
+        $refund = OrderRefund::factory()->create([
+            'order_id' => $order->id,
+            'shop_owner_id' => $shop->id,
+            'flow_type' => 'request_approval',
+            'status' => 'processing',
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'pending_customer_shipment',
+        ]);
+
+        $this->actingAs($staff, 'user')
+            ->postJson("/api/staff/orders/{$order->id}/arrange-return-pickup", [
+                'delivery_method' => 'shop_owned',
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('order_refunds', [
+            'id' => $refund->id,
+            'staff_return_carrier' => 'Shop-owned logistics',
+            'return_status' => 'pending_staff_pickup',
+        ]);
+        $this->assertDatabaseHas('shipments', [
+            'source_type' => 'order_refund',
+            'source_id' => $refund->id,
+            'purpose' => 'refund_return',
+        ]);
+
+        $this->actingAs($staff, 'user')
+            ->postJson("/api/staff/orders/{$order->id}/arrange-return-pickup", [
+                'delivery_method' => 'shop_owned',
+            ])
+            ->assertStatus(422);
     }
 
     public function test_repair_pickup_creates_inbound_shipment(): void

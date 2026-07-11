@@ -105,6 +105,13 @@ class RolesAndPermissionsSeeder extends Seeder
             'manage-logistics-riders',
             'update-logistics-status',
             'record-logistics-proof',
+            'approve-proof-of-delivery',
+            'view-proof-of-delivery',
+            'manage-logistics-deliveries',
+            'operate-logistics-deliveries',
+            'manage-logistics-courier-providers',
+            'manage-logistics-shipping-methods',
+            'configure-logistics-settings',
 
             // ===== COMMON/GLOBAL =====
             'access-global-search',
@@ -299,9 +306,11 @@ class RolesAndPermissionsSeeder extends Seeder
 
         $logisticsRider = Role::firstOrCreate(['name' => 'Logistics Rider', 'guard_name' => 'user']);
         $logisticsRider->syncPermissions([
+            'access-logistics-dashboard',
             'view-logistics-shipments',
             'update-logistics-status',
             'record-logistics-proof',
+            'operate-logistics-deliveries',
             'access-notification-center',
             'access-profile',
         ]);

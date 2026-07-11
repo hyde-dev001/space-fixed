@@ -120,6 +120,7 @@ type RepairOrder = {
   carrier_name?: string | null;
   carrier_phone?: string | null;
   tracking_link?: string | null;
+  logistics_shipments?: Array<{ id: number; purpose: string }>;
   shipped_at?: string | null;
   assigned_repairer_id?: number | null;
   repairer_name?: string | null;
@@ -3415,6 +3416,15 @@ const MyRepairs: React.FC = () => {
                                   <p className="text-sm text-black font-medium">-</p>
                                 )}
                               </div>
+                              {order.logistics_shipments?.length ? (
+                                <div className="md:col-span-2 flex flex-wrap gap-2">
+                                  {order.logistics_shipments.map((shipment) => (
+                                    <Link key={shipment.id} href={`/tracking/shipments/${shipment.id}`} className="text-sm font-semibold text-black underline">
+                                      Track {shipment.purpose.replace(/_/g, ' ')}
+                                    </Link>
+                                  ))}
+                                </div>
+                              ) : null}
                             </div>
                           </div>
                         )}
@@ -3523,6 +3533,15 @@ const MyRepairs: React.FC = () => {
                                 <p className="text-right text-sm font-medium text-black">-</p>
                               )}
                             </div>
+                            {order.logistics_shipments?.length ? (
+                              <div className="flex flex-wrap gap-2 pt-2">
+                                {order.logistics_shipments.map((shipment) => (
+                                  <Link key={shipment.id} href={`/tracking/shipments/${shipment.id}`} className="text-sm font-semibold text-black underline">
+                                    Track {shipment.purpose.replace(/_/g, ' ')}
+                                  </Link>
+                                ))}
+                              </div>
+                            ) : null}
                           </div>
                         </div>
                       )}

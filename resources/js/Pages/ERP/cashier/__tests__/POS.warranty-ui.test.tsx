@@ -41,7 +41,6 @@ const buildRepairHistoryRow = (overrides: Record<string, unknown> = {}) => ({
   id: 10,
   module_type: "repair",
   module_reference_id: 321,
-  repair_request: { status: "received" },
   customer_type: "walk_in",
   walk_in_name: "Walk In Customer",
   walk_in_phone: "09171234567",

@@ -555,10 +555,20 @@ class OrderRefundService
 
     public function arrangeStaffReturnPickup(OrderRefund $refund, array $pickupData, ?int $staffId = null): array
     {
+        $isShopOwnedPickup = strtolower((string) ($pickupData['carrier_company'] ?? $pickupData['carrier'] ?? '')) === 'shop-owned logistics';
+
         if ((string) ($refund->shop_owner_status ?? 'pending') !== 'approved' || (string) ($refund->finance_status ?? 'pending') !== 'approved') {
             return [
                 'result' => 'invalid_state',
                 'message' => 'Refund approvals must be completed before arranging return pickup.',
+                'refund' => $refund,
+            ];
+        }
+
+        if ($isShopOwnedPickup && (string) ($refund->return_status ?? '') !== 'pending_customer_shipment') {
+            return [
+                'result' => 'invalid_state',
+                'message' => 'This shop-owned return pickup is already in the Logistics dispatcher queue.',
                 'refund' => $refund,
             ];
         }
@@ -608,6 +618,17 @@ class OrderRefundService
         ?array $lineDispositions = null,
     ): array
     {
+        $isShopOwnedPickup = (string) ($refund->return_source ?? '') === 'staff'
+            && strtolower((string) ($refund->staff_return_carrier ?? '')) === 'shop-owned logistics';
+
+        if ($isShopOwnedPickup && (string) ($refund->return_status ?? '') === 'pending_staff_pickup') {
+            return [
+                'result' => 'invalid_state',
+                'message' => 'Wait for the assigned rider to complete the return delivery before confirming receipt.',
+                'refund' => $refund,
+            ];
+        }
+
         if (!in_array((string) ($refund->return_status ?? 'awaiting_approval'), ['pending_customer_shipment', 'pending_staff_pickup', 'in_transit'], true)) {
             return [
                 'result' => 'invalid_state',
