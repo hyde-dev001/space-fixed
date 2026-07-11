@@ -72,6 +72,12 @@ class SourceShipmentService
                     'event_type' => 'delivery_estimated', 'visibility' => 'customer',
                     'message' => 'Estimated delivery scheduled.',
                 ]);
+            } elseif ($schedule) {
+                $this->events->record($shipment, $leg, [
+                    'event_type' => 'delivery_schedule_attention',
+                    'message' => 'Delivery schedule requires dispatcher attention.',
+                    'metadata' => ['schedule_status' => $schedule['schedule_status']],
+                ]);
             }
 
             return $shipment->fresh(['legs', 'events']);

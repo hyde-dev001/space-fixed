@@ -51,6 +51,8 @@ interface UserAddress {
   postal_code?: string;
   full_address?: string;
   is_default?: boolean;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 interface ShippingEstimateData {
@@ -202,6 +204,8 @@ const Payment: React.FC = () => {
   const [shippingAddressLine, setShippingAddressLine] = useState('');
   const [shippingBarangay, setShippingBarangay] = useState('');
   const [shippingPostalCode, setShippingPostalCode] = useState('');
+  const [shippingLatitude, setShippingLatitude] = useState<number | null>(null);
+  const [shippingLongitude, setShippingLongitude] = useState<number | null>(null);
   const [shippingCity, setShippingCity] = useState('');
   const [shippingRegion, setShippingRegion] = useState('');
   const [saveAddressForLater, setSaveAddressForLater] = useState(true);
@@ -346,6 +350,8 @@ const Payment: React.FC = () => {
     setShippingCity(selectedCity);
     setShippingBarangay(addr.barangay || '');
     setShippingPostalCode(addr.postal_code || '');
+    setShippingLatitude(addr.latitude ?? null);
+    setShippingLongitude(addr.longitude ?? null);
     setCheckoutData((prev) => prev
       ? {
           ...prev,
@@ -432,6 +438,8 @@ const Payment: React.FC = () => {
           city: normalizeCitySelection(shippingCity) || shippingCity,
           barangay: shippingBarangay,
           postal_code: shippingPostalCode,
+          latitude: shippingLatitude,
+          longitude: shippingLongitude,
           is_default: userAddresses.length === 0,
         }),
       });
@@ -473,6 +481,8 @@ const Payment: React.FC = () => {
     setShippingCity(selectedCity);
     setShippingBarangay(addr.barangay || '');
     setShippingPostalCode(addr.postal_code || '');
+    setShippingLatitude(addr.latitude ?? null);
+    setShippingLongitude(addr.longitude ?? null);
     setAddressSheetMode('form');
   };
 
@@ -1653,6 +1663,8 @@ const Payment: React.FC = () => {
         city: normalizeCitySelection(shippingCity) || shippingCity,
         barangay: shippingBarangay,
         postal_code: shippingPostalCode,
+        latitude: shippingLatitude,
+        longitude: shippingLongitude,
         is_default: true,
       };
 

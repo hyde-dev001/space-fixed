@@ -14,6 +14,7 @@ export default function LogisticsSettings() {
   const initial = usePage<{ settings: Settings }>().props.settings;
   const [form, setForm] = useState(initial);
   const [saved, setSaved] = useState(false);
+  const [blackout, setBlackout] = useState('');
   const set = (key: keyof Settings, value: Settings[keyof Settings]) => setForm({ ...form, [key]: value });
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -34,6 +35,17 @@ export default function LogisticsSettings() {
         <label>Daily capacity per rider<input className="block w-full rounded border p-2" type="number" min="1" value={form.daily_rider_capacity} onChange={(e) => set('daily_rider_capacity', Number(e.target.value))} /></label>
         <label>Maximum attempts<input className="block w-full rounded border p-2" type="number" min="1" value={form.max_delivery_attempts} onChange={(e) => set('max_delivery_attempts', Number(e.target.value))} /></label>
       </div>
+      <fieldset>
+        <legend className="font-semibold">Blackout dates</legend>
+        <div className="flex gap-2">
+          <input aria-label="Blackout date" className="rounded border p-2" type="date" value={blackout} onChange={(e) => setBlackout(e.target.value)} />
+          <button type="button" className="rounded border px-3" onClick={() => {
+            if (blackout && !form.blackout_dates.includes(blackout)) set('blackout_dates', [...form.blackout_dates, blackout].sort());
+            setBlackout('');
+          }}>Add</button>
+        </div>
+        <ul>{form.blackout_dates.map((date) => <li key={date} className="mt-2 flex gap-2">{date}<button type="button" onClick={() => set('blackout_dates', form.blackout_dates.filter((value) => value !== date))}>Remove</button></li>)}</ul>
+      </fieldset>
       <button className="rounded bg-blue-600 px-4 py-2 font-semibold text-white">Save</button>
       {saved && <span className="ml-3 text-green-700">Saved</span>}
     </form>

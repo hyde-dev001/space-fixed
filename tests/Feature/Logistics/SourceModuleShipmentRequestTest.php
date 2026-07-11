@@ -284,4 +284,23 @@ class SourceModuleShipmentRequestTest extends TestCase
 
         $this->assertNull($leg->schedule_status);
     }
+
+    public function test_unscheduled_shop_owned_delivery_records_dispatcher_attention(): void
+    {
+        $shop = ShopOwner::factory()->create(['shop_latitude' => 14.5995, 'shop_longitude' => 120.9842]);
+        $customer = User::factory()->create();
+        $order = Order::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'customer_id' => $customer->id,
+            'carrier_company' => 'Shop-owned logistics',
+        ]);
+
+        $shipment = app(SourceShipmentService::class)->ensureRetailOrderShipment($order);
+
+        $this->assertDatabaseHas('delivery_events', [
+            'shipment_id' => $shipment->id,
+            'event_type' => 'delivery_schedule_attention',
+            'visibility' => 'internal',
+        ]);
+    }
 }
