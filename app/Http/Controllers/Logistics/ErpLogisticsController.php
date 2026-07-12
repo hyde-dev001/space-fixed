@@ -7,6 +7,8 @@ use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\LogisticsSetting;
 use App\Models\Logistics\DeliveryBatch;
+use App\Models\Logistics\ShipmentLeg;
+use App\Models\Logistics\DeliveryAssignment;
 use App\Models\User;
 use App\Services\Logistics\RiderProfileSyncService;
 use Illuminate\Http\Request;
@@ -222,12 +224,21 @@ class ErpLogisticsController extends Controller
     private function stats(int $shopOwnerId): array
     {
         $query = Shipment::query()->where('shop_owner_id', $shopOwnerId);
+        $legs = ShipmentLeg::query()->whereHas('shipment', fn ($q) => $q->where('shop_owner_id', $shopOwnerId));
+        $delivered = (clone $legs)->where('status', 'delivered')->count();
+        $failed = (clone $legs)->whereIn('status', ['delivery_attempted', 'needs_resolution'])->count();
 
         return [
             'requested' => (clone $query)->where('status', 'requested')->count(),
             'active' => (clone $query)->where('status', 'active')->count(),
             'completed' => (clone $query)->where('status', 'completed')->count(),
             'cancelled' => (clone $query)->where('status', 'cancelled')->count(),
+            'due_today' => (clone $legs)->whereDate('scheduled_delivery_date', today())->whereNotIn('status', ['delivered', 'cancelled'])->count(),
+            'overdue' => (clone $legs)->whereDate('scheduled_delivery_date', '<', today())->whereNotIn('status', ['delivered', 'cancelled'])->count(),
+            'failed_attempts' => $failed,
+            'unassigned' => (clone $legs)->where('status', 'pending')->whereDoesntHave('assignments', fn ($q) => $q->whereIn('status', ['assigned', 'accepted']))->count(),
+            'rider_workload' => DeliveryAssignment::query()->whereIn('status', ['assigned', 'accepted'])->whereHas('leg.shipment', fn ($q) => $q->where('shop_owner_id', $shopOwnerId))->count(),
+            'delivery_success_rate' => $delivered + $failed ? round($delivered * 100 / ($delivered + $failed), 1) : 0,
         ];
     }
 }

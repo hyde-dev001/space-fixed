@@ -59,6 +59,12 @@ export type LogisticsStats = {
   active: number;
   completed: number;
   cancelled: number;
+  due_today: number;
+  overdue: number;
+  failed_attempts: number;
+  unassigned: number;
+  rider_workload: number;
+  delivery_success_rate: number;
 };
 
 export type PaginationLink = {

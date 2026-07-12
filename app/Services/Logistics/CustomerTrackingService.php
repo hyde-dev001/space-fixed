@@ -46,8 +46,8 @@ class CustomerTrackingService
                 'sequence' => $leg->sequence,
                 'leg_type' => $leg->leg_type,
                 'status' => $leg->status->value,
-                'origin_snapshot' => $leg->origin_snapshot,
-                'destination_snapshot' => $leg->destination_snapshot,
+                'origin_snapshot' => $this->safeSnapshot($leg->origin_snapshot),
+                'destination_snapshot' => $this->safeSnapshot($leg->destination_snapshot),
                 'tracking_number' => $leg->tracking_number,
                 'tracking_url' => $leg->tracking_url,
                 'requires_delivery_proof' => (bool) $leg->requires_delivery_proof,
@@ -66,5 +66,10 @@ class CustomerTrackingService
                 'created_at' => optional($event->created_at)->toISOString(),
             ])->values()->all(),
         ];
+    }
+
+    private function safeSnapshot(?array $snapshot): ?array
+    {
+        return $snapshot ? collect($snapshot)->except(['phone', 'rider_name', 'rider_phone', 'internal_notes'])->all() : null;
     }
 }
