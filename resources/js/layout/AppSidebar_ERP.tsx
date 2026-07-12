@@ -605,6 +605,16 @@ const staffItems: NavItem[] = [
     name: "Riders",
     route: "erp.logistics.riders",
   },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="3"></circle>
+        <path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42m0-14.14-1.42 1.42M6.35 17.65l-1.42 1.42"></path>
+      </svg>
+    ),
+    name: "Settings",
+    route: "erp.logistics.settings",
+  },
 ];
 
 const repairItems: NavItem[] = [
@@ -829,6 +839,7 @@ const AppSidebar_ERP: React.FC = () => {
     "erp.logistics.shipments": "/erp/logistics/shipments",
     "erp.logistics.deliveries": "/erp/logistics/deliveries",
     "erp.logistics.riders": "/erp/logistics/riders",
+    "erp.logistics.settings": "/erp/logistics/settings",
     "erp.staff.stocks-overview": "/erp/staff/stocks-overview",
     "erp.staff.request-material": "/erp/staff/request-material",
     "erp.staff.attendance": "/erp/staff/attendance",
@@ -906,6 +917,7 @@ const AppSidebar_ERP: React.FC = () => {
     "erp.logistics.shipments": "/erp/logistics/shipments",
     "erp.logistics.deliveries": "/erp/logistics/deliveries",
     "erp.logistics.riders": "/erp/logistics/riders",
+    "erp.logistics.settings": "/erp/logistics/settings",
     "erp.staff.stocks-overview": "/erp/staff/stocks-overview",
     "erp.staff.request-material": "/erp/staff/request-material",
     "erp.staff.attendance": "/erp/staff/attendance",
@@ -1545,6 +1557,10 @@ const AppSidebar_ERP: React.FC = () => {
 
       if (item.route === "erp.logistics.riders") {
         return permissions.includes('manage-logistics-riders');
+      }
+
+      if (item.route === "erp.logistics.settings") {
+        return permissions.includes('configure-logistics-settings');
       }
       
       // Hide other items by default (no permissions)
