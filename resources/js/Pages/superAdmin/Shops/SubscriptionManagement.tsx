@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { router, usePage } from '@inertiajs/react';
+import { router, useForm, usePage } from '@inertiajs/react';
 import Swal from 'sweetalert2';
 import AppLayout from '../../../layout/AppLayout';
 import Button from '../../../components/ui/button/Button';
@@ -46,9 +46,35 @@ interface SubscriptionStats {
   expiring_soon: number;
 }
 
+interface PremiumPlanItem {
+  id: number;
+  plan_code: string;
+  name: string;
+  description: string | null;
+  price: string | number;
+  duration_days: number;
+  showroom_slot_limit: number;
+  benefits: string[] | null;
+  status: 'active' | 'inactive';
+  active_subscriptions_count: number;
+}
+
+type PlanForm = {
+  plan_code: string;
+  name: string;
+  description: string;
+  price: string;
+  duration_days: number;
+  showroom_slot_limit: number;
+  benefits: string[];
+};
+
+const emptyPlan: PlanForm = { plan_code: '', name: '', description: '', price: '', duration_days: 30, showroom_slot_limit: 48, benefits: [] };
+
 interface PageProps extends Record<string, unknown> {
   subscriptions: SubscriptionItem[];
   stats: SubscriptionStats;
+  plans: PremiumPlanItem[];
   success?: string;
   error?: string;
 }
@@ -78,18 +104,6 @@ const CalendarIcon = ({ className }: { className?: string }) => (
 const AlertIcon = ({ className }: { className?: string }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-  </svg>
-);
-
-const ArrowUpIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
   </svg>
 );
 
@@ -182,16 +196,12 @@ const SubscriptionTypeBadge = ({ item }: { item: SubscriptionItem }) => {
 const MetricCard = ({
   title,
   value,
-  change,
-  changeType,
   icon: Icon,
   color,
   description,
 }: {
   title: string;
   value: string | number;
-  change: number;
-  changeType: 'increase' | 'decrease';
   icon: React.ComponentType<{ className?: string }>;
   color: 'success' | 'error' | 'warning' | 'info';
   description: string;
@@ -216,14 +226,7 @@ const MetricCard = ({
             <Icon className="size-7 text-white drop-shadow-sm" />
           </div>
 
-          <div className={`flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold transition-all duration-300 ${
-            changeType === 'increase'
-              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-              : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-          }`}>
-            {changeType === 'increase' ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-            {Math.abs(change)}%
-          </div>
+          <span className="rounded-full bg-gray-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:bg-gray-700 dark:text-gray-300">Live</span>
         </div>
 
         <div className="space-y-2">
@@ -237,7 +240,7 @@ const MetricCard = ({
 };
 
 export default function SubscriptionManagement() {
-  const { subscriptions, stats, success, error: errorMessage } = usePage<PageProps>().props;
+  const { subscriptions, stats, plans, success, error: errorMessage } = usePage<PageProps>().props;
   const itemsPerPage = 6;
 
   const [search, setSearch] = useState('');
@@ -247,6 +250,40 @@ export default function SubscriptionManagement() {
   const [currentPage, setCurrentPage] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState<number | null>(null);
   const [selected, setSelected] = useState<SubscriptionItem | null>(null);
+  const [editingPlan, setEditingPlan] = useState<PremiumPlanItem | null>(null);
+  const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
+  const [planStatusFilter, setPlanStatusFilter] = useState<'active' | 'inactive'>('active');
+  const planForm = useForm<PlanForm>(emptyPlan);
+
+  const openPlanModal = (plan?: PremiumPlanItem) => {
+    setEditingPlan(plan ?? null);
+    planForm.clearErrors();
+    planForm.setData(plan ? {
+      plan_code: plan.plan_code,
+      name: plan.name,
+      description: plan.description ?? '',
+      price: String(plan.price),
+      duration_days: plan.duration_days,
+      showroom_slot_limit: plan.showroom_slot_limit,
+      benefits: plan.benefits ?? [],
+    } : emptyPlan);
+    setIsPlanModalOpen(true);
+  };
+
+  const submitPlan = (event: React.FormEvent) => {
+    event.preventDefault();
+    const options = { preserveScroll: true, onSuccess: () => setIsPlanModalOpen(false) };
+    editingPlan ? planForm.put(`/admin/premium-plans/${editingPlan.id}`, options) : planForm.post('/admin/premium-plans', options);
+  };
+
+  const togglePlan = (plan: PremiumPlanItem) => {
+    const action = plan.status === 'active' ? 'archive' : 'reactivate';
+    Swal.fire({
+      title: `${action === 'archive' ? 'Archive' : 'Reactivate'} ${plan.name}?`,
+      text: action === 'archive' ? 'Existing subscribers keep their current access.' : 'The plan will be available for purchase again.',
+      icon: 'question', showCancelButton: true, confirmButtonText: action === 'archive' ? 'Archive' : 'Reactivate',
+    }).then((result) => result.isConfirmed && router.post(`/admin/premium-plans/${plan.id}/${action}`, {}, { preserveScroll: true }));
+  };
 
   useEffect(() => {
     if (!selected) return;
@@ -270,8 +307,6 @@ export default function SubscriptionManagement() {
     {
       title: 'Active Subscriptions',
       value: stats.active.toLocaleString(),
-      change: 12,
-      changeType: 'increase' as const,
       icon: StoreIcon,
       color: 'success' as const,
       description: 'Currently active plans',
@@ -279,8 +314,6 @@ export default function SubscriptionManagement() {
     {
       title: 'Total Revenue',
       value: formatMoney(stats.total_revenue),
-      change: 18,
-      changeType: 'increase' as const,
       icon: CreditCardIcon,
       color: 'info' as const,
       description: 'From premium subscriptions',
@@ -288,8 +321,6 @@ export default function SubscriptionManagement() {
     {
       title: 'Expiring Soon',
       value: stats.expiring_soon.toLocaleString(),
-      change: -5,
-      changeType: 'decrease' as const,
       icon: AlertIcon,
       color: 'warning' as const,
       description: 'In the next 7 days',
@@ -297,8 +328,6 @@ export default function SubscriptionManagement() {
     {
       title: 'Expired',
       value: stats.expired.toLocaleString(),
-      change: 3,
-      changeType: 'increase' as const,
       icon: CalendarIcon,
       color: 'error' as const,
       description: 'Subscriptions ended',
@@ -397,11 +426,13 @@ export default function SubscriptionManagement() {
     <AppLayout>
       <div className="min-h-screen bg-gray-50 p-6 dark:bg-gray-900">
         <div className="mx-auto max-w-7xl space-y-6">
-          <div>
-            <h1 className="text-4xl font-bold tracking-tight text-gray-900 dark:text-white">Subscription Management</h1>
-            <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-              Monitor premium benefits and active shop subscriptions
-            </p>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="mb-1 text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Revenue & plans</p>
+              <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white sm:text-4xl">Subscription Management</h1>
+              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">Manage premium plans and monitor every shop subscription.</p>
+            </div>
+            <button type="button" onClick={() => openPlanModal()} className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">+ Create Plan</button>
           </div>
 
           {(success || errorMessage) && (
@@ -416,13 +447,34 @@ export default function SubscriptionManagement() {
             </div>
           )}
 
-          <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
-            {metrics.map((metric) => (
-              <MetricCard key={metric.title} {...metric} />
-            ))}
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {metrics.map((metric) => <MetricCard key={metric.title} {...metric} />)}
           </div>
 
+          <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div><h2 className="text-xl font-bold text-gray-900 dark:text-white">Premium Plans</h2><p className="text-sm text-gray-500">Configure pricing, duration, benefits, and showroom capacity.</p></div>
+              <div className="inline-flex rounded-xl bg-gray-100 p-1 dark:bg-gray-900">
+                {(['active', 'inactive'] as const).map((status) => <button key={status} type="button" onClick={() => setPlanStatusFilter(status)} className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${planStatusFilter === status ? 'bg-white text-blue-600 shadow-sm dark:bg-gray-700 dark:text-white' : 'text-gray-500 hover:text-gray-800 dark:hover:text-white'}`}>{status === 'active' ? 'Active' : 'Archived'} ({plans.filter((plan) => plan.status === status).length})</button>)}
+              </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {plans.filter((plan) => plan.status === planStatusFilter).map((plan) => (
+                <article key={plan.id} className={`flex h-full flex-col rounded-2xl border p-5 transition hover:-translate-y-0.5 hover:shadow-md ${plan.status === 'active' ? 'border-gray-200 dark:border-gray-700' : 'border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900/40'}`}>
+                  <div className="flex items-start justify-between gap-3"><div><h3 className="font-bold text-gray-900 dark:text-white">{plan.name}</h3><p className="text-xs uppercase tracking-wide text-gray-400">{plan.plan_code}</p></div><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${plan.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200 text-gray-600'}`}>{plan.status === 'active' ? 'Active' : 'Archived'}</span></div>
+                  <p className="mt-3 line-clamp-2 min-h-10 text-sm leading-5 text-gray-500">{plan.description || 'No description'}</p>
+                  <div className="mt-4 grid grid-cols-3 divide-x rounded-xl bg-gray-50 py-3 text-center text-sm dark:bg-gray-900/50"><div><b className="block text-gray-900 dark:text-white">{formatMoney(Number(plan.price))}</b><span className="text-xs text-gray-400">Price</span></div><div><b className="block text-gray-900 dark:text-white">{plan.duration_days}</b><span className="text-xs text-gray-400">Days</span></div><div><b className="block text-gray-900 dark:text-white">{plan.showroom_slot_limit}</b><span className="text-xs text-gray-400">Slots</span></div></div>
+                  <ul className="mt-4 space-y-2 text-sm text-gray-600 dark:text-gray-300">{(plan.benefits ?? []).slice(0, 2).map((benefit) => <li key={benefit} className="flex gap-2"><span className="text-emerald-500">✓</span><span className="line-clamp-1">{benefit}</span></li>)}</ul>
+                  {(plan.benefits?.length ?? 0) > 2 && <p className="mt-2 text-xs font-medium text-blue-600">+{(plan.benefits?.length ?? 0) - 2} more benefits</p>}
+                  <div className="mt-auto pt-5"><p className="mb-3 text-xs text-gray-400">{plan.active_subscriptions_count} active subscriber(s)</p><div className="flex gap-2"><button type="button" onClick={() => openPlanModal(plan)} className="flex-1 rounded-lg border border-blue-200 px-3 py-2 text-sm font-semibold text-blue-600 transition hover:bg-blue-50">Edit</button><button type="button" onClick={() => togglePlan(plan)} className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-600 transition hover:bg-gray-50">{plan.status === 'active' ? 'Archive' : 'Reactivate'}</button></div></div>
+                </article>
+              ))}
+              {plans.every((plan) => plan.status !== planStatusFilter) && <div className="col-span-full rounded-xl border border-dashed py-10 text-center text-sm text-gray-500">No {planStatusFilter === 'active' ? 'active' : 'archived'} plans.</div>}
+            </div>
+          </section>
+
           <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+            <div className="mb-4"><h2 className="text-xl font-bold text-gray-900 dark:text-white">Shop Subscriptions</h2><p className="text-sm text-gray-500">Search, filter, and review subscription activity.</p></div>
             <div className="grid gap-3 md:grid-cols-4">
               <input
                 type="text"
@@ -594,6 +646,22 @@ export default function SubscriptionManagement() {
             )}
           </div>
         </div>
+
+        {isPlanModalOpen && (
+          <ModalPortal><div className="fixed inset-0 z-999999 flex items-center justify-center bg-black/50 p-4" onClick={() => setIsPlanModalOpen(false)}><form onSubmit={submitPlan} onClick={(e) => e.stopPropagation()} className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-800">
+            <div className="mb-5 flex items-center justify-between"><h2 className="text-xl font-bold dark:text-white">{editingPlan ? 'Edit Plan' : 'Create Plan'}</h2><button type="button" onClick={() => setIsPlanModalOpen(false)} aria-label="Close"><XIcon className="size-5" /></button></div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {([['plan_code','Plan code'],['name','Name'],['price','Price'],['duration_days','Duration (days)'],['showroom_slot_limit','Showroom slots']] as const).map(([field,label]) => <label key={field} className="text-sm font-medium text-gray-700 dark:text-gray-200">{label}<input disabled={field === 'plan_code' && !!editingPlan} type={field === 'plan_code' || field === 'name' ? 'text' : 'number'} min={field === 'showroom_slot_limit' || field === 'duration_days' ? 1 : 0} max={field === 'showroom_slot_limit' ? 150 : field === 'duration_days' ? 3650 : undefined} value={planForm.data[field]} onChange={(e) => planForm.setData(field, field === 'plan_code' || field === 'name' || field === 'price' ? e.target.value : Number(e.target.value))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 dark:bg-gray-700" />{planForm.errors[field] && <span className="text-xs text-red-600">{planForm.errors[field]}</span>}</label>)}
+            </div>
+            <label className="mt-4 block text-sm font-medium text-gray-700 dark:text-gray-200">Description<textarea value={planForm.data.description} onChange={(e) => planForm.setData('description', e.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 dark:bg-gray-700" rows={3} /></label>
+            <p className="mt-2 text-xs text-gray-500">1–84: current room · 85–150: two connected rooms</p>
+            <div className="mt-5"><div className="flex items-center justify-between"><h3 className="font-semibold dark:text-white">Benefits</h3><button type="button" onClick={() => planForm.setData('benefits', [...planForm.data.benefits, ''])} className="text-sm font-semibold text-blue-600">Add benefit</button></div>
+              <div className="mt-2 space-y-2">{planForm.data.benefits.map((benefit,index) => <div key={index} className="flex gap-2"><input maxLength={200} value={benefit} onChange={(e) => { const benefits=[...planForm.data.benefits]; benefits[index]=e.target.value; planForm.setData('benefits',benefits); }} className="min-w-0 flex-1 rounded-lg border px-3 py-2" /><button type="button" disabled={index===0} onClick={() => { const b=[...planForm.data.benefits]; [b[index-1],b[index]]=[b[index],b[index-1]]; planForm.setData('benefits',b); }}>↑</button><button type="button" disabled={index===planForm.data.benefits.length-1} onClick={() => { const b=[...planForm.data.benefits]; [b[index+1],b[index]]=[b[index],b[index+1]]; planForm.setData('benefits',b); }}>↓</button><button type="button" onClick={() => planForm.setData('benefits',planForm.data.benefits.filter((_,i)=>i!==index))} className="text-red-600">Remove</button></div>)}</div>
+              {planForm.errors.benefits && <p className="mt-1 text-xs text-red-600">{planForm.errors.benefits}</p>}
+            </div>
+            <div className="mt-6 flex justify-end gap-3"><button type="button" onClick={() => setIsPlanModalOpen(false)} className="rounded-lg border px-4 py-2">Cancel</button><button disabled={planForm.processing} className="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white disabled:opacity-50">{planForm.processing ? 'Saving…' : 'Save Plan'}</button></div>
+          </form></div></ModalPortal>
+        )}
 
         {selected && (
           <ModalPortal>

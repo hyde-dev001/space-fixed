@@ -161,11 +161,6 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
             ->latestOfMany('ends_at');
     }
 
-    public function logisticsSetting(): HasOne
-    {
-        return $this->hasOne(\App\Models\Logistics\LogisticsSetting::class);
-    }
-
     /**
      * Get all reports filed against this shop
      */

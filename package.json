@@ -10,7 +10,6 @@
         "test:frontend:refund": "vitest run resources/js/components/refunds/__tests__/RefundStageBadge.test.tsx"
     },
     "dependencies": {
-        "-": "^0.0.1",
         "@fullcalendar/core": "^6.1.15",
         "@fullcalendar/daygrid": "^6.1.15",
         "@fullcalendar/interaction": "^6.1.15",

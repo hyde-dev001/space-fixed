@@ -4,7 +4,7 @@ import axios from 'axios';
 import Swal from 'sweetalert2';
 import AppLayoutERP from '@/layout/AppLayout_ERP';
 import { Table, TableBody, TableCell, TableHeader, TableRow } from '@/components/ui/table';
-import type { DeliveryBatch, LogisticsShipment, PaginatedResponse } from '@/types/logistics';
+import type { LogisticsShipment, PaginatedResponse } from '@/types/logistics';
 
 type ShipmentFilters = {
   status: string;
@@ -62,7 +62,7 @@ const toast = (icon: 'success' | 'error', title: string) => Swal.fire({
 });
 
 export default function Shipments() {
-  const { shipments, filters, assignableRiders, canAssign, canUpdateStatus, canRecordProof, canApproveProof, riderMode, batches = [] } = usePage<{
+  const { shipments, filters, assignableRiders, canAssign, canUpdateStatus, canRecordProof, canApproveProof, riderMode } = usePage<{
     shipments: PaginatedResponse<LogisticsShipment>;
     filters: ShipmentFilters;
     assignableRiders: Array<{ id: number; name: string; phone?: string | null }>;
@@ -71,7 +71,6 @@ export default function Shipments() {
     canRecordProof: boolean;
     canApproveProof: boolean;
     riderMode: boolean;
-    batches?: DeliveryBatch[];
   }>().props;
   const [expandedShipmentId, setExpandedShipmentId] = useState<number | null>(null);
   const [selectedRiders, setSelectedRiders] = useState<Record<number, string>>({});
@@ -80,7 +79,6 @@ export default function Shipments() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [proofFiles, setProofFiles] = useState<Record<number, File | null>>({});
   const [issueForms, setIssueForms] = useState<Record<number, { reason_code: string; notes: string }>>({});
-  const [rejectionReasons, setRejectionReasons] = useState<Record<number, string>>({});
   const hasActionColumn = riderMode || canAssign || canUpdateStatus || canRecordProof || canApproveProof;
 
   const updateFilter = (key: keyof ShipmentFilters, value: string) => {
@@ -162,8 +160,6 @@ export default function Shipments() {
           <h1 className="text-2xl font-bold text-gray-950 dark:text-white">{riderMode ? 'My Deliveries' : 'Shipments'}</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">{riderMode ? 'Process your assigned deliveries.' : 'Assign riders and approve delivery proof.'}</p>
         </div>
-
-        {riderMode && batches.length > 0 && <section className="space-y-3 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800"><h2 className="font-bold">My batches</h2>{batches.map((batch) => <article key={batch.id} className="rounded border p-3"><div className="flex justify-between"><strong>#{batch.id} · {batch.delivery_date} {label(batch.delivery_window)}</strong><span>{label(batch.status)}</span></div><ol className="my-2 list-decimal pl-6">{batch.legs.map((leg) => <li key={leg.id}>Stop {leg.stop_sequence ?? '-'} · Leg #{leg.id}</li>)}</ol>{batch.status === 'offered' && <div className="flex flex-wrap gap-2"><button onClick={() => void act(`/api/logistics/batches/${batch.id}/accept`)} className="rounded bg-green-600 px-3 py-1 text-white">Accept</button><input value={rejectionReasons[batch.id] ?? ''} onChange={(e) => setRejectionReasons({ ...rejectionReasons, [batch.id]: e.target.value })} placeholder="Rejection reason" className="rounded border px-2" /><button onClick={() => void act(`/api/logistics/batches/${batch.id}/reject`, { rejection_reason: rejectionReasons[batch.id] ?? '' })} className="rounded border border-red-600 px-3 py-1 text-red-600">Reject</button></div>}{batch.status === 'accepted' && <button onClick={() => void act(`/api/logistics/batches/${batch.id}/start`)} className="rounded bg-blue-600 px-3 py-1 text-white">Start batch</button>}</article>)}</section>}
 
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap items-center gap-3">

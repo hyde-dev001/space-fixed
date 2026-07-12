@@ -17,16 +17,11 @@ class UserAddress extends Model
         'barangay',
         'postal_code',
         'address_line',
-        'latitude',
-        'longitude',
-        'delivery_instructions',
         'is_default',
     ];
 
     protected $casts = [
         'is_default' => 'boolean',
-        'latitude' => 'decimal:8',
-        'longitude' => 'decimal:8',
     ];
 
     /**

@@ -363,4 +363,27 @@ class PremiumFeatureTest extends TestCase
         ]);
         $apiCheckoutResponse->assertStatus(403);
     }
+
+    /** @test */
+    public function plans_api_returns_active_plan_benefits_in_order(): void
+    {
+        $shopOwner = $this->createShopOwner();
+        $this->createPlan([
+            'benefits' => ['First benefit', 'Second benefit'],
+        ]);
+        $this->createPlan([
+            'plan_code' => 'hidden',
+            'name' => 'Hidden',
+            'status' => 'inactive',
+            'benefits' => ['Hidden benefit'],
+        ]);
+
+        $this->actingAs($shopOwner, 'shop_owner');
+
+        $response = $this->getJson('/api/shop-owner/premium/plans');
+
+        $response->assertOk()
+            ->assertJsonPath('plans.0.benefits', ['First benefit', 'Second benefit'])
+            ->assertJsonMissing(['plan_code' => 'hidden']);
+    }
 }

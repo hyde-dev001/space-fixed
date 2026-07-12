@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
+import { getShowroomRooms } from './showroomRooms';
 
 interface Product {
 	id: number;
@@ -84,7 +85,7 @@ const buildPreviewFrames = (frames: string[], maxPreviewFrames: number): string[
 	return getUniqueFrames(sampledFrames);
 };
 
-const MAX_SHOWROOM_SLOTS = 84;
+const MAX_SHOWROOM_SLOTS = 150;
 const JOYSTICK_RADIUS_PX = 62;
 const JOYSTICK_DEADZONE = 0.16;
 
@@ -104,8 +105,6 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 	isStandalonePage = false,
 	onFocusModeChange,
 	showroomSlotLimit,
-	showroomPlanCode,
-	showroomPlanName,
 }) => {
 	const mountRef = useRef<HTMLDivElement | null>(null);
 	const currentIndexRef = useRef(0);
@@ -169,24 +168,14 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 	});
 	const [showLandscapeTip, setShowLandscapeTip] = useState(false);
 	const [joystickUiVector, setJoystickUiVector] = useState({ x: 0, y: 0 });
+	const [activeRoomIndex, setActiveRoomIndex] = useState(0);
 	const lightsOn = isNightMode;
-	const normalizedPlanCode = String(showroomPlanCode ?? '').trim().toLowerCase();
-	const normalizedPlanName = String(showroomPlanName ?? '').trim().toLowerCase();
-	const mappedPlanCapacity = normalizedPlanCode.includes('basic') || normalizedPlanName.includes('basic')
-		? 48
-		: normalizedPlanCode.includes('premium') || normalizedPlanName.includes('premium')
-			? 84
-			: normalizedPlanCode.includes('pro') || normalizedPlanName.includes('pro')
-				? 60
-				: null;
 	const parsedSlotLimit = Number(showroomSlotLimit);
-	const showroomDisplayCapacity = mappedPlanCapacity !== null
-		? mappedPlanCapacity
-		: Number.isFinite(parsedSlotLimit)
+	const showroomDisplayCapacity = Number.isFinite(parsedSlotLimit)
 		? Math.max(0, Math.min(Math.floor(parsedSlotLimit), MAX_SHOWROOM_SLOTS))
 		: 60;
 
-	const shoes = useMemo<ShoeViewSet[]>(() => {
+	const allShoes = useMemo<ShoeViewSet[]>(() => {
 		const useReducedPreview = isTouchScreenDevice;
 		const maxPreviewFrames = 10;
 		return products
@@ -204,6 +193,23 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 			})
 			.filter((shoe) => shoe.frames.length > 0);
 	}, [products, isTouchScreenDevice]);
+	const rooms = useMemo(() => getShowroomRooms(showroomDisplayCapacity), [showroomDisplayCapacity]);
+	const activeRoom = rooms[activeRoomIndex] ?? rooms[0];
+	const shoes = useMemo(
+		() => allShoes.slice(activeRoom.start, activeRoom.start + activeRoom.count),
+		[allShoes, activeRoom.start, activeRoom.count],
+	);
+
+	useEffect(() => {
+		setActiveRoomIndex((index) => Math.min(index, rooms.length - 1));
+	}, [rooms.length]);
+
+	const switchRoom = (index: number) => {
+		setFocusedShoeIndex(null);
+		setCurrentIndex(0);
+		setIsSceneLoading(true);
+		setActiveRoomIndex(index);
+	};
 
 	useEffect(() => {
 		if (shoes.length === 0) return;
@@ -2300,6 +2306,28 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 				}}
 			>
 				<div ref={mountRef} className="h-full w-full" />
+				{rooms.length === 2 && !isSceneLoading && focusedShoeIndex === null && (
+					<button
+						type="button"
+						onPointerDown={(event) => event.stopPropagation()}
+						onPointerMove={(event) => event.stopPropagation()}
+						onPointerUp={(event) => event.stopPropagation()}
+						onClick={(event) => {
+							event.stopPropagation();
+							switchRoom(activeRoomIndex === 0 ? 1 : 0);
+						}}
+						className="pointer-events-auto absolute bottom-6 right-6 z-20 flex h-28 w-20 flex-col items-center justify-center rounded-t-[2rem] border-4 border-amber-900 bg-amber-700 text-center text-xs font-bold text-white shadow-2xl hover:bg-amber-600"
+						aria-label={activeRoomIndex === 0 ? 'Enter room 2' : 'Return to room 1'}
+					>
+						<span className="mb-2 text-2xl">🚪</span>
+						{activeRoomIndex === 0 ? 'Next room' : 'Previous room'}
+					</button>
+				)}
+				{rooms.length === 2 && (
+					<div className="pointer-events-none absolute left-1/2 top-3 z-20 -translate-x-1/2 rounded-full bg-black/70 px-4 py-2 text-xs font-semibold text-white">
+						Room {activeRoomIndex + 1} of 2 · Slots {activeRoom.start + 1}–{activeRoom.start + activeRoom.count}
+					</div>
+				)}
 
 				{showLandscapeTip && shouldShowMobileJoystick && (
 					<div className="landscape-tip pointer-events-none absolute left-1/2 top-16 z-40 w-[min(92%,420px)] -translate-x-1/2 rounded-xl border border-amber-200 bg-amber-50/95 px-3 py-2 text-center text-xs font-medium text-amber-900 shadow-md">

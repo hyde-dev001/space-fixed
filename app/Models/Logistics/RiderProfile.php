@@ -22,12 +22,10 @@ class RiderProfile extends Model
         'phone',
         'availability_status',
         'active',
-        'work_days', 'leave_dates', 'daily_capacity',
     ];
 
     protected $casts = [
         'active' => 'boolean',
-        'work_days' => 'array', 'leave_dates' => 'array', 'daily_capacity' => 'integer',
     ];
 
     public function shopOwner(): BelongsTo
@@ -43,10 +41,5 @@ class RiderProfile extends Model
     public function assignments(): HasMany
     {
         return $this->hasMany(DeliveryAssignment::class);
-    }
-
-    public function deliveryBatches(): HasMany
-    {
-        return $this->hasMany(DeliveryBatch::class);
     }
 }

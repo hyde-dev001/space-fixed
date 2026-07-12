@@ -5,6 +5,12 @@ import Swal from '@/Pages/UserSide/Shared/UserModal';
 import axios from 'axios';
 import { navigateBackOr } from '../Shared/backNavigation';
 import { openTermsPolicyModal } from '../../../utils/termsPolicyModal';
+import {
+  PHILIPPINE_LOCATIONS,
+  getCityMunicipalityOptions,
+  normalizeCityMunicipalitySelection,
+  normalizeProvinceSelection,
+} from '@/data/philippineLocations';
 
 interface CartItem {
   id: string;
@@ -51,8 +57,6 @@ interface UserAddress {
   postal_code?: string;
   full_address?: string;
   is_default?: boolean;
-  latitude?: number | null;
-  longitude?: number | null;
 }
 
 interface ShippingEstimateData {
@@ -97,68 +101,7 @@ interface PromoPreviewData {
   voucher_error?: string | null;
 }
 
-interface CityOption {
-  value: string;
-  label: string;
-  aliases?: string[];
-}
-
 type PaymentMethod = 'paymongo';
-
-const DEFAULT_SHIPPING_REGION = 'Cavite';
-
-const PH_CITY_OPTIONS: CityOption[] = [
-  { value: 'Bacoor', label: 'Bacoor' },
-  { value: 'Cavite City', label: 'Cavite City', aliases: ['City of Cavite'] },
-  { value: 'Dasmariñas', label: 'Dasmariñas', aliases: ['Dasmarinas'] },
-  { value: 'General Trias', label: 'General Trias' },
-  { value: 'Imus', label: 'Imus' },
-  { value: 'Tagaytay', label: 'Tagaytay' },
-  { value: 'Trece Martires', label: 'Trece Martires' },
-  { value: 'Alfonso', label: 'Alfonso' },
-  { value: 'Amadeo', label: 'Amadeo' },
-  { value: 'Carmona', label: 'Carmona' },
-  { value: 'General Emilio Aguinaldo', label: 'Gen. Emilio Aguinaldo', aliases: ['Gen Emilio Aguinaldo'] },
-  { value: 'General Mariano Alvarez', label: 'Gen. Mariano Alvarez', aliases: ['Gen Mariano Alvarez', 'GMA'] },
-  { value: 'Indang', label: 'Indang' },
-  { value: 'Kawit', label: 'Kawit' },
-  { value: 'Magallanes', label: 'Magallanes' },
-  { value: 'Maragondon', label: 'Maragondon' },
-  { value: 'Mendez', label: 'Mendez' },
-  { value: 'Naic', label: 'Naic' },
-  { value: 'Noveleta', label: 'Noveleta' },
-  { value: 'Rosario', label: 'Rosario' },
-  { value: 'Silang', label: 'Silang' },
-  { value: 'Tanza', label: 'Tanza' },
-  { value: 'Ternate', label: 'Ternate' },
-];
-
-const normalizeCityKey = (value: string) => value
-  .normalize('NFD')
-  .replace(/[\u0300-\u036f]/g, '')
-  .replace(/\./g, '')
-  .replace(/\s+/g, ' ')
-  .trim()
-  .toLowerCase();
-
-const CITY_OPTION_LOOKUP = PH_CITY_OPTIONS.reduce<Map<string, string>>((lookup, option) => {
-  const candidates = [option.value, option.label, ...(option.aliases || [])];
-
-  candidates.forEach((candidate) => {
-    const key = normalizeCityKey(candidate);
-    if (key && !lookup.has(key)) {
-      lookup.set(key, option.value);
-    }
-  });
-
-  return lookup;
-}, new Map<string, string>());
-
-const normalizeCitySelection = (city?: string | null) => {
-  const normalizedCityKey = normalizeCityKey(city || '');
-  if (!normalizedCityKey) return '';
-  return CITY_OPTION_LOOKUP.get(normalizedCityKey) || '';
-};
 
 const toFiniteNumber = (value: unknown, fallback = 0): number => {
   if (typeof value === 'number') {
@@ -204,10 +147,9 @@ const Payment: React.FC = () => {
   const [shippingAddressLine, setShippingAddressLine] = useState('');
   const [shippingBarangay, setShippingBarangay] = useState('');
   const [shippingPostalCode, setShippingPostalCode] = useState('');
-  const [shippingLatitude, setShippingLatitude] = useState<number | null>(null);
-  const [shippingLongitude, setShippingLongitude] = useState<number | null>(null);
   const [shippingCity, setShippingCity] = useState('');
   const [shippingRegion, setShippingRegion] = useState('');
+  const cityMunicipalityOptions = getCityMunicipalityOptions(shippingRegion);
   const [saveAddressForLater, setSaveAddressForLater] = useState(true);
   const [userAddresses, setUserAddresses] = useState<UserAddress[]>([]);
   const [isAddressSheetOpen, setIsAddressSheetOpen] = useState(false);
@@ -228,8 +170,12 @@ const Payment: React.FC = () => {
   const voucherInputContainerRef = useRef<HTMLDivElement | null>(null);
   const desktopCityDropdownRef = useRef<HTMLDivElement | null>(null);
   const sheetCityDropdownRef = useRef<HTMLDivElement | null>(null);
+  const desktopProvinceDropdownRef = useRef<HTMLDivElement | null>(null);
+  const sheetProvinceDropdownRef = useRef<HTMLDivElement | null>(null);
   const [isDesktopCityDropdownOpen, setIsDesktopCityDropdownOpen] = useState(false);
   const [isSheetCityDropdownOpen, setIsSheetCityDropdownOpen] = useState(false);
+  const [isDesktopProvinceDropdownOpen, setIsDesktopProvinceDropdownOpen] = useState(false);
+  const [isSheetProvinceDropdownOpen, setIsSheetProvinceDropdownOpen] = useState(false);
   const [paymentRecovery, setPaymentRecovery] = useState<{
     scope: 'order' | 'repair';
     id: number;
@@ -324,10 +270,60 @@ const Payment: React.FC = () => {
     setIsVoucherSuggestionOpen(false);
   };
 
+  const handleProvinceChange = (province: string) => {
+    setShippingRegion(normalizeProvinceSelection(province));
+    setShippingCity('');
+    setShippingEstimate(null);
+    setShippingEstimateReason(null);
+    setIsShippingEstimateLoading(false);
+    setIsDesktopProvinceDropdownOpen(false);
+    setIsSheetProvinceDropdownOpen(false);
+    setIsDesktopCityDropdownOpen(false);
+    setIsSheetCityDropdownOpen(false);
+  };
+
+  const handleDropdownTriggerKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    setOpen: React.Dispatch<React.SetStateAction<boolean>>,
+    containerRef: React.RefObject<HTMLDivElement | null>,
+  ) => {
+    if (event.key === 'Escape') {
+      setOpen(false);
+      return;
+    }
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+
+    event.preventDefault();
+    setOpen(true);
+    requestAnimationFrame(() => {
+      const options = containerRef.current?.querySelectorAll<HTMLElement>('[role="option"]');
+      options?.[event.key === 'ArrowUp' ? options.length - 1 : 0]?.focus();
+    });
+  };
+
+  const handleListboxKeyDown = (
+    event: React.KeyboardEvent<HTMLDivElement>,
+    setOpen: React.Dispatch<React.SetStateAction<boolean>>,
+    containerRef: React.RefObject<HTMLDivElement | null>,
+  ) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      setOpen(false);
+      containerRef.current?.querySelector<HTMLButtonElement>('button')?.focus();
+      return;
+    }
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+
+    event.preventDefault();
+    const options = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[role="option"]'));
+    const currentIndex = options.indexOf(document.activeElement as HTMLElement);
+    const offset = event.key === 'ArrowDown' ? 1 : -1;
+    options[(currentIndex + offset + options.length) % options.length]?.focus();
+  };
+
   const handleCityChange = (city: string) => {
-    const selectedCity = normalizeCitySelection(city);
+    const selectedCity = normalizeCityMunicipalitySelection(shippingRegion, city);
     setShippingCity(selectedCity);
-    setShippingRegion(selectedCity ? DEFAULT_SHIPPING_REGION : '');
     setShippingEstimate(null);
     setShippingEstimateReason(null);
     setIsShippingEstimateLoading(Boolean(selectedCity));
@@ -345,19 +341,18 @@ const Payment: React.FC = () => {
     setCustomerName(addr.name || '');
     setCustomerPhone(addr.phone || '');
     setShippingAddressLine(addr.address_line || '');
-    const selectedCity = normalizeCitySelection(addr.city);
-    setShippingRegion(addr.region || (selectedCity ? DEFAULT_SHIPPING_REGION : ''));
-    setShippingCity(selectedCity);
+    const selectedProvince = normalizeProvinceSelection(addr.province || addr.region);
+    const selectedCity = normalizeCityMunicipalitySelection(selectedProvince, addr.city);
+    setShippingRegion(selectedProvince || addr.province || addr.region || '');
+    setShippingCity(selectedCity || addr.city || '');
     setShippingBarangay(addr.barangay || '');
     setShippingPostalCode(addr.postal_code || '');
-    setShippingLatitude(addr.latitude ?? null);
-    setShippingLongitude(addr.longitude ?? null);
     setCheckoutData((prev) => prev
       ? {
           ...prev,
           address_id: addr.id,
-          shipping_region: addr.region || null,
-          shipping_province: addr.province || addr.region || null,
+          shipping_region: selectedProvince || addr.province || addr.region || null,
+          shipping_province: selectedProvince || addr.province || addr.region || null,
           shipping_city: selectedCity || addr.city || null,
           shipping_barangay: addr.barangay || null,
           shipping_postal_code: addr.postal_code || null,
@@ -400,11 +395,24 @@ const Payment: React.FC = () => {
   };
 
   const handleUseAddressFromForm = async () => {
-    if (!customerName || !customerPhone || !shippingAddressLine || !shippingBarangay || !shippingCity || !shippingRegion || !shippingPostalCode) {
+    const normalizedShippingCity = normalizeCityMunicipalitySelection(shippingRegion, shippingCity);
+    if (!/^\d{11}$/.test(customerPhone)) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Invalid phone number',
+        text: 'Phone number must contain exactly 11 digits.',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
+    if (!customerName || !customerPhone || !shippingAddressLine || !shippingBarangay || !normalizedShippingCity || !shippingRegion || !shippingPostalCode) {
       Swal.fire({
         icon: 'warning',
         title: 'Missing fields',
-        text: 'Please fill all required address fields.',
+        text: shippingCity && !normalizedShippingCity
+          ? 'Please reselect a city or municipality for the selected province.'
+          : 'Please fill all required address fields.',
         confirmButtonColor: '#000000',
       });
       return;
@@ -435,11 +443,9 @@ const Payment: React.FC = () => {
           address_line: shippingAddressLine,
           region: shippingRegion,
           province: shippingRegion,
-          city: normalizeCitySelection(shippingCity) || shippingCity,
+          city: normalizedShippingCity,
           barangay: shippingBarangay,
           postal_code: shippingPostalCode,
-          latitude: shippingLatitude,
-          longitude: shippingLongitude,
           is_default: userAddresses.length === 0,
         }),
       });
@@ -476,13 +482,12 @@ const Payment: React.FC = () => {
     setCustomerName(addr.name || '');
     setCustomerPhone(addr.phone || '');
     setShippingAddressLine(addr.address_line || '');
-    const selectedCity = normalizeCitySelection(addr.city);
-    setShippingRegion(addr.region || (selectedCity ? DEFAULT_SHIPPING_REGION : ''));
-    setShippingCity(selectedCity);
+    const selectedProvince = normalizeProvinceSelection(addr.province || addr.region);
+    const selectedCity = normalizeCityMunicipalitySelection(selectedProvince, addr.city);
+    setShippingRegion(selectedProvince || addr.province || addr.region || '');
+    setShippingCity(selectedCity || addr.city || '');
     setShippingBarangay(addr.barangay || '');
     setShippingPostalCode(addr.postal_code || '');
-    setShippingLatitude(addr.latitude ?? null);
-    setShippingLongitude(addr.longitude ?? null);
     setAddressSheetMode('form');
   };
 
@@ -649,9 +654,10 @@ const Payment: React.FC = () => {
           setShippingAddressLine(data.shipping_address_line || '');
           setShippingBarangay(data.shipping_barangay || '');
           setShippingPostalCode(data.shipping_postal_code || '');
-          const savedCity = normalizeCitySelection(data.shipping_city);
-          setShippingCity(savedCity);
-          setShippingRegion(data.shipping_region || (savedCity ? DEFAULT_SHIPPING_REGION : ''));
+          const selectedProvince = normalizeProvinceSelection(data.shipping_province || data.shipping_region);
+          const selectedCity = normalizeCityMunicipalitySelection(selectedProvince, data.shipping_city);
+          setShippingRegion(selectedProvince || data.shipping_province || data.shipping_region || '');
+          setShippingCity(selectedCity || data.shipping_city || '');
           return;
         } catch (e) {
           console.error('Failed to parse checkout data:', e);
@@ -923,7 +929,7 @@ const Payment: React.FC = () => {
       return;
     }
 
-    const city = normalizeCitySelection(shippingCity);
+    const city = normalizeCityMunicipalitySelection(shippingRegion, shippingCity);
     const region = shippingRegion.trim();
 
     if (!city || !region) {
@@ -1540,12 +1546,6 @@ const Payment: React.FC = () => {
   };
 
   useEffect(() => {
-    if (normalizeCitySelection(shippingCity) && !shippingRegion.trim()) {
-      setShippingRegion(DEFAULT_SHIPPING_REGION);
-    }
-  }, [shippingCity, shippingRegion]);
-
-  useEffect(() => {
     if (selectedVoucherCampaignId === null) {
       return;
     }
@@ -1590,6 +1590,14 @@ const Payment: React.FC = () => {
 
       if (sheetCityDropdownRef.current && !sheetCityDropdownRef.current.contains(target)) {
         setIsSheetCityDropdownOpen(false);
+      }
+
+      if (desktopProvinceDropdownRef.current && !desktopProvinceDropdownRef.current.contains(target)) {
+        setIsDesktopProvinceDropdownOpen(false);
+      }
+
+      if (sheetProvinceDropdownRef.current && !sheetProvinceDropdownRef.current.contains(target)) {
+        setIsSheetProvinceDropdownOpen(false);
       }
     };
 
@@ -1647,9 +1655,15 @@ const Payment: React.FC = () => {
     setter(cleaned);
   };
 
+  const handlePhoneChange = (value: string) => {
+    setCustomerPhone(value.replace(/\D/g, '').slice(0, 11));
+  };
+
   // Save address to user account
   const saveAddressToAccount = async (orderId: number | undefined) => {
     if (!saveAddressForLater || !orderId) return;
+    const normalizedShippingCity = normalizeCityMunicipalitySelection(shippingRegion, shippingCity);
+    if (!normalizedShippingCity) return;
 
     try {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
@@ -1658,13 +1672,11 @@ const Payment: React.FC = () => {
         name: customerName,
         phone: customerPhone,
         address_line: shippingAddressLine,
-        region: shippingRegion || DEFAULT_SHIPPING_REGION,
-        province: shippingRegion || DEFAULT_SHIPPING_REGION, // Use region as province
-        city: normalizeCitySelection(shippingCity) || shippingCity,
+        region: shippingRegion,
+        province: shippingRegion,
+        city: normalizedShippingCity,
         barangay: shippingBarangay,
         postal_code: shippingPostalCode,
-        latitude: shippingLatitude,
-        longitude: shippingLongitude,
         is_default: true,
       };
 
@@ -1800,7 +1812,7 @@ const Payment: React.FC = () => {
       ? Math.max(0, Number(shippingEstimate?.max_fee ?? 0))
       : 0;
     const normalizedSubtotalAmount = Math.max(0, toFiniteNumber(promoPreview?.final_subtotal, checkoutData.total_amount));
-    const normalizedShippingCity = normalizeCitySelection(shippingCity) || shippingCity;
+    const normalizedShippingCity = normalizeCityMunicipalitySelection(shippingRegion, shippingCity);
 
     // Validate required fields
     if (!customerEmail || !customerName || !customerPhone) {
@@ -1814,12 +1826,25 @@ const Payment: React.FC = () => {
       return;
     }
 
+    if (!/^\d{11}$/.test(customerPhone)) {
+      setPayError('Phone number must contain exactly 11 digits.');
+      Swal.fire({
+        icon: 'warning',
+        title: 'Invalid phone number',
+        text: 'Phone number must contain exactly 11 digits.',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
     if (!shippingAddressLine || !shippingBarangay || !normalizedShippingCity || !shippingRegion || !shippingPostalCode) {
       setPayError('Please fill in all required shipping address fields.');
       Swal.fire({
         icon: 'warning',
         title: 'Missing Address',
-        text: 'Please fill in all required shipping address fields.',
+        text: shippingCity && !normalizedShippingCity
+          ? 'Please reselect a city or municipality for the selected province.'
+          : 'Please fill in all required shipping address fields.',
         confirmButtonColor: '#000000',
       });
       return;
@@ -1867,7 +1892,7 @@ const Payment: React.FC = () => {
         shipping_address: `${shippingAddressLine}, ${shippingBarangay}, ${normalizedShippingCity}, ${shippingRegion} ${shippingPostalCode}`,
         address_id: checkoutData.address_id ?? null,
         shipping_region: shippingRegion,
-        shipping_province: null,
+        shipping_province: shippingRegion,
         shipping_city: normalizedShippingCity,
         shipping_barangay: shippingBarangay,
         shipping_postal_code: shippingPostalCode,
@@ -1960,7 +1985,7 @@ const Payment: React.FC = () => {
 
   const rawSubtotal = Math.max(0, toFiniteNumber(promoPreview?.final_subtotal, checkoutData.total_amount));
   const checkoutShipping = Math.max(0, toFiniteNumber(checkoutData.shipping_fee, 0));
-  const selectedCity = normalizeCitySelection(shippingCity);
+  const selectedCity = normalizeCityMunicipalitySelection(shippingRegion, shippingCity);
   const hasSelectedCity = Boolean(selectedCity);
   const shipping = !isPremiumPayment && !isRepairPayment
     ? (hasSelectedCity
@@ -2032,18 +2057,14 @@ const Payment: React.FC = () => {
   const hasShippingEstimate = Boolean(shippingEstimate) && hasSelectedCity;
   const shippingSummaryValue = hasSelectedCity
     ? (hasShippingEstimate ? `₱${shipping.toLocaleString()}` : (isShippingEstimateLoading ? 'Calculating...' : 'Unavailable'))
-    : 'Select a city';
+    : '';
   const isShippingCalculating = hasSelectedCity && isShippingEstimateLoading;
   const shippingCarrierNote = hasShippingEstimate
     ? ''
-    : (hasSelectedCity
-      ? (shippingEstimateReason || 'Complete your delivery address to calculate shipping.')
-      : 'Select a city to calculate shipping.');
+    : (hasSelectedCity ? (shippingEstimateReason || 'Complete your delivery address to calculate shipping.') : '');
   const shippingPayLaterNotice = hasShippingEstimate
     ? ''
-    : (hasSelectedCity
-      ? 'Shipping fee must be calculated before you can continue to payment.'
-      : 'Shipping fee will appear after you select a city.');
+    : (hasSelectedCity ? 'Shipping fee must be calculated before you can continue to payment.' : '');
   const fullShippingAddress = [shippingAddressLine, shippingBarangay, shippingCity, shippingRegion]
     .filter(Boolean)
     .join(', ');
@@ -2447,7 +2468,87 @@ const Payment: React.FC = () => {
                       onChange={e => setShippingBarangay(e.target.value)}
                       className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
                     />
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <div ref={sheetProvinceDropdownRef} className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setIsSheetProvinceDropdownOpen((prev) => !prev)}
+                          onKeyDown={(event) => handleDropdownTriggerKeyDown(event, setIsSheetProvinceDropdownOpen, sheetProvinceDropdownRef)}
+                          className="flex w-full items-center justify-between rounded border border-gray-300 bg-white px-4 py-3 text-left"
+                          aria-label="Province"
+                          aria-haspopup="listbox"
+                          aria-expanded={isSheetProvinceDropdownOpen}
+                        >
+                          <span className={shippingRegion ? 'text-black' : 'text-gray-500'}>{shippingRegion || 'Select Province'}</span>
+                          <span className={`text-gray-500 transition-transform ${isSheetProvinceDropdownOpen ? 'rotate-180' : ''}`}>▾</span>
+                        </button>
+                        {isSheetProvinceDropdownOpen && (
+                          <div
+                            role="listbox"
+                            onKeyDown={(event) => handleListboxKeyDown(event, setIsSheetProvinceDropdownOpen, sheetProvinceDropdownRef)}
+                            className="hide-scrollbar absolute left-0 right-0 top-full z-40 mt-1 max-h-56 overflow-y-auto rounded border border-gray-300 bg-white shadow-lg"
+                          >
+                            {PHILIPPINE_LOCATIONS.map((province) => (
+                              <button
+                                key={province.name}
+                                type="button"
+                                role="option"
+                                aria-selected={shippingRegion === province.name}
+                                onClick={() => handleProvinceChange(province.name)}
+                                className={`w-full border-b border-gray-100 px-4 py-2 text-left text-sm hover:bg-gray-50 last:border-b-0 ${shippingRegion === province.name ? 'bg-gray-50 font-medium text-black' : 'text-black'}`}
+                              >
+                                {province.name}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div ref={sheetCityDropdownRef} className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setIsSheetCityDropdownOpen((prev) => !prev)}
+                          onKeyDown={(event) => handleDropdownTriggerKeyDown(event, setIsSheetCityDropdownOpen, sheetCityDropdownRef)}
+                          disabled={!shippingRegion}
+                          className="flex w-full items-center justify-between rounded border border-gray-300 bg-white px-4 py-3 text-left disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
+                          title="City/Municipality"
+                          aria-label="City/Municipality"
+                          aria-haspopup="listbox"
+                          aria-expanded={isSheetCityDropdownOpen}
+                        >
+                          <span className={shippingCity ? 'text-black' : 'text-gray-500'}>{shippingCity || 'Select City/Municipality'}</span>
+                          <span className={`text-gray-500 transition-transform ${isSheetCityDropdownOpen ? 'rotate-180' : ''}`}>▾</span>
+                        </button>
+
+                        {isSheetCityDropdownOpen && (
+                          <div
+                            role="listbox"
+                            onKeyDown={(event) => handleListboxKeyDown(event, setIsSheetCityDropdownOpen, sheetCityDropdownRef)}
+                            className="hide-scrollbar absolute left-0 right-0 top-full z-40 mt-1 max-h-56 overflow-y-auto rounded border border-gray-300 bg-white shadow-lg"
+                          >
+                            <button
+                              type="button"
+                              role="option"
+                              aria-selected={!shippingCity}
+                              onClick={() => handleCityChange('')}
+                              className="w-full border-b border-gray-100 px-4 py-2 text-left text-sm text-gray-600 hover:bg-gray-50"
+                            >
+                              Select City/Municipality
+                            </button>
+                            {cityMunicipalityOptions.map((city) => (
+                              <button
+                                key={city}
+                                type="button"
+                                role="option"
+                                aria-selected={shippingCity === city}
+                                onClick={() => handleCityChange(city)}
+                                className={`w-full border-b border-gray-100 px-4 py-2 text-left text-sm hover:bg-gray-50 last:border-b-0 ${shippingCity === city ? 'bg-gray-50 font-medium text-black' : 'text-black'}`}
+                              >
+                                {city}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                       <input
                         type="text"
                         placeholder="Postal code"
@@ -2455,47 +2556,15 @@ const Payment: React.FC = () => {
                         onChange={e => handlePostalCodeChange(e.target.value, setShippingPostalCode)}
                         className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
                       />
-                      <div ref={sheetCityDropdownRef} className="relative">
-                        <button
-                          type="button"
-                          onClick={() => setIsSheetCityDropdownOpen((prev) => !prev)}
-                          className="flex w-full items-center justify-between rounded border border-gray-300 bg-white px-4 py-3 text-left"
-                          title="City"
-                          aria-label="City"
-                          aria-haspopup="listbox"
-                        >
-                          <span className={shippingCity ? 'text-black' : 'text-gray-500'}>{shippingCity || 'Select City'}</span>
-                          <span className={`text-gray-500 transition-transform ${isSheetCityDropdownOpen ? 'rotate-180' : ''}`}>▾</span>
-                        </button>
-
-                        {isSheetCityDropdownOpen && (
-                          <div className="hide-scrollbar absolute left-0 right-0 top-full z-40 mt-1 max-h-56 overflow-y-auto rounded border border-gray-300 bg-white shadow-lg">
-                            <button
-                              type="button"
-                              onClick={() => handleCityChange('')}
-                              className="w-full border-b border-gray-100 px-4 py-2 text-left text-sm text-gray-600 hover:bg-gray-50"
-                            >
-                              Select City
-                            </button>
-                            {PH_CITY_OPTIONS.map((cityOption) => (
-                              <button
-                                key={cityOption.value}
-                                type="button"
-                                onClick={() => handleCityChange(cityOption.value)}
-                                className={`w-full border-b border-gray-100 px-4 py-2 text-left text-sm hover:bg-gray-50 last:border-b-0 ${shippingCity === cityOption.value ? 'bg-gray-50 font-medium text-black' : 'text-black'}`}
-                              >
-                                {cityOption.label}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
                     </div>
                     <input
                       type="tel"
                       placeholder="Phone"
                       value={customerPhone}
-                      onChange={e => setCustomerPhone(e.target.value)}
+                      onChange={e => handlePhoneChange(e.target.value)}
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={11}
                       className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
                     />
 
@@ -2600,10 +2669,96 @@ const Payment: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Postal Code, City, and Region */}
+                  {/* Province, city/municipality, and postal code */}
                   {!isPremiumPayment && (
                     <>
-                      <div className="grid grid-cols-2 gap-5">
+                      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+                        <div>
+                          <label className="block text-sm font-medium text-black mb-2.5">Province</label>
+                          <div ref={desktopProvinceDropdownRef} className="relative">
+                            <button
+                              type="button"
+                              onClick={() => setIsDesktopProvinceDropdownOpen((prev) => !prev)}
+                              onKeyDown={(event) => handleDropdownTriggerKeyDown(event, setIsDesktopProvinceDropdownOpen, desktopProvinceDropdownRef)}
+                              className="flex w-full items-center justify-between rounded border border-gray-300 bg-white px-4 py-3 text-left text-base"
+                              aria-label="Province"
+                              aria-haspopup="listbox"
+                              aria-expanded={isDesktopProvinceDropdownOpen}
+                            >
+                              <span className={shippingRegion ? 'text-black' : 'text-gray-500'}>{shippingRegion || 'Select Province'}</span>
+                              <span className={`text-gray-500 transition-transform ${isDesktopProvinceDropdownOpen ? 'rotate-180' : ''}`}>▾</span>
+                            </button>
+                            {isDesktopProvinceDropdownOpen && (
+                              <div
+                                role="listbox"
+                                onKeyDown={(event) => handleListboxKeyDown(event, setIsDesktopProvinceDropdownOpen, desktopProvinceDropdownRef)}
+                                className="hide-scrollbar absolute left-0 right-0 top-full z-40 mt-1 max-h-56 overflow-y-auto rounded border border-gray-300 bg-white shadow-lg"
+                              >
+                                {PHILIPPINE_LOCATIONS.map((province) => (
+                                  <button
+                                    key={province.name}
+                                    type="button"
+                                    role="option"
+                                    aria-selected={shippingRegion === province.name}
+                                    onClick={() => handleProvinceChange(province.name)}
+                                    className={`w-full border-b border-gray-100 px-4 py-2 text-left text-sm hover:bg-gray-50 last:border-b-0 ${shippingRegion === province.name ? 'bg-gray-50 font-medium text-black' : 'text-black'}`}
+                                  >
+                                    {province.name}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-black mb-2.5">City/Municipality</label>
+                          <div ref={desktopCityDropdownRef} className="relative">
+                            <button
+                              type="button"
+                              onClick={() => setIsDesktopCityDropdownOpen((prev) => !prev)}
+                              onKeyDown={(event) => handleDropdownTriggerKeyDown(event, setIsDesktopCityDropdownOpen, desktopCityDropdownRef)}
+                              disabled={!shippingRegion}
+                              className="flex w-full items-center justify-between rounded border border-gray-300 bg-white px-4 py-3 text-left text-base disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
+                              title="City/Municipality"
+                              aria-label="City/Municipality"
+                              aria-haspopup="listbox"
+                              aria-expanded={isDesktopCityDropdownOpen}
+                            >
+                              <span className={shippingCity ? 'text-black' : 'text-gray-500'}>{shippingCity || 'Select City/Municipality'}</span>
+                              <span className={`text-gray-500 transition-transform ${isDesktopCityDropdownOpen ? 'rotate-180' : ''}`}>▾</span>
+                            </button>
+
+                            {isDesktopCityDropdownOpen && (
+                              <div
+                                role="listbox"
+                                onKeyDown={(event) => handleListboxKeyDown(event, setIsDesktopCityDropdownOpen, desktopCityDropdownRef)}
+                                className="hide-scrollbar absolute left-0 right-0 top-full z-40 mt-1 max-h-56 overflow-y-auto rounded border border-gray-300 bg-white shadow-lg"
+                              >
+                                <button
+                                  type="button"
+                                  role="option"
+                                  aria-selected={!shippingCity}
+                                  onClick={() => handleCityChange('')}
+                                  className="w-full border-b border-gray-100 px-4 py-2 text-left text-sm text-gray-600 hover:bg-gray-50"
+                                >
+                                  Select City/Municipality
+                                </button>
+                                {cityMunicipalityOptions.map((city) => (
+                                  <button
+                                    key={city}
+                                    type="button"
+                                    role="option"
+                                    aria-selected={shippingCity === city}
+                                    onClick={() => handleCityChange(city)}
+                                    className={`w-full border-b border-gray-100 px-4 py-2 text-left text-sm hover:bg-gray-50 last:border-b-0 ${shippingCity === city ? 'bg-gray-50 font-medium text-black' : 'text-black'}`}
+                                  >
+                                    {city}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
                         <div>
                           <label className="block text-sm font-medium text-black mb-2.5">Postal code</label>
                           <input
@@ -2614,44 +2769,6 @@ const Payment: React.FC = () => {
                             onChange={e => handlePostalCodeChange(e.target.value, setShippingPostalCode)}
                             className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white text-base"
                           />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-black mb-2.5">City</label>
-                          <div ref={desktopCityDropdownRef} className="relative">
-                            <button
-                              type="button"
-                              onClick={() => setIsDesktopCityDropdownOpen((prev) => !prev)}
-                              className="flex w-full items-center justify-between rounded border border-gray-300 bg-white px-4 py-3 text-left text-base"
-                              title="City"
-                              aria-label="City"
-                              aria-haspopup="listbox"
-                            >
-                              <span className={shippingCity ? 'text-black' : 'text-gray-500'}>{shippingCity || 'Select City'}</span>
-                              <span className={`text-gray-500 transition-transform ${isDesktopCityDropdownOpen ? 'rotate-180' : ''}`}>▾</span>
-                            </button>
-
-                            {isDesktopCityDropdownOpen && (
-                              <div className="hide-scrollbar absolute left-0 right-0 top-full z-40 mt-1 max-h-56 overflow-y-auto rounded border border-gray-300 bg-white shadow-lg">
-                                <button
-                                  type="button"
-                                  onClick={() => handleCityChange('')}
-                                  className="w-full border-b border-gray-100 px-4 py-2 text-left text-sm text-gray-600 hover:bg-gray-50"
-                                >
-                                  Select City
-                                </button>
-                                {PH_CITY_OPTIONS.map((cityOption) => (
-                                  <button
-                                    key={cityOption.value}
-                                    type="button"
-                                    onClick={() => handleCityChange(cityOption.value)}
-                                    className={`w-full border-b border-gray-100 px-4 py-2 text-left text-sm hover:bg-gray-50 last:border-b-0 ${shippingCity === cityOption.value ? 'bg-gray-50 font-medium text-black' : 'text-black'}`}
-                                  >
-                                    {cityOption.label}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
                         </div>
                       </div>
                     </>
@@ -2664,7 +2781,10 @@ const Payment: React.FC = () => {
                       type="tel"
                       placeholder="Phone"
                       value={customerPhone}
-                      onChange={e => setCustomerPhone(e.target.value)}
+                      onChange={e => handlePhoneChange(e.target.value)}
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={11}
                       className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white text-base"
                     />
                   </div>

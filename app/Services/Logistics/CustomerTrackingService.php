@@ -46,17 +46,14 @@ class CustomerTrackingService
                 'sequence' => $leg->sequence,
                 'leg_type' => $leg->leg_type,
                 'status' => $leg->status->value,
-                'origin_snapshot' => $this->safeSnapshot($leg->origin_snapshot),
-                'destination_snapshot' => $this->safeSnapshot($leg->destination_snapshot),
+                'origin_snapshot' => $leg->origin_snapshot,
+                'destination_snapshot' => $leg->destination_snapshot,
                 'tracking_number' => $leg->tracking_number,
                 'tracking_url' => $leg->tracking_url,
                 'requires_delivery_proof' => (bool) $leg->requires_delivery_proof,
                 'scheduled_pickup_at' => optional($leg->scheduled_pickup_at)->toISOString(),
                 'picked_up_at' => optional($leg->picked_up_at)->toISOString(),
                 'delivered_at' => optional($leg->delivered_at)->toISOString(),
-                'scheduled_delivery_date' => optional($leg->scheduled_delivery_date)->toDateString(),
-                'delivery_window' => $leg->delivery_window,
-                'schedule_status' => $leg->schedule_status,
             ])->values()->all(),
             'events' => $shipment->events->map(fn ($event) => [
                 'id' => $event->id,
@@ -66,10 +63,5 @@ class CustomerTrackingService
                 'created_at' => optional($event->created_at)->toISOString(),
             ])->values()->all(),
         ];
-    }
-
-    private function safeSnapshot(?array $snapshot): ?array
-    {
-        return $snapshot ? collect($snapshot)->except(['phone', 'rider_name', 'rider_phone', 'internal_notes'])->all() : null;
     }
 }

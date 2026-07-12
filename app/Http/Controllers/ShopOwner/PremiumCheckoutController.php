@@ -706,7 +706,7 @@ class PremiumCheckoutController extends Controller
     {
         $plans = PremiumPlan::where('status', 'active')
             ->orderBy('price')
-            ->get(['id', 'plan_code', 'name', 'description', 'price', 'duration_days', 'showroom_slot_limit']);
+            ->get(['id', 'plan_code', 'name', 'description', 'price', 'duration_days', 'showroom_slot_limit', 'benefits']);
 
         return response()->json([
             'success' => true,

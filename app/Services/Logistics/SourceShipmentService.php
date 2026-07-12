@@ -6,40 +6,23 @@ use App\Models\Logistics\Shipment;
 use App\Models\Order;
 use App\Models\OrderRefund;
 use App\Models\RepairRequest;
-use App\Models\ShopOwner;
-use Illuminate\Support\Facades\DB;
 
 class SourceShipmentService
 {
-    public function __construct(
-        private ShipmentRequestService $shipments,
-        private DeliveryScheduleService $schedules,
-        private DeliveryEventService $events,
-    )
+    public function __construct(private ShipmentRequestService $shipments)
     {
     }
 
     public function ensureRetailOrderShipment(Order $order): Shipment
     {
-        return DB::transaction(function () use ($order) {
-            ShopOwner::query()->whereKey($order->shop_owner_id)->lockForUpdate()->firstOrFail();
-            $existing = $this->findExisting('order', (int) $order->id, 'retail_delivery');
-            if ($existing) {
-                return $existing->load('legs');
-            }
+        $existing = $this->findExisting('order', (int) $order->id, 'retail_delivery');
+        if ($existing) {
+            return $existing;
+        }
 
-            $order->loadMissing('shopOwner', 'address');
-            $address = $order->address;
-            $schedule = strtolower(trim((string) $order->carrier_company)) === 'shop-owned logistics'
-                ? $this->schedules->estimate(
-                    $order->shopOwner,
-                    $order->updated_at ?? now(),
-                    $address?->latitude !== null ? (float) $address->latitude : null,
-                    $address?->longitude !== null ? (float) $address->longitude : null,
-                )
-                : [];
+        $order->loadMissing('shopOwner');
 
-            $shipment = $this->shipments->requestShipment([
+        return $this->shipments->requestShipment([
             'shop_owner_id' => (int) $order->shop_owner_id,
             'source_type' => 'order',
             'source_id' => (int) $order->id,
@@ -56,32 +39,9 @@ class SourceShipmentService
                     'name' => (string) ($order->customer_name ?? 'Customer'),
                     'phone' => (string) ($order->customer_phone ?? ''),
                     'address' => (string) ($order->full_shipping_address ?? $order->customer_address ?? ''),
-                    'latitude' => $address?->latitude !== null ? (float) $address->latitude : null,
-                    'longitude' => $address?->longitude !== null ? (float) $address->longitude : null,
-                    'delivery_instructions' => $address?->delivery_instructions,
                 ],
-                ...$schedule,
-                'estimated_at' => $schedule ? now() : null,
             ]],
-            ]);
-
-            $leg = $shipment->legs->first();
-            if (($schedule['schedule_status'] ?? null) === 'scheduled') {
-                $this->events->record($shipment, $leg, ['event_type' => 'delivery_schedule_created', 'message' => 'Delivery scheduled.']);
-                $this->events->record($shipment, $leg, [
-                    'event_type' => 'delivery_estimated', 'visibility' => 'customer',
-                    'message' => 'Estimated delivery scheduled.',
-                ]);
-            } elseif ($schedule) {
-                $this->events->record($shipment, $leg, [
-                    'event_type' => 'delivery_schedule_attention',
-                    'message' => 'Delivery schedule requires dispatcher attention.',
-                    'metadata' => ['schedule_status' => $schedule['schedule_status']],
-                ]);
-            }
-
-            return $shipment->fresh(['legs', 'events']);
-        });
+        ]);
     }
 
     public function ensureRefundReturnShipment(OrderRefund $refund): Shipment

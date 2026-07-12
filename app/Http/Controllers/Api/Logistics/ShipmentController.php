@@ -94,22 +94,6 @@ class ShipmentController extends Controller
         return response()->json(['leg' => $legs->markInTransit($leg)]);
     }
 
-    public function confirmPickup(ShipmentLeg $leg, HandoffProof $proof, ShipmentLegService $legs): JsonResponse
-    {
-        return response()->json(['leg' => $legs->confirmPickup($leg, $proof, $this->assignedRiderProfile($leg))]);
-    }
-
-    public function rejectPickup(Request $request, ShipmentLeg $leg, HandoffProof $proof, ShipmentLegService $legs): JsonResponse
-    {
-        $reason = $request->validate(['reason' => ['required', 'string', 'max:1000']])['reason'];
-        return response()->json(['leg' => $legs->rejectPickup($leg, $proof, $this->assignedRiderProfile($leg), $reason)]);
-    }
-
-    public function outForDelivery(ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse
-    {
-        return response()->json(['leg' => $legs->markOutForDelivery($leg, $this->assignedRiderProfile($leg))]);
-    }
-
     public function delivered(ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse
     {
         $this->authorizeLegUpdate($leg);
@@ -153,9 +137,7 @@ class ShipmentController extends Controller
         $payload = $request->validate([
             'reason_code' => ['required', 'in:recipient_unavailable,wrong_or_incomplete_address,recipient_refused,vehicle_or_delivery_problem,other'],
             'notes' => ['nullable', 'string'],
-            'proof_file' => ['nullable', 'image', 'max:10240'],
         ]);
-        if ($request->hasFile('proof_file')) $payload['file_path'] = $request->file('proof_file')->store('logistics-attempt/' . $leg->id, 'public');
 
         return response()->json([
             'attempt' => $legs->recordFailedAttempt($leg, [
@@ -193,43 +175,6 @@ class ShipmentController extends Controller
             'leg' => $legs->cancel($leg, $message),
             'message' => $message,
         ]);
-    }
-
-    public function retryResolution(Request $request, ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse
-    {
-        $shop = $this->authorizedShop('assign-logistics-deliveries');
-        $leg->loadMissing('shipment');
-        $this->abortUnlessTenant($leg->shipment->shop_owner_id, $shop);
-        return response()->json(['leg' => $legs->resolveRetry($leg, $request->validate(['reason' => ['required', 'string', 'max:1000']])['reason'])]);
-    }
-
-    public function returnResolution(Request $request, ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse
-    {
-        $shop = $this->authorizedShop('assign-logistics-deliveries');
-        $leg->loadMissing('shipment');
-        $this->abortUnlessTenant($leg->shipment->shop_owner_id, $shop);
-        return response()->json(['leg' => $legs->requireReturn($leg, $request->validate(['reason' => ['required', 'string', 'max:1000']])['reason'])]);
-    }
-
-    public function createReturn(ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse
-    {
-        $shop = $this->authorizedShop('resolve-logistics-exceptions');
-        $leg->loadMissing('shipment');
-        $this->abortUnlessTenant($leg->shipment->shop_owner_id, $shop);
-        return response()->json(['leg' => $legs->createReturnToShop($leg)], 201);
-    }
-
-    public function confirmReturnHandoff(ShipmentLeg $leg, HandoffProof $proof, ShipmentLegService $legs): JsonResponse
-    {
-        return response()->json(['leg' => $legs->confirmReturnHandoff($leg, $proof, $this->assignedRiderProfile($leg))]);
-    }
-
-    public function confirmReturnReceipt(ShipmentLeg $leg, HandoffProof $proof, ShipmentLegService $legs): JsonResponse
-    {
-        $shop = $this->authorizedShop('resolve-logistics-exceptions');
-        $leg->loadMissing('shipment');
-        $this->abortUnlessTenant($leg->shipment->shop_owner_id, $shop);
-        return response()->json(['leg' => $legs->confirmReturnReceipt($leg, $proof, $shop)]);
     }
 
     private function authorizeLegUpdate(ShipmentLeg $leg): ShopOwner
@@ -329,15 +274,5 @@ class ShipmentController extends Controller
                     ->where('linked_id', $user->id);
             })
             ->exists();
-    }
-
-    private function assignedRiderProfile(ShipmentLeg $leg): RiderProfile
-    {
-        $user = Auth::guard('user')->user();
-        abort_unless($user instanceof User, 403);
-        $profile = RiderProfile::query()->where('linked_type', User::class)->where('linked_id', $user->id)
-            ->whereHas('assignments', fn ($query) => $query->where('shipment_leg_id', $leg->id)->whereIn('status', ['assigned', 'accepted']))->first();
-        abort_unless($profile, 403);
-        return $profile;
     }
 }

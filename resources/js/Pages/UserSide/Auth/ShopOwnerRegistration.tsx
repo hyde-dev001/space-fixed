@@ -150,6 +150,8 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     registrationType: resubmission?.form?.registrationType ?? "individual",
   });
   const [selectedCity, setSelectedCity] = useState(inferCaviteCity(resubmission?.form?.businessAddress ?? ""));
+  const [isCityDropdownOpen, setIsCityDropdownOpen] = useState(false);
+  const cityDropdownRef = useRef<HTMLDivElement>(null);
 
 
   const [uploadedDocuments, setUploadedDocuments] = useState({
@@ -194,6 +196,17 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
   const leafletMapRef = useRef<any>(null);
   const markerRef = useRef<any>(null);
   const circleRef = useRef<any>(null);
+
+  useEffect(() => {
+    const closeCityDropdown = (event: MouseEvent) => {
+      if (cityDropdownRef.current && !cityDropdownRef.current.contains(event.target as Node)) {
+        setIsCityDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', closeCityDropdown);
+    return () => document.removeEventListener('mousedown', closeCityDropdown);
+  }, []);
 
   const businessTypeOptions = [
     { value: "retail", label: "Retail" },
@@ -1377,20 +1390,57 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                     </div>
                     <div>
                       <Label htmlFor="caviteCity">City / Municipality (optional)</Label>
-                      <select
-                        id="caviteCity"
-                        name="caviteCity"
-                        aria-label="Cavite city or municipality"
-                        title="Cavite city or municipality"
-                        value={selectedCity}
-                        onChange={(e) => setSelectedCity(e.target.value)}
-                        className="h-11 w-full appearance-none rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 pr-11 text-sm text-gray-800 shadow-theme-xs focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10"
-                      >
-                        <option value="">Select Cavite city/municipality</option>
-                        {CAVITE_CITIES.map((city) => (
-                          <option key={city} value={city}>{city}</option>
-                        ))}
-                      </select>
+                      <div ref={cityDropdownRef} className="relative">
+                        <button
+                          id="caviteCity"
+                          type="button"
+                          aria-label="Cavite city or municipality"
+                          aria-haspopup="listbox"
+                          aria-expanded={isCityDropdownOpen}
+                          onClick={() => setIsCityDropdownOpen((open) => !open)}
+                          className="flex h-11 w-full items-center justify-between rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-left text-sm text-gray-800 shadow-theme-xs focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10"
+                        >
+                          <span className={selectedCity ? 'text-gray-800' : 'text-gray-400'}>
+                            {selectedCity || 'Select Cavite city/municipality'}
+                          </span>
+                          <span className={`text-gray-500 transition-transform ${isCityDropdownOpen ? 'rotate-180' : ''}`}>▾</span>
+                        </button>
+
+                        {isCityDropdownOpen && (
+                          <div
+                            role="listbox"
+                            className="absolute left-0 right-0 top-full z-50 mt-1 max-h-56 overflow-y-auto rounded-lg border border-gray-300 bg-white py-1 shadow-lg"
+                          >
+                            <button
+                              type="button"
+                              role="option"
+                              aria-selected={!selectedCity}
+                              onClick={() => {
+                                setSelectedCity('');
+                                setIsCityDropdownOpen(false);
+                              }}
+                              className="w-full px-4 py-2 text-left text-sm text-gray-500 hover:bg-gray-50"
+                            >
+                              Select Cavite city/municipality
+                            </button>
+                            {CAVITE_CITIES.map((city) => (
+                              <button
+                                key={city}
+                                type="button"
+                                role="option"
+                                aria-selected={selectedCity === city}
+                                onClick={() => {
+                                  setSelectedCity(city);
+                                  setIsCityDropdownOpen(false);
+                                }}
+                                className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-50 ${selectedCity === city ? 'bg-gray-50 font-medium text-gray-900' : 'text-gray-700'}`}
+                              >
+                                {city}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                       <p className="mt-1 text-xs text-gray-500">Use this to confirm the shop is within a Cavite locality.</p>
                     </div>
                   </div>

@@ -41,7 +41,7 @@ class LogisticsNotificationService
 
         $customer = $this->resolveCustomer($event);
         if ($customer && $event->visibility === 'customer') {
-            $this->createOnce($event, $customer->id, [
+            Notification::create([
                 'user_id' => $customer->id,
                 'shop_id' => $event->shipment->shop_owner_id,
                 'type' => $type->value,
@@ -71,7 +71,7 @@ class LogisticsNotificationService
             ->where('shop_owner_id', $event->shipment->shop_owner_id)
             ->whereHas('roles', fn ($query) => $query->where('name', 'Logistics Dispatcher'))
             ->each(function (User $dispatcher) use ($event, $type) {
-                $this->createOnce($event, $dispatcher->id, [
+                Notification::create([
                     'user_id' => $dispatcher->id,
                     'shop_id' => $event->shipment->shop_owner_id,
                     'type' => $type->value,
@@ -97,7 +97,7 @@ class LogisticsNotificationService
             return;
         }
 
-        $this->createOnce($event, $rider->linked_id, [
+        Notification::create([
             'user_id' => $rider->linked_id,
             'shop_id' => $event->shipment->shop_owner_id,
             'type' => $type->value,
@@ -119,7 +119,7 @@ class LogisticsNotificationService
                     return;
                 }
 
-                $this->createOnce($event, $staff->id, [
+                Notification::create([
                     'user_id' => $staff->id,
                     'shop_id' => $event->shipment->shop_owner_id,
                     'type' => $type->value,
@@ -140,12 +140,6 @@ class LogisticsNotificationService
             'shipment_leg_id' => $event->shipment_leg_id,
             'event_type' => $event->event_type,
         ];
-    }
-
-    private function createOnce(DeliveryEvent $event, int $userId, array $data): Notification
-    {
-        $groupKey = implode(':', ['logistics', $userId, $event->shipment_id, $event->shipment_leg_id ?: 0, $event->event_type]);
-        return Notification::firstOrCreate(['user_id' => $userId, 'group_key' => $groupKey], [...$data, 'group_key' => $groupKey]);
     }
 
     private function notificationType(string $eventType): ?NotificationType

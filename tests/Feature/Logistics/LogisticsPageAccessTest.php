@@ -51,30 +51,6 @@ class LogisticsPageAccessTest extends TestCase
         $this->actingAs($staff->fresh(), 'user')->get('/erp/logistics/riders')->assertOk();
     }
 
-    public function test_settings_page_requires_configuration_permission(): void
-    {
-        $shop = ShopOwner::factory()->create();
-        $staff = User::factory()->create(['shop_owner_id' => $shop->id]);
-
-        $this->actingAs($staff, 'user')->get('/erp/logistics/settings')->assertForbidden();
-        Permission::findOrCreate('configure-logistics-settings', 'user');
-        $staff->givePermissionTo('configure-logistics-settings');
-
-        $this->actingAs($staff->fresh(), 'user')->get('/erp/logistics/settings')
-            ->assertOk()->assertInertia(fn ($page) => $page->component('ERP/Logistics/Settings'));
-    }
-
-    public function test_batches_page_requires_batch_management_permission(): void
-    {
-        $shop = ShopOwner::factory()->create();
-        $staff = User::factory()->create(['shop_owner_id' => $shop->id]);
-        $this->actingAs($staff, 'user')->get('/erp/logistics/batches')->assertForbidden();
-        Permission::findOrCreate('manage-logistics-batches', 'user');
-        $staff->givePermissionTo('manage-logistics-batches');
-        $this->actingAs($staff->fresh(), 'user')->get('/erp/logistics/batches')
-            ->assertOk()->assertInertia(fn ($page) => $page->component('ERP/Logistics/Batches'));
-    }
-
     public function test_logistics_rider_can_access_my_deliveries_but_not_dispatcher_shipments(): void
     {
         $this->seed(RolesAndPermissionsSeeder::class);

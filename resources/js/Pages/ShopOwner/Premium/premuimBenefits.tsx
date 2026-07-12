@@ -20,6 +20,7 @@ type PremiumPlan = {
 	price: string | number;
 	duration_days: number;
 	showroom_slot_limit: number;
+	benefits: string[] | null;
 };
 
 type PremiumSubscription = {
@@ -524,8 +525,9 @@ const PremiumBenefits: React.FC<Props> = () => {
 												<ul className="mb-8 grow space-y-3.5">
 													<li className="flex items-start gap-3">{checkIcon}<span className="text-sm leading-snug text-black/65">{getDurationLabel(plan.duration_days)} access to the virtual showroom</span></li>
 													<li className="flex items-start gap-3">{checkIcon}<span className="text-sm leading-snug text-black/65">Display capacity: up to {plan.showroom_slot_limit} shoe slots in your showroom</span></li>
-													<li className="flex items-start gap-3">{checkIcon}<span className="text-sm leading-snug text-black/65">View shoes in horizontal detail inside the showroom</span></li>
-													<li className="flex items-start gap-3">{checkIcon}<span className="text-sm leading-snug text-black/65">Enable image-sequence uploads for showroom presentation</span></li>
+											{(plan.benefits ?? []).map((benefit) => (
+												<li key={benefit} className="flex items-start gap-3">{checkIcon}<span className="text-sm leading-snug text-black/65">{benefit}</span></li>
+											))}
 												</ul>
 												{shouldShowShowroomButton ? (
 													<Link href={virtualShowroomHref as string} className={`${actionBtnBase} ${actionBtnDark}`}>

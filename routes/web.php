@@ -424,40 +424,17 @@ Route::post('/api/cart/clear', [CartController::class, 'clear'])->middleware('au
 Route::post('/api/cart/sync', [CartController::class, 'sync'])->middleware('auth:user')->name('cart.sync');
 
 Route::prefix('api/logistics')->middleware(['auth:user,shop_owner'])->group(function () {
-    Route::get('/batches', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'index']);
-    Route::get('/batch-suggestions', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'suggestions']);
-    Route::post('/batches', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'store']);
-    Route::put('/batches/{batch}', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'update']);
-    Route::delete('/batches/{batch}/legs/{leg}', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'remove']);
-    Route::post('/legs/{leg}/urgent', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'urgent']);
-    Route::post('/batches/{batch}/offer', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'offer']);
-    Route::post('/batches/{batch}/accept', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'accept']);
-    Route::post('/batches/{batch}/reject', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'reject']);
-    Route::post('/batches/{batch}/start', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'start']);
-    Route::post('/batches/{batch}/cancel', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'cancel']);
-    Route::get('/settings', [\App\Http\Controllers\Api\Logistics\LogisticsSettingController::class, 'show']);
-    Route::put('/settings', [\App\Http\Controllers\Api\Logistics\LogisticsSettingController::class, 'update']);
     Route::get('/shipments', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'index']);
     Route::get('/shipments/{shipment}', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'show']);
     Route::post('/legs/{leg}/assign', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'assign']);
     Route::post('/legs/{leg}/proof', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'proof']);
     Route::post('/legs/{leg}/picked-up', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'pickedUp']);
     Route::post('/legs/{leg}/in-transit', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'inTransit']);
-    Route::post('/legs/{leg}/pickup-proofs/{proof}/confirm', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'confirmPickup']);
-    Route::post('/legs/{leg}/pickup-proofs/{proof}/reject', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'rejectPickup']);
-    Route::post('/legs/{leg}/out-for-delivery', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'outForDelivery']);
     Route::post('/legs/{leg}/delivered', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'delivered']);
     Route::post('/proofs/{proof}/approve', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'approveProof']);
     Route::post('/legs/{leg}/attempts', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'attempts']);
     Route::post('/legs/{leg}/report-issue', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'reportIssue']);
     Route::post('/legs/{leg}/cancel', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'cancel']);
-    Route::post('/legs/{leg}/resolve/retry', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'retryResolution']);
-    Route::post('/legs/{leg}/resolve/return', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'returnResolution']);
-    Route::post('/legs/{leg}/incidents', [\App\Http\Controllers\Api\Logistics\DeliveryIncidentController::class, 'store']);
-    Route::post('/incidents/{incident}/resolve', [\App\Http\Controllers\Api\Logistics\DeliveryIncidentController::class, 'resolve']);
-    Route::post('/legs/{leg}/return-to-shop', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'createReturn']);
-    Route::post('/legs/{leg}/return-proofs/{proof}/handoff', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'confirmReturnHandoff']);
-    Route::post('/legs/{leg}/return-proofs/{proof}/receipt', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'confirmReturnReceipt']);
     Route::get('/riders', [\App\Http\Controllers\Api\Logistics\RiderProfileController::class, 'index']);
     Route::post('/riders', [\App\Http\Controllers\Api\Logistics\RiderProfileController::class, 'store']);
     Route::patch('/riders/{rider}', [\App\Http\Controllers\Api\Logistics\RiderProfileController::class, 'update']);
@@ -1667,6 +1644,10 @@ Route::middleware('super_admin.auth')->prefix('admin')->name('admin.')->group(fu
     Route::get('/registered-shops', [SuperAdminController::class, 'showRegisteredShops'])->name('registered-shops');
     Route::get('/shops/{id}/details', [SuperAdminController::class, 'shopDetails'])->name('shops.details');
     Route::get('/subscription-management', [SuperAdminController::class, 'showSubscriptionManagement'])->name('subscription-management');
+    Route::post('/premium-plans', [SuperAdminController::class, 'storePremiumPlan'])->name('premium-plans.store');
+    Route::put('/premium-plans/{premiumPlan}', [SuperAdminController::class, 'updatePremiumPlan'])->name('premium-plans.update');
+    Route::post('/premium-plans/{premiumPlan}/archive', [SuperAdminController::class, 'archivePremiumPlan'])->name('premium-plans.archive');
+    Route::post('/premium-plans/{premiumPlan}/reactivate', [SuperAdminController::class, 'reactivatePremiumPlan'])->name('premium-plans.reactivate');
         Route::post('/subscriptions/{id}/cancel', [SuperAdminController::class, 'cancelSubscription'])->name('subscriptions.cancel');
         Route::post('/subscriptions/{id}/upgrade', [SuperAdminController::class, 'upgradeSubscription'])->name('subscriptions.upgrade');
         Route::post('/subscriptions/{id}/downgrade', [SuperAdminController::class, 'downgradeSubscription'])->name('subscriptions.downgrade');
@@ -1719,8 +1700,6 @@ Route::prefix('erp/logistics')->name('erp.logistics.')->middleware(['auth:user',
     Route::get('/shipments', [\App\Http\Controllers\Logistics\ErpLogisticsController::class, 'shipments'])->name('shipments');
     Route::get('/deliveries', [\App\Http\Controllers\Logistics\ErpLogisticsController::class, 'deliveries'])->name('deliveries');
     Route::get('/riders', [\App\Http\Controllers\Logistics\ErpLogisticsController::class, 'riders'])->name('riders');
-    Route::get('/settings', [\App\Http\Controllers\Logistics\ErpLogisticsController::class, 'settings'])->name('settings');
-    Route::get('/batches', [\App\Http\Controllers\Logistics\ErpLogisticsController::class, 'batches'])->name('batches');
 });
 
 // Time In/Out - First thing staff see after login

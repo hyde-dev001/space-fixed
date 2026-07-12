@@ -25,12 +25,6 @@ class ShipmentRequestService
             'legs.*.origin_snapshot' => ['nullable', 'array'],
             'legs.*.destination_snapshot' => ['nullable', 'array'],
             'legs.*.shipping_method_id' => ['nullable', 'integer', 'exists:shipping_methods,id'],
-            'legs.*.scheduled_delivery_date' => ['nullable', 'date'],
-            'legs.*.delivery_window' => ['nullable', 'in:morning,afternoon'],
-            'legs.*.schedule_status' => ['nullable', 'string', 'max:40'],
-            'legs.*.schedule_override_reason' => ['nullable', 'string'],
-            'legs.*.distance_km' => ['nullable', 'numeric', 'min:0'],
-            'legs.*.estimated_at' => ['nullable', 'date'],
         ]);
 
         if ($validator->fails()) {
@@ -75,12 +69,6 @@ class ShipmentRequestService
                     'destination_snapshot' => $legData['destination_snapshot'] ?? null,
                     'requires_pickup_proof' => (bool) ($legData['requires_pickup_proof'] ?? $method?->requires_pickup_proof ?? false),
                     'requires_delivery_proof' => (bool) ($legData['requires_delivery_proof'] ?? $method?->requires_delivery_proof ?? true),
-                    'scheduled_delivery_date' => $legData['scheduled_delivery_date'] ?? null,
-                    'delivery_window' => $legData['delivery_window'] ?? null,
-                    'schedule_status' => $legData['schedule_status'] ?? null,
-                    'schedule_override_reason' => $legData['schedule_override_reason'] ?? null,
-                    'distance_km' => $legData['distance_km'] ?? null,
-                    'estimated_at' => $legData['estimated_at'] ?? null,
                 ]);
             }
 

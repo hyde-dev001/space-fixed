@@ -7,11 +7,15 @@ use Inertia\Inertia;
 use Inertia\Response;
 use App\Models\SuperAdmin;
 use App\Models\ShopOwner;
+use App\Models\PremiumPlan;
+use App\Models\ShopOwnerSubscription;
 use App\Models\User;
 use App\Models\AuditLog;
 use App\Services\SuspensionAppealService;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Http\JsonResponse;
 
@@ -266,10 +270,85 @@ class SuperAdminController extends Controller
             })->count(),
         ];
 
+        $plans = PremiumPlan::query()
+            ->withCount(['subscriptions as active_subscriptions_count' => fn ($query) => $query->showroomEntitled()])
+            ->orderBy('price')
+            ->get();
+
         return Inertia::render('superAdmin/Shops/SubscriptionManagement', [
             'subscriptions' => $subscriptions,
-            'stats' => $stats
+            'stats' => $stats,
+            'plans' => $plans,
         ]);
+    }
+
+    public function storePremiumPlan(Request $request)
+    {
+        $data = $this->validatedPremiumPlan($request);
+        $data['benefits'] = $this->normalizeBenefits($data['benefits']);
+        $data['status'] = 'active';
+        PremiumPlan::create($data);
+
+        return redirect()->route('admin.subscription-management')->with('success', 'Premium plan created.');
+    }
+
+    public function updatePremiumPlan(Request $request, PremiumPlan $premiumPlan)
+    {
+        $data = $this->validatedPremiumPlan($request, $premiumPlan);
+        unset($data['plan_code']);
+        $data['benefits'] = $this->normalizeBenefits($data['benefits']);
+        $oldLimit = $premiumPlan->showroom_slot_limit;
+
+        DB::transaction(function () use ($premiumPlan, $data, $oldLimit) {
+            $premiumPlan->update($data);
+
+            if ($data['showroom_slot_limit'] > $oldLimit) {
+                ShopOwnerSubscription::query()
+                    ->where('premium_plan_id', $premiumPlan->id)
+                    ->showroomEntitled()
+                    ->where('showroom_slot_limit', '<', $data['showroom_slot_limit'])
+                    ->update(['showroom_slot_limit' => $data['showroom_slot_limit']]);
+            }
+        });
+
+        return redirect()->route('admin.subscription-management')->with('success', 'Premium plan updated.');
+    }
+
+    public function archivePremiumPlan(PremiumPlan $premiumPlan)
+    {
+        $premiumPlan->update(['status' => 'inactive']);
+
+        return back()->with('success', 'Premium plan archived.');
+    }
+
+    public function reactivatePremiumPlan(PremiumPlan $premiumPlan)
+    {
+        $premiumPlan->update(['status' => 'active']);
+
+        return back()->with('success', 'Premium plan reactivated.');
+    }
+
+    private function validatedPremiumPlan(Request $request, ?PremiumPlan $plan = null): array
+    {
+        return $request->validate([
+            'plan_code' => [$plan ? 'sometimes' : 'required', 'string', 'max:50', Rule::unique('premium_plans', 'plan_code')->ignore($plan?->id)],
+            'name' => ['required', 'string', 'max:120'],
+            'description' => ['nullable', 'string', 'max:1000'],
+            'price' => ['required', 'numeric', 'min:0'],
+            'duration_days' => ['required', 'integer', 'between:1,3650'],
+            'showroom_slot_limit' => ['required', 'integer', 'between:1,150'],
+            'benefits' => ['present', 'array', 'max:20'],
+            'benefits.*' => ['required', 'string', 'max:200'],
+        ]);
+    }
+
+    private function normalizeBenefits(array $benefits): array
+    {
+        return collect($benefits)
+            ->map(fn ($benefit) => trim($benefit))
+            ->filter()
+            ->values()
+            ->all();
     }
 
         /**

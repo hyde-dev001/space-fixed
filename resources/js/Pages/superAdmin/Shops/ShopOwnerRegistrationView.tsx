@@ -77,6 +77,9 @@ interface RegistrationDocument {
   type?: string;
 }
 
+export const areAllDocumentsViewed = (documentCount: number, viewedDocuments = new Set<number>()) =>
+  documentCount > 0 && viewedDocuments.size >= documentCount;
+
 interface Registration {
   id: number;
   firstName: string;
@@ -165,6 +168,7 @@ const MetricCard: React.FC<MetricData> = ({
 export default function ShopOwnerRegistrationView({ registrations = [] }: { registrations?: Registration[] }) {
   const [expandedCardId, setExpandedCardId] = useState<number | null>(null);
   const [expandedDocuments, setExpandedDocuments] = useState<Set<number>>(new Set());
+  const [viewedDocuments, setViewedDocuments] = useState<Record<number, Set<number>>>({});
   const [registrationsState, setRegistrationsState] = useState<Registration[]>(registrations);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<'pending' | 'approved' | 'rejected'>('pending');
@@ -357,6 +361,10 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
         : (selectedRegistration.documentUrls || []).map((url) => ({ url }))
     )
     : [];
+  const allDocumentsViewed = areAllDocumentsViewed(
+    selectedRegistrationDocuments.length,
+    selectedRegistration ? viewedDocuments[selectedRegistration.id] : undefined,
+  );
 
   return (
     <AppLayout>
@@ -703,10 +711,20 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
                                       <p className="text-xs text-gray-500 dark:text-gray-400">
                                         {getDocumentTypeLabel(document.type, otherCountBefore + 1)}
                                       </p>
+                                      {viewedDocuments[selectedRegistration.id]?.has(index) && (
+                                        <span className="text-xs font-medium text-green-600 dark:text-green-400">Viewed</span>
+                                      )}
                                     </div>
                                   </div>
                                   <button
                                     onClick={() => {
+                                      setViewedDocuments((current) => ({
+                                        ...current,
+                                        [selectedRegistration.id]: new Set([
+                                          ...(current[selectedRegistration.id] ?? []),
+                                          index,
+                                        ]),
+                                      }));
                                       const newExpanded = new Set(expandedDocuments);
                                       if (newExpanded.has(index)) {
                                         newExpanded.delete(index);
@@ -757,21 +775,23 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
                         {selectedRegistration.status === 'pending' && (
                           <>
                             <Button
+                              disabled={!allDocumentsViewed}
                               onClick={() => {
                                 handleReject(selectedRegistration);
                                 setIsViewModalOpen(false);
                               }}
-                              className="bg-red-600 hover:bg-red-700 text-white"
+                              className="bg-red-600 hover:bg-red-700 text-white disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               <AlertIcon className="h-4 w-4 mr-2" />
                               Reject
                             </Button>
                             <Button
+                              disabled={!allDocumentsViewed}
                               onClick={() => {
                                 handleApprove(selectedRegistration.id);
                                 setIsViewModalOpen(false);
                               }}
-                              className="bg-green-600 hover:bg-green-700 text-white"
+                              className="bg-green-600 hover:bg-green-700 text-white disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               <CheckCircleIcon className="h-4 w-4 mr-2" />
                               Approve
