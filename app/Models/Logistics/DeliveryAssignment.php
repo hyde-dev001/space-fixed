@@ -22,6 +22,7 @@ class DeliveryAssignment extends Model
         'accepted_at',
         'completed_at',
         'cancelled_at',
+        'rejection_reason', 'rejected_at',
     ];
 
     protected $casts = [
@@ -29,6 +30,7 @@ class DeliveryAssignment extends Model
         'accepted_at' => 'datetime',
         'completed_at' => 'datetime',
         'cancelled_at' => 'datetime',
+        'rejected_at' => 'datetime',
     ];
 
     public function leg(): BelongsTo

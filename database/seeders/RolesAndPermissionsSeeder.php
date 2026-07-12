@@ -112,6 +112,9 @@ class RolesAndPermissionsSeeder extends Seeder
             'manage-logistics-courier-providers',
             'manage-logistics-shipping-methods',
             'configure-logistics-settings',
+            'manage-logistics-batches',
+            'operate-assigned-batches',
+            'resolve-logistics-exceptions',
 
             // ===== COMMON/GLOBAL =====
             'access-global-search',
@@ -299,6 +302,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'manage-logistics-riders',
             'update-logistics-status',
             'record-logistics-proof',
+            'manage-logistics-batches',
+            'resolve-logistics-exceptions',
             'access-global-search',
             'access-notification-center',
             'access-profile',
@@ -311,6 +316,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'update-logistics-status',
             'record-logistics-proof',
             'operate-logistics-deliveries',
+            'operate-assigned-batches',
             'access-notification-center',
             'access-profile',
         ]);

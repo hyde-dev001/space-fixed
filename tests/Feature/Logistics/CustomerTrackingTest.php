@@ -8,6 +8,7 @@ use App\Models\Logistics\ShipmentLeg;
 use App\Models\Order;
 use App\Models\RepairRequest;
 use App\Models\User;
+use App\Services\Logistics\CustomerTrackingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -64,5 +65,21 @@ class CustomerTrackingTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.0.logistics_shipments.0.id', $shipment->id)
             ->assertJsonPath('data.0.logistics_shipments.0.purpose', 'repair_return');
+    }
+
+    public function test_customer_payload_includes_estimate_but_hides_override_reason(): void
+    {
+        $shipment = Shipment::factory()->create();
+        ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id, 'scheduled_delivery_date' => '2026-07-15',
+            'delivery_window' => 'morning', 'schedule_status' => 'scheduled',
+            'schedule_override_reason' => 'Internal capacity override',
+        ]);
+
+        $payload = app(CustomerTrackingService::class)->payload($shipment);
+
+        $this->assertSame('2026-07-15', $payload['legs'][0]['scheduled_delivery_date']);
+        $this->assertSame('morning', $payload['legs'][0]['delivery_window']);
+        $this->assertArrayNotHasKey('schedule_override_reason', $payload['legs'][0]);
     }
 }
