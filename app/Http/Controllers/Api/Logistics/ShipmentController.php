@@ -211,6 +211,27 @@ class ShipmentController extends Controller
         return response()->json(['leg' => $legs->requireReturn($leg, $request->validate(['reason' => ['required', 'string', 'max:1000']])['reason'])]);
     }
 
+    public function createReturn(ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse
+    {
+        $shop = $this->authorizedShop('resolve-logistics-exceptions');
+        $leg->loadMissing('shipment');
+        $this->abortUnlessTenant($leg->shipment->shop_owner_id, $shop);
+        return response()->json(['leg' => $legs->createReturnToShop($leg)], 201);
+    }
+
+    public function confirmReturnHandoff(ShipmentLeg $leg, HandoffProof $proof, ShipmentLegService $legs): JsonResponse
+    {
+        return response()->json(['leg' => $legs->confirmReturnHandoff($leg, $proof, $this->assignedRiderProfile($leg))]);
+    }
+
+    public function confirmReturnReceipt(ShipmentLeg $leg, HandoffProof $proof, ShipmentLegService $legs): JsonResponse
+    {
+        $shop = $this->authorizedShop('resolve-logistics-exceptions');
+        $leg->loadMissing('shipment');
+        $this->abortUnlessTenant($leg->shipment->shop_owner_id, $shop);
+        return response()->json(['leg' => $legs->confirmReturnReceipt($leg, $proof, $shop)]);
+    }
+
     private function authorizeLegUpdate(ShipmentLeg $leg): ShopOwner
     {
         $shop = $this->authorizedShop('update-logistics-status');

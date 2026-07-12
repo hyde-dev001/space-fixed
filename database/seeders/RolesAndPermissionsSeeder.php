@@ -114,6 +114,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'configure-logistics-settings',
             'manage-logistics-batches',
             'operate-assigned-batches',
+            'resolve-logistics-exceptions',
 
             // ===== COMMON/GLOBAL =====
             'access-global-search',
@@ -302,6 +303,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'update-logistics-status',
             'record-logistics-proof',
             'manage-logistics-batches',
+            'resolve-logistics-exceptions',
             'access-global-search',
             'access-notification-center',
             'access-profile',

@@ -453,6 +453,11 @@ Route::prefix('api/logistics')->middleware(['auth:user,shop_owner'])->group(func
     Route::post('/legs/{leg}/cancel', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'cancel']);
     Route::post('/legs/{leg}/resolve/retry', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'retryResolution']);
     Route::post('/legs/{leg}/resolve/return', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'returnResolution']);
+    Route::post('/legs/{leg}/incidents', [\App\Http\Controllers\Api\Logistics\DeliveryIncidentController::class, 'store']);
+    Route::post('/incidents/{incident}/resolve', [\App\Http\Controllers\Api\Logistics\DeliveryIncidentController::class, 'resolve']);
+    Route::post('/legs/{leg}/return-to-shop', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'createReturn']);
+    Route::post('/legs/{leg}/return-proofs/{proof}/handoff', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'confirmReturnHandoff']);
+    Route::post('/legs/{leg}/return-proofs/{proof}/receipt', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'confirmReturnReceipt']);
     Route::get('/riders', [\App\Http\Controllers\Api\Logistics\RiderProfileController::class, 'index']);
     Route::post('/riders', [\App\Http\Controllers\Api\Logistics\RiderProfileController::class, 'store']);
     Route::patch('/riders/{rider}', [\App\Http\Controllers\Api\Logistics\RiderProfileController::class, 'update']);

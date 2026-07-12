@@ -40,6 +40,14 @@ class MonitorOverdueDeliveries extends Command
                 }
             });
 
+        ShipmentLeg::query()->with('shipment')->where('leg_type', 'return_to_shop')
+            ->whereIn('status', ['picked_up', 'awaiting_proof_approval'])->where('created_at', '<=', now()->subHours(12))
+            ->each(function ($leg) use ($events) {
+                if (!$leg->events()->where('event_type', 'overdue_return_receipt')->exists()) {
+                    $events->record($leg->shipment, $leg, ['event_type' => 'overdue_return_receipt', 'message' => 'A parcel return is awaiting handoff or shop receipt.']);
+                }
+            });
+
         return self::SUCCESS;
     }
 }

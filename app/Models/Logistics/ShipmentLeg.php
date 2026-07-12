@@ -35,7 +35,7 @@ class ShipmentLeg extends Model
         'schedule_override_reason',
         'distance_km',
         'estimated_at',
-        'delivery_batch_id', 'stop_sequence', 'attempt_number', 'out_for_delivery_at', 'resolution_type', 'resolution_reason', 'urgent_at',
+        'delivery_batch_id', 'stop_sequence', 'attempt_number', 'out_for_delivery_at', 'resolution_type', 'resolution_reason', 'return_for_leg_id', 'urgent_at',
     ];
 
     protected $casts = [
@@ -88,4 +88,6 @@ class ShipmentLeg extends Model
     {
         return $this->belongsTo(DeliveryBatch::class);
     }
+
+    public function incidents(): HasMany { return $this->hasMany(DeliveryIncident::class); }
 }
