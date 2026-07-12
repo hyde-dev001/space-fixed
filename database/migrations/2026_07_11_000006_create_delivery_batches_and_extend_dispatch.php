@@ -33,6 +33,10 @@ return new class extends Migration
         Schema::table('shipment_legs', function (Blueprint $table) {
             $table->foreignId('delivery_batch_id')->nullable()->constrained('delivery_batches')->nullOnDelete();
             $table->unsignedSmallInteger('stop_sequence')->nullable();
+            $table->unsignedSmallInteger('attempt_number')->default(1);
+            $table->timestamp('out_for_delivery_at')->nullable();
+            $table->string('resolution_type')->nullable();
+            $table->text('resolution_reason')->nullable();
             $table->timestamp('urgent_at')->nullable();
             $table->index(['delivery_batch_id', 'stop_sequence']);
         });
@@ -53,7 +57,7 @@ return new class extends Migration
         Schema::table('rider_profiles', fn (Blueprint $table) => $table->dropColumn(['work_days', 'leave_dates', 'daily_capacity']));
         Schema::table('shipment_legs', function (Blueprint $table) {
             $table->dropForeign(['delivery_batch_id']);
-            $table->dropColumn(['delivery_batch_id', 'stop_sequence', 'urgent_at']);
+            $table->dropColumn(['delivery_batch_id', 'stop_sequence', 'attempt_number', 'out_for_delivery_at', 'resolution_type', 'resolution_reason', 'urgent_at']);
         });
         Schema::dropIfExists('delivery_batches');
     }

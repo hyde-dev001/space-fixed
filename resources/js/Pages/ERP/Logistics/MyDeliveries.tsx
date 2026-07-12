@@ -14,7 +14,13 @@ export default function MyDeliveries() {
       <h2 className="text-lg font-bold">My delivery batches</h2>
       {batches.map((batch) => <article key={batch.id} className="rounded border p-3">
         <div className="flex justify-between"><strong>Batch #{batch.id} · {batch.delivery_date} {batch.delivery_window}</strong><span>{batch.status}</span></div>
-        <ol className="my-2 list-decimal pl-6">{batch.legs.map((leg) => <li key={leg.id}>Stop {leg.stop_sequence}: Leg #{leg.id}</li>)}</ol>
+        <ol className="my-2 list-decimal space-y-2 pl-6">{batch.legs.map((leg) => {
+          const pickup = leg.proofs?.filter((proof) => proof.handoff_type === 'pickup').at(-1);
+          return <li key={leg.id}>Stop {leg.stop_sequence}: Leg #{leg.id}
+            {batch.status === 'in_progress' && leg.status === 'assigned' && pickup && <button className="ml-2 rounded border px-2" onClick={() => act(() => logisticsApi.confirmPickup(leg.id, pickup.id))}>Confirm pickup</button>}
+            {batch.status === 'in_progress' && leg.status === 'picked_up' && <button className="ml-2 rounded border px-2" onClick={() => act(() => logisticsApi.outForDelivery(leg.id))}>Out for delivery</button>}
+          </li>;
+        })}</ol>
         {batch.status === 'offered' && <div className="flex flex-wrap gap-2">
           <button className="rounded bg-blue-600 px-3 py-1 text-white" onClick={() => act(() => logisticsApi.acceptBatch(batch.id))}>Accept</button>
           <input aria-label={`Rejection reason for batch ${batch.id}`} className="rounded border px-2" value={reasons[batch.id] || ''} onChange={(event) => setReasons({ ...reasons, [batch.id]: event.target.value })} />

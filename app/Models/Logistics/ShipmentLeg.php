@@ -35,7 +35,7 @@ class ShipmentLeg extends Model
         'schedule_override_reason',
         'distance_km',
         'estimated_at',
-        'delivery_batch_id', 'stop_sequence', 'urgent_at',
+        'delivery_batch_id', 'stop_sequence', 'attempt_number', 'out_for_delivery_at', 'resolution_type', 'resolution_reason', 'urgent_at',
     ];
 
     protected $casts = [
@@ -51,7 +51,7 @@ class ShipmentLeg extends Model
         'scheduled_delivery_date' => 'date',
         'distance_km' => 'decimal:2',
         'estimated_at' => 'datetime',
-        'stop_sequence' => 'integer', 'urgent_at' => 'datetime',
+        'stop_sequence' => 'integer', 'attempt_number' => 'integer', 'out_for_delivery_at' => 'datetime', 'urgent_at' => 'datetime',
     ];
 
     public function shipment(): BelongsTo

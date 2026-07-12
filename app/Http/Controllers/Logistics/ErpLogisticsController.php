@@ -153,7 +153,7 @@ class ErpLogisticsController extends Controller
             'canApproveProof' => false,
             'riderMode' => true,
             'assignableRiders' => [],
-            'batches' => DeliveryBatch::query()->with(['legs', 'riderProfile'])
+            'batches' => DeliveryBatch::query()->with(['legs.proofs', 'riderProfile'])
                 ->where('shop_owner_id', $shopOwnerId)
                 ->whereHas('riderProfile', fn ($query) => $query->where('linked_type', User::class)->where('linked_id', $user->id))
                 ->whereIn('status', ['offered', 'accepted', 'in_progress'])->orderBy('delivery_date')->get(),

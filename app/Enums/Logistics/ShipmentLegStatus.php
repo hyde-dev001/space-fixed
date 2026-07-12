@@ -10,6 +10,7 @@ enum ShipmentLegStatus: string
     case PICKED_UP = 'picked_up';
     case IN_TRANSIT = 'in_transit';
     case DELIVERY_ATTEMPTED = 'delivery_attempted';
+    case NEEDS_RESOLUTION = 'needs_resolution';
     case AWAITING_PROOF_APPROVAL = 'awaiting_proof_approval';
     case DELIVERED = 'delivered';
     case FAILED = 'failed';
