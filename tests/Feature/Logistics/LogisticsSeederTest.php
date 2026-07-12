@@ -4,6 +4,7 @@ namespace Tests\Feature\Logistics;
 
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 class LogisticsSeederTest extends TestCase
@@ -19,5 +20,7 @@ class LogisticsSeederTest extends TestCase
         $this->assertDatabaseHas('shipping_methods', ['code' => 'shop_owned_delivery']);
         $this->assertDatabaseHas('shipping_methods', ['code' => 'third_party_courier']);
         $this->assertDatabaseHas('shipping_methods', ['code' => 'customer_pickup']);
+        $dispatcher = Role::findByName('Logistics Dispatcher', 'user');
+        $this->assertTrue($dispatcher->permissions()->where('name', 'configure-logistics-settings')->exists());
     }
 }

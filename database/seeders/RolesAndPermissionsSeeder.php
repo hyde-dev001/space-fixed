@@ -299,6 +299,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'manage-logistics-riders',
             'update-logistics-status',
             'record-logistics-proof',
+            'configure-logistics-settings',
             'access-global-search',
             'access-notification-center',
             'access-profile',
