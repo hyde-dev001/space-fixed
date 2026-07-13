@@ -3,6 +3,7 @@
 namespace Tests\Feature\Logistics;
 
 use App\Models\Logistics\DeliveryAssignment;
+use App\Models\Logistics\DeliveryBatch;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
@@ -147,6 +148,28 @@ class LogisticsPageAccessTest extends TestCase
             ->all();
 
         $this->assertSame([$assignedShipment->id], $shipmentIds);
+    }
+
+    public function test_offered_batch_stays_out_of_delivery_table_until_rider_accepts(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        $shop = ShopOwner::factory()->create();
+        $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $rider->assignRole('Logistics Rider');
+        $profile = RiderProfile::factory()->create(['shop_owner_id' => $shop->id, 'linked_type' => User::class, 'linked_id' => $rider->id]);
+        $batch = DeliveryBatch::factory()->create(['shop_owner_id' => $shop->id, 'rider_profile_id' => $profile->id, 'status' => 'offered']);
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+        $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'delivery_batch_id' => $batch->id]);
+        $assignment = DeliveryAssignment::factory()->create(['shipment_leg_id' => $leg->id, 'rider_profile_id' => $profile->id, 'status' => 'assigned']);
+
+        $response = $this->actingAs($rider->fresh(), 'user')->get('/erp/logistics/deliveries')->assertOk();
+        $this->assertEmpty($response->viewData('page')['props']['shipments']['data']);
+        $this->assertSame([$batch->id], collect($response->viewData('page')['props']['batches'])->pluck('id')->all());
+
+        $batch->update(['status' => 'accepted']);
+        $assignment->update(['status' => 'accepted']);
+        $response = $this->actingAs($rider->fresh(), 'user')->get('/erp/logistics/deliveries')->assertOk();
+        $this->assertSame([$shipment->id], collect($response->viewData('page')['props']['shipments']['data'])->pluck('id')->all());
     }
 
     public function test_logistics_rider_filters_to_their_matching_leg_status_and_today_assignment(): void
@@ -294,6 +317,22 @@ class LogisticsPageAccessTest extends TestCase
             ->all();
 
         $this->assertSame([$wanted->id], $shipmentIds);
+    }
+
+    public function test_dispatcher_can_filter_shipments_awaiting_proof_approval(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        $shop = ShopOwner::factory()->create();
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $dispatcher->assignRole('Logistics Dispatcher');
+        $awaiting = Shipment::factory()->create(['shop_owner_id' => $shop->id, 'status' => 'active']);
+        ShipmentLeg::factory()->create(['shipment_id' => $awaiting->id, 'status' => 'awaiting_proof_approval']);
+        ShipmentLeg::factory()->create(['shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id, 'status' => 'active'])->id, 'status' => 'in_transit']);
+
+        $response = $this->actingAs($dispatcher, 'user')->get('/erp/logistics/shipments?status=awaiting_proof_approval')->assertOk();
+
+        $this->assertSame([$awaiting->id], collect($response->viewData('page')['props']['shipments']['data'])->pluck('id')->all());
+        $this->assertSame('awaiting_proof_approval', $response->viewData('page')['props']['filters']['status']);
     }
 
     public function test_dispatcher_shipments_include_available_riders_for_assignment(): void

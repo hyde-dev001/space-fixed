@@ -41,6 +41,18 @@ class DeliveryBatchController extends Controller
         return response()->json(['batch' => $service->createDraft($shop, $data['delivery_date'], $data['delivery_window'], $data['leg_ids'], $data['dispatcher_override_reason'] ?? null)], 201);
     }
 
+    public function schedule(Request $request, BatchDispatchService $service): JsonResponse
+    {
+        $shop = $this->dispatcherShop();
+        $data = $request->validate([
+            'delivery_date' => ['required', 'date_format:Y-m-d', 'after_or_equal:today'],
+            'delivery_window' => ['required', 'in:morning,afternoon'],
+            'leg_ids' => ['required', 'array', 'min:1'], 'leg_ids.*' => ['integer', 'distinct'],
+        ]);
+        $service->schedule($shop, $data['delivery_date'], $data['delivery_window'], $data['leg_ids']);
+        return response()->json(['message' => 'Deliveries scheduled.']);
+    }
+
     public function offer(Request $request, DeliveryBatch $batch, BatchDispatchService $service): JsonResponse
     {
         $shop = $this->dispatcherShop($batch);

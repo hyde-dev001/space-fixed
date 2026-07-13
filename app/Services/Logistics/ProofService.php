@@ -9,6 +9,10 @@ use Illuminate\Validation\ValidationException;
 
 class ProofService
 {
+    public function __construct(private DeliveryEventService $events)
+    {
+    }
+
     public function recordProof(ShipmentLeg $leg, array $payload): HandoffProof
     {
         $leg->refresh();
@@ -37,6 +41,10 @@ class ProofService
 
         if ($data['handoff_type'] === 'delivery') {
             $leg->update(['status' => 'awaiting_proof_approval']);
+            $this->events->record($leg->shipment, $leg, [
+                'event_type' => 'proof_required',
+                'message' => 'Delivery proof is awaiting approval.',
+            ]);
         }
 
         return $proof;

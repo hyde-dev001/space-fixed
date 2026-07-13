@@ -54,3 +54,14 @@ it('shows logistics settings only with its permission', () => {
   render(<AppSidebarERP />);
   expect(screen.queryByRole('link', { name: /settings/i })).not.toBeInTheDocument();
 });
+
+it('shows batches only with its permission', () => {
+  state.permissions = ['manage-logistics-batches'];
+  const { unmount } = render(<AppSidebarERP />);
+  expect(screen.getByRole('link', { name: /batches/i })).toHaveAttribute('href', '/erp/logistics/batches');
+  unmount();
+
+  state.permissions = ['assign-logistics-deliveries'];
+  render(<AppSidebarERP />);
+  expect(screen.queryByRole('link', { name: /batches/i })).not.toBeInTheDocument();
+});

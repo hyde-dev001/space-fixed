@@ -14,6 +14,8 @@ export const logisticsApi = {
   suggestions: (deliveryDate: string, deliveryWindow: string) =>
     axios.get('/api/logistics/batch-suggestions', { params: { delivery_date: deliveryDate, delivery_window: deliveryWindow } }),
   createBatch: (payload: Record<string, unknown>) => axios.post('/api/logistics/batches', payload),
+  scheduleLegs: (legIds: number[], deliveryDate: string, deliveryWindow: string) =>
+    axios.post('/api/logistics/legs/schedule', { leg_ids: legIds, delivery_date: deliveryDate, delivery_window: deliveryWindow }),
   updateBatch: (id: number, legIds: number[]) => axios.put(`/api/logistics/batches/${id}`, { leg_ids: legIds }),
   removeBatchStop: (id: number, legId: number) => axios.delete(`/api/logistics/batches/${id}/legs/${legId}`),
   markUrgent: (legId: number, urgent = true) => axios.post(`/api/logistics/legs/${legId}/urgent`, { urgent }),

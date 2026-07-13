@@ -7,12 +7,38 @@ use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\ShopOwner;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Carbon;
 use Illuminate\Validation\ValidationException;
 
 class BatchDispatchService
 {
     public function __construct(private AssignmentService $assignments, private DeliveryEventService $events)
     {
+    }
+
+    public function schedule(ShopOwner $shop, string $date, string $window, array $legIds): void
+    {
+        $deliveryDate = Carbon::parse($date)->startOfDay();
+        $settings = $shop->logisticsSetting()->firstOrCreate([]);
+        if (!in_array($deliveryDate->dayOfWeekIso, $settings->operating_days, true)
+            || in_array($deliveryDate->toDateString(), $settings->blackout_dates, true)) {
+            throw ValidationException::withMessages(['delivery_date' => 'Choose an operating day that is not a blackout date.']);
+        }
+
+        DB::transaction(function () use ($shop, $date, $window, $legIds) {
+            $legs = ShipmentLeg::query()->with('shipment')->whereIn('id', $legIds)->orderBy('id')->lockForUpdate()->get();
+            if ($legs->count() !== count(array_unique($legIds)) || $legs->contains(fn ($leg) =>
+                $leg->shipment->shop_owner_id !== $shop->id || $leg->delivery_batch_id
+                || $leg->status->value !== 'pending' || $leg->schedule_status === 'scheduled')) {
+                throw ValidationException::withMessages(['legs' => 'One or more deliveries cannot be scheduled.']);
+            }
+            foreach ($legs as $leg) {
+                $leg->update([
+                    'scheduled_delivery_date' => $date, 'delivery_window' => $window,
+                    'schedule_status' => 'scheduled', 'estimated_at' => now(),
+                ]);
+            }
+        });
     }
 
     public function createDraft(ShopOwner $shop, string $date, string $window, array $legIds, ?string $overrideReason = null): DeliveryBatch

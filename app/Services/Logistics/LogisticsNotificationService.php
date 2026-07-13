@@ -25,7 +25,7 @@ class LogisticsNotificationService
             return;
         }
 
-        if ($event->event_type === 'shipment_requested') {
+        if (in_array($event->event_type, ['shipment_requested', 'proof_required'], true)) {
             $this->notifyDispatchers($event, $type);
         }
 
@@ -77,9 +77,9 @@ class LogisticsNotificationService
                     'type' => $type->value,
                     'priority' => 'high',
                     'title' => $type->label(),
-                    'message' => 'A new shipment needs rider assignment.',
+                    'message' => $event->event_type === 'proof_required' ? 'Delivery proof is awaiting your approval.' : 'A new shipment needs rider assignment.',
                     'data' => $this->eventData($event),
-                    'action_url' => '/erp/logistics/shipments',
+                    'action_url' => $event->event_type === 'proof_required' ? '/erp/logistics/shipments?status=awaiting_proof_approval' : '/erp/logistics/shipments',
                     'requires_action' => true,
                 ]);
             });

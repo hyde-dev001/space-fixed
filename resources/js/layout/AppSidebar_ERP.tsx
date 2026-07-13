@@ -587,6 +587,17 @@ const staffItems: NavItem[] = [
   {
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 2 3 7l9 5 9-5-9-5Z"></path>
+        <path d="m3 12 9 5 9-5"></path>
+        <path d="m3 17 9 5 9-5"></path>
+      </svg>
+    ),
+    name: "Batches",
+    route: "erp.logistics.batches",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
       </svg>
     ),
@@ -837,6 +848,7 @@ const AppSidebar_ERP: React.FC = () => {
     "erp.staff.inventory-overview": "/erp/staff/inventory-overview",
     "erp.logistics.dashboard": "/erp/logistics",
     "erp.logistics.shipments": "/erp/logistics/shipments",
+    "erp.logistics.batches": "/erp/logistics/batches",
     "erp.logistics.deliveries": "/erp/logistics/deliveries",
     "erp.logistics.riders": "/erp/logistics/riders",
     "erp.logistics.settings": "/erp/logistics/settings",
@@ -915,6 +927,7 @@ const AppSidebar_ERP: React.FC = () => {
     "erp.staff.inventory-overview": "/erp/staff/inventory-overview",
     "erp.logistics.dashboard": "/erp/logistics",
     "erp.logistics.shipments": "/erp/logistics/shipments",
+    "erp.logistics.batches": "/erp/logistics/batches",
     "erp.logistics.deliveries": "/erp/logistics/deliveries",
     "erp.logistics.riders": "/erp/logistics/riders",
     "erp.logistics.settings": "/erp/logistics/settings",
@@ -1339,6 +1352,7 @@ const AppSidebar_ERP: React.FC = () => {
       'access-staff-customers',
       'access-logistics-dashboard',
       'view-logistics-shipments',
+      'manage-logistics-batches',
       'operate-logistics-deliveries',
       'update-logistics-status',
       'record-logistics-proof',
@@ -1549,6 +1563,10 @@ const AppSidebar_ERP: React.FC = () => {
 
       if (item.route === "erp.logistics.shipments") {
         return permissions.includes('assign-logistics-deliveries');
+      }
+
+      if (item.route === "erp.logistics.batches") {
+        return permissions.includes('manage-logistics-batches');
       }
 
       if (item.route === "erp.logistics.deliveries") {
