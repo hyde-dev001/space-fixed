@@ -11,6 +11,10 @@ const formatDate = (value?: string | null) => {
   return new Date(value).toLocaleString();
 };
 
+const formatDeliveryDate = (value?: string | null) => value
+  ? new Intl.DateTimeFormat('en-US', { dateStyle: 'long' }).format(new Date(`${value}T00:00:00`))
+  : '-';
+
 const snapshotText = (snapshot?: Record<string, unknown> | null) => {
   if (!snapshot) return '-';
   return [snapshot.name, snapshot.address].filter(Boolean).join(' - ') || '-';
@@ -62,6 +66,15 @@ export default function ShipmentTracking() {
             </div>
           </div>
         </section>
+
+        {currentLeg?.schedule_status === 'scheduled' && (
+          <section className="mb-6 rounded-lg border border-gray-200 bg-white p-5">
+            <p className="text-xs font-semibold uppercase text-gray-500">Estimated delivery</p>
+            <p className="mt-1 text-sm font-semibold text-gray-900">
+              {formatDeliveryDate(currentLeg.scheduled_delivery_date)} · {titleCase(currentLeg.delivery_window || '')}
+            </p>
+          </section>
+        )}
 
         <section className="mb-6 rounded-lg border border-gray-200 bg-white">
           <div className="border-b border-gray-200 px-5 py-4">

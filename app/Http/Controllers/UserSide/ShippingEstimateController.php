@@ -5,6 +5,7 @@ namespace App\Http\Controllers\UserSide;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\ShopOwner;
+use App\Services\AddressCoordinateService;
 use App\Services\ShippingEstimateService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,21 +14,10 @@ use Illuminate\Support\Facades\Log;
 
 class ShippingEstimateController extends Controller
 {
-    private const CITY_COORDINATE_FALLBACKS = [
-        'bacoor' => ['lat' => 14.4598, 'lng' => 120.9290],
-        'imus' => ['lat' => 14.4297, 'lng' => 120.9367],
-        'dasmariñas' => ['lat' => 14.3294, 'lng' => 120.9367],
-        'dasmarinas' => ['lat' => 14.3294, 'lng' => 120.9367],
-        'general trias' => ['lat' => 14.3830, 'lng' => 120.8845],
-        'trece martires' => ['lat' => 14.2854, 'lng' => 120.8671],
-        'tagaytay' => ['lat' => 14.1153, 'lng' => 120.9629],
-        'city of cavite' => ['lat' => 14.4830, 'lng' => 120.8980],
-        'cavite city' => ['lat' => 14.4830, 'lng' => 120.8980],
-    ];
-
-    public function __construct(private readonly ShippingEstimateService $shippingEstimateService)
-    {
-    }
+    public function __construct(
+        private readonly ShippingEstimateService $shippingEstimateService,
+        private readonly AddressCoordinateService $coordinates,
+    ) {}
 
     public function estimate(Request $request): JsonResponse
     {
@@ -52,8 +42,11 @@ class ShippingEstimateController extends Controller
             return $this->fallbackResponse('Shop location is unavailable.');
         }
 
-        $address = $this->buildAddressString($validated);
-        $customerCoordinates = $this->geocodeCustomerAddress($validated, $address);
+        $resolved = $this->coordinates->geocode($validated);
+        $customerCoordinates = $resolved ? [
+            'lat' => $resolved['latitude'],
+            'lng' => $resolved['longitude'],
+        ] : null;
         if (!$customerCoordinates) {
             return $this->fallbackResponse('Unable to resolve customer location.');
         }
@@ -119,91 +112,6 @@ class ShippingEstimateController extends Controller
             ->value('shop_owner_id');
 
         return $shopOwnerId ? ShopOwner::query()->find((int) $shopOwnerId) : null;
-    }
-
-    private function buildAddressString(array $validated): string
-    {
-        $parts = [
-            $validated['shipping_address_line'] ?? null,
-            $validated['shipping_barangay'] ?? null,
-            $validated['shipping_city'] ?? null,
-            $validated['shipping_region'] ?? null,
-            $validated['shipping_postal_code'] ?? null,
-            'Philippines',
-        ];
-
-        return implode(', ', array_values(array_filter($parts, fn ($part) => filled($part))));
-    }
-
-    private function geocodeCustomerAddress(array $validated, string $primaryAddress): ?array
-    {
-        $queries = [];
-
-        if (filled($primaryAddress)) {
-            $queries[] = $primaryAddress;
-        }
-
-        $city = trim((string) ($validated['shipping_city'] ?? ''));
-        $region = trim((string) ($validated['shipping_region'] ?? ''));
-        $postalCode = trim((string) ($validated['shipping_postal_code'] ?? ''));
-        $barangay = trim((string) ($validated['shipping_barangay'] ?? ''));
-        $addressLine = trim((string) ($validated['shipping_address_line'] ?? ''));
-
-        // Reduce strictness progressively to avoid geocoding misses on noisy inputs.
-        if ($addressLine !== '' && $city !== '' && $region !== '') {
-            $queries[] = implode(', ', array_filter([$addressLine, $city, $region, 'Philippines']));
-        }
-
-        if ($barangay !== '' && $city !== '' && $region !== '') {
-            $queries[] = implode(', ', array_filter([$barangay, $city, $region, 'Philippines']));
-        }
-
-        if ($city !== '' && $region !== '' && $postalCode !== '') {
-            $queries[] = implode(', ', array_filter([$city, $region, $postalCode, 'Philippines']));
-        }
-
-        if ($city !== '' && $region !== '') {
-            $queries[] = implode(', ', array_filter([$city, $region, 'Philippines']));
-        }
-
-        $queries = array_values(array_unique(array_filter($queries)));
-
-        foreach ($queries as $query) {
-            $coordinates = $this->geocodeAddress($query);
-            if ($coordinates) {
-                return $coordinates;
-            }
-        }
-
-        if ($city !== '') {
-            $fallbackCoordinates = $this->resolveCityFallbackCoordinates($city);
-            if ($fallbackCoordinates) {
-                return $fallbackCoordinates;
-            }
-        }
-
-        return null;
-    }
-
-    private function resolveCityFallbackCoordinates(string $city): ?array
-    {
-        $normalizedCity = $this->normalizeLocationKey($city);
-
-        return self::CITY_COORDINATE_FALLBACKS[$normalizedCity] ?? null;
-    }
-
-    private function normalizeLocationKey(string $value): string
-    {
-        $normalized = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $value);
-
-        if ($normalized === false || $normalized === null) {
-            $normalized = $value;
-        }
-
-        $normalized = strtolower(trim($normalized));
-        $normalized = preg_replace('/\s+/', ' ', $normalized) ?? $normalized;
-
-        return $normalized;
     }
 
     private function resolveShopCoordinates(ShopOwner $shopOwner): ?array

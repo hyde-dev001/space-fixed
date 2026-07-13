@@ -12,6 +12,10 @@ export type TrackingShipmentLeg = {
   assigned_at?: string | null;
   picked_up_at?: string | null;
   delivered_at?: string | null;
+  scheduled_delivery_date?: string | null;
+  delivery_window?: 'morning' | 'afternoon' | null;
+  schedule_status?: string | null;
+  stop_sequence?: number | null;
   assignments?: Array<{
     id: number;
     status: string;
@@ -55,6 +59,12 @@ export type LogisticsStats = {
   active: number;
   completed: number;
   cancelled: number;
+  due_today: number;
+  overdue: number;
+  failed_attempts: number;
+  unassigned: number;
+  rider_workload: number;
+  delivery_success_rate: number;
 };
 
 export type PaginationLink = {
@@ -90,4 +100,16 @@ export type LogisticsRider = {
   phone?: string | null;
   availability_status: string;
   active: boolean;
+};
+
+export type DeliveryBatch = {
+  id: number;
+  delivery_date: string;
+  delivery_window: 'morning' | 'afternoon';
+  status: string;
+  capacity: number;
+  assigned_stop_count: number;
+  rejection_reason?: string | null;
+  rider_profile?: LogisticsRider | null;
+  legs: TrackingShipmentLeg[];
 };
