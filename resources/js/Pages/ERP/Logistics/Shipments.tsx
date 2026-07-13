@@ -4,7 +4,7 @@ import axios from 'axios';
 import Swal from 'sweetalert2';
 import AppLayoutERP from '@/layout/AppLayout_ERP';
 import { Table, TableBody, TableCell, TableHeader, TableRow } from '@/components/ui/table';
-import type { DeliveryBatch, LogisticsShipment, PaginatedResponse } from '@/types/logistics';
+import type { LogisticsShipment, PaginatedResponse, TrackingShipmentLeg } from '@/types/logistics';
 
 type ShipmentFilters = {
   status: string;
@@ -17,6 +17,7 @@ const statusOptions = [
   ['incomplete', 'Incomplete'],
   ['requested', 'Requested'],
   ['active', 'Active'],
+  ['awaiting_proof_approval', 'Awaiting Proof Approval'],
   ['completed', 'Completed'],
   ['cancelled', 'Cancelled'],
 ];
@@ -51,6 +52,12 @@ function statusClass(status: string) {
   return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400';
 }
 
+function contact(leg?: TrackingShipmentLeg) {
+  const snapshot = (leg?.leg_type === 'inbound' ? leg.origin_snapshot : leg?.destination_snapshot) ?? {};
+  const value = (key: string) => typeof snapshot[key] === 'string' ? snapshot[key] as string : '';
+  return { name: value('name'), phone: value('phone'), address: value('address'), instructions: value('delivery_instructions') };
+}
+
 const toast = (icon: 'success' | 'error', title: string) => Swal.fire({
   toast: true,
   position: 'top-end',
@@ -61,8 +68,8 @@ const toast = (icon: 'success' | 'error', title: string) => Swal.fire({
   timerProgressBar: true,
 });
 
-export default function Shipments() {
-  const { shipments, filters, assignableRiders, canAssign, canUpdateStatus, canRecordProof, canApproveProof, riderMode, batches = [] } = usePage<{
+export default function Shipments({ children }: React.PropsWithChildren) {
+  const { shipments, filters, assignableRiders, canAssign, canUpdateStatus, canRecordProof, canApproveProof, riderMode } = usePage<{
     shipments: PaginatedResponse<LogisticsShipment>;
     filters: ShipmentFilters;
     assignableRiders: Array<{ id: number; name: string; phone?: string | null }>;
@@ -71,7 +78,6 @@ export default function Shipments() {
     canRecordProof: boolean;
     canApproveProof: boolean;
     riderMode: boolean;
-    batches?: DeliveryBatch[];
   }>().props;
   const [expandedShipmentId, setExpandedShipmentId] = useState<number | null>(null);
   const [selectedRiders, setSelectedRiders] = useState<Record<number, string>>({});
@@ -80,7 +86,6 @@ export default function Shipments() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [proofFiles, setProofFiles] = useState<Record<number, File | null>>({});
   const [issueForms, setIssueForms] = useState<Record<number, { reason_code: string; notes: string }>>({});
-  const [rejectionReasons, setRejectionReasons] = useState<Record<number, string>>({});
   const hasActionColumn = riderMode || canAssign || canUpdateStatus || canRecordProof || canApproveProof;
 
   const updateFilter = (key: keyof ShipmentFilters, value: string) => {
@@ -162,8 +167,7 @@ export default function Shipments() {
           <h1 className="text-2xl font-bold text-gray-950 dark:text-white">{riderMode ? 'My Deliveries' : 'Shipments'}</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">{riderMode ? 'Process your assigned deliveries.' : 'Assign riders and approve delivery proof.'}</p>
         </div>
-
-        {riderMode && batches.length > 0 && <section className="space-y-3 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800"><h2 className="font-bold">My batches</h2>{batches.map((batch) => <article key={batch.id} className="rounded border p-3"><div className="flex justify-between"><strong>#{batch.id} · {batch.delivery_date} {label(batch.delivery_window)}</strong><span>{label(batch.status)}</span></div><ol className="my-2 list-decimal pl-6">{batch.legs.map((leg) => <li key={leg.id}>Stop {leg.stop_sequence ?? '-'} · Leg #{leg.id}</li>)}</ol>{batch.status === 'offered' && <div className="flex flex-wrap gap-2"><button onClick={() => void act(`/api/logistics/batches/${batch.id}/accept`)} className="rounded bg-green-600 px-3 py-1 text-white">Accept</button><input value={rejectionReasons[batch.id] ?? ''} onChange={(e) => setRejectionReasons({ ...rejectionReasons, [batch.id]: e.target.value })} placeholder="Rejection reason" className="rounded border px-2" /><button onClick={() => void act(`/api/logistics/batches/${batch.id}/reject`, { rejection_reason: rejectionReasons[batch.id] ?? '' })} className="rounded border border-red-600 px-3 py-1 text-red-600">Reject</button></div>}{batch.status === 'accepted' && <button onClick={() => void act(`/api/logistics/batches/${batch.id}/start`)} className="rounded bg-blue-600 px-3 py-1 text-white">Start batch</button>}</article>)}</section>}
+        {children}
 
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap items-center gap-3">
@@ -203,6 +207,8 @@ export default function Shipments() {
                 <TableRow>
                   <TableCell isHeader className="px-6 py-4 font-semibold text-gray-900 dark:text-white">ID</TableCell>
                   <TableCell isHeader className="px-6 py-4 font-semibold text-gray-900 dark:text-white">Purpose</TableCell>
+                  <TableCell isHeader className="px-6 py-4 font-semibold text-gray-900 dark:text-white">Receiver</TableCell>
+                  <TableCell isHeader className="px-6 py-4 font-semibold text-gray-900 dark:text-white">Address</TableCell>
                   <TableCell isHeader className="px-6 py-4 font-semibold text-gray-900 dark:text-white">Status</TableCell>
                   <TableCell isHeader className="px-6 py-4 font-semibold text-gray-900 dark:text-white">Source</TableCell>
                   <TableCell isHeader className="px-6 py-4 font-semibold text-gray-900 dark:text-white">Legs</TableCell>
@@ -217,12 +223,16 @@ export default function Shipments() {
                     <TableCell className="px-6 py-6" />
                     <TableCell className="px-6 py-6" />
                     <TableCell className="px-6 py-6" />
+                    <TableCell className="px-6 py-6" />
+                    <TableCell className="px-6 py-6" />
                   </TableRow>
                 ) : shipments.data.map((shipment) => (
                   <React.Fragment key={shipment.id}>
                   <TableRow className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                     <TableCell className="px-6 py-4 font-semibold text-gray-900 dark:text-white">#{shipment.id}</TableCell>
                     <TableCell className="px-6 py-4 text-gray-600 dark:text-gray-300">{label(shipment.purpose)}</TableCell>
+                    <TableCell className="px-6 py-4 text-gray-600 dark:text-gray-300">{contact(shipment.legs?.[0]).name || '—'}</TableCell>
+                    <TableCell className="max-w-xs px-6 py-4 text-gray-600 dark:text-gray-300">{contact(shipment.legs?.[0]).address || '—'}</TableCell>
                     <TableCell className="px-6 py-4">
                       <span className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${statusClass(shipment.status)}`}>
                         {label(shipment.status)}
@@ -244,9 +254,10 @@ export default function Shipments() {
                   </TableRow>
                   {hasActionColumn && expandedShipmentId === shipment.id && (
                     <TableRow>
-                      <TableCell colSpan={hasActionColumn ? 6 : 5} className="bg-gray-50 px-6 py-5 dark:bg-gray-900/40">
+                      <TableCell colSpan={hasActionColumn ? 8 : 7} className="bg-gray-50 px-6 py-5 dark:bg-gray-900/40">
                         <div className="space-y-3">
                           {(shipment.legs ?? []).map((leg) => {
+                            const recipient = contact(leg);
                             const activeAssignment = leg.assignments?.find((assignment) => ['assigned', 'accepted'].includes(assignment.status));
                             const canAssignLeg = !['delivered', 'cancelled'].includes(leg.status) && !activeAssignment;
                             const latestAttempt = leg.attempts?.[0];
@@ -258,6 +269,14 @@ export default function Shipments() {
                                 <div>
                                   <p className="text-sm font-semibold text-gray-900 dark:text-white">{label(leg.leg_type)} leg</p>
                                   <p className="text-xs text-gray-500 dark:text-gray-400">{label(leg.status)}</p>
+                                  <div className="mt-2 space-y-1 text-sm text-gray-700 dark:text-gray-200">
+                                    <p><strong>Receiver:</strong> {recipient.name || 'Not provided'}</p>
+                                    <p><strong>Phone:</strong> {recipient.phone || 'Not provided'}</p>
+                                    <p><strong>Address:</strong> {recipient.address || 'Not provided'}</p>
+                                    {recipient.instructions && <p><strong>Instructions:</strong> {recipient.instructions}</p>}
+                                    <p><strong>Schedule:</strong> {leg.scheduled_delivery_date || 'Not scheduled'}{leg.delivery_window ? ` · ${label(leg.delivery_window)}` : ''}</p>
+                                    {leg.stop_sequence && <p><strong>Stop:</strong> {leg.stop_sequence}</p>}
+                                  </div>
                                   {!riderMode && leg.status === 'delivery_attempted' && <div className="mt-2 space-y-1 text-xs text-gray-600 dark:text-gray-300"><span className="inline-flex rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">Needs attention</span>{latestAttempt?.reason_code && <p>{label(latestAttempt.reason_code)}</p>}{latestAttempt?.notes && <p>Internal note: {latestAttempt.notes}</p>}</div>}
                                 </div>
                                 <div className="flex flex-wrap gap-2">

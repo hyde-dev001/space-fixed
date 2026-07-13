@@ -32,4 +32,12 @@ describe('ShipmentTracking', () => {
     expect(screen.getByText('Estimated delivery')).toBeInTheDocument();
     expect(screen.getByText(/July 15, 2026.*Morning/)).toBeInTheDocument();
   });
+
+  it('shows a customer-friendly status while delivery proof is being verified', () => {
+    shipment.legs[0].status = 'awaiting_proof_approval';
+    render(<ShipmentTracking />);
+
+    expect(screen.getAllByText('Delivered — confirmation in progress').length).toBeGreaterThan(0);
+    expect(screen.getByText('Your item was handed over and the delivery proof is being verified.')).toBeInTheDocument();
+  });
 });

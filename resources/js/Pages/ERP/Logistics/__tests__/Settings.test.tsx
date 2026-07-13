@@ -1,10 +1,13 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { expect, it, vi } from 'vitest';
+import { beforeEach, expect, it, vi } from 'vitest';
 import LogisticsSettings from '../Settings';
 
 const mocks = vi.hoisted(() => ({
   put: vi.fn().mockResolvedValue({ data: {} }),
+  success: vi.fn(),
+  error: vi.fn(),
+  confirm: vi.fn(),
   settings: {
     operating_days: [1, 2, 3, 4, 5],
     cutoff_time: '15:00:00',
@@ -21,6 +24,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('axios', () => ({ default: { put: mocks.put } }));
+vi.mock('@/utils/workflowFeedback', () => ({
+  workflowFeedback: { success: mocks.success, error: mocks.error, confirm: mocks.confirm },
+}));
 vi.mock('@inertiajs/react', () => ({
   Head: () => null,
   usePage: () => ({ props: { settings: mocks.settings } }),
@@ -28,6 +34,13 @@ vi.mock('@inertiajs/react', () => ({
 vi.mock('@/layout/AppLayout_ERP', () => ({
   default: ({ children }: React.PropsWithChildren) => <>{children}</>,
 }));
+
+beforeEach(() => {
+  mocks.put.mockReset().mockResolvedValue({ data: {} });
+  mocks.success.mockReset();
+  mocks.error.mockReset();
+  mocks.confirm.mockReset().mockResolvedValue({ isConfirmed: true });
+});
 
 it('submits untouched time settings without seconds', async () => {
   render(<LogisticsSettings />);
@@ -39,5 +52,49 @@ it('submits untouched time settings without seconds', async () => {
     morning_end: '12:00',
     afternoon_start: '13:00',
     afternoon_end: '18:00',
-  })));
+  }))); 
+});
+
+it('shows a success alert after saving', async () => {
+  render(<LogisticsSettings />);
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+  await waitFor(() => expect(mocks.success).toHaveBeenCalledWith({
+    title: 'Settings saved',
+    text: 'Logistics settings were updated successfully.',
+  }));
+});
+
+it('shows Laravel validation messages when saving fails', async () => {
+  mocks.put.mockRejectedValue({
+    response: { data: { errors: {
+      operating_days: ['Select at least one operating day.'],
+      afternoon_start: ['Afternoon start must be after morning end.'],
+    } } },
+  });
+  render(<LogisticsSettings />);
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+  await waitFor(() => expect(mocks.error).toHaveBeenCalledWith(
+    'Select at least one operating day.\nAfternoon start must be after morning end.',
+    'Check your settings',
+  ));
+});
+
+it('discards unsaved changes after confirmation', async () => {
+  render(<LogisticsSettings />);
+  fireEvent.change(screen.getByLabelText('Lead days'), { target: { value: '4' } });
+  fireEvent.change(screen.getByLabelText('Blackout date'), { target: { value: '2026-12-25' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
+
+  await waitFor(() => expect(screen.getByLabelText('Lead days')).toHaveValue(1));
+  expect(screen.getByLabelText('Blackout date')).toHaveValue('');
+  expect(mocks.confirm).toHaveBeenCalled();
+});
+
+it('prevents adding a past blackout date', () => {
+  render(<LogisticsSettings />);
+  fireEvent.change(screen.getByLabelText('Blackout date'), { target: { value: '2001-04-04' } });
+
+  expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled();
 });

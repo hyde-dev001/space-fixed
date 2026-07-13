@@ -7,6 +7,7 @@ use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\Logistics\DeliveryEvent;
 use App\Models\ShopOwner;
+use App\Models\Order;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -138,7 +139,8 @@ class LogisticsApiTest extends TestCase
         Permission::findOrCreate('update-logistics-status', 'user');
         Permission::findOrCreate('approve-proof-of-delivery', 'user');
         $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
-        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id, 'status' => 'active']);
+        $order = Order::factory()->create(['shop_owner_id' => $shop->id, 'status' => 'shipped', 'carrier_company' => 'Shop-owned logistics']);
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id, 'status' => 'active', 'source_type' => 'order', 'source_id' => $order->id]);
         $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'in_transit']);
         $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
         $approver = User::factory()->create(['shop_owner_id' => $shop->id]);
@@ -151,6 +153,7 @@ class LogisticsApiTest extends TestCase
         $this->actingAs($rider, 'user')->postJson("/api/logistics/legs/{$leg->id}/delivered")->assertUnprocessable();
         $this->actingAs($approver, 'user')->postJson("/api/logistics/proofs/{$proof['id']}/approve")->assertOk();
         $this->assertSame('delivered', $leg->fresh()->status->value);
+        $this->assertSame('completed', $order->fresh()->status->value);
         $this->assertDatabaseHas('handoff_proofs', ['id' => $proof['id'], 'review_status' => 'approved']);
     }
 

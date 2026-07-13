@@ -7,8 +7,11 @@ import type { DeliveryBatch, LogisticsRider, TrackingShipmentLeg } from '@/types
 type Suggestion = { rider_profile_id: number; capacity: number; overload_count: number; leg_ids: number[] };
 
 export default function Batches() {
-  const { batches, pool, riders } = usePage<{ batches: DeliveryBatch[]; pool: TrackingShipmentLeg[]; riders: LogisticsRider[] }>().props;
+  const { batches, pool, riders, unscheduled = [] } = usePage<{ batches: DeliveryBatch[]; pool: TrackingShipmentLeg[]; riders: LogisticsRider[]; unscheduled: Array<TrackingShipmentLeg & { shipment?: { source_type: string; source_id: number } }> }>().props;
   const [selected, setSelected] = useState<number[]>([]);
+  const [unscheduledSelected, setUnscheduledSelected] = useState<number[]>([]);
+  const [scheduleDate, setScheduleDate] = useState('');
+  const [scheduleWindow, setScheduleWindow] = useState('morning');
   const [date, setDate] = useState('');
   const [window, setWindow] = useState('morning');
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
@@ -23,6 +26,15 @@ export default function Batches() {
   return <AppLayoutERP><Head title="Delivery Batches" /><main className="space-y-6 p-6">
     <h1 className="text-2xl font-bold">Delivery Batches</h1>
     {error && <p role="alert" className="rounded bg-red-50 p-3 text-red-700">{error}</p>}
+    <section className="rounded border bg-white p-4"><h2 className="font-semibold">Unscheduled deliveries</h2>
+      <div className="my-3 flex flex-wrap gap-2">
+        <input aria-label="Schedule date" type="date" value={scheduleDate} onChange={(event) => setScheduleDate(event.target.value)} className="rounded border p-2" />
+        <select aria-label="Schedule window" value={scheduleWindow} onChange={(event) => setScheduleWindow(event.target.value)} className="rounded border p-2"><option value="morning">Morning</option><option value="afternoon">Afternoon</option></select>
+        <button disabled={!scheduleDate || !unscheduledSelected.length} onClick={() => run(() => logisticsApi.scheduleLegs(unscheduledSelected, scheduleDate, scheduleWindow))} className="rounded bg-blue-600 px-3 text-white disabled:opacity-50">Schedule deliveries</button>
+      </div>
+      {unscheduled.map((leg) => <label key={leg.id} className="block border-t py-2"><input type="checkbox" checked={unscheduledSelected.includes(leg.id)} onChange={(event) => setUnscheduledSelected(event.target.checked ? [...unscheduledSelected, leg.id] : unscheduledSelected.filter((id) => id !== leg.id))} /> {leg.shipment?.source_type === 'order' ? `Order #${leg.shipment.source_id}` : `Leg #${leg.id}`}</label>)}
+      {!unscheduled.length && <p className="mt-3 text-sm text-gray-500">No unscheduled deliveries.</p>}
+    </section>
     <section className="rounded border bg-white p-4"><h2 className="font-semibold">Dispatch pool</h2>
       <div className="my-3 flex flex-wrap gap-2">
         <input type="date" value={date} onChange={(event) => setDate(event.target.value)} className="rounded border p-2" />

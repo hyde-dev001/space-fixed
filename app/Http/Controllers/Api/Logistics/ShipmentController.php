@@ -17,6 +17,7 @@ use App\Services\Logistics\ShipmentLegService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class ShipmentController extends Controller
 {
@@ -126,9 +127,14 @@ class ShipmentController extends Controller
         abort_unless($proof->review_status === 'pending', 422);
 
         $actor = Auth::guard('user')->user() ?? $shop;
-        $proof->update(['review_status' => 'approved', 'reviewed_by_type' => $actor::class, 'reviewed_by_id' => $actor->id, 'reviewed_at' => now()]);
+        $leg = DB::transaction(function () use ($proof, $actor, $legs) {
+            $locked = HandoffProof::query()->with('leg')->lockForUpdate()->findOrFail($proof->id);
+            abort_unless($locked->review_status === 'pending', 422);
+            $locked->update(['review_status' => 'approved', 'reviewed_by_type' => $actor::class, 'reviewed_by_id' => $actor->id, 'reviewed_at' => now()]);
+            return $legs->markDelivered($locked->leg);
+        });
 
-        return response()->json(['leg' => $legs->markDelivered($proof->leg->fresh())]);
+        return response()->json(['leg' => $leg]);
     }
 
     public function attempts(Request $request, ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse

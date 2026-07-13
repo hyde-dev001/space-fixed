@@ -6,6 +6,10 @@ import type { TrackingShipment } from '@/types/logistics';
 const titleCase = (value: string) =>
   value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 
+const customerStatus = (status: string) => status === 'awaiting_proof_approval'
+  ? 'Delivered — confirmation in progress'
+  : titleCase(status);
+
 const formatDate = (value?: string | null) => {
   if (!value) return '-';
   return new Date(value).toLocaleString();
@@ -27,6 +31,7 @@ export default function ShipmentTracking() {
   const itemLabel = isReturn ? 'Return' : 'Shipment';
   const trackingNumber = isReturn ? `RET-${shipment.id}` : (currentLeg?.tracking_number || '-');
   const trackingUrl = isReturn ? `/tracking/shipments/${shipment.id}` : currentLeg?.tracking_url;
+  const awaitingConfirmation = currentLeg?.status === 'awaiting_proof_approval';
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -40,9 +45,16 @@ export default function ShipmentTracking() {
             <h1 className="text-2xl font-bold text-gray-950">{titleCase(shipment.purpose)}</h1>
           </div>
           <span className="w-fit rounded-full border border-gray-300 bg-white px-3 py-1 text-sm font-semibold text-gray-800">
-            {titleCase(shipment.status)}
+            {awaitingConfirmation ? customerStatus(currentLeg.status) : titleCase(shipment.status)}
           </span>
         </div>
+
+        {awaitingConfirmation && (
+          <section className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-5">
+            <p className="font-semibold text-blue-900">Delivered — confirmation in progress</p>
+            <p className="mt-1 text-sm text-blue-800">Your item was handed over and the delivery proof is being verified.</p>
+          </section>
+        )}
 
         <section className="mb-6 rounded-lg border border-gray-200 bg-white p-5">
           <div className="grid gap-4 md:grid-cols-3">
@@ -92,7 +104,7 @@ export default function ShipmentTracking() {
                   <p className="text-xs uppercase text-gray-500">To</p>
                   <p className="text-sm text-gray-900">{snapshotText(leg.destination_snapshot)}</p>
                 </div>
-                <div className="text-sm font-semibold text-gray-800">{titleCase(leg.status)}</div>
+                <div className="text-sm font-semibold text-gray-800">{customerStatus(leg.status)}</div>
               </div>
             ))}
           </div>

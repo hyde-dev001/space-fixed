@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Services\Logistics\AssignmentService;
 use App\Services\Logistics\DeliveryEventService;
 use App\Services\Logistics\ShipmentRequestService;
+use App\Services\Logistics\ProofService;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Permission;
@@ -68,6 +69,25 @@ class LogisticsNotificationTest extends TestCase
             'user_id' => $dispatcher->id,
             'type' => 'logistics_shipment_requested',
             'action_url' => '/erp/logistics/shipments',
+        ]);
+    }
+
+    public function test_dispatcher_is_notified_when_delivery_proof_awaits_approval(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        $shop = ShopOwner::factory()->create();
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $dispatcher->assignRole('Logistics Dispatcher');
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+        $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'in_transit']);
+
+        app(ProofService::class)->recordProof($leg, ['handoff_type' => 'delivery', 'proof_type' => 'photo']);
+
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $dispatcher->id,
+            'type' => 'logistics_proof_required',
+            'action_url' => '/erp/logistics/shipments?status=awaiting_proof_approval',
+            'requires_action' => true,
         ]);
     }
 

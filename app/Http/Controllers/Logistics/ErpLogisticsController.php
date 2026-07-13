@@ -36,7 +36,8 @@ class ErpLogisticsController extends Controller
             $user->can('manage-logistics-riders')
         );
         $canAssign = $user && $user->can('assign-logistics-deliveries');
-        $status = $request->query('status', 'all');
+        $status = in_array($request->query('status'), ['all', 'incomplete', 'requested', 'active', 'completed', 'cancelled', 'awaiting_proof_approval'], true)
+            ? $request->query('status') : 'all';
         $purpose = $request->query('purpose', 'all');
 
         return Inertia::render('ERP/Logistics/Shipments', [
@@ -66,6 +67,8 @@ class ErpLogisticsController extends Controller
                 ->when(in_array($status, ['requested', 'active', 'completed', 'cancelled'], true), function ($query) use ($status) {
                     $query->where('status', $status);
                 })
+                ->when($status === 'awaiting_proof_approval', fn ($query) => $query
+                    ->whereHas('legs', fn ($legs) => $legs->where('status', 'awaiting_proof_approval')))
                 ->when($purpose !== 'all', function ($query) use ($purpose) {
                     $query->where('purpose', $purpose);
                 })
@@ -131,6 +134,7 @@ class ErpLogisticsController extends Controller
         };
         $legMatches = function ($legs) use ($assignmentMatches, $status) {
             $legs->when($status !== 'all', fn ($query) => $query->where('status', $status))
+                ->whereDoesntHave('deliveryBatch', fn ($query) => $query->where('status', 'offered'))
                 ->whereHas('assignments', $assignmentMatches);
         };
 
@@ -205,6 +209,11 @@ class ErpLogisticsController extends Controller
             'pool' => \App\Models\Logistics\ShipmentLeg::with('shipment')
                 ->whereHas('shipment', fn ($query) => $query->where('shop_owner_id', $shopOwnerId))
                 ->whereNull('delivery_batch_id')->where('schedule_status', 'scheduled')->where('status', 'pending')->get(),
+            'unscheduled' => ShipmentLeg::with('shipment')
+                ->whereHas('shipment', fn ($query) => $query->where('shop_owner_id', $shopOwnerId))
+                ->whereNull('delivery_batch_id')->where('status', 'pending')
+                ->where(fn ($query) => $query->whereNull('schedule_status')->orWhere('schedule_status', '!=', 'scheduled'))
+                ->get(),
             'riders' => RiderProfile::where('shop_owner_id', $shopOwnerId)->where('active', true)->where('availability_status', 'available')->get(),
         ]);
     }

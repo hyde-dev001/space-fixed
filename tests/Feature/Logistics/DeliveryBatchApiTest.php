@@ -5,6 +5,7 @@ namespace Tests\Feature\Logistics;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
+use App\Models\Logistics\LogisticsSetting;
 use App\Models\ShopOwner;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -13,6 +14,26 @@ use Tests\TestCase;
 class DeliveryBatchApiTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_dispatcher_schedules_unscheduled_legs(): void
+    {
+        $shop = ShopOwner::factory()->create();
+        LogisticsSetting::create(['shop_owner_id' => $shop->id, 'operating_days' => range(1, 7)]);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id,
+            'scheduled_delivery_date' => null, 'delivery_window' => null, 'schedule_status' => null, 'status' => 'pending',
+        ]);
+        $date = today()->addDay()->toDateString();
+
+        $this->actingAs($shop, 'shop_owner')->postJson('/api/logistics/legs/schedule', [
+            'delivery_date' => $date, 'delivery_window' => 'morning', 'leg_ids' => [$leg->id],
+        ])->assertOk();
+
+        $this->assertDatabaseHas('shipment_legs', [
+            'id' => $leg->id, 'scheduled_delivery_date' => $date.' 00:00:00',
+            'delivery_window' => 'morning', 'schedule_status' => 'scheduled',
+        ]);
+    }
 
     public function test_dispatcher_creates_and_offers_batch_then_assigned_rider_accepts(): void
     {
