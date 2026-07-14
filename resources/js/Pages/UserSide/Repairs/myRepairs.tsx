@@ -67,10 +67,19 @@ const REPAIR_TABS: RepairTab[] = [
   'rejected',
 ];
 
+type RepairServiceSummary = {
+  id: number;
+  name: string;
+  category?: string;
+  price: number | string;
+  duration?: string;
+};
+
 type RepairOrder = {
   id: number;
   order_number: string;
   repair_type: string;
+  services?: RepairServiceSummary[];
   description: string;
   status: RepairStatus;
   total_amount: number;
@@ -583,6 +592,12 @@ const MyRepairs: React.FC = () => {
   const [cancelTargetOrderId, setCancelTargetOrderId] = useState<number | null>(null);
   const [selectedReason, setSelectedReason] = useState<string>('');
   const [cancelNote, setCancelNote] = useState<string>('');
+  const [modifyOrder, setModifyOrder] = useState<RepairOrder | null>(null);
+  const [availableModifyServices, setAvailableModifyServices] = useState<RepairServiceSummary[]>([]);
+  const [selectedModifyServiceIds, setSelectedModifyServiceIds] = useState<number[]>([]);
+  const [packageRemovalConfirmed, setPackageRemovalConfirmed] = useState(false);
+  const [isLoadingModifyServices, setIsLoadingModifyServices] = useState(false);
+  const [isSavingModifyServices, setIsSavingModifyServices] = useState(false);
 
   // Shop capacity cache: shopOwnerId → { active_count, limit, is_full }
   const [shopCapacityCache, setShopCapacityCache] = useState<Record<number, { active_count: number; limit: number; is_full: boolean }>>({});
@@ -1414,6 +1429,110 @@ const MyRepairs: React.FC = () => {
       }
     }
   };
+
+  const closeModifyModal = () => {
+    if (isSavingModifyServices) return;
+
+    setModifyOrder(null);
+    setAvailableModifyServices([]);
+    setSelectedModifyServiceIds([]);
+    setPackageRemovalConfirmed(false);
+  };
+
+  const openModifyModal = async (order: RepairOrder) => {
+    if (!order.shop_owner_id) return;
+
+    setModifyOrder(order);
+    setPackageRemovalConfirmed(!order.repair_package_id);
+    setIsLoadingModifyServices(true);
+
+    try {
+      const response = await axios.get(`/api/repair-services?shop_id=${order.shop_owner_id}`);
+      const services: RepairServiceSummary[] = Array.isArray(response.data?.data)
+        ? response.data.data
+        : [];
+      const activeServiceIds = new Set(services.map((service) => service.id));
+
+      setAvailableModifyServices(services);
+      setSelectedModifyServiceIds(
+        (order.services ?? [])
+          .map((service) => service.id)
+          .filter((serviceId) => activeServiceIds.has(serviceId)),
+      );
+    } catch {
+      setModifyOrder(null);
+      Swal.fire({
+        icon: 'error',
+        title: 'Unable to Load Services',
+        text: 'Please try again.',
+        confirmButtonColor: '#000000',
+      });
+    } finally {
+      setIsLoadingModifyServices(false);
+    }
+  };
+
+  const toggleModifyService = (serviceId: number) => {
+    if (!packageRemovalConfirmed) return;
+
+    setSelectedModifyServiceIds((current) =>
+      current.includes(serviceId)
+        ? current.filter((id) => id !== serviceId)
+        : [...current, serviceId],
+    );
+  };
+
+  const saveModifiedServices = async () => {
+    if (!modifyOrder || selectedModifyServiceIds.length === 0) return;
+
+    setIsSavingModifyServices(true);
+
+    try {
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+      const response = await fetch(`/api/customer/repairs/${modifyOrder.id}/services`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': csrfToken || '',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          service_ids: selectedModifyServiceIds,
+          remove_package: Boolean(modifyOrder.repair_package_id),
+        }),
+      });
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Unable to update services.');
+      }
+
+      setModifyOrder(null);
+      setAvailableModifyServices([]);
+      setSelectedModifyServiceIds([]);
+      setPackageRemovalConfirmed(false);
+      await fetchRepairs();
+      Swal.fire({
+        icon: 'success',
+        title: 'Services Updated',
+        text: 'Your repair total and chat were updated.',
+        confirmButtonColor: '#000000',
+      });
+    } catch (error: any) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Update Failed',
+        text: error?.message || 'Please try again.',
+        confirmButtonColor: '#000000',
+      });
+    } finally {
+      setIsSavingModifyServices(false);
+    }
+  };
+
+  const selectedModifyTotal = availableModifyServices
+    .filter((service) => selectedModifyServiceIds.includes(service.id))
+    .reduce((sum, service) => sum + Number(service.price || 0), 0);
 
   useEffect(() => {
     const intervalId = window.setInterval(async () => {
@@ -3687,6 +3806,32 @@ const MyRepairs: React.FC = () => {
                         </div>
                       )}
                       {/* Chat with Repairer actions */}
+                      {order.status === 'repairer_accepted' &&
+                        order.conversation_id &&
+                        order.shop_owner_id &&
+                        ![
+                          'paid',
+                          'completed',
+                          'down_payment_paid',
+                          'partially_paid',
+                          'partially_refunded',
+                          'refunded',
+                        ].includes(String(order.payment_status || '').toLowerCase()) &&
+                        !order.payment_completed_at &&
+                        Number(order.total_paid_amount || 0) === 0 && (
+                          <button
+                            type="button"
+                            onClick={() => openModifyModal(order)}
+                            disabled={processingPayment}
+                            className={`${actionButtonBaseClass} ${
+                              processingPayment
+                                ? actionButtonDisabledClass
+                                : 'border border-[#16233b] bg-white text-[#16233b] hover:bg-slate-50'
+                            }`}
+                          >
+                            MODIFY
+                          </button>
+                        )}
                       {order.status === 'repairer_accepted' && order.conversation_id && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (
                         <>
                           {isOnlineIntakeFlow(order) && (
@@ -3860,6 +4005,123 @@ const MyRepairs: React.FC = () => {
           )}
           </div>
         </div>
+        {modifyOrder && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="modify-repair-services-title"
+          >
+            <div className="max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl sm:p-7">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 id="modify-repair-services-title" className="text-xl font-semibold text-slate-950">
+                    Modify Repair Services
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Choose at least one active service from {modifyOrder.shop_name}.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeModifyModal}
+                  disabled={isSavingModifyServices}
+                  aria-label="Close modify services"
+                  className="text-2xl leading-none text-slate-500 hover:text-black disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  &times;
+                </button>
+              </div>
+
+              {modifyOrder.repair_package_id && !packageRemovalConfirmed && (
+                <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4">
+                  <p className="text-sm text-amber-900">
+                    This repair uses a package. Remove it to switch to individually priced services.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setPackageRemovalConfirmed(true)}
+                    className="mt-3 text-sm font-semibold text-amber-950 underline"
+                  >
+                    Remove Package
+                  </button>
+                </div>
+              )}
+
+              <div className="mt-5 space-y-2">
+                {isLoadingModifyServices ? (
+                  <p className="py-8 text-center text-sm text-slate-500">Loading services...</p>
+                ) : availableModifyServices.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-slate-500">No active services are available.</p>
+                ) : availableModifyServices.map((service) => {
+                  const checked = selectedModifyServiceIds.includes(service.id);
+
+                  return (
+                    <label
+                      key={service.id}
+                      className={`flex items-center justify-between gap-4 rounded-xl border p-4 ${
+                        packageRemovalConfirmed ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
+                      }`}
+                    >
+                      <span className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={!packageRemovalConfirmed}
+                          onChange={() => toggleModifyService(service.id)}
+                        />
+                        <span>
+                          <span className="block text-sm font-semibold text-slate-950">{service.name}</span>
+                          {service.duration && (
+                            <span className="block text-xs text-slate-500">{service.duration}</span>
+                          )}
+                        </span>
+                      </span>
+                      <span className="text-sm font-semibold text-slate-950">
+                        {formatCurrency(Number(service.price || 0))}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+
+              <div className="mt-6 flex flex-col gap-4 border-t border-slate-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-slate-500">Updated total</p>
+                  <p className="text-xl font-bold text-slate-950">{formatCurrency(selectedModifyTotal)}</p>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={closeModifyModal}
+                    disabled={isSavingModifyServices}
+                    className={`${actionButtonBaseClass} border border-slate-300 bg-white text-slate-700`}
+                  >
+                    CANCEL
+                  </button>
+                  <button
+                    type="button"
+                    onClick={saveModifiedServices}
+                    disabled={
+                      !packageRemovalConfirmed
+                      || selectedModifyServiceIds.length === 0
+                      || isSavingModifyServices
+                    }
+                    className={`${actionButtonBaseClass} ${
+                      !packageRemovalConfirmed
+                      || selectedModifyServiceIds.length === 0
+                      || isSavingModifyServices
+                        ? actionButtonDisabledClass
+                        : actionButtonPrimaryClass
+                    }`}
+                  >
+                    {isSavingModifyServices ? 'SAVING...' : 'SAVE CHANGES'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         {showCancelModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center">
             <div className="absolute inset-0 bg-black opacity-40" onClick={() => setShowCancelModal(false)}></div>

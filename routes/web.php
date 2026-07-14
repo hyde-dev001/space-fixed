@@ -1262,6 +1262,9 @@ Route::middleware('auth:user')->prefix('api/customer/repairs')->group(function (
     // Get single repair request
     Route::get('{id}', [\App\Http\Controllers\Api\RepairRequestController::class, 'show']);
 
+    // Replace services after repairer acceptance and before payment
+    Route::patch('{id}/services', [\App\Http\Controllers\Api\RepairRequestController::class, 'updateServices']);
+
     // Cancel repair request
     Route::post('{id}/cancel', [\App\Http\Controllers\Api\RepairRequestController::class, 'cancel']);
 

@@ -169,6 +169,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 	const [showLandscapeTip, setShowLandscapeTip] = useState(false);
 	const [joystickUiVector, setJoystickUiVector] = useState({ x: 0, y: 0 });
 	const [activeRoomIndex, setActiveRoomIndex] = useState(0);
+	const [isRoomSwitching, setIsRoomSwitching] = useState(false);
 	const lightsOn = isNightMode;
 	const parsedSlotLimit = Number(showroomSlotLimit);
 	const showroomDisplayCapacity = Number.isFinite(parsedSlotLimit)
@@ -205,11 +206,18 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 	}, [rooms.length]);
 
 	const switchRoom = (index: number) => {
+		setIsRoomSwitching(true);
 		setFocusedShoeIndex(null);
 		setCurrentIndex(0);
 		setIsSceneLoading(true);
 		setActiveRoomIndex(index);
 	};
+
+	useEffect(() => {
+		if (!isRoomSwitching || isSceneLoading) return;
+		const timer = window.setTimeout(() => setIsRoomSwitching(false), 400);
+		return () => window.clearTimeout(timer);
+	}, [isRoomSwitching, isSceneLoading]);
 
 	useEffect(() => {
 		if (shoes.length === 0) return;
@@ -2526,9 +2534,15 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 					</>
 				)}
 
-				{isSceneLoading && (
-					<div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-black/65">
-						<div className="h-14 w-14 animate-spin rounded-full border-4 border-white/35 border-t-white" />
+				{(isSceneLoading || isRoomSwitching) && (
+					<div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm">
+						<div className="flex flex-col items-center gap-4 text-center text-white">
+							<div className="h-14 w-14 animate-spin rounded-full border-4 border-white/25 border-t-white" />
+							<div>
+								<p className="text-base font-semibold">{isRoomSwitching ? `Entering Room ${activeRoomIndex + 1}` : 'Preparing showroom'}</p>
+								<p className="mt-1 text-xs text-white/65">Loading products and display shelves…</p>
+							</div>
+						</div>
 					</div>
 				)}
 

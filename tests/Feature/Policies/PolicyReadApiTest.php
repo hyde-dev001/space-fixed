@@ -36,6 +36,16 @@ class PolicyReadApiTest extends TestCase
             ->assertJsonPath('data.version_number', 1);
     }
 
+    public function test_shop_without_active_policy_returns_an_empty_successful_response(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create();
+
+        $this->getJson("/api/policies/shops/{$shopOwner->id}/active")
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data', null);
+    }
+
     public function test_customer_prefill_returns_true_when_same_user_already_accepted_active_version(): void
     {
         $shopOwner = ShopOwner::factory()->approved()->create();

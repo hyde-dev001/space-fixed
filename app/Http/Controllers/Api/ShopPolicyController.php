@@ -89,9 +89,9 @@ class ShopPolicyController extends Controller
 
         if (!$version) {
             return response()->json([
-                'success' => false,
-                'message' => 'No active policy version found for this shop.',
-            ], 404);
+                'success' => true,
+                'data' => null,
+            ]);
         }
 
         return response()->json([

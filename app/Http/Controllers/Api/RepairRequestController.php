@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use App\Models\Conversation;
+use App\Models\ConversationMessage;
 use App\Models\RepairRequest;
 use App\Models\RepairReview;
 use App\Models\RepairPackage;
@@ -883,6 +885,13 @@ class RepairRequestController extends Controller
                     'id' => $repair->id,
                     'order_number' => $repair->request_id,
                     'repair_type' => $repair->services->pluck('name')->join(', '),
+                    'services' => $repair->services->map(fn (RepairService $service) => [
+                        'id' => (int) $service->id,
+                        'name' => $service->name,
+                        'category' => $service->category,
+                        'price' => (float) $service->price,
+                        'duration' => $service->duration,
+                    ])->values(),
                     'description' => $repair->description,
                     'status' => $repair->status,
                     'total_amount' => $pricingSnapshot['final_total'],
@@ -1765,6 +1774,158 @@ class RepairRequestController extends Controller
         }
     }
     
+    public function updateServices(Request $request, int $id)
+    {
+        $user = Auth::guard('user')->user();
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthenticated',
+            ], 401);
+        }
+
+        $validated = $request->validate([
+            'service_ids' => ['required', 'array', 'min:1'],
+            'service_ids.*' => ['integer', 'distinct', 'exists:repair_services,id'],
+            'remove_package' => ['sometimes', 'boolean'],
+        ]);
+
+        $repair = DB::transaction(function () use ($validated, $id, $user) {
+            $repair = RepairRequest::query()
+                ->with('services:id,name')
+                ->whereKey($id)
+                ->forCustomer($user->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($repair->status !== 'repairer_accepted' || !$repair->conversation_id) {
+                abort(409, 'Services can only be modified after repairer acceptance and before confirmation.');
+            }
+
+            $paidStatuses = [
+                'paid',
+                'completed',
+                'down_payment_paid',
+                'partially_paid',
+                'partially_refunded',
+                'refunded',
+            ];
+            $hasRecordedPayment = (float) $repair->total_paid_amount > 0
+                || $repair->payment_completed_at
+                || in_array(strtolower((string) $repair->payment_status), $paidStatuses, true)
+                || $repair->posTransactions()
+                    ->whereIn('status', ['paid', 'partially_refunded', 'refunded'])
+                    ->exists();
+
+            if ($hasRecordedPayment) {
+                abort(409, 'Paid repairs can no longer be modified.');
+            }
+
+            if ($repair->repair_package_id && !($validated['remove_package'] ?? false)) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'remove_package' => ['Remove the package before choosing individual services.'],
+                ]);
+            }
+
+            $requestedIds = collect($validated['service_ids'])
+                ->map(fn ($value) => (int) $value)
+                ->unique()
+                ->values();
+            $services = RepairService::query()
+                ->whereIn('id', $requestedIds)
+                ->where('shop_owner_id', $repair->shop_owner_id)
+                ->whereIn('status', ['Active', 'active'])
+                ->get(['id', 'name', 'category', 'price', 'duration']);
+
+            if ($services->count() !== $requestedIds->count()) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'service_ids' => ['Every selected service must be active and belong to this repair shop.'],
+                ]);
+            }
+
+            $oldNames = $repair->services->pluck('name');
+            $newNames = $services->pluck('name');
+            $total = round((float) $services->sum(
+                fn (RepairService $service) => (float) $service->price
+            ), 2);
+            $shopOwner = ShopOwner::find($repair->shop_owner_id);
+            $requiresOwnerApprovalByPolicy = $shopOwner
+                ? $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForRepairReject(
+                    (int) $shopOwner->id,
+                    $total
+                )
+                : false;
+            $isHighValue = (bool) ($shopOwner && (
+                $total >= (float) $shopOwner->high_value_threshold
+                || $requiresOwnerApprovalByPolicy
+            ));
+            $snapshot = $services->map(fn (RepairService $service) => [
+                'id' => (int) $service->id,
+                'name' => $service->name,
+                'category' => $service->category,
+                'price' => (float) $service->price,
+                'duration' => $service->duration,
+            ])->values()->all();
+
+            $repair->services()->sync($services->pluck('id')->all());
+            $repair->update([
+                'repair_package_id' => null,
+                'package_price' => null,
+                'add_ons_total' => 0,
+                'total' => $total,
+                'final_total' => $total,
+                'included_services_snapshot' => $snapshot,
+                'add_on_services_snapshot' => null,
+                'is_high_value' => $isHighValue,
+                'requires_owner_approval' => (bool) ($shopOwner
+                    && $shopOwner->require_two_way_approval
+                    && $requiresOwnerApprovalByPolicy),
+                'pricing_breakdown' => [
+                    'mode' => 'services',
+                    'package_id' => null,
+                    'package_name' => null,
+                    'included_services_total' => $total,
+                    'package_price' => null,
+                    'add_ons_total' => 0,
+                    'base_total' => $total,
+                    'materials_total' => 0,
+                    'final_total' => $total,
+                    'add_on_count' => 0,
+                    'tax_mode' => 'vat_inclusive',
+                ],
+                'paymongo_link_id' => null,
+                'payment_link_created_at' => null,
+                'payment_expires_at' => null,
+                'payment_failed_at' => null,
+                'payment_failure_reason' => null,
+                'payment_expired_at' => null,
+            ]);
+
+            $added = $newNames->diff($oldNames)->values()->join(', ') ?: 'None';
+            $removed = $oldNames->diff($newNames)->values()->join(', ') ?: 'None';
+            $message = ConversationMessage::create([
+                'conversation_id' => $repair->conversation_id,
+                'sender_type' => 'system',
+                'sender_id' => $user->id,
+                'content' => "Services updated by customer.\n\n"
+                    . "Added: {$added}\n"
+                    . "Removed: {$removed}\n"
+                    . 'New total: PHP ' . number_format($total, 2),
+            ]);
+            Conversation::whereKey($repair->conversation_id)
+                ->update(['last_message_at' => $message->created_at]);
+
+            return $repair->fresh('services:id,name,category,price,duration');
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Repair services updated.',
+            'data' => $repair,
+        ]);
+    }
+
     /**
      * Customer confirms repair after chat discussion (Phase 3)
      */

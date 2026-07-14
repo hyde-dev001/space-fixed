@@ -4,6 +4,12 @@ import Navigation from '../Shared/Navigation';
 import Swal from '@/Pages/UserSide/Shared/UserModal';
 import { buildRepairBreakdown } from '../../../utils/repairPricing';
 import { openTermsPolicyModal } from '../../../utils/termsPolicyModal';
+import {
+  PHILIPPINE_LOCATIONS,
+  getCityMunicipalityOptions,
+  normalizeCityMunicipalitySelection,
+  normalizeProvinceSelection,
+} from '@/data/philippineLocations';
 
 const REPAIR_VAT_RATE_PERCENT = 12;
 
@@ -60,66 +66,6 @@ interface RepairProcessPageProps {
     } | null;
   };
 }
-
-const DEFAULT_SHIPPING_REGION = 'Cavite';
-
-interface CityOption {
-  value: string;
-  label: string;
-  aliases?: string[];
-}
-
-const PH_CITY_OPTIONS: CityOption[] = [
-  { value: 'Bacoor', label: 'Bacoor' },
-  { value: 'Cavite City', label: 'Cavite City', aliases: ['City of Cavite'] },
-  { value: 'Dasmariñas', label: 'Dasmariñas', aliases: ['Dasmarinas'] },
-  { value: 'General Trias', label: 'General Trias' },
-  { value: 'Imus', label: 'Imus' },
-  { value: 'Tagaytay', label: 'Tagaytay' },
-  { value: 'Trece Martires', label: 'Trece Martires' },
-  { value: 'Alfonso', label: 'Alfonso' },
-  { value: 'Amadeo', label: 'Amadeo' },
-  { value: 'Carmona', label: 'Carmona' },
-  { value: 'Gen. Emilio Aguinaldo', label: 'Gen. Emilio Aguinaldo', aliases: ['General Emilio Aguinaldo', 'Gen Emilio Aguinaldo'] },
-  { value: 'Gen. Mariano Alvarez', label: 'Gen. Mariano Alvarez', aliases: ['General Mariano Alvarez', 'Gen Mariano Alvarez', 'GMA'] },
-  { value: 'Indang', label: 'Indang' },
-  { value: 'Kawit', label: 'Kawit' },
-  { value: 'Magallanes', label: 'Magallanes' },
-  { value: 'Maragondon', label: 'Maragondon' },
-  { value: 'Mendez', label: 'Mendez' },
-  { value: 'Naic', label: 'Naic' },
-  { value: 'Noveleta', label: 'Noveleta' },
-  { value: 'Rosario', label: 'Rosario' },
-  { value: 'Silang', label: 'Silang' },
-  { value: 'Tanza', label: 'Tanza' },
-];
-
-const normalizeCityKey = (value: string) => value
-  .normalize('NFD')
-  .replace(/[\u0300-\u036f]/g, '')
-  .replace(/\./g, '')
-  .replace(/\s+/g, ' ')
-  .trim()
-  .toLowerCase();
-
-const CITY_OPTION_LOOKUP = PH_CITY_OPTIONS.reduce<Map<string, string>>((lookup, option) => {
-  const candidates = [option.value, option.label, ...(option.aliases || [])];
-
-  candidates.forEach((candidate) => {
-    const key = normalizeCityKey(candidate);
-    if (key && !lookup.has(key)) {
-      lookup.set(key, option.value);
-    }
-  });
-
-  return lookup;
-}, new Map<string, string>());
-
-const normalizeCitySelection = (city?: string | null): string => {
-  const normalizedCityKey = normalizeCityKey(city || '');
-  if (!normalizedCityKey) return '';
-  return CITY_OPTION_LOOKUP.get(normalizedCityKey) || '';
-};
 
 const getEffectivePackagePrice = (pkg: RepairPackage): number => {
   const effective = Number((pkg as any).effective_package_price);
@@ -293,9 +239,12 @@ const RepairProcess: React.FC = () => {
   const [selectedServiceIds, setSelectedServiceIds] = useState<number[]>([]);
   const [selectedAddOnServiceIds, setSelectedAddOnServiceIds] = useState<number[]>([]);
   const [isShoeTypeOpen, setIsShoeTypeOpen] = useState(false);
+  const returnCityMunicipalityOptions = getCityMunicipalityOptions(formData.returnRegion);
+  const [isReturnProvinceDropdownOpen, setIsReturnProvinceDropdownOpen] = useState(false);
   const [isReturnCityDropdownOpen, setIsReturnCityDropdownOpen] = useState(false);
   const [saveInfoForCheckout, setSaveInfoForCheckout] = useState(false);
   const shoeTypeDropdownRef = useRef<HTMLDivElement | null>(null);
+  const returnProvinceDropdownRef = useRef<HTMLDivElement | null>(null);
   const returnCityDropdownRef = useRef<HTMLDivElement | null>(null);
 
   // Set selected services once repair services are loaded
@@ -326,6 +275,10 @@ const RepairProcess: React.FC = () => {
     const handleClickOutside = (event: MouseEvent) => {
       if (shoeTypeDropdownRef.current && !shoeTypeDropdownRef.current.contains(event.target as Node)) {
         setIsShoeTypeOpen(false);
+      }
+
+      if (returnProvinceDropdownRef.current && !returnProvinceDropdownRef.current.contains(event.target as Node)) {
+        setIsReturnProvinceDropdownOpen(false);
       }
 
       if (returnCityDropdownRef.current && !returnCityDropdownRef.current.contains(event.target as Node)) {
@@ -431,7 +384,8 @@ const RepairProcess: React.FC = () => {
 
     try {
       const parsed = JSON.parse(savedCheckoutInfo) as Partial<typeof formData>;
-      const savedReturnCity = normalizeCitySelection(parsed.returnCity);
+      const savedReturnRegion = normalizeProvinceSelection(parsed.returnRegion);
+      const savedReturnCity = normalizeCityMunicipalitySelection(savedReturnRegion, parsed.returnCity);
       setFormData((prev) => ({
         ...prev,
         customerName: parsed.customerName || '',
@@ -447,7 +401,7 @@ const RepairProcess: React.FC = () => {
         returnAddressLine: parsed.returnAddressLine || '',
         returnBarangay: parsed.returnBarangay || '',
         returnCity: savedReturnCity,
-        returnRegion: parsed.returnRegion || (savedReturnCity ? DEFAULT_SHIPPING_REGION : ''),
+        returnRegion: savedReturnRegion,
         returnPostalCode: (parsed.returnPostalCode || '').replace(/\D/g, ''),
       }));
       setSaveInfoForCheckout(true);
@@ -677,21 +631,61 @@ const RepairProcess: React.FC = () => {
     setFormData(prev => ({ ...prev, [name]: nextValue }));
   };
 
-  const handleReturnCityChange = (city: string) => {
-    const selectedCity = normalizeCitySelection(city);
+  const handleDropdownTriggerKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    setOpen: React.Dispatch<React.SetStateAction<boolean>>,
+    containerRef: React.RefObject<HTMLDivElement | null>,
+  ) => {
+    if (event.key === 'Escape') {
+      setOpen(false);
+      return;
+    }
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+
+    event.preventDefault();
+    setOpen(true);
+    requestAnimationFrame(() => {
+      const options = containerRef.current?.querySelectorAll<HTMLElement>('[role="option"]');
+      options?.[event.key === 'ArrowUp' ? options.length - 1 : 0]?.focus();
+    });
+  };
+
+  const handleListboxKeyDown = (
+    event: React.KeyboardEvent<HTMLDivElement>,
+    setOpen: React.Dispatch<React.SetStateAction<boolean>>,
+    containerRef: React.RefObject<HTMLDivElement | null>,
+  ) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      setOpen(false);
+      containerRef.current?.querySelector<HTMLButtonElement>('button')?.focus();
+      return;
+    }
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+
+    event.preventDefault();
+    const options = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[role="option"]'));
+    const currentIndex = options.indexOf(document.activeElement as HTMLElement);
+    const offset = event.key === 'ArrowDown' ? 1 : -1;
+    options[(currentIndex + offset + options.length) % options.length]?.focus();
+  };
+
+  const handleReturnProvinceChange = (province: string) => {
     setFormData((prev) => ({
       ...prev,
-      returnCity: selectedCity,
-      returnRegion: selectedCity ? DEFAULT_SHIPPING_REGION : '',
+      returnRegion: normalizeProvinceSelection(province),
+      returnCity: '',
     }));
+    setIsReturnProvinceDropdownOpen(false);
     setIsReturnCityDropdownOpen(false);
   };
 
-  const getCityLabel = (city?: string | null): string => {
-    const selectedCity = normalizeCitySelection(city);
-    if (!selectedCity) return '';
-    const option = PH_CITY_OPTIONS.find((cityOption) => cityOption.value === selectedCity);
-    return option?.label || selectedCity;
+  const handleReturnCityChange = (city: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      returnCity: normalizeCityMunicipalitySelection(prev.returnRegion, city),
+    }));
+    setIsReturnCityDropdownOpen(false);
   };
 
   const handleServiceToggle = (serviceId: number) => {
@@ -990,6 +984,7 @@ const RepairProcess: React.FC = () => {
       const missingReturnFields =
         !formData.returnAddressLine ||
         !formData.returnBarangay ||
+        !formData.returnRegion ||
         !formData.returnCity ||
         !normalizedReturnPostalCode;
 
@@ -1073,13 +1068,13 @@ const RepairProcess: React.FC = () => {
       }
       
       if (formData.returnDeliveryMethod !== 'walk_in') {
-        const selectedReturnCity = normalizeCitySelection(formData.returnCity);
-        const returnRegion = formData.returnRegion || (selectedReturnCity ? DEFAULT_SHIPPING_REGION : '');
+        const returnRegion = normalizeProvinceSelection(formData.returnRegion);
+        const returnCity = normalizeCityMunicipalitySelection(returnRegion, formData.returnCity);
         const normalizedReturnPostalCode = formData.returnPostalCode.replace(/\D/g, '');
 
         submitFormData.append('return_address_line', formData.returnAddressLine);
         submitFormData.append('return_barangay', formData.returnBarangay);
-        submitFormData.append('return_city', selectedReturnCity || formData.returnCity);
+        submitFormData.append('return_city', returnCity);
         submitFormData.append('return_region', returnRegion);
         submitFormData.append('return_postal_code', normalizedReturnPostalCode);
       }
@@ -1501,61 +1496,104 @@ const RepairProcess: React.FC = () => {
                             required
                           />
                         </div>
-                        <div>
-                          <label className="block text-sm font-medium text-black mb-2">City</label>
-                          <div ref={returnCityDropdownRef} className="relative">
-                            <button
-                              type="button"
-                              onClick={() => setIsReturnCityDropdownOpen((prev) => !prev)}
-                              className="flex w-full items-center justify-between rounded border border-gray-300 bg-white px-4 py-3 text-left"
-                              title="City"
-                              aria-label="City"
-                              aria-haspopup="listbox"
-                            >
-                              <span className={formData.returnCity ? 'text-black' : 'text-gray-500'}>
-                                {getCityLabel(formData.returnCity) || 'Select City'}
-                              </span>
-                              <svg className={`h-4 w-4 text-gray-500 transition-transform ${isReturnCityDropdownOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                              </svg>
-                            </button>
+                        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                          <div>
+                            <label className="block text-sm font-medium text-black mb-2">Province</label>
+                            <div ref={returnProvinceDropdownRef} className="relative">
+                              <button
+                                type="button"
+                                onClick={() => setIsReturnProvinceDropdownOpen((prev) => !prev)}
+                                onKeyDown={(event) => handleDropdownTriggerKeyDown(event, setIsReturnProvinceDropdownOpen, returnProvinceDropdownRef)}
+                                className="flex w-full items-center justify-between rounded border border-gray-300 bg-white px-4 py-3 text-left"
+                                aria-label="Province"
+                                aria-haspopup="listbox"
+                                aria-expanded={isReturnProvinceDropdownOpen}
+                              >
+                                <span className={formData.returnRegion ? 'text-black' : 'text-gray-500'}>
+                                  {formData.returnRegion || 'Select Province'}
+                                </span>
+                                <span className={`text-gray-500 transition-transform ${isReturnProvinceDropdownOpen ? 'rotate-180' : ''}`}>▾</span>
+                              </button>
 
-                            {isReturnCityDropdownOpen && (
-                              <div className="hide-scrollbar absolute left-0 right-0 top-full z-30 mt-1 max-h-56 overflow-y-auto rounded border border-gray-300 bg-white shadow-lg">
-                                <button
-                                  type="button"
-                                  onClick={() => handleReturnCityChange('')}
-                                  className="w-full border-b border-gray-100 px-4 py-2 text-left text-sm text-gray-600 hover:bg-gray-50"
+                              {isReturnProvinceDropdownOpen && (
+                                <div
+                                  role="listbox"
+                                  onKeyDown={(event) => handleListboxKeyDown(event, setIsReturnProvinceDropdownOpen, returnProvinceDropdownRef)}
+                                  className="hide-scrollbar absolute left-0 right-0 top-full z-30 mt-1 max-h-56 overflow-y-auto rounded border border-gray-300 bg-white shadow-lg"
                                 >
-                                  Select City
-                                </button>
-                                {PH_CITY_OPTIONS.map((cityOption) => (
-                                  <button
-                                    key={cityOption.value}
-                                    type="button"
-                                    onClick={() => handleReturnCityChange(cityOption.value)}
-                                    className={`w-full border-b border-gray-100 px-4 py-2 text-left text-sm hover:bg-gray-50 last:border-b-0 ${formData.returnCity === cityOption.value ? 'bg-gray-50 font-medium text-black' : 'text-black'}`}
-                                  >
-                                    {cityOption.label}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
+                                  {PHILIPPINE_LOCATIONS.map((province) => (
+                                    <button
+                                      key={province.name}
+                                      type="button"
+                                      role="option"
+                                      aria-selected={formData.returnRegion === province.name}
+                                      onClick={() => handleReturnProvinceChange(province.name)}
+                                      className={`w-full border-b border-gray-100 px-4 py-2 text-left text-sm hover:bg-gray-50 last:border-b-0 ${formData.returnRegion === province.name ? 'bg-gray-50 font-medium text-black' : 'text-black'}`}
+                                    >
+                                      {province.name}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-black mb-2">Postal code</label>
-                          <input
-                            type="text"
-                            name="returnPostalCode"
-                            value={formData.returnPostalCode}
-                            onChange={handleInputChange}
-                            inputMode="numeric"
-                            pattern="[0-9]*"
-                            className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
-                            placeholder="Postal code"
-                            required
-                          />
+
+                          <div>
+                            <label className="block text-sm font-medium text-black mb-2">City/Municipality</label>
+                            <div ref={returnCityDropdownRef} className="relative">
+                              <button
+                                type="button"
+                                onClick={() => setIsReturnCityDropdownOpen((prev) => !prev)}
+                                onKeyDown={(event) => handleDropdownTriggerKeyDown(event, setIsReturnCityDropdownOpen, returnCityDropdownRef)}
+                                disabled={!formData.returnRegion}
+                                className="flex w-full items-center justify-between rounded border border-gray-300 bg-white px-4 py-3 text-left disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
+                                aria-label="City/Municipality"
+                                aria-haspopup="listbox"
+                                aria-expanded={isReturnCityDropdownOpen}
+                              >
+                                <span className={formData.returnCity ? 'text-black' : 'text-gray-500'}>
+                                  {formData.returnCity || 'Select City/Municipality'}
+                                </span>
+                                <span className={`text-gray-500 transition-transform ${isReturnCityDropdownOpen ? 'rotate-180' : ''}`}>▾</span>
+                              </button>
+
+                              {isReturnCityDropdownOpen && (
+                                <div
+                                  role="listbox"
+                                  onKeyDown={(event) => handleListboxKeyDown(event, setIsReturnCityDropdownOpen, returnCityDropdownRef)}
+                                  className="hide-scrollbar absolute left-0 right-0 top-full z-30 mt-1 max-h-56 overflow-y-auto rounded border border-gray-300 bg-white shadow-lg"
+                                >
+                                  {returnCityMunicipalityOptions.map((city) => (
+                                    <button
+                                      key={city}
+                                      type="button"
+                                      role="option"
+                                      aria-selected={formData.returnCity === city}
+                                      onClick={() => handleReturnCityChange(city)}
+                                      className={`w-full border-b border-gray-100 px-4 py-2 text-left text-sm hover:bg-gray-50 last:border-b-0 ${formData.returnCity === city ? 'bg-gray-50 font-medium text-black' : 'text-black'}`}
+                                    >
+                                      {city}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-medium text-black mb-2">Postal code</label>
+                            <input
+                              type="text"
+                              name="returnPostalCode"
+                              value={formData.returnPostalCode}
+                              onChange={handleInputChange}
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                              placeholder="Postal code"
+                              required
+                            />
+                          </div>
                         </div>
                       </div>
                     )}
