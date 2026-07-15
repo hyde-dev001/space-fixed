@@ -29,7 +29,11 @@ class LogisticsNotificationService
             $this->notifyDispatchers($event, $type);
         }
 
-        if ($event->event_type === 'leg_assigned') {
+        if ($event->event_type === 'leg_assigned' && empty($event->metadata['delivery_batch_id'])) {
+            $this->notifyRider($event, $type);
+        }
+
+        if ($event->event_type === 'batch_offered') {
             $this->notifyRider($event, $type);
         }
 
@@ -62,7 +66,7 @@ class LogisticsNotificationService
     private function shouldNotify(DeliveryEvent $event): bool
     {
         return $event->visibility === 'customer'
-            || in_array($event->event_type, ['shipment_requested', 'leg_assigned', 'delivery_attempt_failed', 'proof_required'], true);
+            || in_array($event->event_type, ['shipment_requested', 'leg_assigned', 'batch_offered', 'delivery_attempt_failed', 'proof_required'], true);
     }
 
     private function notifyDispatchers(DeliveryEvent $event, NotificationType $type): void
@@ -97,15 +101,23 @@ class LogisticsNotificationService
             return;
         }
 
+        $batchOffer = $event->event_type === 'batch_offered';
+        $stopCount = (int) ($event->metadata['stop_count'] ?? 0);
+
         $this->createOnce($event, $rider->linked_id, [
             'user_id' => $rider->linked_id,
             'shop_id' => $event->shipment->shop_owner_id,
             'type' => $type->value,
             'priority' => 'high',
             'title' => $type->label(),
-            'message' => 'A delivery has been assigned to you.',
-            'data' => $this->eventData($event),
-            'action_url' => '/erp/logistics/shipments',
+            'message' => $batchOffer
+                ? "A delivery batch with {$stopCount} stops has been offered to you."
+                : 'A delivery has been assigned to you.',
+            'data' => $this->eventData($event) + array_filter([
+                'delivery_batch_id' => $event->metadata['delivery_batch_id'] ?? null,
+                'stop_count' => $event->metadata['stop_count'] ?? null,
+            ], fn ($value) => $value !== null),
+            'action_url' => $batchOffer ? '/erp/logistics/deliveries' : '/erp/logistics/shipments',
             'requires_action' => true,
         ]);
     }
@@ -153,6 +165,7 @@ class LogisticsNotificationService
         return match ($eventType) {
             'shipment_requested' => NotificationType::LOGISTICS_SHIPMENT_REQUESTED,
             'leg_assigned' => NotificationType::LOGISTICS_ASSIGNED,
+            'batch_offered' => NotificationType::LOGISTICS_BATCH_OFFERED,
             'pickup_scheduled' => NotificationType::LOGISTICS_PICKUP_SCHEDULED,
             'in_transit' => NotificationType::LOGISTICS_IN_TRANSIT,
             'delivery_attempt_failed' => NotificationType::LOGISTICS_DELIVERY_FAILED,
