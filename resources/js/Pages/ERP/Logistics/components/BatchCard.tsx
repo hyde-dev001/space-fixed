@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronUp, MoreHorizontal } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronUp, MoreHorizontal } from 'lucide-react';
 import type { DeliveryBatch, TrackingShipmentLeg } from '@/types/logistics';
 import BatchStopRow from './BatchStopRow';
 
@@ -40,6 +40,11 @@ export default function BatchCard({ batch, onOpen, onReview, onCancel, onToggleU
           <p>{urgentCount} urgent</p>
         </div>
       </div>
+      {batch.status === 'draft' && batch.rejection_reason && <div role="alert" className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+        <p className="flex items-center gap-2 font-semibold"><AlertTriangle size={17} />Rejected by rider</p>
+        <p className="mt-1">{batch.rejection_reason}</p>
+        {batch.rejected_at && <time className="mt-1 block text-xs" dateTime={batch.rejected_at}>{new Date(batch.rejected_at).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' })}</time>}
+      </div>}
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
         <button type="button" aria-label={`${primaryLabel(batch.status)} ${batch.id}`} onClick={() => onOpen(batch)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700">{primaryLabel(batch.status)}</button>
         <div className="flex items-center gap-1">

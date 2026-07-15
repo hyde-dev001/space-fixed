@@ -42,6 +42,11 @@ export default function BatchWorkspace({
       <div className="mt-3 flex items-center gap-2 rounded-xl bg-gray-50 p-3 text-sm text-gray-600 dark:bg-gray-900/40 dark:text-gray-300">
         <PackageCheck size={18} />Rider will be selected during Review &amp; Offer.
       </div>
+      {batch?.status === 'draft' && batch.rejection_reason && <div role="alert" className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+        <p className="flex items-center gap-2 font-semibold"><AlertTriangle size={17} />Rejected by rider</p>
+        <p className="mt-1">{batch.rejection_reason}</p>
+        {batch.rejected_at && <time className="mt-1 block text-xs" dateTime={batch.rejected_at}>{new Date(batch.rejected_at).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' })}</time>}
+      </div>}
       {overCapacity && <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-800">
         <p className="flex items-center gap-2 text-sm font-semibold"><AlertTriangle size={17} />This batch exceeds the daily rider capacity of {dailyRiderCapacity} {dailyRiderCapacity === 1 ? 'stop' : 'stops'}.</p>
         {!batch && <label className="mt-3 block text-sm font-medium">Capacity override reason

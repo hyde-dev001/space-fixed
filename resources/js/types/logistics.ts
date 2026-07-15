@@ -129,6 +129,7 @@ export type DeliveryBatch = {
   capacity: number;
   assigned_stop_count: number;
   rejection_reason?: string | null;
+  rejected_at?: string | null;
   rider_profile?: LogisticsRider | null;
   legs: TrackingShipmentLeg[];
 };
