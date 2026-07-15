@@ -23,12 +23,12 @@ The implementation will reuse the existing APIs and installed `react-dnd`, `swee
 
 ## Page Structure
 
-The page header contains the title, a primary **New Batch** button, search, and batch-status tabs.
+The page header contains only the title and a primary **New Batch** button. Search and status controls live beside the content they filter; they are not duplicated in the page header.
 
 The main workspace contains:
 
 1. **Available Deliveries panel**
-   - Search.
+   - Search that filters available deliveries by order/source reference, customer, phone, or address.
    - Delivery date filter.
    - Delivery window filter.
    - Scheduling/status filter.
@@ -43,7 +43,7 @@ The main workspace contains:
    - Sticky actions on smaller screens.
 
 3. **Batch collection**
-   - Active status tabs: All, Draft, Offered, Accepted, In Progress.
+   - Active status tabs that filter only the batch collection: All, Draft, Offered, Accepted, In Progress.
    - Collapsible batch cards.
    - Completed and cancelled batches in a collapsed **History** section.
 
@@ -52,14 +52,22 @@ The main workspace contains:
 1. The dispatcher clicks **New Batch**.
 2. The dispatcher selects a delivery date and window.
 3. The delivery pool displays matching eligible deliveries.
-4. Selecting a delivery immediately adds it to the ordered stop list.
+4. Selecting a delivery immediately adds it to the local, unsaved ordered stop list.
 5. The dispatcher reorders, removes, or marks stops urgent.
 6. **Save Draft** creates the batch without offering it.
 7. Once saved, **Review & Offer** becomes available.
 
 Direct create-and-offer is removed from the primary flow. A durable draft is always created first so an offer failure cannot lose the selected stops or their order.
 
-The UI prevents duplicate submission and reports partial failures clearly. If delivery scheduling succeeds but draft creation fails, the dispatcher receives an actionable error and can retry without scheduling the same stops again.
+For a new batch, all selection and ordering remain local until **Save Draft**. Saving uses the existing two-request sequence:
+
+1. Partition the selected deliveries into already scheduled stops and stops that still require scheduling.
+2. Schedule only the unscheduled subset for the selected date and window.
+3. Create the draft with the complete ordered stop ID list.
+
+The UI records which stops were scheduled during the current save attempt. If scheduling succeeds but draft creation fails, it retains the local selection and order, shows an actionable error, and skips the scheduling request for those same stops on retry. After a full page refresh, the server-provided pool is authoritative: those stops return as scheduled for the chosen date/window and can be selected for draft creation without another scheduling request.
+
+Once a draft exists, supported mutations persist immediately through their existing APIs: reorder, remove, and urgent toggle. Adding new stops to an existing draft is not part of this design because the current batch update API only accepts stops already belonging to that batch. The dispatcher may create a new batch for additional unbatched deliveries.
 
 ## Stop Rows and Management
 
@@ -99,7 +107,7 @@ Every batch card shows:
 - Completion progress.
 - Urgent-stop count.
 
-Cards are collapsed by default. Selecting a card loads it into the right workspace; expanding it reveals a stop summary.
+Cards are collapsed by default. The chevron only expands or collapses the inline stop summary. The explicit **Edit batch**, **View offer**, **View route**, **View progress**, or **View summary** primary action loads that batch into the right workspace. Expansion does not change the selected workspace batch.
 
 Actions are status-aware:
 
