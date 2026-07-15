@@ -53,7 +53,7 @@ The main workspace contains:
 2. The dispatcher selects a delivery date and window.
 3. The delivery pool displays matching eligible deliveries.
 4. Selecting a delivery immediately adds it to the local, unsaved ordered stop list.
-5. The dispatcher reorders, removes, or marks stops urgent.
+5. The dispatcher locally reorders or removes selected stops and may immediately toggle a stop's urgency.
 6. **Save Draft** creates the batch without offering it.
 7. Once saved, **Review & Offer** becomes available.
 
@@ -66,6 +66,8 @@ For a new batch, all selection and ordering remain local until **Save Draft**. S
 3. Create the draft with the complete ordered stop ID list.
 
 The UI records which stops were scheduled during the current save attempt. If scheduling succeeds but draft creation fails, it retains the local selection and order, shows an actionable error, and skips the scheduling request for those same stops on retry. After a full page refresh, the server-provided pool is authoritative: those stops return as scheduled for the chosen date/window and can be selected for draft creation without another scheduling request.
+
+Urgency is a leg-level property, not a draft property, so an urgent toggle persists immediately through the existing urgent endpoint even while the new batch selection and order are still unsaved. The badge changes only after a successful response; on failure, the server state remains displayed and an inline error is shown. Draft creation therefore does not need to carry or replay urgency state.
 
 Once a draft exists, supported mutations persist immediately through their existing APIs: reorder, remove, and urgent toggle. Adding new stops to an existing draft is not part of this design because the current batch update API only accepts stops already belonging to that batch. The dispatcher may create a new batch for additional unbatched deliveries.
 
