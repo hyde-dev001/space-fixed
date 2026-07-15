@@ -9,6 +9,7 @@ const sourceLabel = (leg: TrackingShipmentLeg) => leg.shipment?.source_type === 
 type Props = {
   rows: TrackingShipmentLeg[];
   totalRows: number;
+  loading?: boolean;
   selectedIds: number[];
   search: string;
   date: string;
@@ -24,7 +25,7 @@ type Props = {
 };
 
 export default function AvailableDeliveriesPanel({
-  rows, totalRows, selectedIds, search, date, window, status,
+  rows, totalRows, selectedIds, search, date, window, status, loading = false,
   onSearchChange, onDateChange, onWindowChange, onStatusChange,
   onToggle, onSelectAll, onClearFilters,
 }: Props) {
@@ -68,7 +69,8 @@ export default function AvailableDeliveriesPanel({
       </div>
     </div>
     <div className="max-h-[36rem] space-y-2 overflow-y-auto p-3">
-      {rows.map((leg) => {
+      {loading && Array.from({ length: 3 }, (_, index) => <div key={index} data-testid="delivery-skeleton" className="h-20 animate-pulse rounded-xl bg-gray-100 dark:bg-gray-700" />)}
+      {!loading && rows.map((leg) => {
         const destination = leg.destination_snapshot;
         const scheduled = Boolean(leg.scheduled_delivery_date);
         return <label key={leg.id} className="flex min-h-20 cursor-pointer items-start gap-3 rounded-xl border border-gray-200 p-3 hover:border-blue-300 hover:bg-blue-50/40 dark:border-gray-700">
@@ -83,8 +85,8 @@ export default function AvailableDeliveriesPanel({
           </span>
         </label>;
       })}
-      {!totalRows && <p className="p-6 text-center text-sm text-gray-500">No deliveries ready for batching.</p>}
-      {totalRows > 0 && !rows.length && <p className="p-6 text-center text-sm text-gray-500">No deliveries match your filters.</p>}
+      {!loading && !totalRows && <p className="p-6 text-center text-sm text-gray-500">No deliveries ready for batching.</p>}
+      {!loading && totalRows > 0 && !rows.length && <p className="p-6 text-center text-sm text-gray-500">No deliveries match your filters.</p>}
     </div>
   </section>;
 }

@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import Batches from '../Batches';
 
@@ -280,7 +280,7 @@ it('offers a focused refresh prompt when saved batch data is stale', async () =>
   await waitFor(() => expect(mocks.confirm).toHaveBeenCalledWith(expect.objectContaining({
     title: 'Batch changed', confirmButtonText: 'Refresh batch data',
   })));
-  expect(mocks.reload).toHaveBeenCalledWith({ only: ['batches', 'pool', 'unscheduled', 'riders'] });
+  expect(mocks.reload).toHaveBeenCalledWith(expect.objectContaining({ only: ['batches', 'pool', 'unscheduled', 'riders'] }));
 });
 
 it('reviews an ordered draft and requires a rider before offering', async () => {
@@ -335,4 +335,67 @@ it('requires a cancellation reason and calls the existing endpoint', async () =>
   await waitFor(() => expect(mocks.cancelBatch).toHaveBeenCalledWith(1, 'Customer requested another date'));
   expect(mocks.confirm).toHaveBeenCalledWith(expect.objectContaining({ input: 'textarea', title: 'Cancel Batch #1?', inputValidator: expect.any(Function) }));
   expect(mocks.toast).toHaveBeenCalledWith('success', 'Batch cancelled');
+});
+
+const batchForStatus = (id: number, status: string) => ({
+  id, delivery_date: '2026-07-15', delivery_window: 'morning', status, capacity: 10, assigned_stop_count: 1,
+  rider_profile: status === 'draft' ? null : { id: 3, name: 'Rider One', active: true, availability_status: 'available', rider_type: 'employee', daily_capacity: 10 },
+  legs: [{ ...unscheduledLeg, id: id * 10, status: status === 'completed' ? 'delivered' : 'pending', stop_sequence: 1, scheduled_delivery_date: '2026-07-15', delivery_window: 'morning' }],
+});
+
+it('filters active batches by status and keeps history collapsed separately', () => {
+  mocks.props.batches = [batchForStatus(1, 'draft'), batchForStatus(2, 'offered'), batchForStatus(3, 'completed')];
+  render(<Batches />);
+  const active = screen.getByRole('region', { name: 'Active batches' });
+  expect(within(active).getByText('Batch #1')).toBeInTheDocument();
+  expect(within(active).getByText('Batch #2')).toBeInTheDocument();
+  expect(within(active).queryByText('Batch #3')).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Offered (1)' }));
+  expect(within(active).queryByText('Batch #1')).not.toBeInTheDocument();
+  expect(within(active).getByText('Batch #2')).toBeInTheDocument();
+  expect(screen.getByText('History (1)').closest('details')).not.toHaveAttribute('open');
+});
+
+it('uses status-aware primary and secondary actions', () => {
+  mocks.props.batches = [
+    batchForStatus(1, 'draft'), batchForStatus(2, 'offered'), batchForStatus(3, 'accepted'),
+    batchForStatus(4, 'in_progress'), batchForStatus(5, 'completed'), batchForStatus(6, 'cancelled'),
+  ];
+  render(<Batches />);
+  expect(screen.getByRole('button', { name: 'Edit batch 1' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'View offer 2' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'View route 3' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'View progress 4' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'View summary 5' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'View summary 6' })).toBeInTheDocument();
+  expect(screen.queryByLabelText('More actions for batch 4')).not.toBeInTheDocument();
+});
+
+it('keeps active offered routes read-only while urgency remains available', () => {
+  mocks.props.batches = [batchForStatus(2, 'offered')];
+  render(<Batches />);
+  fireEvent.click(screen.getByRole('button', { name: 'View offer 2' }));
+
+  expect(screen.queryByRole('button', { name: 'Move stop 1 up' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Remove stop 1' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Mark urgent stop 1' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Review & Offer' })).not.toBeInTheDocument();
+});
+
+it('shows the no-riders state without allowing an offer', () => {
+  mocks.props.riders = [];
+  openDraft();
+  fireEvent.click(screen.getAllByRole('button', { name: 'Review & Offer' })[0]);
+
+  expect(screen.getByText('No available riders. Keep this batch as a draft and try again later.')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Offer Batch to Rider' })).toBeDisabled();
+});
+
+it('shows delivery-pool skeletons while refreshed props are pending', async () => {
+  mocks.reload.mockImplementation(() => undefined);
+  openDraft();
+  fireEvent.click(screen.getByRole('button', { name: 'Mark urgent stop 1' }));
+
+  expect(await screen.findAllByTestId('delivery-skeleton')).toHaveLength(3);
 });
