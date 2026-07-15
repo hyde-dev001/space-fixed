@@ -8,8 +8,12 @@ const mocks = vi.hoisted(() => ({
   scheduleLegs: vi.fn(),
   createBatch: vi.fn(),
   offerBatch: vi.fn(),
+  updateBatch: vi.fn(),
+  removeBatchStop: vi.fn(),
+  markUrgent: vi.fn(),
   reload: vi.fn(),
   toast: vi.fn(),
+  confirm: vi.fn(),
 }));
 
 vi.mock('@inertiajs/react', () => ({
@@ -22,11 +26,11 @@ vi.mock('@/services/logisticsApi', () => ({ logisticsApi: {
   scheduleLegs: mocks.scheduleLegs,
   createBatch: mocks.createBatch,
   offerBatch: mocks.offerBatch,
-  suggestions: vi.fn(), updateBatch: vi.fn(), removeBatchStop: vi.fn(), markUrgent: vi.fn(), cancelBatch: vi.fn(),
+  suggestions: vi.fn(), updateBatch: mocks.updateBatch, removeBatchStop: mocks.removeBatchStop, markUrgent: mocks.markUrgent, cancelBatch: vi.fn(),
 } }));
 vi.mock('@/utils/workflowFeedback', () => ({ workflowFeedback: {
   toast: mocks.toast,
-  confirm: vi.fn(),
+  confirm: mocks.confirm,
   alert: vi.fn(),
 } }));
 
@@ -56,7 +60,11 @@ beforeEach(() => {
   };
   mocks.scheduleLegs.mockResolvedValue({});
   mocks.createBatch.mockResolvedValue({ data: { batch: { id: 41 } } });
+  mocks.updateBatch.mockResolvedValue({});
+  mocks.removeBatchStop.mockResolvedValue({});
+  mocks.markUrgent.mockResolvedValue({});
   mocks.toast.mockResolvedValue({});
+  mocks.confirm.mockResolvedValue({ isConfirmed: true });
 });
 
 function openBuilder() {
@@ -202,4 +210,73 @@ it('formats existing batch dates and shows useful stop details', () => {
   expect(screen.getAllByText('Ana Reyes')).toHaveLength(2);
   expect(screen.getByText('Dasmarinas, Cavite')).toBeInTheDocument();
   expect(screen.getByText('Urgent')).toBeInTheDocument();
+});
+
+function openDraft(legs = [
+  { ...unscheduledLeg, id: 7, stop_sequence: 1, scheduled_delivery_date: '2026-07-15', delivery_window: 'morning', urgent_at: null },
+  { ...scheduledLeg, id: 8, stop_sequence: 2 },
+]) {
+  mocks.props.batches = [{
+    id: 1, delivery_date: '2026-07-15', delivery_window: 'morning', status: 'draft', capacity: 10,
+    assigned_stop_count: legs.length, rider_profile: null, legs,
+  }];
+  render(<Batches />);
+  fireEvent.click(screen.getByRole('button', { name: 'Edit batch 1' }));
+}
+
+it('persists one ordered id list when a saved draft stop moves', async () => {
+  openDraft();
+  fireEvent.click(screen.getByRole('button', { name: 'Move stop 2 up' }));
+
+  await waitFor(() => expect(mocks.updateBatch).toHaveBeenCalledWith(1, [8, 7]));
+  expect(mocks.toast).toHaveBeenCalledWith('success', 'Stop order updated');
+});
+
+it('confirms removal with the stop and customer', async () => {
+  openDraft();
+  fireEvent.click(screen.getByRole('button', { name: 'Remove stop 1' }));
+  await waitFor(() => expect(mocks.removeBatchStop).toHaveBeenCalledWith(1, 7));
+  expect(mocks.confirm).toHaveBeenCalledWith(expect.objectContaining({ title: 'Remove stop 1?', text: expect.stringContaining('Ana Reyes') }));
+});
+
+it('warns that removing the final stop deletes the empty batch', async () => {
+  openDraft([{ ...unscheduledLeg, id: 7, stop_sequence: 1, scheduled_delivery_date: '2026-07-15', delivery_window: 'morning' }]);
+  fireEvent.click(screen.getByRole('button', { name: 'Remove stop 1' }));
+  await waitFor(() => expect(mocks.confirm).toHaveBeenCalledWith(expect.objectContaining({ title: 'Delete this empty batch?', text: expect.stringContaining('final stop') })));
+});
+
+it('sets and clears urgency immediately while hiding it for terminal stops', async () => {
+  openDraft([
+    { ...unscheduledLeg, id: 7, status: 'pending', stop_sequence: 1, urgent_at: null },
+    { ...scheduledLeg, id: 8, status: 'pending', stop_sequence: 2, urgent_at: '2026-07-15T08:00:00Z' },
+    { ...scheduledLeg, id: 9, status: 'delivered', stop_sequence: 3, urgent_at: null },
+  ]);
+  fireEvent.click(screen.getByRole('button', { name: 'Mark urgent stop 1' }));
+  await waitFor(() => expect(mocks.markUrgent).toHaveBeenCalledWith(7, true));
+  fireEvent.click(screen.getByRole('button', { name: 'Clear urgent stop 2' }));
+  await waitFor(() => expect(mocks.markUrgent).toHaveBeenCalledWith(8, false));
+  expect(screen.queryByRole('button', { name: /urgent stop 3/i })).not.toBeInTheDocument();
+});
+
+it('disables the stop action while its request is pending', async () => {
+  let resolveUrgent!: (value: unknown) => void;
+  mocks.markUrgent.mockReturnValue(new Promise((resolve) => { resolveUrgent = resolve; }));
+  openDraft();
+  fireEvent.click(screen.getByRole('button', { name: 'Mark urgent stop 1' }));
+
+  expect(screen.getByRole('button', { name: 'Mark urgent stop 1' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Mark urgent stop 2' })).toBeEnabled();
+  resolveUrgent({});
+  await waitFor(() => expect(mocks.reload).toHaveBeenCalled());
+});
+
+it('offers a focused refresh prompt when saved batch data is stale', async () => {
+  mocks.updateBatch.mockRejectedValue({ response: { status: 422, data: { message: 'Only draft batches can be changed.' } } });
+  openDraft();
+  fireEvent.click(screen.getByRole('button', { name: 'Move stop 2 up' }));
+
+  await waitFor(() => expect(mocks.confirm).toHaveBeenCalledWith(expect.objectContaining({
+    title: 'Batch changed', confirmButtonText: 'Refresh batch data',
+  })));
+  expect(mocks.reload).toHaveBeenCalledWith({ only: ['batches', 'pool', 'unscheduled', 'riders'] });
 });

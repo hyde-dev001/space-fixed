@@ -13,16 +13,18 @@ type Props = {
   dailyRiderCapacity: number;
   overrideReason: string;
   submitting: boolean;
+  busyLegId?: number;
   onOverrideReasonChange: (value: string) => void;
   onMove: (from: number, to: number) => void;
   onRemove: (leg: TrackingShipmentLeg, index: number) => void;
+  onToggleUrgent: (leg: TrackingShipmentLeg) => void;
   onSave: () => void;
   onReview: () => void;
 };
 
 export default function BatchWorkspace({
-  batch, selectedLegs, date, window, dailyRiderCapacity, overrideReason, submitting,
-  onOverrideReasonChange, onMove, onRemove, onSave, onReview,
+  batch, selectedLegs, date, window, dailyRiderCapacity, overrideReason, submitting, busyLegId,
+  onOverrideReasonChange, onMove, onRemove, onToggleUrgent, onSave, onReview,
 }: Props) {
   const legs = batch?.legs ?? selectedLegs;
   const overCapacity = legs.length > dailyRiderCapacity;
@@ -49,7 +51,7 @@ export default function BatchWorkspace({
     </div>
     <DndProvider backend={HTML5Backend}>
       <div className="min-h-48 space-y-3 bg-gray-50 p-4 dark:bg-gray-900/40">
-        {legs.map((leg, index) => <BatchStopRow key={leg.id} leg={leg} index={index} total={legs.length} editable={!batch || batch.status === 'draft'} busy={submitting} onMove={onMove} onRemove={onRemove} />)}
+        {legs.map((leg, index) => <BatchStopRow key={leg.id} leg={leg} index={index} total={legs.length} editable={!batch || batch.status === 'draft'} busy={submitting || busyLegId === leg.id} onMove={onMove} onRemove={onRemove} onToggleUrgent={onToggleUrgent} />)}
         {!legs.length && <p className="grid min-h-40 place-items-center text-center text-sm text-gray-500">Select deliveries from the left to build the route.</p>}
       </div>
     </DndProvider>

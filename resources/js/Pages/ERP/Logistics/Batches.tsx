@@ -32,6 +32,7 @@ export default function Batches() {
   const [overrideReason, setOverrideReason] = useState('');
   const [scheduledThisAttempt, setScheduledThisAttempt] = useState<number[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [busyLegId, setBusyLegId] = useState<number>();
   const [error, setError] = useState('');
 
   const allDeliveries = useMemo(() => {
@@ -90,16 +91,93 @@ export default function Batches() {
       ? [...ids.filter((id) => !matchingIds.includes(id)), ...matchingIds]
       : ids.filter((id) => !matchingIds.includes(id)));
   };
+  const refreshBatchData = () => router.reload({ only: ['batches', 'pool', 'unscheduled', 'riders'] });
+  const handleMutationError = async (caught: unknown) => {
+    setError(errorMessage(caught));
+    const statusCode = (caught as { response?: { status?: number } })?.response?.status;
+    if (![409, 422].includes(statusCode ?? 0)) return;
+    const result = await workflowFeedback.confirm({
+      title: 'Batch changed',
+      text: 'This batch was updated elsewhere. Refresh the batch data before trying again.',
+      confirmButtonText: 'Refresh batch data',
+    });
+    if (result.isConfirmed) refreshBatchData();
+  };
+  const reorder = (ids: number[], from: number, to: number) => {
+    if (to < 0 || to >= ids.length) return ids;
+    const reordered = [...ids];
+    const [moved] = reordered.splice(from, 1);
+    reordered.splice(to, 0, moved);
+    return reordered;
+  };
+  const moveStops = async (from: number, to: number) => {
+    const currentIds = selectedBatch ? selectedBatch.legs.map((leg) => leg.id) : selectedIds;
+    const reordered = reorder(currentIds, from, to);
+    if (reordered === currentIds) return;
+    if (!selectedBatch) {
+      setSelectedIds(reordered);
+      return;
+    }
+    const legId = currentIds[from];
+    try {
+      setBusyLegId(legId);
+      setError('');
+      await logisticsApi.updateBatch(selectedBatch.id, reordered);
+      await workflowFeedback.toast('success', 'Stop order updated');
+      refreshBatchData();
+    } catch (caught) {
+      await handleMutationError(caught);
+    } finally {
+      setBusyLegId(undefined);
+    }
+  };
+  const removeStop = async (leg: TrackingShipmentLeg, index: number) => {
+    if (!selectedBatch) {
+      setSelectedIds((ids) => ids.filter((id) => id !== leg.id));
+      return;
+    }
+    const finalStop = selectedBatch.legs.length === 1;
+    const customer = leg.destination_snapshot?.name || sourceLabel(leg);
+    const result = await workflowFeedback.confirm({
+      title: finalStop ? 'Delete this empty batch?' : `Remove stop ${index + 1}?`,
+      text: finalStop
+        ? `This is the final stop for ${customer}. Removing it will delete the empty batch.`
+        : `Remove stop ${index + 1} for ${customer} from this batch?`,
+      confirmButtonText: finalStop ? 'Remove stop and delete batch' : 'Remove stop',
+    });
+    if (!result.isConfirmed) return;
+    try {
+      setBusyLegId(leg.id);
+      setError('');
+      await logisticsApi.removeBatchStop(selectedBatch.id, leg.id);
+      if (finalStop) setSelectedBatchId(undefined);
+      await workflowFeedback.toast('success', 'Stop removed');
+      refreshBatchData();
+    } catch (caught) {
+      await handleMutationError(caught);
+    } finally {
+      setBusyLegId(undefined);
+    }
+  };
+  const toggleUrgent = async (leg: TrackingShipmentLeg) => {
+    try {
+      setBusyLegId(leg.id);
+      setError('');
+      await logisticsApi.markUrgent(leg.id, !leg.urgent_at);
+      await workflowFeedback.toast('success', 'Urgent state updated');
+      refreshBatchData();
+    } catch (caught) {
+      await handleMutationError(caught);
+    } finally {
+      setBusyLegId(undefined);
+    }
+  };
   const moveLocal = (from: number, to: number) => {
     if (to < 0 || to >= selectedIds.length) return;
     setSelectedIds((ids) => {
-      const reordered = [...ids];
-      const [moved] = reordered.splice(from, 1);
-      reordered.splice(to, 0, moved);
-      return reordered;
+      return reorder(ids, from, to);
     });
   };
-  const removeLocal = (leg: TrackingShipmentLeg) => setSelectedIds((ids) => ids.filter((id) => id !== leg.id));
   const saveDraft = async () => {
     try {
       setSubmitting(true);
@@ -144,8 +222,8 @@ export default function Batches() {
       />
       {building || selectedBatch ? <BatchWorkspace
         batch={selectedBatch} selectedLegs={selectedLegs} date={date} window={window} dailyRiderCapacity={dailyRiderCapacity}
-        overrideReason={overrideReason} submitting={submitting} onOverrideReasonChange={setOverrideReason}
-        onMove={moveLocal} onRemove={removeLocal} onSave={saveDraft} onReview={() => undefined}
+        overrideReason={overrideReason} submitting={submitting} busyLegId={busyLegId} onOverrideReasonChange={setOverrideReason}
+        onMove={selectedBatch ? moveStops : moveLocal} onRemove={removeStop} onToggleUrgent={toggleUrgent} onSave={saveDraft} onReview={() => undefined}
       /> : <section className="grid min-h-72 place-items-center rounded-2xl border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-500">Choose New Batch or open an existing batch to begin.</section>}
     </div>
     <section aria-label="Existing batches" className="space-y-3">
