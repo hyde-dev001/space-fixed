@@ -17,7 +17,7 @@ type Props = {
   onOverrideReasonChange: (value: string) => void;
   onMove: (from: number, to: number) => void;
   onRemove: (leg: TrackingShipmentLeg, index: number) => void;
-  onToggleUrgent: (leg: TrackingShipmentLeg) => void;
+  onToggleUrgent?: (leg: TrackingShipmentLeg) => void;
   onSave: () => void;
   onReview: () => void;
 };
@@ -55,8 +55,9 @@ export default function BatchWorkspace({
         {!legs.length && <p className="grid min-h-40 place-items-center text-center text-sm text-gray-500">Select deliveries from the left to build the route.</p>}
       </div>
     </DndProvider>
-    <div className="sticky bottom-0 flex flex-wrap justify-end gap-2 border-t bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-      <button type="button" disabled={!batch} onClick={onReview} className="min-h-11 rounded-xl border border-blue-600 px-4 text-sm font-semibold text-blue-700 disabled:border-gray-200 disabled:text-gray-400">Review &amp; Offer</button>
+    <div className="sticky bottom-0 flex min-h-16 flex-wrap items-center justify-end gap-2 border-t bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+      {batch?.status === 'draft' && <button type="button" onClick={onReview} className="min-h-11 rounded-xl border border-blue-600 px-4 text-sm font-semibold text-blue-700">Review &amp; Offer</button>}
+      {batch && batch.status !== 'draft' && <span className="mr-auto text-sm font-medium text-gray-500">This route is read-only at the {batch.status.replaceAll('_', ' ')} stage.</span>}
       {!batch && <button type="button" disabled={!canSave} onClick={onSave} className="min-h-11 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40">{submitting ? 'Saving Draft...' : 'Save Draft'}</button>}
     </div>
   </section>;

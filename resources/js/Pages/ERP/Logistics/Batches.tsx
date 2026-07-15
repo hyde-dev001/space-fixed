@@ -5,7 +5,7 @@ import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import AppLayoutERP from '@/layout/AppLayout_ERP';
 import { logisticsApi } from '@/services/logisticsApi';
-import type { DeliveryBatchPageProps, TrackingShipmentLeg } from '@/types/logistics';
+import type { DeliveryBatchPageProps, DeliveryBatchStatus, TrackingShipmentLeg } from '@/types/logistics';
 import { workflowFeedback } from '@/utils/workflowFeedback';
 import AvailableDeliveriesPanel from './components/AvailableDeliveriesPanel';
 import BatchCard from './components/BatchCard';
@@ -38,6 +38,8 @@ export default function Batches() {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [offerSubmitting, setOfferSubmitting] = useState(false);
   const [offerError, setOfferError] = useState('');
+  const [activeStatus, setActiveStatus] = useState<'all' | DeliveryBatchStatus>('all');
+  const [refreshing, setRefreshing] = useState(false);
 
   const allDeliveries = useMemo(() => {
     const rows = new Map<number, TrackingShipmentLeg>();
@@ -64,6 +66,9 @@ export default function Batches() {
     return leg ? [leg] : [];
   });
   const selectedBatch = batches.find((batch) => batch.id === selectedBatchId);
+  const activeBatches = batches.filter((batch) => !['completed', 'cancelled'].includes(batch.status));
+  const historyBatches = batches.filter((batch) => ['completed', 'cancelled'].includes(batch.status));
+  const visibleActiveBatches = activeStatus === 'all' ? activeBatches : activeBatches.filter((batch) => batch.status === activeStatus);
 
   const startNewBatch = () => {
     setBuilding(true);
@@ -95,7 +100,10 @@ export default function Batches() {
       ? [...ids.filter((id) => !matchingIds.includes(id)), ...matchingIds]
       : ids.filter((id) => !matchingIds.includes(id)));
   };
-  const refreshBatchData = () => router.reload({ only: ['batches', 'pool', 'unscheduled', 'riders'] });
+  const refreshBatchData = () => {
+    setRefreshing(true);
+    router.reload({ only: ['batches', 'pool', 'unscheduled', 'riders'], onFinish: () => setRefreshing(false) });
+  };
   const handleMutationError = async (caught: unknown) => {
     setError(errorMessage(caught));
     const statusCode = (caught as { response?: { status?: number } })?.response?.status;
@@ -270,7 +278,7 @@ export default function Batches() {
     {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-red-700">{error}</p>}
     <div data-testid="batch-workspace" className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
       <AvailableDeliveriesPanel
-        rows={filteredDeliveries} totalRows={allDeliveries.length} selectedIds={selectedIds}
+        rows={filteredDeliveries} totalRows={allDeliveries.length} selectedIds={selectedIds} loading={refreshing}
         search={search} date={date} window={window} status={status}
         onSearchChange={setSearch} onDateChange={(value) => changeSlot(value, window)} onWindowChange={(value) => changeSlot(date, value)} onStatusChange={setStatus}
         onToggle={toggle} onSelectAll={selectAll} onClearFilters={() => { setSearch(''); setStatus('all'); setDate(''); setWindow('morning'); }}
@@ -278,14 +286,21 @@ export default function Batches() {
       {building || selectedBatch ? <BatchWorkspace
         batch={selectedBatch} selectedLegs={selectedLegs} date={date} window={window} dailyRiderCapacity={dailyRiderCapacity}
         overrideReason={overrideReason} submitting={submitting} busyLegId={busyLegId} onOverrideReasonChange={setOverrideReason}
-        onMove={selectedBatch ? moveStops : moveLocal} onRemove={removeStop} onToggleUrgent={toggleUrgent} onSave={saveDraft} onReview={() => selectedBatch && openReview(selectedBatch.id)}
+        onMove={selectedBatch ? moveStops : moveLocal} onRemove={removeStop}
+        onToggleUrgent={!selectedBatch || ['draft', 'offered', 'accepted', 'in_progress'].includes(selectedBatch.status) ? toggleUrgent : undefined}
+        onSave={saveDraft} onReview={() => selectedBatch && openReview(selectedBatch.id)}
       /> : <section className="grid min-h-72 place-items-center rounded-2xl border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-500">Choose New Batch or open an existing batch to begin.</section>}
     </div>
-    <section aria-label="Existing batches" className="space-y-3">
-      <h2 className="text-lg font-bold text-gray-950 dark:text-white">Existing batches</h2>
-      <DndProvider backend={HTML5Backend}><div className="grid gap-4 xl:grid-cols-2">{batches.map((batch) => <BatchCard key={batch.id} batch={batch} onOpen={() => { setBuilding(false); setSelectedBatchId(batch.id); }} onReview={() => openReview(batch.id)} onCancel={() => cancelBatch(batch.id)} />)}</div></DndProvider>
-      {!batches.length && <p className="rounded-xl border border-dashed p-6 text-center text-sm text-gray-500">No batches yet.</p>}
+    <section aria-label="Active batches" className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-bold text-gray-950 dark:text-white">Active batches</h2><div className="flex flex-wrap gap-1">{(['all', 'draft', 'offered', 'accepted', 'in_progress'] as const).map((tab) => {
+        const count = tab === 'all' ? activeBatches.length : activeBatches.filter((batch) => batch.status === tab).length;
+        const tabLabel = tab === 'all' ? 'All' : tab.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+        return <button key={tab} type="button" aria-pressed={activeStatus === tab} onClick={() => setActiveStatus(tab)} className={`min-h-10 rounded-lg px-3 text-sm font-semibold ${activeStatus === tab ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}`}>{tabLabel} ({count})</button>;
+      })}</div></div>
+      <DndProvider backend={HTML5Backend}><div className="grid gap-4 xl:grid-cols-2">{visibleActiveBatches.map((batch) => <BatchCard key={batch.id} batch={batch} onOpen={() => { setBuilding(false); setSelectedBatchId(batch.id); }} onReview={() => openReview(batch.id)} onCancel={() => cancelBatch(batch.id)} />)}</div></DndProvider>
+      {!visibleActiveBatches.length && <p className="rounded-xl border border-dashed p-6 text-center text-sm text-gray-500">No active batches in this status.</p>}
     </section>
+    {historyBatches.length > 0 && <details className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800"><summary className="min-h-10 cursor-pointer font-bold text-gray-800 dark:text-white">History ({historyBatches.length})</summary><DndProvider backend={HTML5Backend}><div className="mt-4 grid gap-4 xl:grid-cols-2">{historyBatches.map((batch) => <BatchCard key={batch.id} batch={batch} onOpen={() => { setBuilding(false); setSelectedBatchId(batch.id); }} />)}</div></DndProvider></details>}
     <OfferBatchModal isOpen={reviewOpen} batch={selectedBatch} riders={riders} submitting={offerSubmitting} error={offerError} onClose={() => setReviewOpen(false)} onOffer={offerBatch} />
   </main></AppLayoutERP>;
 }

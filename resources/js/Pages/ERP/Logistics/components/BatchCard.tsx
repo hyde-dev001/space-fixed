@@ -21,6 +21,8 @@ export default function BatchCard({ batch, onOpen, onReview, onCancel, onToggleU
   const [expanded, setExpanded] = useState(false);
   const urgentCount = batch.legs.filter((leg) => leg.urgent_at).length;
   const active = !['completed', 'cancelled'].includes(batch.status);
+  const hasSecondaryActions = (batch.status === 'draft' && Boolean(onReview))
+    || (['draft', 'offered', 'accepted'].includes(batch.status) && Boolean(onCancel));
 
   return <article className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
     <div className="p-4">
@@ -41,7 +43,7 @@ export default function BatchCard({ batch, onOpen, onReview, onCancel, onToggleU
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
         <button type="button" aria-label={`${primaryLabel(batch.status)} ${batch.id}`} onClick={() => onOpen(batch)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700">{primaryLabel(batch.status)}</button>
         <div className="flex items-center gap-1">
-          {active && <details className="relative">
+          {active && hasSecondaryActions && <details className="relative">
             <summary aria-label={`More actions for batch ${batch.id}`} className="flex cursor-pointer list-none rounded-lg border p-2 text-gray-600"><MoreHorizontal size={18} /></summary>
             <div className="absolute right-0 z-10 mt-1 w-44 rounded-lg border bg-white p-1 shadow-lg">
               {batch.status === 'draft' && onReview && <button type="button" onClick={() => onReview(batch)} className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-gray-50">Review & Offer</button>}
