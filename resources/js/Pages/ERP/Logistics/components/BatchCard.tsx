@@ -4,6 +4,10 @@ import type { DeliveryBatch, TrackingShipmentLeg } from '@/types/logistics';
 import BatchStopRow from './BatchStopRow';
 
 const formatDate = (value: string) => new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(`${value.slice(0, 10)}T00:00:00Z`));
+const formatRejectionTime = (value?: string | null) => {
+  const date = value && new Date(value);
+  return date && !Number.isNaN(date.getTime()) ? date.toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Manila' }) : null;
+};
 const label = (value: string) => value.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 const primaryLabel = (status: DeliveryBatch['status']) => ({
   draft: 'Edit batch', offered: 'View offer', accepted: 'View route', in_progress: 'View progress', completed: 'View summary', cancelled: 'View summary',
@@ -19,6 +23,7 @@ type Props = {
 
 export default function BatchCard({ batch, onOpen, onReview, onCancel, onToggleUrgent }: Props) {
   const [expanded, setExpanded] = useState(false);
+  const rejectedAt = formatRejectionTime(batch.rejected_at);
   const urgentCount = batch.legs.filter((leg) => leg.urgent_at).length;
   const active = !['completed', 'cancelled'].includes(batch.status);
   const hasSecondaryActions = (batch.status === 'draft' && Boolean(onReview))
@@ -43,7 +48,7 @@ export default function BatchCard({ batch, onOpen, onReview, onCancel, onToggleU
       {batch.status === 'draft' && batch.rejection_reason && <div role="alert" className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
         <p className="flex items-center gap-2 font-semibold"><AlertTriangle size={17} />Rejected by rider</p>
         <p className="mt-1">{batch.rejection_reason}</p>
-        {batch.rejected_at && <time className="mt-1 block text-xs" dateTime={batch.rejected_at}>{new Date(batch.rejected_at).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' })}</time>}
+        {rejectedAt && <time className="mt-1 block text-xs" dateTime={batch.rejected_at!}>{rejectedAt}</time>}
       </div>}
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
         <button type="button" aria-label={`${primaryLabel(batch.status)} ${batch.id}`} onClick={() => onOpen(batch)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700">{primaryLabel(batch.status)}</button>

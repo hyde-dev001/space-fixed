@@ -225,7 +225,7 @@ it('shows rider rejection details on a rejected draft card and workspace only', 
 
   expect(screen.getByRole('alert')).toHaveTextContent('Rejected by rider');
   expect(screen.getByRole('alert')).toHaveTextContent('Vehicle unavailable');
-  expect(screen.getByRole('alert')).toHaveTextContent('Jul 15, 2026, 8:30 AM');
+  expect(screen.getByRole('alert')).toHaveTextContent(/Jul 15, 2026.*4:30 PM/);
 
   fireEvent.click(screen.getByRole('button', { name: 'Edit batch 1' }));
   expect(screen.getAllByRole('alert')).toHaveLength(2);
@@ -233,6 +233,15 @@ it('shows rider rejection details on a rejected draft card and workspace only', 
   expect(screen.getAllByRole('alert')[1]).toHaveTextContent('Vehicle unavailable');
 
   view.unmount();
+  mocks.props.batches = [{ ...rejectedDraft, rejected_at: 'not-a-timestamp' }];
+  const invalidView = render(<Batches />);
+  expect(screen.getByRole('alert')).toHaveTextContent('Vehicle unavailable');
+  expect(screen.queryByText('Invalid Date')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Edit batch 1' }));
+  expect(screen.getAllByRole('alert')).toHaveLength(2);
+  expect(screen.queryByText('Invalid Date')).not.toBeInTheDocument();
+
+  invalidView.unmount();
   mocks.props.batches = [{ ...rejectedDraft, rejection_reason: null, rejected_at: null }];
   render(<Batches />);
   expect(screen.queryByText('Rejected by rider')).not.toBeInTheDocument();
