@@ -3,6 +3,7 @@
 namespace Tests\Feature\Seeders;
 
 use App\Models\Product;
+use App\Models\ProductVariant;
 use App\Models\ShopOwner;
 use Database\Seeders\Test2ProductSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -26,10 +27,16 @@ class Test2ProductSeederTest extends TestCase
 
         $this->assertSame('Urban Kicks Test Runner', $product->name);
         $this->assertSame('2499.00', $product->price);
-        $this->assertSame(50, $product->stock_quantity);
+        $this->assertSame(1000, $product->stock_quantity);
         $this->assertTrue($product->is_active);
         $this->assertSame(['7', '8', '9', '10', '11'], $product->sizes_available);
         $this->assertSame(['Black', 'White'], $product->colors_available);
+
+        $variants = ProductVariant::where('product_id', $product->id)->get();
+
+        $this->assertCount(10, $variants);
+        $this->assertSame([100], $variants->pluck('quantity')->unique()->values()->all());
+        $this->assertTrue($variants->every->is_active);
     }
 
     public function test_it_explains_when_the_test2_shop_is_missing(): void
