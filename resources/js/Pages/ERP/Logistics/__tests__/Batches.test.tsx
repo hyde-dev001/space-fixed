@@ -214,6 +214,30 @@ it('formats existing batch dates and shows useful stop details', () => {
   expect(screen.getByText('Urgent')).toBeInTheDocument();
 });
 
+it('shows rider rejection details on a rejected draft card and workspace only', () => {
+  const rejectedDraft = {
+    id: 1, delivery_date: '2026-07-15', delivery_window: 'morning', status: 'draft', capacity: 10,
+    assigned_stop_count: 1, rejection_reason: 'Vehicle unavailable', rejected_at: '2026-07-15T08:30:00Z', rider_profile: null,
+    legs: [{ ...scheduledLeg, stop_sequence: 1 }],
+  };
+  mocks.props.batches = [rejectedDraft];
+  const view = render(<Batches />);
+
+  expect(screen.getByRole('alert')).toHaveTextContent('Rejected by rider');
+  expect(screen.getByRole('alert')).toHaveTextContent('Vehicle unavailable');
+  expect(screen.getByRole('alert')).toHaveTextContent('Jul 15, 2026, 8:30 AM');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Edit batch 1' }));
+  expect(screen.getAllByRole('alert')).toHaveLength(2);
+  expect(screen.getAllByRole('alert')[1]).toHaveTextContent('Rejected by rider');
+  expect(screen.getAllByRole('alert')[1]).toHaveTextContent('Vehicle unavailable');
+
+  view.unmount();
+  mocks.props.batches = [{ ...rejectedDraft, rejection_reason: null, rejected_at: null }];
+  render(<Batches />);
+  expect(screen.queryByText('Rejected by rider')).not.toBeInTheDocument();
+});
+
 function openDraft(legs = [
   { ...unscheduledLeg, id: 7, stop_sequence: 1, scheduled_delivery_date: '2026-07-15', delivery_window: 'morning', urgent_at: null },
   { ...scheduledLeg, id: 8, stop_sequence: 2 },
