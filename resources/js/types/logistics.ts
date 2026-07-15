@@ -1,10 +1,20 @@
+export type DeliveryContactSnapshot = {
+  type?: string;
+  name?: string;
+  phone?: string;
+  address?: string;
+  delivery_instructions?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+};
+
 export type TrackingShipmentLeg = {
   id: number;
   sequence: number;
   leg_type: string;
   status: string;
-  origin_snapshot?: Record<string, unknown> | null;
-  destination_snapshot?: Record<string, unknown> | null;
+  origin_snapshot?: (DeliveryContactSnapshot & Record<string, unknown>) | null;
+  destination_snapshot?: (DeliveryContactSnapshot & Record<string, unknown>) | null;
   tracking_number?: string | null;
   tracking_url?: string | null;
   requires_delivery_proof?: boolean;
@@ -16,6 +26,12 @@ export type TrackingShipmentLeg = {
   delivery_window?: 'morning' | 'afternoon' | null;
   schedule_status?: string | null;
   stop_sequence?: number | null;
+  urgent_at?: string | null;
+  shipment?: {
+    id: number;
+    source_type: string;
+    source_id: number;
+  };
   assignments?: Array<{
     id: number;
     status: string;
@@ -103,14 +119,24 @@ export type LogisticsRider = {
   daily_capacity?: number | null;
 };
 
+export type DeliveryBatchStatus = 'draft' | 'offered' | 'accepted' | 'in_progress' | 'completed' | 'cancelled';
+
 export type DeliveryBatch = {
   id: number;
   delivery_date: string;
   delivery_window: 'morning' | 'afternoon';
-  status: string;
+  status: DeliveryBatchStatus;
   capacity: number;
   assigned_stop_count: number;
   rejection_reason?: string | null;
   rider_profile?: LogisticsRider | null;
   legs: TrackingShipmentLeg[];
+};
+
+export type DeliveryBatchPageProps = {
+  batches: DeliveryBatch[];
+  pool: TrackingShipmentLeg[];
+  unscheduled: TrackingShipmentLeg[];
+  riders: LogisticsRider[];
+  dailyRiderCapacity: number;
 };
