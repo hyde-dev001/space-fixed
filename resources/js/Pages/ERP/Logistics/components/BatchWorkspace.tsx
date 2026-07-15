@@ -5,6 +5,11 @@ import { HTML5Backend } from 'react-dnd-html5-backend';
 import type { DeliveryBatch, TrackingShipmentLeg } from '@/types/logistics';
 import BatchStopRow from './BatchStopRow';
 
+const formatRejectionTime = (value?: string | null) => {
+  const date = value && new Date(value);
+  return date && !Number.isNaN(date.getTime()) ? date.toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Manila' }) : null;
+};
+
 type Props = {
   batch?: DeliveryBatch;
   selectedLegs: TrackingShipmentLeg[];
@@ -27,6 +32,7 @@ export default function BatchWorkspace({
   onOverrideReasonChange, onMove, onRemove, onToggleUrgent, onSave, onReview,
 }: Props) {
   const legs = batch?.legs ?? selectedLegs;
+  const rejectedAt = formatRejectionTime(batch?.rejected_at);
   const overCapacity = legs.length > dailyRiderCapacity;
   const canSave = !batch && Boolean(date) && legs.length > 0 && !submitting && (!overCapacity || Boolean(overrideReason.trim()));
 
@@ -45,7 +51,7 @@ export default function BatchWorkspace({
       {batch?.status === 'draft' && batch.rejection_reason && <div role="alert" className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
         <p className="flex items-center gap-2 font-semibold"><AlertTriangle size={17} />Rejected by rider</p>
         <p className="mt-1">{batch.rejection_reason}</p>
-        {batch.rejected_at && <time className="mt-1 block text-xs" dateTime={batch.rejected_at}>{new Date(batch.rejected_at).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' })}</time>}
+        {rejectedAt && <time className="mt-1 block text-xs" dateTime={batch.rejected_at!}>{rejectedAt}</time>}
       </div>}
       {overCapacity && <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-800">
         <p className="flex items-center gap-2 text-sm font-semibold"><AlertTriangle size={17} />This batch exceeds the daily rider capacity of {dailyRiderCapacity} {dailyRiderCapacity === 1 ? 'stop' : 'stops'}.</p>
