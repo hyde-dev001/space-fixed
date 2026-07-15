@@ -19,17 +19,18 @@ Fix two gaps in the delivery batch workflow without changing logistics coverage 
 
 - For the selected rider and the candidate batch delivery date, total `assigned_stop_count` from the rider's other batches in `offered`, `accepted`, `in_progress`, and `completed` states.
 - Do not count `draft` or `cancelled` batches. The candidate batch is excluded from its existing workload calculation.
+- Use the rider's `daily_capacity` when set; otherwise fall back to the shop's `daily_rider_capacity`, matching the existing batch-suggestion behavior. A null rider capacity does not mean unlimited.
 - Projected workload is `existing same-day stops + candidate batch stops`.
 - The offer modal displays existing, added, projected, and capacity values.
 - When projected workload exceeds the rider's `daily_capacity`, the dispatcher must enter an override reason before offering.
 - The API accepts an optional `capacity_override_reason`, recalculates workload inside the offer transaction, and rejects over-capacity offers without a reason. UI calculations are advisory; the server is authoritative.
-- Store the accepted override reason in the batch's existing `dispatcher_override_reason` field for auditability.
+- Store the accepted rider-capacity override reason in the immutable `batch_offered` delivery-event metadata. Keep `dispatcher_override_reason` for the existing draft-capacity workflow; an offer does not replace it. Cancellation continues using its current field behavior without destroying the earlier offer-event audit record.
 
 ## Data and notification flow
 
-The existing rejection endpoint remains unchanged. `BatchDispatchService` continues to own state transitions and records a `batch_rejected` delivery event containing the batch ID, rider identity, and reason. `LogisticsNotificationService` maps that event to a dispatcher notification.
+The existing rejection endpoint remains unchanged. `BatchDispatchService` continues to own state transitions and records a `batch_rejected` delivery event containing the batch ID, rider identity, and reason. `LogisticsNotificationService` maps that event to a dispatcher notification. Its deduplication key includes the delivery-event ID: retrying notification delivery for the same event stays idempotent, while a later rejection after re-offer creates a new notification.
 
-The offer endpoint adds `capacity_override_reason`. `BatchDispatchService` locks the rider and batch, calculates the same-day workload, validates the override when necessary, creates assignments, clears stale rejection data, and records the existing batch-offered event.
+The offer endpoint adds `capacity_override_reason`. `BatchDispatchService` locks the rider and batch, calculates the same-day workload using the rider-specific-or-shop-fallback limit, validates the override when necessary, creates assignments, clears stale rejection data, and records the existing batch-offered event with workload and override metadata.
 
 ## Error handling
 
