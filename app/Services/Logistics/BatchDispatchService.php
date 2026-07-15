@@ -132,6 +132,9 @@ class BatchDispatchService
 
     public function markUrgent(ShipmentLeg $leg, bool $urgent): ShipmentLeg
     {
+        if (in_array($leg->status->value, ['delivered', 'cancelled'], true)) {
+            throw ValidationException::withMessages(['leg' => 'Delivered or cancelled stops can no longer be changed.']);
+        }
         $leg->update(['urgent_at' => $urgent ? now() : null]);
         return $leg->fresh();
     }
