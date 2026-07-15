@@ -136,3 +136,29 @@ php artisan db:seed --class=Test2ProductSeeder
 ```
 
 This intentionally remains opt-in and requires `ShopOwnerSeeder` to have created `test2@example.com` first.
+
+### Task 3: Seed purchasable size/color stock
+
+**Files:**
+- Modify: `database/seeders/Test2ProductSeeder.php`
+- Modify: `tests/Feature/Seeders/Test2ProductSeederTest.php`
+
+- [ ] **Step 1: Extend the idempotency test**
+
+Assert parent stock is `1000`, exactly 10 product variants exist after two seeder runs, and every variant has quantity `100`.
+
+- [ ] **Step 2: Run the focused test and verify RED**
+
+```powershell
+php vendor/bin/phpunit tests/Feature/Seeders/Test2ProductSeederTest.php --display-warnings
+```
+
+Expected: FAIL because the seeder currently creates no `ProductVariant` rows and parent stock remains `50`.
+
+- [ ] **Step 3: Implement the minimal fix**
+
+Set parent stock to `1000`. For each size in `['7', '8', '9', '10', '11']` and color in `['Black', 'White']`, use `ProductVariant::updateOrCreate` scoped by product, size, and color with quantity `100`, an active status, and a deterministic SKU.
+
+- [ ] **Step 4: Verify GREEN and regressions**
+
+Run the focused test, then the existing product-isolation and batch-dispatch regression tests. Expected: all pass; the existing repository-level PHPUnit deprecation may remain.
