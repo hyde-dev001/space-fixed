@@ -13,7 +13,7 @@ Let a rider select multiple eligible stops inside one in-progress delivery batch
 - Mark In Transit processes only selected `picked_up` stops.
 - Mixed-status selection is allowed. Each action skips ineligible selected stops and reports the skipped count.
 - Multiple selected stops may be in transit simultaneously.
-- Normal outbound retail pickup does not require a newly uploaded pickup proof. Delivery proof requirements remain unchanged.
+- Normal outbound retail legs have `requires_pickup_proof = false`, so pickup does not require a newly uploaded proof. A leg explicitly configured with `requires_pickup_proof = true` keeps the existing proof requirement and may fail independently. Delivery proof requirements remain unchanged.
 
 ## Implementation approach
 
@@ -22,7 +22,7 @@ Reuse the existing per-stop logistics endpoints instead of adding a bulk backend
 - `POST /api/logistics/legs/{leg}/picked-up` for pickup.
 - `POST /api/logistics/legs/{leg}/out-for-delivery` for in transit.
 
-The UI sends one request per eligible selected stop with `Promise.allSettled`. This preserves the existing rider assignment, tenant, batch-state, transition, timestamp, event, and notification checks. Batches are small enough that the extra requests are acceptable, while avoiding duplicate bulk-transition logic.
+The UI sends one request per eligible selected stop with `Promise.allSettled`. This preserves the existing rider assignment, tenant, transition, timestamp, event, and notification checks. Add a minimal guard to `ShipmentLegService::markPickedUp`: when a leg belongs to a batch, that batch must be `in_progress`. The existing out-for-delivery transition already enforces this state. Batches are small enough that the extra requests are acceptable, while avoiding duplicate bulk-transition logic.
 
 ## UI behavior
 
@@ -53,4 +53,4 @@ Frontend tests will verify:
 - buttons disable during processing; and
 - selection clears and data reloads after completion.
 
-Existing backend logistics tests remain the regression coverage for authorization, state transitions, timestamps, events, and notifications.
+Existing backend logistics tests remain the regression coverage for authorization, state transitions, timestamps, events, and notifications. Add regression coverage proving a proof-free assigned retail leg in an in-progress batch can be picked up and a batched leg outside `in_progress` cannot be picked up.
