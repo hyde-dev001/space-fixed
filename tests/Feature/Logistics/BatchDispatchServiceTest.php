@@ -69,6 +69,14 @@ class BatchDispatchServiceTest extends TestCase
         $rejected = $service->reject($batch, $rider, 'Vehicle unavailable');
         $this->assertSame('draft', $rejected->status);
         $this->assertNull($rejected->rider_profile_id);
+        $this->assertSame('Vehicle unavailable', $rejected->rejection_reason);
+        $this->assertNotNull($rejected->rejected_at);
+
+        $reoffered = $service->offer($rejected, $rider, $shop);
+        $this->assertNull($reoffered->rejection_reason);
+        $this->assertNull($reoffered->rejected_at);
+
+        $rejected = $service->reject($reoffered, $rider, 'Still unavailable');
         $cancelled = $service->cancel($rejected, 'No longer required');
         $this->assertSame('cancelled', $cancelled->status);
         $this->assertNull($leg->fresh()->delivery_batch_id);

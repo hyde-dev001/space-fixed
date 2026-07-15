@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\Logistics\AssignmentService;
 use App\Services\Logistics\BatchDispatchService;
 use App\Services\Logistics\DeliveryEventService;
+use App\Services\Logistics\LogisticsNotificationService;
 use App\Services\Logistics\ShipmentRequestService;
 use App\Services\Logistics\ProofService;
 use Database\Seeders\RolesAndPermissionsSeeder;
@@ -154,6 +155,52 @@ class LogisticsNotificationTest extends TestCase
         ]);
         $this->assertSame(2, DeliveryEvent::where('event_type', 'leg_assigned')->count());
         $this->assertSame(1, DeliveryEvent::where('event_type', 'batch_offered')->count());
+    }
+
+    public function test_dispatcher_is_notified_for_each_batch_rejection_event(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $dispatcher->assignRole('Logistics Dispatcher');
+        $riderUser = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $rider = RiderProfile::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'linked_type' => User::class,
+            'linked_id' => $riderUser->id,
+            'active' => true,
+            'availability_status' => 'available',
+        ]);
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id,
+            'scheduled_delivery_date' => '2026-07-15',
+            'delivery_window' => 'morning',
+            'schedule_status' => 'scheduled',
+            'status' => 'pending',
+        ]);
+        $service = app(BatchDispatchService::class);
+        $batch = $service->offer($service->createDraft($shop, '2026-07-15', 'morning', [$leg->id]), $rider, $shop);
+
+        $rejected = $service->reject($batch, $rider, 'Vehicle unavailable');
+        $notification = Notification::query()->where('user_id', $dispatcher->id)
+            ->where('type', 'logistics_batch_rejected')->sole();
+
+        $this->assertSame('Batch Offer Rejected', $notification->title);
+        $this->assertSame('/erp/logistics/batches', $notification->action_url);
+        $this->assertTrue($notification->requires_action);
+        $this->assertSame($batch->id, $notification->data['delivery_batch_id']);
+        $this->assertSame('Vehicle unavailable', $notification->data['rejection_reason']);
+
+        $event = DeliveryEvent::query()->where('event_type', 'batch_rejected')->sole();
+        app(LogisticsNotificationService::class)->notifyForEvent($event);
+        $this->assertSame(1, Notification::query()->where('user_id', $dispatcher->id)
+            ->where('type', 'logistics_batch_rejected')->count());
+
+        $reoffered = $service->offer($rejected, $rider, $shop);
+        $service->reject($reoffered, $rider, 'Schedule conflict');
+        $this->assertSame(2, Notification::query()->where('user_id', $dispatcher->id)
+            ->where('type', 'logistics_batch_rejected')->count());
     }
 
     public function test_retail_order_staff_is_notified_once_when_a_delivery_is_cancelled(): void

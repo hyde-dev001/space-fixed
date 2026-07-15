@@ -87,7 +87,10 @@ class BatchDispatchService
             foreach ($batch->legs()->orderBy('id')->lockForUpdate()->get() as $leg) {
                 $this->assignments->assignInternalRider($leg, $rider, $actor, ['delivery_batch_id' => $batch->id]);
             }
-            $batch->update(['rider_profile_id' => $rider->id, 'status' => 'offered', 'offered_at' => now()]);
+            $batch->update([
+                'rider_profile_id' => $rider->id, 'status' => 'offered', 'offered_at' => now(),
+                'rejection_reason' => null, 'rejected_at' => null,
+            ]);
             $this->recordBatchEvent($batch, 'batch_offered', 'Delivery batch offered.', [
                 'rider_profile_id' => $rider->id,
                 'stop_count' => $batch->assigned_stop_count,
@@ -166,7 +169,11 @@ class BatchDispatchService
                 'status' => 'draft', 'rider_profile_id' => null, 'rejection_reason' => $reason,
                 'rejected_at' => now(), 'offered_at' => null,
             ]);
-            $this->recordBatchEvent($locked, 'batch_rejected', 'Delivery batch rejected.');
+            $this->recordBatchEvent($locked, 'batch_rejected', 'Delivery batch rejected.', [
+                'rider_profile_id' => $rider->id,
+                'rider_name' => $rider->name,
+                'rejection_reason' => $reason,
+            ]);
         });
     }
 
