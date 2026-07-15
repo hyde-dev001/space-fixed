@@ -87,6 +87,26 @@ class BatchDispatchServiceTest extends TestCase
         $this->assertSame(1, $updated->fresh()->assigned_stop_count);
     }
 
+    public function test_terminal_stops_cannot_be_marked_urgent(): void
+    {
+        [$shop, $legs, $service] = $this->draftFixture();
+
+        foreach (['delivered', 'cancelled'] as $status) {
+            $leg = ShipmentLeg::factory()->create([
+                'shipment_id' => $legs->first()->shipment_id,
+                'status' => $status,
+            ]);
+            $this->assertSame($status, $leg->status->value);
+
+            try {
+                $service->markUrgent($leg, true);
+                $this->fail("{$status} leg accepted an urgency change.");
+            } catch (ValidationException) {
+                $this->assertNull($leg->fresh()->urgent_at);
+            }
+        }
+    }
+
     public function test_accept_and_start_are_idempotent_but_started_batch_cannot_be_cancelled(): void
     {
         [$shop, $legs, $service] = $this->draftFixture();
