@@ -91,6 +91,7 @@ enum NotificationType: string
     // ==================== LOGISTICS NOTIFICATIONS ====================
     case LOGISTICS_SHIPMENT_REQUESTED = 'logistics_shipment_requested';
     case LOGISTICS_ASSIGNED = 'logistics_assigned';
+    case LOGISTICS_BATCH_OFFERED = 'logistics_batch_offered';
     case LOGISTICS_PICKUP_SCHEDULED = 'logistics_pickup_scheduled';
     case LOGISTICS_IN_TRANSIT = 'logistics_in_transit';
     case LOGISTICS_DELIVERY_FAILED = 'logistics_delivery_failed';
@@ -190,6 +191,7 @@ enum NotificationType: string
             // Logistics notifications
             self::LOGISTICS_SHIPMENT_REQUESTED => 'Shipment Requested',
             self::LOGISTICS_ASSIGNED => 'Delivery Assigned',
+            self::LOGISTICS_BATCH_OFFERED => 'Delivery Batch Offered',
             self::LOGISTICS_PICKUP_SCHEDULED => 'Pickup Scheduled',
             self::LOGISTICS_IN_TRANSIT => 'Delivery In Transit',
             self::LOGISTICS_DELIVERY_FAILED => 'Delivery Attempt Failed',
@@ -234,7 +236,7 @@ enum NotificationType: string
             self::NEW_LEAD, self::LEAD_UPDATED, self::OPPORTUNITY_CREATED,
             self::CUSTOMER_SUPPORT_TICKET => 'crm',
 
-            self::LOGISTICS_SHIPMENT_REQUESTED, self::LOGISTICS_ASSIGNED,
+            self::LOGISTICS_SHIPMENT_REQUESTED, self::LOGISTICS_ASSIGNED, self::LOGISTICS_BATCH_OFFERED,
             self::LOGISTICS_PICKUP_SCHEDULED, self::LOGISTICS_IN_TRANSIT,
             self::LOGISTICS_DELIVERY_FAILED, self::LOGISTICS_PROOF_REQUIRED,
             self::LOGISTICS_DELIVERED => 'logistics',

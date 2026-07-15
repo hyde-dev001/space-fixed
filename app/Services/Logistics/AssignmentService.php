@@ -15,7 +15,7 @@ class AssignmentService
     {
     }
 
-    public function assignInternalRider(ShipmentLeg $leg, RiderProfile $rider, ShopOwner $actor): DeliveryAssignment
+    public function assignInternalRider(ShipmentLeg $leg, RiderProfile $rider, ShopOwner $actor, array $eventMetadata = []): DeliveryAssignment
     {
         $leg->loadMissing('shipment');
 
@@ -31,7 +31,7 @@ class AssignmentService
             throw ValidationException::withMessages(['rider_profile_id' => 'Owner delivery is only allowed for individual shops.']);
         }
 
-        return DB::transaction(function () use ($leg, $rider, $actor) {
+        return DB::transaction(function () use ($leg, $rider, $actor, $eventMetadata) {
             $leg = ShipmentLeg::query()->lockForUpdate()->findOrFail($leg->id);
             $leg->loadMissing('shipment');
 
@@ -60,7 +60,7 @@ class AssignmentService
                 'event_type' => 'leg_assigned',
                 'visibility' => 'internal',
                 'message' => "Assigned to {$rider->name}.",
-                'metadata' => ['rider_profile_id' => $rider->id],
+                'metadata' => ['rider_profile_id' => $rider->id] + $eventMetadata,
             ]);
 
             return $assignment;

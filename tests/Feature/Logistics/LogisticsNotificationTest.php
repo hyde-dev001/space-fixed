@@ -5,11 +5,13 @@ namespace Tests\Feature\Logistics;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\Logistics\RiderProfile;
+use App\Models\Logistics\DeliveryEvent;
 use App\Models\Notification;
 use App\Models\Order;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\Logistics\AssignmentService;
+use App\Services\Logistics\BatchDispatchService;
 use App\Services\Logistics\DeliveryEventService;
 use App\Services\Logistics\ShipmentRequestService;
 use App\Services\Logistics\ProofService;
@@ -110,6 +112,48 @@ class LogisticsNotificationTest extends TestCase
             'type' => 'logistics_assigned',
             'action_url' => '/erp/logistics/shipments',
         ]);
+    }
+
+    public function test_rider_is_notified_once_when_a_batch_is_offered(): void
+    {
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $riderUser = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $rider = RiderProfile::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'linked_type' => User::class,
+            'linked_id' => $riderUser->id,
+            'active' => true,
+            'availability_status' => 'available',
+        ]);
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+        $legs = ShipmentLeg::factory()->count(2)->create([
+            'shipment_id' => $shipment->id,
+            'scheduled_delivery_date' => '2026-07-15',
+            'delivery_window' => 'morning',
+            'schedule_status' => 'scheduled',
+            'status' => 'pending',
+        ]);
+
+        $service = app(BatchDispatchService::class);
+        $batch = $service->createDraft($shop, '2026-07-15', 'morning', $legs->pluck('id')->all());
+        $service->offer($batch, $rider, $shop);
+
+        $this->assertSame(1, Notification::query()
+            ->where('user_id', $riderUser->id)
+            ->where('type', 'logistics_batch_offered')
+            ->count());
+        $this->assertSame(0, Notification::query()
+            ->where('user_id', $riderUser->id)
+            ->where('type', 'logistics_assigned')
+            ->count());
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $riderUser->id,
+            'title' => 'Delivery Batch Offered',
+            'message' => 'A delivery batch with 2 stops has been offered to you.',
+            'action_url' => '/erp/logistics/deliveries',
+        ]);
+        $this->assertSame(2, DeliveryEvent::where('event_type', 'leg_assigned')->count());
+        $this->assertSame(1, DeliveryEvent::where('event_type', 'batch_offered')->count());
     }
 
     public function test_retail_order_staff_is_notified_once_when_a_delivery_is_cancelled(): void

@@ -85,9 +85,13 @@ class BatchDispatchService
                 throw ValidationException::withMessages(['rider_profile_id' => 'Rider is unavailable on this delivery date.']);
             }
             foreach ($batch->legs()->orderBy('id')->lockForUpdate()->get() as $leg) {
-                $this->assignments->assignInternalRider($leg, $rider, $actor);
+                $this->assignments->assignInternalRider($leg, $rider, $actor, ['delivery_batch_id' => $batch->id]);
             }
             $batch->update(['rider_profile_id' => $rider->id, 'status' => 'offered', 'offered_at' => now()]);
+            $this->recordBatchEvent($batch, 'batch_offered', 'Delivery batch offered.', [
+                'rider_profile_id' => $rider->id,
+                'stop_count' => $batch->assigned_stop_count,
+            ]);
             return $batch->fresh('legs.assignments');
         });
     }
@@ -210,13 +214,13 @@ class BatchDispatchService
         });
     }
 
-    private function recordBatchEvent(DeliveryBatch $batch, string $type, string $message): void
+    private function recordBatchEvent(DeliveryBatch $batch, string $type, string $message, array $metadata = []): void
     {
         $leg = $batch->legs()->with('shipment')->orderBy('stop_sequence')->first();
         if ($leg) $this->events->record($leg->shipment, $leg, [
             'event_type' => $type,
             'message' => $message,
-            'metadata' => ['delivery_batch_id' => $batch->id],
+            'metadata' => ['delivery_batch_id' => $batch->id] + $metadata,
         ]);
     }
 }
