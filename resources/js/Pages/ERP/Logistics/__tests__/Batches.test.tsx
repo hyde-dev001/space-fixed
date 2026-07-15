@@ -364,6 +364,22 @@ it('keeps the review and draft intact when the rider offer fails', async () => {
   expect(screen.getByRole('heading', { name: 'Batch #1', level: 2 })).toBeInTheDocument();
 });
 
+it('allows an override retry when server capacity is newer than the page', async () => {
+  mocks.offerBatch.mockRejectedValueOnce({ response: { data: { errors: { capacity_override_reason: ['Capacity changed. Add an override reason.'] } } } });
+  openDraft();
+  fireEvent.click(screen.getAllByRole('button', { name: 'Review & Offer' })[0]);
+  fireEvent.change(screen.getByLabelText('Select rider'), { target: { value: '3' } });
+  expect(screen.queryByLabelText('Capacity override reason')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Offer Batch to Rider' }));
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('Capacity changed. Add an override reason.');
+  const reason = screen.getByLabelText('Capacity override reason');
+  fireEvent.change(reason, { target: { value: '  Dispatch recovery  ' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Offer Batch to Rider' }));
+
+  await waitFor(() => expect(mocks.offerBatch).toHaveBeenNthCalledWith(2, 1, 3, 'Dispatch recovery'));
+});
+
 it('requires a cancellation reason and calls the existing endpoint', async () => {
   mocks.confirm.mockResolvedValueOnce({ isConfirmed: true, value: 'Customer requested another date' });
   openDraft();
