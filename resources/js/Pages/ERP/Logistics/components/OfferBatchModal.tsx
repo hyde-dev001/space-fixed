@@ -9,15 +9,18 @@ const formatDate = (value: string) => new Intl.DateTimeFormat('en-PH', { dateSty
 type Props = {
   isOpen: boolean;
   batch?: DeliveryBatch;
+  batches: DeliveryBatch[];
   riders: LogisticsRider[];
+  dailyRiderCapacity: number;
   submitting: boolean;
   error: string;
   onClose: () => void;
-  onOffer: (riderId: number) => void;
+  onOffer: (riderId: number, capacityOverrideReason?: string) => void;
 };
 
-export default function OfferBatchModal({ isOpen, batch, riders, submitting, error, onClose, onOffer }: Props) {
+export default function OfferBatchModal({ isOpen, batch, batches, riders, dailyRiderCapacity, submitting, error, onClose, onOffer }: Props) {
   const [riderId, setRiderId] = useState('');
+  const [capacityOverrideReason, setCapacityOverrideReason] = useState('');
   const dialogRef = useRef<HTMLDivElement>(null);
   const riderRef = useRef<HTMLSelectElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
@@ -27,13 +30,23 @@ export default function OfferBatchModal({ isOpen, batch, riders, submitting, err
     if (!isOpen) return;
     returnFocusRef.current = document.activeElement as HTMLElement;
     setRiderId('');
+    setCapacityOverrideReason('');
     window.setTimeout(() => riderRef.current?.focus(), 0);
     return () => returnFocusRef.current?.focus();
   }, [isOpen]);
 
   if (!batch) return null;
   const urgentCount = batch.legs.filter((leg) => leg.urgent_at).length;
-  const exceedsRiderCapacity = Boolean(rider?.daily_capacity && batch.legs.length > rider.daily_capacity);
+  const usedBy = (candidate: LogisticsRider) => batches
+    .filter((other) => other.id !== batch.id
+      && other.delivery_date.slice(0, 10) === batch.delivery_date.slice(0, 10)
+      && other.rider_profile?.id === candidate.id
+      && ['offered', 'accepted', 'in_progress', 'completed'].includes(other.status))
+    .reduce((total, other) => total + other.assigned_stop_count, 0);
+  const riderCapacity = rider?.daily_capacity ?? dailyRiderCapacity;
+  const used = rider ? usedBy(rider) : 0;
+  const projected = used + batch.assigned_stop_count;
+  const exceedsRiderCapacity = Boolean(rider && projected > riderCapacity);
   const handleKeys = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'Tab') return;
     const focusable = dialogRef.current?.querySelectorAll<HTMLElement>('button:not([disabled]), select:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
@@ -57,17 +70,23 @@ export default function OfferBatchModal({ isOpen, batch, riders, submitting, err
         <div className="rounded-xl bg-gray-50 p-3"><Flame size={18} className="text-red-600" /><p className="mt-2 text-sm font-semibold">{urgentCount} urgent</p></div>
       </div>
       <label className="mt-5 block text-sm font-semibold text-gray-800 dark:text-gray-100">Select rider
-        <select ref={riderRef} aria-label="Select rider" value={riderId} onChange={(event) => setRiderId(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-gray-300 px-3 font-normal">
+        <select ref={riderRef} aria-label="Select rider" value={riderId} onChange={(event) => { setRiderId(event.target.value); setCapacityOverrideReason(''); }} className="mt-2 min-h-11 w-full rounded-xl border border-gray-300 px-3 font-normal">
           <option value="">Choose an available rider</option>
-          {riders.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name} · {candidate.daily_capacity ?? 'No'} stop capacity</option>)}
+          {riders.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name} · {usedBy(candidate)}/{candidate.daily_capacity ?? dailyRiderCapacity} used today</option>)}
         </select>
       </label>
       {!riders.length && <p className="mt-2 text-sm text-amber-700">No available riders. Keep this batch as a draft and try again later.</p>}
-      {exceedsRiderCapacity && <p className="mt-3 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800"><AlertTriangle size={17} />This route exceeds {rider?.name}’s capacity of {rider?.daily_capacity} {rider?.daily_capacity === 1 ? 'stop' : 'stops'}.</p>}
+      {rider && <p className="mt-3 text-sm font-semibold text-gray-700">{used} used + {batch.assigned_stop_count} stops = {projected}/{riderCapacity}</p>}
+      {exceedsRiderCapacity && <>
+        <p className="mt-3 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800"><AlertTriangle size={17} />This route exceeds {rider?.name}’s capacity of {riderCapacity} {riderCapacity === 1 ? 'stop' : 'stops'}.</p>
+        <label className="mt-3 block text-sm font-semibold text-gray-800">Capacity override reason
+          <textarea aria-label="Capacity override reason" value={capacityOverrideReason} onChange={(event) => setCapacityOverrideReason(event.target.value)} className="mt-2 min-h-24 w-full rounded-xl border border-gray-300 p-3 font-normal" />
+        </label>
+      </>}
       <ol className="mt-5 space-y-2 rounded-xl border border-gray-200 p-3">{batch.legs.map((leg, index) => <li key={leg.id} className="flex items-center gap-3 rounded-lg bg-gray-50 p-3 text-sm"><span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-blue-600 font-bold text-white">{index + 1}</span><span><strong>{leg.destination_snapshot?.name || `Stop ${index + 1}`}</strong><span className="block text-xs text-gray-500">{leg.destination_snapshot?.address || 'Address not provided'}</span></span></li>)}</ol>
       <div className="mt-5 flex justify-end gap-2">
         <button type="button" onClick={onClose} className="min-h-11 rounded-xl border px-4 text-sm font-semibold">Keep as Draft</button>
-        <button type="button" disabled={!riderId || submitting} onClick={() => onOffer(Number(riderId))} className="min-h-11 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white disabled:opacity-40">{submitting ? 'Offering Batch...' : 'Offer Batch to Rider'}</button>
+        <button type="button" disabled={!riderId || submitting || (exceedsRiderCapacity && !capacityOverrideReason.trim())} onClick={() => onOffer(Number(riderId), capacityOverrideReason.trim() || undefined)} className="min-h-11 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white disabled:opacity-40">{submitting ? 'Offering Batch...' : 'Offer Batch to Rider'}</button>
       </div>
     </div>
   </Modal>;
