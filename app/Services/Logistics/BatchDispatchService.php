@@ -68,13 +68,14 @@ class BatchDispatchService
         });
     }
 
-    public function offer(DeliveryBatch $batch, RiderProfile $rider, ShopOwner $actor): DeliveryBatch
+    public function offer(DeliveryBatch $batch, RiderProfile $rider, ShopOwner $actor, ?string $capacityOverrideReason = null): DeliveryBatch
     {
-        return DB::transaction(function () use ($batch, $rider, $actor) {
+        return DB::transaction(function () use ($batch, $rider, $actor, $capacityOverrideReason) {
             $batch = DeliveryBatch::query()->lockForUpdate()->findOrFail($batch->id);
             if ($batch->status === 'offered' && $batch->rider_profile_id === $rider->id) {
                 return $batch->load('legs.assignments');
             }
+            $rider = RiderProfile::query()->lockForUpdate()->findOrFail($rider->id);
             if ($batch->status !== 'draft' || $rider->shop_owner_id !== $batch->shop_owner_id) {
                 throw ValidationException::withMessages(['batch' => 'Batch cannot be offered to this rider.']);
             }
@@ -83,6 +84,19 @@ class BatchDispatchService
                 || ($rider->work_days && !in_array($date->dayOfWeekIso, $rider->work_days, true))
                 || in_array($date->toDateString(), $rider->leave_dates ?? [], true)) {
                 throw ValidationException::withMessages(['rider_profile_id' => 'Rider is unavailable on this delivery date.']);
+            }
+            $capacity = $rider->daily_capacity ?? $actor->logisticsSetting()->firstOrCreate([])->daily_rider_capacity;
+            $existingStopCount = DeliveryBatch::query()
+                ->where('shop_owner_id', $batch->shop_owner_id)
+                ->where('rider_profile_id', $rider->id)
+                ->whereDate('delivery_date', $date->toDateString())
+                ->whereKeyNot($batch->id)
+                ->whereIn('status', ['offered', 'accepted', 'in_progress', 'completed'])
+                ->sum('assigned_stop_count');
+            $projectedStopCount = $existingStopCount + $batch->assigned_stop_count;
+            $capacityOverrideReason = filled($trimmedReason = trim($capacityOverrideReason ?? '')) ? $trimmedReason : null;
+            if ($projectedStopCount > $capacity && !$capacityOverrideReason) {
+                throw ValidationException::withMessages(['capacity_override_reason' => 'Capacity override reason is required.']);
             }
             foreach ($batch->legs()->orderBy('id')->lockForUpdate()->get() as $leg) {
                 $this->assignments->assignInternalRider($leg, $rider, $actor, ['delivery_batch_id' => $batch->id]);
@@ -94,6 +108,11 @@ class BatchDispatchService
             $this->recordBatchEvent($batch, 'batch_offered', 'Delivery batch offered.', [
                 'rider_profile_id' => $rider->id,
                 'stop_count' => $batch->assigned_stop_count,
+                'existing_stop_count' => $existingStopCount,
+                'offered_stop_count' => $batch->assigned_stop_count,
+                'projected_stop_count' => $projectedStopCount,
+                'daily_capacity' => $capacity,
+                'capacity_override_reason' => $capacityOverrideReason,
             ]);
             return $batch->fresh('legs.assignments');
         });

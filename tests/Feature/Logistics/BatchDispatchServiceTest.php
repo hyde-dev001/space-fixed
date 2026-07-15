@@ -3,7 +3,9 @@
 namespace Tests\Feature\Logistics;
 
 use App\Models\Logistics\RiderProfile;
+use App\Models\Logistics\DeliveryBatch;
 use App\Models\Logistics\DeliveryEvent;
+use App\Models\Logistics\LogisticsSetting;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\ShopOwner;
@@ -146,6 +148,49 @@ class BatchDispatchServiceTest extends TestCase
 
         $this->expectException(ValidationException::class);
         $service->offer($batch, $rider, $shop);
+    }
+
+    public function test_offer_enforces_cumulative_daily_capacity_and_audits_override(): void
+    {
+        [$shop, $legs, $service] = $this->draftFixture(2);
+        LogisticsSetting::updateOrCreate(['shop_owner_id' => $shop->id], ['daily_rider_capacity' => 6]);
+        $rider = RiderProfile::factory()->create([
+            'shop_owner_id' => $shop->id, 'active' => true, 'availability_status' => 'available',
+            'daily_capacity' => null,
+        ]);
+        DeliveryBatch::factory()->create([
+            'shop_owner_id' => $shop->id, 'rider_profile_id' => $rider->id,
+            'delivery_date' => '2026-07-15', 'delivery_window' => 'afternoon',
+            'status' => 'in_progress', 'assigned_stop_count' => 5,
+        ]);
+        foreach (['draft', 'cancelled'] as $status) {
+            DeliveryBatch::factory()->create([
+                'shop_owner_id' => $shop->id, 'rider_profile_id' => $rider->id,
+                'delivery_date' => '2026-07-15', 'status' => $status, 'assigned_stop_count' => 20,
+            ]);
+        }
+        DeliveryBatch::factory()->create([
+            'shop_owner_id' => $shop->id, 'rider_profile_id' => $rider->id,
+            'delivery_date' => '2026-07-16', 'status' => 'accepted', 'assigned_stop_count' => 20,
+        ]);
+        $batch = $service->createDraft($shop, '2026-07-15', 'morning', $legs->pluck('id')->all());
+
+        try {
+            $service->offer($batch, $rider, $shop);
+            $this->fail('Over-capacity offer was accepted without an override.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('capacity_override_reason', $exception->errors());
+        }
+
+        $offered = $service->offer($batch, $rider, $shop, 'Operational priority');
+        $event = DeliveryEvent::where('event_type', 'batch_offered')->latest('id')->firstOrFail();
+
+        $this->assertSame('offered', $offered->status);
+        $this->assertSame(5, $event->metadata['existing_stop_count']);
+        $this->assertSame(2, $event->metadata['offered_stop_count']);
+        $this->assertSame(7, $event->metadata['projected_stop_count']);
+        $this->assertSame(6, $event->metadata['daily_capacity']);
+        $this->assertSame('Operational priority', $event->metadata['capacity_override_reason']);
     }
 
     private function draftFixture(int $count = 1): array
