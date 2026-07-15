@@ -300,7 +300,7 @@ it('reviews an ordered draft and requires a rider before offering', async () => 
   fireEvent.change(screen.getByLabelText('Select rider'), { target: { value: '3' } });
   fireEvent.click(screen.getByRole('button', { name: 'Offer Batch to Rider' }));
 
-  await waitFor(() => expect(mocks.offerBatch).toHaveBeenCalledWith(1, 3));
+  await waitFor(() => expect(mocks.offerBatch).toHaveBeenCalledWith(1, 3, undefined));
   expect(mocks.confirm).toHaveBeenCalledWith(expect.objectContaining({ title: 'Offer Batch #1 to Rider One?' }));
   expect(mocks.toast).toHaveBeenCalledWith('success', 'Batch offered');
 });
@@ -312,6 +312,44 @@ it('warns when the selected rider capacity is below the stop count', () => {
   fireEvent.change(screen.getByLabelText('Select rider'), { target: { value: '3' } });
 
   expect(screen.getByText('This route exceeds Rider One’s capacity of 1 stop.')).toBeInTheDocument();
+});
+
+it('requires an override reason when same-date workload exceeds rider capacity', async () => {
+  const candidate = {
+    id: 1, delivery_date: '2026-07-15', delivery_window: 'morning', status: 'draft', capacity: 6,
+    assigned_stop_count: 2, rider_profile: null, legs: [
+      { ...unscheduledLeg, id: 7, stop_sequence: 1, scheduled_delivery_date: '2026-07-15', delivery_window: 'morning' },
+      { ...scheduledLeg, id: 8, stop_sequence: 2 },
+    ],
+  };
+  const assignedRider = { id: 3, name: 'Rider One', active: true, availability_status: 'available', rider_type: 'employee', daily_capacity: null };
+  mocks.props = {
+    ...mocks.props,
+    dailyRiderCapacity: 6,
+    riders: [assignedRider],
+    batches: [
+      candidate,
+      { ...candidate, id: 2, delivery_window: 'afternoon', status: 'in_progress', assigned_stop_count: 5, rider_profile: assignedRider, legs: [] },
+      { ...candidate, id: 3, delivery_date: '2026-07-16', status: 'accepted', assigned_stop_count: 4, rider_profile: assignedRider, legs: [] },
+    ],
+  };
+  render(<Batches />);
+  fireEvent.click(screen.getByRole('button', { name: 'Edit batch 1' }));
+  fireEvent.click(screen.getAllByRole('button', { name: 'Review & Offer' })[0]);
+
+  expect(screen.getByRole('option', { name: 'Rider One · 5/6 used today' })).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Select rider'), { target: { value: '3' } });
+  expect(screen.getByText('5 used + 2 stops = 7/6')).toBeInTheDocument();
+
+  const reason = screen.getByLabelText('Capacity override reason');
+  const offer = screen.getByRole('button', { name: 'Offer Batch to Rider' });
+  expect(offer).toBeDisabled();
+  fireEvent.change(reason, { target: { value: '   ' } });
+  expect(offer).toBeDisabled();
+  fireEvent.change(reason, { target: { value: 'Operational priority' } });
+  fireEvent.click(offer);
+
+  await waitFor(() => expect(mocks.offerBatch).toHaveBeenCalledWith(1, 3, 'Operational priority'));
 });
 
 it('keeps the review and draft intact when the rider offer fails', async () => {
