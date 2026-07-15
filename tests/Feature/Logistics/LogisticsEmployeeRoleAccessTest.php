@@ -2,9 +2,10 @@
 
 namespace Tests\Feature\Logistics;
 
-use App\Models\User;
 use App\Models\ShopOwner;
+use App\Models\User;
 use App\Services\BusinessAccessControlService;
+use Database\Seeders\EmployeeSeeder;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Permission;
@@ -106,6 +107,36 @@ class LogisticsEmployeeRoleAccessTest extends TestCase
 
         $this->assertTrue($user->hasRole('Logistics Dispatcher'));
         $this->assertSame('STAFF', $user->role);
+    }
+
+    public function test_employee_seeder_creates_both_logistics_roles(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+
+        $shop = ShopOwner::factory()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+
+        $this->seed(EmployeeSeeder::class);
+
+        foreach (['Logistics Dispatcher', 'Logistics Rider'] as $role) {
+            $email = str($role)->lower()->replace(' ', '.').".{$shop->id}@solespace.com";
+
+            $this->assertDatabaseHas('employees', [
+                'shop_owner_id' => $shop->id,
+                'email' => $email,
+                'department' => $role,
+            ]);
+
+            $user = User::where('email', $email)->firstOrFail();
+
+            $this->assertTrue($user->hasRole($role));
+            $this->assertContains($user->role, [
+                'STAFF',
+                strtoupper(str_replace(' ', '_', $role)),
+            ]);
+        }
     }
 
     public function test_dispatcher_riders_page_backfills_existing_logistics_rider_profiles(): void
