@@ -38,7 +38,7 @@ export default function Batches() {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [offerSubmitting, setOfferSubmitting] = useState(false);
   const [offerError, setOfferError] = useState('');
-  const [offerOverrideRequired, setOfferOverrideRequired] = useState(false);
+  const [offerOverrideRiderId, setOfferOverrideRiderId] = useState<number>();
   const [activeStatus, setActiveStatus] = useState<'all' | DeliveryBatchStatus>('all');
   const [refreshing, setRefreshing] = useState(false);
 
@@ -189,7 +189,7 @@ export default function Batches() {
     setBuilding(false);
     setSelectedBatchId(batchId);
     setOfferError('');
-    setOfferOverrideRequired(false);
+    setOfferOverrideRiderId(undefined);
     setReviewOpen(true);
   };
   const offerBatch = async (riderId: number, capacityOverrideReason?: string) => {
@@ -206,13 +206,13 @@ export default function Batches() {
       setOfferSubmitting(true);
       setOfferError('');
       await logisticsApi.offerBatch(selectedBatch.id, riderId, capacityOverrideReason?.trim() || undefined);
-      setOfferOverrideRequired(false);
+      setOfferOverrideRiderId(undefined);
       setReviewOpen(false);
       await workflowFeedback.toast('success', 'Batch offered');
       refreshBatchData();
     } catch (caught) {
       const errors = (caught as { response?: { data?: { errors?: Record<string, string[]> } } })?.response?.data?.errors;
-      if (errors?.capacity_override_reason) setOfferOverrideRequired(true);
+      if (errors?.capacity_override_reason) setOfferOverrideRiderId(riderId);
       setOfferError(errorMessage(caught));
     } finally {
       setOfferSubmitting(false);
@@ -306,6 +306,6 @@ export default function Batches() {
       {!visibleActiveBatches.length && <p className="rounded-xl border border-dashed p-6 text-center text-sm text-gray-500">No active batches in this status.</p>}
     </section>
     {historyBatches.length > 0 && <details className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800"><summary className="min-h-10 cursor-pointer font-bold text-gray-800 dark:text-white">History ({historyBatches.length})</summary><DndProvider backend={HTML5Backend}><div className="mt-4 grid gap-4 xl:grid-cols-2">{historyBatches.map((batch) => <BatchCard key={batch.id} batch={batch} onOpen={() => { setBuilding(false); setSelectedBatchId(batch.id); }} />)}</div></DndProvider></details>}
-    <OfferBatchModal isOpen={reviewOpen} batch={selectedBatch} batches={batches} riders={riders} dailyRiderCapacity={dailyRiderCapacity} forceCapacityOverride={offerOverrideRequired} submitting={offerSubmitting} error={offerError} onClose={() => { setReviewOpen(false); setOfferOverrideRequired(false); }} onOffer={offerBatch} />
+    <OfferBatchModal isOpen={reviewOpen} batch={selectedBatch} batches={batches} riders={riders} dailyRiderCapacity={dailyRiderCapacity} forceCapacityOverrideForRiderId={offerOverrideRiderId} submitting={offerSubmitting} error={offerError} onClose={() => { setReviewOpen(false); setOfferOverrideRiderId(undefined); }} onOffer={offerBatch} />
   </main></AppLayoutERP>;
 }
