@@ -31,6 +31,7 @@ beforeEach(() => {
     pool: [],
     riders: [{ id: 3, name: 'Rider One', active: true, availability_status: 'available', rider_type: 'employee', daily_capacity: 10 }],
     unscheduled: [{ id: 7, status: 'pending', shipment: { source_type: 'order', source_id: 55 } }],
+    dailyRiderCapacity: 10,
   };
   mocks.scheduleLegs.mockResolvedValue({});
   mocks.createBatch.mockResolvedValue({ data: { batch: { id: 41 } } });
@@ -158,5 +159,37 @@ it('reloads and clears a partially scheduled selection when its slot changes', a
 it('formats existing batch dates for dispatchers', () => {
   mocks.props.batches = [{ id: 1, delivery_date: '2026-07-15T00:00:00.000000Z', delivery_window: 'morning', status: 'draft', capacity: 10, assigned_stop_count: 1, legs: [] }];
   render(<Batches />);
-  expect(screen.getByText('Batch #1 · Jul 15, 2026 · Morning')).toBeInTheDocument();
+  expect(screen.getByText('Batch #1')).toBeInTheDocument();
+  expect(screen.getByText('Jul 15, 2026 · Morning')).toBeInTheDocument();
+});
+
+it('shows useful batch and stop details instead of raw leg ids', () => {
+  mocks.props.batches = [{
+    id: 1,
+    delivery_date: '2026-07-15T00:00:00.000000Z',
+    delivery_window: 'morning',
+    status: 'draft',
+    capacity: 10,
+    assigned_stop_count: 1,
+    rider_profile: null,
+    legs: [{
+      id: 8,
+      status: 'pending',
+      stop_sequence: 1,
+      urgent_at: '2026-07-15T08:00:00Z',
+      scheduled_delivery_date: '2026-07-15',
+      delivery_window: 'morning',
+      destination_snapshot: { name: 'Ana Reyes', phone: '09171234567', address: 'Dasmarinas, Cavite' },
+      shipment: { id: 4, source_type: 'order', source_id: 55 },
+    }],
+  }];
+
+  render(<Batches />);
+
+  expect(screen.getByText('Not assigned')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Expand batch 1' }));
+  expect(screen.getByText('Ana Reyes')).toBeInTheDocument();
+  expect(screen.getByText('Dasmarinas, Cavite')).toBeInTheDocument();
+  expect(screen.getByText('Urgent')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Edit batch 1' })).toBeInTheDocument();
 });

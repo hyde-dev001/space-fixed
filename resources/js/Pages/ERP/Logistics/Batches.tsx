@@ -3,6 +3,9 @@ import { Head, router, usePage } from '@inertiajs/react';
 import AppLayoutERP from '@/layout/AppLayout_ERP';
 import { logisticsApi } from '@/services/logisticsApi';
 import type { DeliveryBatch, LogisticsRider, TrackingShipmentLeg } from '@/types/logistics';
+import { DndProvider } from 'react-dnd';
+import { HTML5Backend } from 'react-dnd-html5-backend';
+import BatchCard from './components/BatchCard';
 
 const formatDate = (value: string) => new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(`${value.slice(0, 10)}T00:00:00Z`));
 const errorMessage = (error: unknown) => {
@@ -92,11 +95,6 @@ export default function Batches() {
       })}
       {!unscheduled.length && !pool.length && <p className="mt-3 text-sm text-gray-500">No deliveries ready for batching.</p>}
     </section>
-    <section className="grid gap-4">{batches.map((batch) => <article key={batch.id} className="rounded border bg-white p-4">
-      <div className="flex justify-between"><strong>Batch #{batch.id} · {formatDate(batch.delivery_date)} · {batch.delivery_window === 'morning' ? 'Morning' : 'Afternoon'}</strong><span>{batch.status}</span></div>
-      <p>{batch.assigned_stop_count}/{batch.capacity} stops</p>
-      {batch.status === 'draft' && <div className="mt-2 flex flex-wrap gap-2">{riders.map((rider) => <button key={rider.id} onClick={() => run(() => logisticsApi.offerBatch(batch.id, rider.id))} className="rounded border px-2 py-1">Offer to {rider.name}</button>)}</div>}
-      <ol className="mt-2 list-decimal pl-6">{batch.legs.map((leg, index) => <li key={leg.id}>Leg #{leg.id}{batch.status === 'draft' && <span className="ml-2"><button disabled={index === 0} onClick={() => move(batch, index, -1)}>Up</button> <button disabled={index === batch.legs.length - 1} onClick={() => move(batch, index, 1)}>Down</button> <button onClick={() => run(() => logisticsApi.removeBatchStop(batch.id, leg.id))}>Remove</button> <button onClick={() => run(() => logisticsApi.markUrgent(leg.id))}>Urgent</button></span>}</li>)}</ol>
-    </article>)}</section>
+    <DndProvider backend={HTML5Backend}><section className="grid gap-4">{batches.map((batch) => <BatchCard key={batch.id} batch={batch} onOpen={() => undefined} />)}</section></DndProvider>
   </main></AppLayoutERP>;
 }
