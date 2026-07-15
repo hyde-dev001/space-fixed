@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   updateBatch: vi.fn(),
   removeBatchStop: vi.fn(),
   markUrgent: vi.fn(),
+  cancelBatch: vi.fn(),
   reload: vi.fn(),
   toast: vi.fn(),
   confirm: vi.fn(),
@@ -26,7 +27,7 @@ vi.mock('@/services/logisticsApi', () => ({ logisticsApi: {
   scheduleLegs: mocks.scheduleLegs,
   createBatch: mocks.createBatch,
   offerBatch: mocks.offerBatch,
-  suggestions: vi.fn(), updateBatch: mocks.updateBatch, removeBatchStop: mocks.removeBatchStop, markUrgent: mocks.markUrgent, cancelBatch: vi.fn(),
+  suggestions: vi.fn(), updateBatch: mocks.updateBatch, removeBatchStop: mocks.removeBatchStop, markUrgent: mocks.markUrgent, cancelBatch: mocks.cancelBatch,
 } }));
 vi.mock('@/utils/workflowFeedback', () => ({ workflowFeedback: {
   toast: mocks.toast,
@@ -63,6 +64,7 @@ beforeEach(() => {
   mocks.updateBatch.mockResolvedValue({});
   mocks.removeBatchStop.mockResolvedValue({});
   mocks.markUrgent.mockResolvedValue({});
+  mocks.cancelBatch.mockResolvedValue({});
   mocks.toast.mockResolvedValue({});
   mocks.confirm.mockResolvedValue({ isConfirmed: true });
 });
@@ -195,7 +197,7 @@ it('keeps the saved batch selected after refreshed props hydrate it', async () =
   rerender(<Batches />);
 
   expect(screen.getAllByRole('heading', { name: 'Batch #41' })).toHaveLength(2);
-  expect(screen.getByRole('button', { name: 'Review & Offer' })).toBeEnabled();
+  expect(screen.getAllByRole('button', { name: 'Review & Offer' })[0]).toBeEnabled();
 });
 
 it('formats existing batch dates and shows useful stop details', () => {
@@ -279,4 +281,58 @@ it('offers a focused refresh prompt when saved batch data is stale', async () =>
     title: 'Batch changed', confirmButtonText: 'Refresh batch data',
   })));
   expect(mocks.reload).toHaveBeenCalledWith({ only: ['batches', 'pool', 'unscheduled', 'riders'] });
+});
+
+it('reviews an ordered draft and requires a rider before offering', async () => {
+  openDraft([
+    { ...unscheduledLeg, id: 7, stop_sequence: 1, urgent_at: '2026-07-15T08:00:00Z' },
+    { ...scheduledLeg, id: 8, stop_sequence: 2 },
+  ]);
+  fireEvent.click(screen.getAllByRole('button', { name: 'Review & Offer' })[0]);
+
+  const dialog = screen.getByRole('dialog', { name: 'Review & Offer Batch #1' });
+  expect(dialog).toBeInTheDocument();
+  expect(screen.getByText('2 ordered stops')).toBeInTheDocument();
+  expect(dialog).toHaveTextContent('1 urgent');
+  expect(screen.getByRole('button', { name: 'Offer Batch to Rider' })).toBeDisabled();
+
+  await waitFor(() => expect(screen.getByLabelText('Select rider')).toHaveFocus());
+  fireEvent.change(screen.getByLabelText('Select rider'), { target: { value: '3' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Offer Batch to Rider' }));
+
+  await waitFor(() => expect(mocks.offerBatch).toHaveBeenCalledWith(1, 3));
+  expect(mocks.confirm).toHaveBeenCalledWith(expect.objectContaining({ title: 'Offer Batch #1 to Rider One?' }));
+  expect(mocks.toast).toHaveBeenCalledWith('success', 'Batch offered');
+});
+
+it('warns when the selected rider capacity is below the stop count', () => {
+  mocks.props.riders = [{ id: 3, name: 'Rider One', active: true, availability_status: 'available', rider_type: 'employee', daily_capacity: 1 }];
+  openDraft();
+  fireEvent.click(screen.getAllByRole('button', { name: 'Review & Offer' })[0]);
+  fireEvent.change(screen.getByLabelText('Select rider'), { target: { value: '3' } });
+
+  expect(screen.getByText('This route exceeds Rider One’s capacity of 1 stop.')).toBeInTheDocument();
+});
+
+it('keeps the review and draft intact when the rider offer fails', async () => {
+  mocks.offerBatch.mockRejectedValue({ response: { data: { message: 'Rider is no longer available.' } } });
+  openDraft();
+  fireEvent.click(screen.getAllByRole('button', { name: 'Review & Offer' })[0]);
+  fireEvent.change(screen.getByLabelText('Select rider'), { target: { value: '3' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Offer Batch to Rider' }));
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('Rider is no longer available.');
+  expect(screen.getByRole('dialog', { name: 'Review & Offer Batch #1' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Batch #1', level: 2 })).toBeInTheDocument();
+});
+
+it('requires a cancellation reason and calls the existing endpoint', async () => {
+  mocks.confirm.mockResolvedValueOnce({ isConfirmed: true, value: 'Customer requested another date' });
+  openDraft();
+  fireEvent.click(screen.getByLabelText('More actions for batch 1'));
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel batch' }));
+
+  await waitFor(() => expect(mocks.cancelBatch).toHaveBeenCalledWith(1, 'Customer requested another date'));
+  expect(mocks.confirm).toHaveBeenCalledWith(expect.objectContaining({ input: 'textarea', title: 'Cancel Batch #1?', inputValidator: expect.any(Function) }));
+  expect(mocks.toast).toHaveBeenCalledWith('success', 'Batch cancelled');
 });

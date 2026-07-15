@@ -10,6 +10,7 @@ import { workflowFeedback } from '@/utils/workflowFeedback';
 import AvailableDeliveriesPanel from './components/AvailableDeliveriesPanel';
 import BatchCard from './components/BatchCard';
 import BatchWorkspace from './components/BatchWorkspace';
+import OfferBatchModal from './components/OfferBatchModal';
 
 const errorMessage = (error: unknown) => {
   const data = (error as { response?: { data?: { errors?: Record<string, string[]>; message?: string } } })?.response?.data;
@@ -21,7 +22,7 @@ const sourceLabel = (leg: TrackingShipmentLeg) => leg.shipment?.source_type === 
   : `Leg #${leg.id}`;
 
 export default function Batches() {
-  const { batches, pool, unscheduled = [], dailyRiderCapacity } = usePage<DeliveryBatchPageProps>().props;
+  const { batches, pool, unscheduled = [], riders, dailyRiderCapacity } = usePage<DeliveryBatchPageProps>().props;
   const [building, setBuilding] = useState(false);
   const [selectedBatchId, setSelectedBatchId] = useState<number>();
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -34,6 +35,9 @@ export default function Batches() {
   const [submitting, setSubmitting] = useState(false);
   const [busyLegId, setBusyLegId] = useState<number>();
   const [error, setError] = useState('');
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [offerSubmitting, setOfferSubmitting] = useState(false);
+  const [offerError, setOfferError] = useState('');
 
   const allDeliveries = useMemo(() => {
     const rows = new Map<number, TrackingShipmentLeg>();
@@ -172,6 +176,57 @@ export default function Batches() {
       setBusyLegId(undefined);
     }
   };
+  const openReview = (batchId: number) => {
+    setBuilding(false);
+    setSelectedBatchId(batchId);
+    setOfferError('');
+    setReviewOpen(true);
+  };
+  const offerBatch = async (riderId: number) => {
+    if (!selectedBatch) return;
+    const rider = riders.find((candidate) => candidate.id === riderId);
+    if (!rider) return;
+    const confirmation = await workflowFeedback.confirm({
+      title: `Offer Batch #${selectedBatch.id} to ${rider.name}?`,
+      text: `The rider will receive one notification for all ${selectedBatch.legs.length} ordered stops.`,
+      confirmButtonText: 'Offer batch',
+    });
+    if (!confirmation.isConfirmed) return;
+    try {
+      setOfferSubmitting(true);
+      setOfferError('');
+      await logisticsApi.offerBatch(selectedBatch.id, riderId);
+      setReviewOpen(false);
+      await workflowFeedback.toast('success', 'Batch offered');
+      refreshBatchData();
+    } catch (caught) {
+      setOfferError(errorMessage(caught));
+    } finally {
+      setOfferSubmitting(false);
+    }
+  };
+  const cancelBatch = async (batchId: number) => {
+    const result = await workflowFeedback.confirm({
+      title: `Cancel Batch #${batchId}?`,
+      text: 'The stops will return to the available delivery pool.',
+      input: 'textarea',
+      inputLabel: 'Cancellation reason',
+      inputPlaceholder: 'Explain why this batch is being cancelled',
+      confirmButtonText: 'Cancel batch',
+      inputValidator: (value) => String(value ?? '').trim() ? undefined : 'A cancellation reason is required.',
+    });
+    const reason = String(result.value ?? '').trim();
+    if (!result.isConfirmed || !reason) return;
+    try {
+      setError('');
+      await logisticsApi.cancelBatch(batchId, reason);
+      if (selectedBatchId === batchId) setSelectedBatchId(undefined);
+      await workflowFeedback.toast('success', 'Batch cancelled');
+      refreshBatchData();
+    } catch (caught) {
+      await handleMutationError(caught);
+    }
+  };
   const moveLocal = (from: number, to: number) => {
     if (to < 0 || to >= selectedIds.length) return;
     setSelectedIds((ids) => {
@@ -223,13 +278,14 @@ export default function Batches() {
       {building || selectedBatch ? <BatchWorkspace
         batch={selectedBatch} selectedLegs={selectedLegs} date={date} window={window} dailyRiderCapacity={dailyRiderCapacity}
         overrideReason={overrideReason} submitting={submitting} busyLegId={busyLegId} onOverrideReasonChange={setOverrideReason}
-        onMove={selectedBatch ? moveStops : moveLocal} onRemove={removeStop} onToggleUrgent={toggleUrgent} onSave={saveDraft} onReview={() => undefined}
+        onMove={selectedBatch ? moveStops : moveLocal} onRemove={removeStop} onToggleUrgent={toggleUrgent} onSave={saveDraft} onReview={() => selectedBatch && openReview(selectedBatch.id)}
       /> : <section className="grid min-h-72 place-items-center rounded-2xl border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-500">Choose New Batch or open an existing batch to begin.</section>}
     </div>
     <section aria-label="Existing batches" className="space-y-3">
       <h2 className="text-lg font-bold text-gray-950 dark:text-white">Existing batches</h2>
-      <DndProvider backend={HTML5Backend}><div className="grid gap-4 xl:grid-cols-2">{batches.map((batch) => <BatchCard key={batch.id} batch={batch} onOpen={() => { setBuilding(false); setSelectedBatchId(batch.id); }} />)}</div></DndProvider>
+      <DndProvider backend={HTML5Backend}><div className="grid gap-4 xl:grid-cols-2">{batches.map((batch) => <BatchCard key={batch.id} batch={batch} onOpen={() => { setBuilding(false); setSelectedBatchId(batch.id); }} onReview={() => openReview(batch.id)} onCancel={() => cancelBatch(batch.id)} />)}</div></DndProvider>
       {!batches.length && <p className="rounded-xl border border-dashed p-6 text-center text-sm text-gray-500">No batches yet.</p>}
     </section>
+    <OfferBatchModal isOpen={reviewOpen} batch={selectedBatch} riders={riders} submitting={offerSubmitting} error={offerError} onClose={() => setReviewOpen(false)} onOffer={offerBatch} />
   </main></AppLayoutERP>;
 }
