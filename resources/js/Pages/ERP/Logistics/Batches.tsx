@@ -1,100 +1,157 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
-import AppLayoutERP from '@/layout/AppLayout_ERP';
-import { logisticsApi } from '@/services/logisticsApi';
-import type { DeliveryBatch, LogisticsRider, TrackingShipmentLeg } from '@/types/logistics';
+import { Plus } from 'lucide-react';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
+import AppLayoutERP from '@/layout/AppLayout_ERP';
+import { logisticsApi } from '@/services/logisticsApi';
+import type { DeliveryBatchPageProps, TrackingShipmentLeg } from '@/types/logistics';
+import { workflowFeedback } from '@/utils/workflowFeedback';
+import AvailableDeliveriesPanel from './components/AvailableDeliveriesPanel';
 import BatchCard from './components/BatchCard';
+import BatchWorkspace from './components/BatchWorkspace';
 
-const formatDate = (value: string) => new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(`${value.slice(0, 10)}T00:00:00Z`));
 const errorMessage = (error: unknown) => {
   const data = (error as { response?: { data?: { errors?: Record<string, string[]>; message?: string } } })?.response?.data;
   return Object.values(data?.errors ?? {})[0]?.[0] ?? data?.message ?? 'This batch changed. Refresh and try again.';
 };
 
+const sourceLabel = (leg: TrackingShipmentLeg) => leg.shipment?.source_type === 'order'
+  ? `Order #${leg.shipment.source_id}`
+  : `Leg #${leg.id}`;
+
 export default function Batches() {
-  const { batches, pool, riders, unscheduled = [] } = usePage<{ batches: DeliveryBatch[]; pool: TrackingShipmentLeg[]; riders: LogisticsRider[]; unscheduled: Array<TrackingShipmentLeg & { shipment?: { source_type: string; source_id: number } }> }>().props;
-  const [selected, setSelected] = useState<number[]>([]);
+  const { batches, pool, unscheduled = [], dailyRiderCapacity } = usePage<DeliveryBatchPageProps>().props;
+  const [building, setBuilding] = useState(false);
+  const [selectedBatchId, setSelectedBatchId] = useState<number>();
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [date, setDate] = useState('');
   const [window, setWindow] = useState('morning');
-  const [riderId, setRiderId] = useState('');
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState('all');
+  const [overrideReason, setOverrideReason] = useState('');
   const [scheduledThisAttempt, setScheduledThisAttempt] = useState<number[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const run = async (action: () => Promise<unknown>) => { try { setError(''); await action(); router.reload(); } catch { setError('This batch changed. Refresh and try again.'); } };
-  const eligiblePool = pool.filter((leg) => leg.scheduled_delivery_date?.slice(0, 10) === date && leg.delivery_window === window);
-  const eligibleIds = [...unscheduled.map((leg) => leg.id), ...eligiblePool.map((leg) => leg.id)];
-  const selectedRider = riders.find((rider) => rider.id === Number(riderId));
-  const toggle = (id: number, checked: boolean) => setSelected(checked ? [...selected, id] : selected.filter((selectedId) => selectedId !== id));
+
+  const allDeliveries = useMemo(() => {
+    const rows = new Map<number, TrackingShipmentLeg>();
+    [...unscheduled, ...pool].forEach((leg) => rows.set(leg.id, leg));
+    return [...rows.values()];
+  }, [pool, unscheduled]);
+  const unscheduledIds = useMemo(() => new Set(unscheduled.map((leg) => leg.id)), [unscheduled]);
+  const filteredDeliveries = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return allDeliveries.filter((leg) => {
+      const needsScheduling = unscheduledIds.has(leg.id);
+      if (status === 'unscheduled' && !needsScheduling) return false;
+      if (status === 'scheduled' && needsScheduling) return false;
+      if (!needsScheduling && date && leg.scheduled_delivery_date?.slice(0, 10) !== date) return false;
+      if (!needsScheduling && leg.delivery_window !== window) return false;
+      if (!query) return true;
+      const destination = leg.destination_snapshot;
+      return [sourceLabel(leg), destination?.name, destination?.phone, destination?.address]
+        .some((value) => String(value ?? '').toLowerCase().includes(query));
+    });
+  }, [allDeliveries, date, search, status, unscheduledIds, window]);
+  const selectedLegs = selectedIds.flatMap((id) => {
+    const leg = allDeliveries.find((candidate) => candidate.id === id);
+    return leg ? [leg] : [];
+  });
+  const selectedBatch = batches.find((batch) => batch.id === selectedBatchId);
+
+  const startNewBatch = () => {
+    setBuilding(true);
+    setSelectedBatchId(undefined);
+    setSelectedIds([]);
+    setScheduledThisAttempt([]);
+    setOverrideReason('');
+    setError('');
+  };
   const changeSlot = (nextDate: string, nextWindow: string) => {
     if (scheduledThisAttempt.length) {
-      setSelected([]);
+      setSelectedIds([]);
       setScheduledThisAttempt([]);
-      router.reload();
+      router.reload({ only: ['pool', 'unscheduled'] });
     } else {
-      setSelected((ids) => ids.filter((id) => unscheduled.some((leg) => leg.id === id)
-        || pool.some((leg) => leg.id === id && leg.scheduled_delivery_date?.slice(0, 10) === nextDate && leg.delivery_window === nextWindow)));
+      setSelectedIds((ids) => ids.filter((id) => unscheduledIds.has(id) || pool.some((leg) => leg.id === id
+        && (!nextDate || leg.scheduled_delivery_date?.slice(0, 10) === nextDate)
+        && leg.delivery_window === nextWindow)));
     }
     setDate(nextDate);
     setWindow(nextWindow);
   };
-  const create = async () => {
-    let batchCreated = false;
+  const toggle = (id: number, checked: boolean) => setSelectedIds((ids) => checked
+    ? [...ids.filter((selectedId) => selectedId !== id), id]
+    : ids.filter((selectedId) => selectedId !== id));
+  const selectAll = (checked: boolean) => {
+    const matchingIds = filteredDeliveries.map((leg) => leg.id);
+    setSelectedIds((ids) => checked
+      ? [...ids.filter((id) => !matchingIds.includes(id)), ...matchingIds]
+      : ids.filter((id) => !matchingIds.includes(id)));
+  };
+  const moveLocal = (from: number, to: number) => {
+    if (to < 0 || to >= selectedIds.length) return;
+    setSelectedIds((ids) => {
+      const reordered = [...ids];
+      const [moved] = reordered.splice(from, 1);
+      reordered.splice(to, 0, moved);
+      return reordered;
+    });
+  };
+  const removeLocal = (leg: TrackingShipmentLeg) => setSelectedIds((ids) => ids.filter((id) => id !== leg.id));
+  const saveDraft = async () => {
     try {
       setSubmitting(true);
       setError('');
-      const unscheduledIds = selected.filter((id) => unscheduled.some((leg) => leg.id === id) && !scheduledThisAttempt.includes(id));
-      if (unscheduledIds.length) {
-        await logisticsApi.scheduleLegs(unscheduledIds, date, window);
-        setScheduledThisAttempt((ids) => [...new Set([...ids, ...unscheduledIds])]);
+      const toSchedule = selectedIds.filter((id) => unscheduledIds.has(id) && !scheduledThisAttempt.includes(id));
+      if (toSchedule.length) {
+        await logisticsApi.scheduleLegs(toSchedule, date, window);
+        setScheduledThisAttempt((ids) => [...new Set([...ids, ...toSchedule])]);
       }
-      const response = await logisticsApi.createBatch({ delivery_date: date, delivery_window: window, leg_ids: selected });
-      batchCreated = true;
-      setSelected([]);
+      const { data } = await logisticsApi.createBatch({
+        delivery_date: date,
+        delivery_window: window,
+        leg_ids: selectedIds,
+        dispatcher_override_reason: selectedIds.length > dailyRiderCapacity ? overrideReason.trim() : undefined,
+      });
+      setSelectedBatchId(data.batch.id);
+      setBuilding(false);
+      setSelectedIds([]);
       setScheduledThisAttempt([]);
-      setRiderId('');
-      if (riderId) await logisticsApi.offerBatch(response.data.batch.id, Number(riderId));
-      router.reload();
+      setOverrideReason('');
+      await workflowFeedback.toast('success', 'Draft saved');
+      router.reload({ only: ['batches', 'pool', 'unscheduled'] });
     } catch (caught) {
-      if (batchCreated) {
-        setError('Draft batch created, but the rider offer failed. Assign a rider from the draft batch below.');
-        router.reload();
-      } else {
-        setError(errorMessage(caught));
-      }
+      setError(errorMessage(caught));
     } finally {
       setSubmitting(false);
     }
   };
-  const move = (batch: DeliveryBatch, index: number, offset: number) => {
-    const ids = batch.legs.map((leg) => leg.id);
-    [ids[index], ids[index + offset]] = [ids[index + offset], ids[index]];
-    return run(() => logisticsApi.updateBatch(batch.id, ids));
-  };
 
-  return <AppLayoutERP><Head title="Delivery Batches" /><main className="space-y-6 p-6">
-    <h1 className="text-2xl font-bold">Delivery Batches</h1>
-    {error && <p role="alert" className="rounded bg-red-50 p-3 text-red-700">{error}</p>}
-    <section className="rounded border bg-white p-4"><h2 className="font-semibold">Create delivery batch</h2>
-      <div className="my-3 flex flex-wrap gap-2">
-        <input aria-label="Delivery date" type="date" value={date} onChange={(event) => changeSlot(event.target.value, window)} className="rounded border p-2" />
-        <select aria-label="Delivery window" value={window} onChange={(event) => changeSlot(date, event.target.value)} className="rounded border p-2"><option value="morning">Morning</option><option value="afternoon">Afternoon</option></select>
-        <select aria-label="Rider" value={riderId} onChange={(event) => setRiderId(event.target.value)} className="rounded border p-2"><option value="">{riders.length ? 'Assign later' : 'No available riders'}</option>{riders.map((rider) => <option key={rider.id} value={rider.id}>{rider.name}</option>)}</select>
-        <button disabled={!date || !selected.length || submitting} onClick={create} className="rounded bg-blue-600 px-3 text-white disabled:opacity-50">{submitting ? 'Creating batch...' : riderId ? 'Create & offer batch' : 'Create draft batch'}</button>
-      </div>
-      <div className="mb-3 flex flex-wrap items-center gap-4 text-sm text-gray-600">
-        <label><input aria-label="Select all eligible deliveries" type="checkbox" disabled={!eligibleIds.length} checked={eligibleIds.length > 0 && eligibleIds.every((id) => selected.includes(id))} onChange={(event) => setSelected(event.target.checked ? eligibleIds : [])} /> Select all</label>
-        <span>{selected.length} selected</span>
-        {selectedRider && <span>Rider capacity: {selectedRider.daily_capacity ?? 'Not set'}{selectedRider.daily_capacity ? ' stops' : ''}</span>}
-      </div>
-      {unscheduled.map((leg) => <label key={leg.id} className="block border-t py-2"><input type="checkbox" checked={selected.includes(leg.id)} onChange={(event) => toggle(leg.id, event.target.checked)} /> {leg.shipment?.source_type === 'order' ? `Order #${leg.shipment.source_id}` : `Leg #${leg.id}`}</label>)}
-      {pool.map((leg) => {
-        const eligible = eligiblePool.some((candidate) => candidate.id === leg.id);
-        return <label key={leg.id} className={`block border-t py-2 ${eligible ? '' : 'text-gray-400'}`}><input type="checkbox" disabled={!eligible} checked={selected.includes(leg.id)} onChange={(event) => toggle(leg.id, event.target.checked)} /> Leg #{leg.id} · {formatDate(leg.scheduled_delivery_date!)} · {leg.delivery_window === 'morning' ? 'Morning' : 'Afternoon'}</label>;
-      })}
-      {!unscheduled.length && !pool.length && <p className="mt-3 text-sm text-gray-500">No deliveries ready for batching.</p>}
+  return <AppLayoutERP><Head title="Delivery Batches" /><main className="space-y-6 p-4 sm:p-6">
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div><h1 className="text-2xl font-bold text-gray-950 dark:text-white">Delivery Batches</h1><p className="mt-1 text-sm text-gray-500">Build, organize, and offer efficient delivery routes.</p></div>
+      <button type="button" onClick={startNewBatch} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-blue-600 px-4 font-semibold text-white hover:bg-blue-700"><Plus size={18} />New Batch</button>
+    </div>
+    {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-red-700">{error}</p>}
+    <div data-testid="batch-workspace" className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+      <AvailableDeliveriesPanel
+        rows={filteredDeliveries} totalRows={allDeliveries.length} selectedIds={selectedIds}
+        search={search} date={date} window={window} status={status}
+        onSearchChange={setSearch} onDateChange={(value) => changeSlot(value, window)} onWindowChange={(value) => changeSlot(date, value)} onStatusChange={setStatus}
+        onToggle={toggle} onSelectAll={selectAll} onClearFilters={() => { setSearch(''); setStatus('all'); setDate(''); setWindow('morning'); }}
+      />
+      {building || selectedBatch ? <BatchWorkspace
+        batch={selectedBatch} selectedLegs={selectedLegs} date={date} window={window} dailyRiderCapacity={dailyRiderCapacity}
+        overrideReason={overrideReason} submitting={submitting} onOverrideReasonChange={setOverrideReason}
+        onMove={moveLocal} onRemove={removeLocal} onSave={saveDraft} onReview={() => undefined}
+      /> : <section className="grid min-h-72 place-items-center rounded-2xl border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-500">Choose New Batch or open an existing batch to begin.</section>}
+    </div>
+    <section aria-label="Existing batches" className="space-y-3">
+      <h2 className="text-lg font-bold text-gray-950 dark:text-white">Existing batches</h2>
+      <DndProvider backend={HTML5Backend}><div className="grid gap-4 xl:grid-cols-2">{batches.map((batch) => <BatchCard key={batch.id} batch={batch} onOpen={() => { setBuilding(false); setSelectedBatchId(batch.id); }} />)}</div></DndProvider>
+      {!batches.length && <p className="rounded-xl border border-dashed p-6 text-center text-sm text-gray-500">No batches yet.</p>}
     </section>
-    <DndProvider backend={HTML5Backend}><section className="grid gap-4">{batches.map((batch) => <BatchCard key={batch.id} batch={batch} onOpen={() => undefined} />)}</section></DndProvider>
   </main></AppLayoutERP>;
 }
