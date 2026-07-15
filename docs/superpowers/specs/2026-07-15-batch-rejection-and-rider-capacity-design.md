@@ -17,11 +17,11 @@ Fix two gaps in the delivery batch workflow without changing logistics coverage 
 
 ## Cumulative daily capacity
 
-- For the selected rider and the candidate batch delivery date, total `assigned_stop_count` from the rider's other batches in `offered`, `accepted`, `in_progress`, and `completed` states.
+- For the selected rider and the candidate batch delivery date, total `assigned_stop_count` from the rider's other batches in `offered`, `accepted`, `in_progress`, and `completed` states. Daily capacity is shared across Morning and Afternoon windows on that date.
 - Do not count `draft` or `cancelled` batches. The candidate batch is excluded from its existing workload calculation.
 - Use the rider's `daily_capacity` when set; otherwise fall back to the shop's `daily_rider_capacity`, matching the existing batch-suggestion behavior. A null rider capacity does not mean unlimited.
 - Projected workload is `existing same-day stops + candidate batch stops`.
-- The offer modal displays existing, added, projected, and capacity values.
+- Every rider option in the offer modal displays same-date usage and capacity (for example, `Marco Santos — 5/10 used today`). After selection, the modal displays existing, added, projected, and capacity values (for example, `5 used + 2 stops = 7/10`).
 - When projected workload exceeds the rider's `daily_capacity`, the dispatcher must enter an override reason before offering.
 - The API accepts an optional `capacity_override_reason`, recalculates workload inside the offer transaction, and rejects over-capacity offers without a reason. UI calculations are advisory; the server is authoritative.
 - Store the accepted rider-capacity override reason in the immutable `batch_offered` delivery-event metadata. Keep `dispatcher_override_reason` for the existing draft-capacity workflow; an offer does not replace it. Cancellation continues using its current field behavior without destroying the earlier offer-event audit record.
