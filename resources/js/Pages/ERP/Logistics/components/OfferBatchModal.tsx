@@ -12,14 +12,14 @@ type Props = {
   batches: DeliveryBatch[];
   riders: LogisticsRider[];
   dailyRiderCapacity: number;
-  forceCapacityOverride: boolean;
+  forceCapacityOverrideForRiderId?: number;
   submitting: boolean;
   error: string;
   onClose: () => void;
   onOffer: (riderId: number, capacityOverrideReason?: string) => void;
 };
 
-export default function OfferBatchModal({ isOpen, batch, batches, riders, dailyRiderCapacity, forceCapacityOverride, submitting, error, onClose, onOffer }: Props) {
+export default function OfferBatchModal({ isOpen, batch, batches, riders, dailyRiderCapacity, forceCapacityOverrideForRiderId, submitting, error, onClose, onOffer }: Props) {
   const [riderId, setRiderId] = useState('');
   const [capacityOverrideReason, setCapacityOverrideReason] = useState('');
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -48,7 +48,7 @@ export default function OfferBatchModal({ isOpen, batch, batches, riders, dailyR
   const used = rider ? usedBy(rider) : 0;
   const projected = used + batch.assigned_stop_count;
   const exceedsRiderCapacity = Boolean(rider && projected > riderCapacity);
-  const overrideRequired = exceedsRiderCapacity || forceCapacityOverride;
+  const overrideRequired = exceedsRiderCapacity || Boolean(rider && forceCapacityOverrideForRiderId === rider.id);
   const handleKeys = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'Tab') return;
     const focusable = dialogRef.current?.querySelectorAll<HTMLElement>('button:not([disabled]), select:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
