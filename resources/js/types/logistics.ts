@@ -100,6 +100,7 @@ export type LogisticsRider = {
   phone?: string | null;
   availability_status: string;
   active: boolean;
+  daily_capacity?: number | null;
 };
 
 export type DeliveryBatch = {
