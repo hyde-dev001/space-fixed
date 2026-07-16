@@ -25,7 +25,8 @@ type Props = {
 export default function BatchCard({ batch, onOpen, onReview, onCancel, onRestore, onToggleUrgent }: Props) {
   const [expanded, setExpanded] = useState(false);
   const rejectedAt = formatRejectionTime(batch.rejected_at);
-  const urgentCount = batch.legs.filter((leg) => leg.urgent_at).length;
+  const legs = batch.status === 'cancelled' && batch.cancelled_stops?.length ? batch.cancelled_stops : batch.legs;
+  const urgentCount = legs.filter((leg) => leg.urgent_at).length;
   const active = !['completed', 'cancelled'].includes(batch.status);
   const hasSecondaryActions = (batch.status === 'draft' && Boolean(onReview))
     || (['draft', 'offered', 'accepted'].includes(batch.status) && Boolean(onCancel));
@@ -66,6 +67,6 @@ export default function BatchCard({ batch, onOpen, onReview, onCancel, onRestore
         </div>
       </div>
     </div>
-    {expanded && <div className="space-y-3 border-t bg-gray-50 p-4 dark:bg-gray-900/40">{batch.legs.map((leg, index) => <BatchStopRow key={leg.id} leg={leg} index={index} total={batch.legs.length} onToggleUrgent={onToggleUrgent} />)}</div>}
+    {expanded && <div className="space-y-3 border-t bg-gray-50 p-4 dark:bg-gray-900/40">{legs.map((leg, index) => <BatchStopRow key={leg.id} leg={leg} index={index} total={legs.length} onToggleUrgent={onToggleUrgent} />)}</div>}
   </article>;
 }
