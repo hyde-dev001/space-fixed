@@ -468,6 +468,11 @@ const batchForStatus = (id: number, status: string) => ({
   legs: [{ ...unscheduledLeg, id: id * 10, status: status === 'completed' ? 'delivered' : 'pending', stop_sequence: 1, scheduled_delivery_date: '2026-07-15', delivery_window: 'morning' }],
 });
 
+const historicalStops = [
+  { ...scheduledLeg, id: 91, stop_sequence: 1, status: 'delivered', urgent_at: '2026-07-15T08:00:00Z', shipment: { id: 91, source_type: 'order', source_id: 901 }, destination_snapshot: { name: 'Snapshot First', phone: '0901', address: 'First saved address' } },
+  { ...scheduledLeg, id: 92, stop_sequence: 2, status: 'delivered', urgent_at: null, shipment: { id: 92, source_type: 'order', source_id: 902 }, destination_snapshot: { name: 'Snapshot Second', phone: '0902', address: 'Second saved address' } },
+];
+
 it('filters active batches by status and keeps history collapsed separately', () => {
   mocks.props.batches = [batchForStatus(1, 'draft'), batchForStatus(2, 'offered'), batchForStatus(3, 'completed')];
   render(<Batches />);
@@ -530,6 +535,87 @@ it('keeps saved stops visible in a cancelled batch history card', () => {
 
   expect(within(history).getByText('Order #81')).toBeInTheDocument();
   expect(within(history).getByText('1 urgent')).toBeInTheDocument();
+});
+
+it.each(['completed', 'cancelled'])('uses the immutable stop snapshot throughout %s history', (status) => {
+  mocks.props.batches = [{
+    ...batchForStatus(6, status),
+    assigned_stop_count: 99,
+    legs: [],
+    stop_snapshot: historicalStops,
+    cancelled_stops: [{ ...scheduledLeg, id: 60, destination_snapshot: { name: 'Mutable cancellation', address: 'Wrong address' } }],
+  }];
+  render(<Batches />);
+  const history = screen.getByText('History (1)').closest('details')!;
+  fireEvent.click(within(history).getByText('History (1)'));
+
+  expect(within(history).getByText('2/10 stops')).toBeInTheDocument();
+  expect(within(history).getByText('1 urgent')).toBeInTheDocument();
+  fireEvent.click(within(history).getByRole('button', { name: 'Expand batch 6' }));
+  const cardRows = within(history).getAllByText(/Snapshot (First|Second)/);
+  expect(cardRows.map((row) => row.textContent)).toEqual(['Snapshot First', 'Snapshot Second']);
+  expect(within(history).queryByText('Mutable cancellation')).not.toBeInTheDocument();
+
+  fireEvent.click(within(history).getByRole('button', { name: 'View summary 6' }));
+  const workspace = within(screen.getByTestId('batch-workspace'));
+  expect(workspace.getByText('2/10 stops')).toBeInTheDocument();
+  expect(workspace.getAllByText(/Snapshot (First|Second)/).map((row) => row.textContent)).toEqual(['Snapshot First', 'Snapshot Second']);
+  expect(workspace.queryByText('Mutable cancellation')).not.toBeInTheDocument();
+});
+
+it('uses the persisted batch capacity in a history workspace', () => {
+  mocks.props.dailyRiderCapacity = 1;
+  mocks.props.batches = [{
+    ...batchForStatus(5, 'completed'), capacity: 3, legs: [], stop_snapshot: historicalStops,
+  }];
+  render(<Batches />);
+  fireEvent.click(screen.getByText('History (1)'));
+  fireEvent.click(screen.getByRole('button', { name: 'View summary 5' }));
+  const workspace = within(screen.getByTestId('batch-workspace'));
+
+  expect(workspace.getByText('2/3 stops')).toBeInTheDocument();
+  expect(workspace.queryByText(/exceeds the daily rider capacity/)).not.toBeInTheDocument();
+});
+
+it('falls back from an empty snapshot to saved cancellation stops', () => {
+  mocks.props.batches = [{
+    ...batchForStatus(6, 'cancelled'), legs: [], stop_snapshot: [],
+    cancelled_stops: [{ ...scheduledLeg, id: 60, destination_snapshot: { name: 'Saved cancellation', address: 'Saved address' } }],
+  }];
+  render(<Batches />);
+  fireEvent.click(screen.getByText('History (1)'));
+  fireEvent.click(screen.getByRole('button', { name: 'Expand batch 6' }));
+
+  expect(screen.getByText('Saved cancellation')).toBeInTheDocument();
+  expect(screen.getByText('1/10 stops')).toBeInTheDocument();
+});
+
+it('falls back from empty persisted history to live legs', () => {
+  mocks.props.batches = [{
+    ...batchForStatus(5, 'completed'), stop_snapshot: null, cancelled_stops: [],
+    legs: [{ ...scheduledLeg, id: 50, status: 'delivered', destination_snapshot: { name: 'Legacy live stop', address: 'Live address' } }],
+  }];
+  render(<Batches />);
+  fireEvent.click(screen.getByText('History (1)'));
+  fireEvent.click(screen.getByRole('button', { name: 'Expand batch 5' }));
+
+  expect(screen.getByText('Legacy live stop')).toBeInTheDocument();
+  expect(screen.getByText('1/10 stops')).toBeInTheDocument();
+});
+
+it.each(['completed', 'cancelled'])('shows unavailable history details only when every %s source is empty', (status) => {
+  mocks.props.batches = [{
+    ...batchForStatus(6, status), legs: [], stop_snapshot: [], cancelled_stops: [],
+  }];
+  render(<Batches />);
+  const history = screen.getByText('History (1)').closest('details')!;
+  fireEvent.click(within(history).getByText('History (1)'));
+  expect(within(history).queryByText('Historical stop details unavailable')).not.toBeInTheDocument();
+
+  fireEvent.click(within(history).getByRole('button', { name: 'Expand batch 6' }));
+  expect(within(history).getByText('Historical stop details unavailable')).toBeInTheDocument();
+  fireEvent.click(within(history).getByRole('button', { name: 'View summary 6' }));
+  expect(within(screen.getByTestId('batch-workspace')).getByText('Historical stop details unavailable')).toBeInTheDocument();
 });
 
 it.each([null, []])('falls back to live stops when cancelled_stops is %j', (cancelledStops) => {

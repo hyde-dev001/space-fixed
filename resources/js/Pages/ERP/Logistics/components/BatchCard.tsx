@@ -25,9 +25,11 @@ type Props = {
 export default function BatchCard({ batch, onOpen, onReview, onCancel, onRestore, onToggleUrgent }: Props) {
   const [expanded, setExpanded] = useState(false);
   const rejectedAt = formatRejectionTime(batch.rejected_at);
-  const legs = batch.status === 'cancelled' && batch.cancelled_stops?.length ? batch.cancelled_stops : batch.legs;
-  const urgentCount = legs.filter((leg) => leg.urgent_at).length;
   const active = !['completed', 'cancelled'].includes(batch.status);
+  const legs = active ? batch.legs
+    : batch.stop_snapshot?.length ? batch.stop_snapshot
+      : batch.cancelled_stops?.length ? batch.cancelled_stops : batch.legs;
+  const urgentCount = legs.filter((leg) => leg.urgent_at).length;
   const hasSecondaryActions = (batch.status === 'draft' && Boolean(onReview))
     || (['draft', 'offered', 'accepted'].includes(batch.status) && Boolean(onCancel));
 
@@ -43,7 +45,7 @@ export default function BatchCard({ batch, onOpen, onReview, onCancel, onRestore
           <p className="mt-1 text-sm text-gray-700 dark:text-gray-200">{batch.rider_profile?.name || 'Not assigned'}</p>
         </div>
         <div className="text-right text-sm text-gray-600 dark:text-gray-300">
-          <p>{batch.assigned_stop_count}/{batch.capacity} stops</p>
+          <p>{active ? batch.assigned_stop_count : legs.length}/{batch.capacity} stops</p>
           <p>{urgentCount} urgent</p>
         </div>
       </div>
@@ -67,6 +69,9 @@ export default function BatchCard({ batch, onOpen, onReview, onCancel, onRestore
         </div>
       </div>
     </div>
-    {expanded && <div className="space-y-3 border-t bg-gray-50 p-4 dark:bg-gray-900/40">{legs.map((leg, index) => <BatchStopRow key={leg.id} leg={leg} index={index} total={legs.length} onToggleUrgent={onToggleUrgent} />)}</div>}
+    {expanded && <div className="space-y-3 border-t bg-gray-50 p-4 dark:bg-gray-900/40">
+      {legs.map((leg, index) => <BatchStopRow key={leg.id} leg={leg} index={index} total={legs.length} onToggleUrgent={onToggleUrgent} />)}
+      {!active && !legs.length && <p className="text-center text-sm text-gray-500">Historical stop details unavailable</p>}
+    </div>}
   </article>;
 }

@@ -139,6 +139,7 @@ export type DeliveryBatch = {
   rejection_reason?: string | null;
   rejected_at?: string | null;
   cancellation_reason?: string | null;
+  stop_snapshot?: TrackingShipmentLeg[] | null;
   cancelled_stops?: TrackingShipmentLeg[] | null;
   dispatcher_override_reason?: string | null;
   rider_profile?: LogisticsRider | null;

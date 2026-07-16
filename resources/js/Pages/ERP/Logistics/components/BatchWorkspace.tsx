@@ -32,13 +32,16 @@ export default function BatchWorkspace({
   batch, selectedLegs, date, window, dailyRiderCapacity, overrideReason, submitting, busyLegId,
   onOverrideReasonChange, onMove, onRemove, onToggleUrgent, onSave, onReview,
 }: Props) {
-  const legs = batch?.status === 'cancelled' && batch.cancelled_stops?.length
-    ? batch.cancelled_stops
-    : batch?.legs ?? selectedLegs;
+  const history = batch && ['completed', 'cancelled'].includes(batch.status);
+  const legs = !batch ? selectedLegs : history
+    ? batch.stop_snapshot?.length ? batch.stop_snapshot
+      : batch.cancelled_stops?.length ? batch.cancelled_stops : batch.legs
+    : batch.legs;
+  const capacity = batch?.capacity ?? dailyRiderCapacity;
   const deliveryDate = date || batch?.delivery_date;
   const rejectedAt = formatRejectionTime(batch?.rejected_at);
   const cancellationReason = batch?.cancellation_reason || batch?.dispatcher_override_reason;
-  const overCapacity = legs.length > dailyRiderCapacity;
+  const overCapacity = legs.length > capacity;
   const canSave = !batch && Boolean(date) && legs.length > 0 && !submitting && (!overCapacity || Boolean(overrideReason.trim()));
 
   return <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
@@ -48,7 +51,7 @@ export default function BatchWorkspace({
           <h2 className="font-bold text-gray-950 dark:text-white">{batch ? `Batch #${batch.id}` : 'New batch'}</h2>
           <p className="mt-1 text-sm text-gray-500">{deliveryDate ? formatDate(deliveryDate) : 'Choose a date'} · {(batch?.delivery_window || window) === 'morning' ? 'Morning' : 'Afternoon'}</p>
         </div>
-        <span className="rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">{legs.length}/{dailyRiderCapacity} stops</span>
+        <span className="rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">{legs.length}/{capacity} stops</span>
       </div>
       <div className="mt-3 flex items-center gap-2 rounded-xl bg-gray-50 p-3 text-sm text-gray-600 dark:bg-gray-900/40 dark:text-gray-300">
         <PackageCheck size={18} />{batch?.status === 'cancelled' ? 'Cancelled batch summary.' : 'Rider will be selected during Review & Offer.'}
@@ -63,7 +66,7 @@ export default function BatchWorkspace({
         <p className="mt-1">{cancellationReason}</p>
       </div>}
       {overCapacity && <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-800">
-        <p className="flex items-center gap-2 text-sm font-semibold"><AlertTriangle size={17} />This batch exceeds the daily rider capacity of {dailyRiderCapacity} {dailyRiderCapacity === 1 ? 'stop' : 'stops'}.</p>
+        <p className="flex items-center gap-2 text-sm font-semibold"><AlertTriangle size={17} />This batch exceeds the daily rider capacity of {capacity} {capacity === 1 ? 'stop' : 'stops'}.</p>
         {!batch && <label className="mt-3 block text-sm font-medium">Capacity override reason
           <textarea aria-label="Capacity override reason" value={overrideReason} onChange={(event) => onOverrideReasonChange(event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-amber-300 bg-white p-3" placeholder="Explain why this batch can exceed capacity" />
         </label>}
@@ -72,7 +75,7 @@ export default function BatchWorkspace({
     <DndProvider backend={HTML5Backend}>
       <div className="min-h-48 space-y-3 bg-gray-50 p-4 dark:bg-gray-900/40">
         {legs.map((leg, index) => <BatchStopRow key={leg.id} leg={leg} index={index} total={legs.length} editable={!batch || batch.status === 'draft'} busy={submitting || busyLegId === leg.id} onMove={onMove} onRemove={onRemove} onToggleUrgent={onToggleUrgent} />)}
-        {!legs.length && <p className="grid min-h-40 place-items-center text-center text-sm text-gray-500">{batch?.status === 'cancelled' ? 'Order details are unavailable for this legacy cancellation.' : 'Select deliveries from the left to build the route.'}</p>}
+        {!legs.length && <p className="grid min-h-40 place-items-center text-center text-sm text-gray-500">{history ? 'Historical stop details unavailable' : 'Select deliveries from the left to build the route.'}</p>}
       </div>
     </DndProvider>
     <div className="sticky bottom-0 flex min-h-16 flex-wrap items-center justify-end gap-2 border-t bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
