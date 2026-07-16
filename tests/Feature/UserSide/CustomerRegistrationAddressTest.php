@@ -37,7 +37,14 @@ class CustomerRegistrationAddressTest extends TestCase
     public function test_registration_creates_a_default_shipping_address(): void
     {
         Storage::fake('public');
-        Http::fake(['nominatim.openstreetmap.org/*' => Http::response(['address' => ['country_code' => 'ph']])]);
+        Http::fake(['nominatim.openstreetmap.org/*' => Http::response(['address' => [
+            'country_code' => 'ph',
+            'region' => 'National Capital Region',
+            'state' => 'Metro Manila',
+            'city' => 'Manila',
+            'suburb' => 'Ermita',
+            'postcode' => '1000',
+        ]])]);
 
         $this->post('/user/register', $this->payload())
             ->assertRedirect(route('verification.notice'));
@@ -98,5 +105,33 @@ class CustomerRegistrationAddressTest extends TestCase
         ]))->assertSessionHasErrors('address_latitude');
 
         $this->assertDatabaseMissing('users', ['email' => 'juan.dela.cruz@gmail.com']);
+    }
+
+    public function test_registration_uses_reverse_geocoded_shipping_fields_instead_of_client_values(): void
+    {
+        Storage::fake('public');
+        Http::fake(['nominatim.openstreetmap.org/*' => Http::response(['address' => [
+            'country_code' => 'ph',
+            'region' => 'National Capital Region',
+            'state' => 'Metro Manila',
+            'city' => 'Manila',
+            'suburb' => 'Ermita',
+            'postcode' => '1000',
+        ]])]);
+
+        $this->post('/user/register', $this->payload([
+            'address_region' => 'Forged Region',
+            'address_province' => 'Forged Province',
+            'address_city' => 'Forged City',
+            'address_barangay' => 'Forged Barangay',
+        ]))->assertRedirect(route('verification.notice'));
+
+        $this->assertDatabaseHas('user_addresses', [
+            'region' => 'National Capital Region',
+            'province' => 'Metro Manila',
+            'city' => 'Manila',
+            'barangay' => 'Ermita',
+        ]);
+        $this->assertDatabaseMissing('user_addresses', ['city' => 'Forged City']);
     }
 }

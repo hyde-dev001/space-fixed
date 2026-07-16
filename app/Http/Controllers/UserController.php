@@ -227,7 +227,7 @@ class UserController extends Controller
             ]);
 
             try {
-                $countryCode = Http::timeout(5)->acceptJson()->get(
+                $resolvedAddress = Http::timeout(5)->acceptJson()->get(
                     'https://nominatim.openstreetmap.org/reverse',
                     [
                         'lat' => $validated['address_latitude'],
@@ -235,16 +235,30 @@ class UserController extends Controller
                         'format' => 'json',
                         'addressdetails' => 1,
                     ],
-                )->json('address.country_code');
+                )->json('address', []);
             } catch (\Throwable) {
-                $countryCode = null;
+                $resolvedAddress = [];
             }
 
-            if (strtolower((string) $countryCode) !== 'ph') {
+            $resolvedProvince = $resolvedAddress['province'] ?? $resolvedAddress['state'] ?? '';
+            $resolvedRegion = $resolvedAddress['region'] ?? $resolvedAddress['state'] ?? $resolvedProvince;
+            $resolvedCity = $resolvedAddress['city'] ?? $resolvedAddress['municipality'] ?? $resolvedAddress['town'] ?? $resolvedAddress['county'] ?? '';
+            $resolvedBarangay = $resolvedAddress['suburb'] ?? $resolvedAddress['quarter'] ?? $resolvedAddress['neighbourhood'] ?? $resolvedAddress['village'] ?? '';
+
+            if (
+                strtolower((string) ($resolvedAddress['country_code'] ?? '')) !== 'ph'
+                || !$resolvedRegion || !$resolvedProvince || !$resolvedCity || !$resolvedBarangay
+            ) {
                 throw ValidationException::withMessages([
                     'address_latitude' => 'Please select a verified location within the Philippines.',
                 ]);
             }
+
+            $validated['address_region'] = $resolvedRegion;
+            $validated['address_province'] = $resolvedProvince;
+            $validated['address_city'] = $resolvedCity;
+            $validated['address_barangay'] = $resolvedBarangay;
+            $validated['address_postal_code'] = $resolvedAddress['postcode'] ?? $validated['address_postal_code'] ?? null;
 
             // Handle valid ID upload
             $validIdPath = null;

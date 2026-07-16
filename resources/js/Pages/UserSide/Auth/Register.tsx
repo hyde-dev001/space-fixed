@@ -57,6 +57,7 @@ export default function Register() {
   const mapRef = useRef<HTMLDivElement>(null);
   const leafletMapRef = useRef<any>(null);
   const markerRef = useRef<any>(null);
+  const locationRequestRef = useRef(0);
   const authInputClasses = 'h-12 rounded-xl !border-gray-200 !bg-[#f8fafc] !text-[13px] !text-gray-800 placeholder:!text-gray-400 shadow-none focus:!border-gray-300 focus:!ring-gray-200/70 dark:!border-gray-200 dark:!bg-[#f8fafc] dark:!text-gray-800 dark:placeholder:!text-gray-400 dark:focus:!border-gray-300 dark:focus:!ring-gray-200/70';
 
   useEffect(() => {
@@ -234,12 +235,13 @@ export default function Register() {
     return true;
   };
 
-  const reverseGeocode = async (latitude: number, longitude: number) => {
+  const reverseGeocode = async (latitude: number, longitude: number, requestId: number) => {
     const response = await fetch(
       `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&addressdetails=1`,
     );
     if (!response.ok) throw new Error('Address lookup failed');
-    return applyLocationResult(await response.json());
+    const result = await response.json();
+    return requestId === locationRequestRef.current && applyLocationResult(result);
   };
 
   useEffect(() => {
@@ -266,13 +268,16 @@ export default function Register() {
       const marker = L.marker(initial, { draggable: true }).addTo(map);
 
       const updateFromPin = async (latitude: number, longitude: number) => {
+        const requestId = ++locationRequestRef.current;
         marker.setLatLng([latitude, longitude]);
         setAddressLocation(null);
         setGeoError('');
         try {
-          await reverseGeocode(latitude, longitude);
+          await reverseGeocode(latitude, longitude, requestId);
         } catch {
-          setGeoError('Could not identify this location. Please try again.');
+          if (requestId === locationRequestRef.current) {
+            setGeoError('Could not identify this location. Please try again.');
+          }
         }
       };
 
@@ -303,6 +308,7 @@ export default function Register() {
     }
 
     setIsSearching(true);
+    const requestId = ++locationRequestRef.current;
     setAddressLocation(null);
     setGeoError('');
     try {
@@ -311,10 +317,13 @@ export default function Register() {
       );
       if (!response.ok) throw new Error('Address search failed');
       const [result] = await response.json();
+      if (requestId !== locationRequestRef.current) return;
       if (!result) setGeoError('No Philippine address found. Try a more specific search.');
       else applyLocationResult(result);
     } catch {
-      setGeoError('Address search is unavailable. Please try again.');
+      if (requestId === locationRequestRef.current) {
+        setGeoError('Address search is unavailable. Please try again.');
+      }
     } finally {
       setIsSearching(false);
     }
@@ -327,20 +336,25 @@ export default function Register() {
     }
 
     setGettingGPS(true);
+    const requestId = ++locationRequestRef.current;
     setAddressLocation(null);
     setGeoError('');
     navigator.geolocation.getCurrentPosition(
       async ({ coords }) => {
         try {
-          await reverseGeocode(coords.latitude, coords.longitude);
+          await reverseGeocode(coords.latitude, coords.longitude, requestId);
         } catch {
-          setGeoError('Could not identify your GPS address. Please try searching instead.');
+          if (requestId === locationRequestRef.current) {
+            setGeoError('Could not identify your GPS address. Please try searching instead.');
+          }
         } finally {
           setGettingGPS(false);
         }
       },
       () => {
-        setGeoError('Could not get your location. Please allow location access.');
+        if (requestId === locationRequestRef.current) {
+          setGeoError('Could not get your location. Please allow location access.');
+        }
         setGettingGPS(false);
       },
       { enableHighAccuracy: true },
