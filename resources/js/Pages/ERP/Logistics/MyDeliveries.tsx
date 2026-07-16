@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import { logisticsApi } from '@/services/logisticsApi';
 import type { DeliveryBatch } from '@/types/logistics';
+import { workflowFeedback } from '@/utils/workflowFeedback';
 import Shipments from './Shipments';
 
 const destination = (leg: DeliveryBatch['legs'][number]) => {
@@ -20,8 +21,58 @@ export default function MyDeliveries() {
   const { batches = [] } = usePage<{ batches: DeliveryBatch[] }>().props;
   const [reasons, setReasons] = useState<Record<number, string>>({});
   const [expandedLegs, setExpandedLegs] = useState<Record<number, number | null>>({});
+  const [selectedByBatch, setSelectedByBatch] = useState<Record<number, number[]>>({});
+  const [processingBatchId, setProcessingBatchId] = useState<number | null>(null);
   const nextSignature = batches.map((batch) => `${batch.id}:${ordered(batch).find((leg) => !complete(leg.status))?.id ?? 'done'}`).join('|');
   const act = async (action: () => Promise<unknown>) => { await action(); router.reload(); };
+
+  const setBatchSelection = (batchId: number, legIds: number[]) => {
+    setSelectedByBatch((current) => ({ ...current, [batchId]: legIds }));
+  };
+
+  const toggleStop = (batchId: number, legId: number) => {
+    const selected = selectedByBatch[batchId] ?? [];
+    setBatchSelection(batchId, selected.includes(legId) ? selected.filter((id) => id !== legId) : [...selected, legId]);
+  };
+
+  const runBulkAction = async (batch: DeliveryBatch, action: 'picked_up' | 'in_transit') => {
+    const selected = new Set(selectedByBatch[batch.id] ?? []);
+    const sourceStatus = action === 'picked_up' ? 'assigned' : 'picked_up';
+    const eligible = ordered(batch).filter((leg) => selected.has(leg.id) && leg.status === sourceStatus);
+    const skipped = selected.size - eligible.length;
+    const actionLabel = action === 'picked_up' ? 'Mark Picked Up' : 'Mark In Transit';
+
+    if (!eligible.length) {
+      await workflowFeedback.warning('No eligible stops', `${selected.size} selected · ${skipped} skipped`);
+      return;
+    }
+
+    const confirmation = await workflowFeedback.confirm({
+      title: `${actionLabel}?`,
+      text: `${eligible.length} eligible · ${skipped} skipped`,
+      confirmButtonText: actionLabel,
+    });
+    if (!confirmation.isConfirmed) return;
+
+    setProcessingBatchId(batch.id);
+    try {
+      const results = await Promise.allSettled(eligible.map((leg) => action === 'picked_up'
+        ? logisticsApi.markPickedUp(leg.id)
+        : logisticsApi.outForDelivery(leg.id)));
+      const successful = results.filter((result) => result.status === 'fulfilled').length;
+      const failed = results.length - successful;
+
+      await workflowFeedback.alert({
+        icon: failed ? 'warning' : 'success',
+        title: `${actionLabel} complete`,
+        text: `${successful} successful · ${skipped} skipped · ${failed} failed`,
+      });
+      setBatchSelection(batch.id, []);
+      router.reload({ only: ['batches'] });
+    } finally {
+      setProcessingBatchId(null);
+    }
+  };
 
   useEffect(() => setExpandedLegs({}), [nextSignature]);
 
@@ -37,6 +88,14 @@ export default function MyDeliveries() {
         const completed = legs.filter((leg) => complete(leg.status)).length;
         const nextLeg = legs.find((leg) => !complete(leg.status));
         const percent = legs.length ? Math.round((completed / legs.length) * 100) : 0;
+        const selectableLegs = batch.status === 'in_progress'
+          ? legs.filter((leg) => ['assigned', 'picked_up'].includes(leg.status))
+          : [];
+        const selectedIds = selectedByBatch[batch.id] ?? [];
+        const selectedAssigned = legs.filter((leg) => selectedIds.includes(leg.id) && leg.status === 'assigned').length;
+        const selectedPickedUp = legs.filter((leg) => selectedIds.includes(leg.id) && leg.status === 'picked_up').length;
+        const allSelected = selectableLegs.length > 0 && selectableLegs.every((leg) => selectedIds.includes(leg.id));
+        const isProcessing = processingBatchId !== null;
 
         return <article key={batch.id} className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
           <header className="border-b border-gray-100 p-4 sm:p-5">
@@ -54,6 +113,38 @@ export default function MyDeliveries() {
             <div className="mt-2 h-2 overflow-hidden rounded-full bg-gray-100" role="progressbar" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
               <div className="h-full rounded-full bg-green-500 transition-all" style={{ width: `${percent}%` }} />
             </div>
+            {selectableLegs.length > 0 && <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-4">
+              <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                <input
+                  type="checkbox"
+                  aria-label={`Select all eligible stops in batch ${batch.id}`}
+                  checked={allSelected}
+                  disabled={isProcessing}
+                  onChange={() => setBatchSelection(batch.id, allSelected ? [] : selectableLegs.map((leg) => leg.id))}
+                  className="h-4 w-4 rounded border-gray-300 text-blue-600"
+                />
+                Select all
+              </label>
+              <span className="mr-auto text-sm text-gray-500">{selectedIds.length} selected</span>
+              <button
+                type="button"
+                disabled={!selectedIds.length || isProcessing}
+                onClick={() => runBulkAction(batch, 'picked_up')}
+                className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >Mark Picked Up ({selectedAssigned})</button>
+              <button
+                type="button"
+                disabled={!selectedIds.length || isProcessing}
+                onClick={() => runBulkAction(batch, 'in_transit')}
+                className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >Mark In Transit ({selectedPickedUp})</button>
+              <button
+                type="button"
+                disabled={!selectedIds.length || isProcessing}
+                onClick={() => setBatchSelection(batch.id, [])}
+                className="rounded-lg border px-3 py-2 text-sm font-semibold text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >Clear</button>
+            </div>}
           </header>
 
           <div className="space-y-3 p-4 sm:p-5">
@@ -66,6 +157,7 @@ export default function MyDeliveries() {
               const isDone = complete(leg.status);
               const isNext = nextLeg?.id === leg.id;
               const isExpanded = isNext || expandedLegs[batch.id] === leg.id;
+              const isSelectable = batch.status === 'in_progress' && ['assigned', 'picked_up'].includes(leg.status);
               const stop = leg.stop_sequence ?? '—';
 
               return <div
@@ -76,6 +168,14 @@ export default function MyDeliveries() {
               >
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
+                    {isSelectable && <input
+                      type="checkbox"
+                      aria-label={`Select stop ${stop} in batch ${batch.id}`}
+                      checked={selectedIds.includes(leg.id)}
+                      disabled={isProcessing}
+                      onChange={() => toggleStop(batch.id, leg.id)}
+                      className="h-4 w-4 rounded border-gray-300 text-blue-600"
+                    />}
                     <span className={`grid h-9 w-9 place-items-center rounded-full text-sm font-bold ${isDone ? 'bg-green-100 text-green-700' : isNext ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}>
                       {isDone ? '✓' : stop}
                     </span>
