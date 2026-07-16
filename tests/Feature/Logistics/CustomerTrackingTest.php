@@ -94,7 +94,10 @@ class CustomerTrackingTest extends TestCase
                 ->where('orders.0.delivery_status', 'in_transit')
                 ->where('orders.0.delivery_tracking_number', 'SHP-TRACK-1001')
                 ->where('orders.0.delivery_rider_name', 'Marco Santos')
-                ->where('orders.0.delivery_rider_phone', '09053338826'));
+                ->where('orders.0.delivery_rider_phone', '09053338826')
+                ->where('orders.0.delivery_has_failed_attempt', false)
+                ->where('orders.0.delivery_scheduled_date', null)
+                ->where('orders.0.delivery_window', null));
     }
 
     public function test_customer_repair_listing_includes_logistics_tracking_shipments(): void
@@ -220,5 +223,57 @@ class CustomerTrackingTest extends TestCase
 
         Storage::disk('public')->delete($path);
         $this->actingAs($customer, 'user')->get($url)->assertNotFound();
+    }
+
+    public function test_my_orders_uses_newest_shipment_current_leg_failure_and_schedule(): void
+    {
+        $customer = User::factory()->create();
+        $order = Order::factory()->create([
+            'customer_id' => $customer->id,
+            'carrier_company' => 'Shop-owned logistics',
+        ]);
+        $olderShipment = Shipment::factory()->create([
+            'shop_owner_id' => $order->shop_owner_id, 'source_type' => 'order',
+            'source_id' => $order->id, 'purpose' => 'retail_delivery',
+        ]);
+        $olderLeg = ShipmentLeg::factory()->create([
+            'shipment_id' => $olderShipment->id, 'sequence' => 99, 'status' => 'pending',
+        ]);
+        DeliveryAttempt::query()->create([
+            'shipment_leg_id' => $olderLeg->id, 'attempt_type' => 'delivery', 'status' => 'failed',
+            'reason_code' => 'recipient_refused', 'attempted_at' => now(),
+        ]);
+
+        $shipment = Shipment::factory()->create([
+            'shop_owner_id' => $order->shop_owner_id, 'source_type' => 'order',
+            'source_id' => $order->id, 'purpose' => 'retail_delivery',
+        ]);
+        ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id, 'sequence' => 5, 'status' => 'pending',
+            'scheduled_delivery_date' => '2026-07-17', 'delivery_window' => 'afternoon',
+        ]);
+        $currentLeg = ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id, 'sequence' => 5, 'status' => 'pending',
+            'scheduled_delivery_date' => '2026-07-18', 'delivery_window' => 'morning',
+        ]);
+        DeliveryAttempt::query()->create([
+            'shipment_leg_id' => $currentLeg->id, 'attempt_type' => 'delivery', 'status' => 'failed',
+            'reason_code' => 'recipient_unavailable', 'attempted_at' => now(),
+        ]);
+
+        $assertPayload = fn ($response, bool $failed, ?string $date, ?string $window) => $response
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('orders.0.logistics_shipment_id', $shipment->id)
+                ->where('orders.0.delivery_has_failed_attempt', $failed)
+                ->where('orders.0.delivery_scheduled_date', $date)
+                ->where('orders.0.delivery_window', $window));
+
+        $assertPayload($this->actingAs($customer, 'user')->get('/my-orders'), true, '2026-07-18', 'morning');
+
+        $currentLeg->update([
+            'status' => 'delivered', 'scheduled_delivery_date' => null, 'delivery_window' => 'afternoon',
+        ]);
+        $assertPayload($this->actingAs($customer, 'user')->get('/my-orders'), false, null, 'afternoon');
     }
 }

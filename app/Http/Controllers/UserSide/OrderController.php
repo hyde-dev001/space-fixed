@@ -104,11 +104,20 @@ class OrderController extends Controller
             ->where('purpose', 'retail_delivery')
             ->whereIn('source_id', $orderCollection->pluck('id')->all())
             ->orderByDesc('id')
-            ->with('legs.assignments.riderProfile')
+            ->with([
+                'legs' => fn ($query) => $query->orderBy('sequence')->orderBy('id'),
+                'legs.assignments.riderProfile',
+                'legs.attempts' => fn ($query) => $query
+                    ->where('attempt_type', 'delivery')
+                    ->where('status', 'failed')
+                    ->latest('attempted_at')
+                    ->latest('id'),
+            ])
             ->get()
             ->unique('source_id')
             ->mapWithKeys(function (Shipment $shipment) {
                 $currentLeg = $shipment->legs->last();
+                $latestAttempt = $currentLeg?->attempts->first();
                 $assignment = $shipment->legs
                     ->flatMap(fn ($leg) => $leg->assignments)
                     ->first(fn ($assignment) => in_array($assignment->status, ['assigned', 'accepted', 'completed'], true));
@@ -117,6 +126,10 @@ class OrderController extends Controller
                     'id' => (int) $shipment->id,
                     'status' => $currentLeg?->status?->value ?? $shipment->status->value,
                     'tracking_number' => $currentLeg?->tracking_number,
+                    'delivery_has_failed_attempt' => (bool) ($latestAttempt
+                        && !in_array($currentLeg->status->value, ['awaiting_proof_approval', 'delivered'], true)),
+                    'delivery_scheduled_date' => optional($currentLeg?->scheduled_delivery_date)->toDateString(),
+                    'delivery_window' => $currentLeg?->delivery_window,
                     'rider_name' => $assignment?->riderProfile?->name,
                     'rider_phone' => $assignment?->riderProfile?->phone,
                 ]];
@@ -275,6 +288,9 @@ class OrderController extends Controller
                     'is_shop_owned_delivery' => $isShopOwnedDelivery,
                     'delivery_status' => $shipment['status'] ?? null,
                     'delivery_tracking_number' => $shipment['tracking_number'] ?? null,
+                    'delivery_has_failed_attempt' => $shipment['delivery_has_failed_attempt'] ?? false,
+                    'delivery_scheduled_date' => $shipment['delivery_scheduled_date'] ?? null,
+                    'delivery_window' => $shipment['delivery_window'] ?? null,
                     'delivery_rider_name' => $isShopOwnedDelivery ? ($shipment['rider_name'] ?? null) : null,
                     'delivery_rider_phone' => $isShopOwnedDelivery ? ($shipment['rider_phone'] ?? null) : null,
                     'delivery_reference' => $isShopOwnedDelivery && $shipment ? 'SHP-' . $shipment['id'] : null,
