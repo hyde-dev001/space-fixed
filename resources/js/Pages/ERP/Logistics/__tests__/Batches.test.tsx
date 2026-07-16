@@ -517,6 +517,36 @@ it('opens a cancelled batch summary and scrolls the workspace into view', () => 
   expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
 });
 
+it('keeps saved stops visible in a cancelled batch history card', () => {
+  mocks.props.batches = [{
+    ...batchForStatus(6, 'cancelled'),
+    legs: [],
+    cancelled_stops: [{ ...scheduledLeg, id: 60, stop_sequence: 1, urgent_at: '2026-07-15T08:00:00Z' }],
+  }];
+  render(<Batches />);
+  const history = screen.getByText('History (1)').closest('details')!;
+  fireEvent.click(within(history).getByText('History (1)'));
+  fireEvent.click(screen.getByRole('button', { name: 'Expand batch 6' }));
+
+  expect(within(history).getByText('Order #81')).toBeInTheDocument();
+  expect(within(history).getByText('1 urgent')).toBeInTheDocument();
+});
+
+it.each([null, []])('falls back to live stops when cancelled_stops is %j', (cancelledStops) => {
+  mocks.props.batches = [{
+    ...batchForStatus(6, 'cancelled'),
+    legs: [{ ...scheduledLeg, id: 60, stop_sequence: 1, urgent_at: '2026-07-15T08:00:00Z' }],
+    cancelled_stops: cancelledStops,
+  }];
+  render(<Batches />);
+  const history = screen.getByText('History (1)').closest('details')!;
+  fireEvent.click(within(history).getByText('History (1)'));
+  fireEvent.click(screen.getByRole('button', { name: 'Expand batch 6' }));
+
+  expect(within(history).getByText('Order #81')).toBeInTheDocument();
+  expect(within(history).getByText('1 urgent')).toBeInTheDocument();
+});
+
 it('restores a cancelled history batch after confirmation', async () => {
   mocks.props.batches = [{
     ...batchForStatus(6, 'cancelled'),
