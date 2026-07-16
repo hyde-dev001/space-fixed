@@ -8,6 +8,7 @@ use App\Models\Logistics\ShipmentLeg;
 use App\Models\ShopOwner;
 use App\Support\Logistics\BatchStopSnapshot;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
+use Illuminate\Foundation\Testing\RefreshDatabaseState;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
@@ -19,6 +20,13 @@ class DeliveryBatchStopSnapshotMigrationTest extends TestCase
     protected function migrateFreshUsing(): array
     {
         return ['--step' => true];
+    }
+
+    protected function tearDown(): void
+    {
+        parent::tearDown();
+
+        RefreshDatabaseState::$inMemoryConnections = [];
     }
 
     public function test_migration_backfills_ordered_normalized_snapshots_from_cancelled_stops_or_live_legs(): void
