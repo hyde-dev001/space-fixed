@@ -46,8 +46,10 @@ export type TrackingShipmentLeg = {
   }>;
   attempts?: Array<{
     id: number;
+    status?: string;
     reason_code?: string | null;
     notes?: string | null;
+    file_path?: string | null;
     attempted_at?: string | null;
   }>;
 };
@@ -130,6 +132,9 @@ export type DeliveryBatch = {
   assigned_stop_count: number;
   rejection_reason?: string | null;
   rejected_at?: string | null;
+  cancellation_reason?: string | null;
+  cancelled_stops?: TrackingShipmentLeg[] | null;
+  dispatcher_override_reason?: string | null;
   rider_profile?: LogisticsRider | null;
   legs: TrackingShipmentLeg[];
 };

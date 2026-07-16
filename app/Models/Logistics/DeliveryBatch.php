@@ -13,7 +13,8 @@ class DeliveryBatch extends Model
     protected $fillable = [
         'shop_owner_id', 'rider_profile_id', 'delivery_date', 'delivery_window', 'status',
         'capacity', 'assigned_stop_count', 'offered_at', 'accepted_at', 'rejected_at',
-        'started_at', 'completed_at', 'cancelled_at', 'rejection_reason', 'dispatcher_override_reason',
+        'started_at', 'completed_at', 'cancelled_at', 'rejection_reason', 'cancellation_reason',
+        'cancelled_stops', 'dispatcher_override_reason',
     ];
 
     protected $attributes = ['status' => 'draft', 'capacity' => 0, 'assigned_stop_count' => 0];
@@ -21,6 +22,7 @@ class DeliveryBatch extends Model
         'delivery_date' => 'date', 'offered_at' => 'datetime', 'accepted_at' => 'datetime',
         'rejected_at' => 'datetime', 'started_at' => 'datetime', 'completed_at' => 'datetime',
         'cancelled_at' => 'datetime', 'capacity' => 'integer', 'assigned_stop_count' => 'integer',
+        'cancelled_stops' => 'array',
     ];
 
     public function shopOwner() { return $this->belongsTo(ShopOwner::class); }

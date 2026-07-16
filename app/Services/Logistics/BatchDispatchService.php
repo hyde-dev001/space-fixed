@@ -216,15 +216,45 @@ class BatchDispatchService
             if (!in_array($batch->status, ['draft', 'offered', 'accepted'], true)) {
                 throw ValidationException::withMessages(['batch' => 'Only a batch that has not started may be cancelled.']);
             }
+            $cancelledStops = $batch->legs()->with('shipment')->orderBy('stop_sequence')->get()->toArray();
+            $batch->update([
+                'status' => 'cancelled', 'cancelled_at' => now(), 'cancellation_reason' => $reason,
+                'cancelled_stops' => $cancelledStops,
+            ]);
             $batch->legs()->each(function ($leg) {
                 $leg->assignments()->whereIn('status', ['assigned', 'accepted'])->update(['status' => 'cancelled', 'cancelled_at' => now()]);
                 if (!in_array($leg->status->value, ['delivered', 'cancelled'], true)) {
                     $leg->update(['delivery_batch_id' => null, 'stop_sequence' => null, 'status' => 'pending']);
                 }
             });
-            $batch->update(['status' => 'cancelled', 'cancelled_at' => now(), 'dispatcher_override_reason' => $reason]);
             $this->recordBatchEvent($batch, 'batch_cancelled', 'Delivery batch cancelled.');
             return $batch->fresh('legs');
+        });
+    }
+
+    public function restore(DeliveryBatch $batch): DeliveryBatch
+    {
+        return DB::transaction(function () use ($batch) {
+            $batch = DeliveryBatch::query()->lockForUpdate()->findOrFail($batch->id);
+            $legIds = collect($batch->cancelled_stops)->pluck('id')->filter()->unique()->values();
+            if ($batch->status !== 'cancelled' || $legIds->isEmpty()) {
+                throw ValidationException::withMessages(['batch' => 'This cancelled batch has no restorable stop history.']);
+            }
+            $legs = ShipmentLeg::query()->with('shipment')->whereIn('id', $legIds)->lockForUpdate()->get();
+            if ($legs->count() !== $legIds->count() || $legs->contains(fn ($leg) =>
+                $leg->shipment->shop_owner_id !== $batch->shop_owner_id || $leg->delivery_batch_id
+                || $leg->status->value !== 'pending')) {
+                throw ValidationException::withMessages(['batch' => 'One or more stops are no longer available for restoration.']);
+            }
+            foreach ($legIds as $index => $id) {
+                $legs->firstWhere('id', $id)->update(['delivery_batch_id' => $batch->id, 'stop_sequence' => $index + 1]);
+            }
+            $batch->update([
+                'status' => 'draft', 'rider_profile_id' => null, 'assigned_stop_count' => $legIds->count(),
+                'offered_at' => null, 'accepted_at' => null, 'rejected_at' => null, 'cancelled_at' => null,
+                'rejection_reason' => null, 'cancellation_reason' => null, 'cancelled_stops' => null,
+            ]);
+            return $batch->fresh('legs.shipment');
         });
     }
 

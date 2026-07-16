@@ -33,6 +33,15 @@ describe('ShipmentTracking', () => {
     expect(screen.getByText(/July 15, 2026.*Morning/)).toBeInTheDocument();
   });
 
+  it('shows the shop delivery method without a tracking link when courier tracking is absent', () => {
+    render(<ShipmentTracking />);
+
+    expect(screen.getByText('SHP-1')).toBeInTheDocument();
+    expect(screen.getByText('Delivery Method')).toBeInTheDocument();
+    expect(screen.getByText('SoleSpace Shop Logistics')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Open SoleSpace tracking' })).not.toBeInTheDocument();
+  });
+
   it('shows a customer-friendly status while delivery proof is being verified', () => {
     shipment.legs[0].status = 'awaiting_proof_approval';
     render(<ShipmentTracking />);

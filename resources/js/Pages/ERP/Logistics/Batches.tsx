@@ -79,6 +79,15 @@ export default function Batches() {
     setOverrideReason('');
     setError('');
   };
+  const openBatch = (batchId: number) => {
+    setBuilding(false);
+    setSelectedBatchId(batchId);
+    const workspace = document.getElementById('batch-workspace');
+
+    if (typeof workspace?.scrollIntoView === 'function') {
+      workspace.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
   const changeSlot = (nextDate: string, nextWindow: string) => {
     if (scheduledThisAttempt.length) {
       setSelectedIds([]);
@@ -240,6 +249,22 @@ export default function Batches() {
       await handleMutationError(caught);
     }
   };
+  const restoreBatch = async (batchId: number) => {
+    const result = await workflowFeedback.confirm({
+      title: `Restore Batch #${batchId}?`,
+      text: 'The saved stops will return to this batch as an editable draft.',
+      confirmButtonText: 'Restore to draft',
+    });
+    if (!result.isConfirmed) return;
+    try {
+      setError('');
+      await logisticsApi.restoreBatch(batchId);
+      await workflowFeedback.toast('success', 'Batch restored to draft');
+      refreshBatchData();
+    } catch (caught) {
+      await handleMutationError(caught);
+    }
+  };
   const moveLocal = (from: number, to: number) => {
     if (to < 0 || to >= selectedIds.length) return;
     setSelectedIds((ids) => {
@@ -269,7 +294,9 @@ export default function Batches() {
       await workflowFeedback.toast('success', 'Draft saved');
       router.reload({ only: ['batches', 'pool', 'unscheduled'] });
     } catch (caught) {
-      setError(errorMessage(caught));
+      const message = errorMessage(caught);
+      setError(message);
+      await workflowFeedback.error(message, 'Draft not saved');
     } finally {
       setSubmitting(false);
     }
@@ -281,7 +308,7 @@ export default function Batches() {
       <button type="button" onClick={startNewBatch} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-blue-600 px-4 font-semibold text-white hover:bg-blue-700"><Plus size={18} />New Batch</button>
     </div>
     {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-red-700">{error}</p>}
-    <div data-testid="batch-workspace" className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+    <div id="batch-workspace" data-testid="batch-workspace" className="grid scroll-mt-28 gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
       <AvailableDeliveriesPanel
         rows={filteredDeliveries} totalRows={allDeliveries.length} selectedIds={selectedIds} loading={refreshing}
         search={search} date={date} window={window} status={status}
@@ -302,10 +329,10 @@ export default function Batches() {
         const tabLabel = tab === 'all' ? 'All' : tab.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
         return <button key={tab} type="button" aria-pressed={activeStatus === tab} onClick={() => setActiveStatus(tab)} className={`min-h-10 rounded-lg px-3 text-sm font-semibold ${activeStatus === tab ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}`}>{tabLabel} ({count})</button>;
       })}</div></div>
-      <DndProvider backend={HTML5Backend}><div className="grid gap-4 xl:grid-cols-2">{visibleActiveBatches.map((batch) => <BatchCard key={batch.id} batch={batch} onOpen={() => { setBuilding(false); setSelectedBatchId(batch.id); }} onReview={() => openReview(batch.id)} onCancel={() => cancelBatch(batch.id)} />)}</div></DndProvider>
+      <DndProvider backend={HTML5Backend}><div className="grid gap-4 xl:grid-cols-2">{visibleActiveBatches.map((batch) => <BatchCard key={batch.id} batch={batch} onOpen={() => openBatch(batch.id)} onReview={() => openReview(batch.id)} onCancel={() => cancelBatch(batch.id)} />)}</div></DndProvider>
       {!visibleActiveBatches.length && <p className="rounded-xl border border-dashed p-6 text-center text-sm text-gray-500">No active batches in this status.</p>}
     </section>
-    {historyBatches.length > 0 && <details className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800"><summary className="min-h-10 cursor-pointer font-bold text-gray-800 dark:text-white">History ({historyBatches.length})</summary><DndProvider backend={HTML5Backend}><div className="mt-4 grid gap-4 xl:grid-cols-2">{historyBatches.map((batch) => <BatchCard key={batch.id} batch={batch} onOpen={() => { setBuilding(false); setSelectedBatchId(batch.id); }} />)}</div></DndProvider></details>}
+    {historyBatches.length > 0 && <details className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800"><summary className="min-h-10 cursor-pointer font-bold text-gray-800 dark:text-white">History ({historyBatches.length})</summary><DndProvider backend={HTML5Backend}><div className="mt-4 grid gap-4 xl:grid-cols-2">{historyBatches.map((batch) => <BatchCard key={batch.id} batch={batch} onOpen={() => openBatch(batch.id)} onRestore={batch.status === 'cancelled' ? () => restoreBatch(batch.id) : undefined} />)}</div></DndProvider></details>}
     <OfferBatchModal isOpen={reviewOpen} batch={selectedBatch} batches={batches} riders={riders} dailyRiderCapacity={dailyRiderCapacity} forceCapacityOverrideForRiderId={offerOverrideRiderId} submitting={offerSubmitting} error={offerError} onClose={() => { setReviewOpen(false); setOfferOverrideRiderId(undefined); }} onOffer={offerBatch} />
   </main></AppLayoutERP>;
 }

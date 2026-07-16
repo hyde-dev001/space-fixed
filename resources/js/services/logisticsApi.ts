@@ -33,4 +33,5 @@ export const logisticsApi = {
   rejectBatch: (id: number, rejectionReason: string) => axios.post(`/api/logistics/batches/${id}/reject`, { rejection_reason: rejectionReason }),
   startBatch: (id: number) => axios.post(`/api/logistics/batches/${id}/start`),
   cancelBatch: (id: number, reason: string) => axios.post(`/api/logistics/batches/${id}/cancel`, { reason }),
+  restoreBatch: (id: number) => axios.post(`/api/logistics/batches/${id}/restore`),
 };

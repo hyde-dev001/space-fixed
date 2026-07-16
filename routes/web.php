@@ -436,6 +436,7 @@ Route::prefix('api/logistics')->middleware(['auth:user,shop_owner'])->group(func
     Route::post('/batches/{batch}/reject', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'reject']);
     Route::post('/batches/{batch}/start', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'start']);
     Route::post('/batches/{batch}/cancel', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'cancel']);
+    Route::post('/batches/{batch}/restore', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'restore']);
     Route::get('/settings', [\App\Http\Controllers\Api\Logistics\LogisticsSettingController::class, 'show']);
     Route::put('/settings', [\App\Http\Controllers\Api\Logistics\LogisticsSettingController::class, 'update']);
     Route::get('/shipments', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'index']);

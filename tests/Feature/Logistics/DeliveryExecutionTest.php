@@ -54,7 +54,10 @@ class DeliveryExecutionTest extends TestCase
         $service = app(ShipmentLegService::class);
         HandoffProof::factory()->create(['shipment_leg_id' => $leg->id, 'handoff_type' => 'delivery', 'proof_type' => 'photo']);
 
-        $service->recordFailedAttempt($leg, ['reason_code' => 'recipient_unavailable', 'file_path' => 'proof.jpg'], true);
+        $proofCount = $leg->proofs()->count();
+        $attempt = $service->recordFailedAttempt($leg, ['reason_code' => 'recipient_unavailable', 'file_path' => 'proof.jpg'], true);
+        $this->assertSame('proof.jpg', $attempt->file_path);
+        $this->assertSame($proofCount, $leg->proofs()->count());
         $this->assertSame(2, $leg->fresh()->attempt_number);
         $leg->update(['status' => 'in_transit']);
         HandoffProof::factory()->create(['shipment_leg_id' => $leg->id, 'handoff_type' => 'delivery', 'proof_type' => 'photo']);

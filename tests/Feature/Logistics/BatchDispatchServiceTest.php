@@ -60,10 +60,14 @@ class BatchDispatchServiceTest extends TestCase
     {
         $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
         $rider = RiderProfile::factory()->create(['shop_owner_id' => $shop->id, 'active' => true, 'availability_status' => 'available']);
+        $shipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id, 'source_type' => 'order', 'source_id' => 72,
+        ]);
         $leg = ShipmentLeg::factory()->create([
-            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id,
+            'shipment_id' => $shipment->id,
             'scheduled_delivery_date' => '2026-07-15', 'delivery_window' => 'morning',
             'schedule_status' => 'scheduled', 'status' => 'pending',
+            'destination_snapshot' => ['name' => 'Miguel Dela Rosa', 'address' => 'Bacoor, Cavite'],
         ]);
         $service = app(BatchDispatchService::class);
         $batch = $service->offer($service->createDraft($shop, '2026-07-15', 'morning', [$leg->id]), $rider, $shop);
@@ -81,7 +85,25 @@ class BatchDispatchServiceTest extends TestCase
         $rejected = $service->reject($reoffered, $rider, 'Still unavailable');
         $cancelled = $service->cancel($rejected, 'No longer required');
         $this->assertSame('cancelled', $cancelled->status);
+        $this->assertSame('No longer required', $cancelled->cancellation_reason);
+        $this->assertSame(72, $cancelled->cancelled_stops[0]['shipment']['source_id']);
+        $this->assertSame('Miguel Dela Rosa', $cancelled->cancelled_stops[0]['destination_snapshot']['name']);
         $this->assertNull($leg->fresh()->delivery_batch_id);
+    }
+
+    public function test_cancelled_batch_can_be_restored_to_draft(): void
+    {
+        [$shop, $legs, $service] = $this->draftFixture(2);
+        $batch = $service->createDraft($shop, '2026-07-15', 'morning', $legs->pluck('id')->all());
+        $cancelled = $service->cancel($batch, 'Route changed');
+
+        $restored = $service->restore($cancelled);
+
+        $this->assertSame('draft', $restored->status);
+        $this->assertSame($legs->pluck('id')->all(), $restored->legs->pluck('id')->all());
+        $this->assertSame([1, 2], $restored->legs->pluck('stop_sequence')->all());
+        $this->assertNull($restored->cancellation_reason);
+        $this->assertNull($restored->cancelled_stops);
     }
 
     public function test_draft_stops_can_be_reordered_removed_and_marked_urgent(): void

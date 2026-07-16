@@ -29,8 +29,9 @@ export default function ShipmentTracking() {
   const currentLeg = shipment.legs[shipment.legs.length - 1];
   const isReturn = shipment.purpose === 'refund_return';
   const itemLabel = isReturn ? 'Return' : 'Shipment';
-  const trackingNumber = isReturn ? `RET-${shipment.id}` : (currentLeg?.tracking_number || '-');
-  const trackingUrl = isReturn ? `/tracking/shipments/${shipment.id}` : currentLeg?.tracking_url;
+  const internalTrackingUrl = `/tracking/shipments/${shipment.id}`;
+  const trackingNumber = isReturn ? `RET-${shipment.id}` : (currentLeg?.tracking_number || `SHP-${shipment.id}`);
+  const trackingUrl = isReturn ? internalTrackingUrl : currentLeg?.tracking_url;
   const awaitingConfirmation = currentLeg?.status === 'awaiting_proof_approval';
 
   return (
@@ -67,13 +68,13 @@ export default function ShipmentTracking() {
               <p className="mt-1 text-sm font-medium text-gray-900">{trackingNumber}</p>
             </div>
             <div>
-              <p className="text-xs font-semibold uppercase text-gray-500">Tracking Link</p>
+              <p className="text-xs font-semibold uppercase text-gray-500">{trackingUrl ? 'Tracking Link' : 'Delivery Method'}</p>
               {trackingUrl ? (
                 <a className="mt-1 inline-block text-sm font-semibold text-black underline" href={trackingUrl}>
                   {isReturn ? 'Open return tracking' : 'Open courier page'}
                 </a>
               ) : (
-                <p className="mt-1 text-sm font-medium text-gray-900">-</p>
+                <p className="mt-1 text-sm font-medium text-gray-900">SoleSpace Shop Logistics</p>
               )}
             </div>
           </div>

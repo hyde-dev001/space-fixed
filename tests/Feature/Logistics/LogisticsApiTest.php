@@ -6,6 +6,7 @@ use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\Logistics\DeliveryEvent;
+use App\Models\Logistics\HandoffProof;
 use App\Models\ShopOwner;
 use App\Models\Order;
 use App\Models\User;
@@ -157,20 +158,54 @@ class LogisticsApiTest extends TestCase
         $this->assertDatabaseHas('handoff_proofs', ['id' => $proof['id'], 'review_status' => 'approved']);
     }
 
+    public function test_non_delivery_evidence_cannot_complete_delivery(): void
+    {
+        Permission::findOrCreate('approve-proof-of-delivery', 'user');
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id,
+            'status' => 'awaiting_proof_approval',
+            'requires_delivery_proof' => true,
+        ]);
+        HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'handoff_type' => 'delivery',
+            'review_status' => 'approved',
+        ]);
+        $pickupProof = HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'handoff_type' => 'pickup',
+            'review_status' => 'pending',
+        ]);
+        $approver = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $approver->givePermissionTo('approve-proof-of-delivery');
+
+        $this->actingAs($approver, 'user')
+            ->postJson("/api/logistics/proofs/{$pickupProof->id}/approve")
+            ->assertUnprocessable();
+
+        $this->assertSame('awaiting_proof_approval', $leg->fresh()->status->value);
+        $this->assertSame('pending', $pickupProof->fresh()->review_status);
+    }
+
     public function test_assigned_rider_can_report_a_delivery_issue_with_a_customer_safe_event(): void
     {
+        Storage::fake('public');
         Permission::findOrCreate('update-logistics-status', 'user');
         [$shop, $leg, $rider] = $this->assignedRiderLeg('assigned');
         $rider->givePermissionTo('update-logistics-status');
 
-        $this->actingAs($rider, 'user')
-            ->postJson("/api/logistics/legs/{$leg->id}/report-issue", [
+        $response = $this->actingAs($rider, 'user')
+            ->post("/api/logistics/legs/{$leg->id}/report-issue", [
                 'reason_code' => 'recipient_unavailable',
                 'notes' => 'Gate code was unavailable.',
-            ])
+                'proof_file' => $this->fakeAttemptPhoto(),
+            ], ['Accept' => 'application/json'])
             ->assertCreated()
             ->assertJsonPath('attempt.attempt_type', 'delivery')
             ->assertJsonPath('attempt.reason_code', 'recipient_unavailable');
+        Storage::disk('public')->assertExists($response->json('attempt.file_path'));
 
         $this->assertDatabaseHas('delivery_attempts', [
             'shipment_leg_id' => $leg->id,
@@ -190,6 +225,9 @@ class LogisticsApiTest extends TestCase
 
         $this->actingAs($rider, 'user')->postJson("/api/logistics/legs/{$leg->id}/report-issue", [])->assertUnprocessable();
         $this->actingAs($rider, 'user')->postJson("/api/logistics/legs/{$leg->id}/report-issue", ['reason_code' => 'unsupported'])->assertUnprocessable();
+        $this->actingAs($rider, 'user')->postJson("/api/logistics/legs/{$leg->id}/report-issue", ['reason_code' => 'other'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('proof_file');
     }
 
     public function test_other_rider_cannot_report_an_issue(): void
@@ -228,6 +266,7 @@ class LogisticsApiTest extends TestCase
 
     public function test_rider_can_report_issues_from_each_allowed_leg_status(): void
     {
+        Storage::fake('public');
         Permission::findOrCreate('update-logistics-status', 'user');
 
         foreach (['assigned', 'picked_up', 'in_transit', 'delivery_attempted'] as $status) {
@@ -235,7 +274,10 @@ class LogisticsApiTest extends TestCase
             $rider->givePermissionTo('update-logistics-status');
 
             $this->actingAs($rider, 'user')
-                ->postJson("/api/logistics/legs/{$leg->id}/report-issue", ['reason_code' => 'other'])
+                ->post("/api/logistics/legs/{$leg->id}/report-issue", [
+                    'reason_code' => 'other',
+                    'proof_file' => $this->fakeAttemptPhoto("attempt-{$status}.png"),
+                ], ['Accept' => 'application/json'])
                 ->assertCreated();
         }
     }
@@ -334,5 +376,10 @@ class LogisticsApiTest extends TestCase
         $leg->assignments()->create(['assignment_type' => 'internal_rider', 'rider_profile_id' => $profile->id, 'status' => 'assigned', 'assigned_at' => now()]);
 
         return [$shop, $leg, $rider];
+    }
+
+    private function fakeAttemptPhoto(string $name = 'attempt.png'): UploadedFile
+    {
+        return UploadedFile::fake()->createWithContent($name, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='));
     }
 }

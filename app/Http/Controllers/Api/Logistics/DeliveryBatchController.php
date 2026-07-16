@@ -108,6 +108,12 @@ class DeliveryBatchController extends Controller
         return response()->json(['batch' => $service->cancel($batch, $reason)]);
     }
 
+    public function restore(DeliveryBatch $batch, BatchDispatchService $service): JsonResponse
+    {
+        $this->dispatcherShop($batch);
+        return response()->json(['batch' => $service->restore($batch)]);
+    }
+
     private function dispatcherShop(?DeliveryBatch $batch = null): ShopOwner
     {
         $shop = Auth::guard('shop_owner')->user();

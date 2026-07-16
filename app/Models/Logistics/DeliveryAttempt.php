@@ -16,6 +16,7 @@ class DeliveryAttempt extends Model
         'status',
         'reason_code',
         'notes',
+        'file_path',
         'attempted_at',
         'next_attempt_at',
         'recorded_by_type',

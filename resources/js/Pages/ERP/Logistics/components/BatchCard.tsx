@@ -18,10 +18,11 @@ type Props = {
   onOpen: (batch: DeliveryBatch) => void;
   onReview?: (batch: DeliveryBatch) => void;
   onCancel?: (batch: DeliveryBatch) => void;
+  onRestore?: (batch: DeliveryBatch) => void;
   onToggleUrgent?: (leg: TrackingShipmentLeg) => void;
 };
 
-export default function BatchCard({ batch, onOpen, onReview, onCancel, onToggleUrgent }: Props) {
+export default function BatchCard({ batch, onOpen, onReview, onCancel, onRestore, onToggleUrgent }: Props) {
   const [expanded, setExpanded] = useState(false);
   const rejectedAt = formatRejectionTime(batch.rejected_at);
   const urgentCount = batch.legs.filter((leg) => leg.urgent_at).length;
@@ -53,6 +54,7 @@ export default function BatchCard({ batch, onOpen, onReview, onCancel, onToggleU
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
         <button type="button" aria-label={`${primaryLabel(batch.status)} ${batch.id}`} onClick={() => onOpen(batch)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700">{primaryLabel(batch.status)}</button>
         <div className="flex items-center gap-1">
+          {batch.status === 'cancelled' && onRestore && <button type="button" aria-label={`Restore batch ${batch.id}`} onClick={() => onRestore(batch)} className="rounded-lg border border-blue-200 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50">Restore to draft</button>}
           {active && hasSecondaryActions && <details className="relative">
             <summary aria-label={`More actions for batch ${batch.id}`} className="flex cursor-pointer list-none rounded-lg border p-2 text-gray-600"><MoreHorizontal size={18} /></summary>
             <div className="absolute right-0 z-10 mt-1 w-44 rounded-lg border bg-white p-1 shadow-lg">

@@ -229,6 +229,7 @@ class ShipmentLegService
                 'status' => 'failed',
                 'reason_code' => $payload['reason_code'],
                 'notes' => $payload['notes'] ?? null,
+                'file_path' => $payload['file_path'] ?? null,
                 'attempted_at' => $payload['attempted_at'] ?? now(),
                 'next_attempt_at' => $payload['next_attempt_at'] ?? null,
                 'recorded_by_type' => $payload['recorded_by_type'] ?? null,
@@ -243,10 +244,6 @@ class ShipmentLegService
             while (!in_array($next->dayOfWeekIso, $settings?->operating_days ?? [1, 2, 3, 4, 5, 6], true)
                 || in_array($next->toDateString(), $settings?->blackout_dates ?? [], true)) $next->addDay();
             $nextDate = $next->toDateString();
-            if (!empty($payload['file_path'])) $leg->proofs()->create([
-                'handoff_type' => 'delivery', 'proof_type' => 'photo', 'file_path' => $payload['file_path'],
-                'notes' => $payload['notes'] ?? null, 'recorded_at' => now(),
-            ]);
             $leg->update([
                 'status' => $needsResolution ? 'needs_resolution' : 'pending',
                 'failed_at' => now(),

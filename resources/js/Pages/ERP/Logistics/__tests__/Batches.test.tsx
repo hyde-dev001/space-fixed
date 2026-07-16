@@ -12,8 +12,10 @@ const mocks = vi.hoisted(() => ({
   removeBatchStop: vi.fn(),
   markUrgent: vi.fn(),
   cancelBatch: vi.fn(),
+  restoreBatch: vi.fn(),
   reload: vi.fn(),
   toast: vi.fn(),
+  error: vi.fn(),
   confirm: vi.fn(),
 }));
 
@@ -27,10 +29,11 @@ vi.mock('@/services/logisticsApi', () => ({ logisticsApi: {
   scheduleLegs: mocks.scheduleLegs,
   createBatch: mocks.createBatch,
   offerBatch: mocks.offerBatch,
-  suggestions: vi.fn(), updateBatch: mocks.updateBatch, removeBatchStop: mocks.removeBatchStop, markUrgent: mocks.markUrgent, cancelBatch: mocks.cancelBatch,
+  suggestions: vi.fn(), updateBatch: mocks.updateBatch, removeBatchStop: mocks.removeBatchStop, markUrgent: mocks.markUrgent, cancelBatch: mocks.cancelBatch, restoreBatch: mocks.restoreBatch,
 } }));
 vi.mock('@/utils/workflowFeedback', () => ({ workflowFeedback: {
   toast: mocks.toast,
+  error: mocks.error,
   confirm: mocks.confirm,
   alert: vi.fn(),
 } }));
@@ -65,7 +68,9 @@ beforeEach(() => {
   mocks.removeBatchStop.mockResolvedValue({});
   mocks.markUrgent.mockResolvedValue({});
   mocks.cancelBatch.mockResolvedValue({});
+  mocks.restoreBatch.mockResolvedValue({});
   mocks.toast.mockResolvedValue({});
+  mocks.error.mockResolvedValue({});
   mocks.confirm.mockResolvedValue({ isConfirmed: true });
 });
 
@@ -183,6 +188,22 @@ it('retries draft creation without scheduling the same stops twice', async () =>
   expect(mocks.scheduleLegs).toHaveBeenCalledTimes(1);
 });
 
+it('shows a Swal error when draft creation is rejected', async () => {
+  mocks.createBatch.mockRejectedValueOnce({
+    response: { status: 422, data: { errors: { delivery_window: ['The selected delivery window conflicts with an existing batch.'] } } },
+  });
+  render(<Batches />);
+  openBuilder();
+  selectOrder55();
+  fireEvent.click(screen.getByRole('button', { name: 'Save Draft' }));
+
+  await waitFor(() => expect(mocks.error).toHaveBeenCalledWith(
+    'The selected delivery window conflicts with an existing batch.',
+    'Draft not saved',
+  ));
+  expect(screen.getByRole('alert')).toHaveTextContent('The selected delivery window conflicts with an existing batch.');
+});
+
 it('keeps the saved batch selected after refreshed props hydrate it', async () => {
   const { rerender } = render(<Batches />);
   openBuilder();
@@ -212,6 +233,9 @@ it('formats existing batch dates and shows useful stop details', () => {
   expect(screen.getAllByText('Ana Reyes')).toHaveLength(2);
   expect(screen.getByText('Dasmarinas, Cavite')).toBeInTheDocument();
   expect(screen.getByText('Urgent')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Edit batch 1' }));
+  expect(screen.getAllByText('Jul 15, 2026 · Morning')).toHaveLength(2);
+  expect(screen.getAllByText('Jul 15, 2026 · Morning · Pending')).toHaveLength(2);
 });
 
 it('shows rider rejection details on a rejected draft card and workspace only', () => {
@@ -471,6 +495,40 @@ it('uses status-aware primary and secondary actions', () => {
   expect(screen.getByRole('button', { name: 'View summary 5' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'View summary 6' })).toBeInTheDocument();
   expect(screen.queryByLabelText('More actions for batch 4')).not.toBeInTheDocument();
+});
+
+it('opens a cancelled batch summary and scrolls the workspace into view', () => {
+  const scrollIntoView = vi.fn();
+  Element.prototype.scrollIntoView = scrollIntoView;
+  mocks.props.batches = [{
+    ...batchForStatus(6, 'cancelled'),
+    legs: [],
+    cancellation_reason: 'Customer requested another date',
+    cancelled_stops: [{ ...scheduledLeg, id: 60, stop_sequence: 1 }],
+  }];
+  render(<Batches />);
+  fireEvent.click(screen.getByText('History (1)'));
+  fireEvent.click(screen.getByRole('button', { name: 'View summary 6' }));
+
+  const workspace = within(screen.getByTestId('batch-workspace'));
+  const summary = within(workspace.getByRole('heading', { name: 'Batch #6' }).closest('section')!);
+  expect(summary.getByText('Customer requested another date')).toBeInTheDocument();
+  expect(summary.getByText('Order #81')).toBeInTheDocument();
+  expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+});
+
+it('restores a cancelled history batch after confirmation', async () => {
+  mocks.props.batches = [{
+    ...batchForStatus(6, 'cancelled'),
+    cancelled_stops: [{ ...scheduledLeg, id: 60, stop_sequence: 1 }],
+  }];
+  render(<Batches />);
+  fireEvent.click(screen.getByText('History (1)'));
+  fireEvent.click(screen.getByRole('button', { name: 'Restore batch 6' }));
+
+  await waitFor(() => expect(mocks.restoreBatch).toHaveBeenCalledWith(6));
+  expect(mocks.confirm).toHaveBeenCalledWith(expect.objectContaining({ title: 'Restore Batch #6?' }));
+  expect(mocks.toast).toHaveBeenCalledWith('success', 'Batch restored to draft');
 });
 
 it('keeps active offered routes read-only while urgency remains available', () => {

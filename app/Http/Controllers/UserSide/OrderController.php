@@ -108,12 +108,15 @@ class OrderController extends Controller
             ->get()
             ->unique('source_id')
             ->mapWithKeys(function (Shipment $shipment) {
+                $currentLeg = $shipment->legs->last();
                 $assignment = $shipment->legs
                     ->flatMap(fn ($leg) => $leg->assignments)
-                    ->first(fn ($assignment) => in_array($assignment->status, ['assigned', 'accepted'], true));
+                    ->first(fn ($assignment) => in_array($assignment->status, ['assigned', 'accepted', 'completed'], true));
 
                 return [(int) $shipment->source_id => [
                     'id' => (int) $shipment->id,
+                    'status' => $currentLeg?->status?->value ?? $shipment->status->value,
+                    'tracking_number' => $currentLeg?->tracking_number,
                     'rider_name' => $assignment?->riderProfile?->name,
                     'rider_phone' => $assignment?->riderProfile?->phone,
                 ]];
@@ -270,6 +273,8 @@ class OrderController extends Controller
                     'tracking_link' => $order->tracking_link,
                     'logistics_shipment_id' => $shipment['id'] ?? null,
                     'is_shop_owned_delivery' => $isShopOwnedDelivery,
+                    'delivery_status' => $shipment['status'] ?? null,
+                    'delivery_tracking_number' => $shipment['tracking_number'] ?? null,
                     'delivery_rider_name' => $isShopOwnedDelivery ? ($shipment['rider_name'] ?? null) : null,
                     'delivery_rider_phone' => $isShopOwnedDelivery ? ($shipment['rider_phone'] ?? null) : null,
                     'delivery_reference' => $isShopOwnedDelivery && $shipment ? 'SHP-' . $shipment['id'] : null,
