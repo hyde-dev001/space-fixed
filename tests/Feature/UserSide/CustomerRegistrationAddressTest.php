@@ -5,6 +5,7 @@ namespace Tests\Feature\UserSide;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class CustomerRegistrationAddressTest extends TestCase
@@ -36,6 +37,7 @@ class CustomerRegistrationAddressTest extends TestCase
     public function test_registration_creates_a_default_shipping_address(): void
     {
         Storage::fake('public');
+        Http::fake(['nominatim.openstreetmap.org/*' => Http::response(['address' => ['country_code' => 'ph']])]);
 
         $this->post('/user/register', $this->payload())
             ->assertRedirect(route('verification.notice'));
@@ -76,6 +78,24 @@ class CustomerRegistrationAddressTest extends TestCase
             'address_latitude',
             'address_longitude',
         ]);
+
+        $this->assertDatabaseMissing('users', ['email' => 'juan.dela.cruz@gmail.com']);
+    }
+
+    public function test_registration_rejects_non_philippine_coordinates_inside_the_bounding_box(): void
+    {
+        Storage::fake('public');
+        Http::fake(['nominatim.openstreetmap.org/*' => Http::response(['address' => ['country_code' => 'my']])]);
+
+        $this->post('/user/register', $this->payload([
+            'address' => 'Kudat, Sabah, Malaysia',
+            'address_region' => 'Sabah',
+            'address_province' => 'Sabah',
+            'address_city' => 'Kudat',
+            'address_barangay' => 'Kudat',
+            'address_latitude' => 7.0,
+            'address_longitude' => 116.8,
+        ]))->assertSessionHasErrors('address_latitude');
 
         $this->assertDatabaseMissing('users', ['email' => 'juan.dela.cruz@gmail.com']);
     }

@@ -219,6 +219,7 @@ export default function Register() {
   const applyLocationResult = (result: any) => {
     const location = parsePhilippineAddress(result);
     if (!location) {
+      setAddressLocation(null);
       setGeoError('Choose a complete address within the Philippines, including barangay and city.');
       return false;
     }
@@ -266,6 +267,7 @@ export default function Register() {
 
       const updateFromPin = async (latitude: number, longitude: number) => {
         marker.setLatLng([latitude, longitude]);
+        setAddressLocation(null);
         setGeoError('');
         try {
           await reverseGeocode(latitude, longitude);
@@ -301,6 +303,7 @@ export default function Register() {
     }
 
     setIsSearching(true);
+    setAddressLocation(null);
     setGeoError('');
     try {
       const response = await fetch(
@@ -324,6 +327,7 @@ export default function Register() {
     }
 
     setGettingGPS(true);
+    setAddressLocation(null);
     setGeoError('');
     navigator.geolocation.getCurrentPosition(
       async ({ coords }) => {

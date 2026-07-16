@@ -30,5 +30,9 @@ describe('parsePhilippineAddress', () => {
   it('rejects incomplete or non-Philippine results', () => {
     expect(parsePhilippineAddress({ lat: '35', lon: '139', address: { country_code: 'jp' } })).toBeNull();
     expect(parsePhilippineAddress({ lat: '14.5', lon: '121', address: { country_code: 'ph' } })).toBeNull();
+    expect(parsePhilippineAddress({
+      lat: '10.2', lon: '123.7',
+      address: { state: 'Central Visayas', village: 'Mountain Barangay', country_code: 'ph' },
+    })).toBeNull();
   });
 });

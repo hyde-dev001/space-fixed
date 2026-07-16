@@ -19,6 +19,7 @@ use Inertia\Inertia;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 
 /**
  * UserController
@@ -224,6 +225,26 @@ class UserController extends Controller
                 'valid_id.mimes' => 'Valid ID must be JPG, JPEG, or PNG only.',
                 'valid_id.max' => 'Valid ID file size must not exceed 5MB.',
             ]);
+
+            try {
+                $countryCode = Http::timeout(5)->acceptJson()->get(
+                    'https://nominatim.openstreetmap.org/reverse',
+                    [
+                        'lat' => $validated['address_latitude'],
+                        'lon' => $validated['address_longitude'],
+                        'format' => 'json',
+                        'addressdetails' => 1,
+                    ],
+                )->json('address.country_code');
+            } catch (\Throwable) {
+                $countryCode = null;
+            }
+
+            if (strtolower((string) $countryCode) !== 'ph') {
+                throw ValidationException::withMessages([
+                    'address_latitude' => 'Please select a verified location within the Philippines.',
+                ]);
+            }
 
             // Handle valid ID upload
             $validIdPath = null;

@@ -15,7 +15,7 @@ export const parsePhilippineAddress = (result: any): RegistrationAddress | null 
   const address = result?.address || {};
   const province = address.province || address.state || '';
   const region = address.region || address.state || province;
-  const city = address.city || address.municipality || address.town || address.village || '';
+  const city = address.city || address.municipality || address.town || address.county || '';
   const barangay = address.suburb || address.quarter || address.neighbourhood || address.village || '';
 
   if (
