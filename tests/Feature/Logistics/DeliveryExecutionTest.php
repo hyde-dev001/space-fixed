@@ -31,6 +31,22 @@ class DeliveryExecutionTest extends TestCase
         $this->assertNotNull($started->out_for_delivery_at);
     }
 
+    public function test_proof_free_batched_pickup_requires_an_in_progress_batch(): void
+    {
+        [$leg] = $this->fixture();
+        $leg->update(['requires_pickup_proof' => false]);
+
+        $pickedUp = app(ShipmentLegService::class)->markPickedUp($leg->fresh());
+        $this->assertSame('picked_up', $pickedUp->status->value);
+
+        [$blockedLeg] = $this->fixture();
+        $blockedLeg->update(['requires_pickup_proof' => false]);
+        $blockedLeg->deliveryBatch->update(['status' => 'accepted']);
+
+        $this->expectException(ValidationException::class);
+        app(ShipmentLegService::class)->markPickedUp($blockedLeg->fresh());
+    }
+
     public function test_failed_attempt_reschedules_then_reaches_needs_resolution(): void
     {
         [$leg, $rider, $shop] = $this->fixture();

@@ -19,6 +19,7 @@ export const logisticsApi = {
   updateBatch: (id: number, legIds: number[]) => axios.put(`/api/logistics/batches/${id}`, { leg_ids: legIds }),
   removeBatchStop: (id: number, legId: number) => axios.delete(`/api/logistics/batches/${id}/legs/${legId}`),
   markUrgent: (legId: number, urgent = true) => axios.post(`/api/logistics/legs/${legId}/urgent`, { urgent }),
+  markPickedUp: (legId: number) => axios.post(`/api/logistics/legs/${legId}/picked-up`),
   confirmPickup: (legId: number, proofId: number) => axios.post(`/api/logistics/legs/${legId}/pickup-proofs/${proofId}/confirm`),
   rejectPickup: (legId: number, proofId: number, reason: string) => axios.post(`/api/logistics/legs/${legId}/pickup-proofs/${proofId}/reject`, { reason }),
   outForDelivery: (legId: number) => axios.post(`/api/logistics/legs/${legId}/out-for-delivery`),

@@ -22,8 +22,12 @@ class ShipmentLegService
 
     public function markPickedUp(ShipmentLeg $leg): ShipmentLeg
     {
-        $leg->loadMissing('shipment');
+        $leg->loadMissing(['shipment', 'deliveryBatch']);
         $this->assertTransitionAllowed($leg, ['assigned', 'pickup_scheduled', 'delivery_attempted'], 'picked up');
+
+        if ($leg->delivery_batch_id && $leg->deliveryBatch?->status !== 'in_progress') {
+            throw ValidationException::withMessages(['status' => 'This stop can only be picked up from an in-progress batch.']);
+        }
 
         if (!$this->proofs->hasRequiredPickupProof($leg)) {
             throw ValidationException::withMessages(['proof' => 'Pickup proof is required before marking this leg picked up.']);
