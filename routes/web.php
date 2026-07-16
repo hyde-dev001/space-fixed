@@ -181,6 +181,9 @@ Route::get('/notifications/settings', function () {
 Route::get('/tracking/shipments/{shipment}', [\App\Http\Controllers\Logistics\CustomerTrackingController::class, 'show'])
     ->middleware('auth:user')
     ->name('tracking.shipments.show');
+Route::get('/tracking/shipments/{shipment}/attempts/{attempt}/proof', [\App\Http\Controllers\Logistics\CustomerTrackingController::class, 'attemptProof'])
+    ->middleware('auth:user')
+    ->name('customer.tracking.attempt-proof');
 
 Route::get('/shop-profile/{id}', [LandingPageController::class, 'shopProfile'])->name('shop-profile');
 Route::get('/shop-profile/{id}/virtual-showroom', [LandingPageController::class, 'virtualShowroom'])

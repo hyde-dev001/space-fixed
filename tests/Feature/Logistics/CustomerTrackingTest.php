@@ -3,6 +3,7 @@
 namespace Tests\Feature\Logistics;
 
 use App\Models\Logistics\DeliveryEvent;
+use App\Models\Logistics\DeliveryAttempt;
 use App\Models\Logistics\DeliveryAssignment;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
@@ -12,6 +13,7 @@ use App\Models\RepairRequest;
 use App\Models\User;
 use App\Services\Logistics\CustomerTrackingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -127,5 +129,96 @@ class CustomerTrackingTest extends TestCase
         $this->assertSame('2026-07-15', $payload['legs'][0]['scheduled_delivery_date']);
         $this->assertSame('morning', $payload['legs'][0]['delivery_window']);
         $this->assertArrayNotHasKey('schedule_override_reason', $payload['legs'][0]);
+    }
+
+    public function test_customer_payload_exposes_only_safe_latest_failed_attempt_details(): void
+    {
+        Storage::fake('public');
+        $shipment = Shipment::factory()->create();
+        $expectedReasons = [
+            'recipient_unavailable' => 'Recipient unavailable',
+            'wrong_or_incomplete_address' => 'Wrong or incomplete address',
+            'recipient_refused' => 'Recipient refused',
+            'vehicle_or_delivery_problem' => 'Vehicle or delivery problem',
+            'other' => 'Other delivery issue',
+            'legacy_reason' => 'Delivery could not be completed',
+        ];
+
+        foreach ($expectedReasons as $reasonCode => $reasonLabel) {
+            $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id]);
+            $path = "logistics-attempt/{$leg->id}/attempt.jpg";
+            Storage::disk('public')->put($path, 'photo');
+            DeliveryAttempt::query()->create([
+                'shipment_leg_id' => $leg->id,
+                'attempt_type' => 'delivery',
+                'status' => 'failed',
+                'reason_code' => $reasonCode,
+                'notes' => 'Internal rider note',
+                'file_path' => $path,
+                'attempted_at' => '2026-07-17 10:00:00',
+                'next_attempt_at' => '2026-07-18 10:00:00',
+                'recorded_by_type' => User::class,
+                'recorded_by_id' => 999,
+            ]);
+
+            $attempt = collect(app(CustomerTrackingService::class)->payload($shipment)['legs'])
+                ->firstWhere('id', $leg->id)['latest_failed_attempt'];
+
+            $this->assertSame(['id', 'reason', 'attempted_at', 'proof_url'], array_keys($attempt));
+            $this->assertSame($reasonLabel, $attempt['reason']);
+            $this->assertStringContainsString("/tracking/shipments/{$shipment->id}/attempts/", $attempt['proof_url']);
+        }
+    }
+
+    public function test_customer_payload_orders_legs_and_attempts_deterministically(): void
+    {
+        $shipment = Shipment::factory()->create();
+        $lowerIdLeg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'sequence' => 5]);
+        $higherIdLeg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'sequence' => 5]);
+        $older = DeliveryAttempt::query()->create([
+            'shipment_leg_id' => $higherIdLeg->id, 'attempt_type' => 'delivery', 'status' => 'failed',
+            'reason_code' => 'other', 'attempted_at' => '2026-07-17 10:00:00',
+        ]);
+        $latest = DeliveryAttempt::query()->create([
+            'shipment_leg_id' => $higherIdLeg->id, 'attempt_type' => 'delivery', 'status' => 'failed',
+            'reason_code' => 'recipient_unavailable', 'attempted_at' => '2026-07-17 10:00:00',
+        ]);
+
+        $payload = app(CustomerTrackingService::class)->payload($shipment);
+
+        $this->assertSame([$lowerIdLeg->id, $higherIdLeg->id], array_column($payload['legs'], 'id'));
+        $this->assertNull($payload['legs'][0]['latest_failed_attempt']);
+        $this->assertSame($latest->id, $payload['legs'][1]['latest_failed_attempt']['id']);
+        $this->assertNotSame($older->id, $payload['legs'][1]['latest_failed_attempt']['id']);
+    }
+
+    public function test_only_the_owning_customer_can_view_failed_attempt_proof(): void
+    {
+        Storage::fake('public');
+        $customer = User::factory()->create();
+        $other = User::factory()->create();
+        $order = Order::factory()->create(['customer_id' => $customer->id]);
+        $shipment = Shipment::factory()->create([
+            'shop_owner_id' => $order->shop_owner_id, 'source_type' => 'order', 'source_id' => $order->id,
+        ]);
+        $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id]);
+        $path = "logistics-attempt/{$leg->id}/attempt.jpg";
+        Storage::disk('public')->put($path, 'attempt-photo');
+        $attempt = DeliveryAttempt::query()->create([
+            'shipment_leg_id' => $leg->id, 'attempt_type' => 'delivery', 'status' => 'failed',
+            'reason_code' => 'recipient_unavailable', 'file_path' => $path, 'attempted_at' => now(),
+        ]);
+        $otherShipment = Shipment::factory()->create([
+            'shop_owner_id' => $order->shop_owner_id, 'source_type' => 'order', 'source_id' => $order->id,
+        ]);
+        $url = "/tracking/shipments/{$shipment->id}/attempts/{$attempt->id}/proof";
+
+        $this->get($url)->assertRedirect();
+        $this->actingAs($other, 'user')->get($url)->assertForbidden();
+        $this->actingAs($customer, 'user')->get("/tracking/shipments/{$otherShipment->id}/attempts/{$attempt->id}/proof")->assertForbidden();
+        $this->actingAs($customer, 'user')->get($url)->assertOk()->assertStreamedContent('attempt-photo');
+
+        Storage::disk('public')->delete($path);
+        $this->actingAs($customer, 'user')->get($url)->assertNotFound();
     }
 }
