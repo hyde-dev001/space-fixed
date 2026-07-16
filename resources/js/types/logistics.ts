@@ -27,6 +27,12 @@ export type TrackingShipmentLeg = {
   schedule_status?: string | null;
   stop_sequence?: number | null;
   urgent_at?: string | null;
+  latest_failed_attempt?: {
+    id: number;
+    reason: string;
+    attempted_at?: string | null;
+    proof_url?: string | null;
+  } | null;
   shipment?: {
     id: number;
     source_type: string;

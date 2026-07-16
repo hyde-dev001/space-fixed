@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Head, Link, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import type { TrackingShipment } from '@/types/logistics';
@@ -26,6 +26,7 @@ const snapshotText = (snapshot?: Record<string, unknown> | null) => {
 
 export default function ShipmentTracking() {
   const { shipment } = usePage<{ shipment: TrackingShipment }>().props;
+  const [failedProofIds, setFailedProofIds] = useState<number[]>([]);
   const currentLeg = shipment.legs[shipment.legs.length - 1];
   const isReturn = shipment.purpose === 'refund_return';
   const itemLabel = isReturn ? 'Return' : 'Shipment';
@@ -88,6 +89,38 @@ export default function ShipmentTracking() {
             </p>
           </section>
         )}
+
+        {shipment.legs.filter((leg) => leg.latest_failed_attempt).map((leg) => {
+          const attempt = leg.latest_failed_attempt!;
+          const isActiveFailure = leg.id === currentLeg?.id
+            && !['awaiting_proof_approval', 'delivered'].includes(leg.status);
+          const proofUnavailable = !attempt.proof_url || failedProofIds.includes(attempt.id);
+
+          return (
+            <section
+              key={`failed-attempt-${attempt.id}`}
+              className={`mb-6 rounded-lg border p-5 ${isActiveFailure ? 'border-amber-300 bg-amber-50' : 'border-gray-200 bg-white'}`}
+            >
+              <p className={`font-semibold ${isActiveFailure ? 'text-amber-900' : 'text-gray-900'}`}>
+                {isActiveFailure ? 'Delivery Attempt Failed' : 'Previous delivery attempt'}
+              </p>
+              <p className="mt-1 text-sm text-gray-700">{attempt.reason}</p>
+              <p className="mt-1 text-xs text-gray-500">{formatDate(attempt.attempted_at)}</p>
+              {proofUnavailable ? (
+                <p className="mt-3 text-sm text-gray-500">Attempt photo unavailable</p>
+              ) : (
+                <a href={attempt.proof_url!} target="_blank" rel="noreferrer" className="mt-3 inline-block">
+                  <img
+                    src={attempt.proof_url!}
+                    alt="Failed delivery attempt proof"
+                    className="max-h-64 rounded-lg border border-gray-200 object-cover"
+                    onError={() => setFailedProofIds((ids) => ids.includes(attempt.id) ? ids : [...ids, attempt.id])}
+                  />
+                </a>
+              )}
+            </section>
+          );
+        })}
 
         <section className="mb-6 rounded-lg border border-gray-200 bg-white">
           <div className="border-b border-gray-200 px-5 py-4">

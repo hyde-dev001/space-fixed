@@ -100,6 +100,9 @@ type Order = {
   delivery_rider_name?: string | null;
   delivery_rider_phone?: string | null;
   delivery_reference?: string | null;
+  delivery_has_failed_attempt?: boolean;
+  delivery_scheduled_date?: string | null;
+  delivery_window?: 'morning' | 'afternoon' | null;
   eta?: string;
   pickup_enabled?: boolean;
   refund_stage?: {
@@ -207,6 +210,15 @@ const MyOrders: React.FC = () => {
       .replace(/\s+/g, ' ')
       .trim()
       .replace(/\b\w/g, (char) => char.toUpperCase());
+  };
+
+  const formatShopDeliveryEstimate = (date?: string | null, window?: string | null): string => {
+    if (!date) return 'Not scheduled yet';
+
+    const formattedDate = new Intl.DateTimeFormat('en-US', { dateStyle: 'long' })
+      .format(new Date(`${date}T00:00:00`));
+
+    return window ? `${formattedDate} · ${humanizeReasonCode(window)}` : formattedDate;
   };
 
   const isReturnRefundOrder = (order: Order): boolean => {
@@ -1848,6 +1860,17 @@ const MyOrders: React.FC = () => {
                               {hasShippingInfo && (
                                 <div className={hasBothDetailSections ? '' : 'xl:col-span-2'}>
                                   <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">Delivery Tracking</p>
+                                  {order.delivery_has_failed_attempt && order.logistics_shipment_id && (
+                                    <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-4">
+                                      <p className="font-semibold text-amber-900">Failed delivery attempt</p>
+                                      <Link
+                                        href={`/tracking/shipments/${order.logistics_shipment_id}`}
+                                        className="mt-1 inline-block text-sm font-semibold text-amber-900 underline"
+                                      >
+                                        View attempt details
+                                      </Link>
+                                    </div>
+                                  )}
                                   <div className="space-y-3 sm:grid sm:grid-cols-2 sm:gap-y-4 sm:gap-x-10 sm:space-y-0">
                                     <div className="flex items-start justify-between gap-3 sm:block">
                                       <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Delivery Status</p>
@@ -1855,7 +1878,11 @@ const MyOrders: React.FC = () => {
                                     </div>
                                     <div className="flex items-start justify-between gap-3 sm:block">
                                       <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Estimated Delivery Date </p>
-                                      <p className="text-sm text-black font-medium text-right sm:text-left">{order.eta || '-'}</p>
+                                      <p className="text-sm text-black font-medium text-right sm:text-left">
+                                        {order.is_shop_owned_delivery
+                                          ? formatShopDeliveryEstimate(order.delivery_scheduled_date, order.delivery_window)
+                                          : (order.eta || '-')}
+                                      </p>
                                     </div>
                                     <div className="flex items-start justify-between gap-3 sm:block">
                                       <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Carrier Business </p>
