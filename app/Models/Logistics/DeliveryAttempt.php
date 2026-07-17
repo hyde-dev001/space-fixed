@@ -12,8 +12,12 @@ class DeliveryAttempt extends Model
 
     protected $fillable = [
         'shipment_leg_id',
+        'delivery_assignment_id',
+        'delivery_batch_id',
+        'idempotency_key',
         'attempt_type',
         'status',
+        'attempt_number',
         'reason_code',
         'notes',
         'file_path',
@@ -24,6 +28,7 @@ class DeliveryAttempt extends Model
     ];
 
     protected $casts = [
+        'attempt_number' => 'integer',
         'attempted_at' => 'datetime',
         'next_attempt_at' => 'datetime',
     ];
@@ -31,5 +36,15 @@ class DeliveryAttempt extends Model
     public function leg(): BelongsTo
     {
         return $this->belongsTo(ShipmentLeg::class, 'shipment_leg_id');
+    }
+
+    public function assignment(): BelongsTo
+    {
+        return $this->belongsTo(DeliveryAssignment::class, 'delivery_assignment_id');
+    }
+
+    public function batch(): BelongsTo
+    {
+        return $this->belongsTo(DeliveryBatch::class, 'delivery_batch_id');
     }
 }
