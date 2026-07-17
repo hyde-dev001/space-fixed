@@ -974,19 +974,14 @@ class OrderController extends Controller
                 'requested_at' => now(),
             ];
 
-            $refundRequest = $this->createRefundRequestWithCompatibilityFallback($refundPayload, (int) $order->id);
-
-            if (!empty($normalizedRefundLines) && Schema::hasTable('order_refund_items')) {
-                try {
-                    $refundRequest->items()->createMany($normalizedRefundLines);
-                } catch (\Throwable $linePersistError) {
-                    Log::warning('Refund line payload accepted but line persistence failed', [
-                        'order_id' => (int) $order->id,
-                        'refund_id' => (int) ($refundRequest->id ?? 0),
-                        'error' => $linePersistError->getMessage(),
-                    ]);
-                }
+            $reservation = $this->orderRefundService->reserveOrderRefund($order, $refundPayload, $normalizedRefundLines);
+            if (($reservation['result'] ?? null) === 'collision') {
+                return response()->json([
+                    'success' => false,
+                    'message' => $reservation['message'],
+                ], 422);
             }
+            $refundRequest = $reservation['refund'];
 
             $this->dispatchRefundRequestNotification($refundRequest, $order, $user);
 
