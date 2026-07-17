@@ -3,6 +3,7 @@
 namespace App\Services\Logistics;
 
 use App\Models\Logistics\DeliveryAttempt;
+use App\Models\Logistics\DeliveryBatch;
 use App\Models\Logistics\HandoffProof;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\ShipmentLeg;
@@ -211,19 +212,23 @@ class ShipmentLegService
 
     public function recordFailedAttempt(ShipmentLeg $leg, array $payload, bool $allowAssigned = false): DeliveryAttempt
     {
-        $leg->loadMissing('shipment');
-        $this->assertTransitionAllowed($leg, $allowAssigned ? ['assigned', 'picked_up', 'in_transit', 'delivery_attempted'] : ['picked_up', 'in_transit', 'delivery_attempted'], 'delivery attempted');
-
         if (empty($payload['reason_code'])) {
             throw ValidationException::withMessages(['reason_code' => 'Attempt reason is required.']);
         }
 
-        if ($leg->delivery_batch_id && empty($payload['file_path'])) {
-            throw ValidationException::withMessages(['proof' => 'A failed-attempt photo is required.']);
-        }
-
-        return DB::transaction(function () use ($leg, $payload) {
+        $batchId = $leg->delivery_batch_id;
+        return DB::transaction(function () use ($leg, $payload, $allowAssigned, $batchId) {
+            $batch = $batchId
+                ? DeliveryBatch::query()->lockForUpdate()->find($batchId)
+                : null;
             $leg = ShipmentLeg::query()->with('shipment.shopOwner.logisticsSetting')->lockForUpdate()->findOrFail($leg->id);
+            if ((int) $leg->delivery_batch_id !== (int) $batchId || ($batchId && !$batch)) {
+                throw ValidationException::withMessages(['leg' => 'This stop changed batches. Please try again.']);
+            }
+            $this->assertTransitionAllowed($leg, $allowAssigned ? ['assigned', 'picked_up', 'in_transit', 'delivery_attempted'] : ['in_transit', 'delivery_attempted'], 'delivery attempted');
+            if ($leg->delivery_batch_id && empty($payload['file_path'])) {
+                throw ValidationException::withMessages(['proof' => 'A failed-attempt photo is required.']);
+            }
             $attempt = $leg->attempts()->create([
                 'attempt_type' => $payload['attempt_type'] ?? 'delivery',
                 'status' => 'failed',
@@ -252,6 +257,18 @@ class ShipmentLegService
                 'delivery_batch_id' => null,
                 'stop_sequence' => null,
             ]);
+            if ($batch) {
+                $remainingStops = $batch->legs()->count();
+                $batchChanges = ['assigned_stop_count' => $remainingStops];
+                if ($batch->status === 'in_progress' && $remainingStops === 0) {
+                    $batchChanges += [
+                        'status' => 'cancelled',
+                        'cancelled_at' => now(),
+                        'cancellation_reason' => 'All stops were removed after failed delivery attempts.',
+                    ];
+                }
+                $batch->update($batchChanges);
+            }
             $leg->shipment->update(['status' => 'active']);
             $this->events->record($leg->shipment, $leg, [
                 'event_type' => 'delivery_attempt_failed',

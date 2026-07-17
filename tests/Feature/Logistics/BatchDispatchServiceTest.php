@@ -19,6 +19,72 @@ class BatchDispatchServiceTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_assigned_unscheduled_leg_can_be_scheduled(): void
+    {
+        $shop = ShopOwner::factory()->create();
+        LogisticsSetting::updateOrCreate(['shop_owner_id' => $shop->id], [
+            'operating_days' => [1, 2, 3, 4, 5, 6, 7],
+            'blackout_dates' => [],
+        ]);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id,
+            'status' => 'assigned',
+            'schedule_status' => 'unscheduled',
+            'delivery_batch_id' => null,
+        ]);
+        $date = now()->addDay()->toDateString();
+
+        app(BatchDispatchService::class)->schedule($shop, $date, 'morning', [$leg->id]);
+
+        $leg->refresh();
+        $this->assertSame($date, $leg->scheduled_delivery_date->toDateString());
+        $this->assertSame('morning', $leg->delivery_window);
+        $this->assertSame('scheduled', $leg->schedule_status);
+    }
+
+    public function test_schedule_rejects_ineligible_legs(): void
+    {
+        $shop = ShopOwner::factory()->create();
+        LogisticsSetting::updateOrCreate(['shop_owner_id' => $shop->id], [
+            'operating_days' => [1, 2, 3, 4, 5, 6, 7],
+            'blackout_dates' => [],
+        ]);
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+        $batch = DeliveryBatch::factory()->create(['shop_owner_id' => $shop->id]);
+        $legs = [
+            'foreign tenant' => ShipmentLeg::factory()->create([
+                'shipment_id' => Shipment::factory()->create()->id,
+                'status' => 'pending',
+                'schedule_status' => 'unscheduled',
+            ]),
+            'batched' => ShipmentLeg::factory()->create([
+                'shipment_id' => $shipment->id,
+                'status' => 'pending',
+                'schedule_status' => 'unscheduled',
+                'delivery_batch_id' => $batch->id,
+            ]),
+            'already scheduled' => ShipmentLeg::factory()->create([
+                'shipment_id' => $shipment->id,
+                'status' => 'pending',
+                'schedule_status' => 'scheduled',
+            ]),
+            'invalid status' => ShipmentLeg::factory()->create([
+                'shipment_id' => $shipment->id,
+                'status' => 'picked_up',
+                'schedule_status' => 'unscheduled',
+            ]),
+        ];
+
+        foreach ($legs as $case => $leg) {
+            try {
+                app(BatchDispatchService::class)->schedule($shop, now()->addDay()->toDateString(), 'morning', [$leg->id]);
+                $this->fail("{$case} leg was scheduled.");
+            } catch (ValidationException $exception) {
+                $this->assertArrayHasKey('legs', $exception->errors(), $case);
+            }
+        }
+    }
+
     public function test_draft_offer_accept_and_start_preserve_individual_leg_state(): void
     {
         $shop = ShopOwner::factory()->create(['registration_type' => 'company']);

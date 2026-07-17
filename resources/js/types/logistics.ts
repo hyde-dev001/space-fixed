@@ -10,6 +10,7 @@ export type DeliveryContactSnapshot = {
 
 export type TrackingShipmentLeg = {
   id: number;
+  delivery_batch_id?: number | null;
   sequence: number;
   leg_type: string;
   status: string;

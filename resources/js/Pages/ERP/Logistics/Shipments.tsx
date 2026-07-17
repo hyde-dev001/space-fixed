@@ -81,6 +81,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
   }>().props;
   const [expandedShipmentId, setExpandedShipmentId] = useState<number | null>(null);
   const [selectedRiders, setSelectedRiders] = useState<Record<number, string>>({});
+  const [deliverySchedules, setDeliverySchedules] = useState<Record<number, { date: string; window: string }>>({});
   const [assigningLegId, setAssigningLegId] = useState<number | null>(null);
   const [assignmentError, setAssignmentError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -152,6 +153,45 @@ export default function Shipments({ children }: React.PropsWithChildren) {
       toast('error', message);
     } finally {
       setAssigningLegId(null);
+    }
+  };
+
+  const scheduleLeg = async (legId: number, assignAfter: boolean) => {
+    const schedule = deliverySchedules[legId];
+    const riderProfileId = Number(selectedRiders[legId]);
+    if (!schedule?.date || !schedule.window || (assignAfter && !riderProfileId)) return;
+
+    setAssigningLegId(legId);
+    setAssignmentError(null);
+    let scheduled = false;
+    let awaitingReload = false;
+    try {
+      await axios.post('/api/logistics/legs/schedule', {
+        delivery_date: schedule.date,
+        delivery_window: schedule.window,
+        leg_ids: [legId],
+      });
+      scheduled = true;
+      if (assignAfter) {
+        await axios.post(`/api/logistics/legs/${legId}/assign`, {
+          assignment_type: 'internal_rider',
+          rider_profile_id: riderProfileId,
+        });
+      }
+      toast('success', assignAfter ? 'Delivery scheduled and rider assigned.' : 'Delivery scheduled.');
+      awaitingReload = true;
+      router.reload({ only: assignAfter ? ['shipments', 'assignableRiders'] : ['shipments'], onFinish: () => setAssigningLegId(null) });
+    } catch (error: any) {
+      const errors = error.response?.data?.errors;
+      const message = error.response?.data?.message ?? (errors ? Object.values(errors).flat().join(' ') : 'Unable to schedule this delivery.');
+      setAssignmentError(message);
+      toast('error', message);
+      if (scheduled && assignAfter) {
+        awaitingReload = true;
+        router.reload({ only: ['shipments', 'assignableRiders'], onFinish: () => setAssigningLegId(null) });
+      }
+    } finally {
+      if (!awaitingReload) setAssigningLegId(null);
     }
   };
 
@@ -280,7 +320,9 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                             const activeAssignment = leg.assignments?.find((assignment) => ['assigned', 'accepted'].includes(assignment.status));
                             const canAssignLeg = !['delivered', 'cancelled'].includes(leg.status) && !activeAssignment;
                             const latestAttempt = leg.attempts?.[0];
-                            const canReportIssue = riderMode && ['assigned', 'picked_up', 'in_transit', 'delivery_attempted'].includes(leg.status);
+                            const canReportIssue = riderMode && ['in_transit', 'delivery_attempted'].includes(leg.status);
+                            const canScheduleLeg = canAssign && !riderMode && !leg.scheduled_delivery_date && leg.delivery_batch_id == null && ['pending', 'assigned'].includes(leg.status);
+                            const schedule = deliverySchedules[leg.id] ?? { date: '', window: 'morning' };
                             const issueForm = issueForms[leg.id] ?? { reason_code: '', notes: '' };
                             const canSubmitProof = canRecordProof && leg.status === 'in_transit';
                             const showOutcomeChoice = canSubmitProof && canReportIssue;
@@ -315,7 +357,31 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                   {canReportIssue && (!showOutcomeChoice || deliveryOutcome === 'issue') && <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30"><div><p className="text-sm font-semibold text-amber-950 dark:text-amber-100">Failed delivery attempt</p><p className="text-xs text-amber-700 dark:text-amber-300">Choose a reason and upload a photo showing you reached the delivery location.</p></div><label className="block text-xs font-semibold text-gray-700 dark:text-gray-200">Reason<select value={issueForm.reason_code} onChange={(event) => setIssueForms({ ...issueForms, [leg.id]: { ...issueForm, reason_code: event.target.value } })} className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" aria-label="Issue reason"><option value="">Choose a reason</option><option value="recipient_unavailable">Recipient unavailable</option><option value="wrong_or_incomplete_address">Wrong or incomplete address</option><option value="recipient_refused">Recipient refused</option><option value="vehicle_or_delivery_problem">Vehicle or delivery problem</option><option value="other">Other</option></select></label><label className="block text-xs font-semibold text-gray-700 dark:text-gray-200">Attempt photo <span className="text-red-600">(required)</span><input type="file" required accept="image/jpeg,image/png,image/webp" aria-label="Issue photo" onChange={(event) => setIssueProofFiles({ ...issueProofFiles, [leg.id]: event.target.files?.[0] ?? null })} className="mt-1 block w-full text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-2 file:font-semibold file:text-amber-700 dark:text-gray-200 dark:file:bg-gray-800 dark:file:text-amber-300" /></label><label className="block text-xs font-semibold text-gray-700 dark:text-gray-200">Note <span className="font-normal text-gray-500">(optional)</span><textarea value={issueForm.notes} onChange={(event) => setIssueForms({ ...issueForms, [leg.id]: { ...issueForm, notes: event.target.value } })} placeholder="Optional note" rows={3} className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" /></label><button type="button" disabled={!issueForm.reason_code || !issueProofFiles[leg.id]} onClick={() => reportIssue(leg.id)} className="w-full rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50">{leg.status === 'delivery_attempted' ? 'Request cancellation' : 'Report issue'}</button></div>}
                                   {!riderMode && leg.status === 'delivery_attempted' && <button type="button" onClick={() => void confirmAct(`/api/logistics/legs/${leg.id}/cancel`, 'Cancel delivery?', 'This is the final cancellation action.')} className="rounded-lg border border-red-600 px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50">Cancel delivery</button>}
                                 </div>
-                                {activeAssignment ? (
+                                {canScheduleLeg && (
+                                  <div className="flex flex-col gap-2">
+                                    <div className="flex flex-col gap-2 sm:flex-row">
+                                      <label className="text-xs font-semibold text-gray-700 dark:text-gray-200">Delivery date<input type="date" aria-label="Delivery date" value={schedule.date} onChange={(event) => setDeliverySchedules({ ...deliverySchedules, [leg.id]: { ...schedule, date: event.target.value } })} className="mt-1 block rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white" /></label>
+                                      <label className="text-xs font-semibold text-gray-700 dark:text-gray-200">Delivery window<select aria-label="Delivery window" value={schedule.window} onChange={(event) => setDeliverySchedules({ ...deliverySchedules, [leg.id]: { ...schedule, window: event.target.value } })} className="mt-1 block rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"><option value="">Choose a window</option><option value="morning">Morning</option><option value="afternoon">Afternoon</option></select></label>
+                                    </div>
+                                    {activeAssignment ? (
+                                      <><p className="text-sm font-medium text-gray-700 dark:text-gray-200">Assigned to {activeAssignment.rider_profile?.name ?? 'rider'}</p><button type="button" disabled={!schedule.date || !schedule.window || assigningLegId === leg.id} onClick={() => void scheduleLeg(leg.id, false)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Save schedule</button></>
+                                    ) : (
+                                      <div className="flex flex-col gap-2 sm:flex-row">
+                                        <select
+                                          value={selectedRiders[leg.id] ?? ''}
+                                          onChange={(event) => setSelectedRiders({ ...selectedRiders, [leg.id]: event.target.value })}
+                                          className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                                          aria-label={`Choose rider for ${leg.leg_type} leg`}
+                                        >
+                                          <option value="">Choose available rider</option>
+                                          {assignableRiders.map((rider) => <option key={rider.id} value={rider.id}>{rider.name}{rider.phone ? ` (${rider.phone})` : ''}</option>)}
+                                        </select>
+                                        <button type="button" disabled={!schedule.date || !schedule.window || !selectedRiders[leg.id] || assigningLegId === leg.id} onClick={() => void scheduleLeg(leg.id, true)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{assigningLegId === leg.id ? 'Scheduling...' : 'Schedule & assign rider'}</button>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                                {!canScheduleLeg && (activeAssignment ? (
                                   <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Assigned to {activeAssignment.rider_profile?.name ?? 'rider'}</p>
                                 ) : canAssignLeg ? (
                                   <div className="flex flex-col gap-2 sm:flex-row">
@@ -339,7 +405,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                   </div>
                                 ) : (
                                   <p className="text-sm text-gray-500">No assignment needed.</p>
-                                )}
+                                ))}
                               </div>
                             );
                           })}

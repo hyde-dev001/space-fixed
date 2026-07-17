@@ -10,6 +10,7 @@ use App\Models\Logistics\HandoffProof;
 use App\Models\ShopOwner;
 use App\Models\Order;
 use App\Models\User;
+use App\Services\Logistics\ShipmentLegService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -19,6 +20,32 @@ use Tests\TestCase;
 class LogisticsApiTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_staff_without_logistics_permission_cannot_schedule_leg(): void
+    {
+        $user = User::factory()->create();
+        $leg = ShipmentLeg::factory()->create();
+
+        $this->actingAs($user, 'user')->postJson('/api/logistics/legs/schedule', [
+            'delivery_date' => now()->addDay()->toDateString(),
+            'delivery_window' => 'morning',
+            'leg_ids' => [$leg->id],
+        ])->assertForbidden();
+    }
+
+    public function test_schedule_rejects_past_delivery_date(): void
+    {
+        $shop = ShopOwner::factory()->create();
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id,
+        ]);
+
+        $this->actingAs($shop, 'shop_owner')->postJson('/api/logistics/legs/schedule', [
+            'delivery_date' => now()->subDay()->toDateString(),
+            'delivery_window' => 'morning',
+            'leg_ids' => [$leg->id],
+        ])->assertUnprocessable()->assertJsonValidationErrors('delivery_date');
+    }
 
     public function test_staff_without_logistics_permission_cannot_assign_leg(): void
     {
@@ -193,7 +220,7 @@ class LogisticsApiTest extends TestCase
     {
         Storage::fake('public');
         Permission::findOrCreate('update-logistics-status', 'user');
-        [$shop, $leg, $rider] = $this->assignedRiderLeg('assigned');
+        [$shop, $leg, $rider] = $this->assignedRiderLeg('in_transit');
         $rider->givePermissionTo('update-logistics-status');
 
         $response = $this->actingAs($rider, 'user')
@@ -242,6 +269,22 @@ class LogisticsApiTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_rider_cannot_report_an_issue_for_another_shop(): void
+    {
+        Storage::fake('public');
+        Permission::findOrCreate('update-logistics-status', 'user');
+        [, $leg, $rider] = $this->assignedRiderLeg('in_transit');
+        $rider->update(['shop_owner_id' => ShopOwner::factory()->create()->id]);
+        $rider->givePermissionTo('update-logistics-status');
+
+        $this->actingAs($rider, 'user')->post("/api/logistics/legs/{$leg->id}/report-issue", [
+            'reason_code' => 'other',
+            'proof_file' => $this->fakeAttemptPhoto(),
+        ], ['Accept' => 'application/json'])->assertForbidden();
+
+        $this->assertSame([], Storage::disk('public')->allFiles());
+    }
+
     public function test_shop_owner_cannot_report_an_issue(): void
     {
         [$shop, $leg] = $this->assignedRiderLeg('picked_up');
@@ -264,12 +307,12 @@ class LogisticsApiTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_rider_can_report_issues_from_each_allowed_leg_status(): void
+    public function test_rider_report_issue_rejects_pre_delivery_statuses_before_upload(): void
     {
         Storage::fake('public');
         Permission::findOrCreate('update-logistics-status', 'user');
 
-        foreach (['assigned', 'picked_up', 'in_transit', 'delivery_attempted'] as $status) {
+        foreach (['assigned', 'picked_up'] as $status) {
             [, $leg, $rider] = $this->assignedRiderLeg($status);
             $rider->givePermissionTo('update-logistics-status');
 
@@ -278,8 +321,53 @@ class LogisticsApiTest extends TestCase
                     'reason_code' => 'other',
                     'proof_file' => $this->fakeAttemptPhoto("attempt-{$status}.png"),
                 ], ['Accept' => 'application/json'])
-                ->assertCreated();
+                ->assertUnprocessable();
+
+            $this->assertSame(0, $leg->attempts()->count());
         }
+
+        $this->assertSame([], Storage::disk('public')->allFiles());
+    }
+
+    public function test_rider_can_report_issues_from_each_delivery_status(): void
+    {
+        Storage::fake('public');
+        Permission::findOrCreate('update-logistics-status', 'user');
+
+        foreach (['in_transit', 'delivery_attempted'] as $status) {
+            [, $leg, $rider] = $this->assignedRiderLeg($status);
+            $rider->givePermissionTo('update-logistics-status');
+
+            $this->actingAs($rider, 'user')->post("/api/logistics/legs/{$leg->id}/report-issue", [
+                'reason_code' => 'other',
+                'proof_file' => $this->fakeAttemptPhoto("attempt-{$status}.png"),
+            ], ['Accept' => 'application/json'])->assertCreated();
+        }
+    }
+
+    public function test_report_issue_deletes_uploaded_photo_when_locked_status_check_rejects_a_race(): void
+    {
+        Storage::fake('public');
+        Permission::findOrCreate('update-logistics-status', 'user');
+        [, $leg, $rider] = $this->assignedRiderLeg('in_transit');
+        $rider->givePermissionTo('update-logistics-status');
+        $realService = app(ShipmentLegService::class);
+        $this->mock(ShipmentLegService::class, function ($mock) use ($leg, $realService) {
+            $mock->shouldReceive('recordFailedAttempt')->once()->andReturnUsing(
+                function ($passedLeg, $payload, $allowAssigned = false) use ($leg, $realService) {
+                    $leg->update(['status' => 'picked_up']);
+                    return $realService->recordFailedAttempt($passedLeg, $payload, $allowAssigned);
+                }
+            );
+        });
+
+        $this->actingAs($rider, 'user')->post("/api/logistics/legs/{$leg->id}/report-issue", [
+            'reason_code' => 'other',
+            'proof_file' => $this->fakeAttemptPhoto(),
+        ], ['Accept' => 'application/json'])->assertUnprocessable();
+
+        $this->assertSame(0, $leg->attempts()->count());
+        $this->assertSame([], Storage::disk('public')->allFiles());
     }
 
     public function test_generic_attempts_endpoint_still_rejects_assigned_legs(): void

@@ -30,7 +30,7 @@ class BatchDispatchService
             $legs = ShipmentLeg::query()->with('shipment')->whereIn('id', $legIds)->orderBy('id')->lockForUpdate()->get();
             if ($legs->count() !== count(array_unique($legIds)) || $legs->contains(fn ($leg) =>
                 $leg->shipment->shop_owner_id !== $shop->id || $leg->delivery_batch_id
-                || $leg->status->value !== 'pending' || $leg->schedule_status === 'scheduled')) {
+                || !in_array($leg->status->value, ['pending', 'assigned'], true) || $leg->schedule_status === 'scheduled')) {
                 throw ValidationException::withMessages(['legs' => 'One or more deliveries cannot be scheduled.']);
             }
             foreach ($legs as $leg) {
