@@ -10,6 +10,7 @@ export type DeliveryContactSnapshot = {
 
 export type TrackingShipmentLeg = {
   id: number;
+  delivery_batch_id?: number | null;
   sequence: number;
   leg_type: string;
   status: string;
@@ -27,6 +28,12 @@ export type TrackingShipmentLeg = {
   schedule_status?: string | null;
   stop_sequence?: number | null;
   urgent_at?: string | null;
+  latest_failed_attempt?: {
+    id: number;
+    reason: string;
+    attempted_at?: string | null;
+    proof_url?: string | null;
+  } | null;
   shipment?: {
     id: number;
     source_type: string;
@@ -46,8 +53,10 @@ export type TrackingShipmentLeg = {
   }>;
   attempts?: Array<{
     id: number;
+    status?: string;
     reason_code?: string | null;
     notes?: string | null;
+    file_path?: string | null;
     attempted_at?: string | null;
   }>;
 };
@@ -130,6 +139,10 @@ export type DeliveryBatch = {
   assigned_stop_count: number;
   rejection_reason?: string | null;
   rejected_at?: string | null;
+  cancellation_reason?: string | null;
+  stop_snapshot?: TrackingShipmentLeg[] | null;
+  cancelled_stops?: TrackingShipmentLeg[] | null;
+  dispatcher_override_reason?: string | null;
   rider_profile?: LogisticsRider | null;
   legs: TrackingShipmentLeg[];
 };

@@ -54,12 +54,82 @@ class DeliveryExecutionTest extends TestCase
         $service = app(ShipmentLegService::class);
         HandoffProof::factory()->create(['shipment_leg_id' => $leg->id, 'handoff_type' => 'delivery', 'proof_type' => 'photo']);
 
-        $service->recordFailedAttempt($leg, ['reason_code' => 'recipient_unavailable', 'file_path' => 'proof.jpg'], true);
+        $proofCount = $leg->proofs()->count();
+        $attempt = $service->recordFailedAttempt($leg, ['reason_code' => 'recipient_unavailable', 'file_path' => 'proof.jpg'], true);
+        $this->assertSame('proof.jpg', $attempt->file_path);
+        $this->assertSame($proofCount, $leg->proofs()->count());
         $this->assertSame(2, $leg->fresh()->attempt_number);
         $leg->update(['status' => 'in_transit']);
         HandoffProof::factory()->create(['shipment_leg_id' => $leg->id, 'handoff_type' => 'delivery', 'proof_type' => 'photo']);
         $service->recordFailedAttempt($leg->fresh(), ['reason_code' => 'recipient_unavailable', 'file_path' => 'proof2.jpg'], true);
         $this->assertSame('needs_resolution', $leg->fresh()->status->value);
+    }
+
+    public function test_failed_attempt_cancels_an_in_progress_batch_after_its_last_stop_is_removed(): void
+    {
+        [$firstLeg, , $shop] = $this->fixture();
+        $batch = $firstLeg->deliveryBatch;
+        $secondLeg = ShipmentLeg::factory()->create([
+            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id,
+            'delivery_batch_id' => $batch->id,
+            'status' => 'assigned',
+            'stop_sequence' => 2,
+        ]);
+        $snapshot = [
+            ['id' => $firstLeg->id, 'stop_sequence' => 1],
+            ['id' => $secondLeg->id, 'stop_sequence' => 2],
+        ];
+        $batch->update(['assigned_stop_count' => 2, 'stop_snapshot' => $snapshot]);
+        $service = app(ShipmentLegService::class);
+
+        $service->recordFailedAttempt($firstLeg, [
+            'reason_code' => 'recipient_unavailable',
+            'file_path' => 'first-failure.jpg',
+        ], true);
+
+        $this->assertSame('in_progress', $batch->fresh()->status);
+        $this->assertSame(1, $batch->fresh()->assigned_stop_count);
+
+        $service->recordFailedAttempt($secondLeg, [
+            'reason_code' => 'recipient_unavailable',
+            'file_path' => 'second-failure.jpg',
+        ], true);
+
+        $batch->refresh();
+        $this->assertSame('cancelled', $batch->status);
+        $this->assertNotNull($batch->cancelled_at);
+        $this->assertSame(0, $batch->assigned_stop_count);
+        $this->assertSame($snapshot, $batch->stop_snapshot);
+        $this->assertNull($firstLeg->fresh()->delivery_batch_id);
+        $this->assertNull($secondLeg->fresh()->delivery_batch_id);
+    }
+
+    public function test_failed_attempt_rejects_a_stop_that_moved_to_another_batch(): void
+    {
+        [$leg, , $shop] = $this->fixture();
+        $originalBatch = $leg->deliveryBatch;
+        $staleLeg = $leg->fresh();
+        $newBatch = DeliveryBatch::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'status' => 'in_progress',
+            'assigned_stop_count' => 1,
+        ]);
+        $leg->update(['delivery_batch_id' => $newBatch->id]);
+
+        try {
+            app(ShipmentLegService::class)->recordFailedAttempt($staleLeg, [
+                'reason_code' => 'recipient_unavailable',
+                'file_path' => 'stale-failure.jpg',
+            ], true);
+            $this->fail('A stale failed-attempt request changed a stop in another batch.');
+        } catch (ValidationException) {
+        }
+
+        $this->assertSame($newBatch->id, $leg->fresh()->delivery_batch_id);
+        $this->assertSame('assigned', $leg->fresh()->status->value);
+        $this->assertSame(0, $leg->attempts()->count());
+        $this->assertSame('in_progress', $originalBatch->fresh()->status);
+        $this->assertSame('in_progress', $newBatch->fresh()->status);
     }
 
     public function test_approved_final_proof_completes_batch(): void

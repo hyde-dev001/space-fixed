@@ -5,6 +5,7 @@ import type { TrackingShipmentLeg } from '@/types/logistics';
 
 const text = (value?: string | null) => value || 'Not provided';
 const label = (value?: string | null) => value ? value.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()) : 'Not scheduled';
+const formatDate = (value: string) => new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(`${value.slice(0, 10)}T00:00:00Z`));
 
 type Props = {
   leg: TrackingShipmentLeg;
@@ -47,7 +48,7 @@ export default function BatchStopRow({ leg, index, total, editable = false, busy
         <div className="mt-2 grid gap-1 text-sm text-gray-600 dark:text-gray-300">
           <span className="inline-flex items-center gap-2"><Phone size={14} />{text(destination?.phone)}</span>
           <span className="inline-flex items-start gap-2"><MapPin className="mt-0.5 shrink-0" size={14} />{text(destination?.address)}</span>
-          <span>{leg.scheduled_delivery_date || 'Not scheduled'}{leg.delivery_window ? ` · ${label(leg.delivery_window)}` : ''} · {label(leg.status)}</span>
+          <span>{leg.scheduled_delivery_date ? formatDate(leg.scheduled_delivery_date) : 'Not scheduled'}{leg.delivery_window ? ` · ${label(leg.delivery_window)}` : ''} · {label(leg.status)}</span>
         </div>
       </div>
       <div className="flex flex-wrap justify-end gap-1">

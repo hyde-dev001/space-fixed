@@ -86,7 +86,13 @@ class LogisticsPageAccessTest extends TestCase
         Permission::findOrCreate('manage-logistics-batches', 'user');
         $staff->givePermissionTo('manage-logistics-batches');
 
-        $batch = DeliveryBatch::factory()->create(['shop_owner_id' => $shop->id]);
+        $stopSnapshot = [[
+            'id' => 901,
+            'stop_sequence' => 1,
+            'status' => 'delivered',
+            'destination_snapshot' => ['name' => 'Saved Ana', 'address' => 'Saved address'],
+        ]];
+        $batch = DeliveryBatch::factory()->create(['shop_owner_id' => $shop->id, 'stop_snapshot' => $stopSnapshot]);
         $shipment = Shipment::factory()->create([
             'shop_owner_id' => $shop->id,
             'source_type' => 'order',
@@ -107,6 +113,7 @@ class LogisticsPageAccessTest extends TestCase
         $this->assertSame('order', $props['batches'][0]['legs'][0]['shipment']['source_type']);
         $this->assertSame(55, $props['batches'][0]['legs'][0]['shipment']['source_id']);
         $this->assertSame('Ana Reyes', $props['batches'][0]['legs'][0]['destination_snapshot']['name']);
+        $this->assertSame($stopSnapshot, $props['batches'][0]['stop_snapshot']);
     }
 
     public function test_logistics_rider_can_access_my_deliveries_but_not_dispatcher_shipments(): void

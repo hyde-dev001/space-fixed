@@ -140,6 +140,15 @@ class EmployeeSeeder extends Seeder
                 'salary' => 1076.92,
                 'phone' => '+639180000002',
             ],
+            [
+                'first_name' => 'Paolo',
+                'last_name' => 'Mendoza',
+                'email' => "logistics.rider2.{$shopOwner->id}@solespace.com",
+                'position' => 'Logistics Rider',
+                'department' => 'Logistics Rider',
+                'salary' => 1076.92,
+                'phone' => '+639180000003',
+            ],
         ];
 
         // Add Repairer only if not retail-only business
