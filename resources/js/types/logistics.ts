@@ -14,6 +14,10 @@ export type TrackingShipmentLeg = {
   sequence: number;
   leg_type: string;
   status: string;
+  resolution_type?: string | null;
+  resolution_reason?: string | null;
+  failed_attempt_count?: number;
+  max_delivery_attempts?: number;
   origin_snapshot?: (DeliveryContactSnapshot & Record<string, unknown>) | null;
   destination_snapshot?: (DeliveryContactSnapshot & Record<string, unknown>) | null;
   tracking_number?: string | null;
@@ -30,6 +34,9 @@ export type TrackingShipmentLeg = {
   urgent_at?: string | null;
   latest_failed_attempt?: {
     id: number;
+    attempt_number?: number | null;
+    delivery_assignment_id?: number | null;
+    delivery_batch_id?: number | null;
     reason: string;
     attempted_at?: string | null;
     proof_url?: string | null;

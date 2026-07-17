@@ -36,9 +36,10 @@ class ErpLogisticsController extends Controller
             $user->can('manage-logistics-riders')
         );
         $canAssign = $user && $user->can('assign-logistics-deliveries');
-        $status = in_array($request->query('status'), ['all', 'incomplete', 'requested', 'active', 'completed', 'cancelled', 'awaiting_proof_approval'], true)
+        $status = in_array($request->query('status'), ['all', 'incomplete', 'requested', 'active', 'completed', 'cancelled', 'awaiting_proof_approval', 'failed_attempts'], true)
             ? $request->query('status') : 'all';
         $purpose = $request->query('purpose', 'all');
+        $maxDeliveryAttempts = (int) LogisticsSetting::firstOrCreate(['shop_owner_id' => $shopOwnerId])->max_delivery_attempts;
 
         return Inertia::render('ERP/Logistics/Shipments', [
             'shipments' => Shipment::query()
@@ -49,6 +50,8 @@ class ErpLogisticsController extends Controller
                         ->latest('attempted_at')
                         ->latest('id')
                         ->limit(1)]);
+                    $query->withCount(['attempts as failed_attempt_count' => fn ($attempts) => $attempts
+                        ->where('attempt_type', 'delivery')->where('status', 'failed')]);
 
                     if (! $isDispatcher) {
                         $query->whereHas('assignments', function ($assignments) use ($user) {
@@ -69,6 +72,9 @@ class ErpLogisticsController extends Controller
                 })
                 ->when($status === 'awaiting_proof_approval', fn ($query) => $query
                     ->whereHas('legs', fn ($legs) => $legs->where('status', 'awaiting_proof_approval')))
+                ->when($status === 'failed_attempts', fn ($query) => $query
+                    ->whereHas('legs.attempts', fn ($attempts) => $attempts
+                        ->where('attempt_type', 'delivery')->where('status', 'failed')))
                 ->when($purpose !== 'all', function ($query) use ($purpose) {
                     $query->where('purpose', $purpose);
                 })
@@ -93,6 +99,7 @@ class ErpLogisticsController extends Controller
             'canRecordProof' => false,
             'canApproveProof' => $user && ($user->can('approve-proof-of-delivery') || $user->can('assign-logistics-deliveries')),
             'riderMode' => false,
+            'maxDeliveryAttempts' => $maxDeliveryAttempts,
             'assignableRiders' => $canAssign
                 ? RiderProfile::query()
                     ->where('shop_owner_id', $shopOwnerId)
@@ -204,18 +211,24 @@ class ErpLogisticsController extends Controller
     public function batches(): Response
     {
         $shopOwnerId = $this->authorizedShopOwnerId('manage-logistics-batches');
+        $settings = LogisticsSetting::firstOrCreate(['shop_owner_id' => $shopOwnerId]);
+        $attemptRelations = ['attempts' => fn ($attempts) => $attempts
+            ->where('attempt_type', 'delivery')->where('status', 'failed')->latest('attempted_at')->latest('id')->limit(1)];
         return Inertia::render('ERP/Logistics/Batches', [
-            'batches' => DeliveryBatch::with(['riderProfile', 'legs.shipment'])->where('shop_owner_id', $shopOwnerId)->latest()->get(),
-            'pool' => \App\Models\Logistics\ShipmentLeg::with('shipment')
+            'batches' => DeliveryBatch::with(['riderProfile', 'legs.shipment', 'legs.attempts' => $attemptRelations['attempts']])->where('shop_owner_id', $shopOwnerId)->latest()->get(),
+            'pool' => \App\Models\Logistics\ShipmentLeg::with(['shipment', ...$attemptRelations])
+                ->withCount(['attempts as failed_attempt_count' => fn ($attempts) => $attempts->where('attempt_type', 'delivery')->where('status', 'failed')])
                 ->whereHas('shipment', fn ($query) => $query->where('shop_owner_id', $shopOwnerId))
                 ->whereNull('delivery_batch_id')->where('schedule_status', 'scheduled')->where('status', 'pending')->get(),
-            'unscheduled' => ShipmentLeg::with('shipment')
+            'unscheduled' => ShipmentLeg::with(['shipment', ...$attemptRelations])
+                ->withCount(['attempts as failed_attempt_count' => fn ($attempts) => $attempts->where('attempt_type', 'delivery')->where('status', 'failed')])
                 ->whereHas('shipment', fn ($query) => $query->where('shop_owner_id', $shopOwnerId))
                 ->whereNull('delivery_batch_id')->where('status', 'pending')
                 ->where(fn ($query) => $query->whereNull('schedule_status')->orWhere('schedule_status', '!=', 'scheduled'))
                 ->get(),
             'riders' => RiderProfile::where('shop_owner_id', $shopOwnerId)->where('active', true)->where('availability_status', 'available')->get(),
-            'dailyRiderCapacity' => (int) LogisticsSetting::firstOrCreate(['shop_owner_id' => $shopOwnerId])->daily_rider_capacity,
+            'dailyRiderCapacity' => (int) $settings->daily_rider_capacity,
+            'maxDeliveryAttempts' => (int) $settings->max_delivery_attempts,
         ]);
     }
 
