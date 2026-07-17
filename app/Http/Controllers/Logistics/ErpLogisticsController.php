@@ -205,7 +205,7 @@ class ErpLogisticsController extends Controller
     {
         $shopOwnerId = $this->authorizedShopOwnerId('manage-logistics-batches');
         return Inertia::render('ERP/Logistics/Batches', [
-            'batches' => DeliveryBatch::with(['riderProfile', 'legs'])->where('shop_owner_id', $shopOwnerId)->latest()->get(),
+            'batches' => DeliveryBatch::with(['riderProfile', 'legs.shipment'])->where('shop_owner_id', $shopOwnerId)->latest()->get(),
             'pool' => \App\Models\Logistics\ShipmentLeg::with('shipment')
                 ->whereHas('shipment', fn ($query) => $query->where('shop_owner_id', $shopOwnerId))
                 ->whereNull('delivery_batch_id')->where('schedule_status', 'scheduled')->where('status', 'pending')->get(),
@@ -215,6 +215,7 @@ class ErpLogisticsController extends Controller
                 ->where(fn ($query) => $query->whereNull('schedule_status')->orWhere('schedule_status', '!=', 'scheduled'))
                 ->get(),
             'riders' => RiderProfile::where('shop_owner_id', $shopOwnerId)->where('active', true)->where('availability_status', 'available')->get(),
+            'dailyRiderCapacity' => (int) LogisticsSetting::firstOrCreate(['shop_owner_id' => $shopOwnerId])->daily_rider_capacity,
         ]);
     }
 

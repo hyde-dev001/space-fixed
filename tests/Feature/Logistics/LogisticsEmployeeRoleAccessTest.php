@@ -137,6 +137,14 @@ class LogisticsEmployeeRoleAccessTest extends TestCase
                 strtoupper(str_replace(' ', '_', $role)),
             ]);
         }
+
+        $secondRiderEmail = "logistics.rider2.{$shop->id}@solespace.com";
+        $this->assertDatabaseHas('employees', [
+            'shop_owner_id' => $shop->id,
+            'email' => $secondRiderEmail,
+            'department' => 'Logistics Rider',
+        ]);
+        $this->assertTrue(User::where('email', $secondRiderEmail)->firstOrFail()->hasRole('Logistics Rider'));
     }
 
     public function test_dispatcher_riders_page_backfills_existing_logistics_rider_profiles(): void

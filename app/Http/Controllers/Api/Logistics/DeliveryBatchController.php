@@ -56,9 +56,12 @@ class DeliveryBatchController extends Controller
     public function offer(Request $request, DeliveryBatch $batch, BatchDispatchService $service): JsonResponse
     {
         $shop = $this->dispatcherShop($batch);
-        $data = $request->validate(['rider_profile_id' => ['required', 'integer']]);
+        $data = $request->validate([
+            'rider_profile_id' => ['required', 'integer'],
+            'capacity_override_reason' => ['nullable', 'string', 'max:1000'],
+        ]);
         $rider = RiderProfile::where('shop_owner_id', $shop->id)->findOrFail($data['rider_profile_id']);
-        return response()->json(['batch' => $service->offer($batch, $rider, $shop)]);
+        return response()->json(['batch' => $service->offer($batch, $rider, $shop, $data['capacity_override_reason'] ?? null)]);
     }
 
     public function update(Request $request, DeliveryBatch $batch, BatchDispatchService $service): JsonResponse
@@ -103,6 +106,12 @@ class DeliveryBatchController extends Controller
         $this->dispatcherShop($batch);
         $reason = $request->validate(['reason' => ['required', 'string', 'max:1000']])['reason'];
         return response()->json(['batch' => $service->cancel($batch, $reason)]);
+    }
+
+    public function restore(DeliveryBatch $batch, BatchDispatchService $service): JsonResponse
+    {
+        $this->dispatcherShop($batch);
+        return response()->json(['batch' => $service->restore($batch)]);
     }
 
     private function dispatcherShop(?DeliveryBatch $batch = null): ShopOwner

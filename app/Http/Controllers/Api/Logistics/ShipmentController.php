@@ -18,6 +18,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class ShipmentController extends Controller
 {
@@ -130,6 +131,8 @@ class ShipmentController extends Controller
         $leg = DB::transaction(function () use ($proof, $actor, $legs) {
             $locked = HandoffProof::query()->with('leg')->lockForUpdate()->findOrFail($proof->id);
             abort_unless($locked->review_status === 'pending', 422);
+            abort_unless(in_array($locked->handoff_type, ['delivery', 'receive'], true), 422);
+            abort_unless($locked->leg->status->value === 'awaiting_proof_approval', 422);
             $locked->update(['review_status' => 'approved', 'reviewed_by_type' => $actor::class, 'reviewed_by_id' => $actor->id, 'reviewed_at' => now()]);
             return $legs->markDelivered($locked->leg);
         });
@@ -156,21 +159,27 @@ class ShipmentController extends Controller
     public function reportIssue(Request $request, ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse
     {
         $actor = $this->authorizeIssueReport($leg);
+        abort_unless(in_array($leg->status->value, ['in_transit', 'delivery_attempted'], true), 422);
         $payload = $request->validate([
             'reason_code' => ['required', 'in:recipient_unavailable,wrong_or_incomplete_address,recipient_refused,vehicle_or_delivery_problem,other'],
             'notes' => ['nullable', 'string'],
-            'proof_file' => ['nullable', 'image', 'max:10240'],
+            'proof_file' => ['required', 'image', 'max:10240'],
         ]);
         if ($request->hasFile('proof_file')) $payload['file_path'] = $request->file('proof_file')->store('logistics-attempt/' . $leg->id, 'public');
 
-        return response()->json([
-            'attempt' => $legs->recordFailedAttempt($leg, [
+        try {
+            $attempt = $legs->recordFailedAttempt($leg, [
                 ...$payload,
                 'attempt_type' => 'delivery',
                 'recorded_by_type' => $actor::class,
                 'recorded_by_id' => $actor->id,
-            ], true),
-        ], 201);
+            ]);
+        } catch (\Throwable $exception) {
+            Storage::disk('public')->delete($payload['file_path']);
+            throw $exception;
+        }
+
+        return response()->json(['attempt' => $attempt], 201);
     }
 
     public function cancel(ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse

@@ -1,9 +1,9 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ShipmentTracking from '../ShipmentTracking';
 
-const shipment = {
+const shipment: any = {
   id: 1,
   purpose: 'retail_delivery',
   status: 'active',
@@ -14,6 +14,7 @@ const shipment = {
     scheduled_delivery_date: '2026-07-15',
     delivery_window: 'morning',
     schedule_status: 'scheduled',
+    latest_failed_attempt: null,
   }],
   events: [],
 };
@@ -26,11 +27,34 @@ vi.mock('@inertiajs/react', () => ({
 vi.mock('../../Shared/Navigation', () => ({ default: () => null }));
 
 describe('ShipmentTracking', () => {
+  beforeEach(() => {
+    shipment.status = 'active';
+    shipment.legs = [{
+      id: 2,
+      sequence: 1,
+      leg_type: 'outbound',
+      status: 'pending',
+      scheduled_delivery_date: '2026-07-15',
+      delivery_window: 'morning',
+      schedule_status: 'scheduled',
+      latest_failed_attempt: null,
+    }];
+  });
+
   it('shows the formatted scheduled estimate', () => {
     render(<ShipmentTracking />);
 
     expect(screen.getByText('Estimated delivery')).toBeInTheDocument();
     expect(screen.getByText(/July 15, 2026.*Morning/)).toBeInTheDocument();
+  });
+
+  it('shows the shop delivery method without a tracking link when courier tracking is absent', () => {
+    render(<ShipmentTracking />);
+
+    expect(screen.getByText('SHP-1')).toBeInTheDocument();
+    expect(screen.getByText('Delivery Method')).toBeInTheDocument();
+    expect(screen.getByText('SoleSpace Shop Logistics')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Open SoleSpace tracking' })).not.toBeInTheDocument();
   });
 
   it('shows a customer-friendly status while delivery proof is being verified', () => {
@@ -39,5 +63,37 @@ describe('ShipmentTracking', () => {
 
     expect(screen.getAllByText('Delivered — confirmation in progress').length).toBeGreaterThan(0);
     expect(screen.getByText('Your item was handed over and the delivery proof is being verified.')).toBeInTheDocument();
+  });
+
+  it('shows an unresolved failed attempt reason, time, and proof', () => {
+    shipment.legs[0].latest_failed_attempt = {
+      id: 9,
+      reason: 'Recipient unavailable',
+      attempted_at: '2026-07-17T10:30:00+08:00',
+      proof_url: '/tracking/shipments/1/attempts/9/proof',
+    };
+
+    render(<ShipmentTracking />);
+
+    expect(screen.getByText('Delivery Attempt Failed')).toBeInTheDocument();
+    expect(screen.getByText('Recipient unavailable')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Failed delivery attempt proof' })).toHaveAttribute('src', '/tracking/shipments/1/attempts/9/proof');
+  });
+
+  it('keeps other-leg failures historical and falls back when proof cannot load', () => {
+    shipment.legs = [{
+      ...shipment.legs[0], id: 1, sequence: 1,
+      latest_failed_attempt: { id: 8, reason: 'Recipient refused', attempted_at: '2026-07-16T09:00:00+08:00', proof_url: '/broken-proof' },
+    }, {
+      ...shipment.legs[0], id: 2, sequence: 2, status: 'delivered',
+      latest_failed_attempt: { id: 9, reason: 'Recipient unavailable', attempted_at: '2026-07-17T10:30:00+08:00', proof_url: null },
+    }];
+
+    render(<ShipmentTracking />);
+
+    expect(screen.queryByText('Delivery Attempt Failed')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Previous delivery attempt').length).toBe(2);
+    fireEvent.error(screen.getByRole('img', { name: 'Failed delivery attempt proof' }));
+    expect(screen.getAllByText('Attempt photo unavailable').length).toBe(2);
   });
 });

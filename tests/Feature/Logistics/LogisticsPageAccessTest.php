@@ -4,6 +4,7 @@ namespace Tests\Feature\Logistics;
 
 use App\Models\Logistics\DeliveryAssignment;
 use App\Models\Logistics\DeliveryBatch;
+use App\Models\Logistics\LogisticsSetting;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
@@ -74,6 +75,45 @@ class LogisticsPageAccessTest extends TestCase
         $staff->givePermissionTo('manage-logistics-batches');
         $this->actingAs($staff->fresh(), 'user')->get('/erp/logistics/batches')
             ->assertOk()->assertInertia(fn ($page) => $page->component('ERP/Logistics/Batches'));
+    }
+
+    public function test_batches_page_includes_tenant_stop_details_and_capacity(): void
+    {
+        $shop = ShopOwner::factory()->create();
+        $otherShop = ShopOwner::factory()->create();
+        LogisticsSetting::create(['shop_owner_id' => $shop->id, 'daily_rider_capacity' => 12]);
+        $staff = User::factory()->create(['shop_owner_id' => $shop->id]);
+        Permission::findOrCreate('manage-logistics-batches', 'user');
+        $staff->givePermissionTo('manage-logistics-batches');
+
+        $stopSnapshot = [[
+            'id' => 901,
+            'stop_sequence' => 1,
+            'status' => 'delivered',
+            'destination_snapshot' => ['name' => 'Saved Ana', 'address' => 'Saved address'],
+        ]];
+        $batch = DeliveryBatch::factory()->create(['shop_owner_id' => $shop->id, 'stop_snapshot' => $stopSnapshot]);
+        $shipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+            'source_id' => 55,
+        ]);
+        ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id,
+            'delivery_batch_id' => $batch->id,
+            'destination_snapshot' => ['name' => 'Ana Reyes', 'address' => 'Dasmarinas, Cavite'],
+        ]);
+        DeliveryBatch::factory()->create(['shop_owner_id' => $otherShop->id]);
+
+        $props = $this->actingAs($staff->fresh(), 'user')->get('/erp/logistics/batches')
+            ->assertOk()->viewData('page')['props'];
+
+        $this->assertSame(12, $props['dailyRiderCapacity']);
+        $this->assertSame([$batch->id], collect($props['batches'])->pluck('id')->all());
+        $this->assertSame('order', $props['batches'][0]['legs'][0]['shipment']['source_type']);
+        $this->assertSame(55, $props['batches'][0]['legs'][0]['shipment']['source_id']);
+        $this->assertSame('Ana Reyes', $props['batches'][0]['legs'][0]['destination_snapshot']['name']);
+        $this->assertSame($stopSnapshot, $props['batches'][0]['stop_snapshot']);
     }
 
     public function test_logistics_rider_can_access_my_deliveries_but_not_dispatcher_shipments(): void

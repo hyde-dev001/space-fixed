@@ -95,9 +95,14 @@ type Order = {
   tracking_link?: string;
   logistics_shipment_id?: number | null;
   is_shop_owned_delivery?: boolean;
+  delivery_status?: string | null;
+  delivery_tracking_number?: string | null;
   delivery_rider_name?: string | null;
   delivery_rider_phone?: string | null;
   delivery_reference?: string | null;
+  delivery_has_failed_attempt?: boolean;
+  delivery_scheduled_date?: string | null;
+  delivery_window?: 'morning' | 'afternoon' | null;
   eta?: string;
   pickup_enabled?: boolean;
   refund_stage?: {
@@ -205,6 +210,15 @@ const MyOrders: React.FC = () => {
       .replace(/\s+/g, ' ')
       .trim()
       .replace(/\b\w/g, (char) => char.toUpperCase());
+  };
+
+  const formatShopDeliveryEstimate = (date?: string | null, window?: string | null): string => {
+    if (!date) return 'Not scheduled yet';
+
+    const formattedDate = new Intl.DateTimeFormat('en-US', { dateStyle: 'long' })
+      .format(new Date(`${date}T00:00:00`));
+
+    return window ? `${formattedDate} · ${humanizeReasonCode(window)}` : formattedDate;
   };
 
   const isReturnRefundOrder = (order: Order): boolean => {
@@ -580,6 +594,15 @@ const MyOrders: React.FC = () => {
       default:
         return status;
     }
+  };
+
+  const formatDeliveryStatus = (status?: string | null): string => {
+    const normalized = String(status || '').trim();
+    if (!normalized) return 'Awaiting dispatch';
+
+    return normalized
+      .replace(/[_-]+/g, ' ')
+      .replace(/\b\w/g, (letter) => letter.toUpperCase());
   };
 
   const normalizeOrderIdList = (ids: number[]): number[] => {
@@ -1817,7 +1840,10 @@ const MyOrders: React.FC = () => {
                         const isRefundedOrder = isOrderRefunded(order);
                         const isRefundProcessing = displayStatus === 'refund_processing';
                         const isCancelledRefundOrder = order.status === 'cancelled' && isRefundedOrder;
-                        const hasShippingInfo = !isRefundProcessing && !isRefundedOrder && ['shipped', 'to_ship', 'delivered', 'completed'].includes(order.status);
+                        const hasShippingInfo = !isRefundProcessing && !isRefundedOrder && (
+                          Boolean(order.logistics_shipment_id)
+                          || ['shipped', 'to_ship', 'delivered', 'completed'].includes(order.status)
+                        );
                         const returnStatus = String(stage?.return_status || '').toLowerCase();
                         const returnSource = String(stage?.return_source || 'customer').toLowerCase();
                         const isShopOwnedReturn = Boolean(stage?.is_shop_owned_return);
@@ -1833,11 +1859,30 @@ const MyOrders: React.FC = () => {
                               {/* Shipping Information */}
                               {hasShippingInfo && (
                                 <div className={hasBothDetailSections ? '' : 'xl:col-span-2'}>
-                                  <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">Shipping Information</p>
+                                  <p className="text-sm text-gray-500 uppercase tracking-wider mb-3">Delivery Tracking</p>
+                                  {order.delivery_has_failed_attempt && order.logistics_shipment_id && (
+                                    <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-4">
+                                      <p className="font-semibold text-amber-900">Failed delivery attempt</p>
+                                      <Link
+                                        href={`/tracking/shipments/${order.logistics_shipment_id}`}
+                                        className="mt-1 inline-block text-sm font-semibold text-amber-900 underline"
+                                      >
+                                        View attempt details
+                                      </Link>
+                                    </div>
+                                  )}
                                   <div className="space-y-3 sm:grid sm:grid-cols-2 sm:gap-y-4 sm:gap-x-10 sm:space-y-0">
                                     <div className="flex items-start justify-between gap-3 sm:block">
+                                      <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Delivery Status</p>
+                                      <p className="text-sm text-black font-semibold text-right sm:text-left">{formatDeliveryStatus(order.delivery_status || order.status)}</p>
+                                    </div>
+                                    <div className="flex items-start justify-between gap-3 sm:block">
                                       <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Estimated Delivery Date </p>
-                                      <p className="text-sm text-black font-medium text-right sm:text-left">{order.eta || '-'}</p>
+                                      <p className="text-sm text-black font-medium text-right sm:text-left">
+                                        {order.is_shop_owned_delivery
+                                          ? formatShopDeliveryEstimate(order.delivery_scheduled_date, order.delivery_window)
+                                          : (order.eta || '-')}
+                                      </p>
                                     </div>
                                     <div className="flex items-start justify-between gap-3 sm:block">
                                       <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">Carrier Business </p>
@@ -1849,13 +1894,13 @@ const MyOrders: React.FC = () => {
                                     </div>
                                     <div className="flex items-start justify-between gap-3 sm:block">
                                       <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">{order.is_shop_owned_delivery ? 'Rider Phone' : 'Tracking Number'}</p>
-                                      <p className="text-sm text-black font-medium text-right sm:text-left">{order.is_shop_owned_delivery ? (order.delivery_rider_phone || '-') : (order.tracking_number || '-')}</p>
+                                      <p className="text-sm text-black font-medium text-right sm:text-left">{order.is_shop_owned_delivery ? (order.delivery_rider_phone || '-') : (order.tracking_number || order.delivery_tracking_number || '-')}</p>
                                     </div>
                                     <div className="sm:col-span-2">
                                       <div className="flex items-start justify-between gap-3 sm:block">
-                                        <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">{order.is_shop_owned_delivery ? 'Delivery Reference' : 'Tracking Link'}</p>
+                                        <p className="text-xs text-gray-400 uppercase tracking-wider sm:mb-1">{order.is_shop_owned_delivery ? 'Tracking Reference' : 'Tracking Link'}</p>
                                         {order.is_shop_owned_delivery ? (
-                                          <p className="text-right text-sm text-black font-medium sm:text-left">{order.delivery_reference || '-'}</p>
+                                          <p className="text-right text-sm text-black font-medium sm:text-left">{order.delivery_tracking_number || order.delivery_reference || '-'}</p>
                                         ) : order.tracking_link ? (
                                           <a
                                             href={order.tracking_link}
@@ -1930,7 +1975,7 @@ const MyOrders: React.FC = () => {
 
                       {/* Order Actions */}
                       <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-gray-200 pt-4 sm:mt-6 sm:pt-6 sm:gap-3">
-                        {order.logistics_shipment_id && !order.is_shop_owned_delivery && (
+                        {order.logistics_shipment_id && (
                           <Link
                             href={`/tracking/shipments/${order.logistics_shipment_id}`}
                             className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}

@@ -58,7 +58,7 @@ function contact(leg?: TrackingShipmentLeg) {
   return { name: value('name'), phone: value('phone'), address: value('address'), instructions: value('delivery_instructions') };
 }
 
-const toast = (icon: 'success' | 'error', title: string) => Swal.fire({
+const toast = (icon: 'success' | 'error' | 'warning', title: string) => Swal.fire({
   toast: true,
   position: 'top-end',
   icon,
@@ -81,11 +81,14 @@ export default function Shipments({ children }: React.PropsWithChildren) {
   }>().props;
   const [expandedShipmentId, setExpandedShipmentId] = useState<number | null>(null);
   const [selectedRiders, setSelectedRiders] = useState<Record<number, string>>({});
+  const [deliverySchedules, setDeliverySchedules] = useState<Record<number, { date: string; window: string }>>({});
   const [assigningLegId, setAssigningLegId] = useState<number | null>(null);
   const [assignmentError, setAssignmentError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [proofFiles, setProofFiles] = useState<Record<number, File | null>>({});
+  const [issueProofFiles, setIssueProofFiles] = useState<Record<number, File | null>>({});
   const [issueForms, setIssueForms] = useState<Record<number, { reason_code: string; notes: string }>>({});
+  const [deliveryOutcomes, setDeliveryOutcomes] = useState<Record<number, 'proof' | 'issue'>>({});
   const hasActionColumn = riderMode || canAssign || canUpdateStatus || canRecordProof || canApproveProof;
 
   const updateFilter = (key: keyof ShipmentFilters, value: string) => {
@@ -95,12 +98,12 @@ export default function Shipments({ children }: React.PropsWithChildren) {
     });
   };
 
-  const act = async (url: string, body?: FormData | Record<string, string>) => {
+  const act = async (url: string, body?: FormData | Record<string, string>, issue = false) => {
     setActionError(null);
     try {
       await axios.post(url, body, body instanceof FormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : undefined);
-      toast('success', 'Delivery updated.');
-      router.reload({ only: ['shipments'] });
+      toast(issue ? 'warning' : 'success', issue ? 'Delivery issue reported.' : 'Delivery updated.');
+      router.reload({ only: issue && riderMode ? ['shipments', 'batches'] : ['shipments'] });
       return true;
     } catch (error: any) {
       const errors = error.response?.data?.errors;
@@ -153,10 +156,66 @@ export default function Shipments({ children }: React.PropsWithChildren) {
     }
   };
 
+  const scheduleLeg = async (legId: number, assignAfter: boolean) => {
+    const schedule = deliverySchedules[legId];
+    const riderProfileId = Number(selectedRiders[legId]);
+    if (!schedule?.date || !schedule.window || (assignAfter && !riderProfileId)) return;
+
+    setAssigningLegId(legId);
+    setAssignmentError(null);
+    let scheduled = false;
+    let awaitingReload = false;
+    try {
+      await axios.post('/api/logistics/legs/schedule', {
+        delivery_date: schedule.date,
+        delivery_window: schedule.window,
+        leg_ids: [legId],
+      });
+      scheduled = true;
+      if (assignAfter) {
+        await axios.post(`/api/logistics/legs/${legId}/assign`, {
+          assignment_type: 'internal_rider',
+          rider_profile_id: riderProfileId,
+        });
+      }
+      toast('success', assignAfter ? 'Delivery scheduled and rider assigned.' : 'Delivery scheduled.');
+      awaitingReload = true;
+      router.reload({ only: assignAfter ? ['shipments', 'assignableRiders'] : ['shipments'], onFinish: () => setAssigningLegId(null) });
+    } catch (error: any) {
+      const errors = error.response?.data?.errors;
+      const message = error.response?.data?.message ?? (errors ? Object.values(errors).flat().join(' ') : 'Unable to schedule this delivery.');
+      setAssignmentError(message);
+      toast('error', message);
+      if (scheduled && assignAfter) {
+        awaitingReload = true;
+        router.reload({ only: ['shipments', 'assignableRiders'], onFinish: () => setAssigningLegId(null) });
+      }
+    } finally {
+      if (!awaitingReload) setAssigningLegId(null);
+    }
+  };
+
   const reportIssue = (legId: number) => {
     const form = issueForms[legId] ?? { reason_code: '', notes: '' };
     if (!form.reason_code) return setActionError('Choose an issue reason first.');
-    void act(`/api/logistics/legs/${legId}/report-issue`, form);
+    const file = issueProofFiles[legId];
+    if (!file) return setActionError('Upload a photo showing the delivery attempt.');
+    const data = new FormData();
+    data.append('reason_code', form.reason_code);
+    if (form.notes) data.append('notes', form.notes);
+    data.append('proof_file', file);
+    void act(`/api/logistics/legs/${legId}/report-issue`, data, true);
+  };
+
+  const chooseDeliveryOutcome = (legId: number, outcome: 'proof' | 'issue') => {
+    setDeliveryOutcomes((current) => ({ ...current, [legId]: outcome }));
+
+    if (outcome === 'proof') {
+      setIssueProofFiles((current) => ({ ...current, [legId]: null }));
+      setIssueForms((current) => ({ ...current, [legId]: { reason_code: '', notes: '' } }));
+    } else {
+      setProofFiles((current) => ({ ...current, [legId]: null }));
+    }
   };
 
   return (
@@ -261,8 +320,13 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                             const activeAssignment = leg.assignments?.find((assignment) => ['assigned', 'accepted'].includes(assignment.status));
                             const canAssignLeg = !['delivered', 'cancelled'].includes(leg.status) && !activeAssignment;
                             const latestAttempt = leg.attempts?.[0];
-                            const canReportIssue = riderMode && ['assigned', 'picked_up', 'in_transit', 'delivery_attempted'].includes(leg.status);
+                            const canReportIssue = riderMode && ['in_transit', 'delivery_attempted'].includes(leg.status);
+                            const canScheduleLeg = canAssign && !riderMode && !leg.scheduled_delivery_date && leg.delivery_batch_id == null && ['pending', 'assigned'].includes(leg.status);
+                            const schedule = deliverySchedules[leg.id] ?? { date: '', window: 'morning' };
                             const issueForm = issueForms[leg.id] ?? { reason_code: '', notes: '' };
+                            const canSubmitProof = canRecordProof && leg.status === 'in_transit';
+                            const showOutcomeChoice = canSubmitProof && canReportIssue;
+                            const deliveryOutcome = deliveryOutcomes[leg.id];
 
                             return (
                               <div key={leg.id} className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between dark:border-gray-700 dark:bg-gray-800">
@@ -277,22 +341,47 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                     <p><strong>Schedule:</strong> {leg.scheduled_delivery_date || 'Not scheduled'}{leg.delivery_window ? ` · ${label(leg.delivery_window)}` : ''}</p>
                                     {leg.stop_sequence && <p><strong>Stop:</strong> {leg.stop_sequence}</p>}
                                   </div>
-                                  {!riderMode && leg.status === 'delivery_attempted' && <div className="mt-2 space-y-1 text-xs text-gray-600 dark:text-gray-300"><span className="inline-flex rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">Needs attention</span>{latestAttempt?.reason_code && <p>{label(latestAttempt.reason_code)}</p>}{latestAttempt?.notes && <p>Internal note: {latestAttempt.notes}</p>}</div>}
+                                  {!riderMode && latestAttempt?.status === 'failed' && <div className="mt-2 space-y-1 text-xs text-gray-600 dark:text-gray-300"><span className="inline-flex rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">Failed attempt</span>{latestAttempt.reason_code && <p>{label(latestAttempt.reason_code)}</p>}{latestAttempt.notes && <p>Internal note: {latestAttempt.notes}</p>}{latestAttempt.file_path && <a href={`/storage/${latestAttempt.file_path}`} target="_blank" rel="noreferrer" className="inline-block font-semibold text-blue-600 hover:underline">View failed-attempt photo</a>}</div>}
                                 </div>
-                                <div className="flex flex-wrap gap-2">
+                                <div className="flex min-w-0 flex-col gap-3 sm:min-w-[22rem]">
                                   {canUpdateStatus && leg.status === 'assigned' && <button type="button" onClick={() => void act(`/api/logistics/legs/${leg.id}/picked-up`)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">Picked up</button>}
                                   {canUpdateStatus && leg.status === 'picked_up' && <button type="button" onClick={() => void act(`/api/logistics/legs/${leg.id}/in-transit`)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">In transit</button>}
-                                  {canRecordProof && leg.status === 'in_transit' && <><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setProofFiles({ ...proofFiles, [leg.id]: event.target.files?.[0] ?? null })} className="text-sm" /><button type="button" onClick={() => submitProof(leg.id)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">Submit proof</button></>}
+                                  {showOutcomeChoice && <div role="group" aria-label="Choose delivery outcome" className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-900/40"><p className="mb-2 text-sm font-semibold text-gray-900 dark:text-white">What happened with this delivery?</p><div className="grid gap-2 sm:grid-cols-2"><button type="button" onClick={() => chooseDeliveryOutcome(leg.id, 'proof')} className={`rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${deliveryOutcome === 'proof' ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-300 bg-white text-gray-700 hover:border-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200'}`}>Delivered successfully</button><button type="button" onClick={() => chooseDeliveryOutcome(leg.id, 'issue')} className={`rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${deliveryOutcome === 'issue' ? 'border-amber-600 bg-amber-600 text-white' : 'border-gray-300 bg-white text-gray-700 hover:border-amber-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200'}`}>Couldn't deliver</button></div></div>}
+                                  {canSubmitProof && (!showOutcomeChoice || deliveryOutcome === 'proof') && <div className="space-y-3 rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950/30"><div><p className="text-sm font-semibold text-blue-950 dark:text-blue-100">Delivery proof</p><p className="text-xs text-blue-700 dark:text-blue-300">Upload a clear photo showing the successful handoff.</p></div><input type="file" accept="image/jpeg,image/png,image/webp" aria-label="Delivery proof photo" onChange={(event) => setProofFiles({ ...proofFiles, [leg.id]: event.target.files?.[0] ?? null })} className="block w-full text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-2 file:font-semibold file:text-blue-700 dark:text-gray-200 dark:file:bg-gray-800 dark:file:text-blue-300" /><div className="flex flex-wrap gap-2"><button type="button" onClick={() => submitProof(leg.id)} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">Submit proof</button>{proofFiles[leg.id] && <button type="button" onClick={(event) => { setProofFiles({ ...proofFiles, [leg.id]: null }); const input = event.currentTarget.closest('div.space-y-3')?.querySelector<HTMLInputElement>('input[type="file"]'); if (input) input.value = ''; }} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200">Clear photo</button>}</div></div>}
                                   {canApproveProof && leg.proofs?.filter((proof) => ['delivery', 'receive'].includes(proof.handoff_type)).map((proof) => (
                                     <div key={proof.id} className="flex items-center gap-2">
                                       {proof.file_path && <a href={`/storage/${proof.file_path}`} target="_blank" rel="noreferrer" aria-label="Open uploaded delivery proof"><img src={`/storage/${proof.file_path}`} alt="Uploaded delivery proof" className="h-12 w-12 rounded border border-gray-200 object-cover" /></a>}
                                       {leg.status === 'awaiting_proof_approval' && proof.review_status === 'pending' && <button type="button" onClick={() => void confirmAct(`/api/logistics/proofs/${proof.id}/approve`, 'Confirm delivery?', 'This will complete the delivery.')} className="rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white">Confirm delivery</button>}
                                     </div>
                                   ))}
-                                  {canReportIssue && <div className="flex flex-wrap items-center gap-2"><select value={issueForm.reason_code} onChange={(event) => setIssueForms({ ...issueForms, [leg.id]: { ...issueForm, reason_code: event.target.value } })} className="w-44 rounded border border-gray-300 px-2 py-1 text-xs dark:border-gray-600 dark:bg-gray-700 dark:text-white" aria-label="Issue reason"><option value="">Issue reason</option><option value="recipient_unavailable">Recipient unavailable</option><option value="wrong_or_incomplete_address">Wrong or incomplete address</option><option value="recipient_refused">Recipient refused</option><option value="vehicle_or_delivery_problem">Vehicle or delivery problem</option><option value="other">Other</option></select><textarea value={issueForm.notes} onChange={(event) => setIssueForms({ ...issueForms, [leg.id]: { ...issueForm, notes: event.target.value } })} placeholder="Optional note" className="w-32 rounded border border-gray-300 px-2 py-1 text-xs dark:border-gray-600 dark:bg-gray-700 dark:text-white" /><button type="button" onClick={() => reportIssue(leg.id)} className="rounded border border-amber-500 px-2 py-1 text-xs font-semibold text-amber-700">{leg.status === 'delivery_attempted' ? 'Request cancellation' : 'Report issue'}</button></div>}
+                                  {canReportIssue && (!showOutcomeChoice || deliveryOutcome === 'issue') && <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30"><div><p className="text-sm font-semibold text-amber-950 dark:text-amber-100">Failed delivery attempt</p><p className="text-xs text-amber-700 dark:text-amber-300">Choose a reason and upload a photo showing you reached the delivery location.</p></div><label className="block text-xs font-semibold text-gray-700 dark:text-gray-200">Reason<select value={issueForm.reason_code} onChange={(event) => setIssueForms({ ...issueForms, [leg.id]: { ...issueForm, reason_code: event.target.value } })} className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" aria-label="Issue reason"><option value="">Choose a reason</option><option value="recipient_unavailable">Recipient unavailable</option><option value="wrong_or_incomplete_address">Wrong or incomplete address</option><option value="recipient_refused">Recipient refused</option><option value="vehicle_or_delivery_problem">Vehicle or delivery problem</option><option value="other">Other</option></select></label><label className="block text-xs font-semibold text-gray-700 dark:text-gray-200">Attempt photo <span className="text-red-600">(required)</span><input type="file" required accept="image/jpeg,image/png,image/webp" aria-label="Issue photo" onChange={(event) => setIssueProofFiles({ ...issueProofFiles, [leg.id]: event.target.files?.[0] ?? null })} className="mt-1 block w-full text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-2 file:font-semibold file:text-amber-700 dark:text-gray-200 dark:file:bg-gray-800 dark:file:text-amber-300" /></label><label className="block text-xs font-semibold text-gray-700 dark:text-gray-200">Note <span className="font-normal text-gray-500">(optional)</span><textarea value={issueForm.notes} onChange={(event) => setIssueForms({ ...issueForms, [leg.id]: { ...issueForm, notes: event.target.value } })} placeholder="Optional note" rows={3} className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" /></label><button type="button" disabled={!issueForm.reason_code || !issueProofFiles[leg.id]} onClick={() => reportIssue(leg.id)} className="w-full rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50">{leg.status === 'delivery_attempted' ? 'Request cancellation' : 'Report issue'}</button></div>}
                                   {!riderMode && leg.status === 'delivery_attempted' && <button type="button" onClick={() => void confirmAct(`/api/logistics/legs/${leg.id}/cancel`, 'Cancel delivery?', 'This is the final cancellation action.')} className="rounded-lg border border-red-600 px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50">Cancel delivery</button>}
                                 </div>
-                                {activeAssignment ? (
+                                {canScheduleLeg && (
+                                  <div className="flex flex-col gap-2">
+                                    <div className="flex flex-col gap-2 sm:flex-row">
+                                      <label className="text-xs font-semibold text-gray-700 dark:text-gray-200">Delivery date<input type="date" aria-label="Delivery date" value={schedule.date} onChange={(event) => setDeliverySchedules({ ...deliverySchedules, [leg.id]: { ...schedule, date: event.target.value } })} className="mt-1 block rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white" /></label>
+                                      <label className="text-xs font-semibold text-gray-700 dark:text-gray-200">Delivery window<select aria-label="Delivery window" value={schedule.window} onChange={(event) => setDeliverySchedules({ ...deliverySchedules, [leg.id]: { ...schedule, window: event.target.value } })} className="mt-1 block rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"><option value="">Choose a window</option><option value="morning">Morning</option><option value="afternoon">Afternoon</option></select></label>
+                                    </div>
+                                    {activeAssignment ? (
+                                      <><p className="text-sm font-medium text-gray-700 dark:text-gray-200">Assigned to {activeAssignment.rider_profile?.name ?? 'rider'}</p><button type="button" disabled={!schedule.date || !schedule.window || assigningLegId === leg.id} onClick={() => void scheduleLeg(leg.id, false)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Save schedule</button></>
+                                    ) : (
+                                      <div className="flex flex-col gap-2 sm:flex-row">
+                                        <select
+                                          value={selectedRiders[leg.id] ?? ''}
+                                          onChange={(event) => setSelectedRiders({ ...selectedRiders, [leg.id]: event.target.value })}
+                                          className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                                          aria-label={`Choose rider for ${leg.leg_type} leg`}
+                                        >
+                                          <option value="">Choose available rider</option>
+                                          {assignableRiders.map((rider) => <option key={rider.id} value={rider.id}>{rider.name}{rider.phone ? ` (${rider.phone})` : ''}</option>)}
+                                        </select>
+                                        <button type="button" disabled={!schedule.date || !schedule.window || !selectedRiders[leg.id] || assigningLegId === leg.id} onClick={() => void scheduleLeg(leg.id, true)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{assigningLegId === leg.id ? 'Scheduling...' : 'Schedule & assign rider'}</button>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                                {!canScheduleLeg && (activeAssignment ? (
                                   <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Assigned to {activeAssignment.rider_profile?.name ?? 'rider'}</p>
                                 ) : canAssignLeg ? (
                                   <div className="flex flex-col gap-2 sm:flex-row">
@@ -316,7 +405,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                   </div>
                                 ) : (
                                   <p className="text-sm text-gray-500">No assignment needed.</p>
-                                )}
+                                ))}
                               </div>
                             );
                           })}

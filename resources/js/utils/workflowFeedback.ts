@@ -22,6 +22,10 @@ export const workflowFeedback = {
 		return Swal.fire(withDefaultConfirm({ icon: "success", ...options }));
 	},
 
+	toast(icon: "success" | "error" | "warning", title: string): Promise<SweetAlertResult> {
+		return Swal.fire({ toast: true, position: "top-end", timer: 2200, timerProgressBar: true, showConfirmButton: false, icon, title });
+	},
+
 	confirm(options: Omit<SweetAlertOptions, "icon">): Promise<SweetAlertResult> {
 		return Swal.fire(
 			withDefaultConfirm({
