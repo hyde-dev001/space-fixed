@@ -3,6 +3,7 @@
 namespace Tests\Feature\Logistics;
 
 use App\Models\Logistics\DeliveryAssignment;
+use App\Models\Logistics\HandoffProof;
 use App\Models\Logistics\LogisticsSetting;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
@@ -142,6 +143,78 @@ class FailedDeliveryRefundWorkflowTest extends TestCase
         }
     }
 
+    public function test_failed_delivery_receipt_requires_completed_return_and_applies_every_line_once(): void
+    {
+        [$order, $leg, $items] = $this->paidOrderWithOutboundLeg();
+        [$refund, $return] = $this->exhaustDelivery($order, $leg);
+        $service = app(OrderRefundService::class);
+        $dispositions = $items->values()->map(fn ($item, $index) => [
+            'order_item_id' => $item->id,
+            'approved_qty' => 1,
+            'inspection_disposition' => $index === 0 ? 'resellable' : 'damaged',
+        ])->all();
+
+        $blocked = $service->confirmReturnReceived($refund, $order->customer_id, lineDispositions: $dispositions);
+        $this->assertSame('invalid_state', $blocked['result']);
+
+        $return->update(['status' => 'delivered', 'delivered_at' => now()]);
+        HandoffProof::factory()->create([
+            'shipment_leg_id' => $return->id,
+            'handoff_type' => 'receive',
+            'proof_type' => 'photo',
+            'review_status' => 'approved',
+        ]);
+        $product = $items->first()->product;
+        $variant = $items->first()->productVariant;
+        $productStock = $product->stock_quantity;
+        $variantStock = $variant->quantity;
+
+        $received = $service->confirmReturnReceived($refund->fresh(), $order->customer_id, lineDispositions: $dispositions);
+
+        $this->assertSame('received', $received['result']);
+        $this->assertSame($productStock + 1, $product->fresh()->stock_quantity);
+        $this->assertSame($variantStock + 1, $variant->fresh()->quantity);
+        $this->assertDatabaseHas('order_refund_items', ['order_item_id' => $items[0]->id, 'inventory_action' => 'restock']);
+        $this->assertDatabaseHas('order_refund_items', ['order_item_id' => $items[1]->id, 'inventory_action' => 'write_off']);
+
+        $approved = $service->approveRequestedRefund($refund->fresh(), 'finance', $order->customer_id);
+        $this->assertSame('approved', $approved['result']);
+        $this->assertSame('approved', $approved['refund']->finance_status);
+        $this->assertSame('approved', $approved['refund']->shop_owner_status);
+        $this->assertSame('received', $approved['refund']->return_status);
+        $this->assertStringContainsString('approval was bypassed', strtolower((string) $approved['refund']->reason_note));
+
+        $service->confirmReturnReceived($refund->fresh(), $order->customer_id, lineDispositions: $dispositions);
+        $this->assertSame($productStock + 1, $product->fresh()->stock_quantity);
+        $this->assertSame($variantStock + 1, $variant->fresh()->quantity);
+    }
+
+    public function test_failed_delivery_receipt_rejects_missing_lines_and_finance_waits_for_receipt(): void
+    {
+        [$order, $leg, $items] = $this->paidOrderWithOutboundLeg();
+        [$refund, $return] = $this->exhaustDelivery($order, $leg);
+        $return->update(['status' => 'delivered', 'delivered_at' => now()]);
+        HandoffProof::factory()->create([
+            'shipment_leg_id' => $return->id,
+            'handoff_type' => 'receive',
+            'proof_type' => 'photo',
+            'review_status' => 'approved',
+        ]);
+        $service = app(OrderRefundService::class);
+
+        $missing = $service->confirmReturnReceived($refund, 77, lineDispositions: [[
+            'order_item_id' => $items->first()->id,
+            'approved_qty' => 1,
+            'inspection_disposition' => 'resellable',
+        ]]);
+
+        $this->assertSame('invalid_state', $missing['result']);
+        $this->assertNotSame('received', $refund->fresh()->return_status);
+        $this->assertSame('invalid_state', $service->approveRequestedRefund($refund->fresh(), 'finance', 99)['result']);
+        $refund->update(['finance_status' => 'approved', 'return_status' => 'in_transit']);
+        $this->assertSame('invalid_state', $service->executeApprovedRefund($refund->fresh(), 99)['result']);
+    }
+
     private function paidOrderWithOutboundLeg(): array
     {
         $shop = ShopOwner::factory()->approved()->create([
@@ -218,5 +291,30 @@ class FailedDeliveryRefundWorkflowTest extends TestCase
             'amount' => $amount,
             'idempotency_key' => $key,
         ]);
+    }
+
+    private function exhaustDelivery(Order $order, ShipmentLeg $leg): array
+    {
+        LogisticsSetting::updateOrCreate(['shop_owner_id' => $order->shop_owner_id], ['max_delivery_attempts' => 1]);
+        $rider = RiderProfile::factory()->create([
+            'shop_owner_id' => $order->shop_owner_id,
+            'active' => true,
+            'availability_status' => 'available',
+        ]);
+        $assignment = DeliveryAssignment::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'rider_profile_id' => $rider->id,
+            'status' => 'accepted',
+        ]);
+        $leg->update(['status' => 'in_transit']);
+        app(ShipmentLegService::class)->recordFailedAttempt($leg->fresh(), [
+            'delivery_assignment_id' => $assignment->id,
+            'reason_code' => 'recipient_unavailable',
+        ]);
+
+        return [
+            OrderRefund::where('order_id', $order->id)->firstOrFail(),
+            ShipmentLeg::where('return_for_leg_id', $leg->id)->firstOrFail(),
+        ];
     }
 }

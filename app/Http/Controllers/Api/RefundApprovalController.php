@@ -26,7 +26,12 @@ class RefundApprovalController extends Controller
         }
 
         $query = $this->baseListQuery($request)
-            ->where('shop_owner_id', (int) ($user->shop_owner_id ?? 0));
+            ->where('shop_owner_id', (int) ($user->shop_owner_id ?? 0))
+            ->where(function ($builder) {
+                $builder->where('reason_code', '!=', 'delivery_attempts_exhausted')
+                    ->orWhereNull('reason_code')
+                    ->orWhere('return_status', 'received');
+            });
 
         if (strtolower((string) $request->get('status', '')) === 'pending') {
             $query->where(function ($builder) {
