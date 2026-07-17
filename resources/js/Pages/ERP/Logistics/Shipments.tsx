@@ -18,6 +18,7 @@ const statusOptions = [
   ['requested', 'Requested'],
   ['active', 'Active'],
   ['awaiting_proof_approval', 'Awaiting Proof Approval'],
+  ['failed_attempts', 'Failed attempts'],
   ['completed', 'Completed'],
   ['cancelled', 'Cancelled'],
 ];
@@ -69,7 +70,7 @@ const toast = (icon: 'success' | 'error' | 'warning', title: string) => Swal.fir
 });
 
 export default function Shipments({ children }: React.PropsWithChildren) {
-  const { shipments, filters, assignableRiders, canAssign, canUpdateStatus, canRecordProof, canApproveProof, riderMode } = usePage<{
+  const { shipments, filters, assignableRiders, canAssign, canUpdateStatus, canRecordProof, canApproveProof, riderMode, maxDeliveryAttempts = 2 } = usePage<{
     shipments: PaginatedResponse<LogisticsShipment>;
     filters: ShipmentFilters;
     assignableRiders: Array<{ id: number; name: string; phone?: string | null }>;
@@ -78,6 +79,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
     canRecordProof: boolean;
     canApproveProof: boolean;
     riderMode: boolean;
+    maxDeliveryAttempts?: number;
   }>().props;
   const [expandedShipmentId, setExpandedShipmentId] = useState<number | null>(null);
   const [selectedRiders, setSelectedRiders] = useState<Record<number, string>>({});
@@ -320,8 +322,10 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                           {(shipment.legs ?? []).map((leg) => {
                             const recipient = contact(leg);
                             const activeAssignment = leg.assignments?.find((assignment) => ['assigned', 'accepted'].includes(assignment.status));
-                            const canAssignLeg = !['delivered', 'cancelled'].includes(leg.status) && !activeAssignment;
                             const latestAttempt = leg.attempts?.[0];
+                            const failedAttemptCount = leg.failed_attempt_count ?? latestAttempt?.attempt_number ?? 0;
+                            const attemptsMaxed = failedAttemptCount >= maxDeliveryAttempts;
+                            const canAssignLeg = leg.status === 'pending' && !activeAssignment && !attemptsMaxed;
                             const canReportIssue = riderMode && ['in_transit', 'delivery_attempted'].includes(leg.status);
                             const canScheduleLeg = canAssign && !riderMode && !leg.scheduled_delivery_date && leg.delivery_batch_id == null && ['pending', 'assigned'].includes(leg.status);
                             const schedule = deliverySchedules[leg.id] ?? { date: '', window: 'morning' };
@@ -343,7 +347,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                     <p><strong>Schedule:</strong> {leg.scheduled_delivery_date || 'Not scheduled'}{leg.delivery_window ? ` · ${label(leg.delivery_window)}` : ''}</p>
                                     {leg.stop_sequence && <p><strong>Stop:</strong> {leg.stop_sequence}</p>}
                                   </div>
-                                  {!riderMode && latestAttempt?.status === 'failed' && <div className="mt-2 space-y-1 text-xs text-gray-600 dark:text-gray-300"><span className="inline-flex rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">Failed attempt</span>{latestAttempt.reason_code && <p>{label(latestAttempt.reason_code)}</p>}{latestAttempt.notes && <p>Internal note: {latestAttempt.notes}</p>}{latestAttempt.file_path && <a href={`/storage/${latestAttempt.file_path}`} target="_blank" rel="noreferrer" className="inline-block font-semibold text-blue-600 hover:underline">View failed-attempt photo</a>}</div>}
+                                  {!riderMode && latestAttempt?.status === 'failed' && <div className="mt-2 space-y-1 text-xs text-gray-600 dark:text-gray-300"><span className="inline-flex rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">Failed attempt - {failedAttemptCount}/{maxDeliveryAttempts}</span>{attemptsMaxed && <p className="font-semibold text-red-600">Subject for refund</p>}{latestAttempt.reason_code && <p>{label(latestAttempt.reason_code)}</p>}{latestAttempt.notes && <p>Internal note: {latestAttempt.notes}</p>}{latestAttempt.file_path && <a href={`/storage/${latestAttempt.file_path}`} target="_blank" rel="noreferrer" className="inline-block font-semibold text-blue-600 hover:underline">View failed-attempt photo</a>}</div>}
                                 </div>
                                 <div className="flex min-w-0 flex-col gap-3 sm:min-w-[22rem]">
                                   {canUpdateStatus && leg.status === 'assigned' && <button type="button" onClick={() => void act(`/api/logistics/legs/${leg.id}/picked-up`)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">Picked up</button>}
