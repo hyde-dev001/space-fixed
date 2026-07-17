@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({ post: vi.fn(() => Promise.resolve()), reload: 
 
 const defaultProps = () => ({
   shipments: { data: [{ id: 1, purpose: 'retail_delivery', status: 'active', source_type: 'order', source_id: 10, legs: [{
-    id: 2, leg_type: 'outbound', status: 'in_transit', assignments: [], proofs: [], attempts: [],
+    id: 2, leg_type: 'outbound', status: 'in_transit', assignments: [{ id: 3, status: 'accepted' }], proofs: [], attempts: [],
     destination_snapshot: { name: 'Miguel Dela Rosa', address: 'Dasmariñas, Cavite', phone: '09053338826' },
   }] }], links: [], from: 1, to: 1, total: 1, current_page: 1, last_page: 1 },
   filters: { status: 'all', purpose: 'all', window: 'all' }, assignableRiders: [],
@@ -97,6 +97,7 @@ it('submits required issue evidence only to the failed-attempt endpoint', async 
   expect(url).toBe('/api/logistics/legs/2/report-issue');
   expect(body).toBeInstanceOf(FormData);
   expect((body as FormData).get('reason_code')).toBe('recipient_unavailable');
+  expect((body as FormData).get('delivery_assignment_id')).toBe('3');
   expect((body as FormData).get('proof_file')).toBe(attemptPhoto);
   expect(mocks.post.mock.calls.some(([requestUrl]) => requestUrl === '/api/logistics/legs/2/proof')).toBe(false);
   expect(mocks.reload).toHaveBeenCalledWith({ only: ['shipments', 'batches'] });

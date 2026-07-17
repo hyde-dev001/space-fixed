@@ -2,6 +2,9 @@
 
 namespace Tests\Feature\Logistics;
 
+use App\Models\Logistics\DeliveryAssignment;
+use App\Models\Logistics\LogisticsSetting;
+use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\Order;
@@ -13,6 +16,7 @@ use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\OrderRefundService;
 use App\Services\PaymongoRefundService;
+use App\Services\Logistics\ShipmentLegService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -105,6 +109,37 @@ class FailedDeliveryRefundWorkflowTest extends TestCase
         $this->assertSame('refunded', $result['result']);
         $this->assertSame(900.0, round((float) $result['refund']->amount, 2));
         $this->assertSame(1100.0, round((float) OrderRefund::where('order_id', $order->id)->sum('amount'), 2));
+    }
+
+    public function test_maximum_attempt_bootstraps_paid_retail_refund_but_not_cod(): void
+    {
+        foreach (['paymongo_card' => 1, 'cod' => 0] as $paymentMethod => $expectedRefunds) {
+            [$order, $leg] = $this->paidOrderWithOutboundLeg();
+            $order->update(['payment_method' => $paymentMethod]);
+            $leg->update(['status' => 'in_transit']);
+            LogisticsSetting::updateOrCreate(
+                ['shop_owner_id' => $order->shop_owner_id],
+                ['max_delivery_attempts' => 1]
+            );
+            $rider = RiderProfile::factory()->create([
+                'shop_owner_id' => $order->shop_owner_id,
+                'active' => true,
+                'availability_status' => 'available',
+            ]);
+            $assignment = DeliveryAssignment::factory()->create([
+                'shipment_leg_id' => $leg->id,
+                'rider_profile_id' => $rider->id,
+                'status' => 'accepted',
+            ]);
+
+            app(ShipmentLegService::class)->recordFailedAttempt($leg, [
+                'delivery_assignment_id' => $assignment->id,
+                'reason_code' => 'recipient_unavailable',
+            ]);
+
+            $this->assertSame($expectedRefunds, OrderRefund::where('order_id', $order->id)->count(), $paymentMethod);
+            $this->assertSame('needs_resolution', $leg->fresh()->status->value);
+        }
     }
 
     private function paidOrderWithOutboundLeg(): array
