@@ -61,6 +61,7 @@ beforeEach(() => {
     riders: [{ id: 3, name: 'Rider One', active: true, availability_status: 'available', rider_type: 'employee', daily_capacity: 10 }],
     unscheduled: [unscheduledLeg],
     dailyRiderCapacity: 10,
+    maxDeliveryAttempts: 2,
   };
   mocks.scheduleLegs.mockResolvedValue({});
   mocks.createBatch.mockResolvedValue({ data: { batch: { id: 41 } } });
@@ -92,6 +93,15 @@ it('opens a responsive two-column new-batch workspace', () => {
   expect(screen.getByTestId('batch-workspace')).toHaveClass('lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]');
   expect(screen.getByRole('heading', { name: 'Available deliveries' })).toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'New batch' })).toBeInTheDocument();
+});
+
+it('shows prior failed-attempt context on a reassigned pool stop', () => {
+  mocks.props.pool = [{ ...scheduledLeg, failed_attempt_count: 1, attempts: [{ id: 4, status: 'failed', attempt_number: 1, reason_code: 'recipient_unavailable' }] }];
+  render(<Batches />);
+  openBuilder();
+  fireEvent.click(screen.getByRole('checkbox', { name: /order #81/i }));
+  expect(screen.getByText('Failed attempt - 1/2')).toBeInTheDocument();
+  expect(screen.getByText('Recipient Unavailable')).toBeInTheDocument();
 });
 
 it.each([
