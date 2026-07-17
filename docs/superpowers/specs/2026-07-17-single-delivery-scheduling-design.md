@@ -23,7 +23,8 @@ Existing API validation messages are shown through the current toast and inline 
 - Frontend: an eligible unscheduled single leg renders date/window controls; scheduling happens before assignment; an assigned unscheduled leg can save a schedule; partial success reloads into an assign-only retry state.
 - Frontend: failed-attempt controls are absent for assigned and picked-up legs and present for in-transit legs.
 - Backend: scheduling accepts an assigned unscheduled leg; rejects cross-tenant, unauthorized, batched, already-scheduled, and invalid-status legs.
-- Backend: the rider report endpoint rejects assigned and picked-up legs without creating an attempt or stored photo, and accepts in-transit and delivery-attempted legs.
+- Backend: the rider report endpoint rejects assigned and picked-up legs without creating an attempt or stored photo, rejects cross-tenant riders and riders without an active assignment, and accepts in-transit and delivery-attempted legs.
+- Backend: a storage-fake race test changes the leg after the pre-upload check, forces the locked service operation to return 422, and verifies the newly uploaded photo is deleted.
 
 ## Non-goals
 
