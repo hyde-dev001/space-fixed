@@ -28,8 +28,8 @@ For a paid retail order at the maximum attempt:
 
 1. Create one `request_approval` `OrderRefund` with the stable idempotency key `delivery-attempts-exhausted:{order_id}:{outbound_leg_id}`. The reason text is metadata and is not part of identity.
 2. Set `status = requested`, `shop_owner_status = approved`, `shop_owner_approved_at = now`, `shop_owner_approved_by = null`, `finance_status = pending`, `return_status = pending_staff_pickup`, `return_source = staff`, and `staff_return_carrier = Shop-owned logistics`. Record an audit note that Shop Owner approval was bypassed for a system-confirmed exhausted-delivery workflow.
-3. Set the amount to the remaining refundable PayMongo capture after subtracting prior successful or processing refunds. This includes shipping. If another active refund already reserves the remaining capture, do not create a second request; surface the existing refund as the resolution record.
-4. Create inventory-only refund lines for every order item. Their quantities and SKU references drive inspection and stock movement, but their `line_amount` values must not replace the full remaining captured refund amount.
+3. Set the amount to the remaining refundable PayMongo capture after subtracting succeeded refunds. Treat every nonterminal refund, including `requested`, `pending_approval`, and `processing`, as a reservation. If a different active refund exists, block creation of the failed-delivery refund and surface the collision for Finance resolution; retry creation after that request becomes terminal. Never let combined succeeded and reserved amounts exceed the captured amount. The failed-delivery amount includes shipping.
+4. Create inventory-only refund lines for every order item through transactional upsert keyed by `(order_refund_id, order_item_id)`. When an existing idempotent refund is recovered, reconcile its complete line set before returning it. Line quantities and SKU references drive inspection and stock movement, but `line_amount` must not replace the full remaining captured refund amount.
 5. Leave Finance approval and gateway execution pending and keep this system refund out of Finance's actionable queue until the return is received.
 6. Mark the refund as a staff/shop-owned return and connect it to the existing return-to-shop custody flow.
 7. The rider returns the parcel. Staff cannot confirm receipt until the linked return leg is delivered with approved handoff proof.
@@ -45,10 +45,11 @@ Reuse `ShipmentLegService`, `AssignmentService`, `OrderRefundService`, and `Refu
 
 Add only the persistence required for correctness:
 
-- `delivery_attempts.attempt_number` with a unique key on `(shipment_leg_id, attempt_type, attempt_number)` so an HTTP retry cannot consume another attempt;
+- `delivery_attempts.attempt_number` for display and limit accounting, plus `delivery_assignment_id` with a unique key on `(shipment_leg_id, attempt_type, delivery_assignment_id)`. The server derives the active assignment under the leg lock and returns its existing attempt on conflict, so retrying the same rider operation cannot consume another attempt. Any non-assignment attempt endpoint must require a stable explicit idempotency key with a unique constraint;
 - nullable `delivery_attempts.delivery_batch_id` so the originating batch retains failure provenance after the leg is detached;
 - a unique key on nullable `shipment_legs.return_for_leg_id` so one outbound leg has at most one return leg;
-- nullable `order_items.product_variant_id`, populated for new orders and backfilled only when product, size, and color identify exactly one variant.
+- nullable `order_items.product_variant_id`, populated for new orders and backfilled only when product, size, and color identify exactly one variant;
+- a unique key on `(order_refund_id, order_item_id)` for online refund inventory lines.
 
 Legacy order items with an unresolved variant may still be inspected, but receipt must stop with an actionable SKU-resolution error rather than restocking only aggregate product stock and leaving variant stock incorrect.
 
