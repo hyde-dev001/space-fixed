@@ -10,6 +10,8 @@ Make failed delivery attempts actionable and visible. Dispatchers can find and r
 
 The attempt that reaches the limit moves the leg to `needs_resolution` with `resolution_type = return_required`. It cannot be reassigned for another customer-delivery attempt. For online-paid retail orders, the system creates the return-to-shop work and a single idempotent refund request.
 
+Recording a failure runs in one locked transaction. It captures the active rider and originating batch, records the attempt, creates the return assignment when the limit is reached, then closes the original assignment as `cancelled` with `cancelled_at`. This releases rider workload without losing custody: the same rider receives an `accepted` assignment on the singleton return leg before the delivery assignment closes.
+
 Non-retail logistics purposes keep the existing manual resolution workflow because they are not tied to an online order payment.
 
 ## Dispatcher UI
@@ -18,43 +20,55 @@ The Logistics shipments page adds a `Failed attempts` filter. It matches shipmen
 
 Retryable failed deliveries show the existing rider selector after the previous active assignment is closed. Maxed-out deliveries show `Subject for refund` and no reassignment control.
 
-The batch page loads the latest failed attempt and attempt counters for pool and batch stops. Each affected stop shows a visible `Failed attempt · X/Y` badge and reason. A maxed-out stop is excluded from the delivery pool.
+The batch page loads the latest failed attempt and attempt counters for pool and batch stops. Each affected stop shows a visible `Failed attempt - X/Y` badge and reason. A maxed-out stop is excluded from the delivery pool.
 
 ## Refund and return integration
 
 For a paid retail order at the maximum attempt:
 
-1. Create one `request_approval` `OrderRefund`, keyed idempotently by the order and failed-delivery reason.
-2. Refund the full captured order amount, including shipping fee.
-3. Bypass Shop Owner approval because this is a system-confirmed delivery failure, not a customer dispute.
-4. Leave Finance approval and gateway execution pending.
-5. Mark the refund as a staff/shop-owned return and connect it to the existing return-to-shop custody flow.
-6. The rider returns the parcel. Staff cannot confirm receipt until the return delivery is complete.
-7. Staff must classify every returned line as `resellable` or `damaged`.
-8. Apply the existing idempotent inventory disposition immediately on receipt: resellable quantities are restocked; damaged quantities are written off.
-9. Once the return is `received`, Finance approves and executes the existing PayMongo refund flow.
+1. Create one `request_approval` `OrderRefund` with the stable idempotency key `delivery-attempts-exhausted:{order_id}:{outbound_leg_id}`. The reason text is metadata and is not part of identity.
+2. Set `status = requested`, `shop_owner_status = approved`, `shop_owner_approved_at = now`, `shop_owner_approved_by = null`, `finance_status = pending`, `return_status = pending_staff_pickup`, `return_source = staff`, and `staff_return_carrier = Shop-owned logistics`. Record an audit note that Shop Owner approval was bypassed for a system-confirmed exhausted-delivery workflow.
+3. Set the amount to the remaining refundable PayMongo capture after subtracting prior successful or processing refunds. This includes shipping. If another active refund already reserves the remaining capture, do not create a second request; surface the existing refund as the resolution record.
+4. Create inventory-only refund lines for every order item. Their quantities and SKU references drive inspection and stock movement, but their `line_amount` values must not replace the full remaining captured refund amount.
+5. Leave Finance approval and gateway execution pending and keep this system refund out of Finance's actionable queue until the return is received.
+6. Mark the refund as a staff/shop-owned return and connect it to the existing return-to-shop custody flow.
+7. The rider returns the parcel. Staff cannot confirm receipt until the linked return leg is delivered with approved handoff proof.
+8. Staff must classify every returned line as `resellable` or `damaged`.
+9. Apply the existing idempotent inventory disposition immediately on receipt: resellable quantities are restocked; damaged quantities are written off.
+10. Once the return is `received`, Finance approves and executes the existing PayMongo refund flow. For this workflow, gateway execution requires exactly `return_status = received`; `in_transit` is insufficient.
 
-Repeated requests, retries, or callbacks must not create another refund, return leg, or inventory movement.
+Repeated requests, retries, or callbacks must not create another attempt, refund, return leg, or inventory movement.
 
 ## Data and service changes
 
 Reuse `ShipmentLegService`, `AssignmentService`, `OrderRefundService`, and `RefundInventoryDispositionService`. Add no new refund tables or queues.
 
-The failed-attempt service owns the shared transition: close active assignments, count actual failed delivery attempts, compare them with `max_delivery_attempts`, and start return/refund handling only at the limit. The count shown in UI comes from persisted delivery attempts rather than trusting a client value.
+Add only the persistence required for correctness:
 
-The return receipt service requires a disposition for every refundable order item before setting `return_status = received`, then applies each line through `RefundInventoryDispositionService`. Its existing idempotency marker prevents the later Finance execution path from restocking twice.
+- `delivery_attempts.attempt_number` with a unique key on `(shipment_leg_id, attempt_type, attempt_number)` so an HTTP retry cannot consume another attempt;
+- nullable `delivery_attempts.delivery_batch_id` so the originating batch retains failure provenance after the leg is detached;
+- a unique key on nullable `shipment_legs.return_for_leg_id` so one outbound leg has at most one return leg;
+- nullable `order_items.product_variant_id`, populated for new orders and backfilled only when product, size, and color identify exactly one variant.
+
+Legacy order items with an unresolved variant may still be inspected, but receipt must stop with an actionable SKU-resolution error rather than restocking only aggregate product stock and leaving variant stock incorrect.
+
+The failed-attempt service owns the shared transition: close active assignments, count unique persisted failed delivery attempts, compare them with `max_delivery_attempts`, and start return/refund handling only at the limit. The count shown in UI comes from persisted delivery attempts rather than trusting a client value. Batch queries load the latest attempt, including its originating `delivery_batch_id`, for both current stops and newly reassigned pool stops.
+
+The return receipt service locks the refund, linked delivered return leg, and refund lines in one transaction. It rejects missing, duplicate, foreign, unresolved-SKU, or quantity-mismatched order items. It requires one valid disposition for every line, applies every line through `RefundInventoryDispositionService` without swallowing failures, and only then sets `return_status = received`. Its existing `inventory_applied_at` marker makes later Finance execution a no-op for inventory.
 
 ## Validation and authorization
 
 - Only the owning shop's dispatcher can assign or reassign a leg.
+- Attempt and reassignment endpoints require the explicit Logistics dispatcher/rider permission in addition to tenant ownership.
 - A leg with an active assignment cannot receive another assignment.
 - A maxed-out or terminal leg cannot be reassigned.
 - Refund creation applies only to paid online retail orders owned by the same shop.
-- Staff receipt confirmation requires all order lines and valid dispositions.
-- Finance remains the only company-account actor that can approve and execute the gateway refund.
+- Staff receipt confirmation requires the owning shop's Staff Job Orders permission, a completed linked return, all order lines, and valid dispositions.
+- Finance approval rejects this workflow before receipt. Finance remains the only company-account actor that can approve and execute the gateway refund.
+- The bypassed Shop Owner decision is auditable through its approved status, timestamp, null actor, fixed reason code, and audit note; amount-based approval policy cannot reinsert Shop Owner approval for this workflow.
 
 ## Verification
 
-Backend tests cover assignment closure after a failed attempt, retry reassignment, exact maximum-attempt enforcement, idempotent refund/return creation, mandatory line inspection, single inventory application, and Finance gating.
+Backend tests cover assignment closure after a failed attempt, custody-preserving return assignment, retry reassignment, exact maximum-attempt enforcement, duplicate HTTP attempt protection, batch provenance, idempotent refund/return creation, prior-refund amount collisions, mandatory and atomic line inspection, variant restock, single inventory application, and receipt-only Finance gating.
 
 Page tests cover the failed-attempt filter, single-delivery reassignment controls, max-attempt refund state, and batch stop badges. Run the full Logistics feature suite, focused refund tests, frontend Logistics tests, and the production build.
