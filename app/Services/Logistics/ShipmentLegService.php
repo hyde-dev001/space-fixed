@@ -3,6 +3,7 @@
 namespace App\Services\Logistics;
 
 use App\Models\Logistics\DeliveryAttempt;
+use App\Models\Logistics\DeliveryAssignment;
 use App\Models\Logistics\DeliveryBatch;
 use App\Models\Logistics\HandoffProof;
 use App\Models\Logistics\RiderProfile;
@@ -10,6 +11,7 @@ use App\Models\Logistics\ShipmentLeg;
 use App\Models\Order;
 use App\Models\OrderRefund;
 use App\Models\ShopOwner;
+use App\Services\OrderRefundService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -17,7 +19,8 @@ class ShipmentLegService
 {
     public function __construct(
         private ProofService $proofs,
-        private DeliveryEventService $events
+        private DeliveryEventService $events,
+        private OrderRefundService $refunds,
     ) {
     }
 
@@ -218,6 +221,40 @@ class ShipmentLegService
 
         $batchId = $leg->delivery_batch_id;
         return DB::transaction(function () use ($leg, $payload, $allowAssigned, $batchId) {
+            $idempotencyKey = trim((string) ($payload['idempotency_key'] ?? ''));
+            $assignmentId = (int) ($payload['delivery_assignment_id'] ?? 0);
+            $assignment = $assignmentId > 0
+                ? DeliveryAssignment::query()->lockForUpdate()->find($assignmentId)
+                : null;
+            if ($assignmentId > 0 && (!$assignment || (int) $assignment->shipment_leg_id !== (int) $leg->id)) {
+                throw ValidationException::withMessages(['delivery_assignment_id' => 'This assignment does not belong to the delivery leg.']);
+            }
+
+            if ($assignment && ($payload['recorded_by_type'] ?? null) === \App\Models\User::class) {
+                $ownsAssignment = $assignment->riderProfile()
+                    ->where('linked_type', \App\Models\User::class)
+                    ->where('linked_id', (int) ($payload['recorded_by_id'] ?? 0))
+                    ->exists();
+                abort_unless($ownsAssignment, 403);
+            }
+
+            if ($idempotencyKey !== '') {
+                $existing = DeliveryAttempt::query()
+                    ->where('shipment_leg_id', $leg->id)
+                    ->where('idempotency_key', $idempotencyKey)
+                    ->first();
+                if ($existing) return $existing;
+            }
+
+            if ($assignment) {
+                $existing = DeliveryAttempt::query()
+                    ->where('shipment_leg_id', $leg->id)
+                    ->where('attempt_type', $payload['attempt_type'] ?? 'delivery')
+                    ->where('delivery_assignment_id', $assignment->id)
+                    ->first();
+                if ($existing) return $existing;
+            }
+
             $batch = $batchId
                 ? DeliveryBatch::query()->lockForUpdate()->find($batchId)
                 : null;
@@ -229,9 +266,21 @@ class ShipmentLegService
             if ($leg->delivery_batch_id && empty($payload['file_path'])) {
                 throw ValidationException::withMessages(['proof' => 'A failed-attempt photo is required.']);
             }
+            if (!$assignment) {
+                $assignment = $leg->assignments()->whereIn('status', ['assigned', 'accepted'])->lockForUpdate()->first();
+            }
+            if (!$assignment || !in_array($assignment->status, ['assigned', 'accepted'], true)) {
+                throw ValidationException::withMessages(['delivery_assignment_id' => 'An active delivery assignment is required.']);
+            }
+
+            $attemptNumber = $leg->attempts()->where('attempt_type', $payload['attempt_type'] ?? 'delivery')->count() + 1;
             $attempt = $leg->attempts()->create([
+                'delivery_assignment_id' => $assignment->id,
+                'delivery_batch_id' => $batchId,
+                'idempotency_key' => $idempotencyKey !== '' ? $idempotencyKey : null,
                 'attempt_type' => $payload['attempt_type'] ?? 'delivery',
                 'status' => 'failed',
+                'attempt_number' => $attemptNumber,
                 'reason_code' => $payload['reason_code'],
                 'notes' => $payload['notes'] ?? null,
                 'file_path' => $payload['file_path'] ?? null,
@@ -242,8 +291,7 @@ class ShipmentLegService
             ]);
 
             $max = $leg->shipment->shopOwner->logisticsSetting?->max_delivery_attempts ?? 2;
-            $current = max(1, $leg->attempt_number);
-            $needsResolution = $current >= $max;
+            $needsResolution = $attemptNumber >= $max;
             $settings = $leg->shipment->shopOwner->logisticsSetting;
             $next = now(config('app.shop_timezone', 'Asia/Manila'))->addDay();
             while (!in_array($next->dayOfWeekIso, $settings?->operating_days ?? [1, 2, 3, 4, 5, 6], true)
@@ -252,11 +300,26 @@ class ShipmentLegService
             $leg->update([
                 'status' => $needsResolution ? 'needs_resolution' : 'pending',
                 'failed_at' => now(),
-                'attempt_number' => $current + 1,
+                'attempt_number' => $attemptNumber + 1,
                 'scheduled_delivery_date' => $needsResolution ? $leg->scheduled_delivery_date : $nextDate,
                 'delivery_batch_id' => null,
                 'stop_sequence' => null,
+                'resolution_type' => $needsResolution ? 'return_required' : null,
+                'resolution_reason' => $needsResolution ? 'Maximum delivery attempts reached.' : null,
             ]);
+
+            if ($needsResolution) {
+                $this->createReturnToShop($leg->fresh());
+
+                if ($leg->shipment->source_type === 'order' && $leg->shipment->purpose === 'retail_delivery') {
+                    $order = Order::query()->find($leg->shipment->source_id);
+                    if ($order && $this->isPaidOnlineOrder($order)) {
+                        $this->refunds->reserveFailedDeliveryRefund($order, $leg);
+                    }
+                }
+            }
+
+            $assignment->update(['status' => 'cancelled', 'cancelled_at' => now()]);
             if ($batch) {
                 $remainingStops = $batch->legs()->count();
                 $batchChanges = ['assigned_stop_count' => $remainingStops];
@@ -279,6 +342,14 @@ class ShipmentLegService
 
             return $attempt;
         });
+    }
+
+    private function isPaidOnlineOrder(Order $order): bool
+    {
+        $paymentMethod = strtolower((string) ($order->payment_method ?? ''));
+
+        return !in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery'], true)
+            && in_array((string) ($order->payment_status ?? ''), ['paid', 'completed'], true);
     }
 
     private function transition(ShipmentLeg $leg, string $status, array $extra, string $eventType, string $message): ShipmentLeg

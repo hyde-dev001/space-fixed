@@ -35,8 +35,8 @@ class AssignmentService
             $leg = ShipmentLeg::query()->lockForUpdate()->findOrFail($leg->id);
             $leg->loadMissing('shipment');
 
-            if (in_array($leg->status->value, ['delivered', 'cancelled'], true)) {
-                throw ValidationException::withMessages(['shipment_leg_id' => 'Completed or cancelled legs cannot be assigned.']);
+            if (in_array($leg->status->value, ['needs_resolution', 'delivered', 'cancelled'], true)) {
+                throw ValidationException::withMessages(['shipment_leg_id' => 'Only retryable delivery legs can be assigned.']);
             }
 
             if ($leg->assignments()->whereIn('status', ['assigned', 'accepted'])->exists()) {

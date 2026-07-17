@@ -1216,7 +1216,7 @@ export default function JobOrdersPage() {
           return { line_dispositions: [] };
         }
 
-        const lineDispositions: Array<{ order_item_id: number; inspection_disposition: 'resellable' | 'damaged' }> = [];
+        const lineDispositions: Array<{ order_item_id: number; approved_qty: number; inspection_disposition: 'resellable' | 'damaged' }> = [];
 
         for (let index = 0; index < refundLines.length; index += 1) {
           const line = refundLines[index];
@@ -1230,6 +1230,7 @@ export default function JobOrdersPage() {
 
           lineDispositions.push({
             order_item_id: line.order_item_id,
+            approved_qty: Number(line.approved_qty ?? line.requested_qty ?? 0),
             inspection_disposition: disposition,
           });
         }

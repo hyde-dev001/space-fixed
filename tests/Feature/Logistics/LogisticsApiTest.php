@@ -225,6 +225,7 @@ class LogisticsApiTest extends TestCase
 
         $response = $this->actingAs($rider, 'user')
             ->post("/api/logistics/legs/{$leg->id}/report-issue", [
+                'delivery_assignment_id' => $leg->assignments()->value('id'),
                 'reason_code' => 'recipient_unavailable',
                 'notes' => 'Gate code was unavailable.',
                 'proof_file' => $this->fakeAttemptPhoto(),
@@ -236,12 +237,23 @@ class LogisticsApiTest extends TestCase
 
         $this->assertDatabaseHas('delivery_attempts', [
             'shipment_leg_id' => $leg->id,
+            'delivery_assignment_id' => $leg->assignments()->value('id'),
+            'attempt_number' => 1,
             'recorded_by_type' => User::class,
             'recorded_by_id' => $rider->id,
         ]);
+        $this->assertSame('cancelled', $leg->assignments()->firstOrFail()->fresh()->status);
         $event = DeliveryEvent::query()->where('shipment_leg_id', $leg->id)->where('visibility', 'customer')->latest('id')->firstOrFail();
         $this->assertStringNotContainsString('Gate code', $event->message);
         $this->assertArrayNotHasKey('notes', $event->metadata);
+
+        $replay = $this->actingAs($rider, 'user')->post("/api/logistics/legs/{$leg->id}/report-issue", [
+            'delivery_assignment_id' => $leg->assignments()->value('id'),
+            'reason_code' => 'other',
+            'proof_file' => $this->fakeAttemptPhoto('replay.png'),
+        ], ['Accept' => 'application/json'])->assertCreated();
+        $this->assertSame($response->json('attempt.id'), $replay->json('attempt.id'));
+        $this->assertCount(1, Storage::disk('public')->allFiles());
     }
 
     public function test_report_issue_rejects_missing_or_unlisted_reason_codes(): void
@@ -265,7 +277,10 @@ class LogisticsApiTest extends TestCase
         $otherRider->givePermissionTo('update-logistics-status');
 
         $this->actingAs($otherRider, 'user')
-            ->postJson("/api/logistics/legs/{$leg->id}/report-issue", ['reason_code' => 'other'])
+            ->postJson("/api/logistics/legs/{$leg->id}/report-issue", [
+                'delivery_assignment_id' => $leg->assignments()->value('id'),
+                'reason_code' => 'other',
+            ])
             ->assertForbidden();
     }
 
@@ -303,7 +318,10 @@ class LogisticsApiTest extends TestCase
         $dispatcher->givePermissionTo(['update-logistics-status', 'assign-logistics-deliveries']);
 
         $this->actingAs($dispatcher, 'user')
-            ->postJson("/api/logistics/legs/{$leg->id}/report-issue", ['reason_code' => 'other'])
+            ->postJson("/api/logistics/legs/{$leg->id}/report-issue", [
+                'delivery_assignment_id' => $leg->assignments()->value('id'),
+                'reason_code' => 'other',
+            ])
             ->assertForbidden();
     }
 
@@ -339,6 +357,7 @@ class LogisticsApiTest extends TestCase
             $rider->givePermissionTo('update-logistics-status');
 
             $this->actingAs($rider, 'user')->post("/api/logistics/legs/{$leg->id}/report-issue", [
+                'delivery_assignment_id' => $leg->assignments()->value('id'),
                 'reason_code' => 'other',
                 'proof_file' => $this->fakeAttemptPhoto("attempt-{$status}.png"),
             ], ['Accept' => 'application/json'])->assertCreated();
@@ -362,6 +381,7 @@ class LogisticsApiTest extends TestCase
         });
 
         $this->actingAs($rider, 'user')->post("/api/logistics/legs/{$leg->id}/report-issue", [
+            'delivery_assignment_id' => $leg->assignments()->value('id'),
             'reason_code' => 'other',
             'proof_file' => $this->fakeAttemptPhoto(),
         ], ['Accept' => 'application/json'])->assertUnprocessable();
@@ -379,6 +399,31 @@ class LogisticsApiTest extends TestCase
         $this->actingAs($rider, 'user')
             ->postJson("/api/logistics/legs/{$leg->id}/attempts", ['reason_code' => 'generic_reason'])
             ->assertUnprocessable();
+    }
+
+    public function test_generic_attempt_replays_by_idempotency_key_and_rejects_shop_owner_guard(): void
+    {
+        Permission::findOrCreate('update-logistics-status', 'user');
+        [$shop, $leg, $rider] = $this->assignedRiderLeg('in_transit');
+        $rider->givePermissionTo('update-logistics-status');
+        $payload = [
+            'delivery_assignment_id' => $leg->assignments()->value('id'),
+            'idempotency_key' => '66270d9f-a25b-4130-8494-9e757d92c798',
+            'reason_code' => 'recipient_unavailable',
+        ];
+
+        $first = $this->actingAs($rider, 'user')
+            ->postJson("/api/logistics/legs/{$leg->id}/attempts", $payload)
+            ->assertCreated();
+        $second = $this->actingAs($rider, 'user')
+            ->postJson("/api/logistics/legs/{$leg->id}/attempts", [...$payload, 'reason_code' => 'other'])
+            ->assertCreated();
+
+        $this->assertSame($first->json('attempt.id'), $second->json('attempt.id'));
+        $this->assertSame(1, $leg->attempts()->count());
+        $this->actingAs($shop, 'shop_owner')
+            ->postJson("/api/logistics/legs/{$leg->id}/attempts", $payload)
+            ->assertForbidden();
     }
 
     public function test_only_logistics_dispatchers_can_cancel_after_a_failed_attempt(): void

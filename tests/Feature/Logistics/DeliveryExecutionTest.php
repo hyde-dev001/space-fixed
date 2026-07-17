@@ -10,6 +10,7 @@ use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\ShopOwner;
+use App\Services\Logistics\AssignmentService;
 use App\Services\Logistics\ShipmentLegService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
@@ -47,33 +48,76 @@ class DeliveryExecutionTest extends TestCase
         app(ShipmentLegService::class)->markPickedUp($blockedLeg->fresh());
     }
 
-    public function test_failed_attempt_reschedules_then_reaches_needs_resolution(): void
+    public function test_failed_attempt_is_idempotent_reschedules_and_preserves_return_custody_at_maximum(): void
     {
-        [$leg, $rider, $shop] = $this->fixture();
+        [$leg, $rider, $shop, $firstAssignment] = $this->fixture();
         LogisticsSetting::updateOrCreate(['shop_owner_id' => $shop->id], ['max_delivery_attempts' => 2, 'lead_time_days' => 0]);
         $service = app(ShipmentLegService::class);
+        $originatingBatchId = $leg->delivery_batch_id;
         HandoffProof::factory()->create(['shipment_leg_id' => $leg->id, 'handoff_type' => 'delivery', 'proof_type' => 'photo']);
 
         $proofCount = $leg->proofs()->count();
-        $attempt = $service->recordFailedAttempt($leg, ['reason_code' => 'recipient_unavailable', 'file_path' => 'proof.jpg'], true);
+        $attempt = $service->recordFailedAttempt($leg, [
+            'delivery_assignment_id' => $firstAssignment->id,
+            'reason_code' => 'recipient_unavailable',
+            'file_path' => 'proof.jpg',
+        ], true);
         $this->assertSame('proof.jpg', $attempt->file_path);
+        $this->assertSame(1, $attempt->attempt_number);
+        $this->assertSame($firstAssignment->id, $attempt->delivery_assignment_id);
+        $this->assertSame($originatingBatchId, $attempt->delivery_batch_id);
         $this->assertSame($proofCount, $leg->proofs()->count());
         $this->assertSame(2, $leg->fresh()->attempt_number);
+        $this->assertSame('pending', $leg->fresh()->status->value);
+        $this->assertSame('cancelled', $firstAssignment->fresh()->status);
+        $this->assertNotNull($firstAssignment->fresh()->cancelled_at);
+
+        $replayed = $service->recordFailedAttempt($leg->fresh(), [
+            'delivery_assignment_id' => $firstAssignment->id,
+            'reason_code' => 'other',
+            'file_path' => 'different.jpg',
+        ], true);
+        $this->assertSame($attempt->id, $replayed->id);
+        $this->assertSame(1, $leg->attempts()->count());
+
+        $secondAssignment = DeliveryAssignment::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'rider_profile_id' => $rider->id,
+            'status' => 'accepted',
+        ]);
         $leg->update(['status' => 'in_transit']);
         HandoffProof::factory()->create(['shipment_leg_id' => $leg->id, 'handoff_type' => 'delivery', 'proof_type' => 'photo']);
-        $service->recordFailedAttempt($leg->fresh(), ['reason_code' => 'recipient_unavailable', 'file_path' => 'proof2.jpg'], true);
+        $service->recordFailedAttempt($leg->fresh(), [
+            'delivery_assignment_id' => $secondAssignment->id,
+            'reason_code' => 'recipient_unavailable',
+            'file_path' => 'proof2.jpg',
+        ], true);
         $this->assertSame('needs_resolution', $leg->fresh()->status->value);
+        $this->assertSame('return_required', $leg->fresh()->resolution_type);
+        $this->assertSame('cancelled', $secondAssignment->fresh()->status);
+        $return = ShipmentLeg::where('return_for_leg_id', $leg->id)->firstOrFail();
+        $this->assertSame('picked_up', $return->status->value);
+        $this->assertDatabaseHas('delivery_assignments', [
+            'shipment_leg_id' => $return->id,
+            'rider_profile_id' => $rider->id,
+            'status' => 'accepted',
+        ]);
     }
 
     public function test_failed_attempt_cancels_an_in_progress_batch_after_its_last_stop_is_removed(): void
     {
-        [$firstLeg, , $shop] = $this->fixture();
+        [$firstLeg, $rider, $shop] = $this->fixture();
         $batch = $firstLeg->deliveryBatch;
         $secondLeg = ShipmentLeg::factory()->create([
             'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id,
             'delivery_batch_id' => $batch->id,
             'status' => 'assigned',
             'stop_sequence' => 2,
+        ]);
+        DeliveryAssignment::factory()->create([
+            'shipment_leg_id' => $secondLeg->id,
+            'rider_profile_id' => $rider->id,
+            'status' => 'accepted',
         ]);
         $snapshot = [
             ['id' => $firstLeg->id, 'stop_sequence' => 1],
@@ -156,6 +200,21 @@ class DeliveryExecutionTest extends TestCase
         $this->assertSame('return_required', $return->resolution_type);
     }
 
+    public function test_assignment_service_rejects_non_retryable_leg_states(): void
+    {
+        foreach (['needs_resolution', 'delivered', 'cancelled'] as $status) {
+            [$leg, $rider, $shop] = $this->fixture();
+            $leg->update(['status' => $status]);
+
+            try {
+                app(AssignmentService::class)->assignInternalRider($leg->fresh(), $rider, $shop);
+                $this->fail("{$status} leg was assigned.");
+            } catch (ValidationException) {
+                $this->assertSame($status, $leg->fresh()->status->value);
+            }
+        }
+    }
+
     private function fixture(): array
     {
         $shop = ShopOwner::factory()->create(['shop_latitude' => 14.5, 'shop_longitude' => 121]);
@@ -163,7 +222,7 @@ class DeliveryExecutionTest extends TestCase
         $batch = DeliveryBatch::factory()->create(['shop_owner_id' => $shop->id, 'rider_profile_id' => $rider->id, 'status' => 'in_progress']);
         $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
         $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'delivery_batch_id' => $batch->id, 'status' => 'assigned', 'requires_pickup_proof' => true]);
-        DeliveryAssignment::factory()->create(['shipment_leg_id' => $leg->id, 'rider_profile_id' => $rider->id, 'status' => 'accepted']);
-        return [$leg, $rider, $shop];
+        $assignment = DeliveryAssignment::factory()->create(['shipment_leg_id' => $leg->id, 'rider_profile_id' => $rider->id, 'status' => 'accepted']);
+        return [$leg, $rider, $shop, $assignment];
     }
 }

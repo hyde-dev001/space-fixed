@@ -142,14 +142,19 @@ class ShipmentController extends Controller
 
     public function attempts(Request $request, ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse
     {
-        $this->authorizeLegUpdate($leg);
+        $actor = $this->authorizeAttemptActor($leg);
         $payload = $request->validate([
             'attempt_type' => ['nullable', 'in:pickup,delivery'],
+            'delivery_assignment_id' => ['required', 'integer'],
+            'idempotency_key' => ['required', 'uuid'],
             'reason_code' => ['required', 'string', 'max:255'],
             'notes' => ['nullable', 'string'],
             'attempted_at' => ['nullable', 'date'],
             'next_attempt_at' => ['nullable', 'date'],
         ]);
+        $this->authorizeAttemptAssignment($leg, $actor, (int) $payload['delivery_assignment_id']);
+        $payload['recorded_by_type'] = $actor::class;
+        $payload['recorded_by_id'] = $actor->id;
 
         return response()->json([
             'attempt' => $legs->recordFailedAttempt($leg, $payload),
@@ -158,9 +163,15 @@ class ShipmentController extends Controller
 
     public function reportIssue(Request $request, ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse
     {
-        $actor = $this->authorizeIssueReport($leg);
-        abort_unless(in_array($leg->status->value, ['in_transit', 'delivery_attempted'], true), 422);
+        $actor = $this->authorizeAttemptActor($leg);
+        $assignmentId = (int) $request->input('delivery_assignment_id');
+        if ($assignmentId > 0) {
+            $this->authorizeAttemptAssignment($leg, $actor, $assignmentId);
+        } else {
+            abort_unless($this->userHasActiveAssignment($leg, $actor), 403);
+        }
         $payload = $request->validate([
+            'delivery_assignment_id' => ['required', 'integer'],
             'reason_code' => ['required', 'in:recipient_unavailable,wrong_or_incomplete_address,recipient_refused,vehicle_or_delivery_problem,other'],
             'notes' => ['nullable', 'string'],
             'proof_file' => ['required', 'image', 'max:10240'],
@@ -174,6 +185,9 @@ class ShipmentController extends Controller
                 'recorded_by_type' => $actor::class,
                 'recorded_by_id' => $actor->id,
             ]);
+            if ($attempt->file_path !== $payload['file_path']) {
+                Storage::disk('public')->delete($payload['file_path']);
+            }
         } catch (\Throwable $exception) {
             Storage::disk('public')->delete($payload['file_path']);
             throw $exception;
@@ -269,6 +283,33 @@ class ShipmentController extends Controller
         abort_unless($this->userHasActiveAssignment($leg, $user), 403);
 
         return $user;
+    }
+
+    private function authorizeAttemptActor(ShipmentLeg $leg): User
+    {
+        if (Auth::guard('shop_owner')->check()) {
+            abort(403);
+        }
+
+        $user = Auth::guard('user')->user();
+        if (!$user instanceof User || !$user->can('update-logistics-status') || !$user->shopOwner) {
+            abort(403);
+        }
+
+        $leg->loadMissing('shipment');
+        $this->abortUnlessTenant($leg->shipment->shop_owner_id, $user->shopOwner);
+
+        return $user;
+    }
+
+    private function authorizeAttemptAssignment(ShipmentLeg $leg, User $user, int $assignmentId): void
+    {
+        abort_unless($assignmentId > 0 && $leg->assignments()
+            ->whereKey($assignmentId)
+            ->whereHas('riderProfile', fn ($query) => $query
+                ->where('linked_type', User::class)
+                ->where('linked_id', $user->id))
+            ->exists(), 403);
     }
 
     private function authorizedShop(string $permission): ShopOwner

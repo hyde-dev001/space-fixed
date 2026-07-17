@@ -160,6 +160,7 @@ class RetailPosPaymentService
                 OrderItem::create([
                     'order_id' => $order->id,
                     'product_id' => $product->id,
+                    'product_variant_id' => $variant?->id,
                     'product_name' => (string) $product->name,
                     'product_slug' => (string) $product->slug,
                     'price' => $item['unit_price'],

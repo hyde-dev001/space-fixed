@@ -492,6 +492,7 @@ class StaffOrderController extends Controller
             'return_notes' => 'nullable|string|max:1000',
             'line_dispositions' => 'nullable|array',
             'line_dispositions.*.order_item_id' => 'required|integer|min:1',
+            'line_dispositions.*.approved_qty' => 'required|integer|min:1',
             'line_dispositions.*.inspection_disposition' => 'required|string|in:resellable,damaged',
         ]);
 

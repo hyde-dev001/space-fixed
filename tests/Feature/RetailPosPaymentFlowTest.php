@@ -2,8 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Models\OrderItem;
 use App\Models\PosTransaction;
 use App\Models\Product;
+use App\Models\ProductVariant;
 use App\Models\ShopOwner;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -34,6 +36,13 @@ class RetailPosPaymentFlowTest extends TestCase
             'stock_quantity' => 10,
             'is_active' => true,
         ]);
+        $variant = ProductVariant::create([
+            'product_id' => $product->id,
+            'size' => '42',
+            'color' => 'Black',
+            'quantity' => 10,
+            'is_active' => true,
+        ]);
 
         $response = $this->actingAs($cashier, 'user')
             ->postJson('/api/retail-pos/checkout', [
@@ -45,6 +54,8 @@ class RetailPosPaymentFlowTest extends TestCase
                     'product_id' => $product->id,
                     'qty' => 1,
                     'unit_price' => 500,
+                    'size' => '42',
+                    'color' => 'Black',
                 ]],
                 'payment_lines' => [[
                     'tender_type' => 'cash',
@@ -62,5 +73,6 @@ class RetailPosPaymentFlowTest extends TestCase
         $this->assertSame('retail', (string) $transaction->module_type);
         $this->assertSame('paid', (string) $transaction->status);
         $this->assertSame(9, (int) $product->fresh()->stock_quantity);
+        $this->assertSame($variant->id, OrderItem::where('order_id', $transaction->module_reference_id)->value('product_variant_id'));
     }
 }

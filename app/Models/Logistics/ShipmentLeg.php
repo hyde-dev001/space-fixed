@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class ShipmentLeg extends Model
 {
@@ -87,6 +88,16 @@ class ShipmentLeg extends Model
     public function deliveryBatch(): BelongsTo
     {
         return $this->belongsTo(DeliveryBatch::class);
+    }
+
+    public function returnForLeg(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'return_for_leg_id');
+    }
+
+    public function returnLeg(): HasOne
+    {
+        return $this->hasOne(self::class, 'return_for_leg_id');
     }
 
     public function incidents(): HasMany { return $this->hasMany(DeliveryIncident::class); }
