@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Models\UserAddress;
 use App\Models\ShopOwner;
 use App\Models\Employee;
 use App\Enums\EmployeeStatus;
@@ -17,6 +18,8 @@ use App\Rules\NotDisposableEmail;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 
 /**
  * UserController
@@ -181,6 +184,13 @@ class UserController extends Controller
                     'regex:/[0-9]/',      // must contain at least one digit
                 ],
                 'address' => 'required|string|max:500',
+                'address_region' => 'required|string|max:255',
+                'address_province' => 'required|string|max:255',
+                'address_city' => 'required|string|max:255',
+                'address_barangay' => 'required|string|max:255',
+                'address_postal_code' => 'nullable|string|max:10',
+                'address_latitude' => 'required|numeric|between:4.5,21.5',
+                'address_longitude' => 'required|numeric|between:116,127',
                 'valid_id' => 'required|file|mimes:jpg,jpeg,png|max:5120', // 5MB max
             ], [
                 'first_name.required' => 'Please enter your first name.',
@@ -202,11 +212,53 @@ class UserController extends Controller
                 'password.regex' => 'Password must include uppercase, lowercase, and at least one number.',
                 'address.required' => 'Please enter your address.',
                 'address.max' => 'Address is too long. Maximum allowed is 500 characters.',
+                'address_region.required' => 'Please select a complete address on the map.',
+                'address_province.required' => 'Please select a complete address on the map.',
+                'address_city.required' => 'Please select a city or municipality on the map.',
+                'address_barangay.required' => 'Please select a barangay on the map.',
+                'address_latitude.required' => 'Please select your location on the map.',
+                'address_longitude.required' => 'Please select your location on the map.',
+                'address_latitude.between' => 'Please select a location within the Philippines.',
+                'address_longitude.between' => 'Please select a location within the Philippines.',
                 'valid_id.required' => 'Please upload a valid government-issued ID.',
                 'valid_id.file' => 'Valid ID must be an uploaded file.',
                 'valid_id.mimes' => 'Valid ID must be JPG, JPEG, or PNG only.',
                 'valid_id.max' => 'Valid ID file size must not exceed 5MB.',
             ]);
+
+            try {
+                $resolvedAddress = Http::timeout(5)->acceptJson()->get(
+                    'https://nominatim.openstreetmap.org/reverse',
+                    [
+                        'lat' => $validated['address_latitude'],
+                        'lon' => $validated['address_longitude'],
+                        'format' => 'json',
+                        'addressdetails' => 1,
+                    ],
+                )->json('address', []);
+            } catch (\Throwable) {
+                $resolvedAddress = [];
+            }
+
+            $resolvedProvince = $resolvedAddress['province'] ?? $resolvedAddress['state'] ?? '';
+            $resolvedRegion = $resolvedAddress['region'] ?? $resolvedAddress['state'] ?? $resolvedProvince;
+            $resolvedCity = $resolvedAddress['city'] ?? $resolvedAddress['municipality'] ?? $resolvedAddress['town'] ?? $resolvedAddress['county'] ?? '';
+            $resolvedBarangay = $resolvedAddress['suburb'] ?? $resolvedAddress['quarter'] ?? $resolvedAddress['neighbourhood'] ?? $resolvedAddress['village'] ?? '';
+
+            if (
+                strtolower((string) ($resolvedAddress['country_code'] ?? '')) !== 'ph'
+                || !$resolvedRegion || !$resolvedProvince || !$resolvedCity || !$resolvedBarangay
+            ) {
+                throw ValidationException::withMessages([
+                    'address_latitude' => 'Please select a verified location within the Philippines.',
+                ]);
+            }
+
+            $validated['address_region'] = $resolvedRegion;
+            $validated['address_province'] = $resolvedProvince;
+            $validated['address_city'] = $resolvedCity;
+            $validated['address_barangay'] = $resolvedBarangay;
+            $validated['address_postal_code'] = $resolvedAddress['postcode'] ?? $validated['address_postal_code'] ?? null;
 
             // Handle valid ID upload
             $validIdPath = null;
@@ -216,19 +268,37 @@ class UserController extends Controller
                 $validIdPath = $file->storeAs('valid_ids', $fileName, 'public');
             }
 
-            // Create the user with active status
-            $user = User::create([
-                'first_name' => $validated['first_name'],
-                'last_name' => $validated['last_name'],
-                'name' => $validated['first_name'] . ' ' . $validated['last_name'],
-                'email' => $validated['email'],
-                'phone' => $validated['phone'],
-                'age' => $validated['age'],
-                'password' => Hash::make($validated['password']),
-                'address' => $validated['address'],
-                'status' => 'active',
-                'valid_id_path' => $validIdPath,
-            ]);
+            $user = DB::transaction(function () use ($validated, $validIdPath) {
+                $user = User::create([
+                    'first_name' => $validated['first_name'],
+                    'last_name' => $validated['last_name'],
+                    'name' => $validated['first_name'] . ' ' . $validated['last_name'],
+                    'email' => $validated['email'],
+                    'phone' => $validated['phone'],
+                    'age' => $validated['age'],
+                    'password' => Hash::make($validated['password']),
+                    'address' => $validated['address'],
+                    'status' => 'active',
+                    'valid_id_path' => $validIdPath,
+                ]);
+
+                UserAddress::create([
+                    'user_id' => $user->id,
+                    'name' => $user->name,
+                    'phone' => $user->phone,
+                    'region' => $validated['address_region'],
+                    'province' => $validated['address_province'],
+                    'city' => $validated['address_city'],
+                    'barangay' => $validated['address_barangay'],
+                    'postal_code' => $validated['address_postal_code'] ?? null,
+                    'address_line' => $validated['address'],
+                    'latitude' => $validated['address_latitude'],
+                    'longitude' => $validated['address_longitude'],
+                    'is_default' => true,
+                ]);
+
+                return $user;
+            });
 
             Log::info('User registered successfully', ['user_id' => $user->id, 'email' => $user->email]);
 

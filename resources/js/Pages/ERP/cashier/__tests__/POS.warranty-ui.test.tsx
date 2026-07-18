@@ -52,6 +52,7 @@ const buildRepairHistoryRow = (overrides: Record<string, unknown> = {}) => ({
   total_amount: 500,
   payment_lines: [{ tender_type: "cash" }],
   refunds: [],
+  repair_request: { status: "picked_up" },
   receipt: {
     receipt_no: "RCP-TEST-001",
     issued_at: "2026-04-12T10:00:00.000Z",

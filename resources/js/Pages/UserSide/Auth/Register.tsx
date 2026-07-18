@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import 'leaflet/dist/leaflet.css';
 import { Head, router } from '@inertiajs/react';
 import Swal from '@/Pages/UserSide/Shared/UserModal';
 import Navigation from '../Shared/Navigation';
@@ -6,6 +7,7 @@ import Label from '../../../components/form/Label';
 import Input from '../../../components/form/input/InputField';
 import DropzoneComponent from '../../../components/form/form-elements/DropZone';
 import { MailIcon, LockIcon, UserIcon } from '../../../icons';
+import { parsePhilippineAddress, type RegistrationAddress } from './registrationAddress';
 
 type FormErrors = Record<string, string>;
 
@@ -18,6 +20,7 @@ const CUSTOMER_VALID_ID_ACCEPT = {
 };
 const CUSTOMER_VALID_ID_ALLOWED_EXTENSIONS = new Set(['jpg', 'jpeg', 'png']);
 const CUSTOMER_VALID_ID_ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png']);
+const PHILIPPINES_CENTER: [number, number] = [12.8797, 121.774];
 
 const escapeHtml = (value: string) => (
   value
@@ -46,6 +49,15 @@ export default function Register() {
 
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
   const [isLoading, setIsLoading] = useState(false);
+  const [addressLocation, setAddressLocation] = useState<RegistrationAddress | null>(null);
+  const [addressSearch, setAddressSearch] = useState('');
+  const [geoError, setGeoError] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [gettingGPS, setGettingGPS] = useState(false);
+  const mapRef = useRef<HTMLDivElement>(null);
+  const leafletMapRef = useRef<any>(null);
+  const markerRef = useRef<any>(null);
+  const locationRequestRef = useRef(0);
   const authInputClasses = 'h-12 rounded-xl !border-gray-200 !bg-[#f8fafc] !text-[13px] !text-gray-800 placeholder:!text-gray-400 shadow-none focus:!border-gray-300 focus:!ring-gray-200/70 dark:!border-gray-200 dark:!bg-[#f8fafc] dark:!text-gray-800 dark:placeholder:!text-gray-400 dark:focus:!border-gray-300 dark:focus:!ring-gray-200/70';
 
   useEffect(() => {
@@ -107,6 +119,9 @@ export default function Register() {
       if (!formData.address.trim()) {
         newErrors.address = 'Please enter your address.';
       }
+      if (!addressLocation) {
+        newErrors.addressLocation = 'Please select a complete Philippine address using search, GPS, or the map.';
+      }
 
       if (!formData.password) {
         newErrors.password = 'Please enter a password.';
@@ -141,7 +156,7 @@ export default function Register() {
       return 1;
     }
 
-    if (validationErrors.age || validationErrors.address || validationErrors.password || validationErrors.confirmPassword) {
+    if (validationErrors.age || validationErrors.address || validationErrors.addressLocation || validationErrors.password || validationErrors.confirmPassword) {
       return 2;
     }
 
@@ -200,6 +215,150 @@ export default function Register() {
         message: 'Unable to verify email right now. Please try again.',
       };
     }
+  };
+
+  const applyLocationResult = (result: any) => {
+    const location = parsePhilippineAddress(result);
+    if (!location) {
+      setAddressLocation(null);
+      setGeoError('Choose a complete address within the Philippines, including barangay and city.');
+      return false;
+    }
+
+    setAddressLocation(location);
+    setAddressSearch(location.displayName);
+    setFormData(prev => ({ ...prev, address: location.displayName || prev.address }));
+    setErrors(prev => ({ ...prev, address: undefined, addressLocation: undefined }));
+    setGeoError('');
+    leafletMapRef.current?.setView([location.latitude, location.longitude], 16);
+    markerRef.current?.setLatLng([location.latitude, location.longitude]);
+    return true;
+  };
+
+  const reverseGeocode = async (latitude: number, longitude: number, requestId: number) => {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&addressdetails=1`,
+    );
+    if (!response.ok) throw new Error('Address lookup failed');
+    const result = await response.json();
+    return requestId === locationRequestRef.current && applyLocationResult(result);
+  };
+
+  useEffect(() => {
+    if (currentStep !== 2 || !mapRef.current) return;
+
+    let cancelled = false;
+    import('leaflet').then((L) => {
+      if (cancelled || !mapRef.current) return;
+
+      delete (L.Icon.Default.prototype as any)._getIconUrl;
+      L.Icon.Default.mergeOptions({
+        iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+        iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+        shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+      });
+
+      const initial: [number, number] = addressLocation
+        ? [addressLocation.latitude, addressLocation.longitude]
+        : PHILIPPINES_CENTER;
+      const map = L.map(mapRef.current).setView(initial, addressLocation ? 16 : 5);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors',
+      }).addTo(map);
+      const marker = L.marker(initial, { draggable: true }).addTo(map);
+
+      const updateFromPin = async (latitude: number, longitude: number) => {
+        const requestId = ++locationRequestRef.current;
+        marker.setLatLng([latitude, longitude]);
+        setAddressLocation(null);
+        setGeoError('');
+        try {
+          await reverseGeocode(latitude, longitude, requestId);
+        } catch {
+          if (requestId === locationRequestRef.current) {
+            setGeoError('Could not identify this location. Please try again.');
+          }
+        }
+      };
+
+      marker.on('dragend', () => {
+        const position = marker.getLatLng();
+        void updateFromPin(position.lat, position.lng);
+      });
+      map.on('click', (event: any) => void updateFromPin(event.latlng.lat, event.latlng.lng));
+
+      leafletMapRef.current = map;
+      markerRef.current = marker;
+      window.setTimeout(() => map.invalidateSize(), 0);
+    });
+
+    return () => {
+      cancelled = true;
+      leafletMapRef.current?.remove();
+      leafletMapRef.current = null;
+      markerRef.current = null;
+    };
+  }, [currentStep]);
+
+  const handleAddressSearch = async () => {
+    const query = addressSearch.trim();
+    if (!query) {
+      setGeoError('Enter an address to search.');
+      return;
+    }
+
+    setIsSearching(true);
+    const requestId = ++locationRequestRef.current;
+    setAddressLocation(null);
+    setGeoError('');
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&countrycodes=ph&limit=1&q=${encodeURIComponent(query)}`,
+      );
+      if (!response.ok) throw new Error('Address search failed');
+      const [result] = await response.json();
+      if (requestId !== locationRequestRef.current) return;
+      if (!result) setGeoError('No Philippine address found. Try a more specific search.');
+      else applyLocationResult(result);
+    } catch {
+      if (requestId === locationRequestRef.current) {
+        setGeoError('Address search is unavailable. Please try again.');
+      }
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleUseMyGPS = () => {
+    if (!navigator.geolocation) {
+      setGeoError('Geolocation is not supported by your browser.');
+      return;
+    }
+
+    setGettingGPS(true);
+    const requestId = ++locationRequestRef.current;
+    setAddressLocation(null);
+    setGeoError('');
+    navigator.geolocation.getCurrentPosition(
+      async ({ coords }) => {
+        try {
+          await reverseGeocode(coords.latitude, coords.longitude, requestId);
+        } catch {
+          if (requestId === locationRequestRef.current) {
+            setGeoError('Could not identify your GPS address. Please try searching instead.');
+          }
+        } finally {
+          setGettingGPS(false);
+        }
+      },
+      () => {
+        if (requestId === locationRequestRef.current) {
+          setGeoError('Could not get your location. Please allow location access.');
+        }
+        setGettingGPS(false);
+      },
+      { enableHighAccuracy: true },
+    );
   };
 
   const handleNext = async () => {
@@ -434,6 +593,12 @@ export default function Register() {
       last_name: 'lastName',
       password_confirmation: 'confirmPassword',
       valid_id: 'validId',
+      address_region: 'addressLocation',
+      address_province: 'addressLocation',
+      address_city: 'addressLocation',
+      address_barangay: 'addressLocation',
+      address_latitude: 'addressLocation',
+      address_longitude: 'addressLocation',
     };
 
     const mapped: FormErrors = {};
@@ -468,6 +633,13 @@ export default function Register() {
       payload.append('phone', formData.phone);
       payload.append('age', formData.age);
       payload.append('address', formData.address);
+      payload.append('address_region', addressLocation!.region);
+      payload.append('address_province', addressLocation!.province);
+      payload.append('address_city', addressLocation!.city);
+      payload.append('address_barangay', addressLocation!.barangay);
+      payload.append('address_postal_code', addressLocation!.postalCode);
+      payload.append('address_latitude', String(addressLocation!.latitude));
+      payload.append('address_longitude', String(addressLocation!.longitude));
       payload.append('password', formData.password);
       payload.append('password_confirmation', formData.confirmPassword);
       if (formData.validId) payload.append('valid_id', formData.validId);
@@ -649,6 +821,45 @@ export default function Register() {
                       />
                     </div>
                     {errors.address && <p className="mt-1 text-sm text-red-600">{errors.address}</p>}
+                    <div className="mt-3 space-y-2">
+                      <Label htmlFor="addressSearch" className="text-[12px] font-medium text-gray-700">Search Address</Label>
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <input
+                          id="addressSearch"
+                          value={addressSearch}
+                          onChange={(event) => setAddressSearch(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault();
+                              void handleAddressSearch();
+                            }
+                          }}
+                          placeholder="e.g. 123 Rizal St, Makati"
+                          className="h-10 min-w-0 flex-1 rounded-xl border border-gray-200 bg-[#f8fafc] px-3 text-[12px] text-gray-800 outline-none focus:border-gray-300 focus:ring-2 focus:ring-gray-200/70"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void handleAddressSearch()}
+                          disabled={isSearching}
+                          className="h-10 rounded-xl bg-blue-600 px-4 text-[12px] font-semibold text-white transition hover:bg-blue-700 disabled:opacity-60"
+                        >
+                          {isSearching ? 'Searching...' : 'Search'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleUseMyGPS}
+                          disabled={gettingGPS}
+                          className="h-10 rounded-xl border border-blue-600 px-3 text-[12px] font-semibold text-blue-600 transition hover:bg-blue-50 disabled:opacity-60"
+                        >
+                          {gettingGPS ? 'Locating...' : 'Use My GPS'}
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-gray-500">Drag the pin or click the map to adjust.</p>
+                      <div ref={mapRef} className="h-44 w-full overflow-hidden rounded-xl border border-gray-200" />
+                      {(geoError || errors.addressLocation) && (
+                        <p className="text-xs text-red-600">{geoError || errors.addressLocation}</p>
+                      )}
+                    </div>
                   </div>
 
                   <div className="relative">
