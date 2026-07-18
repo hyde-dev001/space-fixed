@@ -3,11 +3,13 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const usePageMock = vi.fn();
+const axiosGetMock = vi.fn();
 const axiosPostMock = vi.fn();
 const swalFireMock = vi.fn();
 
 vi.mock("axios", () => ({
   default: {
+    get: (...args: unknown[]) => axiosGetMock(...args),
     post: (...args: unknown[]) => axiosPostMock(...args),
   },
 }));
@@ -32,6 +34,7 @@ import CashierPOS from "../POS";
 describe("Cashier POS repair checkout", () => {
   beforeEach(() => {
     usePageMock.mockReset();
+    axiosGetMock.mockReset();
     axiosPostMock.mockReset();
     swalFireMock.mockReset();
 
@@ -54,25 +57,37 @@ describe("Cashier POS repair checkout", () => {
       },
     });
 
+    axiosGetMock.mockImplementation((url: string) => {
+      if (url === "/api/repair-services") {
+        return Promise.resolve({
+          data: { data: [{ id: 1, name: "Sole reglue", category: "Repair", price: 1000, duration: "1 day" }] },
+        });
+      }
+
+      return Promise.resolve({ data: { data: [] } });
+    });
+
     swalFireMock.mockResolvedValue({ isConfirmed: true });
   });
 
   it("submits walk-in repair checkout payload to repair-pos endpoint", async () => {
     render(<CashierPOS />);
 
-    fireEvent.change(screen.getByLabelText(/walk-in customer name/i), {
+    fireEvent.change(screen.getByTitle(/customer name/i), {
       target: { value: "Walk In Customer" },
     });
 
-    fireEvent.change(screen.getByLabelText(/repair subtotal/i), {
-      target: { value: "1000" },
+    fireEvent.change(screen.getByTitle(/customer phone number/i), {
+      target: { value: "09171234567" },
     });
 
-    fireEvent.change(screen.getByLabelText(/amount to collect/i), {
+    fireEvent.click(await screen.findByRole("button", { name: /sole reglue/i }));
+
+    fireEvent.change(screen.getByTitle(/cash received/i), {
       target: { value: "500" },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /process walk-in repair checkout/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Pay" }));
 
     await waitFor(() => {
       expect(axiosPostMock).toHaveBeenCalledTimes(1);

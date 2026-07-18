@@ -10,6 +10,7 @@ import {
   normalizeCityMunicipalitySelection,
   normalizeProvinceSelection,
 } from '@/data/philippineLocations';
+import { mergeRepairProcessPrefill } from './repairProcessPrefill';
 
 const REPAIR_VAT_RATE_PERCENT = 12;
 
@@ -63,6 +64,7 @@ interface RepairProcessPageProps {
       id: number;
       name?: string;
       email?: string;
+      phone?: string;
     } | null;
   };
 }
@@ -409,6 +411,42 @@ const RepairProcess: React.FC = () => {
       localStorage.removeItem(CHECKOUT_INFO_STORAGE_KEY);
     }
   }, []);
+
+  useEffect(() => {
+    if (!authUser) return;
+
+    let cancelled = false;
+    setFormData((current) => mergeRepairProcessPrefill(current, authUser));
+
+    fetch('/api/user/addresses', {
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
+    })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => {
+        if (cancelled) return;
+
+        const addresses = Array.isArray(data?.addresses) ? data.addresses : [];
+        const defaultAddress = addresses.find((address: any) => address.is_default) || addresses[0];
+        if (!defaultAddress) return;
+
+        const province = normalizeProvinceSelection(defaultAddress.province || defaultAddress.region);
+        const city = normalizeCityMunicipalitySelection(province, defaultAddress.city);
+        const normalizedAddress = {
+          ...defaultAddress,
+          province: province || defaultAddress.province || defaultAddress.region || '',
+          city: city || defaultAddress.city || '',
+          postal_code: String(defaultAddress.postal_code || '').replace(/\D/g, ''),
+        };
+
+        setFormData((current) => mergeRepairProcessPrefill(current, authUser, normalizedAddress));
+      })
+      .catch(() => { /* keep the form usable when address prefill is unavailable */ });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authUser?.id]);
 
   useEffect(() => {
     if (!saveInfoForCheckout) {

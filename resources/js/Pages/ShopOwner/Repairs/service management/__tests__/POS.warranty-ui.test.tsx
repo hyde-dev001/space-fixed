@@ -42,7 +42,7 @@ const buildManualQueueRow = (overrides: Record<string, unknown> = {}) => ({
   request_id: "REP-POS-QUEUE-001",
   customer_name: "Walk In Customer",
   phone: "09171234567",
-  status: "pending",
+  status: "picked_up",
   payment_policy: "deposit_50",
   total: 1000,
   paid: 500,
@@ -109,7 +109,7 @@ describe("Shop owner POS warranty UI", () => {
     expect(warrantyButton).toBeEnabled();
   });
 
-  it("shows disabled Warranty button in manual queue when receipt or phone is missing", async () => {
+  it("hides Warranty button in manual queue when receipt or phone is missing", async () => {
     manualQueueRows = [buildManualQueueRow({ receipt_no: null, phone: "" })];
 
     render(<ShopOwnerPOS />);
@@ -118,8 +118,7 @@ describe("Shop owner POS warranty UI", () => {
       expect(screen.getByText("REP-POS-QUEUE-001")).toBeInTheDocument();
     });
 
-    const warrantyButton = screen.getByRole("button", { name: "Warranty" });
-    expect(warrantyButton).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Warranty" })).not.toBeInTheDocument();
   });
 
   it("validates shop-owner warranty modal and requires at least one evidence image", async () => {
