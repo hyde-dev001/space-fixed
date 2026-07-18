@@ -155,7 +155,7 @@ class PaymentLifecycleFeatureTest extends TestCase
     }
 
     #[Test]
-    public function order_late_paid_webhook_after_expiry_is_ignored(): void
+    public function order_late_paid_webhook_after_expiry_is_settled(): void
     {
         config()->set('services.paymongo.webhook_secret', '');
 
@@ -167,12 +167,13 @@ class PaymentLifecycleFeatureTest extends TestCase
         ]);
 
         $response = $this->postJson('/api/webhooks/paymongo', $this->paidWebhookPayload((string) $order->paymongo_link_id, 'pay_order_late'));
-        $response->assertOk()->assertJson(['message' => 'Expired payment session']);
+        $response->assertOk()->assertJson(['message' => 'Payment processed']);
 
         $order->refresh();
-        $this->assertSame('pending', $order->payment_status);
-        $this->assertNull($order->paid_at);
-        $this->assertNull($order->paymongo_payment_id);
+        $this->assertSame('paid', $order->payment_status);
+        $this->assertNotNull($order->paid_at);
+        $this->assertSame('pay_order_late', $order->paymongo_payment_id);
+        $this->assertNull($order->payment_expired_at);
     }
 
     #[Test]
