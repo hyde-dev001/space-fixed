@@ -252,7 +252,7 @@ class PaymentLifecycleFeatureTest extends TestCase
     }
 
     #[Test]
-    public function repairer_can_mark_repair_paid_in_shop_for_due_phase(): void
+    public function direct_manual_repair_payment_requires_pos(): void
     {
         $shopOwner = $this->createShopOwner(['business_type' => 'repair']);
         $customer = User::factory()->create();
@@ -277,16 +277,15 @@ class PaymentLifecycleFeatureTest extends TestCase
         $response = $this->actingAs($repairer, 'user')
             ->postJson("/api/repairer/repairs/{$repair->id}/mark-paid-in-shop");
 
-        $response->assertOk()
-            ->assertJsonPath('success', true)
-            ->assertJsonPath('message', 'In-shop payment recorded successfully.');
+        $response->assertStatus(409)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('code', 'POS_REQUIRED');
 
         $repair->refresh();
 
-        $this->assertSame('paid', (string) $repair->payment_status);
-        $this->assertNotNull($repair->payment_completed_at);
-        $this->assertNotNull($repair->paymongo_payment_id);
-        $this->assertStringStartsWith('in_shop_manual_', (string) $repair->paymongo_payment_id);
+        $this->assertSame('pending', (string) $repair->payment_status);
+        $this->assertNull($repair->payment_completed_at);
+        $this->assertNull($repair->paymongo_payment_id);
     }
 
     #[Test]

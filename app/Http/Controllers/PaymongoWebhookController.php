@@ -132,7 +132,7 @@ class PaymongoWebhookController extends Controller
     private function handleOrderPayment($order, $paymentId)
     {
         $settlement = app(PaymentSettlementService::class)
-            ->settleOrderPaid($order, (string) $paymentId, true);
+            ->settleOrderPaid($order, (string) $paymentId);
 
         $result = $settlement['result'] ?? 'settled';
         $settledOrder = $settlement['model'] ?? $order;
@@ -189,7 +189,7 @@ class PaymongoWebhookController extends Controller
     private function handleRepairPayment($repairRequest, $paymentId)
     {
         $settlement = app(PaymentSettlementService::class)
-            ->settleRepairPaid($repairRequest, (string) $paymentId, true);
+            ->settleRepairPaid($repairRequest, (string) $paymentId);
 
         $result = $settlement['result'] ?? 'settled';
         $settledRepair = $settlement['model'] ?? $repairRequest;
