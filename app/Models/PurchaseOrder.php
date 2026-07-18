@@ -196,7 +196,7 @@ class PurchaseOrder extends Model
             return null;
         }
 
-        return now()->diffInDays($this->expected_delivery_date, false);
+        return today()->diffInDays($this->expected_delivery_date, false);
     }
 
     // Methods
