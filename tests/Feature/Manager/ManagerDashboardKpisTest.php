@@ -358,7 +358,7 @@ class ManagerDashboardKpisTest extends TestCase
      */
     public function test_date_range_start_is_inclusive(): void
     {
-        $startDate = now()->startOfDay()->subDays(7);
+        $startDate = now()->subDays(6)->startOfDay();
 
         // Create repair exactly at range start
         RepairRequest::factory()
