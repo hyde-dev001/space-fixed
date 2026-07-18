@@ -32,7 +32,7 @@ class ManagerDashboardKpisTest extends TestCase
     {
         parent::setUp();
 
-        $this->shop = ShopOwner::factory()->create();
+        $this->shop = ShopOwner::factory()->create(['business_type' => 'both']);
 
         $this->manager = User::factory()
             ->for($this->shop)
