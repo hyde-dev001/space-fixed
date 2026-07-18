@@ -26,6 +26,8 @@ class PurchaseOrderService
                 throw new \Exception('Purchase request must be approved before creating a purchase order.');
             }
 
+            $data['shop_owner_id'] = $purchaseRequest->shop_owner_id;
+
             // Generate PO number if not provided
             if (!isset($data['po_number'])) {
                 $data['po_number'] = $this->generatePONumber($data['shop_owner_id']);
@@ -39,6 +41,7 @@ class PurchaseOrderService
             $data['unit_cost'] = $purchaseRequest->unit_cost;
             $data['total_cost'] = $purchaseRequest->total_cost;
             $data['status'] = 'draft';
+            $data['ordered_date'] ??= now();
 
             $purchaseOrder = PurchaseOrder::create($data);
 
@@ -334,14 +337,14 @@ class PurchaseOrderService
             }
 
             // Update stock quantity
-            $inventoryItem->stock_quantity += $purchaseOrder->quantity;
+            $inventoryItem->available_quantity += $purchaseOrder->quantity;
             $inventoryItem->save();
 
             Log::info('Inventory updated on PO delivery', [
                 'po_id' => $poId,
                 'inventory_item_id' => $inventoryItem->id,
                 'quantity_added' => $purchaseOrder->quantity,
-                'new_stock_quantity' => $inventoryItem->stock_quantity
+                'new_stock_quantity' => $inventoryItem->available_quantity
             ]);
 
             // Stock movement creation will be handled by event listener in Phase 4

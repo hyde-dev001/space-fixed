@@ -624,6 +624,14 @@ class ManagerController extends Controller
                 ->where('shop_owner_id', $shopOwnerId)
                 ->where('status', 'active')
                 ->count();
+
+            $isSqlite = DB::connection()->getDriverName() === 'sqlite';
+            $monthExpression = fn(string $column) => $isSqlite
+                ? "strftime('%Y-%m', {$column})"
+                : "DATE_FORMAT({$column}, '%Y-%m')";
+            $daysPendingExpression = $isSqlite
+                ? "CAST(julianday('now') - julianday(lr.created_at) AS INTEGER)"
+                : 'DATEDIFF(NOW(), lr.created_at)';
                 
             // Get monthly revenue trend from paid fulfilled orders + standalone posted invoices
             $monthlyOrderRevenue = $canRetail
@@ -633,7 +641,7 @@ class ManagerController extends Controller
                     ->where('payment_status', 'paid')
                     ->whereBetween(DB::raw('COALESCE(paid_at, created_at)'), [$rangeStart->copy()->startOfMonth(), $rangeEnd])
                     ->select(
-                        DB::raw('DATE_FORMAT(COALESCE(paid_at, created_at), "%Y-%m") as month'),
+                        DB::raw($monthExpression('COALESCE(paid_at, created_at)') . ' as month'),
                         DB::raw('SUM(total_amount) as revenue')
                     )
                     ->groupBy('month')
@@ -648,7 +656,7 @@ class ManagerController extends Controller
                     ->whereNull('job_order_id')
                     ->whereBetween('created_at', [$rangeStart->copy()->startOfMonth(), $rangeEnd])
                     ->select(
-                        DB::raw('DATE_FORMAT(created_at, "%Y-%m") as month'),
+                        DB::raw($monthExpression('created_at') . ' as month'),
                         DB::raw('SUM(total) as revenue')
                     )
                     ->groupBy('month')
@@ -714,7 +722,7 @@ class ManagerController extends Controller
                             'e.name as employee_name',
                             'e.email as employee_email',
                             'e.position as employee_position',
-                            DB::raw('DATEDIFF(NOW(), lr.created_at) as days_pending')
+                            DB::raw($daysPendingExpression . ' as days_pending')
                         ])
                         ->orderBy('lr.created_at', 'asc')
                         ->limit(5)
@@ -1191,6 +1199,8 @@ class ManagerController extends Controller
                 'report' => $this->mapManagerReport($report),
                 'download_url' => url("/api/manager/reports/{$report->id}/download"),
             ], 201);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             Log::error('Failed to generate manager report: ' . $e->getMessage(), [
                 'exception' => $e,
@@ -1246,6 +1256,10 @@ class ManagerController extends Controller
                 'message' => 'Report marked as sent to shop owner',
                 'report' => $this->mapManagerReport($report->fresh()),
             ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            throw $e;
         } catch (\Exception $e) {
             Log::error('Failed to send manager report: ' . $e->getMessage(), [
                 'exception' => $e,
@@ -1300,10 +1314,12 @@ class ManagerController extends Controller
             $report->update(['downloaded_at' => now()]);
 
             return response()->download(
-                storage_path('app/' . $report->file_path),
+                Storage::disk('local')->path($report->file_path),
                 $fileName,
                 ['Content-Type' => 'text/csv']
             );
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            throw $e;
         } catch (\Exception $e) {
             Log::error('Failed to download manager report: ' . $e->getMessage(), [
                 'exception' => $e,
@@ -1441,7 +1457,4 @@ class ManagerController extends Controller
         }
     }
 }
-
-
-
 

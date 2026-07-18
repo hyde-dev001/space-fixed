@@ -259,7 +259,7 @@ class NotificationCriticalFlowsTest extends TestCase
 
         $this->assertDatabaseHas('notifications', [
             'shop_owner_id' => $fixture['shop_owner']->id,
-            'title' => 'Repair Refund Approved',
+            'title' => 'Repair Refund Approved By Finance',
         ]);
     }
 

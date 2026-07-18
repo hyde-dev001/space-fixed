@@ -122,7 +122,7 @@ class PurchaseOrderServiceTest extends TestCase
             'status' => 'in_transit',
         ]);
 
-        $result = $this->service->markAsDelivered($po->id, $this->user->id);
+        $result = $this->service->markAsDelivered($po->id, $this->user->id, now()->toDateString());
 
         $this->assertEquals('delivered', $result->status);
         $this->assertNotNull($result->actual_delivery_date);
@@ -148,7 +148,7 @@ class PurchaseOrderServiceTest extends TestCase
     {
         $inventoryItem = InventoryItem::factory()->create([
             'shop_owner_id' => $this->shopOwner->id,
-            'quantity' => 100,
+            'available_quantity' => 100,
         ]);
 
         $po = PurchaseOrder::factory()->create([
@@ -161,7 +161,7 @@ class PurchaseOrderServiceTest extends TestCase
 
         $this->service->updateInventoryOnDelivery($po->id);
 
-        $this->assertEquals(150, $inventoryItem->fresh()->quantity);
+        $this->assertEquals(150, $inventoryItem->fresh()->available_quantity);
     }
 
     /** @test */
@@ -181,7 +181,7 @@ class PurchaseOrderServiceTest extends TestCase
 
         $metrics = $this->service->getMetrics($this->shopOwner->id);
 
-        $this->assertEquals(2, $metrics['total_orders']);
+        $this->assertEquals(2, $metrics['total_purchase_orders']);
         $this->assertEquals(1, $metrics['active_orders']);
         $this->assertEquals(1, $metrics['completed_orders']);
     }

@@ -10,6 +10,7 @@ use App\Models\PurchaseRequest;
 use App\Models\PurchaseOrder;
 use App\Models\InventoryItem;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Permission;
 
 class PurchaseOrderWorkflowTest extends TestCase
 {
@@ -23,8 +24,11 @@ class PurchaseOrderWorkflowTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->user = User::factory()->create();
-        $this->shopOwner = ShopOwner::factory()->create(['user_id' => $this->user->id]);
+        config(['auth.defaults.guard' => 'user']);
+        $this->shopOwner = ShopOwner::factory()->create();
+        $this->user = User::factory()->for($this->shopOwner)->create();
+        Permission::findOrCreate('access-procurement-dashboard', 'user');
+        $this->user->givePermissionTo('access-procurement-dashboard');
         $this->supplier = Supplier::factory()->create(['shop_owner_id' => $this->shopOwner->id]);
         
         $this->pr = PurchaseRequest::factory()->create([
@@ -45,9 +49,9 @@ class PurchaseOrderWorkflowTest extends TestCase
                 'notes' => 'Rush delivery required',
             ]);
 
-        $response->assertStatus(201)
+            $response->assertStatus(201)
             ->assertJsonStructure([
-                'data' => [
+                'purchase_order' => [
                     'id',
                     'po_number',
                     'status',
@@ -91,7 +95,7 @@ class PurchaseOrderWorkflowTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->putJson("/api/erp/procurement/purchase-orders/{$po->id}/update-status", [
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/update-status", [
                 'status' => 'confirmed',
                 'notes' => 'Supplier confirmed order',
             ]);
@@ -109,7 +113,7 @@ class PurchaseOrderWorkflowTest extends TestCase
     {
         $inventoryItem = InventoryItem::factory()->create([
             'shop_owner_id' => $this->shopOwner->id,
-            'quantity' => 100,
+            'available_quantity' => 100,
         ]);
 
         $po = PurchaseOrder::factory()->create([
@@ -121,8 +125,10 @@ class PurchaseOrderWorkflowTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/mark-as-delivered", [
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/mark-delivered", [
                 'actual_delivery_date' => now()->format('Y-m-d'),
+                'received_quantity' => 50,
+                'defective_quantity' => 0,
             ]);
 
         $response->assertStatus(200);
@@ -133,7 +139,7 @@ class PurchaseOrderWorkflowTest extends TestCase
         ]);
 
         // Verify inventory was updated
-        $this->assertEquals(150, $inventoryItem->fresh()->quantity);
+        $this->assertEquals(150, $inventoryItem->fresh()->available_quantity);
     }
 
     /** @test */
@@ -179,7 +185,7 @@ class PurchaseOrderWorkflowTest extends TestCase
 
         $response->assertStatus(200)
             ->assertJsonStructure([
-                'total_orders',
+                'total_purchase_orders',
                 'active_orders',
                 'completed_orders',
             ]);
@@ -190,7 +196,7 @@ class PurchaseOrderWorkflowTest extends TestCase
     {
         $inventoryItem = InventoryItem::factory()->create([
             'shop_owner_id' => $this->shopOwner->id,
-            'quantity' => 100,
+            'available_quantity' => 100,
         ]);
 
         // Step 1: Create PO
@@ -202,7 +208,7 @@ class PurchaseOrderWorkflowTest extends TestCase
             ]);
 
         $createResponse->assertStatus(201);
-        $poId = $createResponse->json('data.id');
+        $poId = $createResponse->json('purchase_order.id');
 
         // Update PO with inventory item
         PurchaseOrder::find($poId)->update([
@@ -217,22 +223,24 @@ class PurchaseOrderWorkflowTest extends TestCase
 
         // Step 3: Update to Confirmed
         $confirmResponse = $this->actingAs($this->user)
-            ->putJson("/api/erp/procurement/purchase-orders/{$poId}/update-status", [
+            ->postJson("/api/erp/procurement/purchase-orders/{$poId}/update-status", [
                 'status' => 'confirmed',
             ]);
         $confirmResponse->assertStatus(200);
 
         // Step 4: Update to In Transit
         $transitResponse = $this->actingAs($this->user)
-            ->putJson("/api/erp/procurement/purchase-orders/{$poId}/update-status", [
+            ->postJson("/api/erp/procurement/purchase-orders/{$poId}/update-status", [
                 'status' => 'in_transit',
             ]);
         $transitResponse->assertStatus(200);
 
         // Step 5: Mark as Delivered
         $deliverResponse = $this->actingAs($this->user)
-            ->postJson("/api/erp/procurement/purchase-orders/{$poId}/mark-as-delivered", [
+            ->postJson("/api/erp/procurement/purchase-orders/{$poId}/mark-delivered", [
                 'actual_delivery_date' => now()->format('Y-m-d'),
+                'received_quantity' => 50,
+                'defective_quantity' => 0,
             ]);
         $deliverResponse->assertStatus(200);
 
@@ -243,6 +251,6 @@ class PurchaseOrderWorkflowTest extends TestCase
         ]);
 
         // Verify inventory updated
-        $this->assertEquals(150, $inventoryItem->fresh()->quantity);
+        $this->assertEquals(150, $inventoryItem->fresh()->available_quantity);
     }
 }

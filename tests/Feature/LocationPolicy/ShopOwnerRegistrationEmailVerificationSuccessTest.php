@@ -17,11 +17,13 @@ class ShopOwnerRegistrationEmailVerificationSuccessTest extends TestCase
 
     private function docs(): array
     {
+        $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
+
         return [
-            'dti_registration' => UploadedFile::fake()->create('dti_registration.pdf', 120, 'application/pdf'),
-            'mayors_permit' => UploadedFile::fake()->create('mayors_permit.pdf', 120, 'application/pdf'),
-            'bir_certificate' => UploadedFile::fake()->create('bir_certificate.pdf', 120, 'application/pdf'),
-            'valid_id' => UploadedFile::fake()->create('valid_id.pdf', 120, 'application/pdf'),
+            'dti_registration' => UploadedFile::fake()->createWithContent('dti_registration.png', $png),
+            'mayors_permit' => UploadedFile::fake()->createWithContent('mayors_permit.png', $png),
+            'bir_certificate' => UploadedFile::fake()->createWithContent('bir_certificate.png', $png),
+            'valid_id' => UploadedFile::fake()->createWithContent('valid_id.png', $png),
         ];
     }
 

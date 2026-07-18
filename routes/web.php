@@ -1423,7 +1423,11 @@ Route::middleware(['auth:user', 'check.user.business.type:repair,both'])->prefix
 
 // Manager API Routes (Phase 5 - Rejection Review)
 // Accessible by Manager role or explicit manager-level permissions
-Route::middleware(['auth:user', 'role_or_permission:Manager|access-manager-dashboard|access-repair-reject-review'])->prefix('api/manager/repairs')->group(function () {
+Route::middleware([
+    'auth:user',
+    'role_or_permission:Manager|access-manager-dashboard|access-repair-reject-review',
+    'check.user.business.type:repair,both',
+])->prefix('api/manager/repairs')->group(function () {
     // Get repairs pending manager review
     Route::get('/rejected', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'getPendingManagerReviews']);
 
@@ -1675,6 +1679,10 @@ Route::middleware('super_admin.auth')->prefix('admin')->name('admin.')->group(fu
     Route::get('/registered-shops', [SuperAdminController::class, 'showRegisteredShops'])->name('registered-shops');
     Route::get('/shops/{id}/details', [SuperAdminController::class, 'shopDetails'])->name('shops.details');
     Route::get('/subscription-management', [SuperAdminController::class, 'showSubscriptionManagement'])->name('subscription-management');
+    Route::post('/premium-plans', [SuperAdminController::class, 'storePremiumPlan'])->name('premium-plans.store');
+    Route::put('/premium-plans/{premiumPlan}', [SuperAdminController::class, 'updatePremiumPlan'])->name('premium-plans.update');
+    Route::post('/premium-plans/{premiumPlan}/archive', [SuperAdminController::class, 'archivePremiumPlan'])->name('premium-plans.archive');
+    Route::post('/premium-plans/{premiumPlan}/reactivate', [SuperAdminController::class, 'reactivatePremiumPlan'])->name('premium-plans.reactivate');
         Route::post('/subscriptions/{id}/cancel', [SuperAdminController::class, 'cancelSubscription'])->name('subscriptions.cancel');
         Route::post('/subscriptions/{id}/upgrade', [SuperAdminController::class, 'upgradeSubscription'])->name('subscriptions.upgrade');
         Route::post('/subscriptions/{id}/downgrade', [SuperAdminController::class, 'downgradeSubscription'])->name('subscriptions.downgrade');

@@ -516,6 +516,8 @@ class ShopOwnerAuthController extends Controller
      */
     public function register(Request $request, CaviteLocationPolicyService $caviteLocationPolicy)
     {
+        $transactionStarted = false;
+
         try {
             // Validate registration data
             $validated = $request->validate([
@@ -627,6 +629,7 @@ class ShopOwnerAuthController extends Controller
             );
 
             DB::beginTransaction();
+            $transactionStarted = true;
 
             if ($isReapplication) {
                 $shopOwner = $existingRejectedShopOwner;
@@ -725,6 +728,7 @@ class ShopOwnerAuthController extends Controller
             }
 
             DB::commit();
+            $transactionStarted = false;
             Cache::forget($this->registrationEmailOtpCacheKey($normalizedEmail));
 
             Log::info('Shop owner registered successfully', [
@@ -763,7 +767,9 @@ class ShopOwnerAuthController extends Controller
                 'email' => $shopOwner->email,
             ]);
         } catch (ValidationException $e) {
-            DB::rollBack();
+            if ($transactionStarted) {
+                DB::rollBack();
+            }
             Log::warning('Shop owner registration validation failed', ['errors' => $e->errors()]);
 
             if ($request->expectsJson()) {
@@ -778,7 +784,9 @@ class ShopOwnerAuthController extends Controller
 
             throw $e;
         } catch (\Exception $e) {
-            DB::rollBack();
+            if ($transactionStarted) {
+                DB::rollBack();
+            }
             Log::error('Error registering shop owner', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()

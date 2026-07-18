@@ -36,7 +36,7 @@ class PurchaseRequestServiceTest extends TestCase
             'shop_owner_id' => $this->shopOwner->id,
             'supplier_id' => $this->supplier->id,
             'product_name' => 'Office Supplies',
-            'quantity' => 100,
+            'quantity' => 300,
             'unit_cost' => 50.00,
             'priority' => 'medium',
             'justification' => 'Restock for Q2 operations',
@@ -47,7 +47,7 @@ class PurchaseRequestServiceTest extends TestCase
 
         $this->assertInstanceOf(PurchaseRequest::class, $pr);
         $this->assertEquals('Office Supplies', $pr->product_name);
-        $this->assertEquals(5000.00, $pr->total_cost);
+        $this->assertEquals(15000.00, $pr->total_cost);
         $this->assertEquals('draft', $pr->status);
         $this->assertNotNull($pr->pr_number);
         $this->assertTrue(str_starts_with($pr->pr_number, 'PR-'));
@@ -109,7 +109,7 @@ class PurchaseRequestServiceTest extends TestCase
 
         $this->assertEquals('approved', $result->status);
         $this->assertEquals($this->user->id, $result->approved_by);
-        $this->assertEquals('Budget approved', $result->notes);
+        $this->assertEquals('Finance Final: Budget approved', $result->notes);
     }
 
     /** @test */
@@ -130,23 +130,24 @@ class PurchaseRequestServiceTest extends TestCase
     /** @test */
     public function it_auto_approves_low_value_requests()
     {
-        ProcurementSettings::factory()->create([
+        ProcurementSettings::create([
             'shop_owner_id' => $this->shopOwner->id,
-            'auto_approval_threshold' => 1000.00,
+            'auto_pr_approval_threshold' => 1000.00,
+            'require_finance_approval' => true,
         ]);
 
-        $pr = PurchaseRequest::factory()->create([
+        $pr = $this->service->createPurchaseRequest([
             'shop_owner_id' => $this->shopOwner->id,
             'supplier_id' => $this->supplier->id,
+            'product_name' => 'Low-value supplies',
             'quantity' => 10,
             'unit_cost' => 50.00, // Total: 500.00 (below threshold)
-            'status' => 'pending_finance',
+            'priority' => 'medium',
+            'justification' => 'Routine restock',
+            'requested_by' => $this->user->id,
         ]);
 
-        $autoApproved = $this->service->autoApproveLowValueRequests($this->shopOwner->id);
-
-        $this->assertEquals(1, $autoApproved);
-        $this->assertEquals('approved', $pr->fresh()->status);
+        $this->assertEquals('approved', $pr->status);
     }
 
     /** @test */
@@ -172,10 +173,10 @@ class PurchaseRequestServiceTest extends TestCase
 
         $metrics = $this->service->getMetrics($this->shopOwner->id);
 
-        $this->assertEquals(3, $metrics['total_requests']);
+        $this->assertEquals(3, $metrics['total_purchase_requests']);
         $this->assertEquals(1, $metrics['pending_finance']);
-        $this->assertEquals(1, $metrics['approved']);
-        $this->assertEquals(1, $metrics['rejected']);
+        $this->assertEquals(1, $metrics['approved_requests']);
+        $this->assertEquals(1, $metrics['rejected_requests']);
     }
 
     /** @test */

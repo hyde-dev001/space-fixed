@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Models;
 
+use App\Enums\EmployeeStatus;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 use App\Models\ShopOwner;
@@ -120,22 +121,22 @@ class EmployeeTest extends TestCase
     #[Test]
     public function test_employee_can_be_suspended()
     {
-        $this->assertEquals('active', $this->employee->status);
+        $this->assertSame(EmployeeStatus::ACTIVE, $this->employee->status);
 
         $this->employee->update(['status' => 'suspended']);
 
-        $this->assertEquals('suspended', $this->employee->fresh()->status);
+        $this->assertSame(EmployeeStatus::SUSPENDED, $this->employee->fresh()->status);
     }
 
     #[Test]
     public function test_employee_can_be_activated()
     {
         $this->employee->update(['status' => 'suspended']);
-        $this->assertEquals('suspended', $this->employee->status);
+        $this->assertSame(EmployeeStatus::SUSPENDED, $this->employee->status);
 
         $this->employee->update(['status' => 'active']);
 
-        $this->assertEquals('active', $this->employee->fresh()->status);
+        $this->assertSame(EmployeeStatus::ACTIVE, $this->employee->fresh()->status);
     }
 
     #[Test]

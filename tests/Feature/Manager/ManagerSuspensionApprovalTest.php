@@ -8,6 +8,7 @@ use App\Models\ShopOwner;
 use App\Models\SuspensionRequest;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 /**
@@ -38,6 +39,8 @@ class ManagerSuspensionApprovalTest extends TestCase
         $this->manager = User::factory()
             ->for($this->shop)
             ->create(['role' => 'Manager']);
+        Role::findOrCreate('Manager', 'user');
+        $this->manager->assignRole('Manager');
 
         $this->employee = Employee::factory()
             ->for($this->shop)
@@ -63,7 +66,7 @@ class ManagerSuspensionApprovalTest extends TestCase
             );
 
         $response->assertStatus(200);
-        $response->assertJson(['message' => 'Suspension request approved']);
+        $response->assertJson(['message' => 'Suspension request approved and forwarded to shop owner.']);
 
         // Verify status changed in database
         $this->suspension->refresh();
@@ -88,7 +91,7 @@ class ManagerSuspensionApprovalTest extends TestCase
             );
 
         $response->assertStatus(200);
-        $response->assertJson(['message' => 'Suspension request rejected']);
+        $response->assertJson(['message' => 'Suspension request rejected.']);
 
         $this->suspension->refresh();
         $this->assertEquals(SuspensionStatus::REJECTED_MANAGER, $this->suspension->status);
