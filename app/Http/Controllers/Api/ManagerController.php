@@ -1199,6 +1199,8 @@ class ManagerController extends Controller
                 'report' => $this->mapManagerReport($report),
                 'download_url' => url("/api/manager/reports/{$report->id}/download"),
             ], 201);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             Log::error('Failed to generate manager report: ' . $e->getMessage(), [
                 'exception' => $e,
@@ -1254,6 +1256,10 @@ class ManagerController extends Controller
                 'message' => 'Report marked as sent to shop owner',
                 'report' => $this->mapManagerReport($report->fresh()),
             ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            throw $e;
         } catch (\Exception $e) {
             Log::error('Failed to send manager report: ' . $e->getMessage(), [
                 'exception' => $e,
@@ -1308,10 +1314,12 @@ class ManagerController extends Controller
             $report->update(['downloaded_at' => now()]);
 
             return response()->download(
-                storage_path('app/' . $report->file_path),
+                Storage::disk('local')->path($report->file_path),
                 $fileName,
                 ['Content-Type' => 'text/csv']
             );
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            throw $e;
         } catch (\Exception $e) {
             Log::error('Failed to download manager report: ' . $e->getMessage(), [
                 'exception' => $e,
@@ -1449,6 +1457,4 @@ class ManagerController extends Controller
         }
     }
 }
-
-
 
