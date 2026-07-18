@@ -236,11 +236,14 @@ class ShipmentLegService
             ->first();
         if (!$refund) return;
 
-        $this->refunds->confirmReturnReceived($refund, null, lineDispositions: $refund->items->map(fn ($line) => [
+        $result = $this->refunds->confirmReturnReceived($refund, null, lineDispositions: $refund->items->map(fn ($line) => [
             'order_item_id' => (int) $line->order_item_id,
             'approved_qty' => (int) $line->approved_qty,
             'inspection_disposition' => 'resellable',
         ])->all());
+        if (($result['result'] ?? null) !== 'received') {
+            throw ValidationException::withMessages(['refund' => $result['message'] ?? 'Failed-delivery refund could not be completed.']);
+        }
     }
 
     public function recordFailedAttempt(ShipmentLeg $leg, array $payload, bool $allowAssigned = false): DeliveryAttempt

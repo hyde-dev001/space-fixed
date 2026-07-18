@@ -900,7 +900,7 @@ class OrderRefundService
                 $approvedQty = (int) ($input['approved_qty'] ?? 0);
 
                 if (!$orderItem || (int) $line->product_id !== (int) $orderItem->product_id
-                    || !$line->product_variant_id || (int) $line->product_variant_id !== (int) $orderItem->product_variant_id
+                    || (int) ($line->product_variant_id ?? 0) !== (int) ($orderItem->product_variant_id ?? 0)
                     || $approvedQty !== (int) $line->approved_qty || $approvedQty !== (int) $orderItem->quantity
                     || !in_array($disposition, ['resellable', 'damaged'], true)) {
                     return $this->invalidReturnReceipt($refund, 'Return item identity, quantity, or disposition is invalid.');
