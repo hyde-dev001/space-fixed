@@ -223,8 +223,16 @@ class InventoryItem extends Model
      */
     public function decrementStock(int $quantity, string $type = 'stock_out', ?string $notes = null, ?int $userId = null): StockMovement
     {
+        if ($quantity <= 0) {
+            throw new \InvalidArgumentException('Stock deduction quantity must be greater than zero.');
+        }
+
+        if ($quantity > $this->available_quantity) {
+            throw new \InvalidArgumentException('Stock deduction exceeds available quantity.');
+        }
+
         $quantityBefore = $this->available_quantity;
-        $this->available_quantity = max(0, $this->available_quantity - $quantity);
+        $this->available_quantity -= $quantity;
         $this->save();
 
         return $this->stockMovements()->create([
