@@ -582,6 +582,7 @@ class RepairPackageApiTest extends TestCase
             'package_price' => 900,
             'add_ons_total' => 200,
             'final_total' => 1100,
+            'total_paid_amount' => 1100,
             'created_at' => now()->subDays(5),
             'updated_at' => now()->subDays(5),
             'status' => 'completed',
@@ -592,6 +593,7 @@ class RepairPackageApiTest extends TestCase
             'package_price' => 900,
             'add_ons_total' => 0,
             'final_total' => 900,
+            'total_paid_amount' => 900,
             'created_at' => now()->subDays(2),
             'updated_at' => now()->subDays(2),
             'status' => 'new_request',
@@ -612,12 +614,12 @@ class RepairPackageApiTest extends TestCase
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.overview.total_packages', 1)
             ->assertJsonPath('data.overview.total_bookings', 2)
-            ->assertJsonPath('data.overview.package_revenue', 2000)
-            ->assertJsonPath('data.overview.add_on_revenue', 200)
+            ->assertJsonPath('data.overview.package_revenue', 1785.71)
+            ->assertJsonPath('data.overview.add_on_revenue', 178.57)
             ->assertJsonPath('data.overview.add_on_attach_rate', 50)
             ->assertJsonPath('data.top_packages.0.name', 'Package A')
             ->assertJsonPath('data.top_packages.0.booking_count', 2)
-            ->assertJsonPath('data.top_packages.0.revenue', 2000);
+            ->assertJsonPath('data.top_packages.0.revenue', 1785.71);
 
         $this->assertCount(1, $response->json('data.top_packages'));
     }
