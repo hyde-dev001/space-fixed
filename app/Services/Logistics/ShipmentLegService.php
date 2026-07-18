@@ -207,23 +207,40 @@ class ShipmentLegService
             $proof = HandoffProof::query()->lockForUpdate()->findOrFail($proof->id);
             if ($return->shipment->shop_owner_id !== $shop->id || $return->leg_type !== 'return_to_shop'
                 || $proof->shipment_leg_id !== $return->id || $proof->handoff_type !== 'receive') abort(403);
-            if ($return->status->value === 'delivered' && $proof->review_status === 'approved') return $return;
+            $original = ShipmentLeg::query()->lockForUpdate()->findOrFail($return->return_for_leg_id);
+            if ($return->status->value === 'delivered' && $proof->review_status === 'approved') {
+                $this->completeFailedDeliveryRefundReturn($return, $original);
+                return $return->fresh();
+            }
             if ($proof->review_status !== 'rider_confirmed') abort(403);
             $proof->update(['review_status' => 'approved', 'reviewed_by_type' => ShopOwner::class, 'reviewed_by_id' => $shop->id, 'reviewed_at' => now()]);
             $return->update(['status' => 'delivered', 'delivered_at' => now()]);
-            $original = ShipmentLeg::query()->lockForUpdate()->findOrFail($return->return_for_leg_id);
             $original->update(['status' => 'cancelled', 'resolution_type' => 'returned']);
-            if ($return->shipment->source_type === 'order' && $return->shipment->purpose === 'retail_delivery') {
-                OrderRefund::query()
-                    ->where('order_id', $return->shipment->source_id)
-                    ->where('idempotency_key', "delivery-attempts-exhausted:{$return->shipment->source_id}:{$original->id}")
-                    ->where('return_status', 'pending_staff_pickup')
-                    ->update(['return_status' => 'in_transit', 'staff_return_shipped_at' => now()]);
-            }
+            $this->completeFailedDeliveryRefundReturn($return, $original);
             $return->shipment->update(['status' => 'cancelled', 'cancelled_at' => now()]);
             $this->events->record($return->shipment, $return, ['event_type' => 'return_received', 'visibility' => 'customer', 'message' => 'The returned parcel was received by the shop.']);
             return $return->fresh();
         });
+    }
+
+    private function completeFailedDeliveryRefundReturn(ShipmentLeg $return, ShipmentLeg $original): void
+    {
+        if ($return->shipment->source_type !== 'order' || $return->shipment->purpose !== 'retail_delivery') return;
+
+        $refund = OrderRefund::query()
+            ->with('items')
+            ->where('order_id', $return->shipment->source_id)
+            ->where('reason_code', 'delivery_attempts_exhausted')
+            ->where('idempotency_key', "delivery-attempts-exhausted:{$return->shipment->source_id}:{$original->id}")
+            ->latest('id')
+            ->first();
+        if (!$refund) return;
+
+        $this->refunds->confirmReturnReceived($refund, null, lineDispositions: $refund->items->map(fn ($line) => [
+            'order_item_id' => (int) $line->order_item_id,
+            'approved_qty' => (int) $line->approved_qty,
+            'inspection_disposition' => 'resellable',
+        ])->all());
     }
 
     public function recordFailedAttempt(ShipmentLeg $leg, array $payload, bool $allowAssigned = false): DeliveryAttempt

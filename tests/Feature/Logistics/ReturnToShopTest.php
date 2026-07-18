@@ -8,7 +8,6 @@ use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\Order;
-use App\Models\OrderRefund;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\Logistics\ProofService;
@@ -112,14 +111,6 @@ class ReturnToShopTest extends TestCase
             'status' => 'in_transit',
             'return_for_leg_id' => $original->id,
         ]);
-        $refund = OrderRefund::factory()->create([
-            'order_id' => $order->id,
-            'shop_owner_id' => $shop->id,
-            'return_status' => 'pending_staff_pickup',
-            'return_source' => 'staff',
-            'staff_return_carrier' => 'Shop-owned logistics',
-            'idempotency_key' => "delivery-attempts-exhausted:{$order->id}:{$original->id}",
-        ]);
         $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
         $rider->givePermissionTo('record-logistics-proof');
         $profile = RiderProfile::factory()->create([
@@ -156,7 +147,6 @@ class ReturnToShopTest extends TestCase
         $this->assertSame('delivered', $return->fresh()->status->value);
         $this->assertSame('returned', $original->fresh()->resolution_type);
         $this->assertSame('approved', HandoffProof::findOrFail($proofId)->review_status);
-        $this->assertSame('in_transit', $refund->fresh()->return_status);
     }
 
     public function test_return_receipt_rejects_proof_from_another_leg(): void

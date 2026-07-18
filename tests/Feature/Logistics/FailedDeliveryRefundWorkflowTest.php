@@ -147,36 +147,31 @@ class FailedDeliveryRefundWorkflowTest extends TestCase
     {
         [$order, $leg, $items] = $this->paidOrderWithOutboundLeg();
         [$refund, $return] = $this->exhaustDelivery($order, $leg);
-        $service = app(OrderRefundService::class);
-        $dispositions = $items->values()->map(fn ($item, $index) => [
-            'order_item_id' => $item->id,
-            'approved_qty' => 1,
-            'inspection_disposition' => $index === 0 ? 'resellable' : 'damaged',
-        ])->all();
-
-        $blocked = $service->confirmReturnReceived($refund, $order->customer_id, lineDispositions: $dispositions);
-        $this->assertSame('invalid_state', $blocked['result']);
-
-        $return->update(['status' => 'delivered', 'delivered_at' => now()]);
-        HandoffProof::factory()->create([
+        $proof = HandoffProof::factory()->create([
             'shipment_leg_id' => $return->id,
             'handoff_type' => 'receive',
             'proof_type' => 'photo',
-            'review_status' => 'approved',
+            'review_status' => 'rider_confirmed',
         ]);
         $product = $items->first()->product;
         $variant = $items->first()->productVariant;
         $productStock = $product->stock_quantity;
         $variantStock = $variant->quantity;
 
-        $received = $service->confirmReturnReceived($refund->fresh(), $order->customer_id, lineDispositions: $dispositions);
+        app(ShipmentLegService::class)->confirmReturnReceipt($return, $proof, $order->shopOwner);
 
-        $this->assertSame('received', $received['result']);
-        $this->assertSame($productStock + 1, $product->fresh()->stock_quantity);
-        $this->assertSame($variantStock + 1, $variant->fresh()->quantity);
-        $this->assertDatabaseHas('order_refund_items', ['order_item_id' => $items[0]->id, 'inventory_action' => 'restock']);
-        $this->assertDatabaseHas('order_refund_items', ['order_item_id' => $items[1]->id, 'inventory_action' => 'write_off']);
+        $this->assertSame('received', $refund->fresh()->return_status);
+        $this->assertNotNull($refund->fresh()->return_confirmed_at);
+        $this->assertNull($refund->fresh()->return_confirmed_by_staff_id);
+        $this->assertSame($productStock + 2, $product->fresh()->stock_quantity);
+        $this->assertSame($variantStock + 2, $variant->fresh()->quantity);
+        $this->assertDatabaseMissing('order_refund_items', [
+            'order_refund_id' => $refund->id,
+            'inspection_disposition' => 'pending',
+        ]);
+        $this->assertSame(2, $refund->items()->where('inventory_action', 'restock')->count());
 
+        $service = app(OrderRefundService::class);
         $approved = $service->approveRequestedRefund($refund->fresh(), 'finance', $order->customer_id);
         $this->assertSame('approved', $approved['result']);
         $this->assertSame('approved', $approved['refund']->finance_status);
@@ -184,9 +179,15 @@ class FailedDeliveryRefundWorkflowTest extends TestCase
         $this->assertSame('received', $approved['refund']->return_status);
         $this->assertStringContainsString('approval was bypassed', strtolower((string) $approved['refund']->reason_note));
 
-        $service->confirmReturnReceived($refund->fresh(), $order->customer_id, lineDispositions: $dispositions);
-        $this->assertSame($productStock + 1, $product->fresh()->stock_quantity);
-        $this->assertSame($variantStock + 1, $variant->fresh()->quantity);
+        $refund->update(['return_status' => 'pending_staff_pickup']);
+        $stockAfterFirstReceipt = $product->fresh()->stock_quantity;
+        $variantStockAfterFirstReceipt = $variant->fresh()->quantity;
+
+        app(ShipmentLegService::class)->confirmReturnReceipt($return->fresh(), $proof->fresh(), $order->shopOwner);
+
+        $this->assertSame('received', $refund->fresh()->return_status);
+        $this->assertSame($stockAfterFirstReceipt, $product->fresh()->stock_quantity);
+        $this->assertSame($variantStockAfterFirstReceipt, $variant->fresh()->quantity);
     }
 
     public function test_failed_delivery_receipt_rejects_missing_lines_and_finance_waits_for_receipt(): void
