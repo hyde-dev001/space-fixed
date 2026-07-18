@@ -1423,7 +1423,11 @@ Route::middleware(['auth:user', 'check.user.business.type:repair,both'])->prefix
 
 // Manager API Routes (Phase 5 - Rejection Review)
 // Accessible by Manager role or explicit manager-level permissions
-Route::middleware(['auth:user', 'role_or_permission:Manager|access-manager-dashboard|access-repair-reject-review'])->prefix('api/manager/repairs')->group(function () {
+Route::middleware([
+    'auth:user',
+    'role_or_permission:Manager|access-manager-dashboard|access-repair-reject-review',
+    'check.user.business.type:repair,both',
+])->prefix('api/manager/repairs')->group(function () {
     // Get repairs pending manager review
     Route::get('/rejected', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'getPendingManagerReviews']);
 

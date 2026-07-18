@@ -1100,7 +1100,15 @@ class RepairWorkflowController extends Controller
                 ], 403);
             }
             
-            $repairRequest = RepairRequest::findOrFail($requestId);
+            $repairRequest = RepairRequest::find($requestId);
+
+            if (!$repairRequest) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Repair request not found',
+                ], 404);
+            }
             
             // Verify this is from same shop
             if ($repairRequest->shop_owner_id != $user->shop_owner_id) {
@@ -1617,7 +1625,9 @@ class RepairWorkflowController extends Controller
                         $query->whereIn('status', $this->getActiveRepairStatuses());
                     }
                 ])
-                ->having('active_repairs_count', '<', $workloadLimit);
+                ->whereHas('assignedRepairs', function ($query) {
+                    $query->whereIn('status', $this->getActiveRepairStatuses());
+                }, '<', $workloadLimit);
 
             $repairers = $baseQuery->get()->map(function ($repairer) {
                 return [
@@ -4381,7 +4391,9 @@ class RepairWorkflowController extends Controller
                     $query->whereIn('status', $this->getActiveRepairStatuses());
                 }
             ])
-            ->having('active_repairs_count', '<', $workloadLimit);
+            ->whereHas('assignedRepairs', function ($query) {
+                $query->whereIn('status', $this->getActiveRepairStatuses());
+            }, '<', $workloadLimit);
 
         $workloadFallback = (clone $baseRepairerQuery)
             ->orderBy('active_repairs_count')
@@ -4410,7 +4422,9 @@ class RepairWorkflowController extends Controller
                     $query->whereIn('status', $this->getActiveRepairStatuses());
                 }
             ])
-            ->having('active_repairs_count', '<', $workloadLimit)
+            ->whereHas('assignedRepairs', function ($query) {
+                $query->whereIn('status', $this->getActiveRepairStatuses());
+            }, '<', $workloadLimit)
             ->orderBy('active_repairs_count')
             ->orderBy('id')
             ->first();
