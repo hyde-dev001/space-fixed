@@ -2,16 +2,26 @@
 
 namespace Tests\Unit;
 
+use App\Events\LowStockAlert;
+use App\Events\OutOfStockAlert;
 use App\Jobs\CheckLowStockJob;
 use App\Models\InventoryAlert;
 use App\Models\InventoryItem;
 use App\Models\ShopOwner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 
 class CheckLowStockJobTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Event::fake([LowStockAlert::class, OutOfStockAlert::class]);
+    }
 
     /** @test */
     public function it_creates_alerts_for_low_stock_items()
@@ -36,7 +46,7 @@ class CheckLowStockJobTest extends TestCase
         $this->assertDatabaseHas('inventory_alerts', [
             'inventory_item_id' => $lowStockItem->id,
             'alert_type' => 'low_stock',
-            'status' => 'active',
+            'is_resolved' => false,
         ]);
 
         $this->assertDatabaseMissing('inventory_alerts', [
@@ -60,7 +70,7 @@ class CheckLowStockJobTest extends TestCase
         $this->assertDatabaseHas('inventory_alerts', [
             'inventory_item_id' => $outOfStockItem->id,
             'alert_type' => 'out_of_stock',
-            'status' => 'active',
+            'is_resolved' => false,
         ]);
     }
 
@@ -78,8 +88,7 @@ class CheckLowStockJobTest extends TestCase
         InventoryAlert::create([
             'inventory_item_id' => $lowStockItem->id,
             'alert_type' => 'low_stock',
-            'status' => 'active',
-            'message' => 'Low stock alert',
+            'is_resolved' => false,
         ]);
 
         $job = new CheckLowStockJob($shopOwner->id);
