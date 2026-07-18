@@ -68,7 +68,7 @@ export default function MyDeliveries() {
         text: `${successful} successful · ${skipped} skipped · ${failed} failed`,
       });
       setBatchSelection(batch.id, []);
-      router.reload({ only: ['batches'] });
+      router.reload({ only: ['batches', 'shipments'] });
     } finally {
       setProcessingBatchId(null);
     }

@@ -155,7 +155,7 @@ describe('MyDeliveries', () => {
     expect(mocks.outForDelivery).not.toHaveBeenCalled();
     expect(mocks.confirm).toHaveBeenCalledTimes(1);
     expect(mocks.alert).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining('1 skipped') }));
-    expect(mocks.reload).toHaveBeenCalledWith({ only: ['batches'] });
+    expect(mocks.reload).toHaveBeenCalledWith({ only: ['batches', 'shipments'] });
     expect(screen.getByRole('checkbox', { name: 'Select stop 1 in batch 1' })).not.toBeChecked();
   });
 
@@ -169,6 +169,7 @@ describe('MyDeliveries', () => {
     await waitFor(() => expect(mocks.outForDelivery).toHaveBeenCalledWith(2));
     expect(mocks.outForDelivery).toHaveBeenCalledTimes(1);
     expect(mocks.markPickedUp).not.toHaveBeenCalled();
+    expect(mocks.reload).toHaveBeenCalledWith({ only: ['batches', 'shipments'] });
   });
 
   it('reports partial failures without cancelling successful stops', async () => {
@@ -211,7 +212,7 @@ describe('MyDeliveries', () => {
     expect(screen.getByRole('button', { name: 'Mark Picked Up (1)' })).toBeDisabled();
 
     finishRequest?.();
-    await waitFor(() => expect(mocks.reload).toHaveBeenCalledWith({ only: ['batches'] }));
+    await waitFor(() => expect(mocks.reload).toHaveBeenCalledWith({ only: ['batches', 'shipments'] }));
   });
 
   it('disables bulk controls in every batch while any bulk request is pending', async () => {
@@ -232,6 +233,6 @@ describe('MyDeliveries', () => {
     expect(mocks.confirm).toHaveBeenCalledTimes(1);
 
     finishRequest?.();
-    await waitFor(() => expect(mocks.reload).toHaveBeenCalledWith({ only: ['batches'] }));
+    await waitFor(() => expect(mocks.reload).toHaveBeenCalledWith({ only: ['batches', 'shipments'] }));
   });
 });
