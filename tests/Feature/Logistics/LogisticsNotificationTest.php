@@ -94,6 +94,30 @@ class LogisticsNotificationTest extends TestCase
         ]);
     }
 
+    public function test_dispatcher_is_notified_when_a_delivery_attempt_fails(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        $shop = ShopOwner::factory()->create();
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $dispatcher->assignRole('Logistics Dispatcher');
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+        $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id]);
+
+        app(DeliveryEventService::class)->record($shipment, $leg, [
+            'event_type' => 'delivery_attempt_failed',
+            'visibility' => 'customer',
+            'message' => 'Delivery attempt failed.',
+        ]);
+
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $dispatcher->id,
+            'type' => 'logistics_delivery_failed',
+            'message' => 'A delivery attempt failed and needs review.',
+            'action_url' => '/erp/logistics/shipments?status=failed_attempts',
+            'requires_action' => true,
+        ]);
+    }
+
     public function test_rider_is_notified_when_a_delivery_is_assigned(): void
     {
         $shop = ShopOwner::factory()->create(['registration_type' => 'company']);

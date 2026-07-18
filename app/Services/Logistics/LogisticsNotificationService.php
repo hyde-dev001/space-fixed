@@ -25,7 +25,7 @@ class LogisticsNotificationService
             return;
         }
 
-        if (in_array($event->event_type, ['shipment_requested', 'batch_rejected', 'proof_required'], true)) {
+        if (in_array($event->event_type, ['shipment_requested', 'batch_rejected', 'proof_required', 'delivery_attempt_failed'], true)) {
             $this->notifyDispatchers($event, $type);
         }
 
@@ -84,6 +84,7 @@ class LogisticsNotificationService
                     'message' => match ($event->event_type) {
                         'batch_rejected' => "{$event->metadata['rider_name']} rejected the batch offer: {$event->metadata['rejection_reason']}",
                         'proof_required' => 'Delivery proof is awaiting your approval.',
+                        'delivery_attempt_failed' => 'A delivery attempt failed and needs review.',
                         default => 'A new shipment needs rider assignment.',
                     },
                     'data' => $this->eventData($event) + ($event->event_type === 'batch_rejected' ? [
@@ -93,6 +94,7 @@ class LogisticsNotificationService
                     'action_url' => match ($event->event_type) {
                         'batch_rejected' => '/erp/logistics/batches',
                         'proof_required' => '/erp/logistics/shipments?status=awaiting_proof_approval',
+                        'delivery_attempt_failed' => '/erp/logistics/shipments?status=failed_attempts',
                         default => '/erp/logistics/shipments',
                     },
                     'requires_action' => true,
