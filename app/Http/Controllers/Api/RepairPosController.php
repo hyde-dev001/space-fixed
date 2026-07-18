@@ -660,10 +660,16 @@ class RepairPosController extends Controller
             ->where('shop_owner_id', $shopOwnerId)
             ->where('manual_pos_queue_enabled', true)
             ->where('request_id', 'like', 'REP-POS-%')
+            ->whereNull('assigned_repairer_id')
             ->whereIn('status', ['pending', 'received', 'in_progress', 'ready_for_pickup'])
             ->with([
                 'latestPosTransaction.receipt',
-                'latestWarrantyClaim:id,original_repair_request_id,status,approved_once_guard',
+                'latestWarrantyClaim' => fn ($query) => $query->select([
+                    'repair_warranty_claims.id',
+                    'repair_warranty_claims.original_repair_request_id',
+                    'repair_warranty_claims.status',
+                    'repair_warranty_claims.approved_once_guard',
+                ]),
             ])
             ->when($q !== '', function ($query) use ($q) {
                 $query->where(function ($inner) use ($q) {
