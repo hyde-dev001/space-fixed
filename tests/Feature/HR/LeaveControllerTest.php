@@ -2,130 +2,111 @@
 
 namespace Tests\Feature\HR;
 
-use PHPUnit\Framework\Attributes\Test;
-use Tests\TestCase;
-use App\Models\User;
-use App\Models\ShopOwner;
 use App\Models\Employee;
-use App\Models\HR\LeaveRequest;
 use App\Models\HR\LeaveBalance;
+use App\Models\HR\LeaveRequest;
+use App\Models\ShopOwner;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Foundation\Testing\WithFaker;
+use Illuminate\Support\Facades\Notification;
+use PHPUnit\Framework\Attributes\Test;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\PermissionRegistrar;
+use Tests\TestCase;
 
 class LeaveControllerTest extends TestCase
 {
-    use RefreshDatabase, WithFaker;
+    use RefreshDatabase;
 
-    protected $shopOwner;
-    protected $hrUser;
-    protected $managerUser;
-    protected $employee;
-    protected $manager;
+    protected ShopOwner $shopOwner;
+    protected User $hrUser;
+    protected User $managerUser;
+    protected Employee $employee;
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        $this->shopOwner = ShopOwner::factory()->create();
+        Notification::fake();
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        Permission::findOrCreate('access-employee-directory', 'user');
 
+        $this->shopOwner = ShopOwner::factory()->approved()->create();
         $this->hrUser = User::factory()->create([
             'shop_owner_id' => $this->shopOwner->id,
             'role' => 'HR',
         ]);
+        $this->hrUser->givePermissionTo('access-employee-directory');
 
-        $this->employee = Employee::factory()->create([
+        $this->employee = Employee::factory()->active()->create([
             'shop_owner_id' => $this->shopOwner->id,
-        ]);
-
-        $this->manager = Employee::factory()->create([
-            'shop_owner_id' => $this->shopOwner->id,
+            'email' => $this->hrUser->email,
         ]);
 
         $this->managerUser = User::factory()->create([
             'shop_owner_id' => $this->shopOwner->id,
             'role' => 'manager',
         ]);
+        $this->managerUser->givePermissionTo('access-employee-directory');
 
-        // Create leave balance
-        LeaveBalance::create([
-            'employee_id' => $this->employee->id,
-            'leave_type' => 'annual',
-            'balance' => 15,
-            'used' => 0,
-            'shop_owner_id' => $this->shopOwner->id,
-        ]);
+        LeaveBalance::createForNewEmployee($this->employee->id, $this->shopOwner->id, now()->year);
     }
 
     #[Test]
-    public function test_employee_can_apply_leave()
+    public function test_employee_can_apply_leave(): void
     {
-        $leaveData = [
-            'employee_id' => $this->employee->id,
-            'leave_type' => 'annual',
-            'start_date' => now()->addDays(5)->format('Y-m-d'),
-            'end_date' => now()->addDays(7)->format('Y-m-d'),
-            'days' => 3,
-            'reason' => 'Family vacation',
-        ];
-
-        $response = $this->actingAs($this->hrUser, 'sanctum')
-            ->postJson('/api/hr/leave-requests', $leaveData);
+        $startDate = now()->next('Monday');
+        $response = $this->actingAs($this->hrUser, 'user')
+            ->postJson('/api/staff/leave/request', [
+                'leave_type' => 'vacation',
+                'start_date' => $startDate->toDateString(),
+                'end_date' => $startDate->copy()->addDays(2)->toDateString(),
+                'reason' => 'Family vacation',
+            ]);
 
         $response->assertStatus(201)
             ->assertJsonStructure([
                 'message',
-                'data' => ['id', 'employee_id', 'status']
+                'leave_request' => ['id', 'leave_type', 'status'],
             ]);
 
-        $this->assertDatabaseHas('hr_leave_requests', [
+        $this->assertDatabaseHas('leave_requests', [
             'employee_id' => $this->employee->id,
             'status' => 'pending',
-            'days' => 3,
+            'no_of_days' => 3,
         ]);
     }
 
     #[Test]
-    public function test_leave_balance_validated()
+    public function test_leave_balance_validated(): void
     {
-        $leaveData = [
+        $startDate = now()->next('Monday');
+        $response = $this->actingAs($this->hrUser, 'user')
+            ->postJson('/api/staff/leave/request', [
+                'leave_type' => 'vacation',
+                'start_date' => $startDate->toDateString(),
+                'end_date' => $startDate->copy()->addDays(29)->toDateString(),
+                'reason' => 'Extended vacation',
+            ]);
+
+        $response->assertStatus(422);
+        $this->assertDatabaseMissing('leave_requests', [
             'employee_id' => $this->employee->id,
-            'leave_type' => 'annual',
-            'start_date' => now()->addDays(5)->format('Y-m-d'),
-            'end_date' => now()->addDays(25)->format('Y-m-d'), // 21 days
-            'days' => 21,
-            'reason' => 'Extended vacation',
-        ];
-
-        // Employee only has 15 days available
-        $response = $this->actingAs($this->hrUser, 'sanctum')
-            ->postJson('/api/hr/leave-requests', $leaveData);
-
-        // Should fail validation or return error
-        $response->assertStatus(422); // Validation error
-
-        $this->assertDatabaseMissing('hr_leave_requests', [
-            'employee_id' => $this->employee->id,
-            'days' => 21,
         ]);
     }
 
     #[Test]
-    public function test_manager_can_approve_team_leave()
+    public function test_manager_can_approve_team_leave(): void
     {
-        $leaveRequest = LeaveRequest::factory()->create([
-            'employee_id' => $this->employee->id,
-            'status' => 'pending',
-            'days' => 3,
-            'shop_owner_id' => $this->shopOwner->id,
-        ]);
+        $leaveRequest = $this->createLeaveRequest($this->employee);
 
-        $response = $this->actingAs($this->hrUser, 'sanctum')
+        $response = $this->actingAs($this->hrUser, 'user')
             ->postJson("/api/hr/leave-requests/{$leaveRequest->id}/approve");
 
         $response->assertStatus(200)
-            ->assertJson(['message' => 'Leave request approved']);
+            ->assertJson(['message' => 'Leave request approved successfully']);
 
-        $this->assertDatabaseHas('hr_leave_requests', [
+        $this->assertDatabaseHas('leave_requests', [
             'id' => $leaveRequest->id,
             'status' => 'approved',
             'approved_by' => $this->hrUser->id,
@@ -133,84 +114,53 @@ class LeaveControllerTest extends TestCase
     }
 
     #[Test]
-    public function test_manager_cannot_approve_other_team_leave()
+    public function test_manager_cannot_approve_other_team_leave(): void
     {
-        // Create another shop owner
         $otherShopOwner = ShopOwner::factory()->create();
-        $otherEmployee = Employee::factory()->create([
-            'shop_owner_id' => $otherShopOwner->id,
-        ]);
+        $otherEmployee = Employee::factory()->create(['shop_owner_id' => $otherShopOwner->id]);
+        $leaveRequest = $this->createLeaveRequest($otherEmployee);
 
-        $leaveRequest = LeaveRequest::factory()->create([
-            'employee_id' => $otherEmployee->id,
-            'status' => 'pending',
-            'shop_owner_id' => $otherShopOwner->id,
-        ]);
-
-        // Manager from different shop tries to approve
-        $response = $this->actingAs($this->managerUser, 'sanctum')
+        $response = $this->actingAs($this->managerUser, 'user')
             ->postJson("/api/hr/leave-requests/{$leaveRequest->id}/approve");
 
-        $response->assertStatus(404); // Should not find leave request
-
-        $this->assertDatabaseHas('hr_leave_requests', [
+        $response->assertStatus(404);
+        $this->assertDatabaseHas('leave_requests', [
             'id' => $leaveRequest->id,
-            'status' => 'pending', // Status unchanged
+            'status' => 'pending',
         ]);
     }
 
     #[Test]
-    public function test_leave_deducted_from_balance_on_approval()
+    public function test_leave_deducted_from_balance_on_approval(): void
     {
-        $leaveRequest = LeaveRequest::factory()->create([
-            'employee_id' => $this->employee->id,
-            'leave_type' => 'annual',
-            'status' => 'pending',
-            'days' => 5,
-            'shop_owner_id' => $this->shopOwner->id,
+        $startDate = now()->next('Monday');
+        $leaveRequest = $this->createLeaveRequest($this->employee, [
+            'start_date' => $startDate,
+            'end_date' => $startDate->copy()->addDays(4),
         ]);
+        $initialUsedVacation = (int) LeaveBalance::where('employee_id', $this->employee->id)
+            ->value('used_vacation');
 
-        $initialBalance = LeaveBalance::where('employee_id', $this->employee->id)
-            ->where('leave_type', 'annual')
-            ->first();
+        $this->actingAs($this->hrUser, 'user')
+            ->postJson("/api/hr/leave-requests/{$leaveRequest->id}/approve")
+            ->assertStatus(200);
 
-        $response = $this->actingAs($this->hrUser, 'sanctum')
-            ->postJson("/api/hr/leave-requests/{$leaveRequest->id}/approve");
-
-        $response->assertStatus(200);
-
-        $updatedBalance = LeaveBalance::where('employee_id', $this->employee->id)
-            ->where('leave_type', 'annual')
-            ->first();
-
-        $this->assertEquals(
-            $initialBalance->balance - 5,
-            $updatedBalance->balance
-        );
-
-        $this->assertEquals(
-            $initialBalance->used + 5,
-            $updatedBalance->used
-        );
+        $updatedBalance = LeaveBalance::where('employee_id', $this->employee->id)->firstOrFail();
+        $this->assertSame($initialUsedVacation + 5, (int) $updatedBalance->used_vacation);
     }
 
     #[Test]
-    public function test_can_reject_leave_request()
+    public function test_can_reject_leave_request(): void
     {
-        $leaveRequest = LeaveRequest::factory()->create([
-            'employee_id' => $this->employee->id,
-            'status' => 'pending',
-            'shop_owner_id' => $this->shopOwner->id,
-        ]);
+        $leaveRequest = $this->createLeaveRequest($this->employee);
 
-        $response = $this->actingAs($this->hrUser, 'sanctum')
+        $this->actingAs($this->hrUser, 'user')
             ->postJson("/api/hr/leave-requests/{$leaveRequest->id}/reject", [
-                'rejection_reason' => 'Insufficient staffing',
-            ]);
+                'reason' => 'Insufficient staffing',
+            ])
+            ->assertStatus(200);
 
-        $response->assertStatus(200);
-
-        $this->assertDatabaseHas('hr_leave_requests', [
+        $this->assertDatabaseHas('leave_requests', [
             'id' => $leaveRequest->id,
             'status' => 'rejected',
             'rejection_reason' => 'Insufficient staffing',
@@ -218,56 +168,68 @@ class LeaveControllerTest extends TestCase
     }
 
     #[Test]
-    public function test_can_get_employee_leave_balance()
+    public function test_can_get_employee_leave_balance(): void
     {
-        $response = $this->actingAs($this->hrUser, 'sanctum')
-            ->getJson("/api/hr/leave-requests/balance/{$this->employee->id}");
-
-        $response->assertStatus(200)
+        $this->actingAs($this->hrUser, 'user')
+            ->getJson("/api/hr/leave-requests/employee/{$this->employee->id}/balance")
+            ->assertStatus(200)
             ->assertJsonStructure([
-                '*' => ['leave_type', 'balance', 'used']
+                'employee_id',
+                'year',
+                'vacation_days',
+                'used_vacation',
             ]);
     }
 
     #[Test]
-    public function test_cannot_apply_overlapping_leave()
+    public function test_cannot_apply_overlapping_leave(): void
     {
-        // Create existing leave request
-        LeaveRequest::factory()->create([
-            'employee_id' => $this->employee->id,
-            'start_date' => now()->addDays(10),
-            'end_date' => now()->addDays(15),
+        $startDate = now()->next('Monday');
+        $this->createLeaveRequest($this->employee, [
+            'start_date' => $startDate,
+            'end_date' => $startDate->copy()->addDays(4),
             'status' => 'approved',
-            'shop_owner_id' => $this->shopOwner->id,
         ]);
 
-        // Try to create overlapping leave
-        $leaveData = [
-            'employee_id' => $this->employee->id,
-            'leave_type' => 'annual',
-            'start_date' => now()->addDays(12)->format('Y-m-d'),
-            'end_date' => now()->addDays(17)->format('Y-m-d'),
-            'days' => 6,
-            'reason' => 'Another vacation',
-        ];
-
-        $response = $this->actingAs($this->hrUser, 'sanctum')
-            ->postJson('/api/hr/leave-requests', $leaveData);
-
-        $response->assertStatus(422); // Validation error for overlap
+        $this->actingAs($this->hrUser, 'user')
+            ->postJson('/api/staff/leave/request', [
+                'leave_type' => 'vacation',
+                'start_date' => $startDate->copy()->addDays(2)->toDateString(),
+                'end_date' => $startDate->copy()->addDays(6)->toDateString(),
+                'reason' => 'Another vacation',
+            ])
+            ->assertStatus(422);
     }
 
     #[Test]
-    public function test_can_list_all_leave_requests()
+    public function test_can_list_all_leave_requests(): void
     {
-        LeaveRequest::factory()->count(5)->create([
-            'shop_owner_id' => $this->shopOwner->id,
-        ]);
+        foreach (range(1, 5) as $offset) {
+            $this->createLeaveRequest($this->employee, [
+                'start_date' => now()->next('Monday')->addWeeks($offset),
+                'end_date' => now()->next('Tuesday')->addWeeks($offset),
+            ]);
+        }
 
-        $response = $this->actingAs($this->hrUser, 'sanctum')
-            ->getJson('/api/hr/leave-requests');
-
-        $response->assertStatus(200)
+        $this->actingAs($this->hrUser, 'user')
+            ->getJson('/api/hr/leave-requests')
+            ->assertStatus(200)
             ->assertJsonCount(5, 'data');
+    }
+
+    private function createLeaveRequest(Employee $employee, array $overrides = []): LeaveRequest
+    {
+        $startDate = now()->next('Monday');
+
+        return LeaveRequest::create(array_merge([
+            'employee_id' => $employee->id,
+            'shop_owner_id' => $employee->shop_owner_id,
+            'leave_type' => 'vacation',
+            'start_date' => $startDate,
+            'end_date' => $startDate->copy()->addDay(),
+            'reason' => 'Planned leave',
+            'status' => 'pending',
+            'approval_level' => 1,
+        ], $overrides));
     }
 }
