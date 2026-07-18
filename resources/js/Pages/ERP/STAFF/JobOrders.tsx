@@ -355,6 +355,18 @@ const MetricCard: React.FC<MetricCardProps> = ({
   );
 };
 
+export const canConfirmReturnReceived = (order: Pick<Order, "latest_refund">) => {
+  const latestRefund = order.latest_refund;
+  if (!latestRefund || String(latestRefund.reason_code || '').toLowerCase() === 'delivery_attempts_exhausted') return false;
+  const isShopOwnedPickup = String(latestRefund.return_source || '').toLowerCase() === 'staff'
+    && String(latestRefund.staff_return_carrier || '').toLowerCase() === SHOP_OWNED_LOGISTICS.toLowerCase();
+
+  return String(latestRefund.flow_type || '').toLowerCase() === 'request_approval'
+    && (String(latestRefund.return_status || '').toLowerCase() === 'in_transit'
+      || (!isShopOwnedPickup && String(latestRefund.return_status || '').toLowerCase() === 'pending_staff_pickup'))
+    && !['rejected', 'failed'].includes(String(latestRefund.status || '').toLowerCase());
+};
+
 export default function JobOrdersPage() {
   const [error, setError] = useState<string | null>(null);
   const { auth, initialOrders } = usePage().props as any;
@@ -808,18 +820,6 @@ export default function JobOrdersPage() {
       label: '-',
       className: 'text-gray-500 dark:text-gray-400',
     };
-  };
-
-  const canConfirmReturnReceived = (order: Order) => {
-    const latestRefund = order.latest_refund;
-    if (!latestRefund) return false;
-    const isShopOwnedPickup = String(latestRefund.return_source || '').toLowerCase() === 'staff'
-      && String(latestRefund.staff_return_carrier || '').toLowerCase() === 'shop-owned logistics';
-
-    return String(latestRefund.flow_type || '').toLowerCase() === 'request_approval'
-      && (String(latestRefund.return_status || '').toLowerCase() === 'in_transit'
-        || (!isShopOwnedPickup && String(latestRefund.return_status || '').toLowerCase() === 'pending_staff_pickup'))
-      && !['rejected', 'failed'].includes(String(latestRefund.status || '').toLowerCase());
   };
 
   const canArrangeReturnPickup = (order: Order) => {
