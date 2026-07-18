@@ -79,6 +79,10 @@ class ProofService
             throw ValidationException::withMessages(['status' => 'Proof cannot be changed after delivery or cancellation.']);
         }
 
+        if ($leg->leg_type === 'return_to_shop' && $handoffType !== 'receive') {
+            throw ValidationException::withMessages(['handoff_type' => 'Return-to-shop legs require return handoff proof.']);
+        }
+
         if ($handoffType === 'pickup' && !in_array($status, ['pending', 'assigned', 'pickup_scheduled'], true)) {
             throw ValidationException::withMessages(['status' => 'Pickup proof can only be recorded before pickup.']);
         }

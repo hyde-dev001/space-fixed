@@ -191,7 +191,11 @@ class ShipmentLegService
             $proof = HandoffProof::query()->lockForUpdate()->findOrFail($proof->id);
             if ($return->leg_type !== 'return_to_shop' || $proof->shipment_leg_id !== $return->id || $proof->handoff_type !== 'receive'
                 || !$return->assignments()->where('rider_profile_id', $rider->id)->where('status', 'accepted')->exists()) abort(403);
-            if ($proof->review_status !== 'rider_confirmed') $proof->update(['review_status' => 'rider_confirmed', 'reviewed_by_type' => RiderProfile::class, 'reviewed_by_id' => $rider->id, 'reviewed_at' => now()]);
+            if ($return->status->value === 'delivered' && $proof->review_status === 'approved') return $return;
+            if (!in_array($proof->review_status, ['pending', 'rider_confirmed'], true)) {
+                throw ValidationException::withMessages(['proof' => 'This return handoff proof cannot be confirmed.']);
+            }
+            if ($proof->review_status === 'pending') $proof->update(['review_status' => 'rider_confirmed', 'reviewed_by_type' => RiderProfile::class, 'reviewed_by_id' => $rider->id, 'reviewed_at' => now()]);
             return $return;
         });
     }
@@ -201,8 +205,10 @@ class ShipmentLegService
         return DB::transaction(function () use ($return, $proof, $shop) {
             $return = ShipmentLeg::query()->with('shipment')->lockForUpdate()->findOrFail($return->id);
             $proof = HandoffProof::query()->lockForUpdate()->findOrFail($proof->id);
-            if ($return->shipment->shop_owner_id !== $shop->id || $return->leg_type !== 'return_to_shop' || $proof->review_status !== 'rider_confirmed') abort(403);
-            if ($return->status->value === 'delivered') return $return;
+            if ($return->shipment->shop_owner_id !== $shop->id || $return->leg_type !== 'return_to_shop'
+                || $proof->shipment_leg_id !== $return->id || $proof->handoff_type !== 'receive') abort(403);
+            if ($return->status->value === 'delivered' && $proof->review_status === 'approved') return $return;
+            if ($proof->review_status !== 'rider_confirmed') abort(403);
             $proof->update(['review_status' => 'approved', 'reviewed_by_type' => ShopOwner::class, 'reviewed_by_id' => $shop->id, 'reviewed_at' => now()]);
             $return->update(['status' => 'delivered', 'delivered_at' => now()]);
             $original = ShipmentLeg::query()->lockForUpdate()->findOrFail($return->return_for_leg_id);
@@ -261,6 +267,9 @@ class ShipmentLegService
             $leg = ShipmentLeg::query()->with('shipment.shopOwner.logisticsSetting')->lockForUpdate()->findOrFail($leg->id);
             if ((int) $leg->delivery_batch_id !== (int) $batchId || ($batchId && !$batch)) {
                 throw ValidationException::withMessages(['leg' => 'This stop changed batches. Please try again.']);
+            }
+            if ($leg->leg_type === 'return_to_shop') {
+                throw ValidationException::withMessages(['leg' => 'Return-to-shop legs use the return handoff workflow.']);
             }
             $this->assertTransitionAllowed($leg, $allowAssigned ? ['assigned', 'picked_up', 'in_transit', 'delivery_attempted'] : ['in_transit', 'delivery_attempted'], 'delivery attempted');
             if ($leg->delivery_batch_id && empty($payload['file_path'])) {

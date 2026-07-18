@@ -241,3 +241,48 @@ it('shows failed-attempt controls for a delivery-attempted leg', () => {
   expect(screen.getByLabelText('Issue reason')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Request cancellation' })).toBeInTheDocument();
 });
+
+it('uses return handoff controls instead of customer delivery outcomes', async () => {
+  mocks.props = defaultProps();
+  mocks.props.shipments.data[0].legs[0] = {
+    ...mocks.props.shipments.data[0].legs[0],
+    leg_type: 'return_to_shop',
+  };
+  mocks.post
+    .mockResolvedValueOnce({ data: { proof: { id: 17 } } })
+    .mockResolvedValueOnce({ data: { leg: { id: 2 } } });
+
+  render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+
+  expect(screen.queryByText('Delivered successfully')).not.toBeInTheDocument();
+  expect(screen.queryByText("Couldn't deliver")).not.toBeInTheDocument();
+  const photo = new File(['return'], 'return.jpg', { type: 'image/jpeg' });
+  fireEvent.change(screen.getByLabelText('Return handoff photo'), { target: { files: [photo] } });
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm return handoff' }));
+
+  await waitFor(() => expect(mocks.post).toHaveBeenCalledTimes(2));
+  const [proofUrl, proofBody] = mocks.post.mock.calls[0];
+  expect(proofUrl).toBe('/api/logistics/legs/2/proof');
+  expect((proofBody as FormData).get('handoff_type')).toBe('receive');
+  expect((proofBody as FormData).get('proof_file')).toBe(photo);
+  expect(mocks.post.mock.calls[1][0]).toBe('/api/logistics/legs/2/return-proofs/17/handoff');
+});
+
+it('lets staff confirm a rider-confirmed return receipt', async () => {
+  setDispatcherLeg({
+    id: 2,
+    leg_type: 'return_to_shop',
+    status: 'in_transit',
+    assignments: [{ id: 3, status: 'accepted' }],
+    attempts: [],
+    proofs: [{ id: 17, handoff_type: 'receive', review_status: 'rider_confirmed', file_path: 'return.jpg' }],
+  });
+  mocks.props.canApproveProof = true;
+
+  render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm return received' }));
+  await waitFor(() => expect(mocks.post).toHaveBeenCalledWith('/api/logistics/legs/2/return-proofs/17/receipt', undefined, undefined));
+});
