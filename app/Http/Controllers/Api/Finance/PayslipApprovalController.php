@@ -55,7 +55,7 @@ class PayslipApprovalController extends Controller
 
         $mappedByPermissionRole = User::query()
             ->where('shop_owner_id', $shopOwnerId)
-            ->whereHas('roles', fn ($query) => $query->whereIn('name', ['Shop Owner', 'SHOP_OWNER', 'shop_owner']))
+            ->whereHas('roles', fn ($query) => $query->whereIn('name', ['Shop Owner', 'SHOP_OWNER', 'shop_owner', 'shop-owner']))
             ->orderByDesc('id')
             ->value('id');
 
