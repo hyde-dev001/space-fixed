@@ -255,7 +255,7 @@ class ShipmentController extends Controller
 
     public function confirmReturnReceipt(ShipmentLeg $leg, HandoffProof $proof, ShipmentLegService $legs): JsonResponse
     {
-        $shop = $this->authorizedShop('resolve-logistics-exceptions');
+        $shop = $this->authorizedShopForProofApproval();
         $leg->loadMissing('shipment');
         $this->abortUnlessTenant($leg->shipment->shop_owner_id, $shop);
         return response()->json(['leg' => $legs->confirmReturnReceipt($leg, $proof, $shop)]);
