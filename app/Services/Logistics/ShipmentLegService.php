@@ -213,6 +213,13 @@ class ShipmentLegService
             $return->update(['status' => 'delivered', 'delivered_at' => now()]);
             $original = ShipmentLeg::query()->lockForUpdate()->findOrFail($return->return_for_leg_id);
             $original->update(['status' => 'cancelled', 'resolution_type' => 'returned']);
+            if ($return->shipment->source_type === 'order' && $return->shipment->purpose === 'retail_delivery') {
+                OrderRefund::query()
+                    ->where('order_id', $return->shipment->source_id)
+                    ->where('idempotency_key', "delivery-attempts-exhausted:{$return->shipment->source_id}:{$original->id}")
+                    ->where('return_status', 'pending_staff_pickup')
+                    ->update(['return_status' => 'in_transit', 'staff_return_shipped_at' => now()]);
+            }
             $return->shipment->update(['status' => 'cancelled', 'cancelled_at' => now()]);
             $this->events->record($return->shipment, $return, ['event_type' => 'return_received', 'visibility' => 'customer', 'message' => 'The returned parcel was received by the shop.']);
             return $return->fresh();
