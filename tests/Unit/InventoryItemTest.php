@@ -5,6 +5,7 @@ namespace Tests\Unit;
 use App\Models\InventoryItem;
 use App\Models\ShopOwner;
 use App\Models\User;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -145,6 +146,22 @@ class InventoryItemTest extends TestCase
                 $this->assertSame(5, $item->fresh()->available_quantity);
                 $this->assertSame(0, $item->stockMovements()->count());
             }
+        }
+    }
+
+    /** @test */
+    public function it_rolls_back_deduction_when_movement_cannot_be_recorded(): void
+    {
+        $item = InventoryItem::factory()->create([
+            'available_quantity' => 5,
+        ]);
+
+        try {
+            $item->decrementStock(2, 'invalid_type', 'Invalid movement', $this->user->id);
+            $this->fail('Expected movement insertion to fail.');
+        } catch (QueryException) {
+            $this->assertSame(5, $item->fresh()->available_quantity);
+            $this->assertSame(0, $item->stockMovements()->count());
         }
     }
 
