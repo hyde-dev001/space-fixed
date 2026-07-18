@@ -130,7 +130,7 @@ class LogisticsNotificationService
                 'delivery_batch_id' => $event->metadata['delivery_batch_id'] ?? null,
                 'stop_count' => $event->metadata['stop_count'] ?? null,
             ], fn ($value) => $value !== null),
-            'action_url' => $batchOffer ? '/erp/logistics/deliveries' : '/erp/logistics/shipments',
+            'action_url' => '/erp/logistics/deliveries',
             'requires_action' => true,
         ]);
     }

@@ -116,7 +116,7 @@ class LogisticsPageAccessTest extends TestCase
         $this->assertSame($stopSnapshot, $props['batches'][0]['stop_snapshot']);
     }
 
-    public function test_logistics_rider_can_access_my_deliveries_but_not_dispatcher_shipments(): void
+    public function test_logistics_rider_can_access_my_deliveries_through_legacy_shipments_link(): void
     {
         $this->seed(RolesAndPermissionsSeeder::class);
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -129,7 +129,8 @@ class LogisticsPageAccessTest extends TestCase
         $this->assertTrue($rider->fresh()->can('access-logistics-dashboard'));
 
         $this->actingAs($rider->fresh(), 'user')->get('/erp/logistics')->assertOk();
-        $this->actingAs($rider->fresh(), 'user')->get('/erp/logistics/shipments')->assertForbidden();
+        $this->actingAs($rider->fresh(), 'user')->get('/erp/logistics/shipments')
+            ->assertRedirect('/erp/logistics/deliveries');
         $this->actingAs($rider->fresh(), 'user')->get('/erp/logistics/deliveries')->assertOk();
         $this->actingAs($rider->fresh(), 'user')->get('/erp/logistics/riders')->assertForbidden();
     }

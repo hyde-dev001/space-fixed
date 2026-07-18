@@ -11,6 +11,7 @@ use App\Models\Logistics\ShipmentLeg;
 use App\Models\Logistics\DeliveryAssignment;
 use App\Models\User;
 use App\Services\Logistics\RiderProfileSyncService;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
@@ -27,10 +28,14 @@ class ErpLogisticsController extends Controller
         ]);
     }
 
-    public function shipments(Request $request): Response
+    public function shipments(Request $request): Response|RedirectResponse
     {
-        $shopOwnerId = $this->authorizedShopOwnerId('assign-logistics-deliveries');
         $user = Auth::guard('user')->user();
+        if ($user?->can('operate-logistics-deliveries') && ! $user->can('assign-logistics-deliveries')) {
+            return redirect()->route('erp.logistics.deliveries');
+        }
+
+        $shopOwnerId = $this->authorizedShopOwnerId('assign-logistics-deliveries');
         $isDispatcher = $user && (
             $user->can('assign-logistics-deliveries') ||
             $user->can('manage-logistics-riders')

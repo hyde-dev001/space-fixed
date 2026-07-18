@@ -135,7 +135,7 @@ class LogisticsNotificationTest extends TestCase
         $this->assertDatabaseHas('notifications', [
             'user_id' => $riderUser->id,
             'type' => 'logistics_assigned',
-            'action_url' => '/erp/logistics/shipments',
+            'action_url' => '/erp/logistics/deliveries',
         ]);
     }
 
