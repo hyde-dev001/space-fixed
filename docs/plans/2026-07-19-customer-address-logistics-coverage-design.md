@@ -92,6 +92,18 @@ Unavailable reasons are limited to values the UI needs:
 - Recalculate when the selected address changes or a pin is updated.
 - Prevent final submission while an estimate or required revalidation is pending.
 
+## Usability and Accessibility
+
+- Keep the map compact and responsive inside the existing Checkout and Payment address forms; it must not hide the structured address fields or primary actions on mobile.
+- Give customers three obvious ways to set the pin: tap/click the map, drag the marker, or use Search / My Location.
+- Show immediate loading, success, and friendly error feedback for search, GPS, reverse geocoding, saving, and coverage checks.
+- Preserve typed address values when a map or network lookup fails so customers do not lose their work.
+- Clearly label the selected pin and provide a one-action Repin path for legacy addresses without coordinates.
+- Use keyboard-focusable controls, associated labels, visible focus states, `aria-live` status text, and touch targets of at least 44px.
+- Dynamically load Leaflet only when an address form containing the map is open, and invalidate the map size after a modal or sheet becomes visible.
+- Never block third-party checkout solely because Shop-owned Logistics is unavailable or an address has no pin.
+- In Staff Job Orders, present one short eligibility message beside the carrier selector and never expose internal status codes.
+
 ## Validation and Failure Handling
 
 - Require `address_id` to belong to the authenticated customer.

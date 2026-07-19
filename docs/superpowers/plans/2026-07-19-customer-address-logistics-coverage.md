@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Let customers pin saved addresses with Leaflet and prevent staff from selecting Shop-owned Logistics when the order address is outside the shop's configured coverage radius.
+**Goal:** Let customers easily pin saved addresses with Leaflet and prevent staff from selecting Shop-owned Logistics when the order address is outside the shop's configured coverage radius.
 
 **Architecture:** Add one coverage-only contract to the existing `DeliveryScheduleService`, then reuse it in customer shipping estimates, staff order payloads, staff status validation, and shipment scheduling. Add one shared Leaflet picker consumed by Checkout and Payment; keep carrier selection in Staff Job Orders and leave the downstream shipment, batch, rider, tracking, and refund flows unchanged.
 
@@ -341,7 +341,7 @@ $this->actingAs($user, 'user')->postJson('/api/user/addresses', $this->payload([
 ]))->assertUnprocessable()->assertJsonValidationErrors(['latitude', 'longitude']);
 ```
 
-For the picker, mock Leaflet and geolocation, render the component, and assert that choosing a mocked reverse-geocode result calls `onChange` with the structured fields and coordinates. Reuse `parsePhilippineAddress` from `resources/js/Pages/UserSide/Auth/registrationAddress.ts`; do not duplicate the Philippine address parser.
+For the picker, mock Leaflet and geolocation, render the component, and assert that choosing a mocked reverse-geocode result calls `onChange` with the structured fields and coordinates. Also assert Search and My Location have accessible names, status uses `aria-live`, and a failed lookup keeps the previous value. Reuse `parsePhilippineAddress` from `resources/js/Pages/UserSide/Auth/registrationAddress.ts`; do not duplicate the Philippine address parser.
 
 - [ ] **Step 2: Run tests and verify failures**
 
@@ -376,7 +376,9 @@ type Props = {
 
 Move only the reusable map behavior from registration/shop settings: dynamic `import('leaflet')`, OpenStreetMap tiles, click, draggable marker, Philippine Nominatim search, GPS, reverse geocoding, cleanup, and `invalidateSize()`. Import `leaflet/dist/leaflet.css` in this component and reuse `parsePhilippineAddress`; no new dependency or geocoding backend is added.
 
-Render a search input, Search button, Use My Location button, map container, selected-coordinate text, and accessible error/status text.
+Render a labeled search input, Search button, Use My Location button, map container, selected-coordinate text, and accessible error/status text. Keep buttons at least 44px high, preserve the current value on failed lookups, disable only the action currently loading, expose status through `aria-live="polite"`, and retain visible keyboard focus styles.
+
+Keep the map responsive and touch-friendly without dominating a mobile sheet. Dynamically import Leaflet only while mounted, enable native map keyboard controls, and call `invalidateSize()` after the containing modal or sheet becomes visible.
 
 - [ ] **Step 5: Run focused tests**
 
@@ -410,6 +412,9 @@ expect(checkoutSource).toContain('latitude: newAddressData.latitude');
 expect(paymentSource).toContain('value={{ latitude: shippingLatitude, longitude: shippingLongitude }}');
 expect(checkoutSource).toContain('Repin');
 expect(paymentSource).toContain('Repin address');
+expect(paymentSource).toContain('setIsAddressSheetOpen(true)');
+expect(paymentSource).toContain('isAddressSaving');
+expect(paymentSource).toContain('aria-live="polite"');
 ```
 
 - [ ] **Step 2: Run and verify failure**
@@ -426,11 +431,15 @@ Include the coordinate pair in both `/api/user/addresses` POST and PUT bodies. R
 
 For every saved address whose `latitude` or `longitude` is missing, render a **Repin** action in the address selector. The action opens that address in the existing edit modal and focuses the shared picker; third-party checkout remains usable if the customer does not repin.
 
+Keep the existing form layout and primary Save/Continue action visible on mobile. Show short inline pin guidance instead of another blocking modal.
+
 - [ ] **Step 4: Wire Payment's existing coordinate state**
 
 Render the same picker in the address form using `shippingLatitude` and `shippingLongitude`. On change, update the existing coordinate state and structured shipping fields. Keep `handleUseAddressFromForm()` and `saveAddressToAccount()` as the only persistence paths; they already send the coordinate pair.
 
-In the saved-address sheet, show **Repin address** for an address missing either coordinate. It calls the existing `handleEditAddressFromList(address)` and switches the sheet to form mode so the customer can repair and save that address directly.
+Add `isAddressSaving` plus an inline address-form status/error state. While `handleUseAddressFromForm()` is saving, disable only the Save button and show a short loading label. On success, show friendly confirmation and then return to the address list. On failure, keep the sheet open in form mode, preserve every field and pin, show a retryable inline error through `aria-live="polite"`, and do not merely log or close the sheet.
+
+In the saved-address sheet, show **Repin address** for an address missing either coordinate. Update `handleEditAddressFromList(address)` to call `setIsAddressSheetOpen(true)` before switching to form mode and populating fields, so the same helper works both inside the list and from an external coverage notice.
 
 - [ ] **Step 5: Run customer frontend tests**
 
@@ -490,9 +499,10 @@ Near the shipping estimate, show:
 
 - green: eligible, including distance and radius;
 - amber: outside coverage, including distance and radius;
-- gray: address needs pin or shop location unavailable. For `address_needs_pin`, include a **Repin address** button that opens the selected saved address through `handleEditAddressFromList()`.
+- gray: address needs pin or shop location unavailable. For `address_needs_pin`, include a **Repin address** button that opens the selected saved address through `handleEditAddressFromList()`; that helper must explicitly reopen the address sheet.
 
 Do not add a customer carrier radio and do not change the calculated third-party shipping fee.
+Use plain-language copy and `aria-live="polite"` for estimate changes; never display backend reason codes. Coverage unavailability must not disable third-party payment when the existing third-party estimate is valid.
 
 - [ ] **Step 5: Run Payment tests**
 
@@ -563,6 +573,8 @@ Below the selector, show the exact reason:
 - `shop_needs_pin`: shop location must be configured;
 - fallback: Shop-owned Logistics is unavailable.
 
+Render this as one concise status panel beside the carrier selector with an icon and text, not color alone. Keep every available third-party option immediately selectable and retain the modal's keyboard and mobile behavior.
+
 If stale state still leaves Shop-owned selected while unavailable, block `handleConfirmShipping()` locally before the request; the Task 3 backend guard remains authoritative.
 
 Add `Accept: application/json` to the status PATCH headers so every validation response is JSON. When it returns 422 with a `carrier_company` coverage error, keep the modal open and refresh `/api/staff/orders`. Replace both `orders` and `selectedOrder` with the freshly mapped order, clear an invalid Shop-owned selection, and show the server message. This makes changed logistics settings visible immediately instead of leaving the modal on stale eligibility.
@@ -622,6 +634,9 @@ Expected: Vite build exits successfully with no TypeScript or bundling error. Do
 5. Repin the address outside coverage, reload staff orders, and confirm Shop-owned is disabled while third-party carriers remain selectable.
 6. Confirm a forged Shop-owned PATCH returns 422 and leaves the order Processing.
 7. Ship an inside-radius order through Shop-owned Logistics and confirm the existing Shipment → Batch → Rider → Delivered flow still works.
+8. Repeat address pinning and Mark as Shipped at a narrow mobile viewport: controls remain reachable, no horizontal overflow appears, and the map resizes after its modal or sheet opens.
+9. Navigate Search, My Location, Repin, carrier selection, and Save/Confirm using only the keyboard; focus remains visible and status changes are announced.
+10. Simulate a failed address lookup and confirm typed fields and the previous valid pin remain intact.
 
 - [ ] **Step 5: Inspect the final diff**
 
