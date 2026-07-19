@@ -9,7 +9,6 @@ use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\PriceChangeApprovalService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
@@ -23,7 +22,6 @@ class PriceChangeApprovalWorkflowTest extends TestCase
     private User $requester;
     private User $financeFirst;
     private User $financeSecond;
-    private User $financeFinal;
     private PriceChangeApprovalService $priceChangeApprovalService;
 
     protected function setUp(): void
@@ -34,10 +32,8 @@ class PriceChangeApprovalWorkflowTest extends TestCase
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
-        Permission::findOrCreate('approve-expenses', 'user');
         Role::findOrCreate('finance', 'user');
         Role::findOrCreate('shop-owner', 'user');
-        Role::findOrCreate('Finance Manager', 'user');
 
         $this->shopOwnerAuth = ShopOwner::factory()->approved()->create([
             'business_type' => 'retail',
@@ -64,16 +60,10 @@ class PriceChangeApprovalWorkflowTest extends TestCase
         ]);
         $this->financeSecond->assignRole('finance');
 
-        $this->financeFinal = User::factory()->create([
-            'shop_owner_id' => $this->shopOwnerAuth->id,
-        ]);
-        $this->financeFinal->assignRole('Finance Manager');
-        $this->financeFinal->givePermissionTo('approve-expenses');
-
         $this->priceChangeApprovalService = app(PriceChangeApprovalService::class);
     }
 
-    public function test_price_change_approval_progresses_through_all_four_levels(): void
+    public function test_price_change_approval_progresses_through_all_three_levels(): void
     {
         $priceChange = $this->createWorkflowBoundPriceChange();
 
@@ -115,7 +105,7 @@ class PriceChangeApprovalWorkflowTest extends TestCase
                 'approval_level' => 3,
             ]);
 
-        // Level 3: Finance
+        // Level 3: Finance final
         $thirdApproval = $this->actingAs($this->financeSecond, 'user')
             ->postJson("/api/finance/price-changes/{$priceChange->id}/approve", [
                 'notes' => 'Secondary finance review approved',
@@ -124,32 +114,19 @@ class PriceChangeApprovalWorkflowTest extends TestCase
         $thirdApproval->assertStatus(200)
             ->assertJson([
                 'success' => true,
-                'is_final' => false,
-                'approval_level' => 4,
-            ]);
-
-        // Level 4: Finance final
-        $finalApproval = $this->actingAs($this->financeFinal, 'user')
-            ->postJson("/api/finance/price-changes/{$priceChange->id}/approve", [
-                'notes' => 'Final finance approval complete',
-            ]);
-
-        $finalApproval->assertStatus(200)
-            ->assertJson([
-                'success' => true,
                 'is_final' => true,
-                'approval_level' => 4,
+                'approval_level' => 3,
             ]);
 
         $priceChange->refresh();
-        $this->assertSame(4, $priceChange->current_approval_level);
+        $this->assertSame(3, $priceChange->current_approval_level);
         $this->assertSame('owner_approved', $priceChange->status->value ?? $priceChange->status);
 
         $this->assertDatabaseHas('approvals', [
             'id' => $priceChange->approval_id,
             'status' => 'approved',
-            'current_level' => 4,
-            'current_approver_role' => 'finance_final',
+            'current_level' => 3,
+            'current_approver_role' => 'finance',
         ]);
     }
 

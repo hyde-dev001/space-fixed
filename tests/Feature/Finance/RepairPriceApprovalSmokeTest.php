@@ -3,6 +3,7 @@
 namespace Tests\Feature\Finance;
 
 use App\Models\RepairService;
+use App\Models\ProcurementSettings;
 use App\Models\ShopOwner;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -19,6 +20,7 @@ class RepairPriceApprovalSmokeTest extends TestCase
         $shopOwner = ShopOwner::factory()->approved()->create([
             'business_type' => 'both',
         ]);
+        $this->enableOwnerPriceApproval($shopOwner->id);
 
         $requester = User::factory()->create([
             'shop_owner_id' => $shopOwner->id,
@@ -114,6 +116,7 @@ class RepairPriceApprovalSmokeTest extends TestCase
         $shopOwner = ShopOwner::factory()->approved()->create([
             'business_type' => 'both',
         ]);
+        $this->enableOwnerPriceApproval($shopOwner->id);
 
         $requester = User::factory()->create([
             'shop_owner_id' => $shopOwner->id,
@@ -165,5 +168,13 @@ class RepairPriceApprovalSmokeTest extends TestCase
         $service->refresh();
         $this->assertSame('Active', $service->status);
         $this->assertSame('1300.00', (string) $service->price);
+    }
+
+    private function enableOwnerPriceApproval(int $shopOwnerId): void
+    {
+        $settings = ProcurementSettings::getForShopOwner($shopOwnerId);
+        $settingsJson = $settings->settings_json;
+        $settingsJson['approval_pages']['price_approval']['enabled'] = true;
+        $settings->update(['settings_json' => $settingsJson]);
     }
 }

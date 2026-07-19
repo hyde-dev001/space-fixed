@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Events\StockMovementRecorded;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
@@ -11,6 +12,8 @@ use Illuminate\Support\Facades\DB;
 
 class StockMovement extends Model
 {
+    use HasFactory;
+
     protected $fillable = [
         'inventory_item_id',
         'movement_type',

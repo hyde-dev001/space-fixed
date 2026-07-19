@@ -8,6 +8,7 @@ use App\Models\ShopOwner;
 use App\Models\Supplier;
 use App\Models\PurchaseRequest;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Permission;
 
 class PurchaseRequestWorkflowTest extends TestCase
 {
@@ -20,8 +21,11 @@ class PurchaseRequestWorkflowTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->user = User::factory()->create();
-        $this->shopOwner = ShopOwner::factory()->create(['user_id' => $this->user->id]);
+        config(['auth.defaults.guard' => 'user']);
+        $this->shopOwner = ShopOwner::factory()->create();
+        $this->user = User::factory()->for($this->shopOwner)->create();
+        Permission::findOrCreate('access-procurement-dashboard', 'user');
+        $this->user->givePermissionTo('access-procurement-dashboard');
         $this->supplier = Supplier::factory()->create(['shop_owner_id' => $this->shopOwner->id]);
     }
 
@@ -40,7 +44,7 @@ class PurchaseRequestWorkflowTest extends TestCase
 
         $response->assertStatus(201)
             ->assertJsonStructure([
-                'data' => [
+                'purchase_request' => [
                     'id',
                     'pr_number',
                     'product_name',
@@ -141,9 +145,9 @@ class PurchaseRequestWorkflowTest extends TestCase
 
         $response->assertStatus(200)
             ->assertJsonStructure([
-                'total_requests',
+                'total_purchase_requests',
                 'pending_finance',
-                'approved',
+                'approved_requests',
             ]);
     }
 
@@ -231,7 +235,7 @@ class PurchaseRequestWorkflowTest extends TestCase
             ]);
 
         $createResponse->assertStatus(201);
-        $prId = $createResponse->json('data.id');
+        $prId = $createResponse->json('purchase_request.id');
 
         // Step 2: Submit to Finance
         $submitResponse = $this->actingAs($this->user)

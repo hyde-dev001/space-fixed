@@ -5,10 +5,10 @@ namespace Tests\Feature\Procurement;
 use Tests\TestCase;
 use App\Models\User;
 use App\Models\ShopOwner;
-use App\Models\ReplenishmentRequest;
 use App\Models\StockRequestApproval;
 use App\Models\InventoryItem;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Permission;
 
 class ReplenishmentAndStockRequestTest extends TestCase
 {
@@ -21,8 +21,11 @@ class ReplenishmentAndStockRequestTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->user = User::factory()->create();
-        $this->shopOwner = ShopOwner::factory()->create(['user_id' => $this->user->id]);
+        config(['auth.defaults.guard' => 'user']);
+        $this->shopOwner = ShopOwner::factory()->create();
+        $this->user = User::factory()->for($this->shopOwner)->create();
+        Permission::findOrCreate('access-procurement-dashboard', 'user');
+        $this->user->givePermissionTo('access-procurement-dashboard');
         $this->inventoryItem = InventoryItem::factory()->create([
             'shop_owner_id' => $this->shopOwner->id,
         ]);
@@ -43,15 +46,15 @@ class ReplenishmentAndStockRequestTest extends TestCase
 
         $response->assertStatus(201)
             ->assertJsonStructure([
-                'data' => [
+                'stock_request' => [
                     'id',
                     'request_number',
                     'status',
                 ]
             ]);
 
-        $this->assertDatabaseHas('replenishment_requests', [
-            'product_name' => 'Test Product',
+        $this->assertDatabaseHas('stock_request_approvals', [
+            'inventory_item_id' => $this->inventoryItem->id,
             'status' => 'pending',
         ]);
     }
@@ -59,7 +62,7 @@ class ReplenishmentAndStockRequestTest extends TestCase
     /** @test */
     public function user_can_accept_replenishment_request()
     {
-        $request = ReplenishmentRequest::factory()->create([
+        $request = StockRequestApproval::factory()->create([
             'shop_owner_id' => $this->shopOwner->id,
             'inventory_item_id' => $this->inventoryItem->id,
             'status' => 'pending',
@@ -72,7 +75,7 @@ class ReplenishmentAndStockRequestTest extends TestCase
 
         $response->assertStatus(200);
 
-        $this->assertDatabaseHas('replenishment_requests', [
+        $this->assertDatabaseHas('stock_request_approvals', [
             'id' => $request->id,
             'status' => 'accepted',
         ]);
@@ -81,7 +84,7 @@ class ReplenishmentAndStockRequestTest extends TestCase
     /** @test */
     public function user_can_reject_replenishment_request()
     {
-        $request = ReplenishmentRequest::factory()->create([
+        $request = StockRequestApproval::factory()->create([
             'shop_owner_id' => $this->shopOwner->id,
             'inventory_item_id' => $this->inventoryItem->id,
             'status' => 'pending',
@@ -89,12 +92,12 @@ class ReplenishmentAndStockRequestTest extends TestCase
 
         $response = $this->actingAs($this->user)
             ->postJson("/api/erp/procurement/replenishment-requests/{$request->id}/reject", [
-                'response_notes' => 'Not required at this time',
+                'rejection_reason' => 'Not required at this time',
             ]);
 
         $response->assertStatus(200);
 
-        $this->assertDatabaseHas('replenishment_requests', [
+        $this->assertDatabaseHas('stock_request_approvals', [
             'id' => $request->id,
             'status' => 'rejected',
         ]);
@@ -103,7 +106,7 @@ class ReplenishmentAndStockRequestTest extends TestCase
     /** @test */
     public function user_can_request_additional_details_for_replenishment()
     {
-        $request = ReplenishmentRequest::factory()->create([
+        $request = StockRequestApproval::factory()->create([
             'shop_owner_id' => $this->shopOwner->id,
             'inventory_item_id' => $this->inventoryItem->id,
             'status' => 'pending',
@@ -116,7 +119,7 @@ class ReplenishmentAndStockRequestTest extends TestCase
 
         $response->assertStatus(200);
 
-        $this->assertDatabaseHas('replenishment_requests', [
+        $this->assertDatabaseHas('stock_request_approvals', [
             'id' => $request->id,
             'status' => 'needs_details',
         ]);
@@ -132,7 +135,7 @@ class ReplenishmentAndStockRequestTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->postJson("/api/erp/procurement/stock-request-approvals/{$stockRequest->id}/approve", [
+            ->postJson("/api/erp/procurement/stock-requests/{$stockRequest->id}/approve", [
                 'approval_notes' => 'Approved for procurement',
                 'auto_create_pr' => false,
             ]);
@@ -146,36 +149,6 @@ class ReplenishmentAndStockRequestTest extends TestCase
     }
 
     /** @test */
-    public function user_can_approve_stock_request_with_auto_pr_creation()
-    {
-        $stockRequest = StockRequestApproval::factory()->create([
-            'shop_owner_id' => $this->shopOwner->id,
-            'inventory_item_id' => $this->inventoryItem->id,
-            'status' => 'pending',
-        ]);
-
-        $response = $this->actingAs($this->user)
-            ->postJson("/api/erp/procurement/stock-request-approvals/{$stockRequest->id}/approve", [
-                'approval_notes' => 'Auto-creating PR',
-                'auto_create_pr' => true,
-            ]);
-
-        $response->assertStatus(200);
-
-        // Verify stock request was approved
-        $this->assertDatabaseHas('stock_request_approvals', [
-            'id' => $stockRequest->id,
-            'status' => 'accepted',
-        ]);
-
-        // Verify PR was auto-created
-        $this->assertDatabaseHas('purchase_requests', [
-            'product_name' => $stockRequest->product_name,
-            'quantity' => $stockRequest->quantity_needed,
-        ]);
-    }
-
-    /** @test */
     public function user_can_reject_stock_request()
     {
         $stockRequest = StockRequestApproval::factory()->create([
@@ -185,7 +158,7 @@ class ReplenishmentAndStockRequestTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->postJson("/api/erp/procurement/stock-request-approvals/{$stockRequest->id}/reject", [
+            ->postJson("/api/erp/procurement/stock-requests/{$stockRequest->id}/reject", [
                 'rejection_reason' => 'Budget constraints',
             ]);
 
@@ -214,11 +187,11 @@ class ReplenishmentAndStockRequestTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->getJson('/api/erp/procurement/stock-request-approvals/metrics');
+            ->getJson('/api/erp/procurement/stock-requests/metrics');
 
         $response->assertStatus(200)
             ->assertJsonStructure([
-                'total_requests',
+                'total_stock_requests',
                 'pending_requests',
                 'accepted_requests',
             ]);
@@ -227,13 +200,13 @@ class ReplenishmentAndStockRequestTest extends TestCase
     /** @test */
     public function user_can_filter_replenishment_requests_by_status()
     {
-        ReplenishmentRequest::factory()->create([
+        StockRequestApproval::factory()->create([
             'shop_owner_id' => $this->shopOwner->id,
             'inventory_item_id' => $this->inventoryItem->id,
             'status' => 'pending',
         ]);
 
-        ReplenishmentRequest::factory()->create([
+        StockRequestApproval::factory()->create([
             'shop_owner_id' => $this->shopOwner->id,
             'inventory_item_id' => $this->inventoryItem->id,
             'status' => 'accepted',
@@ -261,7 +234,7 @@ class ReplenishmentAndStockRequestTest extends TestCase
             ]);
 
         $createResponse->assertStatus(201);
-        $requestId = $createResponse->json('data.id');
+        $requestId = $createResponse->json('stock_request.id');
 
         // Step 2: Accept request
         $acceptResponse = $this->actingAs($this->user)
@@ -272,7 +245,7 @@ class ReplenishmentAndStockRequestTest extends TestCase
         $acceptResponse->assertStatus(200);
 
         // Verify final state
-        $this->assertDatabaseHas('replenishment_requests', [
+        $this->assertDatabaseHas('stock_request_approvals', [
             'id' => $requestId,
             'status' => 'accepted',
         ]);

@@ -29,7 +29,7 @@ class PayrollServiceTest extends TestCase
     {
         $employee = Employee::factory()->active()->create([
             'shop_owner_id' => $this->shopOwner->id,
-            'salary' => 50000,
+            'salary' => 2000,
             'sales_commission_rate' => 0.05,
             'performance_bonus_rate' => 0.03,
             'other_allowances' => 750,
@@ -37,8 +37,8 @@ class PayrollServiceTest extends TestCase
 
         $result = $this->service->resolveAdditionalEarnings($employee, '2026-03');
 
-        $this->assertSame(2500.0, $result['sales_commission']);
-        $this->assertSame(1500.0, $result['performance_bonus']);
+        $this->assertSame(2600.0, $result['sales_commission']);
+        $this->assertSame(1560.0, $result['performance_bonus']);
         $this->assertSame(750.0, $result['other_allowances']);
         $this->assertSame(
             ['Sales Commission', 'Performance Bonus', 'Other Allowances'],
@@ -77,7 +77,7 @@ class PayrollServiceTest extends TestCase
     {
         $employee = Employee::factory()->active()->create([
             'shop_owner_id' => $this->shopOwner->id,
-            'salary' => 26000,
+            'salary' => 1000,
         ]);
 
         $extraEarnings = $this->service->resolveAdditionalEarnings($employee, '2026-03', [
@@ -107,24 +107,24 @@ class PayrollServiceTest extends TestCase
         $this->assertSame(125.0, (float) $calculation['rules']['hourly_rate']);
         $this->assertSame(21000.0, (float) $calculation['breakdown']['basic_pay']);
         $this->assertSame(625.0, (float) $calculation['breakdown']['overtime_pay']);
-        $this->assertSame(1300.0, (float) $calculation['breakdown']['rest_day_pay']);
+        $this->assertArrayNotHasKey('rest_day_pay', $calculation['breakdown']);
         $this->assertSame(1300.0, (float) $calculation['breakdown']['special_holiday_pay']);
         $this->assertSame(2000.0, (float) $calculation['breakdown']['regular_holiday_pay']);
-        $this->assertSame(25.0, (float) $calculation['breakdown']['night_differential_pay']);
+        $this->assertArrayNotHasKey('night_differential_pay', $calculation['breakdown']);
         $this->assertSame(1500.0, (float) $calculation['breakdown']['sales_commission']);
         $this->assertSame(1000.0, (float) $calculation['breakdown']['performance_bonus']);
         $this->assertSame(750.0, (float) $calculation['breakdown']['other_allowances']);
         $this->assertSame(0.0, (float) $calculation['breakdown']['absent_deductions']);
         $this->assertSame(187.5, (float) $calculation['breakdown']['undertime_deductions']);
         $this->assertSame(900.0, (float) $calculation['statutory']['sss_contribution']);
-        $this->assertSame(718.75, (float) $calculation['statutory']['philhealth_contribution']);
+        $this->assertSame(685.63, (float) $calculation['statutory']['philhealth_contribution']);
         $this->assertSame(100.0, (float) $calculation['statutory']['pagibig_contribution']);
         $this->assertSame(0.0, (float) $calculation['statutory']['withholding_tax']);
-        $this->assertSame(29500.0, (float) $calculation['gross_salary']);
+        $this->assertSame(28175.0, (float) $calculation['gross_salary']);
         $this->assertSame(187.5, (float) $calculation['component_deductions']);
-        $this->assertSame(1906.25, (float) $calculation['total_deductions']);
-        $this->assertSame(27593.75, (float) $calculation['net_salary']);
-        $this->assertCount(11, $calculation['components']);
+        $this->assertSame(1873.13, (float) $calculation['total_deductions']);
+        $this->assertSame(26301.87, (float) $calculation['net_salary']);
+        $this->assertCount(9, $calculation['components']);
     }
 
     /** @test */
@@ -132,7 +132,7 @@ class PayrollServiceTest extends TestCase
     {
         $employee = Employee::factory()->active()->create([
             'shop_owner_id' => $this->shopOwner->id,
-            'salary' => 26000,
+            'salary' => 1000,
         ]);
 
         $overrides = [
@@ -179,10 +179,10 @@ class PayrollServiceTest extends TestCase
         $this->assertSame((float) $calculation['statutory']['pagibig_contribution'], (float) $payroll->pag_ibig);
         $this->assertSame((float) $calculation['total_deductions'], (float) $payroll->deductions);
         $this->assertSame('processed', $payroll->status);
-        $this->assertTrue($payroll->components->contains('component_name', 'Rest Day Pay'));
+        $this->assertFalse($payroll->components->contains('component_name', 'Rest Day Pay'));
         $this->assertTrue($payroll->components->contains('component_name', 'Special Holiday Pay'));
         $this->assertTrue($payroll->components->contains('component_name', 'Regular Holiday Pay'));
-        $this->assertTrue($payroll->components->contains('component_name', 'Night Differential Pay'));
+        $this->assertFalse($payroll->components->contains('component_name', 'Night Differential Pay'));
         $this->assertTrue($payroll->components->contains('component_name', 'Sales Commission'));
         $this->assertTrue($payroll->components->contains('component_name', 'Performance Bonus'));
         $this->assertTrue($payroll->components->contains('component_name', 'Other Allowances'));

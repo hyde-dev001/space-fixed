@@ -57,7 +57,7 @@ class PurchaseRequestTest extends TestCase
             'status' => 'pending_finance',
         ]);
 
-        $this->assertEquals('Pending Finance Approval', $pr->status_label);
+        $this->assertEquals('Pending Finance', $pr->status_label);
     }
 
     /** @test */
@@ -89,7 +89,7 @@ class PurchaseRequestTest extends TestCase
     }
 
     /** @test */
-    public function it_can_be_approved()
+    public function it_advances_finance_approval_to_shop_owner()
     {
         $pr = PurchaseRequest::factory()->create([
             'shop_owner_id' => $this->shopOwner->id,
@@ -99,9 +99,9 @@ class PurchaseRequestTest extends TestCase
 
         $pr->approve($this->user->id, 'Approved for budget compliance');
 
-        $this->assertEquals('approved', $pr->fresh()->status);
-        $this->assertEquals($this->user->id, $pr->fresh()->approved_by);
-        $this->assertNotNull($pr->fresh()->approved_date);
+        $this->assertEquals('pending_shop_owner', $pr->fresh()->status);
+        $this->assertEquals($this->user->id, $pr->fresh()->reviewed_by);
+        $this->assertNotNull($pr->fresh()->reviewed_date);
     }
 
     /** @test */
