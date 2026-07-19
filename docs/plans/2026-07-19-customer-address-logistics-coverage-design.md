@@ -86,7 +86,8 @@ Unavailable reasons are limited to values the UI needs:
 - Checkout and Payment continue enforcing the existing single-shop flow.
 - Payment shows whether the selected address is eligible for Shop-owned Logistics, but the customer does not select the carrier.
 - The Staff Job Orders shipping modal defaults to Shop-owned Logistics when it is eligible.
-- The staff modal disables Shop-owned Logistics with a short reason when unavailable.
+- In Staff Retail Process / Job Orders, opening Mark as Shipped for an outside-coverage address disables the Shop-owned Logistics option; staff can select only a third-party carrier.
+- The disabled option shows a short reason, including the calculated distance and configured radius when available.
 - Show distance and radius as supporting information, not as editable values.
 - Recalculate when the selected address changes or a pin is updated.
 - Prevent final submission while an estimate or required revalidation is pending.
@@ -97,6 +98,7 @@ Unavailable reasons are limited to values the UI needs:
 - Resolve the shop from the selected single-shop cart or order instead of trusting an arbitrary client shop ID.
 - Validate latitude and longitude as a pair and within the existing Philippine bounds.
 - Never accept a client claim that an address is within coverage.
+- Reject a direct or forged staff request that sets `carrier_company` to Shop-owned Logistics when the order address is outside coverage or lacks valid coordinates.
 - If coverage lookup fails, keep third-party delivery available and do not silently select Shop-owned Logistics.
 - If settings change before staff marks the order shipped, reject a stale Shop-owned choice and refresh the staff shipping modal.
 
