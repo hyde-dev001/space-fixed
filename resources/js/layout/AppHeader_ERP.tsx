@@ -4,7 +4,7 @@ import { useSidebar } from "../context/SidebarContext";
 import { ThemeToggleButton } from "../components/common/ThemeToggleButton";
 import UserDropdown from "../components/header/UserDropdown";
 import SuperAdminDropdown from "../components/header/SuperAdminDropdown";
-import NotificationBell from "../Components/common/NotificationBell";
+import NotificationBell from "../components/common/NotificationBell";
 
 const AppHeader_ERP: React.FC = () => {
   const page = usePage();
