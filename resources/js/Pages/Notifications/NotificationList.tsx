@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { useNotifications, useMarkAsRead, useMarkAllAsRead, useDeleteNotification, useUnarchiveNotification, type NotificationFilters } from '../../hooks/useNotifications';
 import NotificationItem from '../../Components/common/NotificationItem';
-import ExportModal from '../../Components/Notifications/ExportModal';
+import ExportModal from "../../components/Notifications/ExportModal";
 import type { Notification } from '../../hooks/useNotifications';
 
 interface NotificationListProps {
