@@ -57,8 +57,8 @@ class UserAddressController extends Controller
             'postal_code' => 'nullable|string|max:10',
             'address_line' => 'required|string|max:500',
             'is_default' => 'boolean',
-            'latitude' => 'nullable|required_with:longitude|numeric|between:-90,90',
-            'longitude' => 'nullable|required_with:latitude|numeric|between:-180,180',
+            'latitude' => 'nullable|required_with:longitude|numeric|between:4.5,21.5',
+            'longitude' => 'nullable|required_with:latitude|numeric|between:116,127',
             'delivery_instructions' => 'nullable|string|max:1000',
         ]);
 
@@ -110,8 +110,8 @@ class UserAddressController extends Controller
             'postal_code' => 'nullable|string|max:10',
             'address_line' => 'required|string|max:500',
             'is_default' => 'boolean',
-            'latitude' => 'nullable|required_with:longitude|numeric|between:-90,90',
-            'longitude' => 'nullable|required_with:latitude|numeric|between:-180,180',
+            'latitude' => 'nullable|required_with:longitude|numeric|between:4.5,21.5',
+            'longitude' => 'nullable|required_with:latitude|numeric|between:116,127',
             'delivery_instructions' => 'nullable|string|max:1000',
         ]);
 

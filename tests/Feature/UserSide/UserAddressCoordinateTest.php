@@ -34,14 +34,36 @@ class UserAddressCoordinateTest extends TestCase
         ]);
     }
 
-    public function test_partial_or_invalid_coordinates_are_rejected(): void
+    public function test_coordinate_pair_is_required_on_create_and_update(): void
     {
         $user = User::factory()->create();
 
         $this->actingAs($user, 'user')->postJson('/api/user/addresses', $this->payload(['latitude' => 14]))
             ->assertUnprocessable()->assertJsonValidationErrors('longitude');
-        $this->postJson('/api/user/addresses', $this->payload(['latitude' => 91, 'longitude' => 120]))
+
+        $address = $this->postJson('/api/user/addresses', $this->payload([
+            'latitude' => 14.5995, 'longitude' => 120.9842,
+        ]))->assertCreated()->json('address');
+
+        $this->putJson("/api/user/addresses/{$address['id']}", $this->payload(['longitude' => 120.9842]))
             ->assertUnprocessable()->assertJsonValidationErrors('latitude');
+    }
+
+    public function test_coordinates_outside_the_philippines_are_rejected_on_create_and_update(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user, 'user')->postJson('/api/user/addresses', $this->payload([
+            'latitude' => 35, 'longitude' => 139,
+        ]))->assertUnprocessable()->assertJsonValidationErrors(['latitude', 'longitude']);
+
+        $address = $this->postJson('/api/user/addresses', $this->payload([
+            'latitude' => 14.5995, 'longitude' => 120.9842,
+        ]))->assertCreated()->json('address');
+
+        $this->putJson("/api/user/addresses/{$address['id']}", $this->payload([
+            'latitude' => 35, 'longitude' => 139,
+        ]))->assertUnprocessable()->assertJsonValidationErrors(['latitude', 'longitude']);
     }
 
     public function test_missing_coordinates_are_geocoded_and_failure_keeps_them_null(): void
