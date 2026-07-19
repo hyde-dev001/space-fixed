@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import { useCart } from '../../../contexts/CartContext';
-import NotificationBell from '../../../Components/common/NotificationBell';
-import StarRating from '../../../Components/common/StarRating';
+import NotificationBell from "../../../components/common/NotificationBell";
+import StarRating from '../../../components/common/StarRating';
 import { useBadgeCounts } from '../../../hooks/useBadgeCounts';
 
 type Product = {
