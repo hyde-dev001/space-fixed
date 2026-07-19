@@ -1,23 +1,24 @@
 # Customer Address Pin and Logistics Coverage Design
 
 Date: 2026-07-19
-Status: Approved
+Status: Pending Review
 Owner: Customer Checkout and Retail Logistics
 
 ## Objective
 
-Let customers pin delivery addresses with Leaflet and use those saved coordinates to determine whether each shop can offer Shop-owned Logistics within its configured coverage radius.
+Let customers pin delivery addresses with Leaflet and use those saved coordinates to determine whether the selected shop can offer Shop-owned Logistics within its configured coverage radius.
 
 ## Confirmed Decisions
 
 1. Use Leaflet with the same interaction pattern as Shop Address Settings: map click, draggable marker, search, GPS, and reverse geocoding.
 2. Checkout and Payment use saved addresses and allow add/edit with a shared customer address picker.
 3. Coverage uses the existing Haversine straight-line calculation and each shop's `coverage_radius_km`.
-4. Within coverage, both carriers remain available and Shop-owned Logistics is selected by default.
-5. Outside coverage, Shop-owned Logistics is disabled while third-party delivery remains available.
-6. A saved address without coordinates must be repinned before Shop-owned Logistics can be selected; third-party delivery remains available.
-7. Multi-shop carts calculate coverage and select a carrier independently for every shop/order.
-8. Extend the existing `/api/shipping/estimate` endpoint instead of introducing another coverage endpoint.
+4. Staff retains carrier selection when marking a processing order as shipped.
+5. Within coverage, the Staff Job Orders shipping modal defaults to Shop-owned Logistics while third-party carriers remain available.
+6. Outside coverage, Shop-owned Logistics is disabled in the staff shipping modal while third-party delivery remains available.
+7. A saved address without coordinates must be repinned before Shop-owned Logistics can be selected; third-party delivery remains available.
+8. Retail checkout remains single-shop, matching the existing Checkout UI and server validation.
+9. Extend the existing `/api/shipping/estimate` endpoint instead of introducing another coverage endpoint.
 
 ## Existing Components to Reuse
 
@@ -41,22 +42,24 @@ Registration keeps its current Leaflet flow and continues creating the customer'
 
 ## Coverage and Carrier Flow
 
-For each shop represented in the cart:
+Retail checkout already permits items from only one shop. For that selected shop:
 
-1. Checkout requests `/api/shipping/estimate` with `address_id` and `shop_id`.
-2. The backend loads the authenticated customer's address and the requested shop; client-supplied coordinates are not trusted for coverage.
+1. Payment requests `/api/shipping/estimate` with `address_id` and the existing selected product IDs.
+2. The backend loads the authenticated customer's address and resolves the single shop from those products; client-supplied coordinates or arbitrary shop IDs are not trusted for coverage.
 3. The backend compares the shop and destination coordinates using the same Haversine logic used by shipment scheduling.
-4. The response retains the existing third-party estimate and adds the Shop-owned Logistics availability result.
-5. The UI defaults that shop to Shop-owned Logistics only when available; otherwise it selects third-party delivery and explains why Shop-owned is unavailable.
-6. Checkout submits a shop-to-carrier mapping so each generated order receives its selected `carrier_company`.
-7. Order creation validates the selected Shop-owned carrier again against the saved address and current logistics settings before persisting the order.
+4. The response retains the existing third-party estimate and adds the Shop-owned Logistics eligibility result for customer visibility.
+5. Payment creates the order without choosing a carrier, preserving the current retail lifecycle.
+6. The Staff Orders response includes the same eligibility result, calculated from each order's saved address and shop. The Mark as Shipped modal consumes that result without a separate endpoint.
+7. Within coverage, Shop-owned Logistics is the default carrier choice. Outside coverage or without a valid pin, Shop-owned Logistics is disabled with a clear reason.
+8. The staff status endpoint validates Shop-owned eligibility again before saving `carrier_company` and creating the logistics shipment.
 
 ## Shipping Estimate Contract
 
-The existing endpoint accepts the current address fields for backward compatibility and adds:
+The existing endpoint accepts the current address fields and `item_pids` for backward compatibility and adds:
 
 - `address_id`: authenticated customer's saved address.
-- `shop_id`: shop whose coverage is being checked.
+
+The shop continues to be resolved from `item_pids`, matching the existing single-shop checkout.
 
 The response keeps the current third-party estimate fields and adds:
 
@@ -80,21 +83,22 @@ Unavailable reasons are limited to values the UI needs:
 
 ## UI Behavior
 
-- Show one delivery section per shop in a multi-shop checkout.
-- Show both carrier choices when Shop-owned Logistics is available.
-- Disable Shop-owned Logistics with a short reason when unavailable.
+- Checkout and Payment continue enforcing the existing single-shop flow.
+- Payment shows whether the selected address is eligible for Shop-owned Logistics, but the customer does not select the carrier.
+- The Staff Job Orders shipping modal defaults to Shop-owned Logistics when it is eligible.
+- The staff modal disables Shop-owned Logistics with a short reason when unavailable.
 - Show distance and radius as supporting information, not as editable values.
-- Recalculate every shop when the selected address changes or a pin is updated.
+- Recalculate when the selected address changes or a pin is updated.
 - Prevent final submission while an estimate or required revalidation is pending.
 
 ## Validation and Failure Handling
 
 - Require `address_id` to belong to the authenticated customer.
-- Require `shop_id` to match a shop represented in the submitted cart during order creation.
+- Resolve the shop from the selected single-shop cart or order instead of trusting an arbitrary client shop ID.
 - Validate latitude and longitude as a pair and within the existing Philippine bounds.
 - Never accept a client claim that an address is within coverage.
 - If coverage lookup fails, keep third-party delivery available and do not silently select Shop-owned Logistics.
-- If settings change between estimate and checkout, reject the stale Shop-owned choice and return a clear validation error so the UI can refresh estimates.
+- If settings change before staff marks the order shipped, reject a stale Shop-owned choice and refresh the staff shipping modal.
 
 ## Testing
 
@@ -103,15 +107,15 @@ One focused backend feature test set covers:
 - inside-radius, boundary, and outside-radius results;
 - missing customer or shop coordinates;
 - address ownership enforcement;
-- per-shop results for a multi-shop cart;
-- order creation rejecting a forged or stale Shop-owned selection.
+- single-shop estimate resolving the correct shop from the order items;
+- staff status update rejecting a forged or stale Shop-owned selection.
 
 Frontend tests cover:
 
 - address picker saving coordinates;
 - Shop-owned default within coverage;
 - disabled Shop-owned and third-party fallback outside coverage or without a pin;
-- independent carrier choices per shop.
+- staff modal defaulting or disabling Shop-owned Logistics from the current coverage result.
 
 ## Non-Goals
 
@@ -119,3 +123,5 @@ Frontend tests cover:
 - Drawing or managing polygon service areas.
 - Automatically migrating or guessing coordinates for legacy saved addresses.
 - Replacing the existing third-party shipping estimator.
+- Moving carrier selection from staff to the customer.
+- Adding separate pricing for Shop-owned Logistics.
