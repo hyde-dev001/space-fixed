@@ -56,6 +56,8 @@ class SourceModuleShipmentRequestTest extends TestCase
             'business_type' => 'retail',
             'registration_type' => 'company',
             'status' => 'approved',
+            'shop_latitude' => 14.5995,
+            'shop_longitude' => 120.9842,
         ]);
         $staff = User::factory()->create([
             'shop_owner_id' => $shop->id,
@@ -63,8 +65,18 @@ class SourceModuleShipmentRequestTest extends TestCase
         ]);
         Permission::findOrCreate('access-staff-job-orders', 'user');
         $staff->givePermissionTo('access-staff-job-orders');
+        $customer = User::factory()->create();
+        $address = UserAddress::create([
+            'user_id' => $customer->id, 'name' => 'Customer', 'phone' => '09171234567',
+            'region' => 'NCR', 'province' => 'Metro Manila', 'city' => 'Manila',
+            'barangay' => 'Ermita', 'address_line' => '1 Test Street',
+            'latitude' => 14.60, 'longitude' => 120.98,
+        ]);
+        LogisticsSetting::create(['shop_owner_id' => $shop->id, 'coverage_radius_km' => 20]);
         $order = Order::factory()->create([
             'shop_owner_id' => $shop->id,
+            'customer_id' => $customer->id,
+            'address_id' => $address->id,
             'status' => 'processing',
         ]);
 

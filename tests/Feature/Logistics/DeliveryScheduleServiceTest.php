@@ -87,6 +87,21 @@ class DeliveryScheduleServiceTest extends TestCase
         $this->assertNull($missingShopCoordinates['distance_km']);
     }
 
+    public function test_coverage_caches_created_settings_on_an_already_loaded_relation(): void
+    {
+        $shop = ShopOwner::factory()->create([
+            'shop_latitude' => 14.5995,
+            'shop_longitude' => 120.9842,
+        ])->load('logisticsSetting');
+        $this->assertNull($shop->getRelation('logisticsSetting'));
+
+        app(DeliveryScheduleService::class)->coverage($shop, 14.60, 120.98);
+
+        $this->assertInstanceOf(LogisticsSetting::class, $shop->getRelation('logisticsSetting'));
+        app(DeliveryScheduleService::class)->coverage($shop, 14.60, 120.98);
+        $this->assertDatabaseCount('logistics_settings', 1);
+    }
+
     public function test_coverage_fails_closed_when_logistics_is_unavailable(): void
     {
         Log::spy();

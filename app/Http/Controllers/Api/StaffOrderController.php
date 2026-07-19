@@ -10,6 +10,7 @@ use App\Models\Logistics\Shipment;
 use App\Models\User;
 use App\Services\OrderRefundService;
 use App\Services\RetailPosRefundSummaryService;
+use App\Services\Logistics\DeliveryScheduleService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -36,6 +37,7 @@ class StaffOrderController extends Controller
     public function __construct(
         private readonly OrderRefundService $orderRefundService,
         private readonly RetailPosRefundSummaryService $retailPosRefundSummaryService,
+        private readonly DeliveryScheduleService $deliveryScheduleService,
     ) {
     }
 
@@ -61,7 +63,8 @@ class StaffOrderController extends Controller
         $orders = Order::with([
             'items.product',
             'customer',
-            'shopOwner',
+            'address',
+            'shopOwner.logisticsSetting',
             'refunds' => function ($refundQuery) use ($includeRefundItems) {
                 if ($includeRefundItems) {
                     $refundQuery->with('items.orderItem');
@@ -152,6 +155,7 @@ class StaffOrderController extends Controller
                     'carrier_phone' => $order->carrier_phone ?? '',
                     'tracking_link' => $order->tracking_link ?? '',
                     'eta' => $order->eta ?? null,
+                    'shop_owned_coverage' => $this->shopOwnedCoverage($order),
                     'delivery_cancellation' => $cancelledShipment ? [
                         'status' => 'cancelled',
                         'message' => $cancelledShipment->events->first()?->message,
@@ -235,7 +239,8 @@ class StaffOrderController extends Controller
         $order = Order::with([
             'items.product',
             'customer',
-            'shopOwner',
+            'address',
+            'shopOwner.logisticsSetting',
             'refunds' => function ($refundQuery) use ($includeRefundItems) {
                 if ($includeRefundItems) {
                     $refundQuery->with('items.orderItem');
@@ -310,6 +315,7 @@ class StaffOrderController extends Controller
             'carrier_phone' => $order->carrier_phone ?? '',
             'tracking_link' => $order->tracking_link ?? '',
             'eta' => $order->eta ?? null,
+            'shop_owned_coverage' => $this->shopOwnedCoverage($order),
             'retail_pos_refund' => $retailPosRefundSummary[(int) $order->id] ?? null,
             'latest_refund' => $latestRefund ? [
                 'id' => (int) $latestRefund->id,
@@ -411,6 +417,29 @@ class StaffOrderController extends Controller
             return response()->json(['error' => 'Order not found'], 404);
         }
 
+        $carrierCompany = $validated['carrier_company'] ?? $order->carrier_company;
+        $isShopOwned = strtolower(trim((string) $carrierCompany)) === 'shop-owned logistics';
+        if ($isShopOwned) {
+            $validated['carrier_company'] = 'Shop-owned logistics';
+        }
+
+        if ($validated['status'] === 'shipped' && $isShopOwned) {
+            $order->unsetRelation('address');
+            $order->unsetRelation('shopOwner');
+            $coverage = $this->shopOwnedCoverage($order);
+
+            if (! $coverage['available']) {
+                $message = 'Shop-owned logistics is unavailable for this delivery address.';
+
+                return response()->json([
+                    'success' => false,
+                    'message' => $message,
+                    'errors' => ['carrier_company' => [$message]],
+                    'shop_owned_coverage' => $coverage,
+                ], 422);
+            }
+        }
+
         // Store the old status for comparison (convert enum to string value)
         $oldStatus = $order->status->value;
 
@@ -484,6 +513,33 @@ class StaffOrderController extends Controller
                 'updated_at' => $order->updated_at->toISOString(),
             ],
         ]);
+    }
+
+    private function shopOwnedCoverage(Order $order): array
+    {
+        try {
+            $order->loadMissing(['address', 'shopOwner.logisticsSetting']);
+            $address = $order->address;
+
+            return $this->deliveryScheduleService->coverage(
+                $order->shopOwner,
+                $address?->latitude !== null ? (float) $address->latitude : null,
+                $address?->longitude !== null ? (float) $address->longitude : null,
+            );
+        } catch (\Throwable $exception) {
+            Log::warning('Staff order logistics coverage failed.', [
+                'order_id' => $order->id,
+                'shop_owner_id' => $order->shop_owner_id,
+                'exception' => $exception->getMessage(),
+            ]);
+
+            return [
+                'available' => false,
+                'reason' => 'logistics_unavailable',
+                'distance_km' => null,
+                'coverage_radius_km' => null,
+            ];
+        }
     }
 
     public function confirmReturnReceived(Request $request, $id)

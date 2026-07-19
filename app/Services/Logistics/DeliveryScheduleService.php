@@ -74,6 +74,7 @@ class DeliveryScheduleService
     {
         try {
             $settings = $shop->logisticsSetting ?: LogisticsSetting::firstOrCreate(['shop_owner_id' => $shop->id]);
+            $shop->setRelation('logisticsSetting', $settings);
             $radius = (float) $settings->coverage_radius_km;
 
             if ($latitude === null || $longitude === null) {
