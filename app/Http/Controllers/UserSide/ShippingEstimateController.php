@@ -8,6 +8,7 @@ use App\Models\ShopOwner;
 use App\Models\UserAddress;
 use App\Services\AddressCoordinateService;
 use App\Services\Logistics\DeliveryScheduleService;
+use App\Services\NominatimService;
 use App\Services\ShippingEstimateService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -22,6 +23,7 @@ class ShippingEstimateController extends Controller
         private readonly ShippingEstimateService $shippingEstimateService,
         private readonly AddressCoordinateService $coordinates,
         private readonly DeliveryScheduleService $deliverySchedules,
+        private readonly NominatimService $nominatim,
     ) {}
 
     public function estimate(Request $request): JsonResponse
@@ -189,25 +191,8 @@ class ShippingEstimateController extends Controller
     private function geocodeAddress(string $address): ?array
     {
         try {
-            $response = Http::timeout(10)
-                ->withHeaders([
-                    'Accept' => 'application/json',
-                    'User-Agent' => 'SoleSpace Shipping Estimate/1.0',
-                ])
-                ->get('https://nominatim.openstreetmap.org/search', [
-                    'q' => $address,
-                    'format' => 'jsonv2',
-                    'limit' => 1,
-                    'countrycodes' => 'ph',
-                    'addressdetails' => 0,
-                ]);
-
-            if ($response->failed()) {
-                return null;
-            }
-
-            $result = $response->json();
-            if (!is_array($result) || empty($result[0]['lat']) || empty($result[0]['lon'])) {
+            $result = $this->nominatim->search($address, false);
+            if (! isset($result[0])) {
                 return null;
             }
 

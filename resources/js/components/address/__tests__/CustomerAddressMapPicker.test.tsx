@@ -59,9 +59,11 @@ const addressResult = {
   lon: '120.9842',
 };
 
-const response = (body: unknown, ok = true) => ({
+const response = (body: unknown, ok = true, status = ok ? 200 : 502, headers = new Headers()) => ({
+  headers,
   json: vi.fn().mockResolvedValue(body),
   ok,
+  status,
 }) as unknown as Response;
 
 describe('CustomerAddressMapPicker', () => {
@@ -378,6 +380,34 @@ describe('CustomerAddressMapPicker', () => {
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/try again/i));
     expect(screen.getByText('10.315700, 123.885400')).toBeInTheDocument();
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['search', async () => {
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Search address' }), { target: { value: 'Manila' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    }],
+    ['reverse lookup', async () => {
+      await waitFor(() => expect(leaflet.map.on).toHaveBeenCalledWith('click', expect.any(Function)));
+      const click = leaflet.map.on.mock.calls.find(([event]) => event === 'click')?.[1];
+      click({ latlng: { lat: 14.5, lng: 121 } });
+    }],
+  ])('shows the busy message without retrying when %s receives 429', async (_name, trigger) => {
+    const fetchMock = vi.fn().mockResolvedValue(response(
+      { message: 'Address lookup is busy. Please try again shortly.', retry_after: 1 },
+      false,
+      429,
+      new Headers({ 'Retry-After': '1' }),
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+    render(<CustomerAddressMapPicker value={null} onChange={vi.fn()} />);
+
+    await act(trigger);
+
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(
+      'Address lookup is busy. Please try again shortly.',
+    ));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('restores the previous pin when reverse geocoding a drag fails', async () => {

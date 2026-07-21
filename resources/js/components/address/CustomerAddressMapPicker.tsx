@@ -15,9 +15,19 @@ export type CustomerAddressMapPickerProps = {
 
 const PHILIPPINES_CENTER: [number, number] = [12.8797, 121.774];
 const EMPTY_STATUS = 'Search for an address or choose a point on the map.';
+type GeocodeRequestError = Error & { status?: number; retryAfter?: string | null };
+
 const requestGeocode = async <T,>(url: string, signal: AbortSignal): Promise<T> => {
   const response = await fetch(url, { signal });
-  if (!response.ok) throw new Error('Address geocoding request failed');
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: unknown; message?: unknown } | null;
+    const detail = body && [body.message, body.error]
+      .find((value) => typeof value === 'string' && value.length <= 200);
+    throw Object.assign(
+      new Error(typeof detail === 'string' ? detail : 'Address geocoding request failed'),
+      { status: response.status, retryAfter: response.headers.get('Retry-After') },
+    ) as GeocodeRequestError;
+  }
 
   return response.json() as Promise<T>;
 };
@@ -159,9 +169,11 @@ export default function CustomerAddressMapPicker({
     } catch (error) {
       if (mountedRef.current && requestId === requestRef.current && (error as Error).name !== 'AbortError') {
         restorePendingRollback();
-        setStatus(source === 'gps'
-          ? 'Could not identify your location. Please try searching instead.'
-          : 'Could not identify this location. Please try again.');
+        setStatus((error as GeocodeRequestError).status === 429
+          ? 'Address lookup is busy. Please try again shortly.'
+          : source === 'gps'
+            ? 'Could not identify your location. Please try searching instead.'
+            : 'Could not identify this location. Please try again.');
       }
     } finally {
       if (mountedRef.current && source === 'gps' && requestId === requestRef.current) setLocating(false);
@@ -285,7 +297,9 @@ export default function CustomerAddressMapPicker({
       else if (!applyResult(result)) setStatus('Choose a complete Philippine address and try again.');
     } catch (error) {
       if (mountedRef.current && requestId === requestRef.current && (error as Error).name !== 'AbortError') {
-        setStatus('Address search is unavailable. Please try again.');
+        setStatus((error as GeocodeRequestError).status === 429
+          ? 'Address lookup is busy. Please try again shortly.'
+          : 'Address search is unavailable. Please try again.');
       }
     } finally {
       if (mountedRef.current && requestId === requestRef.current) setSearching(false);
