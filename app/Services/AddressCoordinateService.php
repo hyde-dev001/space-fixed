@@ -19,11 +19,25 @@ class AddressCoordinateService
             $address['postal_code'] ?? $address['shipping_postal_code'] ?? null,
             'Philippines',
         ]));
+        $localityQuery = implode(', ', array_filter([
+            $address['city'] ?? $address['shipping_city'] ?? null,
+            $address['province'] ?? $address['region'] ?? $address['shipping_region'] ?? null,
+            $address['postal_code'] ?? $address['shipping_postal_code'] ?? null,
+            'Philippines',
+        ]));
 
         try {
             $result = $this->nominatim->search($query, false);
             if (isset($result[0])) {
                 return ['latitude' => (float) $result[0]['lat'], 'longitude' => (float) $result[0]['lon']];
+            }
+
+            if ($localityQuery !== $query) {
+                sleep(1);
+                $result = $this->nominatim->search($localityQuery, false);
+                if (isset($result[0])) {
+                    return ['latitude' => (float) $result[0]['lat'], 'longitude' => (float) $result[0]['lon']];
+                }
             }
         } catch (\Throwable $exception) {
             Log::warning('Address geocoding failed', ['message' => $exception->getMessage()]);
