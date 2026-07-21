@@ -24,7 +24,7 @@ Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth:web');
 Route::get('/address/geocode', AddressGeocodingController::class)
-    ->middleware(['web', 'throttle:60,1']);
+    ->middleware(['web', 'throttle:10,1,nominatim:']);
 
 /**
  * PayMongo Webhook - Must be accessible without authentication

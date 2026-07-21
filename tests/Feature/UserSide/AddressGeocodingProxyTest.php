@@ -22,6 +22,9 @@ class AddressGeocodingProxyTest extends TestCase
             'services.nominatim.user_agent' => 'SoleSpace Tests/1.0 (tests@example.com)',
         ]);
         Cache::clear();
+        $this->withServerVariables([
+            'REMOTE_ADDR' => sprintf('198.19.%d.%d', random_int(0, 255), random_int(1, 254)),
+        ]);
     }
 
     public function test_guest_search_uses_configured_nominatim_request_and_returns_raw_json(): void
@@ -96,11 +99,78 @@ class AddressGeocodingProxyTest extends TestCase
             ['latitude' => 21.51, 'longitude' => 121],
             ['latitude' => 14.5, 'longitude' => 115.99],
             ['latitude' => 14.5, 'longitude' => 127.01],
-        ] as $query) {
+            ['q' => 'Manila', 'limit' => 0],
+            ['q' => 'Manila', 'limit' => 6],
+            ['q' => 'Manila', 'limit' => 1.5],
+            ['latitude' => 14.5, 'longitude' => 121, 'limit' => 5],
+        ] as $index => $query) {
+            $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.'.($index + 1)]);
             $this->getJson('/api/address/geocode?'.http_build_query($query))->assertUnprocessable();
         }
 
         Http::assertNothingSent();
+    }
+
+    public function test_public_proxy_throttles_the_eleventh_cached_request_per_ip(): void
+    {
+        $payload = [['lat' => '14.5995', 'lon' => '120.9842', 'address' => []]];
+        Http::fake(["https://nominatim.test/*" => Http::response($payload)]);
+        $ip = sprintf('198.18.%d.%d', random_int(0, 255), random_int(1, 254));
+        $this->withServerVariables(['REMOTE_ADDR' => $ip]);
+        $this->getJson('/api/address/geocode?q=Manila')->assertOk();
+
+        $statuses = [];
+        foreach (range(2, 11) as $request) {
+            $statuses[] = $this->getJson('/api/address/geocode?q=Manila')->status();
+        }
+        $this->assertSame([...array_fill(0, 9, 200), 429], $statuses);
+
+        Http::assertSentCount(1);
+    }
+
+    public function test_search_limit_is_bounded_forwarded_and_cache_specific(): void
+    {
+        $payload = collect(range(1, 5))->map(fn (int $index) => [
+            'lat' => (string) (14 + $index / 100),
+            'lon' => (string) (120 + $index / 100),
+            'display_name' => "Candidate {$index}",
+            'address' => ['city' => "City {$index}"],
+        ])->all();
+        Http::fake(fn (ClientRequest $request) => Http::response(array_slice($payload, 0, (int) $request['limit'])));
+
+        $this->getJson('/api/address/geocode?q=Manila&limit=1')->assertOk()->assertJsonCount(1);
+        Cache::forget('nominatim:last-dispatch-ms');
+        $this->getJson('/api/address/geocode?q=Manila&limit=5')
+            ->assertOk()
+            ->assertExactJson($payload);
+        $this->getJson('/api/address/geocode?q=Manila&limit=1')->assertOk()->assertJsonCount(1);
+        $this->getJson('/api/address/geocode?q=Manila&limit=5')->assertOk()->assertJsonCount(5);
+
+        Http::assertSentCount(2);
+        $this->assertSame(
+            [1, 5],
+            Http::recorded()->map(fn (array $record) => $record[0]['limit'])->all(),
+        );
+    }
+
+    public function test_response_cache_forgets_the_oldest_entries_and_refetches_them(): void
+    {
+        config(['services.nominatim.cache_max_entries' => 2]);
+        Http::fake(fn (ClientRequest $request) => Http::response([[
+            'lat' => $request['q'] === 'Alpha' ? '14.1' : '14.2',
+            'lon' => '120.1',
+            'display_name' => $request['q'],
+            'address' => ['city' => $request['q']],
+        ]]));
+
+        $this->getJson('/api/address/geocode?q=Alpha')->assertOk();
+        Cache::forget('nominatim:last-dispatch-ms');
+        $this->getJson('/api/address/geocode?q=Beta')->assertOk();
+        Cache::forget('nominatim:last-dispatch-ms');
+        $this->getJson('/api/address/geocode?q=Alpha')->assertOk();
+
+        Http::assertSentCount(3);
+        $this->assertCount(2, Cache::get('nominatim:response-keys'));
     }
 
     public function test_normalized_request_is_cached_before_the_limiter(): void
@@ -245,5 +315,9 @@ class AddressGeocodingProxyTest extends TestCase
                 }
             }
         }
+
+        $shopSettings = (string) file_get_contents(resource_path('js/Pages/ShopOwner/Settings/shopSetting.tsx'));
+        $this->assertStringContainsString('/api/address/geocode?q=${encodeURIComponent(addressSearch)}&limit=5', $shopSettings);
+        $this->assertStringContainsString('addressResults.map(', $shopSettings);
     }
 }

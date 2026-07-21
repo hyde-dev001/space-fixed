@@ -14,35 +14,26 @@ class NominatimService
     private const HTTP_TIMEOUT_SECONDS = 5;
     private const LOCK_TTL_SECONDS = 10;
     private const MINIMUM_INTERVAL_MS = 1000;
+    private const RESPONSE_KEYS = 'nominatim:response-keys';
 
-    public function search(string $query, bool $addressDetails = true): array
+    public function search(string $query, bool $addressDetails = true, int $limit = 1): array
     {
         $query = preg_replace('/\s+/u', ' ', trim($query)) ?? '';
+        $limit = max(1, min(5, $limit));
 
-        $payload = $this->request(
+        return $this->request(
             'search',
             [
                 'q' => $query,
                 'format' => 'jsonv2',
                 'addressdetails' => $addressDetails ? 1 : 0,
                 'countrycodes' => 'ph',
-                'limit' => 1,
+                'limit' => $limit,
             ],
-            'nominatim:response:search:'.hash('sha256', Str::lower($query).'|'.(int) $addressDetails),
+            'nominatim:response:search:'.hash('sha256', Str::lower($query).'|'.(int) $addressDetails.'|'.$limit),
             fn (array $payload) => $this->validSearch($payload, $addressDetails),
+            $addressDetails,
         );
-
-        if ($addressDetails) {
-            foreach ($payload as $result) {
-                Cache::put(
-                    $this->reverseCacheKey((float) $result['lat'], (float) $result['lon']),
-                    $result,
-                    self::CACHE_TTL_SECONDS,
-                );
-            }
-        }
-
-        return $payload;
     }
 
     public function reverse(float $latitude, float $longitude): array
@@ -60,7 +51,13 @@ class NominatimService
         );
     }
 
-    private function request(string $path, array $parameters, string $cacheKey, callable $valid): array
+    private function request(
+        string $path,
+        array $parameters,
+        string $cacheKey,
+        callable $valid,
+        bool $primeReverse = false,
+    ): array
     {
         if (Cache::has($cacheKey)) {
             return Cache::get($cacheKey);
@@ -98,7 +95,15 @@ class NominatimService
                 throw new RuntimeException('Address lookup is unavailable.', 502);
             }
 
-            Cache::put($cacheKey, $payload, self::CACHE_TTL_SECONDS);
+            $this->store($cacheKey, $payload);
+            if ($primeReverse) {
+                foreach ($payload as $result) {
+                    $this->store(
+                        $this->reverseCacheKey((float) $result['lat'], (float) $result['lon']),
+                        $result,
+                    );
+                }
+            }
 
             return $payload;
         } finally {
@@ -135,6 +140,21 @@ class NominatimService
     private function coordinate(mixed $value): bool
     {
         return is_numeric($value) && is_finite((float) $value);
+    }
+
+    private function store(string $key, array $payload): void
+    {
+        $keys = Cache::get(self::RESPONSE_KEYS, []);
+        $keys = is_array($keys) ? array_values(array_filter($keys, fn ($stored) => $stored !== $key)) : [];
+        $keys[] = $key;
+
+        $maximum = max(1, (int) config('services.nominatim.cache_max_entries', 500));
+        while (count($keys) > $maximum) {
+            Cache::forget((string) array_shift($keys));
+        }
+
+        Cache::forever(self::RESPONSE_KEYS, $keys);
+        Cache::put($key, $payload, self::CACHE_TTL_SECONDS);
     }
 
     private function reverseCacheKey(float $latitude, float $longitude): string

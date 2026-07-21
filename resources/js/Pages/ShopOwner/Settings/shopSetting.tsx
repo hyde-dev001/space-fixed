@@ -1584,7 +1584,7 @@ const ShopSetting: React.FC = () => {
 		setAddressResults([]);
 		try {
 			const res = await fetch(
-				`/api/address/geocode?q=${encodeURIComponent(addressSearch)}`,
+				`/api/address/geocode?q=${encodeURIComponent(addressSearch)}&limit=5`,
 			);
 			if (!res.ok) throw new Error('Address search failed');
 			const data = await res.json();

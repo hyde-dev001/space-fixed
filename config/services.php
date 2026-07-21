@@ -43,6 +43,7 @@ return [
     'nominatim' => [
         'url' => env('NOMINATIM_URL', 'https://nominatim.openstreetmap.org'),
         'user_agent' => env('NOMINATIM_USER_AGENT', 'SoleSpace/1.0 (customer-address-geocoder)'),
+        'cache_max_entries' => env('NOMINATIM_CACHE_MAX_ENTRIES', 500),
     ],
 
     'mailtrap-sdk' => [

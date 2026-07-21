@@ -22,11 +22,21 @@ class AddressGeocodingController extends Controller
             'q' => ['nullable', 'string', 'min:2', 'max:200', 'required_without_all:latitude,longitude', 'prohibits:latitude,longitude'],
             'latitude' => ['nullable', 'numeric', 'between:4.5,21.5', 'required_without:q', 'required_with:longitude'],
             'longitude' => ['nullable', 'numeric', 'between:116,127', 'required_without:q', 'required_with:latitude'],
+            'limit' => [
+                'nullable',
+                'integer',
+                'between:1,5',
+                function (string $attribute, mixed $value, \Closure $fail) use ($request): void {
+                    if (! $request->filled('q')) {
+                        $fail('The limit field is only allowed for address searches.');
+                    }
+                },
+            ],
         ]);
 
         try {
             $payload = isset($validated['q'])
-                ? $this->nominatim->search($validated['q'])
+                ? $this->nominatim->search($validated['q'], true, (int) ($validated['limit'] ?? 1))
                 : $this->nominatim->reverse((float) $validated['latitude'], (float) $validated['longitude']);
         } catch (RuntimeException $exception) {
             return $exception->getCode() === 429 ? $this->busy() : $this->unavailable();
