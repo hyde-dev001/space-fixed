@@ -14,75 +14,12 @@ export type CustomerAddressMapPickerProps = {
 };
 
 const PHILIPPINES_CENTER: [number, number] = [12.8797, 121.774];
-export const NOMINATIM_ENDPOINT = 'https://nominatim.openstreetmap.org';
-const NOMINATIM_INTERVAL_MS = 1000;
 const EMPTY_STATUS = 'Search for an address or choose a point on the map.';
-const nominatimCache = new Map<string, unknown>();
-let nominatimQueue: Promise<void> = Promise.resolve();
-let nextNominatimRequestAt = 0;
-let activeFetch = globalThis.fetch;
+const requestGeocode = async <T,>(url: string, signal: AbortSignal): Promise<T> => {
+  const response = await fetch(url, { signal });
+  if (!response.ok) throw new Error('Address geocoding request failed');
 
-const abortError = () => new DOMException('The request was aborted.', 'AbortError');
-
-const waitForNominatimTurn = (delay: number, signal: AbortSignal) => new Promise<void>((resolve, reject) => {
-  if (signal.aborted) return reject(abortError());
-  const timer = window.setTimeout(done, delay);
-  const aborted = () => {
-    window.clearTimeout(timer);
-    signal.removeEventListener('abort', aborted);
-    reject(abortError());
-  };
-  function done() {
-    signal.removeEventListener('abort', aborted);
-    resolve();
-  }
-  signal.addEventListener('abort', aborted, { once: true });
-});
-
-const abortable = <T,>(promise: Promise<T>, signal: AbortSignal) => new Promise<T>((resolve, reject) => {
-  if (signal.aborted) return reject(abortError());
-  const aborted = () => {
-    signal.removeEventListener('abort', aborted);
-    reject(abortError());
-  };
-  signal.addEventListener('abort', aborted, { once: true });
-  promise.then(
-    (result) => {
-      signal.removeEventListener('abort', aborted);
-      resolve(result);
-    },
-    (error) => {
-      signal.removeEventListener('abort', aborted);
-      reject(error);
-    },
-  );
-});
-
-const requestNominatim = <T,>(url: string, signal: AbortSignal): Promise<T> => {
-  const fetcher = globalThis.fetch;
-  if (fetcher !== activeFetch) {
-    activeFetch = fetcher;
-    nominatimCache.clear();
-    nominatimQueue = Promise.resolve();
-    nextNominatimRequestAt = 0;
-  }
-  if (signal.aborted) return Promise.reject(abortError());
-  if (nominatimCache.has(url)) return Promise.resolve(nominatimCache.get(url) as T);
-
-  const request = nominatimQueue.then(async () => {
-    if (nominatimCache.has(url)) return nominatimCache.get(url) as T;
-    const delay = Math.max(0, nextNominatimRequestAt - Date.now());
-    if (delay) await waitForNominatimTurn(delay, signal);
-    if (signal.aborted) throw abortError();
-    nextNominatimRequestAt = Date.now() + NOMINATIM_INTERVAL_MS;
-    const response = await abortable(fetcher(url, { signal }), signal);
-    if (!response.ok) throw new Error('Nominatim request failed');
-    const result = await abortable(response.json() as Promise<T>, signal);
-    nominatimCache.set(url, result);
-    return result;
-  });
-  nominatimQueue = request.then(() => undefined, () => undefined);
-  return request;
+  return response.json() as Promise<T>;
 };
 
 const sameCoordinates = (left: CoordinateValue, right: CoordinateValue) => (
@@ -210,8 +147,8 @@ export default function CustomerAddressMapPicker({
   ) => {
     abortRef.current = new AbortController();
     try {
-      const result = await requestNominatim<unknown>(
-        `${NOMINATIM_ENDPOINT}/reverse?lat=${latitude}&lon=${longitude}&format=json&addressdetails=1`,
+      const result = await requestGeocode<unknown>(
+        `/api/address/geocode?latitude=${latitude}&longitude=${longitude}`,
         abortRef.current.signal,
       );
       if (!mountedRef.current || requestId !== requestRef.current) return;
@@ -339,8 +276,8 @@ export default function CustomerAddressMapPicker({
     setSearching(true);
     setStatus('Searching for that address…');
     try {
-      const [result] = await requestNominatim<unknown[]>(
-        `${NOMINATIM_ENDPOINT}/search?format=json&addressdetails=1&countrycodes=ph&limit=1&q=${encodeURIComponent(address)}`,
+      const [result] = await requestGeocode<unknown[]>(
+        `/api/address/geocode?q=${encodeURIComponent(address)}`,
         abortRef.current.signal,
       );
       if (!mountedRef.current || requestId !== requestRef.current) return;

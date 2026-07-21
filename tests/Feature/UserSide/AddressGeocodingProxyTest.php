@@ -1,0 +1,174 @@
+<?php
+
+namespace Tests\Feature\UserSide;
+
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request as ClientRequest;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
+use Tests\TestCase;
+
+class AddressGeocodingProxyTest extends TestCase
+{
+    use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config([
+            'cache.default' => 'array',
+            'services.nominatim.url' => 'https://nominatim.test',
+            'services.nominatim.user_agent' => 'SoleSpace Tests/1.0 (tests@example.com)',
+        ]);
+        Cache::clear();
+    }
+
+    public function test_customer_search_uses_configured_nominatim_request_and_returns_raw_json(): void
+    {
+        $payload = [['lat' => '14.5995', 'lon' => '120.9842', 'display_name' => 'Manila']];
+        $options = [];
+        Http::fake(function (ClientRequest $request, array $requestOptions) use ($payload, &$options) {
+            $options = $requestOptions;
+
+            return Http::response($payload);
+        });
+
+        $this->actingAs($this->customer(), 'user')
+            ->getJson('/api/address/geocode?q=Ermita%20Manila')
+            ->assertOk()
+            ->assertExactJson($payload);
+
+        Http::assertSent(function (ClientRequest $request) {
+            return str_starts_with($request->url(), 'https://nominatim.test/search?')
+                && $request['q'] === 'Ermita Manila'
+                && $request['format'] === 'jsonv2'
+                && $request['addressdetails'] === 1
+                && $request['countrycodes'] === 'ph'
+                && $request['limit'] === 1
+                && $request->hasHeader('Accept', 'application/json')
+                && $request->hasHeader('User-Agent', 'SoleSpace Tests/1.0 (tests@example.com)');
+        });
+        $this->assertSame(5, $options['timeout']);
+    }
+
+    public function test_customer_reverse_lookup_uses_bounded_coordinates_and_returns_raw_json(): void
+    {
+        $payload = ['lat' => '14.5995', 'lon' => '120.9842', 'display_name' => 'Manila'];
+        Http::fake(["https://nominatim.test/*" => Http::response($payload)]);
+
+        $this->actingAs($this->customer(), 'user')
+            ->getJson('/api/address/geocode?latitude=14.5995&longitude=120.9842')
+            ->assertOk()
+            ->assertExactJson($payload);
+
+        Http::assertSent(fn (ClientRequest $request) =>
+            str_starts_with($request->url(), 'https://nominatim.test/reverse?')
+            && $request['lat'] === 14.5995
+            && $request['lon'] === 120.9842
+            && $request['format'] === 'jsonv2'
+            && $request['addressdetails'] === 1
+            && ! isset($request['countrycodes'])
+            && ! isset($request['limit'])
+        );
+    }
+
+    public function test_proxy_requires_customer_authentication_and_valid_exclusive_input(): void
+    {
+        Http::fake();
+
+        $this->getJson('/api/address/geocode?q=Manila')->assertUnauthorized();
+
+        $this->actingAs($this->customer(), 'user');
+        foreach ([
+            [],
+            ['q' => ' x '],
+            ['q' => str_repeat('x', 201)],
+            ['q' => 'Manila', 'latitude' => 14.5, 'longitude' => 121],
+            ['latitude' => 14.5],
+            ['longitude' => 121],
+            ['latitude' => 4.49, 'longitude' => 121],
+            ['latitude' => 21.51, 'longitude' => 121],
+            ['latitude' => 14.5, 'longitude' => 115.99],
+            ['latitude' => 14.5, 'longitude' => 127.01],
+        ] as $query) {
+            $this->getJson('/api/address/geocode?'.http_build_query($query))->assertUnprocessable();
+        }
+
+        Http::assertNothingSent();
+    }
+
+    public function test_normalized_request_is_cached_before_the_limiter(): void
+    {
+        $payload = [['lat' => '14.5995', 'lon' => '120.9842']];
+        Http::fake(["https://nominatim.test/*" => Http::response($payload)]);
+        $this->actingAs($this->customer(), 'user');
+
+        $this->getJson('/api/address/geocode?q=%20Ermita%20%20Manila%20')->assertOk()->assertExactJson($payload);
+        $this->getJson('/api/address/geocode?q=ermita%20manila')->assertOk()->assertExactJson($payload);
+
+        Http::assertSentCount(1);
+    }
+
+    public function test_shared_limiter_rejects_an_immediate_uncached_request_from_another_customer(): void
+    {
+        Http::fake(["https://nominatim.test/*" => Http::response([])]);
+
+        $this->actingAs($this->customer(), 'user')
+            ->getJson('/api/address/geocode?q=Manila')
+            ->assertOk();
+        $this->actingAs($this->customer(), 'user')
+            ->getJson('/api/address/geocode?q=Cebu')
+            ->assertStatus(429)
+            ->assertExactJson([
+                'message' => 'Address lookup is busy. Please try again shortly.',
+                'retry_after' => 1,
+            ]);
+
+        Http::assertSentCount(1);
+    }
+
+    public function test_shared_dispatch_lock_rejects_without_contacting_upstream(): void
+    {
+        Http::fake();
+        $lock = Cache::lock('nominatim:dispatch-lock', 10);
+        $this->assertTrue($lock->get());
+
+        try {
+            $this->actingAs($this->customer(), 'user')
+                ->getJson('/api/address/geocode?q=Manila')
+                ->assertStatus(429)
+                ->assertJsonPath('retry_after', 1);
+        } finally {
+            $lock->release();
+        }
+
+        Http::assertNothingSent();
+    }
+
+    public function test_upstream_http_failure_returns_sanitized_502(): void
+    {
+        Http::fake(["https://nominatim.test/*" => Http::response(['private' => 'upstream detail'], 503)]);
+
+        $this->actingAs($this->customer(), 'user')
+            ->getJson('/api/address/geocode?q=Manila')
+            ->assertStatus(502)
+            ->assertExactJson(['message' => 'Address lookup is unavailable. Please try again.']);
+    }
+
+    public function test_upstream_connection_failure_returns_sanitized_502(): void
+    {
+        Http::fake(["https://nominatim.test/*" => Http::failedConnection('private timeout detail')]);
+
+        $this->actingAs($this->customer(), 'user')
+            ->getJson('/api/address/geocode?q=Manila')
+            ->assertStatus(502)
+            ->assertExactJson(['message' => 'Address lookup is unavailable. Please try again.']);
+    }
+
+    private function customer(): User
+    {
+        return User::factory()->create(['shop_owner_id' => null]);
+    }
+}

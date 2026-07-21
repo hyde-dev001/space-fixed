@@ -107,7 +107,8 @@ describe('CustomerAddressMapPicker', () => {
 
   it('searches a Philippine address and disables only search while loading', async () => {
     let resolveFetch!: (value: Response) => void;
-    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((resolve) => { resolveFetch = resolve; })));
+    const fetchMock = vi.fn(() => new Promise<Response>((resolve) => { resolveFetch = resolve; }));
+    vi.stubGlobal('fetch', fetchMock);
     const onChange = vi.fn();
     render(<CustomerAddressMapPicker value={null} onChange={onChange} />);
 
@@ -117,6 +118,10 @@ describe('CustomerAddressMapPicker', () => {
     expect(screen.getByRole('button', { name: 'Searching…' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Use My Location' })).toBeEnabled();
     await waitFor(() => expect(resolveFetch).toBeTypeOf('function'));
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/address/geocode?q=Ermita%20Manila',
+      { signal: expect.any(AbortSignal) },
+    );
     resolveFetch(response([addressResult]));
 
     await waitFor(() => expect(onChange).toHaveBeenCalledWith({
@@ -316,7 +321,8 @@ describe('CustomerAddressMapPicker', () => {
   });
 
   it('uses GPS and reverse geocodes the location', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(addressResult)));
+    const fetchMock = vi.fn().mockResolvedValue(response(addressResult));
+    vi.stubGlobal('fetch', fetchMock);
     const getCurrentPosition = vi.fn((success: PositionCallback) => success({
       coords: { latitude: 14.5995, longitude: 120.9842 },
     } as GeolocationPosition));
@@ -333,6 +339,10 @@ describe('CustomerAddressMapPicker', () => {
       latitude: 14.5995,
       longitude: 120.9842,
     })));
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/address/geocode?latitude=14.5995&longitude=120.9842',
+      { signal: expect.any(AbortSignal) },
+    );
     expect(getCurrentPosition).toHaveBeenCalledWith(expect.any(Function), expect.any(Function), { enableHighAccuracy: true });
   });
 
@@ -531,14 +541,8 @@ describe('CustomerAddressMapPicker', () => {
     ));
   });
 
-  it('spaces distinct Nominatim requests from multiple pickers by one second', async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(0);
-    const startedAt: number[] = [];
-    const fetchMock = vi.fn(() => {
-      startedAt.push(Date.now());
-      return Promise.resolve(response([addressResult]));
-    });
+  it('leaves concurrent request limiting to the server', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response([addressResult]));
     vi.stubGlobal('fetch', fetchMock);
     render(<>
       <CustomerAddressMapPicker value={null} onChange={vi.fn()} />
@@ -551,17 +555,19 @@ describe('CustomerAddressMapPicker', () => {
     fireEvent.change(inputs[1], { target: { value: 'Second Manila' } });
     fireEvent.click(buttons[0]);
     fireEvent.click(buttons[1]);
-    await act(async () => vi.advanceTimersByTimeAsync(0));
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    await act(async () => vi.advanceTimersByTimeAsync(999));
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    await act(async () => vi.advanceTimersByTimeAsync(1));
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(startedAt[1] - startedAt[0]).toBeGreaterThanOrEqual(1000);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2), { timeout: 250 });
+    expect(fetchMock).toHaveBeenNthCalledWith(1,
+      '/api/address/geocode?q=First%20Manila',
+      { signal: expect.any(AbortSignal) },
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(2,
+      '/api/address/geocode?q=Second%20Manila',
+      { signal: expect.any(AbortSignal) },
+    );
   });
 
-  it('reuses a cached Nominatim response for the same URL', async () => {
+  it('leaves repeated request caching to the server', async () => {
     const fetchMock = vi.fn().mockResolvedValue(response([addressResult]));
     vi.stubGlobal('fetch', fetchMock);
     const onChange = vi.fn();
@@ -575,7 +581,11 @@ describe('CustomerAddressMapPicker', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
     await waitFor(() => expect(onChange).toHaveBeenCalledTimes(2));
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      '/api/address/geocode?q=Cached%20Manila',
+      { signal: expect.any(AbortSignal) },
+    );
   });
 
   it('keeps a real zoom control available when re-enabled from initially disabled', async () => {
