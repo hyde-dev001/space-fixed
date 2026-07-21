@@ -24,9 +24,16 @@ class UserAddressCoordinateTest extends TestCase
     {
         $user = User::factory()->create();
 
-        $this->actingAs($user, 'user')->postJson('/api/user/addresses', $this->payload([
+        $response = $this->actingAs($user, 'user')->postJson('/api/user/addresses', $this->payload([
             'latitude' => 14.5995, 'longitude' => 120.9842, 'delivery_instructions' => 'Blue gate',
         ]))->assertCreated();
+
+        $this->assertIsFloat($response->json('address.latitude'));
+        $this->assertIsFloat($response->json('address.longitude'));
+        $this->getJson('/api/user/addresses')
+            ->assertOk()
+            ->assertJsonPath('addresses.0.latitude', 14.5995)
+            ->assertJsonPath('addresses.0.longitude', 120.9842);
 
         $this->assertDatabaseHas('user_addresses', [
             'user_id' => $user->id, 'latitude' => 14.5995, 'longitude' => 120.9842,
@@ -76,7 +83,7 @@ class UserAddressCoordinateTest extends TestCase
         $first = $this->actingAs($user, 'user')->postJson('/api/user/addresses', $this->payload())->assertCreated()->json('address');
         $second = $this->postJson('/api/user/addresses', $this->payload(['address_line' => 'Unknown']))->assertCreated()->json('address');
 
-        $this->assertSame('14.59950000', $first['latitude']);
+        $this->assertSame(14.5995, $first['latitude']);
         $this->assertNull($second['latitude']);
     }
 }

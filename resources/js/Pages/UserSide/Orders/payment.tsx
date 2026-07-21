@@ -11,6 +11,7 @@ import {
   normalizeCityMunicipalitySelection,
   normalizeProvinceSelection,
 } from '@/data/philippineLocations';
+import CustomerAddressMapPicker from '@/components/address/CustomerAddressMapPicker';
 
 interface CartItem {
   id: string;
@@ -154,12 +155,15 @@ const Payment: React.FC = () => {
   const [shippingCity, setShippingCity] = useState('');
   const [shippingRegion, setShippingRegion] = useState('');
   const cityMunicipalityOptions = getCityMunicipalityOptions(shippingRegion);
-  const [saveAddressForLater, setSaveAddressForLater] = useState(true);
+  const [setAsDefaultAddress, setSetAsDefaultAddress] = useState(false);
   const [userAddresses, setUserAddresses] = useState<UserAddress[]>([]);
   const [isAddressSheetOpen, setIsAddressSheetOpen] = useState(false);
   const [isAddressLoading, setIsAddressLoading] = useState(false);
+  const [isAddressSaving, setIsAddressSaving] = useState(false);
+  const [addressSaveStatus, setAddressSaveStatus] = useState<string | null>(null);
   const [addressSheetMode, setAddressSheetMode] = useState<'list' | 'form'>('list');
   const [editingAddressId, setEditingAddressId] = useState<number | null>(null);
+  const addressMapRef = useRef<HTMLDivElement | null>(null);
   const [shippingEstimate, setShippingEstimate] = useState<ShippingEstimateData | null>(null);
   const [isShippingEstimateLoading, setIsShippingEstimateLoading] = useState(false);
   const [shippingEstimateReason, setShippingEstimateReason] = useState<string | null>(null);
@@ -335,6 +339,24 @@ const Payment: React.FC = () => {
     setIsSheetCityDropdownOpen(false);
   };
 
+  const handleAddressMapChange = (location: {
+    displayName: string;
+    region: string;
+    province: string;
+    city: string;
+    barangay: string;
+    postalCode: string;
+    latitude: number;
+    longitude: number;
+  }) => {
+    setShippingLatitude(location.latitude);
+    setShippingLongitude(location.longitude);
+    setShippingRegion(location.province || location.region);
+    setShippingCity(location.city);
+    setShippingBarangay(location.barangay);
+    setShippingPostalCode(location.postalCode);
+  };
+
   const formatAddressDisplay = (addr?: Partial<UserAddress> | null) => {
     if (!addr) return '';
     if (addr.full_address) return addr.full_address;
@@ -342,6 +364,7 @@ const Payment: React.FC = () => {
   };
 
   const applySelectedAddress = (addr: UserAddress) => {
+    setSetAsDefaultAddress(Boolean(addr.is_default));
     setCustomerName(addr.name || '');
     setCustomerPhone(addr.phone || '');
     setShippingAddressLine(addr.address_line || '');
@@ -370,6 +393,7 @@ const Payment: React.FC = () => {
   const openAddressSheet = async () => {
     setAddressSheetMode('list');
     setEditingAddressId(null);
+    setAddressSaveStatus(null);
 
     if (!user) {
       setIsAddressSheetOpen(true);
@@ -430,6 +454,8 @@ const Payment: React.FC = () => {
       return;
     }
 
+    setIsAddressSaving(true);
+    setAddressSaveStatus(null);
     try {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
       const isEditingAddress = editingAddressId !== null;
@@ -454,7 +480,7 @@ const Payment: React.FC = () => {
           postal_code: shippingPostalCode,
           latitude: shippingLatitude,
           longitude: shippingLongitude,
-          is_default: userAddresses.length === 0,
+          is_default: setAsDefaultAddress,
         }),
       });
 
@@ -475,18 +501,20 @@ const Payment: React.FC = () => {
       }
 
       setEditingAddressId(null);
-      setIsAddressSheetOpen(false);
       setAddressSheetMode('list');
+      setAddressSaveStatus('Address saved. You can select it from the list.');
     } catch (error) {
-      console.warn('Failed to save address from sheet:', error);
-      setEditingAddressId(null);
-      setIsAddressSheetOpen(false);
-      setAddressSheetMode('list');
+      setAddressSaveStatus('We could not save this address. Please try again.');
+    } finally {
+      setIsAddressSaving(false);
     }
   };
 
-  const handleEditAddressFromList = (addr: UserAddress) => {
+  const handleEditAddressFromList = (addr: UserAddress, focusMap = false) => {
+    setIsAddressSheetOpen(true);
+    setAddressSaveStatus(null);
     setEditingAddressId(addr.id);
+    setSetAsDefaultAddress(Boolean(addr.is_default));
     setCustomerName(addr.name || '');
     setCustomerPhone(addr.phone || '');
     setShippingAddressLine(addr.address_line || '');
@@ -499,6 +527,12 @@ const Payment: React.FC = () => {
     setShippingLatitude(addr.latitude ?? null);
     setShippingLongitude(addr.longitude ?? null);
     setAddressSheetMode('form');
+    if (focusMap) {
+      requestAnimationFrame(() => {
+        addressMapRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        addressMapRef.current?.querySelector<HTMLInputElement>('input')?.focus();
+      });
+    }
   };
 
   const handleDeleteAddressFromForm = async () => {
@@ -1669,16 +1703,26 @@ const Payment: React.FC = () => {
     setCustomerPhone(value.replace(/\D/g, '').slice(0, 11));
   };
 
-  // Save address to user account
-  const saveAddressToAccount = async (orderId: number | undefined) => {
-    if (!saveAddressForLater || !orderId) return;
+  // Persist the delivery address before creating an order so its address_id is current.
+  const saveAddressToAccount = async (): Promise<number | null> => {
+    if (!user || isPremiumPayment || isRepairPayment) return checkoutData?.address_id ?? null;
     const normalizedShippingCity = normalizeCityMunicipalitySelection(shippingRegion, shippingCity);
-    if (!normalizedShippingCity) return;
+    if (!normalizedShippingCity) {
+      throw new Error('Please select a valid city or municipality before checkout.');
+    }
 
-    try {
-      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-      
-      const addressData = {
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+    const targetAddressId = checkoutData?.address_id ?? null;
+    const response = await fetch(targetAddressId ? `/api/user/addresses/${targetAddressId}` : '/api/user/addresses', {
+      method: targetAddressId ? 'PUT' : 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'X-CSRF-TOKEN': csrfToken,
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+      credentials: 'include',
+      body: JSON.stringify({
         name: customerName,
         phone: customerPhone,
         address_line: shippingAddressLine,
@@ -1689,30 +1733,24 @@ const Payment: React.FC = () => {
         postal_code: shippingPostalCode,
         latitude: shippingLatitude,
         longitude: shippingLongitude,
-        is_default: true,
-      };
+        is_default: setAsDefaultAddress,
+      }),
+    });
 
-      const response = await fetch('/api/user/addresses', {
-        method: 'POST',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-          'X-CSRF-TOKEN': csrfToken,
-          'X-Requested-With': 'XMLHttpRequest',
-        },
-        credentials: 'include',
-        body: JSON.stringify(addressData),
-      });
-
-      if (response.ok) {
-        console.log('Address saved successfully');
-      } else {
-        console.warn('Failed to save address, but order was created');
-      }
-    } catch (error) {
-      console.warn('Unable to save address:', error);
-      // Don't fail - order was already created
+    if (!response.ok) {
+      throw new Error('Unable to save delivery address. Please try again.');
     }
+
+    const savedAddress: UserAddress | undefined = (await response.json()).address;
+    if (!savedAddress?.id) {
+      throw new Error('Unable to save delivery address. Please try again.');
+    }
+
+    setUserAddresses((prev) => targetAddressId
+      ? prev.map((address) => address.id === savedAddress.id ? savedAddress : address)
+      : [savedAddress, ...prev]);
+    setCheckoutData((prev) => (prev ? { ...prev, address_id: savedAddress.id } : prev));
+    return savedAddress.id;
   };
 
   const handleCreateNewPaymentSession = async () => {
@@ -1891,7 +1929,9 @@ const Payment: React.FC = () => {
     setPayError(null);
 
     try {
-      // First, create the order
+      const savedAddressId = await saveAddressToAccount();
+
+      // Create the order only after its delivery address is persisted.
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
       
       const orderData = {
@@ -1902,7 +1942,7 @@ const Payment: React.FC = () => {
         customer_email: customerEmail,
         customer_phone: customerPhone,
         shipping_address: `${shippingAddressLine}, ${shippingBarangay}, ${normalizedShippingCity}, ${shippingRegion} ${shippingPostalCode}`,
-        address_id: checkoutData.address_id ?? null,
+        address_id: savedAddressId,
         shipping_region: shippingRegion,
         shipping_province: shippingRegion,
         shipping_city: normalizedShippingCity,
@@ -1940,9 +1980,6 @@ const Payment: React.FC = () => {
 
       const orderId = orderResult.order?.id || orderResult.order_id;
       sessionStorage.setItem('pendingOrderId', orderId);
-
-      // Save address if checkbox is checked
-      await saveAddressToAccount(orderId);
 
       // Create a dedicated payment retry session that also persists fresh link metadata.
       const response = await fetch(`/api/orders/${orderId}/retry-payment-session`, {
@@ -2387,12 +2424,20 @@ const Payment: React.FC = () => {
                   <div className="w-6" />
                 </div>
 
+                {addressSaveStatus && (
+                  <p aria-live="polite" className="border-b border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+                    {addressSaveStatus}
+                  </p>
+                )}
+
                 {addressSheetMode === 'list' ? (
                   <>
                     <button
                       type="button"
                       onClick={() => {
                         setEditingAddressId(null);
+                        setAddressSaveStatus(null);
+                        setSetAsDefaultAddress(false);
                         setAddressSheetMode('form');
                       }}
                       className="w-full px-4 py-5 border-b border-gray-200 flex items-center justify-between text-left"
@@ -2443,6 +2488,18 @@ const Payment: React.FC = () => {
                                 >
                                   Edit
                                 </button>
+                                {(addr.latitude == null || addr.longitude == null) && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleEditAddressFromList(addr, true);
+                                    }}
+                                    className="shrink-0 text-sm font-semibold text-blue-700 underline"
+                                  >
+                                    Repin address
+                                  </button>
+                                )}
                               </div>
                             </div>
                           );
@@ -2580,12 +2637,25 @@ const Payment: React.FC = () => {
                       className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
                     />
 
+                    <div ref={addressMapRef}>
+                      <p className="mb-2 text-sm text-gray-600">
+                        Pin the exact delivery entrance, then check the address details above.
+                      </p>
+                      <CustomerAddressMapPicker
+                        value={shippingLatitude !== null && shippingLongitude !== null
+                          ? { latitude: shippingLatitude, longitude: shippingLongitude }
+                          : null}
+                        onChange={handleAddressMapChange}
+                      />
+                    </div>
+
                     <button
                       type="button"
                       onClick={handleUseAddressFromForm}
-                      className="w-full mt-2 rounded-lg bg-gray-900 py-3 text-base font-semibold text-white"
+                      disabled={isAddressSaving}
+                      className="w-full mt-2 rounded-lg bg-gray-900 py-3 text-base font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-400"
                     >
-                      {editingAddressId ? 'Save changes' : 'Use this address'}
+                      {isAddressSaving ? 'Saving address...' : editingAddressId ? 'Save changes' : 'Use this address'}
                     </button>
 
                     {editingAddressId && (
@@ -2786,6 +2856,20 @@ const Payment: React.FC = () => {
                     </>
                   )}
 
+                  {!isPremiumPayment && (
+                    <div>
+                      <p className="mb-2 text-sm text-gray-600">
+                        Pin the exact delivery entrance, then check the address details above.
+                      </p>
+                      <CustomerAddressMapPicker
+                        value={shippingLatitude !== null && shippingLongitude !== null
+                          ? { latitude: shippingLatitude, longitude: shippingLongitude }
+                          : null}
+                        onChange={handleAddressMapChange}
+                      />
+                    </div>
+                  )}
+
                   {/* Phone */}
                   <div>
                     <label className="block text-sm font-medium text-black mb-2.5">Phone</label>
@@ -2801,18 +2885,23 @@ const Payment: React.FC = () => {
                     />
                   </div>
 
-                  {/* Save info */}
-                  <label className="flex items-center gap-3 pt-2">
-                    <input 
-                      type="checkbox" 
-                      title="Save my information for faster checkout"
-                      aria-label="Save my information for faster checkout"
-                      checked={saveAddressForLater}
-                      onChange={e => setSaveAddressForLater(e.target.checked)}
-                      className="w-5 h-5" 
-                    />
-                    <span className="text-base text-black">Save my information for a faster checkout</span>
-                  </label>
+                  {/* Delivery address persistence */}
+                  <div className="pt-2">
+                    <p className="text-sm text-gray-600">
+                      Your delivery address will be saved or updated for order fulfillment.
+                    </p>
+                    <label className="mt-3 flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        title="Set as my default delivery address"
+                        aria-label="Set as my default delivery address"
+                        checked={setAsDefaultAddress}
+                        onChange={e => setSetAsDefaultAddress(e.target.checked)}
+                        className="w-5 h-5"
+                      />
+                      <span className="text-base text-black">Set as my default delivery address</span>
+                    </label>
+                  </div>
 
                   {/* Text notification */}
                   <label className="flex items-center gap-3 pt-1">

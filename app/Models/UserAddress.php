@@ -25,8 +25,8 @@ class UserAddress extends Model
 
     protected $casts = [
         'is_default' => 'boolean',
-        'latitude' => 'decimal:8',
-        'longitude' => 'decimal:8',
+        'latitude' => 'float',
+        'longitude' => 'float',
     ];
 
     /**
