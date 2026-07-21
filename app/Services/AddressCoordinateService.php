@@ -27,14 +27,13 @@ class AddressCoordinateService
         ]));
 
         try {
-            $result = $this->nominatim->search($query, false);
+            $result = $this->nominatim->search($query, false, 1, true);
             if (isset($result[0])) {
                 return ['latitude' => (float) $result[0]['lat'], 'longitude' => (float) $result[0]['lon']];
             }
 
             if ($localityQuery !== $query) {
-                sleep(1);
-                $result = $this->nominatim->search($localityQuery, false);
+                $result = $this->nominatim->search($localityQuery, false, 1, true);
                 if (isset($result[0])) {
                     return ['latitude' => (float) $result[0]['lat'], 'longitude' => (float) $result[0]['lon']];
                 }

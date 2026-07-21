@@ -9,7 +9,8 @@ const paymentSource = readFileSync(
 
 describe('payment shop-owned coverage integration', () => {
   it('requests coverage for the latest selected saved address and retains the response', () => {
-    expect(paymentSource).toContain('address_id: checkoutData.address_id');
+    expect(paymentSource).toContain('address_id: addressId');
+    expect(paymentSource).toContain('requestShippingEstimate(checkoutData.address_id, controller.signal)');
     expect(paymentSource).toMatch(/shop_owned\?:\s*\{[\s\S]*available:\s*boolean;[\s\S]*reason:\s*'address_needs_pin'\s*\|\s*'shop_needs_pin'\s*\|\s*'outside_coverage'\s*\|\s*'logistics_unavailable'\s*\|\s*null;[\s\S]*distance_km:\s*number\s*\|\s*null;[\s\S]*coverage_radius_km:\s*number\s*\|\s*null;/);
     expect(paymentSource).toContain('shop_owned: data.shop_owned');
     expect(paymentSource).toContain('checkoutData,');
@@ -36,5 +37,35 @@ describe('payment shop-owned coverage integration', () => {
     expect(paymentSource).toContain('shippingEstimate?.max_fee');
     expect(paymentSource).toContain('if (!shippingEstimate || computedShippingFee <= 0)');
     expect(paymentSource).toContain('shipping_fee: computedShippingFee');
+  });
+
+  it('refreshes preview coverage from the latest draft pin with stale-response protection', () => {
+    expect(paymentSource).toContain('const shippingEstimateRequestRef = useRef(0);');
+    expect(paymentSource).toContain('const requestId = ++shippingEstimateRequestRef.current;');
+    expect(paymentSource).toContain('requestId !== shippingEstimateRequestRef.current');
+    expect(paymentSource).toContain('shipping_latitude: shippingLatitude');
+    expect(paymentSource).toContain('shipping_longitude: shippingLongitude');
+    expect(paymentSource).toMatch(/shippingLatitude,[\s\S]*shippingLongitude,[\s\S]*\]\);/);
+    expect(paymentSource.match(/requestShippingEstimate\(/g)?.length || 0).toBeGreaterThanOrEqual(2);
+  });
+
+  it('saves the address then requires a fresh saved-id estimate before creating the order', () => {
+    const saveIndex = paymentSource.indexOf('const savedAddressId = await saveAddressToAccount()');
+    const finalEstimateIndex = paymentSource.indexOf('await requestShippingEstimate(savedAddressId)');
+    const orderIndex = paymentSource.indexOf("fetch('/api/checkout/create-order'");
+
+    expect(saveIndex).toBeGreaterThan(-1);
+    expect(finalEstimateIndex).toBeGreaterThan(saveIndex);
+    expect(orderIndex).toBeGreaterThan(finalEstimateIndex);
+    expect(paymentSource).toContain('shipping_fee: computedShippingFee');
+    expect(paymentSource).toContain('Your address was saved, but shipping could not be refreshed. Please retry checkout.');
+
+    const retryBlock = paymentSource.slice(finalEstimateIndex, orderIndex);
+    const alertIndex = retryBlock.indexOf('await Swal.fire');
+    const resetIndex = retryBlock.indexOf('setIsProcessing(false);');
+    const returnIndex = retryBlock.indexOf('return;', resetIndex);
+    expect(alertIndex).toBeGreaterThan(-1);
+    expect(resetIndex).toBeGreaterThan(alertIndex);
+    expect(returnIndex).toBeGreaterThan(resetIndex);
   });
 });

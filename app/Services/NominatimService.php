@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -12,11 +13,17 @@ class NominatimService
 {
     private const CACHE_TTL_SECONDS = 86400;
     private const HTTP_TIMEOUT_SECONDS = 5;
+    private const LOCK_WAIT_TIMEOUT_SECONDS = self::HTTP_TIMEOUT_SECONDS + 1;
     private const LOCK_TTL_SECONDS = 10;
     private const MINIMUM_INTERVAL_MS = 1000;
     private const RESPONSE_KEYS = 'nominatim:response-keys';
 
-    public function search(string $query, bool $addressDetails = true, int $limit = 1): array
+    public function search(
+        string $query,
+        bool $addressDetails = true,
+        int $limit = 1,
+        bool $waitForDispatch = false,
+    ): array
     {
         $query = preg_replace('/\s+/u', ' ', trim($query)) ?? '';
         $limit = max(1, min(5, $limit));
@@ -33,6 +40,7 @@ class NominatimService
             'nominatim:response:search:'.hash('sha256', Str::lower($query).'|'.(int) $addressDetails.'|'.$limit),
             fn (array $payload) => $this->validSearch($payload, $addressDetails),
             $addressDetails,
+            $waitForDispatch,
         );
     }
 
@@ -57,6 +65,7 @@ class NominatimService
         string $cacheKey,
         callable $valid,
         bool $primeReverse = false,
+        bool $waitForDispatch = false,
     ): array
     {
         if (Cache::has($cacheKey)) {
@@ -64,7 +73,14 @@ class NominatimService
         }
 
         $lock = Cache::lock('nominatim:dispatch-lock', self::LOCK_TTL_SECONDS);
-        if (! $lock->get()) {
+        try {
+            $acquired = $waitForDispatch
+                ? $lock->block(self::LOCK_WAIT_TIMEOUT_SECONDS)
+                : $lock->get();
+        } catch (LockTimeoutException) {
+            $acquired = false;
+        }
+        if (! $acquired) {
             throw new RuntimeException('Address lookup is busy.', 429);
         }
 
@@ -76,7 +92,12 @@ class NominatimService
             $now = now()->getTimestampMs();
             $lastDispatch = (int) Cache::get('nominatim:last-dispatch-ms', 0);
             if ($lastDispatch && $now - $lastDispatch < self::MINIMUM_INTERVAL_MS) {
-                throw new RuntimeException('Address lookup is busy.', 429);
+                if (! $waitForDispatch) {
+                    throw new RuntimeException('Address lookup is busy.', 429);
+                }
+
+                usleep((self::MINIMUM_INTERVAL_MS - ($now - $lastDispatch)) * 1000);
+                $now = now()->getTimestampMs();
             }
 
             Cache::forever('nominatim:last-dispatch-ms', $now);
@@ -107,7 +128,9 @@ class NominatimService
 
             return $payload;
         } finally {
-            $lock->release();
+            if ($lock->isOwnedByCurrentProcess()) {
+                $lock->release();
+            }
         }
     }
 

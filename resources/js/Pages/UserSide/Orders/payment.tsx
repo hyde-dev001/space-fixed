@@ -174,6 +174,7 @@ const Payment: React.FC = () => {
   const [shopOwnedCoverage, setShopOwnedCoverage] = useState<NonNullable<ShippingEstimateData['shop_owned']> | null>(null);
   const [isShippingEstimateLoading, setIsShippingEstimateLoading] = useState(false);
   const [shippingEstimateReason, setShippingEstimateReason] = useState<string | null>(null);
+  const shippingEstimateRequestRef = useRef(0);
   const [promoPreview, setPromoPreview] = useState<PromoPreviewData | null>(null);
   const [isPromoPreviewLoading, setIsPromoPreviewLoading] = useState(false);
   const [selectedVoucherCampaignId, setSelectedVoucherCampaignId] = useState<number | null>(null);
@@ -972,6 +973,112 @@ const Payment: React.FC = () => {
     }
   }, [user]);
 
+  const requestShippingEstimate = async (
+    addressId: number | null | undefined,
+    signal?: AbortSignal,
+  ): Promise<ShippingEstimateData> => {
+    if (!checkoutData) throw new Error('Checkout data is unavailable.');
+
+    const city = normalizeCityMunicipalitySelection(shippingRegion, shippingCity);
+    const region = shippingRegion.trim();
+    const itemPids = checkoutData.items
+      .map((item) => Number(item.pid))
+      .filter((pid) => Number.isInteger(pid) && pid > 0);
+    if (!city || !region || itemPids.length === 0) {
+      throw new Error('Unable to calculate shipping for the current address.');
+    }
+
+    const requestId = ++shippingEstimateRequestRef.current;
+    setIsShippingEstimateLoading(true);
+    let responseCoverage: NonNullable<ShippingEstimateData['shop_owned']> | null = null;
+
+    try {
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+      const response = await fetch('/api/shipping/estimate', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': csrfToken,
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        body: JSON.stringify({
+          item_pids: itemPids,
+          address_id: addressId,
+          shipping_address_line: shippingAddressLine,
+          shipping_barangay: shippingBarangay,
+          shipping_city: city,
+          shipping_region: region,
+          shipping_postal_code: shippingPostalCode,
+          shipping_latitude: shippingLatitude,
+          shipping_longitude: shippingLongitude,
+        }),
+        signal,
+      });
+
+      if (!response.ok) {
+        let reason = `Unable to fetch shipping estimate (HTTP ${response.status}).`;
+        try {
+          const errorData = await response.json();
+          reason = errorData?.reason || errorData?.message || reason;
+        } catch {
+          // Keep the status-based message when the response is not JSON.
+        }
+        if (response.status === 429) reason = 'Too many shipping estimate requests. Please wait a few seconds and try again.';
+        if (response.status === 419) reason = 'Session expired or CSRF token mismatch. Please refresh the page and try again.';
+        throw new Error(reason);
+      }
+
+      const data = await response.json();
+      responseCoverage = data?.shop_owned ?? {
+        available: false,
+        reason: 'logistics_unavailable',
+        distance_km: null,
+        coverage_radius_km: null,
+      };
+      if (!data?.has_estimate) {
+        throw new Error(data?.reason || 'Shipping fee is currently unavailable.');
+      }
+
+      const estimate: ShippingEstimateData = {
+        distance_km: Number(data.distance_km || 0),
+        base_fee: Number(data.base_fee || 0),
+        min_fee: Number(data.min_fee || 0),
+        max_fee: Number(data.max_fee || 0),
+        distance_label: data.distance_label,
+        customer_notice: data.customer_notice,
+        pay_after_order_notice: data.pay_after_order_notice,
+        shop_owned: data.shop_owned,
+      };
+
+      if (requestId !== shippingEstimateRequestRef.current || signal?.aborted) return estimate;
+      setShippingEstimate(estimate);
+      setShopOwnedCoverage(responseCoverage);
+      setShippingEstimateReason(null);
+      return estimate;
+    } catch (error) {
+      if (requestId === shippingEstimateRequestRef.current && !signal?.aborted) {
+        const reason = error instanceof Error
+          ? error.message
+          : 'Network issue while calculating shipping estimate. Please check your connection and try again.';
+        setShippingEstimate(null);
+        setShopOwnedCoverage(responseCoverage ?? {
+          available: false,
+          reason: 'logistics_unavailable',
+          distance_km: null,
+          coverage_radius_km: null,
+        });
+        setShippingEstimateReason(reason);
+      }
+      throw error;
+    } finally {
+      if (requestId === shippingEstimateRequestRef.current && !signal?.aborted) {
+        setIsShippingEstimateLoading(false);
+      }
+    }
+  };
+
   useEffect(() => {
     if (!checkoutData || isPremiumPayment || isRepairPayment) {
       setShippingEstimate(null);
@@ -1010,93 +1117,10 @@ const Payment: React.FC = () => {
     setIsShippingEstimateLoading(true);
 
     const controller = new AbortController();
-    const timer = window.setTimeout(async () => {
-      try {
-        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-        const response = await fetch('/api/shipping/estimate', {
-          method: 'POST',
-          credentials: 'include',
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': csrfToken,
-            'X-Requested-With': 'XMLHttpRequest',
-          },
-          body: JSON.stringify({
-            item_pids: itemPids,
-            address_id: checkoutData.address_id,
-            shipping_address_line: shippingAddressLine,
-            shipping_barangay: shippingBarangay,
-            shipping_city: city,
-            shipping_region: region,
-            shipping_postal_code: shippingPostalCode,
-          }),
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          let serverReason = `Unable to fetch shipping estimate (HTTP ${response.status}).`;
-          try {
-            const errorData = await response.json();
-            serverReason = errorData?.reason || errorData?.message || serverReason;
-          } catch {
-            // Keep the default message when response is not JSON.
-          }
-
-          if (response.status === 429) {
-            serverReason = 'Too many shipping estimate requests. Please wait a few seconds and try again.';
-          }
-
-          if (response.status === 419) {
-            serverReason = 'Session expired or CSRF token mismatch. Please refresh the page and try again.';
-          }
-
-          setShippingEstimate(null);
-          setShopOwnedCoverage(null);
-          setShippingEstimateReason(serverReason);
-          return;
-        }
-
-        const data = await response.json();
-        setShopOwnedCoverage(data?.shop_owned ?? {
-          available: false,
-          reason: 'logistics_unavailable',
-          distance_km: null,
-          coverage_radius_km: null,
-        });
-        if (data?.has_estimate) {
-          setShippingEstimate({
-            distance_km: Number(data.distance_km || 0),
-            base_fee: Number(data.base_fee || 0),
-            min_fee: Number(data.min_fee || 0),
-            max_fee: Number(data.max_fee || 0),
-            distance_label: data.distance_label,
-            customer_notice: data.customer_notice,
-            pay_after_order_notice: data.pay_after_order_notice,
-            shop_owned: data.shop_owned,
-          });
-          setShippingEstimateReason(null);
-        } else {
-          setShippingEstimate(null);
-          setShippingEstimateReason(data?.reason || 'Shipping fee is currently unavailable.');
-        }
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          setShippingEstimate(null);
-          setShopOwnedCoverage({
-            available: false,
-            reason: 'logistics_unavailable',
-            distance_km: null,
-            coverage_radius_km: null,
-          });
-          setShippingEstimateReason('Network issue while calculating shipping estimate. Please check your connection and try again.');
-          console.warn('Shipping estimate lookup failed:', error);
-        }
-      } finally {
-        if (!controller.signal.aborted) {
-          setIsShippingEstimateLoading(false);
-        }
-      }
+    const timer = window.setTimeout(() => {
+      requestShippingEstimate(checkoutData.address_id, controller.signal).catch((error) => {
+        if (!controller.signal.aborted) console.warn('Shipping estimate lookup failed:', error);
+      });
     }, 500);
 
     return () => {
@@ -1112,6 +1136,8 @@ const Payment: React.FC = () => {
     shippingCity,
     shippingRegion,
     shippingPostalCode,
+    shippingLatitude,
+    shippingLongitude,
   ]);
 
   useEffect(() => {
@@ -1884,7 +1910,7 @@ const Payment: React.FC = () => {
       return;
     }
 
-    const computedShippingFee = !isPremiumPayment && !isRepairPayment
+    let computedShippingFee = !isPremiumPayment && !isRepairPayment
       ? Math.max(0, Number(shippingEstimate?.max_fee ?? 0))
       : 0;
     const normalizedSubtotalAmount = Math.max(0, toFiniteNumber(promoPreview?.final_subtotal, checkoutData.total_amount));
@@ -1956,6 +1982,25 @@ const Payment: React.FC = () => {
 
     try {
       const savedAddressId = await saveAddressToAccount();
+
+      if (!isPremiumPayment && !isRepairPayment) {
+        try {
+          const refreshedEstimate = await requestShippingEstimate(savedAddressId);
+          computedShippingFee = Math.max(0, Number(refreshedEstimate.max_fee || 0));
+          if (computedShippingFee <= 0) throw new Error('Shipping fee is unavailable.');
+        } catch {
+          const reason = 'Your address was saved, but shipping could not be refreshed. Please retry checkout.';
+          setPayError(reason);
+          await Swal.fire({
+            icon: 'warning',
+            title: 'Shipping Refresh Needed',
+            text: reason,
+            confirmButtonColor: '#000000',
+          });
+          setIsProcessing(false);
+          return;
+        }
+      }
 
       // Create the order only after its delivery address is persisted.
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');

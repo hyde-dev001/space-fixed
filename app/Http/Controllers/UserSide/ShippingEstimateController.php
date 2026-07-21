@@ -51,6 +51,8 @@ class ShippingEstimateController extends Controller
             'shipping_city' => ['required', 'string', 'max:100'],
             'shipping_region' => ['required', 'string', 'max:100'],
             'shipping_postal_code' => ['nullable', 'string', 'max:10'],
+            'shipping_latitude' => ['nullable', 'required_with:shipping_longitude', 'numeric', 'between:4.5,21.5'],
+            'shipping_longitude' => ['nullable', 'required_with:shipping_latitude', 'numeric', 'between:116,127'],
         ]);
 
         $address = null;
@@ -65,18 +67,24 @@ class ShippingEstimateController extends Controller
         if (!$shopOwner) {
             return $this->fallbackResponse('Shop information is unavailable.');
         }
-        $coverage = $this->shopOwnedCoverage($shopOwner, $address);
+        $draftCoordinates = isset($validated['shipping_latitude'], $validated['shipping_longitude'])
+            ? ['lat' => (float) $validated['shipping_latitude'], 'lng' => (float) $validated['shipping_longitude']]
+            : null;
+        $coverage = $this->shopOwnedCoverage($shopOwner, $address, $draftCoordinates);
 
         $shopCoordinates = $this->resolveShopCoordinates($shopOwner);
         if (!$shopCoordinates) {
             return $this->fallbackResponse('Shop location is unavailable.', $coverage);
         }
 
-        $resolved = $this->coordinates->geocode($validated);
-        $customerCoordinates = $resolved ? [
-            'lat' => $resolved['latitude'],
-            'lng' => $resolved['longitude'],
-        ] : null;
+        $customerCoordinates = $draftCoordinates;
+        if (!$customerCoordinates) {
+            $resolved = $this->coordinates->geocode($validated);
+            $customerCoordinates = $resolved ? [
+                'lat' => $resolved['latitude'],
+                'lng' => $resolved['longitude'],
+            ] : null;
+        }
         if (!$customerCoordinates) {
             return $this->fallbackResponse('Unable to resolve customer location.', $coverage);
         }
@@ -151,13 +159,13 @@ class ShippingEstimateController extends Controller
             : null;
     }
 
-    private function shopOwnedCoverage(ShopOwner $shopOwner, ?UserAddress $address): array
+    private function shopOwnedCoverage(ShopOwner $shopOwner, ?UserAddress $address, ?array $draftCoordinates): array
     {
         try {
             return $this->deliverySchedules->coverage(
                 $shopOwner,
-                $address?->latitude !== null ? (float) $address->latitude : null,
-                $address?->longitude !== null ? (float) $address->longitude : null,
+                $draftCoordinates['lat'] ?? ($address?->latitude !== null ? (float) $address->latitude : null),
+                $draftCoordinates['lng'] ?? ($address?->longitude !== null ? (float) $address->longitude : null),
             );
         } catch (\Throwable $exception) {
             Log::warning('Shipping estimate logistics coverage failed', ['message' => $exception->getMessage()]);
@@ -191,7 +199,7 @@ class ShippingEstimateController extends Controller
     private function geocodeAddress(string $address): ?array
     {
         try {
-            $result = $this->nominatim->search($address, false);
+            $result = $this->nominatim->search($address, false, 1, true);
             if (! isset($result[0])) {
                 return null;
             }

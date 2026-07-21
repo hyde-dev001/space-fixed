@@ -11,6 +11,8 @@ use App\Services\AddressCoordinateService;
 use App\Services\Logistics\DeliveryScheduleService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request as ClientRequest;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
@@ -20,6 +22,48 @@ use Tests\TestCase;
 class ShippingEstimateControllerTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_cold_cache_legacy_shop_and_customer_addresses_are_geocoded_with_global_spacing(): void
+    {
+        config([
+            'cache.default' => 'array',
+            'services.nominatim.url' => 'https://nominatim.test',
+        ]);
+        Cache::clear();
+        $shop = ShopOwner::factory()->create([
+            'shop_address' => '10 Legacy Shop Street, Manila',
+            'business_address' => '10 Legacy Shop Street, Manila',
+            'shop_latitude' => null,
+            'shop_longitude' => null,
+        ]);
+        $product = $this->productFor($shop);
+        $dispatches = [];
+        Http::fake(function (ClientRequest $request) use (&$dispatches) {
+            if (str_starts_with($request->url(), 'https://nominatim.test/search?')) {
+                $dispatches[] = (int) Cache::get('nominatim:last-dispatch-ms');
+
+                return Http::response(str_contains((string) $request['q'], 'Legacy Shop')
+                    ? [['lat' => '14.5995', 'lon' => '120.9842']]
+                    : [['lat' => '14.6091', 'lon' => '121.0223']]);
+            }
+
+            return Http::response(['routes' => [['distance' => 5000]]]);
+        });
+
+        $this->postJson('/api/shipping/estimate', [
+            'item_pids' => [$product->id],
+            'shipping_address_line' => '20 Customer Street',
+            'shipping_barangay' => 'Ermita',
+            'shipping_city' => 'Manila',
+            'shipping_region' => 'NCR',
+            'shipping_postal_code' => '1000',
+        ])->assertOk()
+            ->assertJsonPath('has_estimate', true)
+            ->assertJsonPath('source', 'osm-osrm');
+
+        $this->assertCount(2, $dispatches);
+        $this->assertGreaterThanOrEqual(1000, $dispatches[1] - $dispatches[0]);
+    }
 
     public function test_estimate_reuses_shared_geocoder_and_preserves_response(): void
     {
@@ -79,6 +123,50 @@ class ShippingEstimateControllerTest extends TestCase
                 'coverage_radius_km' => 10.0,
             ],
         ]);
+    }
+
+    public function test_estimate_prefers_bounded_draft_coordinates_over_the_saved_address_pin(): void
+    {
+        $shop = ShopOwner::factory()->create([
+            'shop_latitude' => 14.5995,
+            'shop_longitude' => 120.9842,
+        ]);
+        LogisticsSetting::create(['shop_owner_id' => $shop->id, 'coverage_radius_km' => 10]);
+        $product = $this->productFor($shop);
+        $customer = User::factory()->create(['shop_owner_id' => null]);
+        $address = $this->addressFor($customer);
+        $address->update(['latitude' => 10.3157, 'longitude' => 123.8854]);
+        $this->mock(AddressCoordinateService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('geocode');
+        });
+        Http::fake(['router.project-osrm.org/*' => Http::response(['routes' => [['distance' => 5000]]])]);
+
+        $payload = $this->payload([$product->id], $address->id);
+        $payload['shipping_latitude'] = 14.60;
+        $payload['shipping_longitude'] = 120.98;
+
+        $this->actingAs($customer, 'user')
+            ->postJson('/api/shipping/estimate', $payload)
+            ->assertOk()
+            ->assertJsonPath('has_estimate', true)
+            ->assertJsonPath('shop_owned.available', true);
+    }
+
+    public function test_estimate_requires_a_ph_bounded_draft_coordinate_pair(): void
+    {
+        $customer = User::factory()->create(['shop_owner_id' => null]);
+        $address = $this->addressFor($customer);
+        $product = $this->productFor(ShopOwner::factory()->create());
+
+        foreach ([
+            ['shipping_latitude' => 14.60],
+            ['shipping_latitude' => 4.49, 'shipping_longitude' => 120.98],
+            ['shipping_latitude' => 14.60, 'shipping_longitude' => 127.01],
+        ] as $draft) {
+            $this->actingAs($customer, 'user')
+                ->postJson('/api/shipping/estimate', [...$this->payload([$product->id], $address->id), ...$draft])
+                ->assertUnprocessable();
+        }
     }
 
     public function test_estimate_rejects_an_address_owned_by_another_customer(): void

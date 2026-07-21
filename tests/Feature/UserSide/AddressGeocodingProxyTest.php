@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\UserSide;
 
+use App\Services\NominatimService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Support\Facades\Cache;
@@ -223,6 +224,7 @@ class AddressGeocodingProxyTest extends TestCase
         Http::fake();
         $lock = Cache::lock('nominatim:dispatch-lock', 10);
         $this->assertTrue($lock->get());
+        $startedAt = microtime(true);
 
         try {
             $this->getJson('/api/address/geocode?q=Manila')
@@ -232,7 +234,27 @@ class AddressGeocodingProxyTest extends TestCase
             $lock->release();
         }
 
+        $this->assertLessThan(1, microtime(true) - $startedAt);
         Http::assertNothingSent();
+    }
+
+    public function test_trusted_search_waits_for_the_dispatch_lock_then_contacts_upstream_once(): void
+    {
+        $payload = [['lat' => '14.5995', 'lon' => '120.9842']];
+        Http::fake(['https://nominatim.test/*' => Http::response($payload)]);
+        $lock = Cache::lock('nominatim:dispatch-lock', 1);
+        $this->assertTrue($lock->get());
+        $startedAt = microtime(true);
+
+        try {
+            $result = app(NominatimService::class)->search('Manila', false, 1, true);
+        } finally {
+            $lock->release();
+        }
+
+        $this->assertSame($payload, $result);
+        $this->assertGreaterThanOrEqual(0.75, microtime(true) - $startedAt);
+        Http::assertSentCount(1);
     }
 
     public function test_upstream_http_failure_returns_sanitized_502(): void
