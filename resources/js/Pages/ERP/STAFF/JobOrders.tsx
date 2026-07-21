@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Swal from "sweetalert2";
 import { Head, usePage } from "@inertiajs/react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
@@ -54,6 +54,12 @@ type Order = {
   carrierPhone?: string;
   trackingNumber?: string;
   trackingLink?: string;
+  shopOwnedCoverage?: {
+    available: boolean;
+    reason: string | null;
+    distance_km: number | null;
+    coverage_radius_km: number | null;
+  };
   items: OrderItem[];
   quantity: number;
   shopName?: string;
@@ -108,6 +114,31 @@ type Order = {
       line_amount?: number;
     }>;
   } | null;
+};
+
+const getShopOwnedCoverageMessage = (coverage: Order['shopOwnedCoverage']): string => {
+  if (coverage?.available) return 'Shop-owned delivery is available for this address.';
+  if (coverage?.reason === 'outside_coverage') {
+    if (
+      coverage.distance_km !== null
+      && coverage.coverage_radius_km !== null
+      && Number.isFinite(coverage.distance_km)
+      && Number.isFinite(coverage.coverage_radius_km)
+    ) {
+      return `Outside shop-owned coverage: ${coverage.distance_km} km away; coverage radius is ${coverage.coverage_radius_km} km.`;
+    }
+    return 'Outside shop-owned coverage.';
+  }
+  if (coverage?.reason === 'address_needs_pin') {
+    return 'Customer address must be pinned before shop-owned delivery can be used.';
+  }
+  if (coverage?.reason === 'shop_needs_pin') {
+    return 'Shop location needs configuration before shop-owned delivery can be used.';
+  }
+  if (coverage?.reason === 'logistics_unavailable') {
+    return 'Shop-owned logistics is currently unavailable.';
+  }
+  return 'Shop-owned logistics is unavailable for this order.';
 };
 
 const parseAmount = (value: unknown): number => {
@@ -387,6 +418,8 @@ export default function JobOrdersPage() {
   const [trackingLink, setTrackingLink] = useState("");
   const [isConfirmingShipping, setIsConfirmingShipping] = useState(false);
   const [isActivatingReceive, setIsActivatingReceive] = useState(false);
+  const shippingRequestTokenRef = useRef(0);
+  const activeShippingOrderIdRef = useRef<number | null>(null);
 
   const mapApiOrder = (order: any): Order => {
     const itemSubtotal = parseAmount(order.total_amount);
@@ -435,6 +468,7 @@ export default function JobOrdersPage() {
       carrierPhone: order.carrier_phone || undefined,
       trackingNumber: order.tracking_number || undefined,
       trackingLink: order.tracking_link || undefined,
+      shopOwnedCoverage: order.shop_owned_coverage || undefined,
       items: order.items || [],
       quantity: order.items ? order.items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0) : 0,
       shopName: order.shop?.shop_name || undefined,
@@ -485,6 +519,8 @@ export default function JobOrdersPage() {
     const linkPart = trackingLink ? ` Track here: ${trackingLink}` : "";
     return `${base}${trackingPart}${linkPart}`;
   };
+
+  const shopOwnedEligible = selectedOrder?.shopOwnedCoverage?.available === true;
 
   if (!canAccessStaffModule) {
     return (
@@ -1096,12 +1132,34 @@ export default function JobOrdersPage() {
     }
   };
 
+  const closeShippingModal = () => {
+    shippingRequestTokenRef.current += 1;
+    activeShippingOrderIdRef.current = null;
+    setIsShippingModalOpen(false);
+    setSelectedOrder(null);
+    setEta("");
+    setEtaPreset("");
+    setCarrierCompany("");
+    setCarrierName("");
+    setCarrierPhone("");
+    setTrackingNumber("");
+    setTrackingLink("");
+    setIsConfirmingShipping(false);
+  };
+
   const handleShipOrder = (order: Order) => {
+    shippingRequestTokenRef.current += 1;
+    activeShippingOrderIdRef.current = order.id;
+    const shopOwnedEligible = order.shopOwnedCoverage?.available === true;
+    const existingCarrier = order.carrierCompany || "";
+    setIsConfirmingShipping(false);
     setSelectedOrder(order);
     setEta("");
     setEtaPreset(order.eta || "1-2 business days");
     // Prepopulate if values already exist (view-only for shipped orders)
-    setCarrierCompany(order.carrierCompany || "");
+    setCarrierCompany(existingCarrier === SHOP_OWNED_LOGISTICS && !shopOwnedEligible
+      ? ""
+      : existingCarrier || (shopOwnedEligible ? SHOP_OWNED_LOGISTICS : ""));
     setCarrierName(order.carrierName || "");
     setCarrierPhone(order.carrierPhone || "");
     setTrackingNumber(order.trackingNumber || "");
@@ -1311,6 +1369,16 @@ export default function JobOrdersPage() {
 
     const usesShopOwnedLogistics = carrierCompany === SHOP_OWNED_LOGISTICS;
 
+    if (usesShopOwnedLogistics && selectedOrder.shopOwnedCoverage?.available !== true) {
+      await Swal.fire({
+        title: "Shop-owned logistics unavailable",
+        text: getShopOwnedCoverageMessage(selectedOrder.shopOwnedCoverage),
+        icon: "warning",
+        confirmButtonColor: "#2563eb",
+      });
+      return;
+    }
+
     if (!usesShopOwnedLogistics && !carrierName) {
       await Swal.fire({
         title: "Missing Information",
@@ -1390,6 +1458,11 @@ export default function JobOrdersPage() {
       }
     }
 
+    const requestToken = ++shippingRequestTokenRef.current;
+    const requestOrderId = selectedOrder.id;
+    const requestIsCurrent = () => requestToken === shippingRequestTokenRef.current
+      && requestOrderId === activeShippingOrderIdRef.current;
+
     try {
       setIsConfirmingShipping(true);
 
@@ -1398,15 +1471,18 @@ export default function JobOrdersPage() {
         credentials: 'include',
         headers: { 'Accept': 'application/json' }
       });
+      if (!requestIsCurrent()) return;
       const csrfData = await csrfResponse.json();
+      if (!requestIsCurrent()) return;
       const csrfToken = csrfData.csrf_token;
 
       // Call API to update order status with shipping info
-      const response = await fetch(`/api/staff/orders/${selectedOrder.id}/status`, {
+      const response = await fetch(`/api/staff/orders/${requestOrderId}/status`, {
         method: 'PATCH',
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
           'X-CSRF-TOKEN': csrfToken,
         },
         body: JSON.stringify({
@@ -1419,10 +1495,58 @@ export default function JobOrdersPage() {
           eta: etaPreset,
         })
       });
+      if (!requestIsCurrent()) return;
 
+      const errorData = response.ok ? null : await response.json().catch(() => null);
+      if (!requestIsCurrent()) return;
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to update order shipping information');
+        const coverageErrors = errorData?.errors?.carrier_company;
+        if (
+          response.status === 422
+          && Array.isArray(coverageErrors)
+          && typeof coverageErrors[0] === 'string'
+          && errorData?.shop_owned_coverage
+        ) {
+          const coverageError = coverageErrors[0];
+          setSelectedOrder((current) => current?.id === requestOrderId
+            ? { ...current, shopOwnedCoverage: errorData.shop_owned_coverage }
+            : current);
+          setCarrierCompany("");
+
+          try {
+            const ordersResponse = await fetch('/api/staff/orders', {
+              credentials: 'include',
+              headers: { 'Accept': 'application/json' },
+            });
+            if (!requestIsCurrent()) return;
+            const ordersData = ordersResponse.ok
+              ? await ordersResponse.json().catch(() => null)
+              : null;
+            if (!requestIsCurrent()) return;
+            if (Array.isArray(ordersData)) {
+              const mappedOrders: Order[] = ordersData.map(mapApiOrder);
+              setOrders(mappedOrders);
+              const refreshedOrder = mappedOrders.find((order) => order.id === requestOrderId);
+              if (refreshedOrder) {
+                setSelectedOrder(refreshedOrder);
+                if (refreshedOrder.shopOwnedCoverage?.available !== true) setCarrierCompany("");
+              }
+            }
+          } catch (refreshError) {
+            console.error('Error refreshing coverage after shipping validation:', refreshError);
+          }
+
+          if (!requestIsCurrent()) return;
+          await Swal.fire({
+            title: "Shop-owned logistics unavailable",
+            text: coverageError,
+            icon: "error",
+            confirmButtonText: "OK",
+            confirmButtonColor: "#2563eb",
+          });
+          return;
+        }
+        throw new Error(errorData?.message || 'Failed to update order shipping information');
       }
 
       // Refresh orders list from server to ensure we have the latest data
@@ -1433,18 +1557,21 @@ export default function JobOrdersPage() {
             'Accept': 'application/json',
           }
         });
+        if (!requestIsCurrent()) return;
         
         if (ordersResponse.ok) {
           const ordersData = await ordersResponse.json();
+          if (!requestIsCurrent()) return;
           const mappedOrders: Order[] = ordersData.map(mapApiOrder);
           setOrders(mappedOrders);
         }
       } catch (fetchError) {
         console.error('Error refreshing orders:', fetchError);
+        if (!requestIsCurrent()) return;
         // Still update local state even if refresh fails
         setOrders((prev) =>
           prev.map((o) =>
-            o.id === selectedOrder.id
+            o.id === requestOrderId
               ? {
                   ...o,
                   status: "shipped",
@@ -1461,16 +1588,8 @@ export default function JobOrdersPage() {
         );
       }
 
-      // Close modal
-      setIsShippingModalOpen(false);
-      setSelectedOrder(null);
-      setEta("");
-      setEtaPreset("");
-      setCarrierCompany("");
-      setCarrierName("");
-      setCarrierPhone("");
-      setTrackingNumber("");
-      setTrackingLink("");
+      if (!requestIsCurrent()) return;
+      closeShippingModal();
 
       await Swal.fire({
         title: "Success",
@@ -1480,6 +1599,7 @@ export default function JobOrdersPage() {
         confirmButtonColor: "#2563eb",
       });
     } catch (error) {
+      if (!requestIsCurrent()) return;
       console.error('Error confirming shipping:', error);
       await Swal.fire({
         title: "Error",
@@ -1489,7 +1609,7 @@ export default function JobOrdersPage() {
         confirmButtonColor: "#2563eb",
       });
     } finally {
-      setIsConfirmingShipping(false);
+      if (requestIsCurrent()) setIsConfirmingShipping(false);
     }
   };
 
@@ -2073,11 +2193,25 @@ export default function JobOrdersPage() {
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="">Select shipping</option>
-                      <option value={SHOP_OWNED_LOGISTICS}>Shop-owned logistics</option>
+                      <option value={SHOP_OWNED_LOGISTICS} disabled={!shopOwnedEligible}>Shop-owned logistics</option>
                       <option value="Lalamove">Lalamove</option>
                       <option value="J&T">J&amp;T</option>
                       <option value="Express Padala">Express Padala</option>
                     </select>
+                    <div
+                      role="status"
+                      aria-live="polite"
+                      className="mt-2 flex items-start gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs leading-relaxed text-gray-700 dark:border-gray-700 dark:bg-gray-900/30 dark:text-gray-300"
+                    >
+                      <svg className="mt-0.5 size-4 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                        {shopOwnedEligible ? (
+                          <path fillRule="evenodd" d="M16.7 5.3a1 1 0 010 1.4l-8 8a1 1 0 01-1.4 0l-4-4a1 1 0 011.4-1.4L8 12.6l7.3-7.3a1 1 0 011.4 0z" clipRule="evenodd" />
+                        ) : (
+                          <path fillRule="evenodd" d="M8.3 2.9a2 2 0 013.4 0l6.1 10.7a2 2 0 01-1.7 3H3.9a2 2 0 01-1.7-3L8.3 2.9zM10 7a1 1 0 00-1 1v3a1 1 0 002 0V8a1 1 0 00-1-1zm0 7a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                        )}
+                      </svg>
+                      <span>{getShopOwnedCoverageMessage(selectedOrder.shopOwnedCoverage)}</span>
+                    </div>
                   </div>
 
                   {carrierCompany === SHOP_OWNED_LOGISTICS ? (
@@ -2190,18 +2324,9 @@ export default function JobOrdersPage() {
                   )}
                 </button>
                 <button
-                  onClick={() => {
-                    setIsShippingModalOpen(false);
-                    setSelectedOrder(null);
-                    setEta("");
-                    setEtaPreset("");
-                    setCarrierCompany("");
-                    setCarrierName("");
-                    setCarrierPhone("");
-                    setTrackingNumber("");
-                    setTrackingLink("");
-                  }}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg font-medium transition-colors"
+                  onClick={closeShippingModal}
+                  disabled={isConfirmingShipping}
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-gray-700 dark:text-gray-300 rounded-lg font-medium transition-colors"
                 >
                   Cancel
                 </button>
