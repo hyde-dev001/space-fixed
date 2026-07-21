@@ -8,6 +8,8 @@
 
 **Tech Stack:** Laravel 12/PHP, Eloquent, React 18/TypeScript, Inertia, Leaflet 1.9, Vitest, PHPUnit.
 
+**Approved amendment (2026-07-22):** Centralize all customer and shop Nominatim search/reverse-geocoding traffic behind one Laravel proxy with bounded validation, cache reuse, per-client throttling, and a global upstream request interval. This replaces the original client-direct geocoding assumption without changing the Haversine coverage contract.
+
 ---
 
 ## File Map
@@ -22,7 +24,7 @@
 - Modify `resources/js/Pages/ERP/STAFF/JobOrders.tsx`: default or disable Shop-owned Logistics in Mark as Shipped.
 - Modify focused PHP and Vitest files listed in each task below.
 
-No migration, package installation, new API route, Logistics Shipments/Batches UI change, or customer carrier selector is needed.
+No migration, package installation, Logistics Shipments/Batches UI change, or customer carrier selector is needed. One geocoding proxy route is included by the approved amendment above; no separate coverage endpoint is added.
 
 ### Task 1: Canonical Coverage-Only Contract
 
@@ -374,7 +376,7 @@ type Props = {
 };
 ```
 
-Move only the reusable map behavior from registration/shop settings: dynamic `import('leaflet')`, OpenStreetMap tiles, click, draggable marker, Philippine Nominatim search, GPS, reverse geocoding, cleanup, and `invalidateSize()`. Import `leaflet/dist/leaflet.css` in this component and reuse `parsePhilippineAddress`; no new dependency or geocoding backend is added.
+Move only the reusable map behavior from registration/shop settings: dynamic `import('leaflet')`, OpenStreetMap tiles, click, draggable marker, Philippine Nominatim search, GPS, reverse geocoding, cleanup, and `invalidateSize()`. Import `leaflet/dist/leaflet.css` in this component and reuse `parsePhilippineAddress`; no new dependency is added. Route search and reverse-geocoding through the shared Laravel proxy described in the approved amendment.
 
 Render a labeled search input, Search button, Use My Location button, map container, selected-coordinate text, and accessible error/status text. Keep buttons at least 44px high, preserve the current value on failed lookups, disable only the action currently loading, expose status through `aria-live="polite"`, and retain visible keyboard focus styles.
 
