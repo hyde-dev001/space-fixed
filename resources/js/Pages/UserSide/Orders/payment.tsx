@@ -70,6 +70,12 @@ interface ShippingEstimateData {
   distance_label?: string;
   customer_notice?: string;
   pay_after_order_notice?: string;
+  shop_owned?: {
+    available: boolean;
+    reason: 'address_needs_pin' | 'shop_needs_pin' | 'outside_coverage' | 'logistics_unavailable' | null;
+    distance_km: number | null;
+    coverage_radius_km: number | null;
+  };
 }
 
 interface AppliedVoucherSummary {
@@ -165,6 +171,7 @@ const Payment: React.FC = () => {
   const [editingAddressId, setEditingAddressId] = useState<number | null>(null);
   const addressMapRef = useRef<HTMLDivElement | null>(null);
   const [shippingEstimate, setShippingEstimate] = useState<ShippingEstimateData | null>(null);
+  const [shopOwnedCoverage, setShopOwnedCoverage] = useState<NonNullable<ShippingEstimateData['shop_owned']> | null>(null);
   const [isShippingEstimateLoading, setIsShippingEstimateLoading] = useState(false);
   const [shippingEstimateReason, setShippingEstimateReason] = useState<string | null>(null);
   const [promoPreview, setPromoPreview] = useState<PromoPreviewData | null>(null);
@@ -968,6 +975,7 @@ const Payment: React.FC = () => {
   useEffect(() => {
     if (!checkoutData || isPremiumPayment || isRepairPayment) {
       setShippingEstimate(null);
+      setShopOwnedCoverage(null);
       setIsShippingEstimateLoading(false);
       setShippingEstimateReason(null);
       return;
@@ -978,6 +986,7 @@ const Payment: React.FC = () => {
 
     if (!city || !region) {
       setShippingEstimate(null);
+      setShopOwnedCoverage(null);
       setIsShippingEstimateLoading(false);
       setShippingEstimateReason('Enter city and region to calculate shipping fee.');
       return;
@@ -989,12 +998,14 @@ const Payment: React.FC = () => {
 
     if (itemPids.length === 0) {
       setShippingEstimate(null);
+      setShopOwnedCoverage(null);
       setIsShippingEstimateLoading(false);
       setShippingEstimateReason('Unable to resolve product location for shipping estimate.');
       return;
     }
 
     setShippingEstimate(null);
+    setShopOwnedCoverage(null);
     setShippingEstimateReason(null);
     setIsShippingEstimateLoading(true);
 
@@ -1013,6 +1024,7 @@ const Payment: React.FC = () => {
           },
           body: JSON.stringify({
             item_pids: itemPids,
+            address_id: checkoutData.address_id,
             shipping_address_line: shippingAddressLine,
             shipping_barangay: shippingBarangay,
             shipping_city: city,
@@ -1040,11 +1052,18 @@ const Payment: React.FC = () => {
           }
 
           setShippingEstimate(null);
+          setShopOwnedCoverage(null);
           setShippingEstimateReason(serverReason);
           return;
         }
 
         const data = await response.json();
+        setShopOwnedCoverage(data?.shop_owned ?? {
+          available: false,
+          reason: 'logistics_unavailable',
+          distance_km: null,
+          coverage_radius_km: null,
+        });
         if (data?.has_estimate) {
           setShippingEstimate({
             distance_km: Number(data.distance_km || 0),
@@ -1054,6 +1073,7 @@ const Payment: React.FC = () => {
             distance_label: data.distance_label,
             customer_notice: data.customer_notice,
             pay_after_order_notice: data.pay_after_order_notice,
+            shop_owned: data.shop_owned,
           });
           setShippingEstimateReason(null);
         } else {
@@ -1063,6 +1083,12 @@ const Payment: React.FC = () => {
       } catch (error) {
         if (!controller.signal.aborted) {
           setShippingEstimate(null);
+          setShopOwnedCoverage({
+            available: false,
+            reason: 'logistics_unavailable',
+            distance_km: null,
+            coverage_radius_km: null,
+          });
           setShippingEstimateReason('Network issue while calculating shipping estimate. Please check your connection and try again.');
           console.warn('Shipping estimate lookup failed:', error);
         }
@@ -2114,6 +2140,47 @@ const Payment: React.FC = () => {
   const shippingPayLaterNotice = hasShippingEstimate
     ? ''
     : (hasSelectedCity ? 'Shipping fee must be calculated before you can continue to payment.' : '');
+  const selectedSavedAddress = userAddresses.find((address) => address.id === checkoutData.address_id);
+  const shopOwnedCoverageDetails = [
+    shopOwnedCoverage?.distance_km != null ? `${shopOwnedCoverage.distance_km.toLocaleString()} km away` : null,
+    shopOwnedCoverage?.coverage_radius_km != null ? `${shopOwnedCoverage.coverage_radius_km.toLocaleString()} km coverage radius` : null,
+  ].filter(Boolean).join(' · ');
+  const shopOwnedCoverageLabel = shopOwnedCoverage?.available
+    ? 'Eligible for Shop-owned Logistics'
+    : shopOwnedCoverage?.reason === 'outside_coverage'
+      ? 'Outside Shop-owned coverage'
+      : shopOwnedCoverage?.reason === 'address_needs_pin'
+        ? 'Pin this address to check Shop-owned coverage'
+        : shopOwnedCoverage?.reason === 'shop_needs_pin'
+          ? 'Shop location is not pinned'
+          : shopOwnedCoverage
+            ? 'Shop-owned logistics is unavailable'
+            : '';
+  const shopOwnedCoverageNotice = shopOwnedCoverageLabel ? (
+    <div
+      role="status"
+      aria-live="polite"
+      className={`mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border px-3 py-2 text-xs leading-relaxed ${
+        shopOwnedCoverage?.available
+          ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+          : shopOwnedCoverage?.reason === 'outside_coverage'
+            ? 'border-amber-200 bg-amber-50 text-amber-900'
+            : 'border-gray-200 bg-gray-50 text-gray-700'
+      }`}
+    >
+      <span className="font-medium">{shopOwnedCoverageLabel}</span>
+      {shopOwnedCoverageDetails && <span>{shopOwnedCoverageDetails}</span>}
+      {shopOwnedCoverage?.reason === 'address_needs_pin' && selectedSavedAddress && (
+        <button
+          type="button"
+          onClick={() => handleEditAddressFromList(selectedSavedAddress, true)}
+          className="font-semibold underline underline-offset-2"
+        >
+          Repin address
+        </button>
+      )}
+    </div>
+  ) : null;
   const fullShippingAddress = [shippingAddressLine, shippingBarangay, shippingCity, shippingRegion]
     .filter(Boolean)
     .join(', ');
@@ -2263,6 +2330,7 @@ const Payment: React.FC = () => {
                   </span>
                 </div>
               </div>
+              {shopOwnedCoverageNotice}
             </div>
 
             <div className="mt-2 bg-white px-4 py-4 md:px-6 md:py-5 border-y border-gray-200">
@@ -3183,6 +3251,7 @@ const Payment: React.FC = () => {
                     </div>
                     {shippingCarrierNote && <p className="text-xs text-gray-500 mt-1 leading-relaxed">{shippingCarrierNote}</p>}
                     {shippingPayLaterNotice && <p className="text-xs text-gray-500 mt-1 leading-relaxed">{shippingPayLaterNotice}</p>}
+                    {shopOwnedCoverageNotice}
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">{vatLabel}</span>
