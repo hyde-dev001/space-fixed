@@ -376,7 +376,7 @@ class OrderRefundService
         }
 
         $stageNormalized = strtolower(trim($stage));
-        if (!in_array($stageNormalized, ['shop_owner', 'finance'], true)) {
+        if (!in_array($stageNormalized, ['staff', 'shop_owner', 'finance'], true)) {
             return [
                 'result' => 'invalid_stage',
                 'message' => 'Invalid approval stage.',
@@ -395,6 +395,8 @@ class OrderRefundService
         $isIndividualRegistration = $this->isIndividualRegistrationType(
             (string) ($order->shopOwner?->registration_type ?? '')
         );
+        $isCompanyCustomerRefund = strtolower(trim((string) ($order->shopOwner?->registration_type ?? ''))) === 'company'
+            && !$isExhaustedDeliveryRefund;
 
         // Individual shops should route refund approvals directly to shop owner without finance pre-approval.
         if ($isIndividualRegistration && !$isExhaustedDeliveryRefund) {
@@ -410,6 +412,28 @@ class OrderRefundService
 
         if ($approvalNote) {
             $payload['reason_note'] = trim((string) ($refund->reason_note ? $refund->reason_note . "\n\n" : '') . 'Approval note: ' . $approvalNote);
+        }
+
+        if ($stageNormalized === 'staff') {
+            if (!$isCompanyCustomerRefund) {
+                return [
+                    'result' => 'invalid_state',
+                    'message' => 'Staff review is only available for company customer refunds.',
+                    'refund' => $refund,
+                ];
+            }
+
+            if ((string) ($refund->shop_owner_status ?? 'pending') !== 'pending') {
+                return [
+                    'result' => 'invalid_state',
+                    'message' => 'Staff has already reviewed this refund request.',
+                    'refund' => $refund,
+                ];
+            }
+
+            $payload['shop_owner_status'] = 'approved';
+            $payload['shop_owner_approved_at'] = now();
+            $payload['shop_owner_approved_by'] = $processedBy;
         }
 
         if ($stageNormalized === 'shop_owner') {
@@ -454,7 +478,27 @@ class OrderRefundService
         if ($stageNormalized === 'finance') {
             $financeStatus = (string) ($refund->finance_status ?? 'pending');
 
-            if (!$requiresOwnerApproval) {
+            if ($isCompanyCustomerRefund) {
+                if ((string) ($refund->shop_owner_status ?? 'pending') !== 'approved') {
+                    return [
+                        'result' => 'invalid_state',
+                        'message' => 'Staff approval is required before Finance authorization.',
+                        'refund' => $refund,
+                    ];
+                }
+
+                if ($financeStatus !== 'pending') {
+                    return [
+                        'result' => 'invalid_state',
+                        'message' => 'Finance has already reviewed this refund request.',
+                        'refund' => $refund,
+                    ];
+                }
+
+                $payload['finance_status'] = 'approved';
+                $payload['finance_approved_at'] = now();
+                $payload['finance_approved_by'] = $processedBy;
+            } elseif (!$requiresOwnerApproval) {
                 if ($financeStatus === 'approved') {
                     return [
                         'result' => 'already_approved',
@@ -539,6 +583,8 @@ class OrderRefundService
             } else {
                 $nextMessage = 'Finance final approval recorded. Awaiting product return confirmation before payout.';
             }
+        } elseif ($stageNormalized === 'staff') {
+            $nextMessage = 'Staff approval recorded. Awaiting Finance authorization.';
         } elseif ($stageNormalized === 'shop_owner') {
             $nextMessage = $isIndividualRegistration
                 ? 'Shop owner approval recorded. Awaiting customer return shipment.'
@@ -565,7 +611,7 @@ class OrderRefundService
         }
 
         $stageNormalized = strtolower(trim($stage));
-        if (!in_array($stageNormalized, ['shop_owner', 'finance'], true)) {
+        if (!in_array($stageNormalized, ['staff', 'shop_owner', 'finance'], true)) {
             return [
                 'result' => 'invalid_stage',
                 'message' => 'Invalid rejection stage.',
@@ -573,12 +619,41 @@ class OrderRefundService
             ];
         }
 
+        $isCompanyCustomerRefund = strtolower(trim((string) ($refund->order?->shopOwner?->registration_type ?? ''))) === 'company'
+            && (string) ($refund->reason_code ?? '') !== 'delivery_attempts_exhausted';
+
         if ($stageNormalized === 'finance') {
+            if ($isCompanyCustomerRefund && (string) ($refund->shop_owner_status ?? 'pending') !== 'approved') {
+                return [
+                    'result' => 'invalid_state',
+                    'message' => 'Staff approval is required before Finance review.',
+                    'refund' => $refund,
+                ];
+            }
+
             $financeStatus = strtolower(trim((string) ($refund->finance_status ?? 'pending')));
             if (!in_array($financeStatus, ['pending', 'approved_initial'], true)) {
                 return [
                     'result' => 'already_' . $financeStatus,
                     'message' => 'Finance has already ' . $financeStatus . ' this refund request.',
+                    'refund' => $refund,
+                ];
+            }
+        }
+
+        if ($stageNormalized === 'staff') {
+            if (!$isCompanyCustomerRefund) {
+                return [
+                    'result' => 'invalid_state',
+                    'message' => 'Staff review is only available for company customer refunds.',
+                    'refund' => $refund,
+                ];
+            }
+
+            if ((string) ($refund->shop_owner_status ?? 'pending') !== 'pending') {
+                return [
+                    'result' => 'invalid_state',
+                    'message' => 'Staff has already reviewed this refund request.',
                     'refund' => $refund,
                 ];
             }
@@ -614,7 +689,7 @@ class OrderRefundService
             'failure_reason' => null,
         ];
 
-        if ($stageNormalized === 'shop_owner') {
+        if (in_array($stageNormalized, ['staff', 'shop_owner'], true)) {
             $payload['shop_owner_status'] = 'rejected';
         } else {
             $payload['finance_status'] = 'rejected';
@@ -685,59 +760,68 @@ class OrderRefundService
     public function arrangeStaffReturnPickup(OrderRefund $refund, array $pickupData, ?int $staffId = null): array
     {
         $isShopOwnedPickup = strtolower((string) ($pickupData['carrier_company'] ?? $pickupData['carrier'] ?? '')) === 'shop-owned logistics';
+        $arrange = function (OrderRefund $lockedRefund) use ($pickupData, $staffId, $isShopOwnedPickup) {
+            if ((string) ($lockedRefund->shop_owner_status ?? 'pending') !== 'approved'
+                || (string) ($lockedRefund->finance_status ?? 'pending') !== 'approved') {
+                return [
+                    'result' => 'invalid_state',
+                    'message' => 'Staff and Finance approvals must be completed before arranging return pickup.',
+                    'refund' => $lockedRefund,
+                ];
+            }
 
-        if ((string) ($refund->shop_owner_status ?? 'pending') !== 'approved' || (string) ($refund->finance_status ?? 'pending') !== 'approved') {
+            if ((string) ($lockedRefund->return_status ?? '') !== 'pending_customer_shipment') {
+                return [
+                    'result' => 'invalid_state',
+                    'message' => 'Return pickup has already been arranged or cannot be arranged in the current state.',
+                    'refund' => $lockedRefund,
+                ];
+            }
+
+            $staffShippedAt = $pickupData['shipped_at'] ?? null;
+            $this->updateOrderRefundCompat($lockedRefund, [
+                'return_status' => $staffShippedAt ? 'in_transit' : 'pending_staff_pickup',
+                'staff_return_tracking_number' => $pickupData['tracking_number'] ?? $lockedRefund->staff_return_tracking_number,
+                'staff_return_carrier' => $pickupData['carrier_company'] ?? ($pickupData['carrier'] ?? $lockedRefund->staff_return_carrier),
+                'staff_return_rider_name' => $pickupData['rider_name'] ?? $lockedRefund->staff_return_rider_name,
+                'staff_return_rider_phone' => $pickupData['rider_phone'] ?? $lockedRefund->staff_return_rider_phone,
+                'staff_return_tracking_link' => $pickupData['tracking_link'] ?? $lockedRefund->staff_return_tracking_link,
+                'staff_return_shipped_at' => $staffShippedAt,
+                'return_arranged_by_staff_id' => $staffId,
+                'return_arranged_by_staff_at' => now(),
+                'return_source' => 'staff',
+                'return_notes' => $pickupData['note'] ?? $lockedRefund->return_notes,
+            ]);
+
+            $resolvedRefund = $lockedRefund->fresh() ?? $lockedRefund;
+            if ($lockedRefund->exists && $isShopOwnedPickup) {
+                $this->ensureReturnShipment($resolvedRefund);
+            }
+
+            if ($lockedRefund->exists) {
+                DB::afterCommit(fn () => $this->notifyCustomerForStaffPickup($resolvedRefund));
+            } else {
+                $this->notifyCustomerForStaffPickup($resolvedRefund);
+            }
+
             return [
-                'result' => 'invalid_state',
-                'message' => 'Refund approvals must be completed before arranging return pickup.',
-                'refund' => $refund,
+                'result' => 'pickup_arranged',
+                'message' => $staffShippedAt
+                    ? 'Staff pickup and shipment details saved successfully.'
+                    : 'Staff pickup details saved successfully. Waiting for rider pickup.',
+                'refund' => $resolvedRefund,
             ];
+        };
+
+        if (!$refund->exists) {
+            return $arrange($refund);
         }
 
-        if ($isShopOwnedPickup && (string) ($refund->return_status ?? '') !== 'pending_customer_shipment') {
-            return [
-                'result' => 'invalid_state',
-                'message' => 'This shop-owned return pickup is already in the Logistics dispatcher queue.',
-                'refund' => $refund,
-            ];
-        }
+        return DB::transaction(function () use ($refund, $arrange) {
+            $lockedRefund = OrderRefund::query()->lockForUpdate()->findOrFail($refund->id);
 
-        if (!in_array((string) ($refund->return_status ?? 'awaiting_approval'), ['pending_customer_shipment', 'pending_staff_pickup', 'in_transit'], true)) {
-            return [
-                'result' => 'invalid_state',
-                'message' => 'Return pickup cannot be arranged in the current state.',
-                'refund' => $refund,
-            ];
-        }
-
-        $staffShippedAt = $pickupData['shipped_at'] ?? null;
-
-        $this->updateOrderRefundCompat($refund, [
-            'return_status' => $staffShippedAt ? 'in_transit' : 'pending_staff_pickup',
-            'staff_return_tracking_number' => $pickupData['tracking_number'] ?? $refund->staff_return_tracking_number,
-            'staff_return_carrier' => $pickupData['carrier_company'] ?? ($pickupData['carrier'] ?? $refund->staff_return_carrier),
-            'staff_return_rider_name' => $pickupData['rider_name'] ?? $refund->staff_return_rider_name,
-            'staff_return_rider_phone' => $pickupData['rider_phone'] ?? $refund->staff_return_rider_phone,
-            'staff_return_tracking_link' => $pickupData['tracking_link'] ?? $refund->staff_return_tracking_link,
-            'staff_return_shipped_at' => $staffShippedAt,
-            'return_arranged_by_staff_id' => $staffId,
-            'return_arranged_by_staff_at' => now(),
-            'return_source' => 'staff',
-            'return_notes' => $pickupData['note'] ?? $refund->return_notes,
-        ]);
-
-        $freshRefund = $refund->fresh();
-        $resolvedRefund = $freshRefund ?? $refund;
-
-        $this->notifyCustomerForStaffPickup($resolvedRefund);
-
-        return [
-            'result' => 'pickup_arranged',
-            'message' => $staffShippedAt
-                ? 'Staff pickup and shipment details saved successfully.'
-                : 'Staff pickup details saved successfully. Waiting for rider pickup.',
-            'refund' => $resolvedRefund,
-        ];
+            return $arrange($lockedRefund);
+        });
     }
 
     public function confirmReturnReceived(
@@ -749,6 +833,11 @@ class OrderRefundService
     {
         if ((string) ($refund->reason_code ?? '') === 'delivery_attempts_exhausted') {
             return $this->confirmFailedDeliveryReturnReceived($refund, $staffId, $notes, $lineDispositions);
+        }
+
+        $refund->loadMissing('order.shopOwner');
+        if (strtolower(trim((string) ($refund->order?->shopOwner?->registration_type ?? ''))) === 'company') {
+            return $this->confirmCompanyReturnReceived($refund, $staffId, $notes, $lineDispositions);
         }
 
         $isShopOwnedPickup = (string) ($refund->return_source ?? '') === 'staff'
@@ -861,6 +950,101 @@ class OrderRefundService
         ];
     }
 
+    private function confirmCompanyReturnReceived(
+        OrderRefund $refund,
+        ?int $staffId,
+        ?string $notes,
+        ?array $lineDispositions,
+    ): array {
+        return DB::transaction(function () use ($refund, $staffId, $notes, $lineDispositions) {
+            $refund = OrderRefund::query()->with('order.items')->lockForUpdate()->findOrFail($refund->id);
+            if ((string) $refund->return_status !== 'in_transit') {
+                return $this->invalidReturnReceipt($refund, 'Wait for the returned parcel before completing the Staff inspection.');
+            }
+
+            $lines = $refund->items()->lockForUpdate()->get();
+            $orderItems = $refund->order->items->keyBy('id');
+            $expectedOrderItemIds = $lines->isEmpty()
+                ? $orderItems->keys()->map(fn ($id) => (int) $id)
+                : $lines->pluck('order_item_id')->map(fn ($id) => (int) $id);
+            $submitted = collect($lineDispositions ?? [])->filter(fn ($line) => is_array($line));
+            $submittedIds = $submitted->pluck('order_item_id')->map(fn ($id) => (int) $id);
+
+            if ($expectedOrderItemIds->isEmpty() || $submitted->count() !== $expectedOrderItemIds->count()
+                || $submittedIds->unique()->count() !== $submitted->count()
+                || $submittedIds->sort()->values()->all() !== $expectedOrderItemIds->sort()->values()->all()) {
+                return $this->invalidReturnReceipt($refund, 'Every refund item must be inspected exactly once.');
+            }
+
+            $submittedById = $submitted->keyBy(fn ($line) => (int) $line['order_item_id']);
+            $linesByOrderItemId = $lines->keyBy(fn ($line) => (int) $line->order_item_id);
+            $validatedLines = [];
+            foreach ($expectedOrderItemIds as $orderItemId) {
+                $line = $linesByOrderItemId->get($orderItemId);
+                $orderItem = $orderItems->get($orderItemId);
+                $input = $submittedById->get($orderItemId);
+                $disposition = strtolower(trim((string) ($input['inspection_disposition'] ?? '')));
+                $approvedQty = (int) ($input['approved_qty'] ?? 0);
+                $expectedQty = (int) ($line?->approved_qty ?? $orderItem?->quantity ?? 0);
+
+                if (!$orderItem || ($line && (int) $line->product_id !== (int) $orderItem->product_id)
+                    || ($line && (int) ($line->product_variant_id ?? 0) !== (int) ($orderItem->product_variant_id ?? 0))
+                    || $approvedQty !== $expectedQty || $approvedQty <= 0
+                    || !in_array($disposition, ['resellable', 'damaged'], true)) {
+                    return $this->invalidReturnReceipt($refund, 'Return item identity, quantity, or disposition is invalid.');
+                }
+
+                $validatedLines[] = compact('line', 'orderItem', 'approvedQty', 'disposition');
+            }
+
+            $inspectedLines = collect();
+            foreach ($validatedLines as $validatedLine) {
+                $line = $validatedLine['line'];
+                $orderItem = $validatedLine['orderItem'];
+                $approvedQty = $validatedLine['approvedQty'];
+                $disposition = $validatedLine['disposition'];
+
+                if ($line) {
+                    $line->update(['inspection_disposition' => $disposition]);
+                } else {
+                    $unitPrice = round((float) ($orderItem->price ?? 0), 2);
+                    $line = $refund->items()->create([
+                        'order_item_id' => (int) $orderItem->id,
+                        'product_id' => (int) $orderItem->product_id,
+                        'product_variant_id' => $orderItem->product_variant_id,
+                        'requested_qty' => $approvedQty,
+                        'approved_qty' => $approvedQty,
+                        'unit_price_snapshot' => $unitPrice,
+                        'line_amount' => round($unitPrice * $approvedQty, 2),
+                        'inspection_disposition' => $disposition,
+                        'inventory_action' => 'pending',
+                    ]);
+                }
+
+                $inspectedLines->push($line);
+            }
+
+            $inventoryDisposition = app(RefundInventoryDispositionService::class);
+            foreach ($inspectedLines as $line) {
+                $inventoryDisposition->applyOrderLine($line->fresh());
+            }
+
+            $refund->update([
+                'return_status' => 'received',
+                'return_confirmed_at' => now(),
+                'return_confirmed_by_staff_id' => $staffId,
+                'return_notes' => $notes ?? $refund->return_notes,
+                'staff_return_shipped_at' => $refund->staff_return_shipped_at ?? now(),
+            ]);
+
+            return [
+                'result' => 'received',
+                'message' => 'Every returned item was inspected. Finance may now release the refund.',
+                'refund' => $refund->fresh(),
+            ];
+        });
+    }
+
     private function confirmFailedDeliveryReturnReceived(
         OrderRefund $refund,
         ?int $staffId,
@@ -952,10 +1136,7 @@ class OrderRefundService
             ];
         }
 
-        $requiredReturnStatuses = (string) ($refund->reason_code ?? '') === 'delivery_attempts_exhausted'
-            ? ['received']
-            : ['in_transit', 'received'];
-        if (!in_array((string) ($refund->return_status ?? 'awaiting_approval'), $requiredReturnStatuses, true)) {
+        if ((string) ($refund->return_status ?? 'awaiting_approval') !== 'received') {
             return [
                 'result' => 'invalid_state',
                 'message' => 'The returned parcel must be received before payout execution.',

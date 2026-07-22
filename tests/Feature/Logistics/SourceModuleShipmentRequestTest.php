@@ -205,6 +205,41 @@ class SourceModuleShipmentRequestTest extends TestCase
                 'delivery_method' => 'shop_owned',
             ])
             ->assertStatus(422);
+
+        $this->assertDatabaseCount('shipments', 1);
+    }
+
+    public function test_staff_cannot_arrange_a_third_party_return_twice(): void
+    {
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $staff = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'STAFF']);
+        Permission::findOrCreate('access-staff-job-orders', 'user');
+        $staff->givePermissionTo('access-staff-job-orders');
+        $order = Order::factory()->create(['shop_owner_id' => $shop->id]);
+        OrderRefund::factory()->create([
+            'order_id' => $order->id,
+            'shop_owner_id' => $shop->id,
+            'flow_type' => 'request_approval',
+            'status' => 'processing',
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'pending_customer_shipment',
+        ]);
+        $payload = [
+            'delivery_method' => 'third_party',
+            'tracking_number' => 'TRK-123',
+            'carrier_company' => 'LBC',
+            'rider_name' => 'Rider One',
+            'rider_phone' => '09171234567',
+            'tracking_link' => 'https://example.com/TRK-123',
+        ];
+
+        $this->actingAs($staff, 'user')
+            ->postJson("/api/staff/orders/{$order->id}/arrange-return-pickup", $payload)
+            ->assertOk();
+
+        $this->postJson("/api/staff/orders/{$order->id}/arrange-return-pickup", $payload)
+            ->assertStatus(422);
     }
 
     public function test_repair_pickup_creates_inbound_shipment(): void

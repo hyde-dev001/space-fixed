@@ -105,6 +105,50 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
     }
 
     #[Test]
+    public function company_refund_requires_staff_approval_before_finance(): void
+    {
+        $refund = $this->makeRefund(registrationType: 'company');
+        $this->assertSame('company', $refund->order->shopOwner->registration_type);
+
+        $blocked = $this->service->approveRequestedRefund($refund, stage: 'finance', processedBy: 12);
+
+        $this->assertSame('invalid_state', $blocked['result']);
+        $this->assertSame('pending', $refund->finance_status);
+
+        $staff = $this->service->approveRequestedRefund($refund, stage: 'staff', processedBy: 11);
+
+        $this->assertSame('approved', $staff['result']);
+        $this->assertSame('approved', $refund->shop_owner_status);
+        $this->assertSame(11, $refund->shop_owner_approved_by);
+        $this->assertSame('pending', $refund->finance_status);
+        $this->assertSame('awaiting_approval', $refund->return_status);
+
+        $finance = $this->service->approveRequestedRefund($refund, stage: 'finance', processedBy: 12);
+
+        $this->assertSame('approved', $finance['result']);
+        $this->assertSame('approved', $refund->finance_status);
+        $this->assertSame('pending_customer_shipment', $refund->return_status);
+    }
+
+    #[Test]
+    public function company_finance_cannot_reject_before_staff_review(): void
+    {
+        $refund = $this->makeRefund(registrationType: 'company');
+        $this->assertSame('company', $refund->order->shopOwner->registration_type);
+
+        $blocked = $this->service->rejectRequestedRefund($refund, 'Not approved', stage: 'finance', processedBy: 12);
+
+        $this->assertSame('invalid_state', $blocked['result']);
+        $this->assertSame('requested', $refund->status);
+
+        $staff = $this->service->rejectRequestedRefund($refund, 'Not refundable', stage: 'staff', processedBy: 11);
+
+        $this->assertSame('rejected', $staff['result']);
+        $this->assertSame('rejected', $refund->shop_owner_status);
+        $this->assertSame('Not refundable', $refund->rejection_reason);
+    }
+
+    #[Test]
     public function customer_return_shipment_requires_completed_approvals(): void
     {
         $refund = $this->makeRefund();
@@ -279,7 +323,7 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
     }
 
     #[Test]
-    public function execute_refund_attempts_payout_when_return_is_in_transit(): void
+    public function execute_refund_blocks_payout_when_return_is_in_transit(): void
     {
         $refund = $this->makeRefund([
             'shop_owner_status' => 'approved',
@@ -288,19 +332,13 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
             'status' => 'pending_approval',
         ]);
 
-        $this->paymongoRefundService
-            ->expects($this->once())
-            ->method('createRefund')
-            ->willReturn([
-                'success' => false,
-                'message' => 'Gateway temporarily unavailable',
-            ]);
+        $this->paymongoRefundService->expects($this->never())->method('createRefund');
 
         $result = $this->service->executeApprovedRefund($refund, processedBy: 90);
 
-        $this->assertSame('failed', $result['result']);
-        $this->assertSame('failed', $refund->status);
-        $this->assertStringContainsString('gateway', strtolower((string) $result['message']));
+        $this->assertSame('invalid_state', $result['result']);
+        $this->assertSame('pending_approval', $refund->status);
+        $this->assertStringContainsString('received', strtolower((string) $result['message']));
     }
 
     #[Test]

@@ -380,6 +380,40 @@ const normalizeFinanceRefundRequest = (item: RefundRequest): RefundRequest => {
 	};
 };
 
+export const canFinanceAuthorizeRefund = (request: RefundRequest): boolean => {
+	const rawStatus = String(request.rawStatus || "").toLowerCase();
+	const financeStatus = String(request.financeStatus || "").toLowerCase();
+	const shopOwnerStatus = String(request.shopOwnerStatus || "").toLowerCase();
+	const requiresOwnerApproval = request.requiresOwnerApproval !== false;
+
+	if (request.refundType === "repair") {
+		return financeStatus === "pending"
+			&& !["rejected", "failed", "succeeded", "completed", "paid"].includes(rawStatus);
+	}
+
+	return shopOwnerStatus === "approved"
+		&& (financeStatus === "pending"
+			|| (requiresOwnerApproval && financeStatus === "approved_initial"))
+		&& !["rejected", "failed", "succeeded", "completed", "paid"].includes(rawStatus);
+};
+
+export const canExecuteRefundPayout = (request: RefundRequest): boolean => {
+	const rawStatus = String(request.rawStatus || "").toLowerCase();
+	const financeStatus = String(request.financeStatus || "").toLowerCase();
+	const shopOwnerStatus = String(request.shopOwnerStatus || "").toLowerCase();
+
+	if (request.refundType === "repair") {
+		return financeStatus === "approved"
+			&& ["approved", "skipped"].includes(shopOwnerStatus)
+			&& !["processing", "succeeded", "failed", "rejected"].includes(rawStatus);
+	}
+
+	return financeStatus === "approved"
+		&& shopOwnerStatus === "approved"
+		&& String(request.returnStatus || "").toLowerCase() === "received"
+		&& !["processing", "succeeded", "failed", "rejected"].includes(rawStatus);
+};
+
 const formatPayoutChannelLabel = (channel?: string): string => {
 	switch (String(channel || "").toLowerCase()) {
 		case "gcash":
@@ -691,28 +725,15 @@ export default function RefundApproval() {
 	};
 
 	const canFinanceApprove = (request: RefundRequest): boolean => {
-		const rawStatus = String(request.rawStatus || "").toLowerCase();
-		const financeStatus = String(request.financeStatus || "").toLowerCase();
-		const shopOwnerStatus = String(request.shopOwnerStatus || "").toLowerCase();
-		const requiresOwnerApproval = (request as any).requiresOwnerApproval !== false;
-
-		if (request.refundType === "repair") {
-			return financeStatus === "pending"
-				&& !["rejected", "failed", "succeeded", "completed", "paid"].includes(rawStatus);
-		}
-
-		return (
-				financeStatus === "pending"
-				|| (requiresOwnerApproval && financeStatus === "approved_initial" && shopOwnerStatus === "approved")
-			)
-			&& !["rejected", "failed", "succeeded", "completed", "paid"].includes(rawStatus);
+		return canFinanceAuthorizeRefund(request);
 	};
 
 	const canFinanceReject = (request: RefundRequest): boolean => {
 		const financeStatus = String(request.financeStatus || "").toLowerCase();
 		const rawStatus = String(request.rawStatus || "").toLowerCase();
 		
-		return financeStatus === "pending"
+		return (request.refundType === "repair" || String(request.shopOwnerStatus || "").toLowerCase() === "approved")
+			&& financeStatus === "pending"
 			&& !["rejected", "failed", "succeeded", "completed", "paid"].includes(rawStatus);
 	};
 
@@ -741,7 +762,8 @@ export default function RefundApproval() {
 					<p style="margin-bottom: 0.5rem;"><strong>Method:</strong> ${request.refundMethod}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Requested by:</strong> ${request.requestedBy}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Reason:</strong> ${request.reason}</p>
-					<p style="margin-bottom: 0.5rem;"><strong>Action:</strong> ${(request as any).approvalStage === "finance_final" ? "Finance final approval" : "Finance initial approval"}</p>
+					<p style="margin-bottom: 0.5rem;"><strong>Action:</strong> Finance authorization only</p>
+					<p style="margin-bottom: 0;color:#92400e;"><strong>No payout yet.</strong> Money can be released only after Staff receives and inspects every returned item.</p>
 				</div>
 			`,
 			icon: "question",
@@ -890,21 +912,7 @@ export default function RefundApproval() {
 	};
 
 	const canExecuteGatewayRefund = (request: RefundRequest): boolean => {
-		const rawStatus = String(request.rawStatus || "").toLowerCase();
-		const financeStatus = String(request.financeStatus || "").toLowerCase();
-		const shopOwnerStatus = String(request.shopOwnerStatus || "").toLowerCase();
-		const returnStatus = String(request.returnStatus || "").toLowerCase();
-
-		if (request.refundType === "repair") {
-			return financeStatus === "approved"
-				&& ["approved", "skipped"].includes(shopOwnerStatus)
-				&& !["processing", "succeeded", "failed", "rejected"].includes(rawStatus);
-		}
-
-		return financeStatus === "approved"
-			&& shopOwnerStatus === "approved"
-			&& ["in_transit", "received"].includes(returnStatus)
-			&& !["processing", "succeeded", "failed", "rejected"].includes(rawStatus);
+		return canExecuteRefundPayout(request);
 	};
 
 	const getExecuteActionLabel = (request: RefundRequest): string => {

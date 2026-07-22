@@ -678,13 +678,52 @@ class StaffOrderController extends Controller
             ], 422);
         }
 
-        if ($isShopOwned) {
-            $this->orderRefundService->ensureReturnShipment($result['refund']);
+        return response()->json([
+            'success' => true,
+            'message' => $result['message'] ?? 'Return pickup arranged successfully.',
+            'refund' => $result['refund'],
+        ]);
+    }
+
+    public function approveRefund(Request $request, $id)
+    {
+        return $this->reviewRefund($request, $id, true);
+    }
+
+    public function rejectRefund(Request $request, $id)
+    {
+        return $this->reviewRefund($request, $id, false);
+    }
+
+    private function reviewRefund(Request $request, $id, bool $approve)
+    {
+        $user = Auth::guard('user')->user();
+        abort_unless($this->canAccessStaffOrders($user), 403);
+
+        $validated = $request->validate($approve
+            ? ['approval_note' => 'nullable|string|max:1000']
+            : ['rejection_reason' => 'required|string|max:1000']);
+        $shopOwnerId = (int) ($user->shop_owner_id ?? $user->id);
+        $order = Order::query()->where('shop_owner_id', $shopOwnerId)->findOrFail($id);
+        $refund = OrderRefund::query()
+            ->where('order_id', $order->id)
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where('flow_type', 'request_approval')
+            ->whereIn('status', ['requested', 'pending_approval'])
+            ->latest('id')
+            ->firstOrFail();
+
+        $result = $approve
+            ? $this->orderRefundService->approveRequestedRefund($refund, 'staff', (int) $user->id, $validated['approval_note'] ?? null)
+            : $this->orderRefundService->rejectRequestedRefund($refund, $validated['rejection_reason'], 'staff', (int) $user->id);
+
+        if (in_array((string) ($result['result'] ?? ''), ['failed', 'invalid_state', 'invalid_stage', 'already_approved', 'already_rejected'], true)) {
+            return response()->json(['success' => false, 'message' => $result['message']], 422);
         }
 
         return response()->json([
             'success' => true,
-            'message' => $result['message'] ?? 'Return pickup arranged successfully.',
+            'message' => $result['message'],
             'refund' => $result['refund'],
         ]);
     }
