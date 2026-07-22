@@ -28,6 +28,7 @@ use App\Services\PaymentSettlementService;
 use App\Services\RepairPosPaymentService;
 use App\Services\RepairPosReceiptService;
 use App\Services\RepairPosRefundService;
+use App\Services\RepairDeliveryService;
 use App\Services\ShopOwnerApprovalPolicyService;
 use App\Services\PolicyAcceptanceService;
 
@@ -40,7 +41,11 @@ class RepairRequestController extends Controller
         private ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService
     ) {}
 
-    public function store(Request $request, PolicyAcceptanceService $policyAcceptanceService)
+    public function store(
+        Request $request,
+        PolicyAcceptanceService $policyAcceptanceService,
+        RepairDeliveryService $repairDeliveryService,
+    )
     {
         if (!Auth::guard('user')->check()) {
             return response()->json([
@@ -66,18 +71,22 @@ class RepairRequestController extends Controller
             'images.*' => 'image|mimes:jpeg,png,jpg,gif|max:2048',
             'total' => 'required|numeric|min:0',
             'preferred_date' => 'nullable|date|after:today',
-            'service_type' => 'required|in:pickup,walkin',
+            'service_type' => 'nullable|required_without:intake_delivery_method|in:pickup,walkin',
+            'intake_delivery_method' => 'nullable|in:walk_in,customer_delivery,shop_pickup',
+            'intake_address_id' => 'nullable|integer',
             'pickup_address_line' => 'nullable|string|max:255',
             'pickup_barangay' => 'nullable|string|max:255',
             'pickup_city' => 'nullable|string|max:255',
             'pickup_region' => 'nullable|string|max:255',
             'pickup_postal_code' => 'nullable|string|max:10',
             'return_delivery_method' => 'nullable|in:walk_in,customer_pickup,shop_delivery',
-            'return_address_line' => 'required_if:return_delivery_method,customer_pickup,shop_delivery|string|max:255',
-            'return_barangay' => 'required_if:return_delivery_method,customer_pickup,shop_delivery|string|max:255',
-            'return_city' => 'required_if:return_delivery_method,customer_pickup,shop_delivery|string|max:255',
-            'return_region' => 'required_if:return_delivery_method,customer_pickup,shop_delivery|string|max:255',
-            'return_postal_code' => 'required_if:return_delivery_method,customer_pickup,shop_delivery|string|max:10',
+            'return_address_id' => 'nullable|integer',
+            'same_as_intake_address' => 'nullable|boolean',
+            'return_address_line' => 'nullable|string|max:255',
+            'return_barangay' => 'nullable|string|max:255',
+            'return_city' => 'nullable|string|max:255',
+            'return_region' => 'nullable|string|max:255',
+            'return_postal_code' => 'nullable|string|max:10',
             'accepted_shop_policy_version_id' => 'nullable|integer|exists:shop_policy_versions,id',
             'policy_accepted' => 'nullable|boolean',
         ]);
@@ -89,6 +98,143 @@ class RepairRequestController extends Controller
                 'errors' => $validator->errors()
             ], 422);
         }
+
+        $usesExplicitLogistics = $request->filled('intake_delivery_method');
+        $intakeDeliveryMethod = $usesExplicitLogistics
+            ? (string) $request->input('intake_delivery_method')
+            : ($request->input('service_type') === 'pickup' ? 'customer_delivery' : 'walk_in');
+        $returnDeliveryMethod = (string) ($request->input('return_delivery_method')
+            ?: ($intakeDeliveryMethod === 'walk_in' ? 'walk_in' : 'customer_pickup'));
+        $sameAsIntakeAddress = $usesExplicitLogistics && $request->boolean('same_as_intake_address', true);
+        $logisticsErrors = [];
+
+        if ($usesExplicitLogistics) {
+            if ($intakeDeliveryMethod !== 'walk_in' && ! $request->filled('intake_address_id')) {
+                $logisticsErrors['intake_address_id'][] = 'Choose a saved address for sending your shoes to the shop.';
+            }
+            if ($returnDeliveryMethod !== 'walk_in'
+                && (! $sameAsIntakeAddress || $intakeDeliveryMethod === 'walk_in')
+                && ! $request->filled('return_address_id')) {
+                $logisticsErrors['return_address_id'][] = 'Choose a saved address for returning your repaired shoes.';
+            }
+            if (in_array($intakeDeliveryMethod, ['shop_pickup'], true)
+                || in_array($returnDeliveryMethod, ['shop_delivery'], true)) {
+                if (! $request->filled('shop_owner_id')) {
+                    $logisticsErrors['shop_owner_id'][] = 'Choose a shop before using shop-owned logistics.';
+                }
+            }
+        } elseif ($request->filled('return_delivery_method') && $returnDeliveryMethod !== 'walk_in') {
+            foreach ([
+                'return_address_line' => 'Return address line',
+                'return_barangay' => 'Return barangay',
+                'return_city' => 'Return city',
+                'return_region' => 'Return province',
+                'return_postal_code' => 'Return postal code',
+            ] as $field => $label) {
+                if (! $request->filled($field)) {
+                    $logisticsErrors[$field][] = "{$label} is required.";
+                }
+            }
+        }
+
+        $customer = Auth::guard('user')->user();
+        $shopOwner = $request->filled('shop_owner_id')
+            ? ShopOwner::find((int) $request->input('shop_owner_id'))
+            : null;
+        $intakeSavedAddress = null;
+        $returnSavedAddress = null;
+
+        if ($usesExplicitLogistics && $intakeDeliveryMethod !== 'walk_in' && $request->filled('intake_address_id')) {
+            $intakeSavedAddress = $customer?->addresses()->find((int) $request->input('intake_address_id'));
+            if (! $intakeSavedAddress) {
+                $logisticsErrors['intake_address_id'][] = 'Choose one of your saved addresses.';
+            }
+        }
+
+        if ($usesExplicitLogistics && $returnDeliveryMethod !== 'walk_in') {
+            if ($sameAsIntakeAddress && $intakeDeliveryMethod !== 'walk_in') {
+                $returnSavedAddress = $intakeSavedAddress;
+            } elseif ($request->filled('return_address_id')) {
+                $returnSavedAddress = $customer?->addresses()->find((int) $request->input('return_address_id'));
+                if (! $returnSavedAddress) {
+                    $logisticsErrors['return_address_id'][] = 'Choose one of your saved addresses.';
+                }
+            }
+        }
+
+        if ($logisticsErrors !== []) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $logisticsErrors,
+            ], 422);
+        }
+
+        $pickupAddress = null;
+        $intakeAddress = null;
+        $returnAddress = null;
+        $intakeLogisticsQuote = null;
+        $returnLogisticsQuote = null;
+        $intakeDeliveryFee = 0.0;
+        $returnDeliveryFee = 0.0;
+
+        if ($usesExplicitLogistics) {
+            if ($intakeSavedAddress) {
+                $intakeAddress = $repairDeliveryService->snapshot($intakeSavedAddress, $intakeDeliveryMethod);
+                $pickupAddress = $intakeAddress;
+            }
+            if ($returnSavedAddress) {
+                $returnAddress = $repairDeliveryService->snapshot($returnSavedAddress, $returnDeliveryMethod);
+            }
+
+            if ($intakeDeliveryMethod === 'shop_pickup' && $shopOwner && $intakeSavedAddress) {
+                $intakeLogisticsQuote = $repairDeliveryService->quote($shopOwner, $intakeSavedAddress);
+                if (! $intakeLogisticsQuote['available']) {
+                    return $this->repairLogisticsValidationFailure('intake_address_id', $intakeLogisticsQuote['reason']);
+                }
+                $intakeDeliveryFee = (float) $intakeLogisticsQuote['fee'];
+                $intakeLogisticsQuote['address_version'] = $intakeAddress['version'];
+                $intakeLogisticsQuote['method'] = $intakeDeliveryMethod;
+            }
+
+            if ($returnDeliveryMethod === 'shop_delivery' && $shopOwner && $returnSavedAddress) {
+                $returnLogisticsQuote = $repairDeliveryService->quote($shopOwner, $returnSavedAddress);
+                if (! $returnLogisticsQuote['available']) {
+                    return $this->repairLogisticsValidationFailure('return_address_id', $returnLogisticsQuote['reason']);
+                }
+                $returnDeliveryFee = (float) $returnLogisticsQuote['fee'];
+                $returnLogisticsQuote['address_version'] = $returnAddress['version'];
+                $returnLogisticsQuote['method'] = $returnDeliveryMethod;
+            }
+        } else {
+            if ($intakeDeliveryMethod === 'customer_delivery' && $shopOwner) {
+                $shopAddressLine = $shopOwner->shop_address
+                    ?? $shopOwner->business_address
+                    ?? $shopOwner->city_state
+                    ?? 'Shop address unavailable';
+                $parts = array_values(array_filter(array_map('trim', explode(',', (string) ($shopOwner->city_state ?? '')))));
+                $intakeAddress = [
+                    'address_line' => $shopAddressLine,
+                    'barangay' => null,
+                    'city' => $parts[0] ?? null,
+                    'region' => $parts[1] ?? null,
+                    'postal_code' => $shopOwner->postal_code,
+                ];
+                $pickupAddress = $intakeAddress;
+            }
+            if ($returnDeliveryMethod !== 'walk_in') {
+                $returnAddress = [
+                    'address_line' => $request->return_address_line,
+                    'barangay' => $request->return_barangay,
+                    'city' => $request->return_city,
+                    'region' => $request->return_region,
+                    'postal_code' => $request->return_postal_code,
+                ];
+            }
+        }
+
+        $deliveryMethod = $intakeDeliveryMethod === 'walk_in' ? 'walk_in' : 'pickup';
+        $autoEnableOnlinePayment = in_array($intakeDeliveryMethod, ['walk_in', 'shop_pickup'], true);
 
         try {
             // Generate unique request ID
@@ -245,7 +391,6 @@ class RepairRequestController extends Controller
             }
             
             // Get shop owner for high value check
-            $shopOwner = ShopOwner::find($request->shop_owner_id);
             $isHighValue = $shopOwner && $requestTotal >= $shopOwner->high_value_threshold;
             $requiresOwnerApprovalByPolicy = $shopOwner
                 ? $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForRepairReject((int) $shopOwner->id, (float) $requestTotal)
@@ -283,67 +428,6 @@ class RepairRequestController extends Controller
                 }
             }
             
-            // Determine intake delivery method and address
-            // 'walk_in' = customer brings shoes to shop
-            // 'customer_delivery' = customer arranges delivery (Lalamove, courier, etc)
-            $intakeDeliveryMethod = $request->service_type === 'pickup' ? 'customer_delivery' : 'walk_in';
-            $returnDeliveryMethod = $request->return_delivery_method
-                ?: ($intakeDeliveryMethod === 'walk_in' ? 'walk_in' : 'customer_pickup');
-            $autoEnableOnlinePayment = $intakeDeliveryMethod === 'walk_in';
-            $pickupAddress = null;
-            $intakeAddress = null;
-            $returnAddress = null;
-            $deliveryMethod = $request->service_type === 'pickup' ? 'pickup' : 'walk_in';
-            
-            // Build intake delivery address if customer is arranging delivery
-            if ($request->service_type === 'pickup') {
-                if (!$shopOwner) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Shop is required when selecting courier delivery to shop.',
-                    ], 422);
-                }
-
-                $shopAddressLine = $shopOwner->shop_address
-                    ?? $shopOwner->business_address
-                    ?? $shopOwner->city_state
-                    ?? 'Shop address unavailable';
-                $shopCityState = (string) ($shopOwner->city_state ?? '');
-                $city = null;
-                $region = null;
-
-                if ($shopCityState !== '') {
-                    $parts = array_values(array_filter(array_map('trim', explode(',', $shopCityState))));
-                    if (count($parts) >= 2) {
-                        $city = $parts[0];
-                        $region = $parts[1];
-                    } else {
-                        $city = $shopCityState;
-                    }
-                }
-
-                $intakeAddress = [
-                    'address_line' => $shopAddressLine,
-                    'barangay' => null,
-                    'city' => $city,
-                    'region' => $region,
-                    'postal_code' => $shopOwner->postal_code,
-                ];
-                
-                // Keep pickup_address for backward compatibility
-                $pickupAddress = $intakeAddress;
-            }
-
-            if ($returnDeliveryMethod !== 'walk_in') {
-                $returnAddress = [
-                    'address_line' => $request->return_address_line,
-                    'barangay' => $request->return_barangay,
-                    'city' => $request->return_city,
-                    'region' => $request->return_region,
-                    'postal_code' => $request->return_postal_code,
-                ];
-            }
-            
             // Create request and acceptance evidence atomically.
             $repairRequest = DB::transaction(function () use (
                 $request,
@@ -363,6 +447,11 @@ class RepairRequestController extends Controller
                 $intakeAddress,
                 $returnDeliveryMethod,
                 $returnAddress,
+                $intakeDeliveryFee,
+                $returnDeliveryFee,
+                $sameAsIntakeAddress,
+                $intakeLogisticsQuote,
+                $returnLogisticsQuote,
                 $isHighValue,
                 $requiresOwnerApproval,
                 $shopOwner,
@@ -411,6 +500,11 @@ class RepairRequestController extends Controller
                     'intake_address' => $intakeAddress,
                     'return_delivery_method' => $returnDeliveryMethod,
                     'return_address' => $returnAddress,
+                    'intake_delivery_fee' => $intakeDeliveryFee,
+                    'return_delivery_fee' => $returnDeliveryFee,
+                    'same_as_intake_address' => $sameAsIntakeAddress,
+                    'intake_logistics_quote' => $intakeLogisticsQuote,
+                    'return_logistics_quote' => $returnLogisticsQuote,
                     'is_high_value' => $isHighValue,
                     'requires_owner_approval' => $requiresOwnerApproval,
                     'scheduled_dropoff_date' => $request->preferred_date ? \Carbon\Carbon::parse($request->preferred_date)->startOfDay() : null,
@@ -3258,5 +3352,21 @@ class RepairRequestController extends Controller
             'final_total' => $finalTotal,
             'pricing_breakdown' => $pricingBreakdown,
         ];
+    }
+
+    private function repairLogisticsValidationFailure(string $field, ?string $reason)
+    {
+        $message = match ($reason) {
+            'address_needs_pin' => 'Pin the exact address before choosing shop-owned logistics.',
+            'outside_coverage' => 'This address is outside the shop coverage. Choose walk-in or a third-party courier.',
+            'shop_needs_pin' => 'The shop must pin its location before shop-owned logistics can be used.',
+            default => 'Shop-owned logistics is unavailable for this address.',
+        };
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Validation failed',
+            'errors' => [$field => [$message]],
+        ], 422);
     }
 }
