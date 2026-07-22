@@ -173,6 +173,9 @@ Existing off-schedule/on-leave rider checks, assignment rules, batching, proof r
 - Shipment rows and batch cards/stops show a compact Retail or Repair badge.
 - Every delivery batch is module-homogeneous. Retail and Repair legs cannot be combined in one batch.
 - The same module rule is enforced server-side for batch suggestions, manual creation, adding or replacing stops, and restoring a cancelled batch. Invalid mixed-module requests fail before assignments, events, or other side effects.
+- A new or reconstructed batch requires at least two stops. The minimum applies to suggestions, manual and schedule creation, stop replacement/update, and cancelled-batch restore.
+- The UI disables batch creation below two selected deliveries and explains that at least two are required. The backend remains authoritative and rejects invalid requests before assignments, events, or other side effects.
+- A batch that was validly created with at least two stops may continue with one remaining stop if a later operational cancellation or removal reduces it. Existing historical single-stop batches remain readable and unchanged.
 
 ## Failure Handling
 
@@ -219,7 +222,7 @@ Frontend coverage must prove:
 - Separate intake and return timelines.
 - Both-business Dispatcher users can switch Shipments and Batches between All, Retail, and Repair, while single-module shops remain scoped without a redundant selector.
 
-Backend coverage must also prove that the derived module filter composes with status, purpose, window, and pagination without cross-module rows or incorrect counts. Batch suggestions, creation, updates, and restore must reject mixed Retail/Repair legs without partial side effects.
+Backend coverage must also prove that the derived module filter composes with status, purpose, window, and pagination without cross-module rows or incorrect counts. Batch suggestions, creation, updates, and restore must reject mixed Retail/Repair legs or fewer than two stops without partial side effects. A valid batch reduced to one stop by a later operational removal must remain operable.
 
 Final regression gate:
 
