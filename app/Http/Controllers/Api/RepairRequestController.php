@@ -13,6 +13,7 @@ use App\Models\ConversationMessage;
 use App\Models\RepairRequest;
 use App\Models\RepairReview;
 use App\Models\RepairPackage;
+use App\Models\RepairPaymentSession;
 use App\Models\RepairService;
 use App\Models\ShopOwner;
 use App\Models\ShopPolicyVersion;
@@ -2117,6 +2118,23 @@ class RepairRequestController extends Controller
                 ], 422);
             }
 
+            $paymentSession = $repair->paymentSessions()
+                ->where('provider', 'paymongo')
+                ->where('provider_link_id', $request->paymongo_link_id)
+                ->where('status', 'pending')
+                ->whereNull('invalidated_at')
+                ->first();
+
+            if (! $paymentSession) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => [
+                        'paymongo_link_id' => ['The payment link was not created by the server for this repair phase.'],
+                    ],
+                ], 422);
+            }
+
             $policy = $this->normalizeRepairPaymentPolicy($repair->payment_policy ?? 'deposit_50');
 
             if ($this->isRepairPaymentSettled($repair, $policy)) {
@@ -2184,7 +2202,7 @@ class RepairRequestController extends Controller
     /**
      * Create a fresh PayMongo checkout session for an existing unpaid repair request.
      */
-    public function retryPaymentSession(Request $request, $id)
+    public function retryPaymentSession(Request $request, $id, PaymentSettlementService $settlementService)
     {
         try {
             $user = Auth::guard('user')->user();
@@ -2238,46 +2256,60 @@ class RepairRequestController extends Controller
                 ], 409);
             }
 
+            $phaseBreakdown = $settlementService->repairPaymentBreakdown($repair);
+            $phase = $phaseBreakdown['phase'] === 'final'
+                ? 'final payment'
+                : ($policy === 'full_upfront' ? 'full payment' : 'down payment');
+
+            $taxMode = $settlementService->repairTaxMode($repair);
+            if ($taxMode === 'vat_inclusive') {
+                $taxBreakdown = VatInclusiveCalculator::extract((float) $phaseBreakdown['service_amount'], self::REPAIR_VAT_RATE_PERCENT);
+                $serviceAmount = (float) $taxBreakdown['total'];
+                $dueSubtotal = round((float) $taxBreakdown['net'] + (float) $phaseBreakdown['delivery_amount'], 2);
+                $vatAmount = (float) $taxBreakdown['vat'];
+            } else {
+                $serviceSubtotal = (float) $phaseBreakdown['service_amount'];
+                $vatAmount = round($serviceSubtotal * (self::REPAIR_VAT_RATE_PERCENT / 100), 2);
+                $serviceAmount = round($serviceSubtotal + $vatAmount, 2);
+                $dueSubtotal = round($serviceSubtotal + (float) $phaseBreakdown['delivery_amount'], 2);
+            }
+            $amount = round($serviceAmount + (float) $phaseBreakdown['delivery_amount'], 2);
+
+            if ($amount <= 0) {
+                $settledRepair = DB::transaction(function () use ($repair, $settlementService): RepairRequest {
+                    $lockedRepair = RepairRequest::query()->lockForUpdate()->findOrFail($repair->id);
+                    $currentBreakdown = $settlementService->repairPaymentBreakdown($lockedRepair);
+
+                    if (round((float) $currentBreakdown['total_amount'], 2) !== 0.0) {
+                        throw \Illuminate\Validation\ValidationException::withMessages([
+                            'payment' => ['The payable amount changed. Please try again.'],
+                        ]);
+                    }
+
+                    return $settlementService->settleRepairPhasePaid($lockedRepair, $currentBreakdown);
+                });
+
+                return response()->json([
+                    'success' => true,
+                    'zero_amount_settled' => true,
+                    'checkout_url' => null,
+                    'link_id' => null,
+                    'repair_id' => $settledRepair->id,
+                    'subtotal_amount' => 0,
+                    'vat_amount' => 0,
+                    'vat_rate' => self::REPAIR_VAT_RATE_PERCENT,
+                    'total_amount' => 0,
+                    'tax_mode' => $taxMode,
+                ]);
+            }
+
             $apiKey = $repair->shopOwner?->paymongo_secret_key;
-            if (!$apiKey) {
+            if (! $apiKey) {
                 return response()->json([
                     'success' => false,
                     'error' => 'shop_payment_not_configured',
                     'message' => 'This shop has not set up payment processing yet. Please contact the shop owner.',
                 ], 503);
-            }
-
-            $chargeSubtotal = (float) ($repair->final_total ?? $repair->total ?? 0);
-            if ($chargeSubtotal <= 0) {
-                $chargeSubtotal = (float) (($repair->package_price ?? 0) + ($repair->add_ons_total ?? 0));
-            }
-
-            $isRemainingBalancePhase = $this->isRepairRemainingBalancePhase($repair);
-            if ($policy === 'full_upfront') {
-                $phaseBaseAmount = $chargeSubtotal;
-                $phase = 'full payment';
-            } else {
-                $phaseBaseAmount = max(1.0, round($chargeSubtotal / 2, 2));
-                $phase = $isRemainingBalancePhase ? 'remaining balance' : 'down payment';
-            }
-
-            $taxMode = $this->resolveRepairTaxMode($repair);
-            if ($taxMode === 'vat_inclusive') {
-                $breakdown = VatInclusiveCalculator::extract($phaseBaseAmount, self::REPAIR_VAT_RATE_PERCENT);
-                $dueSubtotal = (float) $breakdown['net'];
-                $vatAmount = (float) $breakdown['vat'];
-                $amount = (float) $breakdown['total'];
-            } else {
-                $dueSubtotal = $phaseBaseAmount;
-                $vatAmount = round($dueSubtotal * (self::REPAIR_VAT_RATE_PERCENT / 100), 2);
-                $amount = round($dueSubtotal + $vatAmount, 2);
-            }
-
-            if ($amount <= 0) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Invalid payable amount',
-                ], 422);
             }
 
             $description = 'SoleSpace Repair #' . ($repair->request_id ?: $repair->id) . ' (' . $phase . ')';
@@ -2310,12 +2342,20 @@ class RepairRequestController extends Controller
                         'send_email_receipt' => false,
                         'show_description' => true,
                         'show_line_items' => true,
-                        'line_items' => [[
-                            'currency' => 'PHP',
-                            'amount' => (int) round($amount * 100),
-                            'name' => $description,
-                            'quantity' => 1,
-                        ]],
+                        'line_items' => array_values(array_filter([
+                            $serviceAmount > 0 ? [
+                                'currency' => 'PHP',
+                                'amount' => (int) round($serviceAmount * 100),
+                                'name' => $description,
+                                'quantity' => 1,
+                            ] : null,
+                            (float) $phaseBreakdown['delivery_amount'] > 0 ? [
+                                'currency' => 'PHP',
+                                'amount' => (int) round((float) $phaseBreakdown['delivery_amount'] * 100),
+                                'name' => $phaseBreakdown['leg'] === 'intake' ? 'Shop pickup fee' : 'Shop return delivery fee',
+                                'quantity' => 1,
+                            ] : null,
+                        ])),
                         'payment_method_types' => $paymentMethodTypes,
                     ],
                 ],
@@ -2355,17 +2395,73 @@ class RepairRequestController extends Controller
                 ], 500);
             }
 
-            $nextPaymentStatus = $this->nextRepairPaymentStatusForRetry($repair, $policy);
+            DB::transaction(function () use ($repair, $phaseBreakdown, $serviceAmount, $linkId, $policy, $taxMode, $settlementService): void {
+                $lockedRepair = RepairRequest::query()->lockForUpdate()->findOrFail($repair->id);
+                $lockedPolicy = $settlementService->normalizeRepairPaymentPolicy(
+                    $lockedRepair->payment_policy_snapshot ?: $lockedRepair->payment_policy
+                );
 
-            $repair->update([
-                'paymongo_link_id' => $linkId,
-                'payment_link_created_at' => now(),
-                'payment_expires_at' => now()->addHour(),
-                'payment_failed_at' => null,
-                'payment_failure_reason' => null,
-                'payment_expired_at' => null,
-                'payment_status' => $nextPaymentStatus,
-            ]);
+                if (! $settlementService->isRepairPaymentDueNow($lockedRepair, $lockedPolicy)
+                    || $settlementService->isRepairPaymentPhaseSettled($lockedRepair, $phaseBreakdown['phase'])) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'payment' => ['This payment phase was already settled. Refresh the repair before trying again.'],
+                    ]);
+                }
+
+                $currentBreakdown = $settlementService->repairPaymentBreakdown($lockedRepair);
+                $currentTaxMode = $settlementService->repairTaxMode($lockedRepair);
+                $paymentPlanChanged = (string) $currentBreakdown['phase'] !== (string) $phaseBreakdown['phase']
+                    || (string) $currentBreakdown['policy'] !== (string) $phaseBreakdown['policy']
+                    || (string) ($currentBreakdown['snapshot_version'] ?? '') !== (string) ($phaseBreakdown['snapshot_version'] ?? '')
+                    || (string) $currentBreakdown['delivery_method'] !== (string) $phaseBreakdown['delivery_method']
+                    || round((float) $currentBreakdown['service_amount'], 2) !== round((float) $phaseBreakdown['service_amount'], 2)
+                    || round((float) $currentBreakdown['delivery_amount'], 2) !== round((float) $phaseBreakdown['delivery_amount'], 2)
+                    || $currentTaxMode !== $taxMode;
+
+                if ($paymentPlanChanged) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'payment' => ['The payable amount or delivery plan changed. Refresh and try again.'],
+                    ]);
+                }
+
+                RepairPaymentSession::query()
+                    ->where('repair_request_id', $lockedRepair->id)
+                    ->where('phase', $currentBreakdown['phase'])
+                    ->where('status', 'pending')
+                    ->update([
+                        'status' => 'invalidated',
+                        'invalidated_at' => now(),
+                    ]);
+
+                RepairPaymentSession::create([
+                    'repair_request_id' => $lockedRepair->id,
+                    'provider' => 'paymongo',
+                    'provider_link_id' => $linkId,
+                    'phase' => $currentBreakdown['phase'],
+                    'status' => 'pending',
+                    'snapshot_version' => $currentBreakdown['snapshot_version'],
+                    'delivery_method' => $currentBreakdown['delivery_method'],
+                    'service_amount' => $serviceAmount,
+                    'delivery_amount' => $currentBreakdown['delivery_amount'],
+                    'quote' => [
+                        ...(is_array($currentBreakdown['quote']) ? $currentBreakdown['quote'] : []),
+                        'payment_policy' => $currentBreakdown['policy'],
+                        'payment_phase' => $currentBreakdown['phase'],
+                        'service_base_amount' => $currentBreakdown['service_amount'],
+                        'tax_mode' => $currentTaxMode,
+                    ],
+                ]);
+
+                $lockedRepair->update([
+                    'paymongo_link_id' => $linkId,
+                    'payment_link_created_at' => now(),
+                    'payment_expires_at' => now()->addHour(),
+                    'payment_failed_at' => null,
+                    'payment_failure_reason' => null,
+                    'payment_expired_at' => null,
+                    'payment_status' => $this->nextRepairPaymentStatusForRetry($lockedRepair, $policy),
+                ]);
+            });
 
             return response()->json([
                 'success' => true,
@@ -2378,6 +2474,8 @@ class RepairRequestController extends Controller
                 'total_amount' => $amount,
                 'tax_mode' => $taxMode,
             ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             \Log::error('Retry payment session failed for repair', [
                 'repair_id' => $id,
@@ -2690,6 +2788,15 @@ class RepairRequestController extends Controller
         // For deposit_50: 'paid' = only the deposit was paid, 'completed' = both payments done.
         // For full_upfront: a single 'paid' should be treated as fully paid.
         $normalizedPolicy = $settlementService->normalizeRepairPaymentPolicy($repair->payment_policy ?? 'deposit_50');
+        if (data_get($repair->logistics_payment_reconciliation, 'status') === 'pending') {
+            return response()->json([
+                'success' => false,
+                'payment_verified' => false,
+                'requires_reconciliation' => true,
+                'message' => 'Payment was received, but the amount or delivery plan changed. The shop must reconcile it before processing can continue.',
+            ], 409);
+        }
+
         $isFullyPaid = $settlementService->isRepairSettled($repair, $normalizedPolicy);
 
         if ($isFullyPaid) {
@@ -2845,6 +2952,15 @@ class RepairRequestController extends Controller
                 'success' => false,
                 'payment_verified' => false,
                 'message' => 'No payable repair phase is currently due.',
+            ], 409);
+        }
+
+        if ($settlementResult === 'reconciliation') {
+            return response()->json([
+                'success' => false,
+                'payment_verified' => false,
+                'requires_reconciliation' => true,
+                'message' => 'Payment was received, but the amount or delivery plan changed. The shop must reconcile it before processing can continue.',
             ], 409);
         }
 

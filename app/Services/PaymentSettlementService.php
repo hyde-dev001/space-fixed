@@ -4,15 +4,94 @@ namespace App\Services;
 
 use App\Models\Finance\Invoice;
 use App\Models\Order;
+use App\Models\PosTransaction;
+use App\Models\RepairPaymentSession;
 use App\Models\RepairRequest;
+use Illuminate\Support\Facades\DB;
 use App\Enums\NotificationType;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 
 class PaymentSettlementService
 {
     public function __construct(
         private readonly NotificationService $notificationService,
+        private readonly RepairDeliveryService $repairDeliveryService,
     ) {
+    }
+
+    public function repairPaymentBreakdown(RepairRequest $repair, ?string $dueType = null): array
+    {
+        if (data_get($repair->logistics_payment_reconciliation, 'status') === 'pending') {
+            throw ValidationException::withMessages([
+                'payment' => ['This repair has a payment reconciliation that must be resolved before another payment can be collected.'],
+            ]);
+        }
+
+        $policy = $this->normalizeRepairPaymentPolicy($repair->payment_policy_snapshot ?: $repair->payment_policy);
+        $phase = $this->resolveRepairPaymentPhase($repair, $policy, $dueType);
+        $serviceTotal = $this->resolveRepairServiceTotal($repair, $policy, $phase);
+        $serviceDeposit = $policy === 'deposit_50' ? round($serviceTotal * 0.5, 2) : $serviceTotal;
+        $serviceAmount = $phase === 'initial'
+            ? $serviceDeposit
+            : ($policy === 'deposit_50'
+                ? round(max(0, $serviceTotal - $this->resolveRepairInitialServiceAmount($repair)), 2)
+                : 0.0);
+        $leg = $phase === 'initial' ? 'intake' : 'return';
+        $delivery = $this->repairDeliveryService->paymentDetails($repair, $leg);
+        $deliveryAmount = round((float) $delivery['delivery_amount'], 2);
+
+        return [
+            'policy' => $policy,
+            'phase' => $phase,
+            'due_type' => $phase === 'initial'
+                ? ($policy === 'deposit_50' ? 'deposit' : 'full')
+                : 'balance',
+            'leg' => $leg,
+            'service_total' => $serviceTotal,
+            'service_amount' => $serviceAmount,
+            'delivery_amount' => $deliveryAmount,
+            'total_amount' => round($serviceAmount + $deliveryAmount, 2),
+            'snapshot_version' => $delivery['snapshot_version'],
+            'delivery_method' => $delivery['method'],
+            'quote' => $delivery['quote'],
+        ];
+    }
+
+    public function settleRepairPhasePaid(RepairRequest $repair, array $breakdown, ?string $paymentReference = null): RepairRequest
+    {
+        $phase = (string) $breakdown['phase'];
+        $policy = (string) $breakdown['policy'];
+        $phaseAmount = round((float) $breakdown['total_amount'], 2);
+        $totalPaidAmount = round((float) ($repair->total_paid_amount ?? 0) + $phaseAmount, 2);
+        $finalDue = $policy === 'deposit_50'
+            ? round((float) $breakdown['service_total'] - round((float) $breakdown['service_total'] * 0.5, 2) + (float) $repair->return_delivery_fee, 2)
+            : round((float) $repair->return_delivery_fee, 2);
+        $completed = $phase === 'final' || ($phase === 'initial' && $finalDue <= 0);
+        $paymentReferences = $this->appendRepairPaymentReference(
+            is_array($repair->paymongo_payment_ids) ? $repair->paymongo_payment_ids : null,
+            $paymentReference,
+        );
+
+        $updates = [
+            'payment_status' => $completed ? 'completed' : 'paid',
+            'payment_status_derived' => $completed ? 'completed' : 'paid',
+            'total_paid_amount' => $totalPaidAmount,
+            'payment_completed_at' => now(),
+            'payment_failed_at' => null,
+            'payment_failure_reason' => null,
+            'payment_expired_at' => null,
+            $phase === 'initial' ? 'intake_logistics_locked_at' : 'return_logistics_locked_at' => now(),
+        ];
+
+        if ($paymentReference !== null && trim($paymentReference) !== '') {
+            $updates['paymongo_payment_id'] = $paymentReference;
+            $updates['paymongo_payment_ids'] = $paymentReferences ?: null;
+        }
+
+        $repair->update($updates);
+
+        return $repair->fresh();
     }
 
     public function settleOrderPaid(Order $order, ?string $paymentId = null, bool $ignoreExpiry = false): array
@@ -57,8 +136,23 @@ class PaymentSettlementService
         ];
     }
 
-    public function settleRepairPaid(RepairRequest $repair, ?string $paymentId = null, bool $ignoreExpiry = false): array
-    {
+    public function settleRepairPaid(
+        RepairRequest $repair,
+        ?string $paymentId = null,
+        bool $ignoreExpiry = false,
+        ?RepairPaymentSession $session = null,
+    ): array {
+        if (! $session && $repair->paymongo_link_id) {
+            $session = RepairPaymentSession::query()
+                ->where('repair_request_id', $repair->id)
+                ->where('provider_link_id', $repair->paymongo_link_id)
+                ->first();
+        }
+
+        if ($session) {
+            return $this->settleRepairPaymentSession($repair, $session, $paymentId);
+        }
+
         $policy = $this->normalizeRepairPaymentPolicy($repair->payment_policy ?? 'deposit_50');
         $resolvedPaymentId = trim((string) ($paymentId ?? ''));
         $grandTotal = round((float) ($repair->final_total ?? $repair->total ?? 0), 2);
@@ -351,6 +445,10 @@ class PaymentSettlementService
     {
         $resolvedPolicy = $policy ?? $this->normalizeRepairPaymentPolicy($repair->payment_policy ?? 'deposit_50');
 
+        if (data_get($repair->logistics_payment_reconciliation, 'status') === 'pending') {
+            return false;
+        }
+
         if ($this->isRepairSettled($repair, $resolvedPolicy)) {
             return false;
         }
@@ -362,7 +460,13 @@ class PaymentSettlementService
         $paymentStatus = (string) ($repair->payment_status ?? 'pending');
 
         if ($resolvedPolicy === 'full_upfront') {
-            return in_array($paymentStatus, ['pending', 'failed', 'expired', ''], true);
+            if (in_array($paymentStatus, ['pending', 'failed', 'expired', ''], true)) {
+                return true;
+            }
+
+            return in_array($paymentStatus, ['paid', 'partially_paid'], true)
+                && (float) $repair->return_delivery_fee > 0
+                && $this->isRepairRemainingBalancePhase($repair);
         }
 
         if (in_array($paymentStatus, ['pending', 'failed', 'expired', ''], true)) {
@@ -380,8 +484,14 @@ class PaymentSettlementService
     {
         $resolvedPolicy = $policy ?? $this->normalizeRepairPaymentPolicy($repair->payment_policy ?? 'deposit_50');
 
+        if (data_get($repair->logistics_payment_reconciliation, 'status') === 'pending') {
+            return false;
+        }
+
         return (string) $repair->payment_status === 'completed'
-            || ($resolvedPolicy === 'full_upfront' && (string) $repair->payment_status === 'paid');
+            || ($resolvedPolicy === 'full_upfront'
+                && (string) $repair->payment_status === 'paid'
+                && (float) $repair->return_delivery_fee <= 0);
     }
 
     public function normalizeRepairPaymentPolicy(?string $policy): string
@@ -389,6 +499,54 @@ class PaymentSettlementService
         $normalized = strtolower(trim((string) $policy));
 
         return $normalized === 'deposit_50' ? 'deposit_50' : 'full_upfront';
+    }
+
+    public function repairTaxMode(RepairRequest $repair): string
+    {
+        $pricingTaxMode = strtolower((string) data_get($repair->pricing_breakdown, 'tax_mode', ''));
+        if (in_array($pricingTaxMode, ['vat_inclusive', 'legacy_add_on'], true)) {
+            return $pricingTaxMode;
+        }
+
+        if (strtolower((string) data_get($repair->pricing_breakdown, 'mode', '')) === 'manual_pos') {
+            return 'vat_inclusive';
+        }
+
+        $latestPosTaxMode = strtolower((string) data_get($repair->latestPosTransaction?->metadata, 'tax_mode', ''));
+
+        return in_array($latestPosTaxMode, ['vat_inclusive', 'legacy_add_on'], true)
+            ? $latestPosTaxMode
+            : 'legacy_add_on';
+    }
+
+    public function isRepairPaymentPhaseSettled(RepairRequest $repair, string $phase): bool
+    {
+        $normalizedPhase = $phase === 'final' ? 'final' : 'initial';
+        $dueTypes = $normalizedPhase === 'final' ? ['balance'] : ['deposit', 'full'];
+
+        if (PosTransaction::query()
+            ->where('module_type', 'repair')
+            ->where('module_reference_id', $repair->id)
+            ->whereIn('due_type', $dueTypes)
+            ->whereIn('status', ['paid', 'partially_refunded', 'refunded'])
+            ->exists()) {
+            return true;
+        }
+
+        if (RepairPaymentSession::query()
+            ->where('repair_request_id', $repair->id)
+            ->where('phase', $normalizedPhase)
+            ->whereIn('status', ['paid', 'reconciliation'])
+            ->exists()) {
+            return true;
+        }
+
+        if ($normalizedPhase === 'final') {
+            return (string) $repair->payment_status === 'completed';
+        }
+
+        return in_array((string) $repair->payment_status, ['paid', 'partially_paid', 'completed'], true)
+            && ((float) ($repair->total_paid_amount ?? 0) > 0 || $repair->intake_logistics_locked_at !== null);
     }
 
     private function isOrderSettled(Order $order): bool
@@ -399,6 +557,313 @@ class PaymentSettlementService
     private function isRepairRemainingBalancePhase(RepairRequest $repair): bool
     {
         return in_array((string) $repair->status, ['ready_for_pickup', 'ready-for-pickup'], true);
+    }
+
+    private function settleRepairPaymentSession(
+        RepairRequest $repair,
+        RepairPaymentSession $session,
+        ?string $paymentId,
+    ): array {
+        return DB::transaction(function () use ($repair, $session, $paymentId): array {
+            $lockedRepair = RepairRequest::query()->lockForUpdate()->findOrFail($repair->id);
+            $lockedSession = RepairPaymentSession::query()->lockForUpdate()->findOrFail($session->id);
+            $policy = $this->normalizeRepairPaymentPolicy($lockedRepair->payment_policy_snapshot ?: $lockedRepair->payment_policy);
+            $phaseLabel = $lockedSession->phase === 'final'
+                ? 'remaining_balance'
+                : ($policy === 'full_upfront' ? 'full_upfront' : 'deposit_50');
+
+            if ($lockedSession->status === 'paid') {
+                return [
+                    'result' => 'already_settled',
+                    'model' => $lockedRepair,
+                    'policy' => $policy,
+                    'phase' => $phaseLabel,
+                ];
+            }
+
+            if ($lockedSession->status === 'reconciliation') {
+                return [
+                    'result' => 'reconciliation',
+                    'model' => $lockedRepair,
+                    'policy' => $policy,
+                    'phase' => $phaseLabel,
+                ];
+            }
+
+            if ($this->repairPhaseSettledOutsideSession($lockedRepair, $lockedSession)) {
+                return $this->reconcileRepairPaymentSession(
+                    $lockedRepair,
+                    $lockedSession,
+                    $paymentId,
+                    'phase_already_settled',
+                    true,
+                );
+            }
+
+            if ($lockedSession->invalidated_at || $lockedSession->status === 'invalidated') {
+                return $this->reconcileRepairPaymentSession($lockedRepair, $lockedSession, $paymentId, 'invalidated_session');
+            }
+
+            try {
+                $current = $this->repairPaymentBreakdown(
+                    $lockedRepair,
+                    $lockedSession->phase === 'final' ? 'balance' : ($policy === 'deposit_50' ? 'deposit' : 'full'),
+                );
+            } catch (ValidationException) {
+                return $this->reconcileRepairPaymentSession($lockedRepair, $lockedSession, $paymentId, 'delivery_plan_changed');
+            }
+
+            $deliveryMatches = hash_equals((string) ($lockedSession->snapshot_version ?? ''), (string) ($current['snapshot_version'] ?? ''))
+                && (string) $lockedSession->delivery_method === (string) $current['delivery_method']
+                && round((float) $lockedSession->delivery_amount, 2) === round((float) $current['delivery_amount'], 2);
+
+            if (! $deliveryMatches) {
+                return $this->reconcileRepairPaymentSession($lockedRepair, $lockedSession, $paymentId, 'delivery_plan_changed');
+            }
+
+            $sessionQuote = is_array($lockedSession->quote) ? $lockedSession->quote : [];
+            $storedPolicy = data_get($sessionQuote, 'payment_policy');
+            $storedServiceBase = data_get($sessionQuote, 'service_base_amount');
+            $storedTaxMode = data_get($sessionQuote, 'tax_mode');
+            $currentTaxMode = $this->repairTaxMode($lockedRepair);
+            $serviceMatches = $storedServiceBase !== null
+                ? round((float) $storedServiceBase, 2) === round((float) $current['service_amount'], 2)
+                : round((float) $lockedSession->service_amount, 2) === round((float) $current['service_amount'], 2);
+            $paymentPlanMatches = $serviceMatches
+                && ($storedPolicy === null || (string) $storedPolicy === (string) $current['policy'])
+                && ($storedTaxMode === null || strtolower((string) $storedTaxMode) === $currentTaxMode);
+
+            if (! $paymentPlanMatches) {
+                return $this->reconcileRepairPaymentSession($lockedRepair, $lockedSession, $paymentId, 'payment_plan_changed');
+            }
+
+            $settlementBreakdown = array_merge($current, [
+                'service_amount' => round((float) $lockedSession->service_amount, 2),
+                'delivery_amount' => round((float) $lockedSession->delivery_amount, 2),
+                'total_amount' => round((float) $lockedSession->service_amount + (float) $lockedSession->delivery_amount, 2),
+            ]);
+            $settledRepair = $this->settleRepairPhasePaid($lockedRepair, $settlementBreakdown, $paymentId);
+            $lockedSession->update([
+                'status' => 'paid',
+                'resolved_at' => now(),
+            ]);
+
+            return [
+                'result' => 'settled',
+                'model' => $settledRepair,
+                'policy' => $policy,
+                'phase' => $phaseLabel,
+            ];
+        });
+    }
+
+    private function reconcileRepairPaymentSession(
+        RepairRequest $repair,
+        RepairPaymentSession $session,
+        ?string $paymentId,
+        string $reason,
+        bool $serviceAlreadyApplied = false,
+    ): array {
+        $serviceAmount = round((float) $session->service_amount, 2);
+        $serviceAmountApplied = $serviceAlreadyApplied ? 0.0 : $serviceAmount;
+        $serviceBaseAmount = round((float) data_get($session->quote, 'service_base_amount', $serviceAmount), 2);
+        $serviceBaseAmountApplied = $serviceAlreadyApplied ? 0.0 : $serviceBaseAmount;
+        $paymentReferences = $this->appendRepairPaymentReference(
+            is_array($repair->paymongo_payment_ids) ? $repair->paymongo_payment_ids : null,
+            $paymentId,
+        );
+
+        $entry = [
+            'reason' => $reason,
+            'phase' => $session->phase,
+            'payment_session_id' => $session->id,
+            'provider_link_id' => $session->provider_link_id,
+            'payment_id' => $paymentId,
+            'service_amount_applied' => $serviceAmountApplied,
+            'service_base_amount_applied' => $serviceBaseAmountApplied,
+            'duplicate_service_amount' => $serviceAlreadyApplied ? $serviceAmount : 0.0,
+            'delivery_amount' => round((float) $session->delivery_amount, 2),
+            'reconciliation_amount' => round(
+                ($serviceAlreadyApplied ? $serviceAmount : 0.0) + (float) $session->delivery_amount,
+                2,
+            ),
+            'created_at' => now()->toISOString(),
+        ];
+        $currentReconciliation = is_array($repair->logistics_payment_reconciliation)
+            ? $repair->logistics_payment_reconciliation
+            : [];
+        $entries = collect(data_get($currentReconciliation, 'entries', []))
+            ->filter(fn ($entry): bool => is_array($entry));
+
+        if ($entries->isEmpty() && data_get($currentReconciliation, 'payment_session_id')) {
+            $entries->push(collect($currentReconciliation)->except(['status', 'entries', 'total_reconciliation_amount'])->all());
+        }
+
+        if (! $entries->contains(fn (array $existing): bool => (int) ($existing['payment_session_id'] ?? 0) === (int) $session->id)) {
+            $entries->push($entry);
+        }
+
+        $reconciliation = [
+            ...$entry,
+            'status' => 'pending',
+            'entries' => $entries->values()->all(),
+            'total_reconciliation_amount' => round((float) $entries->sum(
+                fn (array $item): float => (float) ($item['reconciliation_amount'] ?? 0)
+            ), 2),
+        ];
+
+        $repair->update([
+            'payment_status' => $serviceAlreadyApplied ? $repair->payment_status : 'paid',
+            'payment_status_derived' => $serviceAlreadyApplied ? $repair->payment_status_derived : 'paid',
+            'total_paid_amount' => round((float) ($repair->total_paid_amount ?? 0) + $serviceAmountApplied, 2),
+            'paymongo_payment_id' => $paymentId ?: $repair->paymongo_payment_id,
+            'paymongo_payment_ids' => $paymentReferences ?: null,
+            $session->phase === 'final' ? 'return_logistics_locked_at' : 'intake_logistics_locked_at' => now(),
+            'logistics_payment_reconciliation' => $reconciliation,
+        ]);
+        $session->update([
+            'status' => 'reconciliation',
+            'resolved_at' => now(),
+        ]);
+
+        return [
+            'result' => 'reconciliation',
+            'model' => $repair->fresh(),
+            'policy' => $this->normalizeRepairPaymentPolicy($repair->payment_policy_snapshot ?: $repair->payment_policy),
+            'phase' => $session->phase === 'final' ? 'remaining_balance' : 'deposit_50',
+        ];
+    }
+
+    private function repairPhaseSettledOutsideSession(
+        RepairRequest $repair,
+        RepairPaymentSession $session,
+    ): bool {
+        $dueType = $session->phase === 'final'
+            ? 'balance'
+            : ($this->normalizeRepairPaymentPolicy($repair->payment_policy_snapshot ?: $repair->payment_policy) === 'deposit_50'
+                ? 'deposit'
+                : 'full');
+
+        return PosTransaction::query()
+            ->where('module_type', 'repair')
+            ->where('module_reference_id', $repair->id)
+            ->where('due_type', $dueType)
+            ->whereIn('status', ['paid', 'partially_refunded', 'refunded'])
+            ->exists()
+            || RepairPaymentSession::query()
+                ->where('repair_request_id', $repair->id)
+                ->where('phase', $session->phase)
+                ->where('id', '!=', $session->id)
+                ->whereIn('status', ['paid', 'reconciliation'])
+                ->exists();
+    }
+
+    private function resolveRepairPaymentPhase(RepairRequest $repair, string $policy, ?string $dueType): string
+    {
+        $isFinal = $dueType === 'balance'
+            || ($dueType === null
+                && in_array((string) $repair->payment_status, ['paid', 'partially_paid'], true)
+                && $this->isRepairRemainingBalancePhase($repair));
+        $expectedDueType = $isFinal ? 'balance' : ($policy === 'deposit_50' ? 'deposit' : 'full');
+
+        if ($dueType !== null && $dueType !== $expectedDueType) {
+            throw ValidationException::withMessages([
+                'due_type' => ['Selected due type is not allowed for the current payment phase.'],
+            ]);
+        }
+
+        if ($isFinal && ! $this->isRepairRemainingBalancePhase($repair)) {
+            throw ValidationException::withMessages([
+                'due_type' => ['The final payment is available only when the repair is ready for return.'],
+            ]);
+        }
+
+        if ($isFinal && ! $this->isRepairPaymentPhaseSettled($repair, 'initial')) {
+            throw ValidationException::withMessages([
+                'due_type' => ['The initial payment must be settled before the final payment can be collected.'],
+            ]);
+        }
+
+        return $isFinal ? 'final' : 'initial';
+    }
+
+    private function resolveRepairServiceTotal(RepairRequest $repair, string $policy, string $phase): float
+    {
+        $pricingBreakdown = is_array($repair->pricing_breakdown) ? $repair->pricing_breakdown : [];
+        $packagePrice = round((float) ($repair->package_price ?? ($pricingBreakdown['package_price'] ?? 0)), 2);
+        $addOnsTotal = round((float) ($repair->add_ons_total ?? ($pricingBreakdown['add_ons_total'] ?? 0)), 2);
+        $packagePlusAddOns = $repair->repair_package_id ? round($packagePrice + $addOnsTotal, 2) : 0.0;
+        $candidates = [
+            round((float) ($repair->final_total ?? 0), 2),
+            round((float) ($repair->total ?? 0), 2),
+            round((float) ($pricingBreakdown['base_total'] ?? 0), 2),
+            round((float) ($pricingBreakdown['final_total'] ?? 0), 2),
+            $packagePlusAddOns,
+        ];
+        $serviceTotal = max($candidates);
+
+        if ($policy === 'deposit_50' && $phase === 'final') {
+            $initialServiceAmount = $this->resolveRepairInitialServiceAmount($repair);
+
+            if ($initialServiceAmount > 0) {
+                $serviceTotal = max($serviceTotal, round($initialServiceAmount * 2, 2));
+            }
+        }
+
+        return round(max($serviceTotal, 0), 2);
+    }
+
+    private function resolveRepairInitialServiceAmount(RepairRequest $repair): float
+    {
+        $posAmount = (float) PosTransaction::query()
+            ->where('module_type', 'repair')
+            ->where('module_reference_id', $repair->id)
+            ->whereIn('due_type', ['deposit', 'full'])
+            ->whereIn('status', ['paid', 'partially_refunded', 'refunded'])
+            ->get()
+            ->sum(fn (PosTransaction $transaction) => (float) data_get(
+                $transaction->metadata,
+                'service_amount',
+                $transaction->total_amount
+            ));
+
+        $reconciliationEntries = collect(data_get($repair->logistics_payment_reconciliation, 'entries', []))
+            ->filter(fn ($entry): bool => is_array($entry))
+            ->keyBy(fn (array $entry): int => (int) ($entry['payment_session_id'] ?? 0));
+        $onlineAmount = (float) RepairPaymentSession::query()
+            ->where('repair_request_id', $repair->id)
+            ->where('phase', 'initial')
+            ->whereIn('status', ['paid', 'reconciliation'])
+            ->get()
+            ->sum(function (RepairPaymentSession $session) use ($reconciliationEntries): float {
+                $serviceBaseAmount = round((float) data_get(
+                    $session->quote,
+                    'service_base_amount',
+                    $session->service_amount
+                ), 2);
+
+                if ($session->status === 'paid') {
+                    return $serviceBaseAmount;
+                }
+
+                $entry = $reconciliationEntries->get((int) $session->id);
+                if (! is_array($entry) || (float) ($entry['service_amount_applied'] ?? 0) <= 0) {
+                    return 0.0;
+                }
+
+                return round((float) ($entry['service_base_amount_applied'] ?? $serviceBaseAmount), 2);
+            });
+        $recordedAmount = round($posAmount + $onlineAmount, 2);
+
+        if ($recordedAmount <= 0
+            && in_array((string) $repair->payment_status, ['paid', 'partially_paid', 'completed'], true)) {
+            $recordedAmount = max(
+                0,
+                round((float) ($repair->total_paid_amount ?? 0) - (float) $repair->intake_delivery_fee, 2),
+            );
+        }
+
+        return round($recordedAmount, 2);
     }
 
     private function appendRepairPaymentReference(?array $current, ?string $paymentReference): array

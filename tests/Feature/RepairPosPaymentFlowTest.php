@@ -340,6 +340,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'total' => 599,
             'final_total' => 599,
             'add_ons_total' => 0,
+            'status' => 'ready_for_pickup',
             'pricing_breakdown' => array_merge((array) ($repair->pricing_breakdown ?? []), [
                 'mode' => 'manual_pos',
                 'base_total' => 599,
@@ -1096,6 +1097,8 @@ class RepairPosPaymentFlowTest extends TestCase
                 ['tender_type' => 'cash', 'amount' => 500],
             ],
         ])->assertOk();
+
+        $repair->update(['status' => 'ready_for_pickup']);
 
         $this->actingAs($actor, 'user')->postJson('/api/repair-pos/checkout', [
             'repair_request_id' => $repair->id,

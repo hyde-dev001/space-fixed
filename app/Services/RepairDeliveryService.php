@@ -7,6 +7,7 @@ use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\UserAddress;
 use App\Services\Logistics\DeliveryScheduleService;
+use Illuminate\Validation\ValidationException;
 
 final class RepairDeliveryService
 {
@@ -57,6 +58,69 @@ final class RepairDeliveryService
         $estimate = $this->shipping->calculate((float) $coverage['distance_km']);
 
         return [...$coverage, 'fee' => $estimate['max_fee'], 'estimate' => $estimate];
+    }
+
+    public function paymentDetails(RepairRequest $repair, string $leg): array
+    {
+        $isIntake = $leg === 'intake';
+        $method = (string) ($isIntake ? $repair->intake_delivery_method : $repair->return_delivery_method);
+        $snapshot = $isIntake ? $repair->intake_address : $repair->return_address;
+        $storedFee = round((float) ($isIntake ? $repair->intake_delivery_fee : $repair->return_delivery_fee), 2);
+        $shopOwned = $method === ($isIntake ? 'shop_pickup' : 'shop_delivery');
+
+        if (! $shopOwned) {
+            return [
+                'leg' => $leg,
+                'method' => $method,
+                'snapshot_version' => is_array($snapshot) ? ($snapshot['version'] ?? null) : null,
+                'delivery_amount' => 0.0,
+                'quote' => null,
+            ];
+        }
+
+        $field = $isIntake ? 'intake_address' : 'return_address';
+        $addressId = is_array($snapshot) ? (int) ($snapshot['address_id'] ?? 0) : 0;
+        $address = UserAddress::query()
+            ->whereKey($addressId)
+            ->where('user_id', $repair->user_id)
+            ->first();
+
+        if (! $address || ! $repair->shopOwner) {
+            throw ValidationException::withMessages([
+                $field => ['The selected delivery address is no longer available. Please review the delivery plan.'],
+            ]);
+        }
+
+        $currentSnapshot = $this->snapshot($address, $method);
+        if (! hash_equals((string) ($snapshot['version'] ?? ''), (string) $currentSnapshot['version'])) {
+            throw ValidationException::withMessages([
+                $field => ['The delivery address changed. Please review and confirm the latest pinned address before paying.'],
+            ]);
+        }
+
+        $quote = $this->quote($repair->shopOwner, $address);
+        if (! ($quote['available'] ?? false)) {
+            throw ValidationException::withMessages([
+                $field => [($quote['reason'] ?? null) === 'outside_coverage'
+                    ? 'The address is now outside shop delivery coverage. Choose another delivery method.'
+                    : 'Shop-owned delivery is currently unavailable for this address.'],
+            ]);
+        }
+
+        $currentFee = round((float) ($quote['fee'] ?? 0), 2);
+        if ($currentFee !== $storedFee) {
+            throw ValidationException::withMessages([
+                $field => ['The delivery fee changed. Please refresh the delivery plan before paying.'],
+            ]);
+        }
+
+        return [
+            'leg' => $leg,
+            'method' => $method,
+            'snapshot_version' => $currentSnapshot['version'],
+            'delivery_amount' => $currentFee,
+            'quote' => $quote,
+        ];
     }
 
     public function hasApprovedProof(RepairRequest $repair, string $purpose): bool
