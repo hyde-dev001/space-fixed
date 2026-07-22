@@ -29,6 +29,15 @@ class ShipmentLegService
         $leg->loadMissing(['shipment', 'deliveryBatch']);
         $this->assertTransitionAllowed($leg, ['assigned', 'pickup_scheduled', 'delivery_attempted'], 'picked up');
 
+        if ($leg->shipment->source_type === 'order_refund' && $leg->shipment->purpose === 'refund_return') {
+            $refund = OrderRefund::query()->find($leg->shipment->source_id);
+            if (!$refund || $refund->shop_owner_status !== 'approved' || $refund->finance_status !== 'approved') {
+                throw ValidationException::withMessages([
+                    'refund' => 'Finance and Staff approvals are required before return pickup.',
+                ]);
+            }
+        }
+
         if ($leg->delivery_batch_id && $leg->deliveryBatch?->status !== 'in_progress') {
             throw ValidationException::withMessages(['status' => 'This stop can only be picked up from an in-progress batch.']);
         }

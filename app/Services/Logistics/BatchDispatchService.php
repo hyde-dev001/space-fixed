@@ -2,10 +2,12 @@
 
 namespace App\Services\Logistics;
 
+use App\Models\HR\LeaveRequest;
 use App\Models\Logistics\DeliveryBatch;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\ShopOwner;
+use App\Models\User;
 use App\Support\Logistics\BatchStopSnapshot;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Carbon;
@@ -82,9 +84,13 @@ class BatchDispatchService
                 throw ValidationException::withMessages(['batch' => 'Batch cannot be offered to this rider.']);
             }
             $date = $batch->delivery_date;
+            $linkedUser = $rider->linked_type === User::class ? User::find($rider->linked_id) : null;
+            $employeeId = $linkedUser?->employee()->where('shop_owner_id', $batch->shop_owner_id)->value('employees.id');
+            $onApprovedLeave = $employeeId && LeaveRequest::query()->where('employee_id', $employeeId)
+                ->where('status', 'approved')->whereDate('start_date', '<=', $date)->whereDate('end_date', '>=', $date)->exists();
             if (!$rider->active || $rider->availability_status !== 'available'
                 || ($rider->work_days && !in_array($date->dayOfWeekIso, $rider->work_days, true))
-                || in_array($date->toDateString(), $rider->leave_dates ?? [], true)) {
+                || in_array($date->toDateString(), $rider->leave_dates ?? [], true) || $onApprovedLeave) {
                 throw ValidationException::withMessages(['rider_profile_id' => 'Rider is unavailable on this delivery date.']);
             }
             $capacity = $rider->daily_capacity ?? $actor->logisticsSetting()->firstOrCreate([])->daily_rider_capacity;
