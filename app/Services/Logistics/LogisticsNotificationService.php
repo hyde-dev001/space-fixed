@@ -37,6 +37,10 @@ class LogisticsNotificationService
             $this->notifyRider($event, $type);
         }
 
+        if ($event->event_type === 'proof_rejected') {
+            $this->notifyRider($event, $type);
+        }
+
         if ($event->event_type === 'delivery_cancelled'
             && $event->visibility === 'customer'
             && $event->shipment->source_type === 'order') {
@@ -66,7 +70,7 @@ class LogisticsNotificationService
     private function shouldNotify(DeliveryEvent $event): bool
     {
         return $event->visibility === 'customer'
-            || in_array($event->event_type, ['shipment_requested', 'leg_assigned', 'batch_offered', 'batch_rejected', 'delivery_attempt_failed', 'proof_required'], true);
+            || in_array($event->event_type, ['shipment_requested', 'leg_assigned', 'batch_offered', 'batch_rejected', 'delivery_attempt_failed', 'proof_required', 'proof_rejected'], true);
     }
 
     private function notifyDispatchers(DeliveryEvent $event, NotificationType $type): void
@@ -115,6 +119,7 @@ class LogisticsNotificationService
         }
 
         $batchOffer = $event->event_type === 'batch_offered';
+        $proofRejected = $event->event_type === 'proof_rejected';
         $stopCount = (int) ($event->metadata['stop_count'] ?? 0);
 
         $this->createOnce($event, $rider->linked_id, [
@@ -125,10 +130,13 @@ class LogisticsNotificationService
             'title' => $type->label(),
             'message' => $batchOffer
                 ? "A delivery batch with {$stopCount} stops has been offered to you."
-                : 'A delivery has been assigned to you.',
+                : ($proofRejected
+                    ? "Delivery proof rejected: {$event->metadata['rejection_reason']} Submit a replacement proof."
+                    : 'A delivery has been assigned to you.'),
             'data' => $this->eventData($event) + array_filter([
                 'delivery_batch_id' => $event->metadata['delivery_batch_id'] ?? null,
                 'stop_count' => $event->metadata['stop_count'] ?? null,
+                'rejection_reason' => $event->metadata['rejection_reason'] ?? null,
             ], fn ($value) => $value !== null),
             'action_url' => '/erp/logistics/deliveries',
             'requires_action' => true,
@@ -171,7 +179,7 @@ class LogisticsNotificationService
     {
         $groupKey = implode(':', array_filter([
             'logistics', $userId, $event->shipment_id, $event->shipment_leg_id ?: 0, $event->event_type,
-            $event->event_type === 'batch_rejected' ? $event->id : null,
+            in_array($event->event_type, ['batch_rejected', 'proof_rejected'], true) ? $event->id : null,
         ], fn ($value) => $value !== null));
         return Notification::firstOrCreate(['user_id' => $userId, 'group_key' => $groupKey], [...$data, 'group_key' => $groupKey]);
     }
@@ -188,6 +196,7 @@ class LogisticsNotificationService
             'delivery_attempt_failed' => NotificationType::LOGISTICS_DELIVERY_FAILED,
             'delivery_cancelled' => NotificationType::LOGISTICS_DELIVERY_FAILED,
             'proof_required' => NotificationType::LOGISTICS_PROOF_REQUIRED,
+            'proof_rejected' => NotificationType::LOGISTICS_PROOF_REQUIRED,
             'delivered' => NotificationType::LOGISTICS_DELIVERED,
             default => null,
         };

@@ -1,6 +1,7 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
+import Swal from 'sweetalert2';
 import Shipments from '../Shipments';
 
 const mocks = vi.hoisted(() => ({ post: vi.fn(() => Promise.resolve()), reload: vi.fn(), props: {} as any }));
@@ -54,6 +55,29 @@ it('shows failed-attempt filter and retryable reassignment controls', () => {
   expect(screen.getByText('Failed attempt - 1/2')).toBeInTheDocument();
   expect(screen.getByText('Recipient Unavailable')).toBeInTheDocument();
   expect(screen.getByLabelText('Choose rider for outbound leg')).toBeInTheDocument();
+});
+
+it('lets dispatcher reject pending delivery proof with a reason', async () => {
+  setDispatcherLeg({
+    id: 2,
+    leg_type: 'outbound',
+    status: 'awaiting_proof_approval',
+    assignments: [{ id: 3, status: 'accepted' }],
+    proofs: [{ id: 17, handoff_type: 'delivery', review_status: 'pending', file_path: 'proof.jpg' }],
+    attempts: [],
+  });
+  mocks.props.canApproveProof = true;
+  (Swal.fire as any).mockResolvedValueOnce({ isConfirmed: true, value: 'Photo does not show the recipient.' });
+
+  render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Reject proof' }));
+
+  await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
+    '/api/logistics/proofs/17/reject',
+    { rejection_reason: 'Photo does not show the recipient.' },
+    undefined,
+  ));
 });
 
 it('shows subject for refund without reassignment at maximum attempts', () => {

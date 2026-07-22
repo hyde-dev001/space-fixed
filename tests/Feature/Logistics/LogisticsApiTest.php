@@ -7,6 +7,7 @@ use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\Logistics\DeliveryEvent;
 use App\Models\Logistics\HandoffProof;
+use App\Models\Notification;
 use App\Models\ShopOwner;
 use App\Models\Order;
 use App\Models\User;
@@ -183,6 +184,55 @@ class LogisticsApiTest extends TestCase
         $this->assertSame('delivered', $leg->fresh()->status->value);
         $this->assertSame('completed', $order->fresh()->status->value);
         $this->assertDatabaseHas('handoff_proofs', ['id' => $proof['id'], 'review_status' => 'approved']);
+    }
+
+    public function test_proof_approver_can_reject_delivery_proof_for_rider_resubmission(): void
+    {
+        Permission::findOrCreate('approve-proof-of-delivery', 'user');
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id, 'status' => 'active']);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id,
+            'status' => 'awaiting_proof_approval',
+        ]);
+        $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $approver = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $approver->givePermissionTo('approve-proof-of-delivery');
+        $profile = RiderProfile::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'linked_type' => User::class,
+            'linked_id' => $rider->id,
+        ]);
+        $leg->assignments()->create([
+            'assignment_type' => 'internal_rider',
+            'rider_profile_id' => $profile->id,
+            'status' => 'accepted',
+            'assigned_at' => now(),
+        ]);
+        $proof = HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'handoff_type' => 'delivery',
+            'review_status' => 'pending',
+        ]);
+
+        $this->actingAs($approver, 'user')
+            ->postJson("/api/logistics/proofs/{$proof->id}/reject", [
+                'rejection_reason' => 'Photo does not show the recipient.',
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('handoff_proofs', [
+            'id' => $proof->id,
+            'review_status' => 'rejected',
+            'rejection_reason' => 'Photo does not show the recipient.',
+        ]);
+        $this->assertSame('in_transit', $leg->fresh()->status->value);
+        $this->assertDatabaseHas('delivery_events', [
+            'shipment_leg_id' => $leg->id,
+            'event_type' => 'proof_rejected',
+        ]);
+        $this->assertTrue(Notification::query()->where('user_id', $rider->id)
+            ->where('data->event_type', 'proof_rejected')->exists());
     }
 
     public function test_non_delivery_evidence_cannot_complete_delivery(): void

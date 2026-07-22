@@ -121,6 +121,22 @@ export default function Shipments({ children }: React.PropsWithChildren) {
     if (result.isConfirmed) await act(url);
   };
 
+  const rejectProof = async (proofId: number) => {
+    const result = await Swal.fire({
+      title: 'Reject delivery proof?',
+      text: 'The rider will be asked to submit a replacement proof.',
+      icon: 'warning',
+      input: 'textarea',
+      inputLabel: 'Rejection reason',
+      inputPlaceholder: 'Explain what is missing or unclear...',
+      inputValidator: (value) => value.trim().length < 3 ? 'Enter a clear rejection reason.' : undefined,
+      showCancelButton: true,
+      confirmButtonText: 'Reject proof',
+      cancelButtonText: 'Back',
+    });
+    if (result.isConfirmed) await act(`/api/logistics/proofs/${proofId}/reject`, { rejection_reason: result.value.trim() });
+  };
+
   const submitProof = (legId: number) => {
     const file = proofFiles[legId];
     if (!file) return setActionError('Select a proof image first.');
@@ -385,7 +401,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                   {canApproveProof && leg.proofs?.filter((proof) => ['delivery', 'receive'].includes(proof.handoff_type)).map((proof) => (
                                     <div key={proof.id} className="flex items-center gap-2">
                                       {proof.file_path && <a href={`/storage/${proof.file_path}`} target="_blank" rel="noreferrer" aria-label="Open uploaded delivery proof"><img src={`/storage/${proof.file_path}`} alt="Uploaded delivery proof" className="h-12 w-12 rounded border border-gray-200 object-cover" /></a>}
-                                      {leg.status === 'awaiting_proof_approval' && proof.review_status === 'pending' && <button type="button" onClick={() => void confirmAct(`/api/logistics/proofs/${proof.id}/approve`, 'Confirm delivery?', 'This will complete the delivery.')} className="rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white">Confirm delivery</button>}
+                                      {leg.status === 'awaiting_proof_approval' && proof.review_status === 'pending' && <><button type="button" onClick={() => void confirmAct(`/api/logistics/proofs/${proof.id}/approve`, 'Confirm delivery?', 'This will complete the delivery.')} className="rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white">Confirm delivery</button><button type="button" onClick={() => void rejectProof(proof.id)} className="rounded-lg border border-red-600 px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50">Reject proof</button></>}
                                       {isReturnToShop && proof.handoff_type === 'receive' && proof.review_status === 'rider_confirmed' && <button type="button" onClick={() => void confirmAct(`/api/logistics/legs/${leg.id}/return-proofs/${proof.id}/receipt`, 'Confirm return received?', 'Confirm the physical parcel handoff. Item inspection continues in the refund workflow.')} className="rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white">Confirm return received</button>}
                                     </div>
                                   ))}
