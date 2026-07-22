@@ -1116,6 +1116,10 @@ Route::middleware('auth:user')->prefix('api/staff')->group(function () {
         ->middleware('permission:access-staff-job-orders');
     Route::post('orders/{id}/confirm-return-received', [\App\Http\Controllers\Api\StaffOrderController::class, 'confirmReturnReceived'])
         ->middleware('permission:access-staff-job-orders');
+    Route::post('orders/{id}/refund/approve', [\App\Http\Controllers\Api\StaffOrderController::class, 'approveRefund'])
+        ->middleware('permission:access-staff-job-orders');
+    Route::post('orders/{id}/refund/reject', [\App\Http\Controllers\Api\StaffOrderController::class, 'rejectRefund'])
+        ->middleware('permission:access-staff-job-orders');
     Route::post('orders/{id}/arrange-return-pickup', [\App\Http\Controllers\Api\StaffOrderController::class, 'arrangeReturnPickup'])
         ->middleware('permission:access-staff-job-orders');
     Route::post('orders/{id}/complete', [\App\Http\Controllers\Api\StaffOrderController::class, 'complete'])

@@ -398,6 +398,24 @@ export const canConfirmReturnReceived = (order: Pick<Order, "latest_refund">) =>
     && !['rejected', 'failed'].includes(String(latestRefund.status || '').toLowerCase());
 };
 
+export const canStaffReviewRefund = (order: Pick<Order, "latest_refund">) => {
+  const refund = order.latest_refund;
+  if (!refund || String(refund.flow_type || '').toLowerCase() !== 'request_approval') return false;
+
+  return String(refund.shop_owner_status || '').toLowerCase() === 'pending'
+    && !['rejected', 'failed', 'succeeded'].includes(String(refund.status || '').toLowerCase());
+};
+
+export const canArrangeReturnPickup = (order: Pick<Order, "latest_refund">) => {
+  const refund = order.latest_refund;
+  if (!refund || String(refund.flow_type || '').toLowerCase() !== 'request_approval') return false;
+
+  return String(refund.shop_owner_status || '').toLowerCase() === 'approved'
+    && String(refund.finance_status || '').toLowerCase() === 'approved'
+    && String(refund.return_status || '').toLowerCase() === 'pending_customer_shipment'
+    && !['rejected', 'failed', 'succeeded'].includes(String(refund.status || '').toLowerCase());
+};
+
 export default function JobOrdersPage() {
   const [error, setError] = useState<string | null>(null);
   const { auth, initialOrders } = usePage().props as any;
@@ -823,9 +841,16 @@ export default function JobOrdersPage() {
         };
       }
 
-      if (shopOwnerStatus !== 'approved' || financeStatus !== 'approved') {
+      if (shopOwnerStatus !== 'approved') {
         return {
-          label: 'Awaiting Approval',
+          label: 'Awaiting Staff Review',
+          className: 'bg-orange-50 text-orange-700 ring-1 ring-inset ring-orange-200 dark:bg-orange-900/20 dark:text-orange-300 dark:ring-orange-700/40',
+        };
+      }
+
+      if (financeStatus !== 'approved') {
+        return {
+          label: 'Awaiting Finance Authorization',
           className: 'bg-orange-50 text-orange-700 ring-1 ring-inset ring-orange-200 dark:bg-orange-900/20 dark:text-orange-300 dark:ring-orange-700/40',
         };
       }
@@ -858,17 +883,46 @@ export default function JobOrdersPage() {
     };
   };
 
-  const canArrangeReturnPickup = (order: Order) => {
-    const latestRefund = order.latest_refund;
-    if (!latestRefund) return false;
+  const handleStaffRefundReview = async (order: Order, approve: boolean) => {
+    const decision = approve
+      ? await Swal.fire({
+          title: 'Approve Refund Eligibility?',
+          text: 'Confirm that the request and customer evidence qualify. Finance will authorize the refund next; no money is released yet.',
+          icon: 'question',
+          showCancelButton: true,
+          confirmButtonText: 'Approve eligibility',
+          confirmButtonColor: '#16a34a',
+        })
+      : await Swal.fire({
+          title: 'Reject Refund Request',
+          text: 'Explain why the item or evidence does not qualify.',
+          input: 'textarea',
+          inputLabel: 'Rejection reason',
+          inputValidator: (value) => value.trim() ? undefined : 'A rejection reason is required.',
+          showCancelButton: true,
+          confirmButtonText: 'Reject request',
+          confirmButtonColor: '#dc2626',
+        });
 
-    const returnStatus = String(latestRefund.return_status || '').toLowerCase();
-    const flowType = String(latestRefund.flow_type || '').toLowerCase();
-    const isBlocked = ['rejected', 'failed'].includes(String(latestRefund.status || '').toLowerCase());
+    if (!decision.isConfirmed) return;
 
-    return flowType === 'request_approval'
-      && returnStatus === 'pending_customer_shipment'
-      && !isBlocked;
+    try {
+      const csrfResponse = await fetch('/api/csrf-token', { credentials: 'include', headers: { Accept: 'application/json' } });
+      const csrfData = await csrfResponse.json();
+      const response = await fetch(`/api/staff/orders/${order.id}/refund/${approve ? 'approve' : 'reject'}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-TOKEN': csrfData.csrf_token },
+        body: JSON.stringify(approve ? {} : { rejection_reason: String(decision.value || '').trim() }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.message || 'Unable to review the refund request.');
+
+      await refreshOrders();
+      await Swal.fire(approve ? 'Eligibility approved' : 'Refund rejected', data?.message || 'Refund review saved.', 'success');
+    } catch (reviewError) {
+      await Swal.fire('Review failed', reviewError instanceof Error ? reviewError.message : 'Unable to review the refund request.', 'error');
+    }
   };
 
   const handleArrangeReturnPickup = async (order: Order) => {
@@ -2045,6 +2099,28 @@ export default function JobOrdersPage() {
                             >
                               <CheckCircleIcon className="size-5" />
                             </button>
+                          )}
+                          {canStaffReviewRefund(order) && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleStaffRefundReview(order, true)}
+                                className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                                title="Approve refund eligibility (no payout yet)"
+                                aria-label="Approve refund eligibility"
+                              >
+                                <CheckCircleIcon className="size-5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleStaffRefundReview(order, false)}
+                                className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                title="Reject refund eligibility"
+                                aria-label="Reject refund eligibility"
+                              >
+                                <TrashIcon className="size-5" />
+                              </button>
+                            </>
                           )}
                           {canArrangeReturnPickup(order) && (
                             <button
