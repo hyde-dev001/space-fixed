@@ -49,6 +49,7 @@ describe('Philippine location hierarchy', () => {
     expect(normalizeProvinceSelection('cavite')).toBe('Cavite');
     expect(normalizeCityMunicipalitySelection('Cavite', 'Dasmarinas')).toBe('Dasmariñas');
     expect(normalizeCityMunicipalitySelection('Cavite', 'City of Cavite')).toBe('Cavite City');
+    expect(normalizeCityMunicipalitySelection('Cavite', 'General Trias')).toBe('General Trias City');
     expect(normalizeCityMunicipalitySelection('Metro Manila', 'Manila')).toBe('City of Manila');
     expect(normalizeCityMunicipalitySelection('Cebu', 'Dasmarinas')).toBe('');
   });
