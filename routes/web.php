@@ -1382,6 +1382,7 @@ Route::middleware(['auth:user', 'check.user.business.type:repair,both'])->prefix
 
 // Public shop-hours fetch — no auth needed, used by the customer schedule modal
 Route::get('/api/repair/shop-hours', [\App\Http\Controllers\Api\RepairAvailabilityController::class, 'shopHours']);
+Route::middleware('auth:user')->get('/api/repair/shops/{shop}/delivery-quote', [\App\Http\Controllers\Api\RepairAvailabilityController::class, 'deliveryQuote']);
 
 Route::middleware(['auth:user', 'check.user.business.type:repair,both'])->prefix('api/repairer/repairs')->group(function () {
     // Get assigned repairs
