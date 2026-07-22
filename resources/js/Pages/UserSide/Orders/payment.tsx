@@ -11,6 +11,7 @@ import {
   normalizeCityMunicipalitySelection,
   normalizeProvinceSelection,
 } from '@/data/philippineLocations';
+import CustomerAddressMapPicker from '@/components/address/CustomerAddressMapPicker';
 
 interface CartItem {
   id: string;
@@ -69,6 +70,12 @@ interface ShippingEstimateData {
   distance_label?: string;
   customer_notice?: string;
   pay_after_order_notice?: string;
+  shop_owned?: {
+    available: boolean;
+    reason: 'address_needs_pin' | 'shop_needs_pin' | 'outside_coverage' | 'logistics_unavailable' | null;
+    distance_km: number | null;
+    coverage_radius_km: number | null;
+  };
 }
 
 interface AppliedVoucherSummary {
@@ -154,15 +161,20 @@ const Payment: React.FC = () => {
   const [shippingCity, setShippingCity] = useState('');
   const [shippingRegion, setShippingRegion] = useState('');
   const cityMunicipalityOptions = getCityMunicipalityOptions(shippingRegion);
-  const [saveAddressForLater, setSaveAddressForLater] = useState(true);
+  const [setAsDefaultAddress, setSetAsDefaultAddress] = useState(false);
   const [userAddresses, setUserAddresses] = useState<UserAddress[]>([]);
   const [isAddressSheetOpen, setIsAddressSheetOpen] = useState(false);
   const [isAddressLoading, setIsAddressLoading] = useState(false);
+  const [isAddressSaving, setIsAddressSaving] = useState(false);
+  const [addressSaveStatus, setAddressSaveStatus] = useState<string | null>(null);
   const [addressSheetMode, setAddressSheetMode] = useState<'list' | 'form'>('list');
   const [editingAddressId, setEditingAddressId] = useState<number | null>(null);
+  const addressMapRef = useRef<HTMLDivElement | null>(null);
   const [shippingEstimate, setShippingEstimate] = useState<ShippingEstimateData | null>(null);
+  const [shopOwnedCoverage, setShopOwnedCoverage] = useState<NonNullable<ShippingEstimateData['shop_owned']> | null>(null);
   const [isShippingEstimateLoading, setIsShippingEstimateLoading] = useState(false);
   const [shippingEstimateReason, setShippingEstimateReason] = useState<string | null>(null);
+  const shippingEstimateRequestRef = useRef(0);
   const [promoPreview, setPromoPreview] = useState<PromoPreviewData | null>(null);
   const [isPromoPreviewLoading, setIsPromoPreviewLoading] = useState(false);
   const [selectedVoucherCampaignId, setSelectedVoucherCampaignId] = useState<number | null>(null);
@@ -335,6 +347,24 @@ const Payment: React.FC = () => {
     setIsSheetCityDropdownOpen(false);
   };
 
+  const handleAddressMapChange = (location: {
+    displayName: string;
+    region: string;
+    province: string;
+    city: string;
+    barangay: string;
+    postalCode: string;
+    latitude: number;
+    longitude: number;
+  }) => {
+    setShippingLatitude(location.latitude);
+    setShippingLongitude(location.longitude);
+    setShippingRegion(location.province || location.region);
+    setShippingCity(location.city);
+    setShippingBarangay(location.barangay);
+    setShippingPostalCode(location.postalCode);
+  };
+
   const formatAddressDisplay = (addr?: Partial<UserAddress> | null) => {
     if (!addr) return '';
     if (addr.full_address) return addr.full_address;
@@ -342,6 +372,7 @@ const Payment: React.FC = () => {
   };
 
   const applySelectedAddress = (addr: UserAddress) => {
+    setSetAsDefaultAddress(Boolean(addr.is_default));
     setCustomerName(addr.name || '');
     setCustomerPhone(addr.phone || '');
     setShippingAddressLine(addr.address_line || '');
@@ -370,6 +401,7 @@ const Payment: React.FC = () => {
   const openAddressSheet = async () => {
     setAddressSheetMode('list');
     setEditingAddressId(null);
+    setAddressSaveStatus(null);
 
     if (!user) {
       setIsAddressSheetOpen(true);
@@ -430,6 +462,8 @@ const Payment: React.FC = () => {
       return;
     }
 
+    setIsAddressSaving(true);
+    setAddressSaveStatus(null);
     try {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
       const isEditingAddress = editingAddressId !== null;
@@ -454,7 +488,7 @@ const Payment: React.FC = () => {
           postal_code: shippingPostalCode,
           latitude: shippingLatitude,
           longitude: shippingLongitude,
-          is_default: userAddresses.length === 0,
+          is_default: setAsDefaultAddress,
         }),
       });
 
@@ -475,18 +509,20 @@ const Payment: React.FC = () => {
       }
 
       setEditingAddressId(null);
-      setIsAddressSheetOpen(false);
       setAddressSheetMode('list');
+      setAddressSaveStatus('Address saved. You can select it from the list.');
     } catch (error) {
-      console.warn('Failed to save address from sheet:', error);
-      setEditingAddressId(null);
-      setIsAddressSheetOpen(false);
-      setAddressSheetMode('list');
+      setAddressSaveStatus('We could not save this address. Please try again.');
+    } finally {
+      setIsAddressSaving(false);
     }
   };
 
-  const handleEditAddressFromList = (addr: UserAddress) => {
+  const handleEditAddressFromList = (addr: UserAddress, focusMap = false) => {
+    setIsAddressSheetOpen(true);
+    setAddressSaveStatus(null);
     setEditingAddressId(addr.id);
+    setSetAsDefaultAddress(Boolean(addr.is_default));
     setCustomerName(addr.name || '');
     setCustomerPhone(addr.phone || '');
     setShippingAddressLine(addr.address_line || '');
@@ -499,6 +535,12 @@ const Payment: React.FC = () => {
     setShippingLatitude(addr.latitude ?? null);
     setShippingLongitude(addr.longitude ?? null);
     setAddressSheetMode('form');
+    if (focusMap) {
+      requestAnimationFrame(() => {
+        addressMapRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        addressMapRef.current?.querySelector<HTMLInputElement>('input')?.focus();
+      });
+    }
   };
 
   const handleDeleteAddressFromForm = async () => {
@@ -931,9 +973,116 @@ const Payment: React.FC = () => {
     }
   }, [user]);
 
+  const requestShippingEstimate = async (
+    addressId: number | null | undefined,
+    signal?: AbortSignal,
+  ): Promise<ShippingEstimateData> => {
+    if (!checkoutData) throw new Error('Checkout data is unavailable.');
+
+    const city = normalizeCityMunicipalitySelection(shippingRegion, shippingCity);
+    const region = shippingRegion.trim();
+    const itemPids = checkoutData.items
+      .map((item) => Number(item.pid))
+      .filter((pid) => Number.isInteger(pid) && pid > 0);
+    if (!city || !region || itemPids.length === 0) {
+      throw new Error('Unable to calculate shipping for the current address.');
+    }
+
+    const requestId = ++shippingEstimateRequestRef.current;
+    setIsShippingEstimateLoading(true);
+    let responseCoverage: NonNullable<ShippingEstimateData['shop_owned']> | null = null;
+
+    try {
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+      const response = await fetch('/api/shipping/estimate', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': csrfToken,
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        body: JSON.stringify({
+          item_pids: itemPids,
+          address_id: addressId,
+          shipping_address_line: shippingAddressLine,
+          shipping_barangay: shippingBarangay,
+          shipping_city: city,
+          shipping_region: region,
+          shipping_postal_code: shippingPostalCode,
+          shipping_latitude: shippingLatitude,
+          shipping_longitude: shippingLongitude,
+        }),
+        signal,
+      });
+
+      if (!response.ok) {
+        let reason = `Unable to fetch shipping estimate (HTTP ${response.status}).`;
+        try {
+          const errorData = await response.json();
+          reason = errorData?.reason || errorData?.message || reason;
+        } catch {
+          // Keep the status-based message when the response is not JSON.
+        }
+        if (response.status === 429) reason = 'Too many shipping estimate requests. Please wait a few seconds and try again.';
+        if (response.status === 419) reason = 'Session expired or CSRF token mismatch. Please refresh the page and try again.';
+        throw new Error(reason);
+      }
+
+      const data = await response.json();
+      responseCoverage = data?.shop_owned ?? {
+        available: false,
+        reason: 'logistics_unavailable',
+        distance_km: null,
+        coverage_radius_km: null,
+      };
+      if (!data?.has_estimate) {
+        throw new Error(data?.reason || 'Shipping fee is currently unavailable.');
+      }
+
+      const estimate: ShippingEstimateData = {
+        distance_km: Number(data.distance_km || 0),
+        base_fee: Number(data.base_fee || 0),
+        min_fee: Number(data.min_fee || 0),
+        max_fee: Number(data.max_fee || 0),
+        distance_label: data.distance_label,
+        customer_notice: data.customer_notice,
+        pay_after_order_notice: data.pay_after_order_notice,
+        shop_owned: data.shop_owned,
+      };
+
+      if (requestId !== shippingEstimateRequestRef.current || signal?.aborted) return estimate;
+      setShippingEstimate(estimate);
+      setShopOwnedCoverage(responseCoverage);
+      setShippingEstimateReason(null);
+      return estimate;
+    } catch (error) {
+      if (requestId === shippingEstimateRequestRef.current && !signal?.aborted) {
+        const reason = error instanceof Error
+          ? error.message
+          : 'Network issue while calculating shipping estimate. Please check your connection and try again.';
+        setShippingEstimate(null);
+        setShopOwnedCoverage(responseCoverage ?? {
+          available: false,
+          reason: 'logistics_unavailable',
+          distance_km: null,
+          coverage_radius_km: null,
+        });
+        setShippingEstimateReason(reason);
+      }
+      throw error;
+    } finally {
+      if (requestId === shippingEstimateRequestRef.current && !signal?.aborted) {
+        setIsShippingEstimateLoading(false);
+      }
+    }
+  };
+
   useEffect(() => {
     if (!checkoutData || isPremiumPayment || isRepairPayment) {
       setShippingEstimate(null);
+      setShopOwnedCoverage(null);
       setIsShippingEstimateLoading(false);
       setShippingEstimateReason(null);
       return;
@@ -944,6 +1093,7 @@ const Payment: React.FC = () => {
 
     if (!city || !region) {
       setShippingEstimate(null);
+      setShopOwnedCoverage(null);
       setIsShippingEstimateLoading(false);
       setShippingEstimateReason('Enter city and region to calculate shipping fee.');
       return;
@@ -955,88 +1105,22 @@ const Payment: React.FC = () => {
 
     if (itemPids.length === 0) {
       setShippingEstimate(null);
+      setShopOwnedCoverage(null);
       setIsShippingEstimateLoading(false);
       setShippingEstimateReason('Unable to resolve product location for shipping estimate.');
       return;
     }
 
     setShippingEstimate(null);
+    setShopOwnedCoverage(null);
     setShippingEstimateReason(null);
     setIsShippingEstimateLoading(true);
 
     const controller = new AbortController();
-    const timer = window.setTimeout(async () => {
-      try {
-        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-        const response = await fetch('/api/shipping/estimate', {
-          method: 'POST',
-          credentials: 'include',
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': csrfToken,
-            'X-Requested-With': 'XMLHttpRequest',
-          },
-          body: JSON.stringify({
-            item_pids: itemPids,
-            shipping_address_line: shippingAddressLine,
-            shipping_barangay: shippingBarangay,
-            shipping_city: city,
-            shipping_region: region,
-            shipping_postal_code: shippingPostalCode,
-          }),
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          let serverReason = `Unable to fetch shipping estimate (HTTP ${response.status}).`;
-          try {
-            const errorData = await response.json();
-            serverReason = errorData?.reason || errorData?.message || serverReason;
-          } catch {
-            // Keep the default message when response is not JSON.
-          }
-
-          if (response.status === 429) {
-            serverReason = 'Too many shipping estimate requests. Please wait a few seconds and try again.';
-          }
-
-          if (response.status === 419) {
-            serverReason = 'Session expired or CSRF token mismatch. Please refresh the page and try again.';
-          }
-
-          setShippingEstimate(null);
-          setShippingEstimateReason(serverReason);
-          return;
-        }
-
-        const data = await response.json();
-        if (data?.has_estimate) {
-          setShippingEstimate({
-            distance_km: Number(data.distance_km || 0),
-            base_fee: Number(data.base_fee || 0),
-            min_fee: Number(data.min_fee || 0),
-            max_fee: Number(data.max_fee || 0),
-            distance_label: data.distance_label,
-            customer_notice: data.customer_notice,
-            pay_after_order_notice: data.pay_after_order_notice,
-          });
-          setShippingEstimateReason(null);
-        } else {
-          setShippingEstimate(null);
-          setShippingEstimateReason(data?.reason || 'Shipping fee is currently unavailable.');
-        }
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          setShippingEstimate(null);
-          setShippingEstimateReason('Network issue while calculating shipping estimate. Please check your connection and try again.');
-          console.warn('Shipping estimate lookup failed:', error);
-        }
-      } finally {
-        if (!controller.signal.aborted) {
-          setIsShippingEstimateLoading(false);
-        }
-      }
+    const timer = window.setTimeout(() => {
+      requestShippingEstimate(checkoutData.address_id, controller.signal).catch((error) => {
+        if (!controller.signal.aborted) console.warn('Shipping estimate lookup failed:', error);
+      });
     }, 500);
 
     return () => {
@@ -1052,6 +1136,8 @@ const Payment: React.FC = () => {
     shippingCity,
     shippingRegion,
     shippingPostalCode,
+    shippingLatitude,
+    shippingLongitude,
   ]);
 
   useEffect(() => {
@@ -1669,16 +1755,26 @@ const Payment: React.FC = () => {
     setCustomerPhone(value.replace(/\D/g, '').slice(0, 11));
   };
 
-  // Save address to user account
-  const saveAddressToAccount = async (orderId: number | undefined) => {
-    if (!saveAddressForLater || !orderId) return;
+  // Persist the delivery address before creating an order so its address_id is current.
+  const saveAddressToAccount = async (): Promise<number | null> => {
+    if (!user || isPremiumPayment || isRepairPayment) return checkoutData?.address_id ?? null;
     const normalizedShippingCity = normalizeCityMunicipalitySelection(shippingRegion, shippingCity);
-    if (!normalizedShippingCity) return;
+    if (!normalizedShippingCity) {
+      throw new Error('Please select a valid city or municipality before checkout.');
+    }
 
-    try {
-      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-      
-      const addressData = {
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+    const targetAddressId = checkoutData?.address_id ?? null;
+    const response = await fetch(targetAddressId ? `/api/user/addresses/${targetAddressId}` : '/api/user/addresses', {
+      method: targetAddressId ? 'PUT' : 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'X-CSRF-TOKEN': csrfToken,
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+      credentials: 'include',
+      body: JSON.stringify({
         name: customerName,
         phone: customerPhone,
         address_line: shippingAddressLine,
@@ -1689,30 +1785,24 @@ const Payment: React.FC = () => {
         postal_code: shippingPostalCode,
         latitude: shippingLatitude,
         longitude: shippingLongitude,
-        is_default: true,
-      };
+        is_default: setAsDefaultAddress,
+      }),
+    });
 
-      const response = await fetch('/api/user/addresses', {
-        method: 'POST',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-          'X-CSRF-TOKEN': csrfToken,
-          'X-Requested-With': 'XMLHttpRequest',
-        },
-        credentials: 'include',
-        body: JSON.stringify(addressData),
-      });
-
-      if (response.ok) {
-        console.log('Address saved successfully');
-      } else {
-        console.warn('Failed to save address, but order was created');
-      }
-    } catch (error) {
-      console.warn('Unable to save address:', error);
-      // Don't fail - order was already created
+    if (!response.ok) {
+      throw new Error('Unable to save delivery address. Please try again.');
     }
+
+    const savedAddress: UserAddress | undefined = (await response.json()).address;
+    if (!savedAddress?.id) {
+      throw new Error('Unable to save delivery address. Please try again.');
+    }
+
+    setUserAddresses((prev) => targetAddressId
+      ? prev.map((address) => address.id === savedAddress.id ? savedAddress : address)
+      : [savedAddress, ...prev]);
+    setCheckoutData((prev) => (prev ? { ...prev, address_id: savedAddress.id } : prev));
+    return savedAddress.id;
   };
 
   const handleCreateNewPaymentSession = async () => {
@@ -1820,7 +1910,7 @@ const Payment: React.FC = () => {
       return;
     }
 
-    const computedShippingFee = !isPremiumPayment && !isRepairPayment
+    let computedShippingFee = !isPremiumPayment && !isRepairPayment
       ? Math.max(0, Number(shippingEstimate?.max_fee ?? 0))
       : 0;
     const normalizedSubtotalAmount = Math.max(0, toFiniteNumber(promoPreview?.final_subtotal, checkoutData.total_amount));
@@ -1891,7 +1981,28 @@ const Payment: React.FC = () => {
     setPayError(null);
 
     try {
-      // First, create the order
+      const savedAddressId = await saveAddressToAccount();
+
+      if (!isPremiumPayment && !isRepairPayment) {
+        try {
+          const refreshedEstimate = await requestShippingEstimate(savedAddressId);
+          computedShippingFee = Math.max(0, Number(refreshedEstimate.max_fee || 0));
+          if (computedShippingFee <= 0) throw new Error('Shipping fee is unavailable.');
+        } catch {
+          const reason = 'Your address was saved, but shipping could not be refreshed. Please retry checkout.';
+          setPayError(reason);
+          await Swal.fire({
+            icon: 'warning',
+            title: 'Shipping Refresh Needed',
+            text: reason,
+            confirmButtonColor: '#000000',
+          });
+          setIsProcessing(false);
+          return;
+        }
+      }
+
+      // Create the order only after its delivery address is persisted.
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
       
       const orderData = {
@@ -1902,7 +2013,7 @@ const Payment: React.FC = () => {
         customer_email: customerEmail,
         customer_phone: customerPhone,
         shipping_address: `${shippingAddressLine}, ${shippingBarangay}, ${normalizedShippingCity}, ${shippingRegion} ${shippingPostalCode}`,
-        address_id: checkoutData.address_id ?? null,
+        address_id: savedAddressId,
         shipping_region: shippingRegion,
         shipping_province: shippingRegion,
         shipping_city: normalizedShippingCity,
@@ -1940,9 +2051,6 @@ const Payment: React.FC = () => {
 
       const orderId = orderResult.order?.id || orderResult.order_id;
       sessionStorage.setItem('pendingOrderId', orderId);
-
-      // Save address if checkbox is checked
-      await saveAddressToAccount(orderId);
 
       // Create a dedicated payment retry session that also persists fresh link metadata.
       const response = await fetch(`/api/orders/${orderId}/retry-payment-session`, {
@@ -2077,6 +2185,47 @@ const Payment: React.FC = () => {
   const shippingPayLaterNotice = hasShippingEstimate
     ? ''
     : (hasSelectedCity ? 'Shipping fee must be calculated before you can continue to payment.' : '');
+  const selectedSavedAddress = userAddresses.find((address) => address.id === checkoutData.address_id);
+  const shopOwnedCoverageDetails = [
+    shopOwnedCoverage?.distance_km != null ? `${shopOwnedCoverage.distance_km.toLocaleString()} km away` : null,
+    shopOwnedCoverage?.coverage_radius_km != null ? `${shopOwnedCoverage.coverage_radius_km.toLocaleString()} km coverage radius` : null,
+  ].filter(Boolean).join(' · ');
+  const shopOwnedCoverageLabel = shopOwnedCoverage?.available
+    ? 'Eligible for Shop-owned Logistics'
+    : shopOwnedCoverage?.reason === 'outside_coverage'
+      ? 'Outside Shop-owned coverage'
+      : shopOwnedCoverage?.reason === 'address_needs_pin'
+        ? 'Pin this address to check Shop-owned coverage'
+        : shopOwnedCoverage?.reason === 'shop_needs_pin'
+          ? 'Shop location is not pinned'
+          : shopOwnedCoverage
+            ? 'Shop-owned logistics is unavailable'
+            : '';
+  const shopOwnedCoverageNotice = shopOwnedCoverageLabel ? (
+    <div
+      role="status"
+      aria-live="polite"
+      className={`mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border px-3 py-2 text-xs leading-relaxed ${
+        shopOwnedCoverage?.available
+          ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+          : shopOwnedCoverage?.reason === 'outside_coverage'
+            ? 'border-amber-200 bg-amber-50 text-amber-900'
+            : 'border-gray-200 bg-gray-50 text-gray-700'
+      }`}
+    >
+      <span className="font-medium">{shopOwnedCoverageLabel}</span>
+      {shopOwnedCoverageDetails && <span>{shopOwnedCoverageDetails}</span>}
+      {shopOwnedCoverage?.reason === 'address_needs_pin' && selectedSavedAddress && (
+        <button
+          type="button"
+          onClick={() => handleEditAddressFromList(selectedSavedAddress, true)}
+          className="font-semibold underline underline-offset-2"
+        >
+          Repin address
+        </button>
+      )}
+    </div>
+  ) : null;
   const fullShippingAddress = [shippingAddressLine, shippingBarangay, shippingCity, shippingRegion]
     .filter(Boolean)
     .join(', ');
@@ -2226,6 +2375,7 @@ const Payment: React.FC = () => {
                   </span>
                 </div>
               </div>
+              {shopOwnedCoverageNotice}
             </div>
 
             <div className="mt-2 bg-white px-4 py-4 md:px-6 md:py-5 border-y border-gray-200">
@@ -2387,12 +2537,20 @@ const Payment: React.FC = () => {
                   <div className="w-6" />
                 </div>
 
+                {addressSaveStatus && (
+                  <p aria-live="polite" className="border-b border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+                    {addressSaveStatus}
+                  </p>
+                )}
+
                 {addressSheetMode === 'list' ? (
                   <>
                     <button
                       type="button"
                       onClick={() => {
                         setEditingAddressId(null);
+                        setAddressSaveStatus(null);
+                        setSetAsDefaultAddress(false);
                         setAddressSheetMode('form');
                       }}
                       className="w-full px-4 py-5 border-b border-gray-200 flex items-center justify-between text-left"
@@ -2443,6 +2601,18 @@ const Payment: React.FC = () => {
                                 >
                                   Edit
                                 </button>
+                                {(addr.latitude == null || addr.longitude == null) && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleEditAddressFromList(addr, true);
+                                    }}
+                                    className="shrink-0 text-sm font-semibold text-blue-700 underline"
+                                  >
+                                    Repin address
+                                  </button>
+                                )}
                               </div>
                             </div>
                           );
@@ -2580,12 +2750,25 @@ const Payment: React.FC = () => {
                       className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
                     />
 
+                    <div ref={addressMapRef}>
+                      <p className="mb-2 text-sm text-gray-600">
+                        Pin the exact delivery entrance, then check the address details above.
+                      </p>
+                      <CustomerAddressMapPicker
+                        value={shippingLatitude !== null && shippingLongitude !== null
+                          ? { latitude: shippingLatitude, longitude: shippingLongitude }
+                          : null}
+                        onChange={handleAddressMapChange}
+                      />
+                    </div>
+
                     <button
                       type="button"
                       onClick={handleUseAddressFromForm}
-                      className="w-full mt-2 rounded-lg bg-gray-900 py-3 text-base font-semibold text-white"
+                      disabled={isAddressSaving}
+                      className="w-full mt-2 rounded-lg bg-gray-900 py-3 text-base font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-400"
                     >
-                      {editingAddressId ? 'Save changes' : 'Use this address'}
+                      {isAddressSaving ? 'Saving address...' : editingAddressId ? 'Save changes' : 'Use this address'}
                     </button>
 
                     {editingAddressId && (
@@ -2786,6 +2969,20 @@ const Payment: React.FC = () => {
                     </>
                   )}
 
+                  {!isPremiumPayment && (
+                    <div>
+                      <p className="mb-2 text-sm text-gray-600">
+                        Pin the exact delivery entrance, then check the address details above.
+                      </p>
+                      <CustomerAddressMapPicker
+                        value={shippingLatitude !== null && shippingLongitude !== null
+                          ? { latitude: shippingLatitude, longitude: shippingLongitude }
+                          : null}
+                        onChange={handleAddressMapChange}
+                      />
+                    </div>
+                  )}
+
                   {/* Phone */}
                   <div>
                     <label className="block text-sm font-medium text-black mb-2.5">Phone</label>
@@ -2801,18 +2998,23 @@ const Payment: React.FC = () => {
                     />
                   </div>
 
-                  {/* Save info */}
-                  <label className="flex items-center gap-3 pt-2">
-                    <input 
-                      type="checkbox" 
-                      title="Save my information for faster checkout"
-                      aria-label="Save my information for faster checkout"
-                      checked={saveAddressForLater}
-                      onChange={e => setSaveAddressForLater(e.target.checked)}
-                      className="w-5 h-5" 
-                    />
-                    <span className="text-base text-black">Save my information for a faster checkout</span>
-                  </label>
+                  {/* Delivery address persistence */}
+                  <div className="pt-2">
+                    <p className="text-sm text-gray-600">
+                      Your delivery address will be saved or updated for order fulfillment.
+                    </p>
+                    <label className="mt-3 flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        title="Set as my default delivery address"
+                        aria-label="Set as my default delivery address"
+                        checked={setAsDefaultAddress}
+                        onChange={e => setSetAsDefaultAddress(e.target.checked)}
+                        className="w-5 h-5"
+                      />
+                      <span className="text-base text-black">Set as my default delivery address</span>
+                    </label>
+                  </div>
 
                   {/* Text notification */}
                   <label className="flex items-center gap-3 pt-1">
@@ -3094,6 +3296,7 @@ const Payment: React.FC = () => {
                     </div>
                     {shippingCarrierNote && <p className="text-xs text-gray-500 mt-1 leading-relaxed">{shippingCarrierNote}</p>}
                     {shippingPayLaterNotice && <p className="text-xs text-gray-500 mt-1 leading-relaxed">{shippingPayLaterNotice}</p>}
+                    {shopOwnedCoverageNotice}
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">{vatLabel}</span>

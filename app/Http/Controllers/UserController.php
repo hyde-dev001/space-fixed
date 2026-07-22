@@ -15,11 +15,11 @@ use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Auth\Events\Registered;
 use App\Rules\NotDisposableEmail;
+use App\Services\NominatimService;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 
 /**
  * UserController
@@ -164,7 +164,7 @@ class UserController extends Controller
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\RedirectResponse
      */
-    public function register(Request $request)
+    public function register(Request $request, NominatimService $nominatim)
     {
         try {
             // Validate registration data
@@ -227,15 +227,10 @@ class UserController extends Controller
             ]);
 
             try {
-                $resolvedAddress = Http::timeout(5)->acceptJson()->get(
-                    'https://nominatim.openstreetmap.org/reverse',
-                    [
-                        'lat' => $validated['address_latitude'],
-                        'lon' => $validated['address_longitude'],
-                        'format' => 'json',
-                        'addressdetails' => 1,
-                    ],
-                )->json('address', []);
+                $resolvedAddress = $nominatim->reverse(
+                    (float) $validated['address_latitude'],
+                    (float) $validated['address_longitude'],
+                )['address'] ?? [];
             } catch (\Throwable) {
                 $resolvedAddress = [];
             }

@@ -37,7 +37,10 @@ class CustomerRegistrationAddressTest extends TestCase
     public function test_registration_creates_a_default_shipping_address(): void
     {
         Storage::fake('public');
-        Http::fake(['nominatim.openstreetmap.org/*' => Http::response(['address' => [
+        Http::fake(['nominatim.openstreetmap.org/*' => Http::response([
+            'lat' => '14.5832',
+            'lon' => '120.9822',
+            'address' => [
             'country_code' => 'ph',
             'region' => 'National Capital Region',
             'state' => 'Metro Manila',
@@ -92,7 +95,11 @@ class CustomerRegistrationAddressTest extends TestCase
     public function test_registration_rejects_non_philippine_coordinates_inside_the_bounding_box(): void
     {
         Storage::fake('public');
-        Http::fake(['nominatim.openstreetmap.org/*' => Http::response(['address' => ['country_code' => 'my']])]);
+        Http::fake(['nominatim.openstreetmap.org/*' => Http::response([
+            'lat' => '7.0',
+            'lon' => '116.8',
+            'address' => ['country_code' => 'my'],
+        ])]);
 
         $this->post('/user/register', $this->payload([
             'address' => 'Kudat, Sabah, Malaysia',
@@ -110,7 +117,10 @@ class CustomerRegistrationAddressTest extends TestCase
     public function test_registration_uses_reverse_geocoded_shipping_fields_instead_of_client_values(): void
     {
         Storage::fake('public');
-        Http::fake(['nominatim.openstreetmap.org/*' => Http::response(['address' => [
+        Http::fake(['nominatim.openstreetmap.org/*' => Http::response([
+            'lat' => '14.5832',
+            'lon' => '120.9822',
+            'address' => [
             'country_code' => 'ph',
             'region' => 'National Capital Region',
             'state' => 'Metro Manila',

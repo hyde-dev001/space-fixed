@@ -8,6 +8,7 @@ use App\Models\Logistics\ShipmentLeg;
 use App\Models\ShopOwner;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
+use Illuminate\Support\Facades\Log;
 
 class DeliveryScheduleService
 {
@@ -17,23 +18,18 @@ class DeliveryScheduleService
         ?float $destinationLatitude,
         ?float $destinationLongitude,
     ): array {
-        if ($destinationLatitude === null || $destinationLongitude === null) {
-            return $this->result('needs_coordinates');
-        }
-        if ($shop->shop_latitude === null || $shop->shop_longitude === null) {
-            return $this->result('needs_shop_coordinates');
+        $coverage = $this->coverage($shop, $destinationLatitude, $destinationLongitude);
+        if (! $coverage['available']) {
+            return $this->result(match ($coverage['reason']) {
+                'address_needs_pin' => 'needs_coordinates',
+                'shop_needs_pin' => 'needs_shop_coordinates',
+                'outside_coverage' => 'outside_coverage',
+                default => 'needs_capacity',
+            }, distance: $coverage['distance_km']);
         }
 
         $settings = $shop->logisticsSetting ?: LogisticsSetting::firstOrCreate(['shop_owner_id' => $shop->id]);
-        $distance = $this->distanceKm(
-            (float) $shop->shop_latitude,
-            (float) $shop->shop_longitude,
-            $destinationLatitude,
-            $destinationLongitude,
-        );
-        if ($distance > (float) $settings->coverage_radius_km) {
-            return $this->result('outside_coverage', distance: $distance);
-        }
+        $distance = $coverage['distance_km'];
 
         $riders = RiderProfile::query()
             ->where('shop_owner_id', $shop->id)
@@ -74,6 +70,43 @@ class DeliveryScheduleService
         return $this->result('needs_capacity', distance: $distance);
     }
 
+    public function coverage(ShopOwner $shop, ?float $latitude, ?float $longitude): array
+    {
+        try {
+            $settings = $shop->logisticsSetting ?: LogisticsSetting::firstOrCreate(['shop_owner_id' => $shop->id]);
+            $shop->setRelation('logisticsSetting', $settings);
+            $radius = (float) $settings->coverage_radius_km;
+
+            if ($latitude === null || $longitude === null) {
+                return $this->coverageResult(false, 'address_needs_pin', null, $radius);
+            }
+            if ($shop->shop_latitude === null || $shop->shop_longitude === null) {
+                return $this->coverageResult(false, 'shop_needs_pin', null, $radius);
+            }
+
+            $distance = $this->distanceKm(
+                (float) $shop->shop_latitude,
+                (float) $shop->shop_longitude,
+                $latitude,
+                $longitude,
+            );
+
+            return $this->coverageResult(
+                $distance <= $radius,
+                $distance <= $radius ? null : 'outside_coverage',
+                $distance,
+                $radius,
+            );
+        } catch (\Throwable $exception) {
+            Log::warning('Logistics coverage unavailable.', [
+                'shop_owner_id' => $shop->id,
+                'exception' => $exception->getMessage(),
+            ]);
+
+            return $this->coverageResult(false, 'logistics_unavailable', null, null);
+        }
+    }
+
     private function nextOperatingDate(CarbonImmutable $date, LogisticsSetting $settings): CarbonImmutable
     {
         while (!in_array($date->dayOfWeekIso, $settings->operating_days, true)
@@ -92,6 +125,16 @@ class DeliveryScheduleService
             + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($lonDelta / 2) ** 2;
 
         return round(6371 * 2 * atan2(sqrt($a), sqrt(1 - $a)), 2);
+    }
+
+    private function coverageResult(bool $available, ?string $reason, ?float $distance, ?float $radius): array
+    {
+        return [
+            'available' => $available,
+            'reason' => $reason,
+            'distance_km' => $distance,
+            'coverage_radius_km' => $radius,
+        ];
     }
 
     private function result(

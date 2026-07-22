@@ -532,9 +532,9 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
 
         try {
           const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
-            { headers: { 'User-Agent': 'SoleSpace/1.0' } },
+            `/api/address/geocode?latitude=${lat}&longitude=${lng}`,
           );
+          if (!res.ok) throw new Error('Address lookup failed');
           const data = await res.json();
           if (data.display_name) {
             setGeoAddress(data.display_name);
@@ -565,9 +565,9 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
 
     try {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
-        { headers: { 'User-Agent': 'SoleSpace/1.0' } },
+        `/api/address/geocode?latitude=${lat}&longitude=${lng}`,
       );
+      if (!res.ok) throw new Error('Address lookup failed');
       const data = await res.json();
       if (data.display_name) {
         setGeoAddress(data.display_name);

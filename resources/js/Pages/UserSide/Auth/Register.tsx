@@ -237,7 +237,7 @@ export default function Register() {
 
   const reverseGeocode = async (latitude: number, longitude: number, requestId: number) => {
     const response = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&addressdetails=1`,
+      `/api/address/geocode?latitude=${latitude}&longitude=${longitude}`,
     );
     if (!response.ok) throw new Error('Address lookup failed');
     const result = await response.json();
@@ -313,7 +313,7 @@ export default function Register() {
     setGeoError('');
     try {
       const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&countrycodes=ph&limit=1&q=${encodeURIComponent(query)}`,
+        `/api/address/geocode?q=${encodeURIComponent(query)}`,
       );
       if (!response.ok) throw new Error('Address search failed');
       const [result] = await response.json();

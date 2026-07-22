@@ -4,6 +4,7 @@ import Navigation from '../Shared/Navigation';
 import Swal from '@/Pages/UserSide/Shared/UserModal';
 import axios from 'axios';
 import { dispatchCartAddedEvent } from '../../../types/cart-events';
+import CustomerAddressMapPicker from '@/components/address/CustomerAddressMapPicker';
 
 type CartItem = {
   id: string;
@@ -60,6 +61,7 @@ const Checkout: React.FC = () => {
   const [showAddAddressModal, setShowAddAddressModal] = useState(false);
   const [addressesLoading, setAddressesLoading] = useState(false);
   const [addressSaving, setAddressSaving] = useState(false);
+  const addressMapRef = useRef<HTMLDivElement | null>(null);
   const [newAddressData, setNewAddressData] = useState({
     name: '',
     phone: '',
@@ -69,6 +71,8 @@ const Checkout: React.FC = () => {
     barangay: '',
     postal_code: '',
     address: '',
+    latitude: null as number | null,
+    longitude: null as number | null,
     is_default: false
   });
   const parseOptions = (rawOptions: any) => {
@@ -635,10 +639,20 @@ const Checkout: React.FC = () => {
     setCustomerEmail(user?.email || '');
   };
 
-  const handleEditAddress = (address: any) => {
+  const handleEditAddress = (address: any, focusMap = false) => {
     setEditingAddressId(address.id);
-    setEditingAddressData({ ...address });
+    setEditingAddressData({
+      ...address,
+      latitude: address.latitude ?? null,
+      longitude: address.longitude ?? null,
+    });
     setShowAddressSelector(false);
+    if (focusMap) {
+      requestAnimationFrame(() => {
+        addressMapRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        addressMapRef.current?.querySelector<HTMLInputElement>('input')?.focus();
+      });
+    }
   };
 
   const handleSaveEditAddress = async () => {
@@ -726,6 +740,8 @@ const Checkout: React.FC = () => {
           barangay: editingAddressData.barangay,
           postal_code: editingAddressData.postal_code?.trim() || '',
           address_line: editingAddressData.address_line.trim(),
+          latitude: editingAddressData.latitude,
+          longitude: editingAddressData.longitude,
           is_default: editingAddressData.is_default || false,
         }),
       });
@@ -856,6 +872,8 @@ const Checkout: React.FC = () => {
       barangay: '', 
       postal_code: '', 
       address: '', 
+      latitude: null,
+      longitude: null,
       is_default: addresses.length === 0 // First address is default
     });
     
@@ -973,6 +991,8 @@ const Checkout: React.FC = () => {
         postal_code: newAddressData.postal_code.trim(),
         address: `${newAddressData.address.trim()}, ${newAddressData.barangay}, ${newAddressData.city}, ${newAddressData.province}, ${newAddressData.region}`,
         address_line: newAddressData.address.trim(),
+        latitude: newAddressData.latitude,
+        longitude: newAddressData.longitude,
         is_default: newAddressData.is_default,
       };
       setAddresses(prev => [...prev, newAddress]);
@@ -1001,6 +1021,8 @@ const Checkout: React.FC = () => {
           barangay: newAddressData.barangay,
           postal_code: newAddressData.postal_code.trim(),
           address_line: newAddressData.address.trim(),
+          latitude: newAddressData.latitude,
+          longitude: newAddressData.longitude,
           is_default: newAddressData.is_default,
         }),
       });
@@ -1501,6 +1523,7 @@ const Checkout: React.FC = () => {
                             </div>
                             <div className="flex items-center gap-2 flex-shrink-0">
                               <button
+                                type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleEditAddress(address);
@@ -1512,7 +1535,20 @@ const Checkout: React.FC = () => {
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                 </svg>
                               </button>
+                              {(address.latitude == null || address.longitude == null) && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleEditAddress(address, true);
+                                  }}
+                                  className="px-2 py-1 text-sm font-semibold text-blue-700 hover:underline dark:text-blue-300"
+                                >
+                                  Repin address
+                                </button>
+                              )}
                               <button
+                                type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleDeleteAddress(address.id);
@@ -1562,7 +1598,7 @@ const Checkout: React.FC = () => {
               <>
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100000] pointer-events-auto" onClick={() => setShowAddAddressModal(false)} />
                 <div className="fixed inset-0 z-[100001] flex items-center justify-center p-4">
-                  <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl max-w-5xl w-full border border-gray-200 dark:border-gray-800 overflow-visible flex flex-col">
+                  <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl max-w-5xl w-full max-h-[90vh] border border-gray-200 dark:border-gray-800 flex flex-col">
                     <div className="border-b border-gray-200 dark:border-gray-800 px-4 py-3 flex items-center justify-between flex-shrink-0 sticky top-0 bg-white dark:bg-gray-900 z-10">
                       <h3 className="text-xl font-bold text-gray-900 dark:text-white">Add New Address</h3>
                       <button
@@ -1577,7 +1613,7 @@ const Checkout: React.FC = () => {
                       </button>
                     </div>
 
-                    <div className="overflow-visible flex-1 p-4">
+                    <div className="overflow-y-auto flex-1 p-4">
                       
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 overflow-visible form-content">
                       <div>
@@ -1722,6 +1758,27 @@ const Checkout: React.FC = () => {
                             Street address must be at least 5 characters
                           </p>
                         )}
+                      </div>
+
+                      <div ref={addressMapRef} className="mt-4">
+                        <p className="mb-2 text-sm text-gray-600 dark:text-gray-300">
+                          Pin the exact delivery entrance, then check the address details above.
+                        </p>
+                        <CustomerAddressMapPicker
+                          value={newAddressData.latitude !== null && newAddressData.longitude !== null
+                            ? { latitude: newAddressData.latitude, longitude: newAddressData.longitude }
+                            : null}
+                          onChange={(location) => setNewAddressData((prev) => ({
+                            ...prev,
+                            latitude: location.latitude,
+                            longitude: location.longitude,
+                            region: location.region,
+                            province: location.province,
+                            city: location.city,
+                            barangay: location.barangay,
+                            postal_code: location.postalCode,
+                          }))}
+                        />
                       </div>
 
                       <div className="flex items-center justify-between pt-2 mt-2">
@@ -1933,6 +1990,27 @@ const Checkout: React.FC = () => {
                             Street address must be at least 5 characters
                           </p>
                         )}
+                      </div>
+
+                      <div ref={addressMapRef} className="mt-4">
+                        <p className="mb-2 text-sm text-gray-600 dark:text-gray-300">
+                          Pin the exact delivery entrance, then check the address details above.
+                        </p>
+                        <CustomerAddressMapPicker
+                          value={editingAddressData.latitude != null && editingAddressData.longitude != null
+                            ? { latitude: editingAddressData.latitude, longitude: editingAddressData.longitude }
+                            : null}
+                          onChange={(location) => setEditingAddressData((prev: any) => ({
+                            ...prev,
+                            latitude: location.latitude,
+                            longitude: location.longitude,
+                            region: location.region,
+                            province: location.province,
+                            city: location.city,
+                            barangay: location.barangay,
+                            postal_code: location.postalCode,
+                          }))}
+                        />
                       </div>
                       
                       {/* Set as Default */}
