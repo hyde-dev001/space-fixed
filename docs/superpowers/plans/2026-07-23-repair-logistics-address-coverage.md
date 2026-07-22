@@ -4,7 +4,7 @@
 
 **Goal:** Add pinned-address coverage, separate intake/return delivery fees, and automatic shop-owned Logistics shipments to the existing Repair lifecycle while preserving walk-in and customer-arranged third-party delivery.
 
-**Architecture:** Keep `RepairRequest` as the source of truth and extend the existing `SourceShipmentService`, payment services, saved-address APIs, Leaflet picker, and Logistics shipment/proof system. Add one focused `RepairDeliveryService` for server-authoritative address snapshots, versions, quotes, locks, readiness checks, and proof lookup; do not create repair-only Logistics tables or duplicate dispatch logic.
+**Architecture:** Keep `RepairRequest` as the source of truth and extend the existing `SourceShipmentService`, payment services, saved-address APIs, Leaflet picker, and Logistics shipment/proof system. Add one focused `RepairDeliveryService` for server-authoritative address snapshots, versions, quotes, locks, readiness checks, and proof lookup; derive Retail/Repair module from each shipment's existing source type, and enforce homogeneous two-or-more-stop batch construction inside the existing Logistics services without new module columns or repair-only dispatch code.
 
 **Tech Stack:** Laravel 12, PHP 8.2+, MySQL/SQLite tests, Inertia React/TypeScript, Tailwind CSS, Leaflet, Vitest, PHPUnit.
 
@@ -57,7 +57,8 @@ The following is based on the current routes, controllers, React pages, and a pa
 - `app/Services/Logistics/SourceShipmentService.php` — coordinates, schedules, and concurrency-safe repair shipment creation.
 - `resources/js/Pages/UserSide/Repairs/Repair.tsx`, `repairShow.tsx`, `RepairProcess.tsx`, and `myRepairs.tsx` — coverage-aware booking, address confirmation, fees, and tracking.
 - `resources/js/Pages/ERP/repairer/JobOrdersRepair.tsx` and `resources/js/Pages/ShopOwner/Repairs/service management/JobOrdersRepair.tsx` — shared Logistics status and explicit handoff actions.
-- `resources/js/Pages/ERP/Logistics/Batches.tsx`, `Shipments.tsx`, and existing tracking UI only where source labels/details are missing.
+- `app/Models/Logistics/Shipment.php`, `app/Http/Controllers/Logistics/ErpLogisticsController.php`, `app/Http/Controllers/Api/Logistics/DeliveryBatchController.php`, `app/Services/Logistics/BatchSuggestionService.php`, and `app/Services/Logistics/BatchDispatchService.php` â€” derived module filtering plus homogeneous, minimum-two batch construction.
+- `resources/js/Pages/ERP/Logistics/Batches.tsx`, `Shipments.tsx`, their focused components/types, and existing tracking UI â€” module filters/badges, batch-selection guidance, and missing source details.
 - Warranty creation code and tests so linked jobs use the same snapshot/fee rules.
 
 ---
@@ -512,27 +513,191 @@ git add app/Services/RepairWarrantyService.php app/Http/Controllers/Api/RepairWa
 git commit -m "feat: apply repair logistics to warranty jobs"
 ```
 
-### Task 12: Polish shared Dispatcher/tracking labels and run the full gate
+### Task 12: Filter Dispatcher queues and enforce valid batch composition
 
 **Files:**
-- Modify: `app/Http/Controllers/Api/Logistics/ShipmentController.php`
+- Modify: `app/Models/Logistics/Shipment.php`
+- Modify: `app/Models/ShopOwner.php`
+- Modify: `app/Http/Controllers/Logistics/ErpLogisticsController.php`
+- Modify: `app/Http/Controllers/Api/Logistics/DeliveryBatchController.php`
+- Modify: `app/Services/Logistics/BatchDispatchService.php`
+- Modify: `app/Services/Logistics/BatchSuggestionService.php`
+- Modify: `resources/js/types/logistics.ts`
+- Modify: `resources/js/Pages/ERP/Logistics/Shipments.tsx`
+- Modify: `resources/js/Pages/ERP/Logistics/Batches.tsx`
+- Modify: `resources/js/Pages/ERP/Logistics/components/AvailableDeliveriesPanel.tsx`
+- Modify: `resources/js/Pages/ERP/Logistics/components/BatchCard.tsx`
+- Modify: `resources/js/Pages/ERP/Logistics/components/BatchStopRow.tsx`
+- Test: `tests/Feature/Logistics/LogisticsPageAccessTest.php`
+- Test: `tests/Feature/Logistics/DeliveryBatchApiTest.php`
+- Test: `tests/Feature/Logistics/BatchDispatchServiceTest.php`
+- Test: `tests/Feature/Logistics/BatchSuggestionServiceTest.php`
+- Test: `resources/js/Pages/ERP/Logistics/__tests__/Shipments.test.tsx`
+- Test: `resources/js/Pages/ERP/Logistics/__tests__/Batches.test.tsx`
+
+- [ ] **Step 1: Add failing backend module-filter tests**
+
+In `LogisticsPageAccessTest.php`, create Retail (`order`, `order_refund`) and Repair (`repair_request`) shipments for the same shop. Assert:
+
+```php
+$response = $this->actingAs($dispatcher, 'user')->get('/erp/logistics/shipments?module=repair');
+$response->assertInertia(fn (Assert $page) => $page
+    ->where('filters.module', 'repair')
+    ->has('shipments.data', 1)
+    ->where('shipments.data.0.source_type', 'repair_request'));
+```
+
+Also prove module composes with status, purpose, delivery window, and pagination; a mismatched module/purpose returns no cross-module rows; the Batches page applies its module filter to `batches`, `pool`, and `unscheduled`, while its date/window filter applies only to already-scheduled batches/pool and deliberately leaves null-window unscheduled deliveries available; `both (retail & repair)` shops see `all|retail|repair`; and retail-only/repair-only shops are forcibly scoped to their module even if a conflicting query string is supplied. Seed one legacy mixed-module batch: it remains visible under `All` with a neutral `Mixed (legacy)` label, but an all-legs constraint excludes it from both Retail and Repair filters so cross-module stops never leak into either filtered view.
+
+- [ ] **Step 2: Run the page tests to verify they fail**
+
+Run: `php artisan test tests/Feature/Logistics/LogisticsPageAccessTest.php`
+
+Expected: FAIL because `filters.module`, business-type scoping, and module-aware batch collections do not exist.
+
+- [ ] **Step 3: Add the smallest shared source-to-module mapping and backend filters**
+
+In `Shipment.php`, centralize the existing source mapping without persisting another field:
+
+```php
+public static function moduleForSourceType(string $sourceType): ?string
+{
+    return match ($sourceType) {
+        'order', 'order_refund' => 'retail',
+        'repair_request' => 'repair',
+        default => null,
+    };
+}
+
+public static function sourceTypesForModule(string $module): array
+{
+    return match ($module) {
+        'retail' => ['order', 'order_refund'],
+        'repair' => ['repair_request'],
+        default => [],
+    };
+}
+```
+
+Add one `ShopOwner::logisticsModules(): array` method that normalizes the stored values (`retail`, `repair`, `both`, and `both (retail & repair)`) to `['retail']`, `['repair']`, or `['retail', 'repair']`. This is the shared authorization boundary used by both page and API/service code.
+
+In `ErpLogisticsController`, accept `module=all|retail|repair` only for a shop whose `logisticsModules()` contains both values, and force a single-module shop to its permitted value. Add `window=all|morning|afternoon` to the Dispatcher Shipments and Batches queries. Apply `whereIn('source_type', Shipment::sourceTypesForModule($module))` before shipment pagination and use `whereHas('legs', fn ($legs) => $legs->where('delivery_window', $window))` for its window filter.
+
+For Batches, apply module using both `whereHas` for the selected source types and `whereDoesntHave` for every other/unknown source type; this all-legs rule prevents a legacy mixed batch from appearing under Retail or Repair. Apply the selected date/window at the query level to already-scheduled batches and pool legs. Apply module, but not date/window, to `unscheduled`: those legs have no selected slot yet and must remain available for the dispatcher to schedule into the active slot. `All` keeps legacy batches readable and labels a batch whose loaded legs derive to multiple/unknown modules as `Mixed (legacy)`. Pass `filters.module`, `filters.window`, `availableModules`, and `showModuleFilter`; do not filter already-assigned Rider work or customer historical tracking pages.
+
+- [ ] **Step 4: Add failing API/service tests for batch invariants**
+
+Update existing happy-path fixtures in `DeliveryBatchApiTest.php` to use two eligible legs, then add tests that assert HTTP 422 and unchanged rows for:
+
+```php
+$this->postJson('/api/logistics/batches', ['leg_ids' => [$retailLeg->id], /* date/window */])
+    ->assertJsonValidationErrors('leg_ids');
+
+$this->postJson('/api/logistics/batches', ['leg_ids' => [$retailLeg->id, $repairLeg->id], /* date/window */])
+    ->assertUnprocessable();
+```
+
+In the service tests, cover `createDraft`, `replaceStops`, and `restore`: fewer than two, mixed-module legs, or a homogeneous module disallowed by the shop's `business_type` must fail before settings creation, batch creation, leg assignment, stop snapshot/event creation, or other mutation. Also prove `removeStop` may reduce a valid two-stop draft to one, that the remaining batch can still be offered/operated, and that pre-existing historical single-stop batches remain readable.
+
+Preserve the existing delivery-scheduling endpoint at `min:1`: scheduling one leg is not creating a batch and is also used from the Shipments page. It must still atomically reject an unknown source or any leg whose derived module is not in `ShopOwner::logisticsModules()` before settings or leg mutation; a `both` shop may schedule Retail and Repair legs together because homogeneity is enforced only when a batch is created. Add a regression where the Batches UI selects one already-scheduled plus one unscheduled compatible leg; scheduling the one unscheduled leg succeeds, then `createDraft` receives and validates the full two-leg selection.
+
+In `DeliveryBatchApiTest.php`, also cover `GET /api/logistics/batches` and suggestions with `module=all|retail|repair`: both-shops may select either module; a single-module shop cannot retrieve or suggest the other module even with a crafted request.
+
+In `BatchSuggestionServiceTest.php`, prove Retail and Repair legs never appear in the same suggestion, a shop-disallowed module is omitted, and no suggestion is returned with fewer than two legs.
+
+- [ ] **Step 5: Run batch tests to verify they fail**
+
+Run: `php artisan test tests/Feature/Logistics/DeliveryBatchApiTest.php tests/Feature/Logistics/BatchDispatchServiceTest.php tests/Feature/Logistics/BatchSuggestionServiceTest.php`
+
+Expected: FAIL because batch store/update validation uses `min:1`, suggestions share one source pool, and batch construction methods do not reject mixed modules.
+
+- [ ] **Step 6: Enforce the batch rules inside the transaction boundary**
+
+Change `leg_ids` validation to `min:2` for batch store and full stop replacement. Keep the delivery-scheduling endpoint at `min:1`, because it only assigns a slot and does not create a batch; `createDraft` remains authoritative over the complete selected set after any unscheduled subset is scheduled. Move scheduling's settings lookup/date validation into its existing database transaction, load and lock every requested leg with `shipment`, and reject unknown or shop-disallowed derived modules before `firstOrCreate()` or leg updates. Do not require scheduled legs to share a module. Keep `remove` unchanged so an operational removal may leave one stop. Make the batch API index/suggestions accept a validated module, resolve it against `ShopOwner::logisticsModules()`, and apply the same all-legs module constraint used by the Inertia page.
+
+After locking and loading legs with `shipment`, but before settings creation or any mutation, make `BatchDispatchService::createDraft`, `replaceStops`, and `restore` enforce:
+
+```php
+if ($legs->count() < 2) {
+    throw ValidationException::withMessages(['legs' => 'A batch requires at least two deliveries.']);
+}
+
+$modules = $legs->map(fn ($leg) => Shipment::moduleForSourceType($leg->shipment->source_type));
+if ($modules->contains(null) || $modules->unique()->count() !== 1) {
+    throw ValidationException::withMessages(['legs' => 'Retail and Repair deliveries cannot share a batch.']);
+}
+
+if (!in_array($modules->first(), $shop->logisticsModules(), true)) {
+    throw ValidationException::withMessages(['legs' => 'This shop cannot dispatch that delivery module.']);
+}
+```
+
+For `replaceStops`/`restore`, resolve the batch's locked `ShopOwner` and apply the same allowed-module check. Load `shipment` in `replaceStops`, and validate restored snapshot legs before reattaching any of them. Do not add a database module column, split batch tables, or block later `removeStop`/operational cancellation from leaving one remaining stop.
+
+Partition `BatchSuggestionService` candidates by `Shipment::moduleForSourceType(...)`, discard unknown or shop-disallowed modules, apply the requested module when present, route each group independently, cap it to the rider capacity, and discard a candidate when its final `leg_ids` count is below two.
+
+- [ ] **Step 7: Run focused backend tests**
+
+Run: `php artisan test tests/Feature/Logistics/LogisticsPageAccessTest.php tests/Feature/Logistics/DeliveryBatchApiTest.php tests/Feature/Logistics/BatchDispatchServiceTest.php tests/Feature/Logistics/BatchSuggestionServiceTest.php`
+
+Expected: PASS; invalid requests leave batches, legs, assignments, events, and scheduling fields unchanged.
+
+- [ ] **Step 8: Add failing Dispatcher UI tests**
+
+In `Shipments.test.tsx`, assert a `both` shop sees the Module selector, changing it requests the same page with `module=repair` while retaining compatible status/purpose filters, Repair exposes only Repair Pickup/Return purposes, and a single-module shop does not see a redundant selector.
+
+In `Batches.test.tsx`, assert a `both` shop can switch `All|Retail|Repair` and sends the selected module/window to the backend while single-module shops hide and force the selector. Assert unscheduled/null-window deliveries remain selectable for the active slot; Retail/Repair badges appear on batch cards/stops; a legacy mixed batch uses `Mixed (legacy)`; selecting a leg disables incompatible-module legs; the create action stays disabled at zero or one selected leg with `Select at least 2 deliveries`; one scheduled plus one unscheduled leg schedules only the unscheduled subset and then creates the batch from both IDs; and a backend validation message remains visible if a stale or crafted request is rejected.
+
+- [ ] **Step 9: Run frontend tests to verify they fail**
+
+Run: `npm run test:frontend -- resources/js/Pages/ERP/Logistics/__tests__/Shipments.test.tsx resources/js/Pages/ERP/Logistics/__tests__/Batches.test.tsx`
+
+Expected: FAIL because the Module selector/badges and two-stop selection guidance do not exist.
+
+- [ ] **Step 10: Implement the minimal Dispatcher controls**
+
+Add `LogisticsModule = 'retail' | 'repair'` and derive the display module from `shipment.source_type` in the existing TypeScript types/helpers. Use one compact `Module` selector on each page only when `showModuleFilter` is true, and make the existing Batches date/window controls reload backend-filtered scheduled data while keeping unscheduled deliveries in the picker. Add a morning/afternoon Dispatcher window filter to Shipments. Keep the existing Purpose filter, but show only purposes valid for the selected/scoped module. Render a small Retail/Repair badge on shipment rows, batch cards, and stops, with `Mixed (legacy)` only for an old mixed/unknown batch shown under All.
+
+In `AvailableDeliveriesPanel`, once the first delivery is selected, disable deliveries from the other module with an explanatory label. Disable only the batch-creation action until at least two compatible deliveries are selected; do not disable independent single-delivery scheduling on the Shipments page. When the selected set mixes scheduled and unscheduled legs, keep the existing two-stage save: schedule the unscheduled subset (which may contain one leg), then create the draft with every selected ID. Treat these as usability guidance only; display server 422 errors because backend validation remains authoritative.
+
+- [ ] **Step 11: Run all focused tests and commit**
+
+Run: `php artisan test tests/Feature/Logistics/LogisticsPageAccessTest.php tests/Feature/Logistics/DeliveryBatchApiTest.php tests/Feature/Logistics/BatchDispatchServiceTest.php tests/Feature/Logistics/BatchSuggestionServiceTest.php`
+
+Run: `npm run test:frontend -- resources/js/Pages/ERP/Logistics/__tests__/Shipments.test.tsx resources/js/Pages/ERP/Logistics/__tests__/Batches.test.tsx`
+
+```bash
+git add app/Models/Logistics/Shipment.php app/Models/ShopOwner.php app/Http/Controllers/Logistics/ErpLogisticsController.php app/Http/Controllers/Api/Logistics/DeliveryBatchController.php app/Services/Logistics/BatchDispatchService.php app/Services/Logistics/BatchSuggestionService.php resources/js/types/logistics.ts resources/js/Pages/ERP/Logistics/Shipments.tsx resources/js/Pages/ERP/Logistics/Batches.tsx resources/js/Pages/ERP/Logistics/components tests/Feature/Logistics resources/js/Pages/ERP/Logistics/__tests__
+git commit -m "feat: filter logistics modules and validate batches"
+```
+
+### Task 13: Polish shared Dispatcher/tracking labels and run the full gate
+
+**Files:**
+- Modify: `app/Http/Controllers/Logistics/ErpLogisticsController.php`
+- Modify: `app/Services/Logistics/CustomerTrackingService.php`
 - Modify: `resources/js/Pages/ERP/Logistics/Batches.tsx`
 - Modify: `resources/js/Pages/ERP/Logistics/Shipments.tsx`
 - Modify: `resources/js/Pages/UserSide/Tracking/ShipmentTracking.tsx`
+- Test: `tests/Feature/Logistics/LogisticsPageAccessTest.php`
+- Test: `tests/Feature/Logistics/CustomerTrackingTest.php`
 - Test: `resources/js/Pages/ERP/Logistics/__tests__/Batches.test.tsx`
 - Test: `resources/js/Pages/ERP/Logistics/__tests__/Shipments.test.tsx`
+- Test: `resources/js/Pages/UserSide/Tracking/__tests__/ShipmentTracking.test.tsx`
 
 - [ ] **Step 1: Add one failing display test**
 
-Require `Repair Pickup` / `Repair Return`, repair request number, customer, and shoe summary. Keep the current generic shipment/batch actions.
+Require `Repair Pickup` / `Repair Return`, repair request number, customer, and shoe summary in ERP shipment/batch props and the customer tracking payload. Keep the current generic shipment/batch actions.
 
 - [ ] **Step 2: Add source presentation only**
 
-Extend serializer labels/data; do not fork Dispatcher pages or add repair-only actions.
+Have `ErpLogisticsController` eager-load/present the repair source summary needed by Shipments/Batches, and extend `CustomerTrackingService::payload()` for customer tracking. Do not put presentation work in `Api\Logistics\ShipmentController`, fork Dispatcher pages, or add repair-only actions.
 
 - [ ] **Step 3: Run focused frontend tests**
 
-Run: `npm run test:frontend -- resources/js/Pages/ERP/Logistics/__tests__/Batches.test.tsx resources/js/Pages/ERP/Logistics/__tests__/Shipments.test.tsx resources/js/Pages/UserSide/Repairs/__tests__ resources/js/Pages/ERP/repairer/__tests__/JobOrdersRepair.logistics.test.tsx`
+Run: `php artisan test tests/Feature/Logistics/LogisticsPageAccessTest.php tests/Feature/Logistics/CustomerTrackingTest.php`
+
+Run: `npm run test:frontend -- resources/js/Pages/ERP/Logistics/__tests__/Batches.test.tsx resources/js/Pages/ERP/Logistics/__tests__/Shipments.test.tsx resources/js/Pages/UserSide/Tracking/__tests__/ShipmentTracking.test.tsx resources/js/Pages/UserSide/Repairs/__tests__ resources/js/Pages/ERP/repairer/__tests__/JobOrdersRepair.logistics.test.tsx`
 
 - [ ] **Step 4: Run full backend regression**
 
@@ -564,7 +729,7 @@ Use a clean test repair for each method:
 - [ ] **Step 7: Commit final UI/regression adjustments**
 
 ```bash
-git add app/Http/Controllers/Api/Logistics/ShipmentController.php resources/js/Pages/ERP/Logistics/Batches.tsx resources/js/Pages/ERP/Logistics/Shipments.tsx resources/js/Pages/UserSide/Tracking/ShipmentTracking.tsx resources/js/Pages/ERP/Logistics/__tests__
+git add app/Http/Controllers/Logistics/ErpLogisticsController.php app/Services/Logistics/CustomerTrackingService.php resources/js/Pages/ERP/Logistics/Batches.tsx resources/js/Pages/ERP/Logistics/Shipments.tsx resources/js/Pages/UserSide/Tracking/ShipmentTracking.tsx tests/Feature/Logistics/LogisticsPageAccessTest.php tests/Feature/Logistics/CustomerTrackingTest.php resources/js/Pages/ERP/Logistics/__tests__ resources/js/Pages/UserSide/Tracking/__tests__
 git commit -m "feat: label repair logistics across tracking"
 ```
 
