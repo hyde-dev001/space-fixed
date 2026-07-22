@@ -672,7 +672,8 @@ export const PHILIPPINE_LOCATIONS: ProvinceOption[] = [
         "City of Dasmariñas"
       ],
       "General Trias City": [
-        "City of General Trias"
+        "City of General Trias",
+        "General Trias"
       ],
       "Imus City": [
         "City of Imus"
