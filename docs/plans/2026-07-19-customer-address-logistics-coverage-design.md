@@ -25,10 +25,13 @@ Let customers pin delivery addresses with Leaflet and use those saved coordinate
 - `UserAddress.latitude` and `UserAddress.longitude` for the customer pin.
 - Existing customer address create/update endpoints and server-side coordinate validation.
 - Existing Leaflet dependency and the interaction pattern in Shop Address Settings.
+- One Laravel Nominatim proxy shared by registration, checkout, payment, and Shop Address Settings so browser clients do not call the public geocoder directly.
 - `DeliveryScheduleService` Haversine calculation and logistics setting lookup.
 - Existing third-party shipping estimate behavior as the fallback option.
 
 No new mapping package, address table, or coverage service is required.
+
+The shared geocoding proxy applies bounded inputs, caching, per-client throttling, and a global upstream request interval. It does not participate in the final coverage decision; saved shop and customer coordinates remain authoritative.
 
 ## Customer Address Flow
 

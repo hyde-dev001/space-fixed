@@ -3,7 +3,7 @@ import { Head, Link, usePage, router } from '@inertiajs/react';
 import { route } from 'ziggy-js';
 import Swal from '@/Pages/UserSide/Shared/UserModal';
 import Navigation from '../Shared/Navigation';
-import AddToCartButton from '../../../Components/CartActions';
+import AddToCartButton from '../../../components/CartActions';
 import Virtual3DShowroom from '../../../components/Virtual3DShowroom';
 import { CartGuestAddAttemptEvent, addCartGuestAddAttemptListener, removeCartGuestAddAttemptListener } from '../../../types/cart-events';
 import { useCart } from '../../../contexts/CartContext';

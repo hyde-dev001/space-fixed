@@ -450,8 +450,9 @@ const ShopSetting: React.FC = () => {
 	const reverseGeocode = async (lat: string | number, lng: string | number): Promise<string | null> => {
 		try {
 			const res = await fetch(
-				`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
+				`/api/address/geocode?latitude=${lat}&longitude=${lng}`,
 			);
+			if (!res.ok) throw new Error('Address lookup failed');
 			const data = await res.json();
 			return typeof data?.display_name === 'string' && data.display_name.trim() !== '' ? data.display_name : null;
 		} catch {
@@ -1583,8 +1584,9 @@ const ShopSetting: React.FC = () => {
 		setAddressResults([]);
 		try {
 			const res = await fetch(
-				`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(addressSearch)}&format=json&limit=5&countrycodes=ph`,
+				`/api/address/geocode?q=${encodeURIComponent(addressSearch)}&limit=5`,
 			);
+			if (!res.ok) throw new Error('Address search failed');
 			const data = await res.json();
 			setAddressResults(data);
 		} catch {

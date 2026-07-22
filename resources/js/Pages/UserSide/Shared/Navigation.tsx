@@ -5,7 +5,7 @@ import { route } from 'ziggy-js';
 import { useCart } from '../../../contexts/CartContext';
 import { dispatchCartAddedEvent } from '../../../types/cart-events';
 import NotificationCenter from '../../../components/header/NotificationCenter';
-import NotificationBell from '../../../Components/common/NotificationBell';
+import NotificationBell from '../../../components/common/NotificationBell';
 import { useBadgeCounts } from '../../../hooks/useBadgeCounts';
 
 type SearchSuggestionProduct = {

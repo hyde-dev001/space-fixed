@@ -2,14 +2,15 @@
 
 namespace App\Services;
 
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class AddressCoordinateService
 {
+    public function __construct(private readonly NominatimService $nominatim) {}
+
     public function geocode(array $address): ?array
     {
-        $queries = array_unique([implode(', ', array_filter([
+        $query = implode(', ', array_filter([
             $address['address_line'] ?? $address['shipping_address_line'] ?? null,
             $address['barangay'] ?? $address['shipping_barangay'] ?? null,
             $address['city'] ?? $address['shipping_city'] ?? null,
@@ -17,24 +18,23 @@ class AddressCoordinateService
             $address['region'] ?? $address['shipping_region'] ?? null,
             $address['postal_code'] ?? $address['shipping_postal_code'] ?? null,
             'Philippines',
-        ])), implode(', ', array_filter([
+        ]));
+        $localityQuery = implode(', ', array_filter([
             $address['city'] ?? $address['shipping_city'] ?? null,
             $address['province'] ?? $address['region'] ?? $address['shipping_region'] ?? null,
             $address['postal_code'] ?? $address['shipping_postal_code'] ?? null,
             'Philippines',
-        ]))]);
+        ]));
 
         try {
-            foreach ($queries as $query) {
-                $result = Http::timeout(10)->withHeaders([
-                    'Accept' => 'application/json',
-                    'User-Agent' => 'SoleSpace/1.0',
-                ])->get('https://nominatim.openstreetmap.org/search', [
-                    'q' => $query, 'format' => 'jsonv2', 'limit' => 1,
-                    'countrycodes' => 'ph', 'addressdetails' => 0,
-                ])->json();
+            $result = $this->nominatim->search($query, false, 1, true);
+            if (isset($result[0])) {
+                return ['latitude' => (float) $result[0]['lat'], 'longitude' => (float) $result[0]['lon']];
+            }
 
-                if (isset($result[0]['lat'], $result[0]['lon'])) {
+            if ($localityQuery !== $query) {
+                $result = $this->nominatim->search($localityQuery, false, 1, true);
+                if (isset($result[0])) {
                     return ['latitude' => (float) $result[0]['lat'], 'longitude' => (float) $result[0]['lon']];
                 }
             }

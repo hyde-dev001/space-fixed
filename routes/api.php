@@ -14,6 +14,7 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\FinancialReportController;
+use App\Http\Controllers\UserSide\AddressGeocodingController;
 // use App\Http\Controllers\Api\Finance\BudgetController;
 use App\Http\Controllers\Api\PriceChangeRequestController;
 use Illuminate\Http\Request;
@@ -22,6 +23,8 @@ use Illuminate\Support\Facades\Auth;
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth:web');
+Route::get('/address/geocode', AddressGeocodingController::class)
+    ->middleware(['web', 'throttle:10,1,nominatim:']);
 
 /**
  * PayMongo Webhook - Must be accessible without authentication

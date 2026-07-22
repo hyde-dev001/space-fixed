@@ -30,6 +30,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\Rule;
 
 class CheckoutController extends Controller
 {
@@ -804,7 +805,11 @@ class CheckoutController extends Controller
                 'shipping_address' => 'required|string|max:500',
                 'payment_method' => 'nullable|string|max:50',
                 // Structured address fields
-                'address_id' => 'nullable|integer|exists:user_addresses,id',
+                'address_id' => [
+                    'nullable',
+                    'integer',
+                    Rule::exists('user_addresses', 'id')->where('user_id', $user->id),
+                ],
                 'shipping_region' => 'nullable|string|max:100',
                 'shipping_province' => 'nullable|string|max:100',
                 'shipping_city' => 'nullable|string|max:100',

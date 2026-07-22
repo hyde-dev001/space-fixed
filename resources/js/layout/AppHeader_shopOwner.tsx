@@ -4,7 +4,7 @@ import { useSidebar } from "../context/SidebarContext";
 import { ThemeToggleButton } from "../components/common/ThemeToggleButton";
 import NotificationCenter from "../components/header/NotificationCenter";
 import ShopOwnerDropdown from "../components/header/ShopOwnerDropdown";
-import NotificationBell from "../Components/common/NotificationBell";
+import NotificationBell from "../components/common/NotificationBell";
 
 const AppHeader_shopOwner: React.FC = () => {
   const [isApplicationMenuOpen, setApplicationMenuOpen] = useState(false);
