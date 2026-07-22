@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Head, Link, usePage, router } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import Swal from '@/Pages/UserSide/Shared/UserModal';
@@ -396,6 +397,11 @@ const Payment: React.FC = () => {
           shipping_address_line: addr.address_line || null,
         }
       : prev);
+  };
+
+  const restoreSelectedAddress = () => {
+    const selectedAddress = userAddresses.find((address) => address.id === checkoutData?.address_id);
+    if (selectedAddress) applySelectedAddress(selectedAddress);
   };
 
   const openAddressSheet = async () => {
@@ -2515,13 +2521,19 @@ const Payment: React.FC = () => {
               </div>
             )}
 
-            {isAddressSheetOpen && (
-              <div className="fixed inset-0 z-40 bg-white overflow-y-auto">
+            {isAddressSheetOpen && createPortal((
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="address-sheet-title"
+                className="fixed inset-0 z-[100001] overflow-y-auto bg-white xl:left-auto xl:w-[min(42rem,100%)] xl:border-l xl:border-gray-200 xl:shadow-2xl"
+              >
                 <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-4 flex items-center justify-between">
                   <button
                     type="button"
                     onClick={() => {
                       if (addressSheetMode === 'form') {
+                        restoreSelectedAddress();
                         setEditingAddressId(null);
                         setAddressSheetMode('list');
                         return;
@@ -2533,7 +2545,7 @@ const Payment: React.FC = () => {
                   >
                     &larr;
                   </button>
-                  <h2 className="text-2xl font-semibold text-black">{addressSheetMode === 'form' ? (editingAddressId ? 'Edit address' : 'Add address') : 'Your addresses'}</h2>
+                  <h2 id="address-sheet-title" className="text-2xl font-semibold text-black">{addressSheetMode === 'form' ? (editingAddressId ? 'Edit address' : 'Add address') : 'Your addresses'}</h2>
                   <div className="w-6" />
                 </div>
 
@@ -2784,7 +2796,7 @@ const Payment: React.FC = () => {
                 )}
 
               </div>
-            )}
+            ), document.body)}
           </div>
 
           <div className="hidden xl:grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
@@ -2810,7 +2822,18 @@ const Payment: React.FC = () => {
 
               {/* Delivery Section */}
               <div className="mb-10">
-                {!isPremiumPayment && <h2 className="text-xl font-bold text-black mb-5">Delivery</h2>}
+                {!isPremiumPayment && (
+                  <div className="mb-5 flex items-center justify-between gap-4">
+                    <h2 className="text-xl font-bold text-black">Delivery</h2>
+                    <button
+                      type="button"
+                      onClick={openAddressSheet}
+                      className="rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-black transition hover:bg-gray-50"
+                    >
+                      Manage addresses
+                    </button>
+                  </div>
+                )}
                 <div className="space-y-5">
                   {/* First Name & Last Name */}
                   <div className="grid grid-cols-2 gap-5">

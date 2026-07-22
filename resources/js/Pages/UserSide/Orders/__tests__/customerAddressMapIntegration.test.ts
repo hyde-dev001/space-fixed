@@ -38,6 +38,8 @@ describe('customer address map integration', () => {
   it('preserves street-only address lines when the picker returns a full display address', () => {
     expect(checkoutSource).not.toContain('address: location.displayName');
     expect(checkoutSource).not.toContain('address_line: location.displayName');
+    expect(checkoutSource).toContain('shipping_address_line: selectedAddress?.address_line || null');
+    expect(checkoutSource).not.toContain('shipping_address_line: selectedAddress?.address || null');
     expect(paymentSource).not.toContain('setShippingAddressLine(location.displayName)');
   });
 
@@ -47,6 +49,20 @@ describe('customer address map integration', () => {
     expect(paymentSource).toContain('Repin address');
     expect(paymentSource).toContain('addr.latitude == null || addr.longitude == null');
     expect(paymentSource).toContain('setIsAddressSheetOpen(true)');
+  });
+
+  it('makes checkout saved-address controls reachable at every screen size', () => {
+    expect(checkoutSource).toContain("import { createPortal } from 'react-dom';");
+    expect(checkoutSource).toContain('setShowAddressSelector(true)');
+    expect(checkoutSource).toContain('Manage delivery address');
+    expect(checkoutSource).toContain('showAddressSelector && createPortal(');
+    expect(checkoutSource).toContain('showAddAddressModal && createPortal(');
+    expect(checkoutSource).toContain('editingAddressId !== null && editingAddressData && createPortal(');
+  });
+
+  it('preserves the selected checkout address when saved addresses reload', () => {
+    expect(checkoutSource).toContain('formattedAddresses.find((address: any) => address.id === selectedAddressId)');
+    expect(checkoutSource).toContain('selectedAddress || defaultAddress');
   });
 
   it('keeps payment address saving recoverable and announced inline', () => {

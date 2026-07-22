@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Head, Link, usePage, router } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import Swal from '@/Pages/UserSide/Shared/UserModal';
@@ -99,6 +100,15 @@ const Checkout: React.FC = () => {
   };
 
   const subtotal = items.filter(item => selectedItems.has(item.id)).reduce((s, it) => s + it.price * it.qty, 0);
+  const selectedCheckoutAddress = addresses.find((address) => address.id === selectedAddressId);
+  const selectedCheckoutAddressText = selectedCheckoutAddress
+    ? selectedCheckoutAddress.full_address || selectedCheckoutAddress.address || [
+        selectedCheckoutAddress.address_line,
+        selectedCheckoutAddress.barangay,
+        selectedCheckoutAddress.city,
+        selectedCheckoutAddress.province,
+      ].filter(Boolean).join(', ')
+    : '';
 
   const shopGroups = useMemo<ShopGroup[]>(() => {
     const groups = new Map<string, ShopGroup>();
@@ -606,10 +616,11 @@ const Checkout: React.FC = () => {
         }));
         setAddresses(formattedAddresses);
         
-        // Auto-select default address
+        // Preserve the current selection when edits refresh the address list.
+        const selectedAddress = formattedAddresses.find((address: any) => address.id === selectedAddressId);
         const defaultAddress = formattedAddresses.find((a: any) => a.is_default);
-        if (defaultAddress) {
-          handleSelectAddress(defaultAddress);
+        if (selectedAddress || defaultAddress) {
+          handleSelectAddress(selectedAddress || defaultAddress);
         }
       }
     } catch (error) {
@@ -1163,7 +1174,7 @@ const Checkout: React.FC = () => {
       shipping_city: selectedAddress?.city || null,
       shipping_barangay: selectedAddress?.barangay || null,
       shipping_postal_code: selectedAddress?.postal_code || null,
-      shipping_address_line: selectedAddress?.address || null,
+      shipping_address_line: selectedAddress?.address_line || null,
       order_note: orderNote,
       payment_method: 'paymongo',
       // Store selected item IDs so we know which items to remove after successful payment
@@ -1228,6 +1239,25 @@ const Checkout: React.FC = () => {
               className={`inline-flex items-center rounded-md px-4 py-2 text-sm font-semibold text-white ${isCreatingRecoverySession ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-black'}`}
             >
               {isCreatingRecoverySession ? 'Creating...' : 'Create New Payment'}
+            </button>
+          </div>
+        )}
+
+        {items.length > 0 && (
+          <div className="mb-6 flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-black">Delivery address</p>
+              <p className="mt-1 truncate text-sm text-gray-600">
+                {selectedCheckoutAddressText || 'Choose or add a pinned address for delivery coverage.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowAddressSelector(true)}
+              disabled={addressesLoading}
+              className="shrink-0 rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-black transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {addressesLoading ? 'Loading addresses...' : 'Manage delivery address'}
             </button>
           </div>
         )}
@@ -1475,7 +1505,7 @@ const Checkout: React.FC = () => {
             <aside>
 
             {/* Address Selection Modal */}
-            {showAddressSelector && (
+            {showAddressSelector && createPortal((
               <>
                 {/* Backdrop */}
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100000] pointer-events-auto" onClick={() => setShowAddressSelector(false)} />
@@ -1591,10 +1621,10 @@ const Checkout: React.FC = () => {
                   </div>
                 </div>
               </>
-            )}
+            ), document.body)}
 
             {/* Add Address Modal */}
-            {showAddAddressModal && (
+            {showAddAddressModal && createPortal((
               <>
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100000] pointer-events-auto" onClick={() => setShowAddAddressModal(false)} />
                 <div className="fixed inset-0 z-[100001] flex items-center justify-center p-4">
@@ -1817,10 +1847,10 @@ const Checkout: React.FC = () => {
                   </div>
                 </div>
               </>
-            )}
+            ), document.body)}
 
             {/* Edit Address Modal */}
-            {editingAddressId !== null && editingAddressData && (
+            {editingAddressId !== null && editingAddressData && createPortal((
               <>
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100000] pointer-events-auto" onClick={() => setEditingAddressId(null)} />
                 <div className="fixed inset-0 z-[100001] flex items-center justify-center p-4">
@@ -2062,7 +2092,7 @@ const Checkout: React.FC = () => {
                   </div>
                 </div>
               </>
-            )}
+            ), document.body)}
             
             <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm sticky top-32">
               <div className="flex items-baseline justify-between mb-4">

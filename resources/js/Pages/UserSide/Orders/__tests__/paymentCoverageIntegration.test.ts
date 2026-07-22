@@ -49,6 +49,23 @@ describe('payment shop-owned coverage integration', () => {
     expect(paymentSource.match(/requestShippingEstimate\(/g)?.length || 0).toBeGreaterThanOrEqual(2);
   });
 
+  it('makes the saved-address manager reachable on desktop', () => {
+    const desktopCheckout = paymentSource.slice(paymentSource.indexOf('hidden xl:grid'));
+
+    expect(paymentSource).toContain("import { createPortal } from 'react-dom';");
+    expect(paymentSource).toContain('isAddressSheetOpen && createPortal(');
+    expect(desktopCheckout).toContain('onClick={openAddressSheet}');
+    expect(desktopCheckout).toContain('Manage addresses');
+    expect(paymentSource).toContain('role="dialog"');
+    expect(paymentSource).toContain('aria-modal="true"');
+    expect(paymentSource).toContain('aria-labelledby="address-sheet-title"');
+  });
+
+  it('restores the selected address when an edit draft is cancelled', () => {
+    expect(paymentSource).toContain('const restoreSelectedAddress = () =>');
+    expect(paymentSource).toMatch(/addressSheetMode === 'form'[\s\S]*restoreSelectedAddress\(\);[\s\S]*setAddressSheetMode\('list'\)/);
+  });
+
   it('saves the address then requires a fresh saved-id estimate before creating the order', () => {
     const saveIndex = paymentSource.indexOf('const savedAddressId = await saveAddressToAccount()');
     const finalEstimateIndex = paymentSource.indexOf('await requestShippingEstimate(savedAddressId)');
