@@ -4,6 +4,7 @@ import Navigation from '../Shared/Navigation';
 import { useCart } from '../../../contexts/CartContext';
 import NotificationBell from '../../../components/common/NotificationBell';
 import { useBadgeCounts } from '../../../hooks/useBadgeCounts';
+import CustomerAddressManager, { type CustomerAddress } from '@/components/address/CustomerAddressManager';
 
 interface Shop {
   id: number;
@@ -20,6 +21,36 @@ interface Shop {
 
 interface Props {
   shops: Shop[];
+}
+
+type CoverageQuote = {
+  status: 'loading' | 'ready' | 'error';
+  available?: boolean;
+  reason?: string | null;
+  distance_km?: number | null;
+  fee?: number | null;
+};
+
+function coverageText(quote?: CoverageQuote): string {
+  if (!quote || quote.status === 'loading') return 'Checking coverage...';
+  if (quote.status === 'error') return 'Coverage unavailable';
+  if (quote.available) {
+    const details = [
+      quote.distance_km != null ? `${quote.distance_km} km` : null,
+      quote.fee != null ? `₱${Number(quote.fee).toLocaleString('en-PH')}` : null,
+    ].filter(Boolean);
+    return `Within coverage${details.length ? ` · ${details.join(' · ')}` : ''}`;
+  }
+  if (quote.reason === 'address_needs_pin') return 'Pin required';
+  if (quote.reason === 'outside_coverage') return 'Outside coverage';
+  return 'Shop delivery unavailable';
+}
+
+function coverageClass(quote?: CoverageQuote): string {
+  if (quote?.status === 'ready' && quote.available) return 'bg-green-50 text-green-800 border-green-200';
+  if (quote?.status === 'ready' && quote.reason === 'outside_coverage') return 'bg-amber-50 text-amber-800 border-amber-200';
+  if (quote?.status === 'ready' && quote.reason === 'address_needs_pin') return 'bg-orange-50 text-orange-800 border-orange-200';
+  return 'bg-gray-50 text-gray-700 border-gray-200';
 }
 
 // Haversine formula — returns distance in km
@@ -59,6 +90,8 @@ const Repair: React.FC<Props> = ({ shops }) => {
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [locating, setLocating] = useState(false);
   const [locError, setLocError] = useState<string | null>(null);
+  const [selectedAddress, setSelectedAddress] = useState<CustomerAddress | null>(null);
+  const [coverageByShop, setCoverageByShop] = useState<Record<number, CoverageQuote>>({});
   const sortMenuRef = useRef<HTMLDivElement | null>(null);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
@@ -107,8 +140,56 @@ const Repair: React.FC<Props> = ({ shops }) => {
   }, []);
 
   useEffect(() => {
-    requestLocation();
-  }, [requestLocation]);
+    if (!isAuthenticated) requestLocation();
+  }, [isAuthenticated, requestLocation]);
+
+  const initialAddressId = useMemo(() => {
+    const value = new URLSearchParams(window.location.search).get('address_id');
+    return value ? Number(value) || null : null;
+  }, []);
+
+  const handleAddressSelect = useCallback((address: CustomerAddress) => {
+    setSelectedAddress(address);
+    if (address.latitude !== null && address.longitude !== null) {
+      setUserCoords({ lat: address.latitude, lng: address.longitude });
+      setSortBy('near_me');
+      setLocError(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!selectedAddress) {
+      setCoverageByShop({});
+      return;
+    }
+
+    const controller = new AbortController();
+    setCoverageByShop(Object.fromEntries(shops.map((shop) => [shop.id, { status: 'loading' }])));
+
+    Promise.all(shops.map(async (shop): Promise<[number, CoverageQuote]> => {
+      try {
+        const response = await fetch(`/api/repair/shops/${shop.id}/delivery-quote?address_id=${selectedAddress.id}`, {
+          credentials: 'include',
+          headers: { Accept: 'application/json' },
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error('Coverage request failed');
+        const quote = await response.json();
+        return [shop.id, { status: 'ready', ...quote }];
+      } catch (error) {
+        if ((error as Error).name === 'AbortError') throw error;
+        return [shop.id, { status: 'error' }];
+      }
+    }))
+      .then((entries) => setCoverageByShop(Object.fromEntries(entries)))
+      .catch((error) => {
+        if ((error as Error).name !== 'AbortError') {
+          setCoverageByShop(Object.fromEntries(shops.map((shop) => [shop.id, { status: 'error' }])));
+        }
+      });
+
+    return () => controller.abort();
+  }, [selectedAddress, shops]);
 
   const handleSortSelect = (value: string) => {
     if (value === 'near_me') {
@@ -388,6 +469,12 @@ const Repair: React.FC<Props> = ({ shops }) => {
             Browse our curated collection of repair shops. Click a shop card to view details and request service.
           </p>
 
+          {isAuthenticated && (
+            <div className="mb-8">
+              <CustomerAddressManager onSelect={handleAddressSelect} initialAddressId={initialAddressId} />
+            </div>
+          )}
+
           {/* Shops Grid */}
           <div className="mb-12">
             {displayShops.length === 0 ? (
@@ -400,7 +487,7 @@ const Repair: React.FC<Props> = ({ shops }) => {
                 {displayShops.map((shop) => (
                   <Link
                     key={shop.id}
-                    href={`/repair-shop/${shop.id}`}
+                    href={`/repair-shop/${shop.id}${selectedAddress ? `?address_id=${selectedAddress.id}` : ''}`}
                     className="group flex h-full flex-col rounded-2xl border border-gray-200 bg-white shadow-[0_12px_28px_-24px_rgba(15,23,42,0.45)] transition-all duration-300 hover:-translate-y-1 hover:border-gray-300 hover:shadow-[0_24px_40px_-24px_rgba(15,23,42,0.55)] xl:rounded-3xl xl:border-gray-300 xl:shadow-[0_16px_35px_-24px_rgba(15,23,42,0.45)]"
                   >
                     <div className="aspect-[0.95] overflow-hidden rounded-t-2xl bg-gray-50 xl:aspect-square xl:rounded-t-3xl">
@@ -429,6 +516,11 @@ const Repair: React.FC<Props> = ({ shops }) => {
                             <path strokeLinecap="round" strokeLinejoin="round" d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
                           </svg>
                           {formatDistance(shop.distance)}
+                        </p>
+                      )}
+                      {selectedAddress && (
+                        <p className={`mb-3 rounded-full border px-2.5 py-1 text-[10px] font-semibold xl:text-xs ${coverageClass(coverageByShop[shop.id])}`}>
+                          {coverageText(coverageByShop[shop.id])}
                         </p>
                       )}
                       <div className={`${buttonBaseClass} ${buttonDarkClass} mt-auto w-full text-[10px] xl:text-xs`}>
