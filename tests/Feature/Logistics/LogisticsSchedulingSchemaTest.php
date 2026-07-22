@@ -36,7 +36,7 @@ class LogisticsSchedulingSchemaTest extends TestCase
         $this->assertSame([], $setting->blackout_dates);
         $this->assertSame(2, $setting->max_delivery_attempts);
         $this->assertInstanceOf(LogisticsSetting::class, $shop->logisticsSetting);
-        $this->assertSame('12.34567800', (new UserAddress(['latitude' => 12.345678]))->latitude);
+        $this->assertSame(12.345678, (new UserAddress(['latitude' => 12.345678]))->latitude);
         $this->assertSame('2026-07-12', (new ShipmentLeg(['scheduled_delivery_date' => '2026-07-12']))->scheduled_delivery_date->toDateString());
     }
 }

@@ -2,6 +2,8 @@
 
 namespace Tests\Feature\Logistics;
 
+use App\Models\Employee;
+use App\Models\HR\LeaveRequest;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\DeliveryBatch;
 use App\Models\Logistics\DeliveryEvent;
@@ -9,6 +11,7 @@ use App\Models\Logistics\LogisticsSetting;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\ShopOwner;
+use App\Models\User;
 use App\Services\Logistics\BatchDispatchService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -406,6 +409,46 @@ class BatchDispatchServiceTest extends TestCase
 
         $this->expectException(ValidationException::class);
         $service->offer($batch, $rider, $shop);
+    }
+
+    public function test_offer_rejects_employee_rider_on_approved_hr_leave(): void
+    {
+        [$shop, $legs, $service] = $this->draftFixture();
+        $user = User::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'email' => 'rider-on-leave@example.com',
+        ]);
+        $employee = Employee::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'email' => $user->email,
+        ]);
+        LeaveRequest::create([
+            'employee_id' => $employee->id,
+            'shop_owner_id' => $shop->id,
+            'leave_type' => 'vacation',
+            'start_date' => '2026-07-15',
+            'end_date' => '2026-07-15',
+            'reason' => 'Approved leave',
+            'status' => 'approved',
+        ]);
+        $rider = RiderProfile::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'linked_type' => User::class,
+            'linked_id' => $user->id,
+            'active' => true,
+            'availability_status' => 'available',
+        ]);
+        $batch = $service->createDraft($shop, '2026-07-15', 'morning', $legs->pluck('id')->all());
+
+        try {
+            $service->offer($batch, $rider, $shop);
+            $this->fail('A delivery offer was sent to a rider on approved leave.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('rider_profile_id', $exception->errors());
+        }
+
+        $this->assertSame('draft', $batch->fresh()->status);
+        $this->assertDatabaseMissing('delivery_assignments', ['rider_profile_id' => $rider->id]);
     }
 
     public function test_offer_enforces_cumulative_daily_capacity_and_audits_override(): void

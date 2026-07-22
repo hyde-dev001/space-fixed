@@ -30,6 +30,48 @@ class ShipmentLegServiceTest extends TestCase
         app(ShipmentLegService::class)->markPickedUp($leg);
     }
 
+    #[DataProvider('unapprovedRefundStatuses')]
+    public function test_refund_return_cannot_be_picked_up_before_both_approvals(
+        string $shopOwnerStatus,
+        string $financeStatus,
+    ): void {
+        $refund = OrderRefund::factory()->create([
+            'shop_owner_status' => $shopOwnerStatus,
+            'finance_status' => $financeStatus,
+            'return_status' => 'pending_staff_pickup',
+        ]);
+        $shipment = Shipment::factory()->create([
+            'source_type' => 'order_refund',
+            'source_id' => $refund->id,
+            'purpose' => 'refund_return',
+        ]);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id,
+            'status' => 'assigned',
+            'requires_pickup_proof' => false,
+        ]);
+
+        try {
+            app(ShipmentLegService::class)->markPickedUp($leg);
+            $this->fail('The return was picked up before both refund approvals were completed.');
+        } catch (ValidationException $exception) {
+            $this->assertSame(
+                'Finance and Staff approvals are required before return pickup.',
+                $exception->errors()['refund'][0],
+            );
+        }
+
+        $this->assertSame('assigned', $leg->fresh()->status->value);
+    }
+
+    public static function unapprovedRefundStatuses(): array
+    {
+        return [
+            'staff pending' => ['pending', 'approved'],
+            'finance pending' => ['approved', 'pending'],
+        ];
+    }
+
     public function test_leg_cannot_be_delivered_without_required_delivery_proof(): void
     {
         $leg = ShipmentLeg::factory()->create([
