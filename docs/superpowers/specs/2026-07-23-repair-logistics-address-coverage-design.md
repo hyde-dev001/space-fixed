@@ -166,6 +166,13 @@ Existing off-schedule/on-leave rider checks, assignment rules, batching, proof r
 ### Dispatcher
 
 - Existing Shipments and Batches pages display repair request number, customer, shoe summary, and `Repair Pickup` or `Repair Return` purpose.
+- Both pages expose a backend-applied `Module` filter with `All`, `Retail`, and `Repair` choices so paginated queues and counts remain correct.
+- Module is derived from existing shipment sources: `order` and `order_refund` are Retail; `repair_request` is Repair. No duplicate module column is stored.
+- The existing granular `Purpose` filter remains. Retail limits applicable purposes to Retail Delivery and Refund Return; Repair limits them to Repair Pickup and Repair Return.
+- Shops registered as `both` see the selector defaulted to `All`. Retail-only or repair-only shops are scoped to their allowed module and do not see a redundant selector.
+- Shipment rows and batch cards/stops show a compact Retail or Repair badge.
+- Every delivery batch is module-homogeneous. Retail and Repair legs cannot be combined in one batch.
+- The same module rule is enforced server-side for batch suggestions, manual creation, adding or replacing stops, and restoring a cancelled batch. Invalid mixed-module requests fail before assignments, events, or other side effects.
 
 ## Failure Handling
 
@@ -210,6 +217,9 @@ Frontend coverage must prove:
 - Correct fee placement in initial/final payment summaries.
 - Return address confirmation and edit lock.
 - Separate intake and return timelines.
+- Both-business Dispatcher users can switch Shipments and Batches between All, Retail, and Repair, while single-module shops remain scoped without a redundant selector.
+
+Backend coverage must also prove that the derived module filter composes with status, purpose, window, and pagination without cross-module rows or incorrect counts. Batch suggestions, creation, updates, and restore must reject mixed Retail/Repair legs without partial side effects.
 
 Final regression gate:
 
