@@ -79,6 +79,16 @@ class RepairRequest extends Model
         'intake_address',
         'return_delivery_method',
         'return_address',
+        'intake_delivery_fee',
+        'return_delivery_fee',
+        'same_as_intake_address',
+        'return_address_confirmed_at',
+        'return_address_confirmed_version',
+        'intake_logistics_locked_at',
+        'return_logistics_locked_at',
+        'intake_logistics_quote',
+        'return_logistics_quote',
+        'logistics_payment_reconciliation',
         'scheduled_dropoff_date',
         'customer_confirmed_at',
         'is_high_value',
@@ -123,6 +133,9 @@ class RepairRequest extends Model
         'last_reassigned_at' => 'datetime',
         'scheduled_dropoff_date' => 'datetime',
         'customer_confirmed_at' => 'datetime',
+        'return_address_confirmed_at' => 'datetime',
+        'intake_logistics_locked_at' => 'datetime',
+        'return_logistics_locked_at' => 'datetime',
         'repairer_rejected_at' => 'datetime',
         'manager_reviewed_at' => 'datetime',
         'owner_reviewed_at' => 'datetime',
@@ -134,6 +147,8 @@ class RepairRequest extends Model
         'payment_enabled_at' => 'datetime',
         'pickup_enabled_at' => 'datetime',
         'total' => 'decimal:2',
+        'intake_delivery_fee' => 'decimal:2',
+        'return_delivery_fee' => 'decimal:2',
         'total_paid_amount' => 'decimal:2',
         'total_refunded_amount' => 'decimal:2',
         'package_price' => 'decimal:2',
@@ -145,6 +160,7 @@ class RepairRequest extends Model
         'pickup_enabled' => 'boolean',
         'manual_pos_queue_enabled' => 'boolean',
         'is_warranty_job' => 'boolean',
+        'same_as_intake_address' => 'boolean',
         'reassignment_count' => 'integer',
         'warranty_sequence' => 'integer',
         'accepted_shop_policy_version_id' => 'integer',
@@ -152,6 +168,9 @@ class RepairRequest extends Model
         'pickup_address' => 'array',
         'intake_address' => 'array',
         'return_address' => 'array',
+        'intake_logistics_quote' => 'array',
+        'return_logistics_quote' => 'array',
+        'logistics_payment_reconciliation' => 'array',
         'included_services_snapshot' => 'array',
         'add_on_services_snapshot' => 'array',
         'pricing_breakdown' => 'array',
@@ -243,6 +262,11 @@ class RepairRequest extends Model
     public function latestPosTransaction()
     {
         return $this->belongsTo(PosTransaction::class, 'latest_pos_transaction_id');
+    }
+
+    public function paymentSessions()
+    {
+        return $this->hasMany(RepairPaymentSession::class);
     }
 
     public function parentRepairRequest()
