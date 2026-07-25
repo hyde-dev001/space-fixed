@@ -44,7 +44,7 @@ class ShippingEstimateController extends Controller
                 },
                 Rule::exists('products', 'id')->whereNull('deleted_at'),
             ],
-            'item_pids.*' => ['integer', 'distinct'],
+            'item_pids.*' => ['integer'],
             'address_id' => ['nullable', 'integer'],
             'shipping_address_line' => ['nullable', 'string', 'max:255'],
             'shipping_barangay' => ['nullable', 'string', 'max:100'],

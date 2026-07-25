@@ -125,6 +125,30 @@ class ShippingEstimateControllerTest extends TestCase
         ]);
     }
 
+    public function test_estimate_accepts_repeated_product_ids_for_variants_from_one_shop(): void
+    {
+        $shop = ShopOwner::factory()->create([
+            'shop_latitude' => 14.5995,
+            'shop_longitude' => 120.9842,
+        ]);
+        $product = $this->productFor($shop);
+        $customer = User::factory()->create(['shop_owner_id' => null]);
+        $address = $this->addressFor($customer);
+        Http::fake([
+            'router.project-osrm.org/*' => Http::response([
+                'routes' => [['distance' => 5000]],
+            ]),
+        ]);
+        $payload = $this->payload([$product->id, $product->id], $address->id);
+        $payload['shipping_latitude'] = 14.60;
+        $payload['shipping_longitude'] = 120.98;
+
+        $this->actingAs($customer, 'user')
+            ->postJson('/api/shipping/estimate', $payload)
+            ->assertOk()
+            ->assertJsonPath('has_estimate', true);
+    }
+
     public function test_estimate_prefers_bounded_draft_coordinates_over_the_saved_address_pin(): void
     {
         $shop = ShopOwner::factory()->create([
