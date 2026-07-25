@@ -67,7 +67,10 @@ export default function LogisticsSettings() {
         <label>Lead days<input className="block w-full rounded border p-2" type="number" min="0" value={form.lead_time_days} onChange={(e) => set('lead_time_days', Number(e.target.value))} /></label>
         {(['morning_start','morning_end','afternoon_start','afternoon_end'] as const).map((key) => <label key={key}>{key.replace('_', ' ')}<input className="block w-full rounded border p-2" type="time" value={form[key].slice(0, 5)} onChange={(e) => set(key, e.target.value)} /></label>)}
         <label>Coverage radius (km)<input className="block w-full rounded border p-2" type="number" min="0.1" step="0.1" value={form.coverage_radius_km} onChange={(e) => set('coverage_radius_km', e.target.value)} /></label>
-        <label>Daily capacity per rider<input className="block w-full rounded border p-2" type="number" min="1" value={form.daily_rider_capacity} onChange={(e) => set('daily_rider_capacity', Number(e.target.value))} /></label>
+        <div>
+          <label>Daily delivery stops per rider<input aria-describedby="daily-rider-capacity-help" className="block w-full rounded border p-2" type="number" min="1" value={form.daily_rider_capacity} onChange={(e) => set('daily_rider_capacity', Number(e.target.value))} /></label>
+          <p id="daily-rider-capacity-help" className="text-sm text-gray-500">One delivery address counts as one stop, regardless of item quantity.</p>
+        </div>
         <label>Maximum attempts<input className="block w-full rounded border p-2" type="number" min="1" value={form.max_delivery_attempts} onChange={(e) => set('max_delivery_attempts', Number(e.target.value))} /></label>
       </div>
       <fieldset>
