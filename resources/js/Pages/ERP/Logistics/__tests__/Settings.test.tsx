@@ -42,6 +42,13 @@ beforeEach(() => {
   mocks.confirm.mockReset().mockResolvedValue({ isConfirmed: true });
 });
 
+it('explains that rider capacity is measured in delivery stops', () => {
+  render(<LogisticsSettings />);
+
+  expect(screen.getByLabelText('Daily delivery stops per rider')).toHaveValue(20);
+  expect(screen.getByText('One delivery address counts as one stop, regardless of item quantity.')).toBeInTheDocument();
+});
+
 it('submits untouched time settings without seconds', async () => {
   render(<LogisticsSettings />);
   fireEvent.click(screen.getByRole('button', { name: 'Save' }));

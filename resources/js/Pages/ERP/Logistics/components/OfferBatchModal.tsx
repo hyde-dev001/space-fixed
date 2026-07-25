@@ -74,11 +74,11 @@ export default function OfferBatchModal({ isOpen, batch, batches, riders, dailyR
       <label className="mt-5 block text-sm font-semibold text-gray-800 dark:text-gray-100">Select rider
         <select ref={riderRef} aria-label="Select rider" value={riderId} onChange={(event) => { setRiderId(event.target.value); setCapacityOverrideReason(''); }} className="mt-2 min-h-11 w-full rounded-xl border border-gray-300 px-3 font-normal">
           <option value="">Choose an available rider</option>
-          {riders.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name} · {usedBy(candidate)}/{candidate.daily_capacity ?? dailyRiderCapacity} used today</option>)}
+          {riders.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name} · {usedBy(candidate)}/{candidate.daily_capacity ?? dailyRiderCapacity} stops used today</option>)}
         </select>
       </label>
       {!riders.length && <p className="mt-2 text-sm text-amber-700">No available riders. Keep this batch as a draft and try again later.</p>}
-      {rider && <p className="mt-3 text-sm font-semibold text-gray-700">{used} used + {batch.assigned_stop_count} stops = {projected}/{riderCapacity}</p>}
+      {rider && <p className="mt-3 text-sm font-semibold text-gray-700">{used} stops used + {batch.assigned_stop_count} stops = {projected}/{riderCapacity}</p>}
       {exceedsRiderCapacity && <p className="mt-3 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800"><AlertTriangle size={17} />This route exceeds {rider?.name}’s capacity of {riderCapacity} {riderCapacity === 1 ? 'stop' : 'stops'}.</p>}
       {overrideRequired &&
         <label className="mt-3 block text-sm font-semibold text-gray-800">Capacity override reason
