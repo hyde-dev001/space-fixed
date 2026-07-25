@@ -404,9 +404,9 @@ it('requires an override reason when same-date workload exceeds rider capacity',
   fireEvent.click(screen.getByRole('button', { name: 'Edit batch 1' }));
   fireEvent.click(screen.getAllByRole('button', { name: 'Review & Offer' })[0]);
 
-  expect(screen.getByRole('option', { name: 'Rider One · 5/6 used today' })).toBeInTheDocument();
+  expect(screen.getByRole('option', { name: 'Rider One · 5/6 stops used today' })).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Select rider'), { target: { value: '3' } });
-  expect(screen.getByText('5 used + 2 stops = 7/6')).toBeInTheDocument();
+  expect(screen.getByText('5 stops used + 2 stops = 7/6')).toBeInTheDocument();
 
   const reason = screen.getByLabelText('Capacity override reason');
   const offer = screen.getByRole('button', { name: 'Offer Batch to Rider' });
