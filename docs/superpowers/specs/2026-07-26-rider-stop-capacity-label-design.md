@@ -13,7 +13,8 @@ Keep the existing stop-based scheduling and capacity enforcement unchanged.
 Clarify the UI copy:
 
 - Rename the setting to "Daily delivery stops per rider."
-- Explain that one order/address counts as one stop regardless of item quantity.
+- Explain that one delivery address counts as one stop regardless of item
+  quantity.
 - Change rider workload text from "used today" to "stops used today."
 - Change the workload equation from "`N` used" to "`N` stops used."
 
