@@ -11,7 +11,8 @@ blocks checkout before shipping can be estimated.
 ## Design
 
 Allow repeated integer product IDs in the shipping-estimate request. Keep the
-existing array size, integer, active-product, and single-shop validation.
+existing array size, integer, existing non-deleted product, and single-shop
+validation.
 `ShippingEstimateController::resolveShopOwner()` already queries products with
 `whereIn` and resolves unique shop-owner IDs, so repeated IDs do not change the
 shipping origin or fee.
