@@ -1,10 +1,10 @@
-# Repair Job Order Performance and Delivery Revenue Design
+# Repair Job Order Performance and Unified Delivery Revenue Design
 
 ## Goal
 
 Keep the staff repair job-order page responsive while it refreshes logistics
-status, and account for paid shop-owned pickup and return fees as delivery
-revenue separate from repair service revenue.
+status, and account consistently for paid shop-owned retail shipping, repair
+pickup, and repair return fees as delivery revenue.
 
 ## Confirmed Problems
 
@@ -17,6 +17,11 @@ revenue separate from repair service revenue.
 - Payment records preserve `service_amount` and `delivery_amount`, but the
   picked-up repair invoice and repair revenue card currently omit paid
   shop-owned delivery fees.
+- The retail staff page excludes shipping fees from its net-revenue card.
+- The shop-owner dashboard combines retail and repair revenue, but currently
+  applies the product/service VAT treatment to delivery fees as well.
+- The automatically generated retail invoice does not include the shipping fee
+  collected during checkout.
 
 ## Approved Design
 
@@ -38,10 +43,22 @@ revenue separate from repair service revenue.
 - Make the existing handoff formatter reuse the eager-loaded relationship,
   while retaining its direct-query fallback for single-repair callers.
 
-### Delivery revenue
+### Unified delivery revenue
 
-- Count a delivery fee only after its corresponding logistics payment lock is
-  present. This avoids treating an unpaid quote as revenue.
+- Use one delivery-revenue category composed of paid shop-owned retail shipping,
+  repair intake pickup, and repair return delivery fees.
+- Count a retail shipping fee only when the order is paid and its selected
+  carrier is `Shop-owned logistics`.
+- Count a repair delivery fee only after its corresponding logistics payment
+  lock is present. This avoids treating an unpaid quote as revenue.
+- Never recognize a third-party courier fee as shop delivery revenue.
+- Show delivery revenue separately in invoice metadata and line items, while
+  including it once in the applicable module's net-revenue total and in the
+  combined shop-owner total.
+- Update the automatically generated retail invoice to include its collected
+  shipping fee in the invoice total and as a separate shipping line. Carrier
+  selection may happen later, so the invoice records the customer charge while
+  revenue classification remains dependent on the selected carrier.
 - Add paid intake and return delivery fees to the picked-up repair invoice total.
 - Store service and delivery amounts separately in invoice metadata.
 - Create separate invoice lines for shop-owned intake pickup and return delivery.
@@ -49,11 +66,16 @@ revenue separate from repair service revenue.
   `return_delivery_fee`, `shipping_fee`, and `grand_total`.
 - Calculate the repair page revenue as:
   `realized service revenue excluding VAT + paid locked intake fee + paid locked return fee`.
-  Delivery fees must not enter the service VAT ratio and must be added only once.
+- Calculate the retail page revenue as:
+  `realized product revenue excluding VAT + paid shop-owned retail shipping fee`.
+- Calculate the combined shop-owner revenue as:
+  `retail product revenue excluding VAT + repair service revenue excluding VAT + all paid shop-owned delivery fees`.
+- Delivery fees must not enter the product/service VAT ratio and must be added
+  only once.
   This preserves the application's current treatment of delivery fees while
-  keeping service revenue net of VAT.
+  keeping product and service revenue net of VAT.
 - Preserve the existing refund/reconciliation behavior; compensated fees whose
-  payment lock is cleared are excluded.
+  payment lock is cleared and refunded retail charges are excluded.
 
 ## Error Handling
 
@@ -69,9 +91,11 @@ revenue separate from repair service revenue.
 - Frontend integration tests prove polling is background-only, skips hidden
   tabs, and uses Inertia chat navigation.
 - Invoice tests prove paid shop-owned fees create separate delivery lines and
-  increase invoice total, while unpaid quotes do not.
-- Revenue tests prove the repair revenue card includes only paid/locked delivery
-  fees, including partial-payment and compensated-fee cases.
+  increase invoice total, while unpaid repair quotes do not. Retail invoice
+  tests prove the collected shipping charge is represented once.
+- Revenue tests prove the retail, repair, and combined shop-owner totals include
+  only paid shop-owned delivery fees, including partial-payment, refund, and
+  compensated-fee cases.
 
 ## Out of Scope
 
