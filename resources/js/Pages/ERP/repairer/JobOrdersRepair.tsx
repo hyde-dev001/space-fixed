@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useRef } from "react";
 import Swal from "sweetalert2";
-import { Head, usePage } from "@inertiajs/react";
+import { Head, router, usePage } from "@inertiajs/react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import ErrorModal from "../../../components/common/ErrorModal";
 import axios from "axios";
@@ -596,6 +596,7 @@ export default function JobOrdersRepair() {
   const [orders, setOrders] = useState<RepairOrder[]>(useStaticData ? staticOrders : []);
   const [repairerRefundQueue, setRepairerRefundQueue] = useState<RepairRefundQueueItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const isOrdersRequestInFlightRef = useRef(false);
   const [isShippingModalOpen, setIsShippingModalOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null);
   const [carrierCompany, setCarrierCompany] = useState("");
@@ -728,19 +729,22 @@ export default function JobOrdersRepair() {
 
   // Fetch repair requests from backend
   useEffect(() => {
-    fetchOrders();
-    fetchRepairerRefundQueue();
+    void fetchOrders(true);
+    void fetchRepairerRefundQueue();
   }, []);
 
-  const fetchOrders = async () => {
+  const fetchOrders = async (showLoading = false) => {
     if (useStaticData) {
       setOrders(staticOrders);
-      setIsLoading(false);
+      if (showLoading) setIsLoading(false);
       return;
     }
 
+    if (isOrdersRequestInFlightRef.current) return;
+    isOrdersRequestInFlightRef.current = true;
+
     try {
-      setIsLoading(true);
+      if (showLoading) setIsLoading(true);
       const response = await axios.get('/api/repairer/repairs');
 
       if (response.data.success) {
@@ -898,9 +902,10 @@ export default function JobOrdersRepair() {
       }
     } catch (error) {
       console.error('Failed to fetch repair requests:', error);
-      setError('Failed to load repair requests');
+      if (showLoading) setError('Failed to load repair requests');
     } finally {
-      setIsLoading(false);
+      isOrdersRequestInFlightRef.current = false;
+      if (showLoading) setIsLoading(false);
     }
   };
 
@@ -952,8 +957,10 @@ export default function JobOrdersRepair() {
     if (useStaticData) return;
 
     const intervalId = window.setInterval(() => {
-      fetchOrders();
-      fetchRepairerRefundQueue();
+      if (document.visibilityState !== 'visible') return;
+
+      void fetchOrders();
+      void fetchRepairerRefundQueue();
     }, 10000);
 
     return () => {
@@ -2414,7 +2421,7 @@ export default function JobOrdersRepair() {
           });
 
           if (shouldOpenChat) {
-            window.location.href = `/erp/staff/repairer-support?conversation_id=${createdConversationId}`;
+            router.visit(`/erp/staff/repairer-support?conversation_id=${createdConversationId}`);
             return;
           }
 

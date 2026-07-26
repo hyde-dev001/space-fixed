@@ -1,5 +1,5 @@
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import JobOrdersRepair from '../JobOrdersRepair';
 
@@ -8,11 +8,13 @@ const mocks = vi.hoisted(() => ({
   post: vi.fn(),
   swal: vi.fn(),
   fetch: vi.fn(),
+  visit: vi.fn(),
   repair: {} as Record<string, unknown>,
 }));
 
 vi.mock('@inertiajs/react', () => ({
   Head: () => null,
+  router: { visit: mocks.visit },
   usePage: () => ({
     props: {
       auth: { user: { role: 'REPAIRER' }, permissions: ['access-repair-job-orders'] },
@@ -209,6 +211,95 @@ describe('JobOrdersRepair intake logistics', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Confirm courier handoff' })[0]);
     await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
       '/api/repairer/repairs/77/activate-pickup',
+    ));
+  });
+
+  it('keeps the current table visible and prevents overlapping background refreshes', async () => {
+    const intervalSpy = vi.spyOn(window, 'setInterval').mockImplementation(() => 1);
+
+    render(<JobOrdersRepair />);
+    fireEvent.click(await screen.findByRole('button', { name: /^Pending \(1\)$/ }));
+    await screen.findByText('Rina Santos');
+
+    let resolveRefresh!: (value: unknown) => void;
+    const pendingRefresh = new Promise((resolve) => {
+      resolveRefresh = resolve;
+    });
+    mocks.get.mockImplementation(async (url: string) => {
+      if (url === '/api/repairer/repairs') {
+        return pendingRefresh;
+      }
+      if (url === '/api/repairer/refunds') {
+        return { data: { success: true, data: [] } };
+      }
+      throw new Error(`Unexpected GET ${url}`);
+    });
+
+    const poll = intervalSpy.mock.calls.find(([, delay]) => delay === 10000)?.[0] as (() => void) | undefined;
+    expect(poll).toBeTypeOf('function');
+    await act(async () => {
+      poll?.();
+      poll?.();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText('Rina Santos')).toBeInTheDocument();
+    expect(screen.queryByText('Loading repair orders...')).not.toBeInTheDocument();
+    expect(mocks.get.mock.calls.filter(([url]) => url === '/api/repairer/repairs')).toHaveLength(2);
+
+    resolveRefresh({ data: { success: true, data: [mocks.repair] } });
+    await act(async () => {
+      await pendingRefresh;
+    });
+    intervalSpy.mockRestore();
+  });
+
+  it('skips polling while the tab is hidden', async () => {
+    const intervalSpy = vi.spyOn(window, 'setInterval').mockImplementation(() => 1);
+
+    render(<JobOrdersRepair />);
+    await screen.findByRole('button', { name: /^Pending \(1\)$/ });
+    const requestCount = mocks.get.mock.calls.length;
+
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'hidden',
+    });
+    const poll = intervalSpy.mock.calls.find(([, delay]) => delay === 10000)?.[0] as (() => void) | undefined;
+    expect(poll).toBeTypeOf('function');
+    await act(async () => {
+      poll?.();
+      await Promise.resolve();
+    });
+
+    expect(mocks.get).toHaveBeenCalledTimes(requestCount);
+
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'visible',
+    });
+    intervalSpy.mockRestore();
+  });
+
+  it('opens an accepted repair chat through Inertia', async () => {
+    mocks.repair = {
+      ...repair('customer_delivery'),
+      status: 'assigned_to_repairer',
+      intake_handoff: null,
+    };
+    mocks.post.mockResolvedValueOnce({
+      data: { success: true, conversation_id: 99 },
+    });
+
+    render(<JobOrdersRepair />);
+    fireEvent.click(await screen.findByRole('button', { name: /^New Request \(1\)$/ }));
+    await screen.findByText('Rina Santos');
+    fireEvent.click(screen.getByTitle('View details'));
+    await screen.findByRole('heading', { name: 'Repair Service Details' });
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+
+    await waitFor(() => expect(mocks.visit).toHaveBeenCalledWith(
+      '/erp/staff/repairer-support?conversation_id=99',
     ));
   });
 });
