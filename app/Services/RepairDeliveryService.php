@@ -167,9 +167,7 @@ final class RepairDeliveryService
                 $cancelledAt = $existing->cancelled_at ?? $existing->updated_at;
                 if ((! $sponsoredWarranty && $reconciliationStatus !== 'resolved')
                     || $cancelledAt === null
-                    || ($sponsoredWarranty
-                        ? $lockedRepair->intake_logistics_locked_at->lessThan($cancelledAt)
-                        : ! $lockedRepair->intake_logistics_locked_at->greaterThan($cancelledAt))) {
+                    || ! $lockedRepair->intake_logistics_locked_at->greaterThan($cancelledAt)) {
                     return null;
                 }
             }
@@ -239,9 +237,7 @@ final class RepairDeliveryService
                 $cancelledAt = $existing->cancelled_at ?? $existing->updated_at;
                 if ((! $sponsoredWarranty && $reconciliationStatus !== 'resolved')
                     || $cancelledAt === null
-                    || ($sponsoredWarranty
-                        ? $lockedRepair->return_logistics_locked_at->lessThan($cancelledAt)
-                        : ! $lockedRepair->return_logistics_locked_at->greaterThan($cancelledAt))) {
+                    || ! $lockedRepair->return_logistics_locked_at->greaterThan($cancelledAt)) {
                     return null;
                 }
             }

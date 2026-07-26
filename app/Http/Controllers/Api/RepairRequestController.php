@@ -1760,7 +1760,7 @@ class RepairRequestController extends Controller
                 && ((string) ($repair->return_delivery_method ?? '') !== $returnMethod
                     || (string) data_get($repair->return_address, 'version', '') !== (string) data_get($returnSnapshot, 'version', '')
                     || round((float) $repair->return_delivery_fee, 2) !== round($returnFee, 2));
-            $replannedAt = $shopSponsoredWarranty ? now() : null;
+            $replannedAt = $shopSponsoredWarranty ? now()->addSecond() : null;
 
             $repair->update([
                 ...($hasIntakeUpdate ? [

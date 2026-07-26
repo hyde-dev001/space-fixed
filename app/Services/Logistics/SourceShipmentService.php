@@ -191,9 +191,7 @@ class SourceShipmentService
                         && data_get($lockedRepair->logistics_payment_reconciliation, 'status') !== 'resolved')
                     || $lockedRepair->intake_logistics_locked_at === null
                     || $cancelledAt === null
-                    || ($sponsoredWarranty
-                        ? $lockedRepair->intake_logistics_locked_at->lessThan($cancelledAt)
-                        : ! $lockedRepair->intake_logistics_locked_at->greaterThan($cancelledAt))) {
+                    || ! $lockedRepair->intake_logistics_locked_at->greaterThan($cancelledAt)) {
                     throw ValidationException::withMessages([
                         'intake' => [$sponsoredWarranty
                             ? 'A cancelled pickup can be retried only after a new sponsored pickup plan.'
@@ -313,9 +311,7 @@ class SourceShipmentService
                         && data_get($lockedRepair->logistics_payment_reconciliation, 'status') !== 'resolved')
                     || $lockedRepair->return_logistics_locked_at === null
                     || $cancelledAt === null
-                    || ($sponsoredWarranty
-                        ? $lockedRepair->return_logistics_locked_at->lessThan($cancelledAt)
-                        : ! $lockedRepair->return_logistics_locked_at->greaterThan($cancelledAt))) {
+                    || ! $lockedRepair->return_logistics_locked_at->greaterThan($cancelledAt)) {
                     throw ValidationException::withMessages([
                         'return' => [$sponsoredWarranty
                             ? 'A cancelled return can be retried only after a new sponsored return plan.'

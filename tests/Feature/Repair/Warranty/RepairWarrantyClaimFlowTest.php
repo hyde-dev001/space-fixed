@@ -192,7 +192,14 @@ class RepairWarrantyClaimFlowTest extends TestCase
         $cancel->assertOk();
         $this->assertSame('cancelled', $shipment?->fresh()->status->value);
         $this->assertNull($linked->fresh()->logistics_payment_reconciliation);
+        $cancelledAt = $shipment->fresh()->cancelled_at->copy()->startOfSecond();
+        $shipment->update(['cancelled_at' => $cancelledAt]);
+        $linked->refresh()->update(['intake_logistics_locked_at' => $cancelledAt]);
+        $this->assertTrue($linked->fresh()->intake_logistics_locked_at->equalTo($shipment->fresh()->cancelled_at));
         $this->assertNull($delivery->tryCreateIntakeShipment($linked->fresh()));
+        $this->assertSame(1, $shipment->fresh()->legs()->count());
+        $linked->update(['intake_logistics_locked_at' => null]);
+        $this->assertNull($linked->fresh()->intake_logistics_locked_at);
 
         $this->actingAs($customer, 'user')
             ->patchJson("/api/customer/repairs/{$linked->id}/delivery-method", [
@@ -205,6 +212,10 @@ class RepairWarrantyClaimFlowTest extends TestCase
         $this->assertFalse((bool) $replanned->payment_enabled);
         $this->assertSame('completed', (string) $replanned->payment_status);
         $this->assertNotNull($replanned->intake_logistics_locked_at);
+        $this->assertTrue(
+            $replanned->intake_logistics_locked_at->greaterThan($cancelledAt),
+            "Replan lock {$replanned->intake_logistics_locked_at} must be later than cancellation {$cancelledAt}.",
+        );
         $this->assertGreaterThan(0, (float) $replanned->intake_delivery_fee);
         $this->assertTrue((bool) data_get($replanned->intake_logistics_quote, 'available'));
 
@@ -242,7 +253,22 @@ class RepairWarrantyClaimFlowTest extends TestCase
         $this->assertSame('cancelled', $shipment?->fresh()->status->value);
         $this->assertSame('ready_for_pickup', (string) $linked->fresh()->status);
         $this->assertNull($linked->fresh()->logistics_payment_reconciliation);
+        $cancelledAt = $shipment->fresh()->cancelled_at->copy()->startOfSecond();
+        $shipment->update(['cancelled_at' => $cancelledAt]);
+        $linked->refresh()->update([
+            'return_logistics_locked_at' => $cancelledAt,
+            'return_address_confirmed_at' => $cancelledAt,
+            'return_address_confirmed_version' => data_get($linked->return_address, 'version'),
+        ]);
+        $this->assertTrue($linked->fresh()->return_logistics_locked_at->equalTo($shipment->fresh()->cancelled_at));
         $this->assertNull($delivery->tryCreateReturnShipment($linked->fresh()));
+        $this->assertSame(1, $shipment->fresh()->legs()->count());
+        $linked->update([
+            'return_logistics_locked_at' => null,
+            'return_address_confirmed_at' => null,
+            'return_address_confirmed_version' => null,
+        ]);
+        $this->assertNull($linked->fresh()->return_logistics_locked_at);
 
         $this->actingAs($customer, 'user')
             ->patchJson("/api/customer/repairs/{$linked->id}/delivery-method", [
@@ -255,6 +281,10 @@ class RepairWarrantyClaimFlowTest extends TestCase
         $this->assertFalse((bool) $replanned->payment_enabled);
         $this->assertSame('completed', (string) $replanned->payment_status);
         $this->assertNotNull($replanned->return_logistics_locked_at);
+        $this->assertTrue(
+            $replanned->return_logistics_locked_at->greaterThan($cancelledAt),
+            "Replan lock {$replanned->return_logistics_locked_at} must be later than cancellation {$cancelledAt}.",
+        );
         $this->assertSame(
             data_get($replanned->return_address, 'version'),
             (string) $replanned->return_address_confirmed_version,
