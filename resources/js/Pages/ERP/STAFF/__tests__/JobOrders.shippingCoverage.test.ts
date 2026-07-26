@@ -71,6 +71,11 @@ afterEach(() => {
 });
 
 describe('staff order shipping coverage integration', () => {
+  it('uses the shared paid shop-owned delivery revenue rule', () => {
+    expect(source).toContain('calculateRetailRevenue({');
+    expect(source).toContain('Products + paid shop-owned delivery, excl. VAT');
+  });
+
   it('maps the backend shop-owned coverage contract to the order model', () => {
     expect(source).toMatch(/shopOwnedCoverage\?:\s*\{[\s\S]*available:\s*boolean;[\s\S]*reason:\s*string\s*\|\s*null;[\s\S]*distance_km:\s*number\s*\|\s*null;[\s\S]*coverage_radius_km:\s*number\s*\|\s*null;/);
     expect(source).toContain('shopOwnedCoverage: order.shop_owned_coverage || undefined');

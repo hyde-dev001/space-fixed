@@ -2239,9 +2239,10 @@ class CheckoutController extends Controller
                 $dueDate = now()->addDays(30);
             }
 
-            // Calculate tax (12% VAT)
-            $baseAmount = $order->total_amount / 1.12;
-            $taxAmount = round($order->total_amount - $baseAmount, 2);
+            $itemSubtotal = round((float) $order->total_amount, 2);
+            $shippingFee = round(max(0, (float) ($order->shipping_fee ?? 0)), 2);
+            $taxAmount = round(max(0, (float) ($order->vat_amount ?? 0)), 2);
+            $grandTotal = round($itemSubtotal + $taxAmount + $shippingFee, 2);
 
             // Create the invoice
             $invoice = Invoice::create([
@@ -2251,13 +2252,20 @@ class CheckoutController extends Controller
                 'customer_email' => $order->customer_email,
                 'date' => now(),
                 'due_date' => $dueDate,
-                'total' => $order->total_amount,
+                'total' => $grandTotal,
                 'tax_amount' => $taxAmount,
                 'status' => $invoiceStatus,
                 'payment_date' => $paymentDate,
                 'payment_method' => in_array($paymentMethod, ['cod', 'cash_on_delivery']) ? 'cod' : $paymentMethod,
                 'job_order_id' => $order->id,
                 'notes' => "Auto-generated from Order #{$order->order_number}",
+                'meta' => [
+                    'source' => 'retail_order',
+                    'item_subtotal' => $itemSubtotal,
+                    'vat_amount' => $taxAmount,
+                    'shipping_fee' => $shippingFee,
+                    'grand_total' => $grandTotal,
+                ],
             ]);
 
             // Log payment processing for online payment methods
@@ -2267,13 +2275,13 @@ class CheckoutController extends Controller
                     ->withProperties([
                         'order_number' => $order->order_number,
                         'customer_name' => $order->customer_name,
-                        'amount_paid' => $order->total_amount,
+                        'amount_paid' => $grandTotal,
                         'payment_method' => ucfirst($paymentMethod),
                         'payment_status' => 'paid',
                         'invoice_reference' => $reference,
                         'auto_processed' => true,
                     ])
-                    ->log("Order payment processed: {$order->order_number} - ₱" . number_format($order->total_amount, 2));
+                    ->log("Order payment processed: {$order->order_number} - ₱" . number_format($grandTotal, 2));
             }
 
             // Get default revenue account (if finance module is set up)
@@ -2295,6 +2303,18 @@ class CheckoutController extends Controller
                         'account_id' => null,
                     ]);
                 }
+            }
+
+            if ($shippingFee > 0) {
+                InvoiceItem::create([
+                    'invoice_id' => $invoice->id,
+                    'description' => 'Shipping Fee',
+                    'quantity' => 1,
+                    'unit_price' => $shippingFee,
+                    'tax_rate' => 0,
+                    'amount' => $shippingFee,
+                    'account_id' => null,
+                ]);
             }
 
             // Update order

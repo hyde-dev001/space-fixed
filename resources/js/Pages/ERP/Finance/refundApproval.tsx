@@ -555,65 +555,6 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
 		}
 	};
 
-	const handleResolveDeliveryReconciliation = async (
-		item: DeliveryReconciliation,
-		action: "credit_balance" | "refund_original",
-	) => {
-		const actionLabel = action === "credit_balance" ? "credit the service balance" : "refund the original channel";
-		const result = await Swal.fire({
-			title: action === "credit_balance" ? "Credit service balance?" : "Refund original channel?",
-			text: `This will ${actionLabel} by ₱${item.amount.toFixed(2)} and then unlock the ${item.phase} delivery plan.`,
-			icon: "question",
-			showCancelButton: true,
-			confirmButtonColor: "#2563eb",
-			confirmButtonText: "Confirm",
-		});
-		if (!result.isConfirmed) {
-			return;
-		}
-
-		setIsActionProcessing(true);
-		try {
-			const response = await fetch(
-				`/api/finance/repair-delivery-reconciliations/${item.repair_id}/resolve`,
-				{
-					method: "POST",
-					credentials: "include",
-					headers: {
-						"Content-Type": "application/json",
-						Accept: "application/json",
-						"X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "",
-					},
-					body: JSON.stringify({
-						compensation_key: item.compensation_key,
-						action,
-					}),
-				},
-			);
-			const data = await response.json();
-			if (!response.ok) {
-				throw new Error(data?.message || "Unable to resolve the delivery fee adjustment.");
-			}
-
-			await Swal.fire({
-				title: data?.data?.status === "processing" ? "Refund processing" : "Adjustment completed",
-				text: data?.message || "The delivery fee adjustment was recorded.",
-				icon: "success",
-				confirmButtonColor: "#2563eb",
-			});
-			await fetchRefundRequests();
-		} catch (error) {
-			await Swal.fire({
-				title: "Adjustment failed",
-				text: error instanceof Error ? error.message : "Unable to resolve the delivery fee adjustment.",
-				icon: "error",
-				confirmButtonColor: "#2563eb",
-			});
-		} finally {
-			setIsActionProcessing(false);
-		}
-	};
-
 	return (
 		<div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-700">
 			<div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
@@ -777,6 +718,65 @@ export default function RefundApproval() {
 			});
 		} finally {
 			setIsLoading(false);
+		}
+	};
+
+	const handleResolveDeliveryReconciliation = async (
+		item: DeliveryReconciliation,
+		action: "credit_balance" | "refund_original",
+	) => {
+		const actionLabel = action === "credit_balance" ? "credit the service balance" : "refund the original channel";
+		const result = await Swal.fire({
+			title: action === "credit_balance" ? "Credit service balance?" : "Refund original channel?",
+			text: `This will ${actionLabel} by ₱${item.amount.toFixed(2)} and then unlock the ${item.phase} delivery plan.`,
+			icon: "question",
+			showCancelButton: true,
+			confirmButtonColor: "#2563eb",
+			confirmButtonText: "Confirm",
+		});
+		if (!result.isConfirmed) {
+			return;
+		}
+
+		setIsActionProcessing(true);
+		try {
+			const response = await fetch(
+				`/api/finance/repair-delivery-reconciliations/${item.repair_id}/resolve`,
+				{
+					method: "POST",
+					credentials: "include",
+					headers: {
+						"Content-Type": "application/json",
+						Accept: "application/json",
+						"X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "",
+					},
+					body: JSON.stringify({
+						compensation_key: item.compensation_key,
+						action,
+					}),
+				},
+			);
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data?.message || "Unable to resolve the delivery fee adjustment.");
+			}
+
+			await Swal.fire({
+				title: data?.data?.status === "processing" ? "Refund processing" : "Adjustment completed",
+				text: data?.message || "The delivery fee adjustment was recorded.",
+				icon: "success",
+				confirmButtonColor: "#2563eb",
+			});
+			await fetchRefundRequests();
+		} catch (error) {
+			await Swal.fire({
+				title: "Adjustment failed",
+				text: error instanceof Error ? error.message : "Unable to resolve the delivery fee adjustment.",
+				icon: "error",
+				confirmButtonColor: "#2563eb",
+			});
+		} finally {
+			setIsActionProcessing(false);
 		}
 	};
 

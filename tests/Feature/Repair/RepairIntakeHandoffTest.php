@@ -210,6 +210,70 @@ class RepairIntakeHandoffTest extends TestCase
             ->assertJsonPath('data.0.intake_handoff.events.0.event_type', 'proof_required');
     }
 
+    public function test_job_order_handoff_queries_do_not_grow_per_repair(): void
+    {
+        $shop = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $repairer = User::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'role' => 'REPAIRER',
+            'status' => 'active',
+        ]);
+
+        $createRepair = function () use ($shop, $repairer): void {
+            $repair = RepairRequest::factory()->create([
+                'shop_owner_id' => $shop->id,
+                'assigned_repairer_id' => $repairer->id,
+                'status' => 'pending',
+                'payment_status' => 'paid',
+                'payment_policy' => 'deposit_50',
+                'payment_policy_snapshot' => 'deposit_50',
+                'delivery_method' => 'pickup',
+                'intake_delivery_method' => 'shop_pickup',
+                'intake_address' => ['address_line' => '1 Test Street'],
+                'intake_logistics_locked_at' => now(),
+                'return_delivery_method' => 'customer_pickup',
+            ]);
+            $this->pickupShipment($repair, 'active', 'awaiting_proof_approval');
+        };
+
+        $countLogisticsQueries = function () use ($repairer): int {
+            DB::flushQueryLog();
+            DB::enableQueryLog();
+
+            $this->actingAs($repairer, 'user')
+                ->getJson('/api/repairer/repairs')
+                ->assertOk();
+
+            $count = collect(DB::getQueryLog())
+                ->filter(function (array $query): bool {
+                    $sql = strtolower($query['query']);
+
+                    return str_contains($sql, 'shipments')
+                        || str_contains($sql, 'shipment_legs')
+                        || str_contains($sql, 'handoff_proofs')
+                        || str_contains($sql, 'delivery_events');
+                })
+                ->count();
+
+            DB::disableQueryLog();
+
+            return $count;
+        };
+
+        $createRepair();
+        $oneRepairQueryCount = $countLogisticsQueries();
+
+        $createRepair();
+        $twoRepairQueryCount = $countLogisticsQueries();
+
+        $this->assertGreaterThan(0, $oneRepairQueryCount);
+        $this->assertSame(
+            $oneRepairQueryCount,
+            $twoRepairQueryCount,
+            'Adding a repair must not add per-repair logistics queries.',
+        );
+    }
+
     private function repairFixture(string $method): array
     {
         $shop = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);

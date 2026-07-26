@@ -15,8 +15,6 @@ use App\Models\User;
 use App\Models\ShopOwner;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
-use App\Models\Finance\Invoice;
-use App\Models\Finance\InvoiceItem;
 use App\Events\LowStockAlert;
 use App\Services\RepairMaterialPlanningService;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -281,7 +279,14 @@ class RepairWorkflowController extends Controller
                 }
 
                 // Shop owner sees all repairs for their shop
-                $repairs = RepairRequest::with(['user', 'services', 'shopOwner', 'repairer'])
+                $repairs = RepairRequest::with([
+                    'user',
+                    'services',
+                    'shopOwner',
+                    'repairer',
+                    'logisticsShipments.legs.proofs',
+                    'logisticsShipments.events',
+                ])
                     ->withSum(['posTransactions as pos_paid_amount' => function ($query) {
                         $query->whereIn('status', ['paid', 'partially_refunded', 'refunded']);
                     }], 'paid_amount')
@@ -332,7 +337,14 @@ class RepairWorkflowController extends Controller
                     ], 422);
                 }
 
-                $repairs = RepairRequest::with(['user', 'services', 'shopOwner', 'repairer'])
+                $repairs = RepairRequest::with([
+                    'user',
+                    'services',
+                    'shopOwner',
+                    'repairer',
+                    'logisticsShipments.legs.proofs',
+                    'logisticsShipments.events',
+                ])
                     ->withSum(['posTransactions as pos_paid_amount' => function ($query) {
                         $query->whereIn('status', ['paid', 'partially_refunded', 'refunded']);
                     }], 'paid_amount')
@@ -364,7 +376,13 @@ class RepairWorkflowController extends Controller
             }
             
             // Get repairs assigned to this repairer
-            $repairs = RepairRequest::with(['user', 'services', 'shopOwner'])
+            $repairs = RepairRequest::with([
+                'user',
+                'services',
+                'shopOwner',
+                'logisticsShipments.legs.proofs',
+                'logisticsShipments.events',
+            ])
                 ->withSum(['posTransactions as pos_paid_amount' => function ($query) {
                     $query->whereIn('status', ['paid', 'partially_refunded', 'refunded']);
                 }], 'paid_amount')
@@ -2471,183 +2489,6 @@ class RepairWorkflowController extends Controller
             'full_upfront' => 'Customer payment must be completed before receive confirmation can be activated.',
             default => 'Customer payment must be completed before receive confirmation can be activated.',
         };
-    }
-
-    private function generateRepairInvoiceReference(): string
-    {
-        do {
-            $reference = 'RINV-' . now()->format('Ymd') . '-' . strtoupper(substr(uniqid('', true), -4));
-        } while (Invoice::where('reference', $reference)->exists());
-
-        return $reference;
-    }
-
-    private function autoGenerateInvoiceForPickedUpRepair(RepairRequest $repair): ?Invoice
-    {
-        if (!$repair->shop_owner_id) {
-            return null;
-        }
-
-        $repair->loadMissing(['services:id,name']);
-
-        $existingInvoice = Invoice::where('shop_id', $repair->shop_owner_id)
-            ->where('job_reference', (string) $repair->request_id)
-            ->first();
-
-        if ($existingInvoice) {
-            return $existingInvoice;
-        }
-
-        $pricingSnapshot = $this->calculateRepairPricingSnapshot($repair);
-        $finalTotal = (float) ($pricingSnapshot['final_total'] ?? 0);
-
-        if ($finalTotal <= 0) {
-            return null;
-        }
-
-        $paymentStatus = strtolower((string) ($repair->payment_status ?? 'pending'));
-        $isSettled = in_array($paymentStatus, ['paid', 'completed'], true);
-
-        $invoice = Invoice::create([
-            'shop_id' => $repair->shop_owner_id,
-            'reference' => $this->generateRepairInvoiceReference(),
-            'customer_id' => $repair->user_id,
-            'customer_name' => $repair->customer_name,
-            'customer_email' => $repair->email,
-            'date' => now(),
-            'due_date' => $isSettled ? null : now()->addDays(7),
-            'total' => $finalTotal,
-            'tax_amount' => 0,
-            'status' => $isSettled ? 'paid' : 'sent',
-            'payment_date' => $isSettled ? ($repair->payment_completed_at ?? now()) : null,
-            'payment_method' => 'repair_service',
-            'job_reference' => (string) $repair->request_id,
-            'notes' => 'Auto-generated from Repair Request #' . $repair->request_id,
-            'meta' => [
-                'source' => 'repair_request',
-                'repair_request_id' => $repair->id,
-                'repair_request_number' => $repair->request_id,
-                'payment_status' => $repair->payment_status,
-                'generated_on_status' => 'picked_up',
-            ],
-        ]);
-
-        $serviceSummary = $repair->services->pluck('name')->filter()->values()->implode(', ');
-        $description = 'Repair Service #' . $repair->request_id;
-        if ($serviceSummary !== '') {
-            $description .= ' - ' . $serviceSummary;
-        }
-
-        InvoiceItem::create([
-            'invoice_id' => $invoice->id,
-            'description' => $description,
-            'quantity' => 1,
-            'unit_price' => $finalTotal,
-            'tax_rate' => 0,
-            'amount' => $finalTotal,
-            'account_id' => null,
-        ]);
-
-        activity()
-            ->performedOn($repair)
-            ->withProperties([
-                'invoice_id' => $invoice->id,
-                'invoice_reference' => $invoice->reference,
-                'repair_request_id' => $repair->id,
-                'repair_request_number' => $repair->request_id,
-                'total' => $finalTotal,
-            ])
-            ->log('Auto-generated invoice for picked-up repair request');
-
-        return $invoice;
-    }
-
-    private function calculateRepairPricingSnapshot(RepairRequest $repair): array
-    {
-        $repair->loadMissing([
-            'materialUsages.inventoryItem:id,price',
-            'services:id,price',
-            'repairPackage.services:id',
-        ]);
-
-        $materialsTotal = round((float) $repair->materialUsages->sum(function ($usage) {
-            $unitPrice = (float) ($usage->inventoryItem->price ?? 0);
-            return ((int) $usage->quantity_used) * $unitPrice;
-        }), 2);
-
-        $pricingBreakdown = is_array($repair->pricing_breakdown)
-            ? $repair->pricing_breakdown
-            : [];
-        $pricingMode = strtolower((string) ($pricingBreakdown['mode'] ?? ''));
-
-        $packagePrice = round((float) ($repair->package_price ?? ($pricingBreakdown['package_price'] ?? 0)), 2);
-        $addOnsTotal = round((float) ($repair->add_ons_total ?? ($pricingBreakdown['add_ons_total'] ?? 0)), 2);
-
-        if (!is_null($repair->repair_package_id) && $addOnsTotal <= 0) {
-            $snapshotAddOns = round((float) collect((array) ($repair->add_on_services_snapshot ?? []))
-                ->sum(fn ($row) => (float) data_get($row, 'price', 0)), 2);
-            if ($snapshotAddOns > 0) {
-                $addOnsTotal = $snapshotAddOns;
-            }
-        }
-
-        if (!is_null($repair->repair_package_id) && $addOnsTotal <= 0) {
-            $packageServiceIds = collect($repair->repairPackage?->services?->pluck('id')->all() ?? [])
-                ->map(fn ($id) => (int) $id)
-                ->filter(fn ($id) => $id > 0)
-                ->values();
-
-            if ($packageServiceIds->isNotEmpty()) {
-                $derivedAddOns = round((float) $repair->services
-                    ->filter(fn ($service) => !$packageServiceIds->contains((int) $service->id))
-                    ->sum(fn ($service) => (float) ($service->price ?? 0)), 2);
-
-                if ($derivedAddOns > 0) {
-                    $addOnsTotal = $derivedAddOns;
-                }
-            }
-        }
-
-        $baseFromStoredTotal = round((float) ($repair->total ?? 0), 2);
-        $baseFromBreakdown = round((float) ($pricingBreakdown['base_total'] ?? 0), 2);
-        $baseFromPackage = !is_null($repair->repair_package_id)
-            ? round($packagePrice + $addOnsTotal, 2)
-            : 0;
-
-        if (!is_null($repair->repair_package_id)) {
-            $baseTotal = $pricingMode === 'manual_pos'
-                ? round(max($baseFromStoredTotal, $baseFromBreakdown, $baseFromPackage), 2)
-                : ($baseFromPackage > 0
-                    ? $baseFromPackage
-                    : round(max($baseFromStoredTotal, $baseFromBreakdown), 2));
-        } else {
-            $baseTotal = $baseFromStoredTotal > 0
-                ? $baseFromStoredTotal
-                : $baseFromBreakdown;
-        }
-
-        if ($baseTotal <= 0) {
-            $baseTotal = round((float) ($repair->final_total ?? 0), 2);
-        }
-
-        // Material usage is operational tracking and should not auto-inflate
-        // the customer-facing billable amount for the repair.
-        $finalTotal = $baseTotal;
-
-        $pricingBreakdown['base_total'] = $baseTotal;
-        $pricingBreakdown['package_price'] = $packagePrice;
-        $pricingBreakdown['add_ons_total'] = $addOnsTotal;
-        $pricingBreakdown['materials_total'] = $materialsTotal;
-        $pricingBreakdown['final_total'] = $finalTotal;
-
-        return [
-            'base_total' => $baseTotal,
-            'package_price' => $packagePrice,
-            'add_ons_total' => $addOnsTotal,
-            'materials_total' => $materialsTotal,
-            'final_total' => $finalTotal,
-            'pricing_breakdown' => $pricingBreakdown,
-        ];
     }
 
     /**

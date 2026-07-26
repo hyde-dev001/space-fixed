@@ -71,7 +71,7 @@ it('shows repair-only purposes and retains compatible filters when changing modu
   expect(screen.getByRole('option', { name: 'Repair Pickup' })).toBeInTheDocument();
   expect(screen.getByRole('option', { name: 'Repair Return' })).toBeInTheDocument();
   expect(screen.queryByRole('option', { name: 'Retail Delivery' })).not.toBeInTheDocument();
-  expect(screen.getByText('Repair')).toBeInTheDocument();
+  expect(screen.getByText('Repair', { selector: 'span' })).toBeInTheDocument();
   expect(screen.getByText('Repair REP-2026-0042')).toBeInTheDocument();
   expect(screen.getByText('Mia Santos · Nike Air Max 90')).toBeInTheDocument();
 

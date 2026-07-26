@@ -2,8 +2,10 @@
 
 namespace App\Models;
 
+use App\Models\Logistics\Shipment;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
 use App\Models\PosTransaction;
@@ -177,6 +179,22 @@ class RepairRequest extends Model
         'paymongo_payment_ids' => 'array',
     ];
 
+    public function paidShopOwnedDeliveryFees(): array
+    {
+        $intake = $this->intake_delivery_method === 'shop_pickup' && $this->intake_logistics_locked_at
+            ? round(max(0, (float) $this->intake_delivery_fee), 2)
+            : 0.0;
+        $return = $this->return_delivery_method === 'shop_delivery' && $this->return_logistics_locked_at
+            ? round(max(0, (float) $this->return_delivery_fee), 2)
+            : 0.0;
+
+        return [
+            'intake' => $intake,
+            'return' => $return,
+            'total' => round($intake + $return, 2),
+        ];
+    }
+
     /**
      * Get the customer who submitted the request
      */
@@ -262,6 +280,12 @@ class RepairRequest extends Model
     public function latestPosTransaction()
     {
         return $this->belongsTo(PosTransaction::class, 'latest_pos_transaction_id');
+    }
+
+    public function logisticsShipments(): HasMany
+    {
+        return $this->hasMany(Shipment::class, 'source_id')
+            ->where('source_type', 'repair_request');
     }
 
     public function paymentSessions()

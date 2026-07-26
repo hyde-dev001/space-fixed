@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Repair;
 
+use App\Models\Finance\Invoice;
 use App\Models\Logistics\HandoffProof;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
@@ -131,6 +132,52 @@ class RepairReturnHandoffTest extends TestCase
             ->assertOk();
 
         $this->assertSame('picked_up', $repair->fresh()->status);
+    }
+
+    public function test_picked_up_repair_invoice_separates_locked_shop_owned_delivery_fees(): void
+    {
+        [$repair, $customer, $repairer] = $this->repairFixture('shop_delivery', 'shipped');
+        $repair->update([
+            'intake_delivery_method' => 'shop_pickup',
+            'intake_delivery_fee' => 50,
+            'intake_logistics_locked_at' => now(),
+            'return_delivery_fee' => 70,
+            'total_paid_amount' => 1120,
+        ]);
+        [$shipment, $leg] = $this->returnShipment($repair, 'completed', 'delivered');
+        HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'handoff_type' => 'delivery',
+            'review_status' => 'approved',
+            'reviewed_at' => now(),
+        ]);
+        $shipment->update(['completed_at' => now()]);
+
+        $this->actingAs($repairer, 'user')
+            ->postJson("/api/repairer/repairs/{$repair->id}/activate-pickup")
+            ->assertOk();
+        $this->actingAs($customer, 'user')
+            ->postJson("/api/customer/repairs/{$repair->id}/confirm-pickup")
+            ->assertOk();
+
+        $invoice = Invoice::query()
+            ->where('job_reference', $repair->request_id)
+            ->firstOrFail();
+
+        $this->assertSame('1120.00', $invoice->total);
+        $this->assertSame(50.0, (float) data_get($invoice->meta, 'intake_delivery_fee'));
+        $this->assertSame(70.0, (float) data_get($invoice->meta, 'return_delivery_fee'));
+        $this->assertSame(120.0, (float) data_get($invoice->meta, 'shipping_fee'));
+        $this->assertDatabaseHas('finance_invoice_items', [
+            'invoice_id' => $invoice->id,
+            'description' => 'Shop-owned intake pickup',
+            'amount' => 50,
+        ]);
+        $this->assertDatabaseHas('finance_invoice_items', [
+            'invoice_id' => $invoice->id,
+            'description' => 'Shop-owned return delivery',
+            'amount' => 70,
+        ]);
     }
 
     public function test_wrong_customer_staff_shop_state_and_replay_do_not_mutate_the_repair(): void

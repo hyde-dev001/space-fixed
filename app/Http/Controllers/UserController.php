@@ -662,9 +662,9 @@ class UserController extends Controller
      */
     public function logout(Request $request)
     {
-        $userId = Auth::id();
+        $userId = Auth::guard('user')->id();
 
-        Auth::logout();
+        Auth::guard('user')->logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
