@@ -86,4 +86,22 @@ class UserAddressCoordinateTest extends TestCase
         $this->assertSame(14.5995, $first['latitude']);
         $this->assertNull($second['latitude']);
     }
+
+    public function test_logged_out_customer_cannot_save_an_address(): void
+    {
+        $user = User::factory()->create();
+        $recaller = auth('user')->getRecallerName();
+
+        $login = $this->post('/user/login', [
+            'email' => $user->email,
+            'password' => 'password',
+            'remember' => true,
+        ])->assertCookie($recaller);
+
+        $this->withCookie($recaller, $login->getCookie($recaller)->getValue())
+            ->post('/user/logout')
+            ->assertCookieExpired($recaller);
+        $this->assertGuest('user');
+        $this->postJson('/api/user/addresses', $this->payload())->assertUnauthorized();
+    }
 }
