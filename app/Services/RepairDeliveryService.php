@@ -417,12 +417,12 @@ final class RepairDeliveryService
                 'approved' => false,
                 'events' => collect(),
             ];
-        $canConfirm = (string) $repair->status === 'pending'
+        $canConfirm = in_array((string) $repair->status, ['pending', 'repairer_accepted'], true)
             && $paymentSatisfied
             && ($method !== 'shop_pickup' || $state['approved']);
 
         $blockedReason = null;
-        if ((string) $repair->status !== 'pending') {
+        if (! in_array((string) $repair->status, ['pending', 'repairer_accepted'], true)) {
             $blockedReason = 'This repair is not awaiting physical intake receipt.';
         } elseif (! $paymentSatisfied) {
             $blockedReason = 'Initial payment must be settled before physical receipt.';

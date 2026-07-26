@@ -2351,9 +2351,9 @@ class RepairWorkflowController extends Controller
                 );
             }
 
-            if ((string) $repair->status !== 'pending') {
+            if (! in_array((string) $repair->status, ['pending', 'repairer_accepted'], true)) {
                 throw ValidationException::withMessages([
-                    'status' => ['Only a pending repair can be confirmed as physically received.'],
+                    'status' => ['Only an accepted repair awaiting intake can be confirmed as physically received.'],
                 ]);
             }
             if (! $this->isPaymentSatisfiedForRepairProgress($repair)) {

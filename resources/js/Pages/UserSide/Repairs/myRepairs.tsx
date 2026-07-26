@@ -978,8 +978,6 @@ const RepairLogisticsTracking: React.FC<{
         const response = await axios.get(`/tracking/shipments/${reference.id}`, {
           headers: {
             Accept: 'application/json',
-            'X-Inertia': 'true',
-            'X-Requested-With': 'XMLHttpRequest',
           },
         });
         const shipment = response.data?.props?.shipment ?? response.data?.shipment;
@@ -1691,7 +1689,7 @@ const MyRepairs: React.FC = () => {
           return;
         }
 
-        fetchRepairs({ reconcilePayments: true });
+        fetchRepairs();
         const retryResult = await Swal.fire({
           icon: 'error',
           title: 'Payment Not Completed',
@@ -1706,7 +1704,7 @@ const MyRepairs: React.FC = () => {
           await handlePayNow(parsedPendingRepairId);
         }
 
-        fetchRepairs({ reconcilePayments: true });
+        fetchRepairs();
         return;
       }
 
@@ -1759,7 +1757,7 @@ const MyRepairs: React.FC = () => {
           }
 
           if (!usedQueryFallback) {
-            await fetchRepairs({ reconcilePayments: true });
+            void fetchRepairs();
           }
 
           if (result?.success && result?.payment_verified) {
@@ -1817,7 +1815,7 @@ const MyRepairs: React.FC = () => {
         } catch (error) {
           console.error('Payment verification error:', error);
           if (!usedQueryFallback) {
-            await fetchRepairs({ reconcilePayments: true });
+            void fetchRepairs();
           }
           await Swal.fire({
             icon: 'error',
@@ -1895,8 +1893,8 @@ const MyRepairs: React.FC = () => {
     setLatestWarrantyClaimByRepairId(nextClaims);
   };
 
-  const fetchRepairs = async (options: { silent?: boolean; lightweight?: boolean; reconcilePayments?: boolean } = {}) => {
-    const { silent = false, lightweight = false, reconcilePayments = false } = options;
+  const fetchRepairs = async (options: { silent?: boolean; lightweight?: boolean } = {}) => {
+    const { silent = false, lightweight = false } = options;
 
     try {
       if (!silent) {
@@ -1904,11 +1902,14 @@ const MyRepairs: React.FC = () => {
       }
 
       const response = await axios.get('/api/customer/repairs', {
-        params: reconcilePayments ? { reconcile_payments: 1 } : undefined,
+        params: undefined,
       });
       if (response.data.success) {
         const repairList: RepairOrder[] = response.data.data;
         setOrders(repairList);
+        if (!silent) {
+          setLoading(false);
+        }
 
         if (lightweight) {
           return;

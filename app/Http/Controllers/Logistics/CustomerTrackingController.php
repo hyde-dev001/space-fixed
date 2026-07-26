@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\DeliveryAttempt;
 use App\Services\Logistics\CustomerTrackingService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
@@ -13,7 +14,7 @@ use Inertia\Response;
 
 class CustomerTrackingController extends Controller
 {
-    public function show(Shipment $shipment, CustomerTrackingService $tracking): Response
+    public function show(Shipment $shipment, CustomerTrackingService $tracking): Response|JsonResponse
     {
         $customer = Auth::guard('user')->user();
 
@@ -21,8 +22,13 @@ class CustomerTrackingController extends Controller
             abort(403);
         }
 
+        $payload = $tracking->payload($shipment);
+        if (request()->expectsJson()) {
+            return response()->json(['shipment' => $payload]);
+        }
+
         return Inertia::render('UserSide/Tracking/ShipmentTracking', [
-            'shipment' => $tracking->payload($shipment),
+            'shipment' => $payload,
         ]);
     }
 

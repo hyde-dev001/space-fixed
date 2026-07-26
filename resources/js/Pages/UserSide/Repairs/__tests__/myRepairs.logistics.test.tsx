@@ -234,6 +234,62 @@ const renderReadyRepair = async () => {
   await screen.findAllByText("Scuffed sneakers");
 };
 
+describe("MyRepairs loading performance", () => {
+  it("shows the primary repair list without waiting for optional metadata", async () => {
+    mocks.get.mockImplementation(async (url: string) => {
+      if (url === "/api/customer/repairs") {
+        return { data: { success: true, data: [mocks.repair] } };
+      }
+      if (url === "/api/customer/conversations/shops") {
+        return new Promise(() => {});
+      }
+      throw new Error(`Unexpected GET ${url}`);
+    });
+
+    render(<MyRepairs />);
+
+    expect((await screen.findAllByText("Scuffed sneakers")).length).toBeGreaterThan(0);
+    expect(screen.queryByText("Loading your repairs...")).not.toBeInTheDocument();
+  });
+
+  it("finishes payment confirmation without waiting for optional metadata", async () => {
+    window.history.replaceState({}, "", "/my-repairs?paymongo_success=1&pending_repair_id=77");
+    Object.defineProperty(window, "sessionStorage", {
+      configurable: true,
+      value: {
+        getItem: vi.fn((key: string) => key === "pendingRepairId" ? "77" : null),
+        setItem: vi.fn(),
+        removeItem: vi.fn(),
+        clear: vi.fn(),
+      },
+    });
+    mocks.get.mockImplementation(async (url: string) => {
+      if (url === "/api/customer/repairs") {
+        return { data: { success: true, data: [mocks.repair] } };
+      }
+      if (url === "/api/customer/conversations/shops") {
+        return new Promise(() => {});
+      }
+      throw new Error(`Unexpected GET ${url}`);
+    });
+    mocks.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true, payment_verified: true }),
+    });
+
+    render(<MyRepairs />);
+
+    await waitFor(() => expect(mocks.swal).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Payment Confirmed!" }),
+    ));
+    expect(mocks.get).toHaveBeenCalledWith(
+      "/api/customer/repairs",
+      { params: undefined },
+    );
+  });
+});
+
 describe("MyRepairs intake payment", () => {
   it("hides payment until the repairer activates it", async () => {
     mocks.repair = repair({
@@ -291,6 +347,8 @@ describe("MyRepairs return logistics", () => {
     expect(within(returnTimeline).getByText("Return rider dispatched")).toBeInTheDocument();
     expect(within(returnTimeline).queryByText("Shoes collected for intake")).not.toBeInTheDocument();
     expect(screen.queryByText(/Shipping Business|Rider Name|Tracking Number/i)).not.toBeInTheDocument();
+    const trackingRequest = mocks.get.mock.calls.find(([url]) => url === "/tracking/shipments/11");
+    expect(trackingRequest?.[1]?.headers).toEqual({ Accept: "application/json" });
   });
 
   it("updates the plan with a saved address before confirming it", async () => {
