@@ -5,6 +5,7 @@ namespace App\Services\Logistics;
 use App\Models\HR\LeaveRequest;
 use App\Models\Logistics\DeliveryBatch;
 use App\Models\Logistics\RiderProfile;
+use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\ShopOwner;
 use App\Models\User;
@@ -21,19 +22,23 @@ class BatchDispatchService
 
     public function schedule(ShopOwner $shop, string $date, string $window, array $legIds): void
     {
-        $deliveryDate = Carbon::parse($date)->startOfDay();
-        $settings = $shop->logisticsSetting()->firstOrCreate([]);
-        if (!in_array($deliveryDate->dayOfWeekIso, $settings->operating_days, true)
-            || in_array($deliveryDate->toDateString(), $settings->blackout_dates, true)) {
-            throw ValidationException::withMessages(['delivery_date' => 'Choose an operating day that is not a blackout date.']);
-        }
-
         DB::transaction(function () use ($shop, $date, $window, $legIds) {
+            $shop = ShopOwner::query()->whereKey($shop->id)->lockForUpdate()->firstOrFail();
             $legs = ShipmentLeg::query()->with('shipment')->whereIn('id', $legIds)->orderBy('id')->lockForUpdate()->get();
             if ($legs->count() !== count(array_unique($legIds)) || $legs->contains(fn ($leg) =>
                 $leg->shipment->shop_owner_id !== $shop->id || $leg->delivery_batch_id
                 || !in_array($leg->status->value, ['pending', 'assigned'], true) || $leg->schedule_status === 'scheduled')) {
                 throw ValidationException::withMessages(['legs' => 'One or more deliveries cannot be scheduled.']);
+            }
+            $modules = $legs->map(fn ($leg) => Shipment::moduleForSourceType((string) $leg->shipment->source_type));
+            if ($modules->contains(null) || $modules->contains(fn ($module) => !in_array($module, $shop->logisticsModules(), true))) {
+                throw ValidationException::withMessages(['legs' => 'This shop cannot schedule one or more delivery modules.']);
+            }
+            $deliveryDate = Carbon::parse($date)->startOfDay();
+            $settings = $shop->logisticsSetting()->firstOrCreate([]);
+            if (!in_array($deliveryDate->dayOfWeekIso, $settings->operating_days, true)
+                || in_array($deliveryDate->toDateString(), $settings->blackout_dates, true)) {
+                throw ValidationException::withMessages(['delivery_date' => 'Choose an operating day that is not a blackout date.']);
             }
             foreach ($legs as $leg) {
                 $leg->update([
@@ -47,7 +52,7 @@ class BatchDispatchService
     public function createDraft(ShopOwner $shop, string $date, string $window, array $legIds, ?string $overrideReason = null): DeliveryBatch
     {
         return DB::transaction(function () use ($shop, $date, $window, $legIds, $overrideReason) {
-            ShopOwner::query()->whereKey($shop->id)->lockForUpdate()->firstOrFail();
+            $shop = ShopOwner::query()->whereKey($shop->id)->lockForUpdate()->firstOrFail();
             $legs = ShipmentLeg::query()->with('shipment')->whereIn('id', $legIds)->orderBy('id')->lockForUpdate()->get();
             if ($legs->count() !== count(array_unique($legIds)) || $legs->contains(fn ($leg) =>
                 $leg->shipment->shop_owner_id !== $shop->id || $leg->delivery_batch_id
@@ -55,6 +60,7 @@ class BatchDispatchService
                 || $leg->scheduled_delivery_date?->toDateString() !== $date || $leg->delivery_window !== $window)) {
                 throw ValidationException::withMessages(['legs' => 'One or more legs are not eligible for this batch.']);
             }
+            $this->validateBatchComposition($legs, $shop);
             $capacity = $shop->logisticsSetting()->firstOrCreate([])->daily_rider_capacity;
             if ($legs->count() > $capacity && !filled($overrideReason)) {
                 throw ValidationException::withMessages(['dispatcher_override_reason' => 'Capacity override reason is required.']);
@@ -134,10 +140,12 @@ class BatchDispatchService
             if ($batch->status !== 'draft' || count($legIds) !== count(array_unique($legIds))) {
                 throw ValidationException::withMessages(['legs' => 'Only draft batches may be reordered.']);
             }
-            $legs = ShipmentLeg::query()->whereIn('id', $legIds)->orderBy('id')->lockForUpdate()->get();
+            $legs = ShipmentLeg::query()->with('shipment')->whereIn('id', $legIds)->orderBy('id')->lockForUpdate()->get();
             if ($legs->count() !== count($legIds) || $legs->contains(fn ($leg) => $leg->delivery_batch_id !== $batch->id)) {
                 throw ValidationException::withMessages(['legs' => 'Every stop must belong to this batch.']);
             }
+            $shop = ShopOwner::query()->whereKey($batch->shop_owner_id)->lockForUpdate()->firstOrFail();
+            $this->validateBatchComposition($legs, $shop);
             foreach ($legIds as $index => $id) {
                 $legs->firstWhere('id', $id)->update(['stop_sequence' => $index + 1]);
             }
@@ -294,6 +302,8 @@ class BatchDispatchService
                 || $leg->status->value !== 'pending')) {
                 throw ValidationException::withMessages(['batch' => 'One or more stops are no longer available for restoration.']);
             }
+            $shop = ShopOwner::query()->whereKey($batch->shop_owner_id)->lockForUpdate()->firstOrFail();
+            $this->validateBatchComposition($legs, $shop);
             foreach ($legIds as $index => $id) {
                 $legs->firstWhere('id', $id)->update(['delivery_batch_id' => $batch->id, 'stop_sequence' => $index + 1]);
             }
@@ -305,6 +315,22 @@ class BatchDispatchService
             $this->syncStopSnapshot($batch);
             return $batch->fresh('legs.shipment');
         });
+    }
+
+    private function validateBatchComposition($legs, ShopOwner $shop): void
+    {
+        if ($legs->count() < 2) {
+            throw ValidationException::withMessages(['legs' => 'A batch requires at least two deliveries.']);
+        }
+
+        $modules = $legs->map(fn ($leg) => Shipment::moduleForSourceType((string) $leg->shipment->source_type));
+        if ($modules->contains(null) || $modules->unique()->count() !== 1) {
+            throw ValidationException::withMessages(['legs' => 'Retail and Repair deliveries cannot share a batch.']);
+        }
+
+        if (!in_array($modules->first(), $shop->logisticsModules(), true)) {
+            throw ValidationException::withMessages(['legs' => 'This shop cannot dispatch that delivery module.']);
+        }
     }
 
     private function syncStopSnapshot(DeliveryBatch $batch): void

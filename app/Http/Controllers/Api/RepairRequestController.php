@@ -13,6 +13,7 @@ use App\Models\ConversationMessage;
 use App\Models\RepairRequest;
 use App\Models\RepairReview;
 use App\Models\RepairPackage;
+use App\Models\RepairPaymentSession;
 use App\Models\RepairService;
 use App\Models\ShopOwner;
 use App\Models\ShopPolicyVersion;
@@ -28,6 +29,7 @@ use App\Services\PaymentSettlementService;
 use App\Services\RepairPosPaymentService;
 use App\Services\RepairPosReceiptService;
 use App\Services\RepairPosRefundService;
+use App\Services\RepairDeliveryService;
 use App\Services\ShopOwnerApprovalPolicyService;
 use App\Services\PolicyAcceptanceService;
 
@@ -40,7 +42,11 @@ class RepairRequestController extends Controller
         private ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService
     ) {}
 
-    public function store(Request $request, PolicyAcceptanceService $policyAcceptanceService)
+    public function store(
+        Request $request,
+        PolicyAcceptanceService $policyAcceptanceService,
+        RepairDeliveryService $repairDeliveryService,
+    )
     {
         if (!Auth::guard('user')->check()) {
             return response()->json([
@@ -66,18 +72,22 @@ class RepairRequestController extends Controller
             'images.*' => 'image|mimes:jpeg,png,jpg,gif|max:2048',
             'total' => 'required|numeric|min:0',
             'preferred_date' => 'nullable|date|after:today',
-            'service_type' => 'required|in:pickup,walkin',
+            'service_type' => 'nullable|required_without:intake_delivery_method|in:pickup,walkin',
+            'intake_delivery_method' => 'nullable|in:walk_in,customer_delivery,shop_pickup',
+            'intake_address_id' => 'nullable|integer',
             'pickup_address_line' => 'nullable|string|max:255',
             'pickup_barangay' => 'nullable|string|max:255',
             'pickup_city' => 'nullable|string|max:255',
             'pickup_region' => 'nullable|string|max:255',
             'pickup_postal_code' => 'nullable|string|max:10',
             'return_delivery_method' => 'nullable|in:walk_in,customer_pickup,shop_delivery',
-            'return_address_line' => 'required_if:return_delivery_method,customer_pickup,shop_delivery|string|max:255',
-            'return_barangay' => 'required_if:return_delivery_method,customer_pickup,shop_delivery|string|max:255',
-            'return_city' => 'required_if:return_delivery_method,customer_pickup,shop_delivery|string|max:255',
-            'return_region' => 'required_if:return_delivery_method,customer_pickup,shop_delivery|string|max:255',
-            'return_postal_code' => 'required_if:return_delivery_method,customer_pickup,shop_delivery|string|max:10',
+            'return_address_id' => 'nullable|integer',
+            'same_as_intake_address' => 'nullable|boolean',
+            'return_address_line' => 'nullable|string|max:255',
+            'return_barangay' => 'nullable|string|max:255',
+            'return_city' => 'nullable|string|max:255',
+            'return_region' => 'nullable|string|max:255',
+            'return_postal_code' => 'nullable|string|max:10',
             'accepted_shop_policy_version_id' => 'nullable|integer|exists:shop_policy_versions,id',
             'policy_accepted' => 'nullable|boolean',
         ]);
@@ -89,6 +99,143 @@ class RepairRequestController extends Controller
                 'errors' => $validator->errors()
             ], 422);
         }
+
+        $usesExplicitLogistics = $request->filled('intake_delivery_method');
+        $intakeDeliveryMethod = $usesExplicitLogistics
+            ? (string) $request->input('intake_delivery_method')
+            : ($request->input('service_type') === 'pickup' ? 'customer_delivery' : 'walk_in');
+        $returnDeliveryMethod = (string) ($request->input('return_delivery_method')
+            ?: ($intakeDeliveryMethod === 'walk_in' ? 'walk_in' : 'customer_pickup'));
+        $sameAsIntakeAddress = $usesExplicitLogistics && $request->boolean('same_as_intake_address', true);
+        $logisticsErrors = [];
+
+        if ($usesExplicitLogistics) {
+            if ($intakeDeliveryMethod !== 'walk_in' && ! $request->filled('intake_address_id')) {
+                $logisticsErrors['intake_address_id'][] = 'Choose a saved address for sending your shoes to the shop.';
+            }
+            if ($returnDeliveryMethod !== 'walk_in'
+                && (! $sameAsIntakeAddress || $intakeDeliveryMethod === 'walk_in')
+                && ! $request->filled('return_address_id')) {
+                $logisticsErrors['return_address_id'][] = 'Choose a saved address for returning your repaired shoes.';
+            }
+            if (in_array($intakeDeliveryMethod, ['shop_pickup'], true)
+                || in_array($returnDeliveryMethod, ['shop_delivery'], true)) {
+                if (! $request->filled('shop_owner_id')) {
+                    $logisticsErrors['shop_owner_id'][] = 'Choose a shop before using shop-owned logistics.';
+                }
+            }
+        } elseif ($request->filled('return_delivery_method') && $returnDeliveryMethod !== 'walk_in') {
+            foreach ([
+                'return_address_line' => 'Return address line',
+                'return_barangay' => 'Return barangay',
+                'return_city' => 'Return city',
+                'return_region' => 'Return province',
+                'return_postal_code' => 'Return postal code',
+            ] as $field => $label) {
+                if (! $request->filled($field)) {
+                    $logisticsErrors[$field][] = "{$label} is required.";
+                }
+            }
+        }
+
+        $customer = Auth::guard('user')->user();
+        $shopOwner = $request->filled('shop_owner_id')
+            ? ShopOwner::find((int) $request->input('shop_owner_id'))
+            : null;
+        $intakeSavedAddress = null;
+        $returnSavedAddress = null;
+
+        if ($usesExplicitLogistics && $intakeDeliveryMethod !== 'walk_in' && $request->filled('intake_address_id')) {
+            $intakeSavedAddress = $customer?->addresses()->find((int) $request->input('intake_address_id'));
+            if (! $intakeSavedAddress) {
+                $logisticsErrors['intake_address_id'][] = 'Choose one of your saved addresses.';
+            }
+        }
+
+        if ($usesExplicitLogistics && $returnDeliveryMethod !== 'walk_in') {
+            if ($sameAsIntakeAddress && $intakeDeliveryMethod !== 'walk_in') {
+                $returnSavedAddress = $intakeSavedAddress;
+            } elseif ($request->filled('return_address_id')) {
+                $returnSavedAddress = $customer?->addresses()->find((int) $request->input('return_address_id'));
+                if (! $returnSavedAddress) {
+                    $logisticsErrors['return_address_id'][] = 'Choose one of your saved addresses.';
+                }
+            }
+        }
+
+        if ($logisticsErrors !== []) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $logisticsErrors,
+            ], 422);
+        }
+
+        $pickupAddress = null;
+        $intakeAddress = null;
+        $returnAddress = null;
+        $intakeLogisticsQuote = null;
+        $returnLogisticsQuote = null;
+        $intakeDeliveryFee = 0.0;
+        $returnDeliveryFee = 0.0;
+
+        if ($usesExplicitLogistics) {
+            if ($intakeSavedAddress) {
+                $intakeAddress = $repairDeliveryService->snapshot($intakeSavedAddress, $intakeDeliveryMethod);
+                $pickupAddress = $intakeAddress;
+            }
+            if ($returnSavedAddress) {
+                $returnAddress = $repairDeliveryService->snapshot($returnSavedAddress, $returnDeliveryMethod);
+            }
+
+            if ($intakeDeliveryMethod === 'shop_pickup' && $shopOwner && $intakeSavedAddress) {
+                $intakeLogisticsQuote = $repairDeliveryService->quote($shopOwner, $intakeSavedAddress);
+                if (! $intakeLogisticsQuote['available']) {
+                    return $this->repairLogisticsValidationFailure('intake_address_id', $intakeLogisticsQuote['reason']);
+                }
+                $intakeDeliveryFee = (float) $intakeLogisticsQuote['fee'];
+                $intakeLogisticsQuote['address_version'] = $intakeAddress['version'];
+                $intakeLogisticsQuote['method'] = $intakeDeliveryMethod;
+            }
+
+            if ($returnDeliveryMethod === 'shop_delivery' && $shopOwner && $returnSavedAddress) {
+                $returnLogisticsQuote = $repairDeliveryService->quote($shopOwner, $returnSavedAddress);
+                if (! $returnLogisticsQuote['available']) {
+                    return $this->repairLogisticsValidationFailure('return_address_id', $returnLogisticsQuote['reason']);
+                }
+                $returnDeliveryFee = (float) $returnLogisticsQuote['fee'];
+                $returnLogisticsQuote['address_version'] = $returnAddress['version'];
+                $returnLogisticsQuote['method'] = $returnDeliveryMethod;
+            }
+        } else {
+            if ($intakeDeliveryMethod === 'customer_delivery' && $shopOwner) {
+                $shopAddressLine = $shopOwner->shop_address
+                    ?? $shopOwner->business_address
+                    ?? $shopOwner->city_state
+                    ?? 'Shop address unavailable';
+                $parts = array_values(array_filter(array_map('trim', explode(',', (string) ($shopOwner->city_state ?? '')))));
+                $intakeAddress = [
+                    'address_line' => $shopAddressLine,
+                    'barangay' => null,
+                    'city' => $parts[0] ?? null,
+                    'region' => $parts[1] ?? null,
+                    'postal_code' => $shopOwner->postal_code,
+                ];
+                $pickupAddress = $intakeAddress;
+            }
+            if ($returnDeliveryMethod !== 'walk_in') {
+                $returnAddress = [
+                    'address_line' => $request->return_address_line,
+                    'barangay' => $request->return_barangay,
+                    'city' => $request->return_city,
+                    'region' => $request->return_region,
+                    'postal_code' => $request->return_postal_code,
+                ];
+            }
+        }
+
+        $deliveryMethod = $intakeDeliveryMethod === 'walk_in' ? 'walk_in' : 'pickup';
+        $autoEnableOnlinePayment = in_array($intakeDeliveryMethod, ['walk_in', 'shop_pickup'], true);
 
         try {
             // Generate unique request ID
@@ -245,7 +392,6 @@ class RepairRequestController extends Controller
             }
             
             // Get shop owner for high value check
-            $shopOwner = ShopOwner::find($request->shop_owner_id);
             $isHighValue = $shopOwner && $requestTotal >= $shopOwner->high_value_threshold;
             $requiresOwnerApprovalByPolicy = $shopOwner
                 ? $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForRepairReject((int) $shopOwner->id, (float) $requestTotal)
@@ -283,67 +429,6 @@ class RepairRequestController extends Controller
                 }
             }
             
-            // Determine intake delivery method and address
-            // 'walk_in' = customer brings shoes to shop
-            // 'customer_delivery' = customer arranges delivery (Lalamove, courier, etc)
-            $intakeDeliveryMethod = $request->service_type === 'pickup' ? 'customer_delivery' : 'walk_in';
-            $returnDeliveryMethod = $request->return_delivery_method
-                ?: ($intakeDeliveryMethod === 'walk_in' ? 'walk_in' : 'customer_pickup');
-            $autoEnableOnlinePayment = $intakeDeliveryMethod === 'walk_in';
-            $pickupAddress = null;
-            $intakeAddress = null;
-            $returnAddress = null;
-            $deliveryMethod = $request->service_type === 'pickup' ? 'pickup' : 'walk_in';
-            
-            // Build intake delivery address if customer is arranging delivery
-            if ($request->service_type === 'pickup') {
-                if (!$shopOwner) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Shop is required when selecting courier delivery to shop.',
-                    ], 422);
-                }
-
-                $shopAddressLine = $shopOwner->shop_address
-                    ?? $shopOwner->business_address
-                    ?? $shopOwner->city_state
-                    ?? 'Shop address unavailable';
-                $shopCityState = (string) ($shopOwner->city_state ?? '');
-                $city = null;
-                $region = null;
-
-                if ($shopCityState !== '') {
-                    $parts = array_values(array_filter(array_map('trim', explode(',', $shopCityState))));
-                    if (count($parts) >= 2) {
-                        $city = $parts[0];
-                        $region = $parts[1];
-                    } else {
-                        $city = $shopCityState;
-                    }
-                }
-
-                $intakeAddress = [
-                    'address_line' => $shopAddressLine,
-                    'barangay' => null,
-                    'city' => $city,
-                    'region' => $region,
-                    'postal_code' => $shopOwner->postal_code,
-                ];
-                
-                // Keep pickup_address for backward compatibility
-                $pickupAddress = $intakeAddress;
-            }
-
-            if ($returnDeliveryMethod !== 'walk_in') {
-                $returnAddress = [
-                    'address_line' => $request->return_address_line,
-                    'barangay' => $request->return_barangay,
-                    'city' => $request->return_city,
-                    'region' => $request->return_region,
-                    'postal_code' => $request->return_postal_code,
-                ];
-            }
-            
             // Create request and acceptance evidence atomically.
             $repairRequest = DB::transaction(function () use (
                 $request,
@@ -363,6 +448,11 @@ class RepairRequestController extends Controller
                 $intakeAddress,
                 $returnDeliveryMethod,
                 $returnAddress,
+                $intakeDeliveryFee,
+                $returnDeliveryFee,
+                $sameAsIntakeAddress,
+                $intakeLogisticsQuote,
+                $returnLogisticsQuote,
                 $isHighValue,
                 $requiresOwnerApproval,
                 $shopOwner,
@@ -411,6 +501,11 @@ class RepairRequestController extends Controller
                     'intake_address' => $intakeAddress,
                     'return_delivery_method' => $returnDeliveryMethod,
                     'return_address' => $returnAddress,
+                    'intake_delivery_fee' => $intakeDeliveryFee,
+                    'return_delivery_fee' => $returnDeliveryFee,
+                    'same_as_intake_address' => $sameAsIntakeAddress,
+                    'intake_logistics_quote' => $intakeLogisticsQuote,
+                    'return_logistics_quote' => $returnLogisticsQuote,
                     'is_high_value' => $isHighValue,
                     'requires_owner_approval' => $requiresOwnerApproval,
                     'scheduled_dropoff_date' => $request->preferred_date ? \Carbon\Carbon::parse($request->preferred_date)->startOfDay() : null,
@@ -910,8 +1005,17 @@ class RepairRequestController extends Controller
                     'pickup_address' => $repair->pickup_address,
                     'intake_delivery_method' => $repair->intake_delivery_method ?? ($repair->delivery_method === 'walk_in' ? 'walk_in' : 'customer_delivery'),
                     'intake_address' => $repair->intake_address ?? $repair->pickup_address,
+                    'intake_delivery_fee' => (float) $repair->intake_delivery_fee,
+                    'intake_logistics_quote' => $repair->intake_logistics_quote,
+                    'intake_logistics_locked_at' => $repair->intake_logistics_locked_at?->toISOString(),
                     'return_delivery_method' => $repair->return_delivery_method ?? ($repair->delivery_method === 'walk_in' ? 'walk_in' : 'customer_pickup'),
                     'return_address' => $repair->return_address,
+                    'return_delivery_fee' => (float) $repair->return_delivery_fee,
+                    'return_logistics_quote' => $repair->return_logistics_quote,
+                    'return_logistics_locked_at' => $repair->return_logistics_locked_at?->toISOString(),
+                    'same_as_intake_address' => (bool) $repair->same_as_intake_address,
+                    'return_address_confirmed_at' => $repair->return_address_confirmed_at?->toISOString(),
+                    'return_address_confirmed_version' => $repair->return_address_confirmed_version,
                     'conversation_id' => $repair->conversation_id,
                     'payment_status' => $repair->payment_status ?? 'pending',
                     'payment_completed_at' => $repair->payment_completed_at ? $repair->payment_completed_at->toISOString() : null,
@@ -1508,7 +1612,7 @@ class RepairRequestController extends Controller
     {
         $user = Auth::guard('user')->user();
 
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'success' => false,
                 'message' => 'Unauthenticated',
@@ -1517,7 +1621,11 @@ class RepairRequestController extends Controller
 
         $validated = $request->validate([
             'delivery_method' => ['nullable', 'in:walk_in,pickup,customer_pickup,shop_delivery'],
+            'intake_delivery_method' => ['nullable', 'in:walk_in,customer_delivery,shop_pickup'],
+            'intake_address_id' => ['nullable', 'integer'],
             'return_delivery_method' => ['nullable', 'in:walk_in,pickup,customer_pickup,shop_delivery'],
+            'return_address_id' => ['nullable', 'integer'],
+            'same_as_intake_address' => ['nullable', 'boolean'],
             'return_address_line' => ['nullable', 'string', 'max:255'],
             'return_barangay' => ['nullable', 'string', 'max:255'],
             'return_city' => ['nullable', 'string', 'max:255'],
@@ -1525,221 +1633,377 @@ class RepairRequestController extends Controller
             'return_postal_code' => ['nullable', 'string', 'max:10'],
         ]);
 
-        $requestedMethod = $validated['return_delivery_method'] ?? $validated['delivery_method'] ?? null;
+        $hasIntakeUpdate = array_key_exists('intake_delivery_method', $validated)
+            || array_key_exists('intake_address_id', $validated);
+        $hasReturnUpdate = array_key_exists('return_delivery_method', $validated)
+            || array_key_exists('delivery_method', $validated)
+            || array_key_exists('return_address_id', $validated)
+            || array_key_exists('same_as_intake_address', $validated);
 
-        if (!$requestedMethod) {
+        if (! $hasIntakeUpdate && ! $hasReturnUpdate) {
             return response()->json([
                 'success' => false,
-                'message' => 'Return delivery method is required.',
+                'message' => 'At least one delivery-plan field is required.',
             ], 422);
         }
 
-        $newMethod = $requestedMethod === 'pickup' ? 'customer_pickup' : $requestedMethod;
+        return DB::transaction(function () use ($id, $user, $validated, $hasIntakeUpdate, $hasReturnUpdate) {
+            $repair = RepairRequest::query()
+                ->with('shopOwner')
+                ->whereKey($id)
+                ->forCustomer($user->id)
+                ->lockForUpdate()
+                ->first();
 
-        $repair = RepairRequest::query()
-            ->where('id', $id)
-            ->forCustomer($user->id)
-            ->first();
+            if (! $repair) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Repair request not found',
+                ], 404);
+            }
+            if ($hasIntakeUpdate && $repair->intake_logistics_locked_at !== null) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'intake_delivery_method' => ['The paid intake delivery plan is locked and can no longer be changed.'],
+                ]);
+            }
+            if ($hasReturnUpdate && $repair->return_logistics_locked_at !== null) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'return_delivery_method' => ['The paid return delivery plan is locked and can no longer be changed.'],
+                ]);
+            }
 
-        if (!$repair) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Repair request not found',
-            ], 404);
-        }
+            $delivery = app(RepairDeliveryService::class);
+            $sameAsIntake = array_key_exists('same_as_intake_address', $validated)
+                ? (bool) $validated['same_as_intake_address']
+                : (bool) $repair->same_as_intake_address;
+            $buildPlan = function (string $leg, string $method, int $addressId) use ($delivery, $repair, $user): array {
+                if ($method === 'walk_in') {
+                    return [null, 0.0, null];
+                }
 
-        $existingMethod = $repair->return_delivery_method ?? ($repair->delivery_method === 'walk_in' ? 'walk_in' : 'customer_pickup');
+                $address = $user->addresses()->find($addressId);
+                if (! $address) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        "{$leg}_address_id" => ['Choose one of your saved addresses.'],
+                    ]);
+                }
 
-        if ($repair->status !== 'ready_for_pickup') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Return method can only be changed when the repair is ready for pickup.',
-            ], 422);
-        }
+                $snapshot = $delivery->snapshot($address, $method);
+                $quote = null;
+                $fee = 0.0;
+                $shopOwned = $method === ($leg === 'intake' ? 'shop_pickup' : 'shop_delivery');
+                if ($shopOwned) {
+                    $quote = $delivery->quote($repair->shopOwner, $address);
+                    if (! ($quote['available'] ?? false)) {
+                        throw \Illuminate\Validation\ValidationException::withMessages([
+                            "{$leg}_address_id" => ['The selected address is not covered by shop-owned logistics.'],
+                        ]);
+                    }
+                    $fee = (float) $quote['fee'];
+                    $quote['address_version'] = $snapshot['version'];
+                    $quote['method'] = $method;
+                }
 
-        if ($repair->pickup_enabled) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Return method can no longer be changed after receive confirmation has been activated.',
-            ], 422);
-        }
+                return [$snapshot, $fee, $quote];
+            };
 
-        $previousMethod = $existingMethod;
+            $intakeMethod = (string) ($validated['intake_delivery_method']
+                ?? $repair->intake_delivery_method
+                ?? ($repair->delivery_method === 'walk_in' ? 'walk_in' : 'customer_delivery'));
+            $intakeSnapshot = $repair->intake_address;
+            $intakeFee = (float) $repair->intake_delivery_fee;
+            $intakeQuote = $repair->intake_logistics_quote;
+            if ($hasIntakeUpdate) {
+                $intakeAddressId = (int) ($validated['intake_address_id']
+                    ?? data_get($repair->intake_address, 'address_id')
+                    ?? 0);
+                [$intakeSnapshot, $intakeFee, $intakeQuote] = $buildPlan(
+                    'intake',
+                    $intakeMethod,
+                    $intakeAddressId,
+                );
+            }
+            $intakeChanged = $hasIntakeUpdate
+                && ((string) ($repair->intake_delivery_method ?? '') !== $intakeMethod
+                    || (string) data_get($repair->intake_address, 'version', '') !== (string) data_get($intakeSnapshot, 'version', '')
+                    || round((float) $repair->intake_delivery_fee, 2) !== round($intakeFee, 2));
 
-        if ($existingMethod === $newMethod) {
+            $requestedReturnMethod = $validated['return_delivery_method'] ?? $validated['delivery_method'] ?? null;
+            $returnMethod = (string) ($requestedReturnMethod
+                ?? $repair->return_delivery_method
+                ?? ($repair->delivery_method === 'walk_in' ? 'walk_in' : 'customer_pickup'));
+            if ($returnMethod === 'pickup') {
+                $returnMethod = 'customer_pickup';
+            }
+            $refreshLinkedReturn = $sameAsIntake
+                && $repair->return_logistics_locked_at === null
+                && $intakeMethod !== 'walk_in'
+                && ($intakeChanged || array_key_exists('same_as_intake_address', $validated));
+            $rebuildReturn = $hasReturnUpdate || $refreshLinkedReturn;
+            $returnSnapshot = $repair->return_address;
+            $returnFee = (float) $repair->return_delivery_fee;
+            $returnQuote = $repair->return_logistics_quote;
+            if ($rebuildReturn) {
+                $returnAddressId = (int) ($validated['return_address_id']
+                    ?? ($sameAsIntake ? data_get($intakeSnapshot, 'address_id') : null)
+                    ?? data_get($repair->return_address, 'address_id')
+                    ?? 0);
+                [$returnSnapshot, $returnFee, $returnQuote] = $buildPlan(
+                    'return',
+                    $returnMethod,
+                    $returnAddressId,
+                );
+            }
+            $returnChanged = $rebuildReturn
+                && ((string) ($repair->return_delivery_method ?? '') !== $returnMethod
+                    || (string) data_get($repair->return_address, 'version', '') !== (string) data_get($returnSnapshot, 'version', '')
+                    || round((float) $repair->return_delivery_fee, 2) !== round($returnFee, 2));
+
+            $repair->update([
+                ...($hasIntakeUpdate ? [
+                    'delivery_method' => $intakeMethod === 'walk_in' ? 'walk_in' : 'pickup',
+                    'pickup_address' => $intakeSnapshot,
+                    'intake_delivery_method' => $intakeMethod,
+                    'intake_address' => $intakeSnapshot,
+                    'intake_delivery_fee' => $intakeFee,
+                    'intake_logistics_quote' => $intakeQuote,
+                ] : []),
+                ...($rebuildReturn ? [
+                    'return_delivery_method' => $returnMethod,
+                    'return_address' => $returnSnapshot,
+                    'return_delivery_fee' => $returnFee,
+                    'return_logistics_quote' => $returnQuote,
+                ] : []),
+                'same_as_intake_address' => $sameAsIntake,
+                ...($returnChanged ? [
+                    'return_address_confirmed_at' => null,
+                    'return_address_confirmed_version' => null,
+                ] : []),
+            ]);
+
+            if ($intakeChanged) {
+                RepairPaymentSession::query()
+                    ->where('repair_request_id', $repair->id)
+                    ->where('phase', 'initial')
+                    ->where('status', 'pending')
+                    ->get()
+                    ->each(function (RepairPaymentSession $session) use ($intakeSnapshot, $intakeMethod, $intakeFee): void {
+                        $matches = (string) ($session->snapshot_version ?? '') === (string) data_get($intakeSnapshot, 'version', '')
+                            && (string) ($session->delivery_method ?? '') === $intakeMethod
+                            && round((float) $session->delivery_amount, 2) === round($intakeFee, 2);
+                        if (! $matches) {
+                            $session->update(['status' => 'invalidated', 'invalidated_at' => now()]);
+                        }
+                    });
+            }
+            if ($returnChanged) {
+                RepairPaymentSession::query()
+                    ->where('repair_request_id', $repair->id)
+                    ->where('phase', 'final')
+                    ->where('status', 'pending')
+                    ->get()
+                    ->each(function (RepairPaymentSession $session) use ($returnSnapshot, $returnMethod, $returnFee): void {
+                        $matches = (string) ($session->snapshot_version ?? '') === (string) data_get($returnSnapshot, 'version', '')
+                            && (string) ($session->delivery_method ?? '') === $returnMethod
+                            && round((float) $session->delivery_amount, 2) === round($returnFee, 2);
+                        if (! $matches) {
+                            $session->update(['status' => 'invalidated', 'invalidated_at' => now()]);
+                        }
+                    });
+            }
+
+            $updatedRepair = $repair->fresh();
+
             return response()->json([
                 'success' => true,
-                'delivery_method' => $repair->delivery_method,
-                'return_delivery_method' => $existingMethod,
-                'return_address' => $repair->return_address,
-                'message' => 'Return method is already set to that option.',
+                'delivery_method' => $updatedRepair->delivery_method,
+                'intake_delivery_method' => $updatedRepair->intake_delivery_method,
+                'intake_address' => $updatedRepair->intake_address,
+                'intake_delivery_fee' => (float) $updatedRepair->intake_delivery_fee,
+                'intake_logistics_quote' => $updatedRepair->intake_logistics_quote,
+                'return_delivery_method' => $updatedRepair->return_delivery_method,
+                'return_address' => $updatedRepair->return_address,
+                'return_delivery_fee' => (float) $updatedRepair->return_delivery_fee,
+                'return_logistics_quote' => $updatedRepair->return_logistics_quote,
+                'same_as_intake_address' => (bool) $updatedRepair->same_as_intake_address,
+                'message' => 'Delivery plan updated.',
             ]);
+        }, 3);
+    }
+
+    public function confirmReturnAddress(Request $request, $id)
+    {
+        $user = Auth::guard('user')->user();
+        if (! $user) {
+            return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
         }
 
-        $updatePayload = [
-            'return_delivery_method' => $newMethod,
-        ];
+        $repair = DB::transaction(function () use ($id, $user): RepairRequest {
+            $repair = RepairRequest::query()
+                ->whereKey($id)
+                ->forCustomer($user->id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        if ($newMethod === 'walk_in') {
-            $updatePayload['return_address'] = null;
-        } elseif (
-            !empty($validated['return_address_line']) ||
-            !empty($validated['return_barangay']) ||
-            !empty($validated['return_city']) ||
-            !empty($validated['return_region']) ||
-            !empty($validated['return_postal_code'])
-        ) {
-            $updatePayload['return_address'] = [
-                'address_line' => $validated['return_address_line'] ?? null,
-                'barangay' => $validated['return_barangay'] ?? null,
-                'city' => $validated['return_city'] ?? null,
-                'region' => $validated['return_region'] ?? null,
-                'postal_code' => $validated['return_postal_code'] ?? null,
-            ];
-        } else {
-            $existingReturnAddress = is_array($repair->return_address) ? $repair->return_address : null;
-            $hasExistingReturnAddress = $existingReturnAddress
-                && !empty($existingReturnAddress['address_line'])
-                && !empty($existingReturnAddress['barangay'])
-                && !empty($existingReturnAddress['city'])
-                && !empty($existingReturnAddress['region'])
-                && !empty($existingReturnAddress['postal_code']);
+            $version = (string) data_get($repair->return_address, 'version', '');
+            if ($version === '') {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'return_address' => ['Choose a saved return address before confirming delivery.'],
+                ]);
+            }
 
-            if ($hasExistingReturnAddress) {
-                $updatePayload['return_address'] = $existingReturnAddress;
-            } else {
-                $defaultAddress = $user->defaultAddress()->first();
+            if ($repair->return_logistics_locked_at !== null) {
+                $paidSession = RepairPaymentSession::query()
+                    ->where('repair_request_id', $repair->id)
+                    ->where('phase', 'final')
+                    ->where('status', 'paid')
+                    ->latest('id')
+                    ->first();
+                $paidPos = PosTransaction::query()
+                    ->where('module_type', 'repair')
+                    ->where('module_reference_id', $repair->id)
+                    ->where('due_type', 'balance')
+                    ->whereIn('status', ['paid', 'partially_refunded', 'refunded'])
+                    ->latest('id')
+                    ->first();
+                $paidVersion = $paidSession?->snapshot_version
+                    ?? data_get($paidPos?->metadata, 'snapshot_version');
+                $paidMethod = $paidSession?->delivery_method
+                    ?? data_get($paidPos?->metadata, 'delivery_method');
+                $paidAmount = $paidSession?->delivery_amount
+                    ?? data_get($paidPos?->metadata, 'delivery_amount');
 
-                if ($defaultAddress) {
-                    $updatePayload['return_address'] = [
-                        'address_line' => $defaultAddress->address_line,
-                        'barangay' => $defaultAddress->barangay,
-                        'city' => $defaultAddress->city,
-                        'region' => $defaultAddress->region,
-                        'postal_code' => $defaultAddress->postal_code,
-                    ];
-                } elseif (is_array($repair->pickup_address)) {
-                    $pickupAddress = $repair->pickup_address;
-                    $hasPickupAddress = !empty($pickupAddress['address_line'])
-                        && !empty($pickupAddress['barangay'])
-                        && !empty($pickupAddress['city'])
-                        && !empty($pickupAddress['region'])
-                        && !empty($pickupAddress['postal_code']);
-
-                    if ($hasPickupAddress) {
-                        $updatePayload['return_address'] = [
-                            'address_line' => $pickupAddress['address_line'],
-                            'barangay' => $pickupAddress['barangay'],
-                            'city' => $pickupAddress['city'],
-                            'region' => $pickupAddress['region'],
-                            'postal_code' => $pickupAddress['postal_code'],
-                        ];
-                    } else {
-                        return response()->json([
-                            'success' => false,
-                            'message' => 'No return address found. Please update your delivery address before switching to courier pickup.',
-                        ], 422);
-                    }
-                } else {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'No return address found. Please update your delivery address before switching to courier pickup.',
-                    ], 422);
+                if ($paidVersion === null
+                    || (string) $paidVersion !== $version
+                        || (string) $paidMethod !== (string) $repair->return_delivery_method
+                        || round((float) $paidAmount, 2) !== round((float) $repair->return_delivery_fee, 2)) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'return_address' => ['The paid return delivery plan does not match the current address version.'],
+                    ]);
                 }
             }
-        }
 
-        $repair->update($updatePayload);
-        $updatedRepair = $repair->fresh();
+            $repair->update([
+                'return_address_confirmed_at' => now(),
+                'return_address_confirmed_version' => $version,
+            ]);
 
-        if ($repair->assigned_repairer_id) {
-            try {
-                $notificationService = app(NotificationService::class);
-                $notificationService->sendToUser(
-                    userId: $repair->assigned_repairer_id,
-                    type: \App\Enums\NotificationType::REPAIR_ASSIGNED_TO_ME,
-                    title: 'Customer Changed Return Method',
-                    message: sprintf(
-                        'Customer changed the return method for repair %s from %s to %s.',
-                        $repair->request_id,
-                        $previousMethod === 'walk_in' ? 'Customer Pick-up at Shop' : ($previousMethod === 'shop_delivery' ? 'Shop Delivery to Customer' : 'Customer-arranged Courier Pickup'),
-                        $newMethod === 'walk_in' ? 'Customer Pick-up at Shop' : ($newMethod === 'shop_delivery' ? 'Shop Delivery to Customer' : 'Customer-arranged Courier Pickup')
-                    ),
-                    data: [
-                        'repair_id' => $repair->id,
-                        'repair_request_id' => $repair->id,
-                        'request_id' => $repair->request_id,
-                        'order_number' => $repair->request_id,
-                        'customer_name' => $repair->customer_name,
-                        'previous_return_delivery_method' => $previousMethod,
-                        'return_delivery_method' => $newMethod,
-                    ],
-                    actionUrl: '/erp/staff/job-orders-repair',
-                    priority: 'medium',
-                    requiresAction: false
-                );
-            } catch (\Exception $e) {
-                \Log::warning('Could not notify repairer of return method change: ' . $e->getMessage());
-            }
-        }
+            return $repair->fresh();
+        }, 3);
+
+        $shipment = app(RepairDeliveryService::class)->tryCreateReturnShipment($repair);
 
         return response()->json([
             'success' => true,
-            'delivery_method' => $updatedRepair->delivery_method,
-            'return_delivery_method' => $updatedRepair->return_delivery_method,
-            'return_address' => $updatedRepair->return_address,
-            'message' => $newMethod === 'walk_in'
-                ? 'Your order is now set to customer pick-up at the shop.'
-                : ($newMethod === 'shop_delivery'
-                    ? 'Your order is now set to shop delivery.'
-                    : 'Your order is now set to customer-arranged courier pickup.'),
+            'message' => 'Return address and delivery plan confirmed.',
+            'return_address_confirmed_at' => $repair->return_address_confirmed_at?->toISOString(),
+            'return_address_confirmed_version' => $repair->return_address_confirmed_version,
+            'shipment_id' => $shipment?->id,
+        ]);
+    }
+
+    public function updateExternalTracking(Request $request, $id)
+    {
+        $user = Auth::guard('user')->user();
+        abort_unless($user, 401);
+
+        $validated = $request->validate([
+            'leg' => ['required', 'in:intake,return'],
+            'carrier' => ['required', 'string', 'max:100'],
+            'tracking_number' => ['required', 'string', 'max:100'],
+            'tracking_url' => ['nullable', 'url', 'max:500'],
+        ]);
+
+        $repair = DB::transaction(function () use ($id, $user, $validated): RepairRequest {
+            $repair = RepairRequest::query()
+                ->whereKey($id)
+                ->forCustomer($user->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $isIntake = $validated['leg'] === 'intake';
+            $method = (string) ($isIntake
+                ? $repair->intake_delivery_method
+                : $repair->return_delivery_method);
+            $requiredMethod = $isIntake ? 'customer_delivery' : 'customer_pickup';
+            $lockField = $isIntake ? 'intake_logistics_locked_at' : 'return_logistics_locked_at';
+            $addressField = $isIntake ? 'intake_address' : 'return_address';
+
+            if ($method !== $requiredMethod) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'leg' => ['External tracking is available only for customer-arranged delivery.'],
+                ]);
+            }
+            if ($repair->{$lockField} !== null) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'leg' => ['This delivery handoff is locked and tracking can no longer be changed.'],
+                ]);
+            }
+
+            $snapshot = is_array($repair->{$addressField}) ? $repair->{$addressField} : [];
+            $snapshot['external_tracking'] = [
+                'carrier' => $validated['carrier'],
+                'tracking_number' => $validated['tracking_number'],
+                'tracking_url' => $validated['tracking_url'] ?? null,
+                'updated_at' => now()->toISOString(),
+            ];
+            $repair->update([$addressField => $snapshot]);
+
+            return $repair->fresh();
+        }, 3);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Tracking details saved.',
+            'data' => $repair,
         ]);
     }
 
     /**
-     * Confirm pickup (Phase 9)
+     * Confirm customer receipt after the shop records the exact return handoff.
      */
-    public function confirmPickup(Request $request, $id)
+    public function confirmPickup(Request $request, $id, RepairDeliveryService $repairDeliveryService)
     {
-        try {
-            $user = Auth::guard('user')->user();
+        $user = Auth::guard('user')->user();
+        abort_unless($user, 401);
 
-            if (!$user) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthenticated'
-                ], 401);
-            }
-
-            DB::beginTransaction();
-
-            $repair = RepairRequest::where('id', $id)
+        $repair = DB::transaction(function () use ($id, $user, $repairDeliveryService): RepairRequest {
+            $repair = RepairRequest::query()
+                ->whereKey($id)
                 ->forCustomer($user->id)
-                ->whereIn('status', ['ready-for-pickup', 'ready_for_pickup', 'shipped'])
-                ->first();
+                ->lockForUpdate()
+                ->firstOrFail();
+            $method = match ((string) ($repair->return_delivery_method
+                ?: (($repair->delivery_method ?? null) === 'walk_in' ? 'walk_in' : 'customer_pickup'))) {
+                'pickup' => 'customer_pickup',
+                default => (string) ($repair->return_delivery_method
+                    ?: (($repair->delivery_method ?? null) === 'walk_in' ? 'walk_in' : 'customer_pickup')),
+            };
+            $allowedStatuses = $method === 'walk_in'
+                ? ['ready_for_pickup', 'ready-for-pickup']
+                : ['shipped'];
 
-            if (!$repair) {
-                DB::rollBack();
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Repair request not found or not ready for confirmation'
-                ], 404);
+            if (! in_array((string) $repair->status, $allowedStatuses, true)) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'status' => ['This repair is not awaiting customer receipt confirmation.'],
+                ]);
             }
-
-            if (!(bool) $repair->pickup_enabled) {
-                DB::rollBack();
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Receive confirmation is not yet activated by the shop.'
-                ], 422);
+            if (! (bool) $repair->pickup_enabled || $repair->return_logistics_locked_at === null) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'status' => ['The shop has not recorded the return handoff yet.'],
+                ]);
+            }
+            if ($method === 'shop_delivery'
+                && ! $repairDeliveryService->hasApprovedProof($repair, 'repair_return')) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'proof' => ['Dispatcher approval of the rider delivery proof is required before receipt confirmation.'],
+                ]);
             }
 
             $repair->update([
                 'status' => 'picked_up',
-                'picked_up_at' => now()
+                'picked_up_at' => now(),
             ]);
 
-            // Auto-generate invoice on pickup confirmation (one-time).
             try {
                 $this->autoGenerateInvoiceForPickedUpRepair($repair);
             } catch (\Throwable $invoiceError) {
@@ -1750,28 +2014,14 @@ class RepairRequestController extends Controller
                 ]);
             }
 
-            DB::commit();
+            return $repair->fresh(['services', 'shopOwner', 'repairer']);
+        }, 3);
 
-            // TODO: Send notification to shop owner/repairer about successful pickup
-            // TODO: Trigger review request email/notification after 24 hours
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Pickup confirmed! Thank you for your business. We hope to serve you again.',
-                'data' => $repair->fresh(['services', 'shopOwner', 'repairer'])
-            ]);
-        } catch (\Throwable $e) {
-            DB::rollBack();
-            \Log::error('Error confirming pickup', [
-                'repair_id' => $id,
-                'error' => $e->getMessage(),
-            ]);
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to confirm pickup. Please try again.'
-            ], 500);
-        }
+        return response()->json([
+            'success' => true,
+            'message' => 'Receipt confirmed. Thank you for choosing this repair shop.',
+            'data' => $repair,
+        ]);
     }
     
     public function updateServices(Request $request, int $id)
@@ -2023,6 +2273,23 @@ class RepairRequestController extends Controller
                 ], 422);
             }
 
+            $paymentSession = $repair->paymentSessions()
+                ->where('provider', 'paymongo')
+                ->where('provider_link_id', $request->paymongo_link_id)
+                ->where('status', 'pending')
+                ->whereNull('invalidated_at')
+                ->first();
+
+            if (! $paymentSession) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => [
+                        'paymongo_link_id' => ['The payment link was not created by the server for this repair phase.'],
+                    ],
+                ], 422);
+            }
+
             $policy = $this->normalizeRepairPaymentPolicy($repair->payment_policy ?? 'deposit_50');
 
             if ($this->isRepairPaymentSettled($repair, $policy)) {
@@ -2090,7 +2357,7 @@ class RepairRequestController extends Controller
     /**
      * Create a fresh PayMongo checkout session for an existing unpaid repair request.
      */
-    public function retryPaymentSession(Request $request, $id)
+    public function retryPaymentSession(Request $request, $id, PaymentSettlementService $settlementService)
     {
         try {
             $user = Auth::guard('user')->user();
@@ -2144,46 +2411,60 @@ class RepairRequestController extends Controller
                 ], 409);
             }
 
+            $phaseBreakdown = $settlementService->repairPaymentBreakdown($repair);
+            $phase = $phaseBreakdown['phase'] === 'final'
+                ? 'final payment'
+                : ($policy === 'full_upfront' ? 'full payment' : 'down payment');
+
+            $taxMode = $settlementService->repairTaxMode($repair);
+            if ($taxMode === 'vat_inclusive') {
+                $taxBreakdown = VatInclusiveCalculator::extract((float) $phaseBreakdown['service_amount'], self::REPAIR_VAT_RATE_PERCENT);
+                $serviceAmount = (float) $taxBreakdown['total'];
+                $dueSubtotal = round((float) $taxBreakdown['net'] + (float) $phaseBreakdown['delivery_amount'], 2);
+                $vatAmount = (float) $taxBreakdown['vat'];
+            } else {
+                $serviceSubtotal = (float) $phaseBreakdown['service_amount'];
+                $vatAmount = round($serviceSubtotal * (self::REPAIR_VAT_RATE_PERCENT / 100), 2);
+                $serviceAmount = round($serviceSubtotal + $vatAmount, 2);
+                $dueSubtotal = round($serviceSubtotal + (float) $phaseBreakdown['delivery_amount'], 2);
+            }
+            $amount = round($serviceAmount + (float) $phaseBreakdown['delivery_amount'], 2);
+
+            if ($amount <= 0) {
+                $settledRepair = DB::transaction(function () use ($repair, $settlementService): RepairRequest {
+                    $lockedRepair = RepairRequest::query()->lockForUpdate()->findOrFail($repair->id);
+                    $currentBreakdown = $settlementService->repairPaymentBreakdown($lockedRepair);
+
+                    if (round((float) $currentBreakdown['total_amount'], 2) !== 0.0) {
+                        throw \Illuminate\Validation\ValidationException::withMessages([
+                            'payment' => ['The payable amount changed. Please try again.'],
+                        ]);
+                    }
+
+                    return $settlementService->settleRepairPhasePaid($lockedRepair, $currentBreakdown);
+                });
+
+                return response()->json([
+                    'success' => true,
+                    'zero_amount_settled' => true,
+                    'checkout_url' => null,
+                    'link_id' => null,
+                    'repair_id' => $settledRepair->id,
+                    'subtotal_amount' => 0,
+                    'vat_amount' => 0,
+                    'vat_rate' => self::REPAIR_VAT_RATE_PERCENT,
+                    'total_amount' => 0,
+                    'tax_mode' => $taxMode,
+                ]);
+            }
+
             $apiKey = $repair->shopOwner?->paymongo_secret_key;
-            if (!$apiKey) {
+            if (! $apiKey) {
                 return response()->json([
                     'success' => false,
                     'error' => 'shop_payment_not_configured',
                     'message' => 'This shop has not set up payment processing yet. Please contact the shop owner.',
                 ], 503);
-            }
-
-            $chargeSubtotal = (float) ($repair->final_total ?? $repair->total ?? 0);
-            if ($chargeSubtotal <= 0) {
-                $chargeSubtotal = (float) (($repair->package_price ?? 0) + ($repair->add_ons_total ?? 0));
-            }
-
-            $isRemainingBalancePhase = $this->isRepairRemainingBalancePhase($repair);
-            if ($policy === 'full_upfront') {
-                $phaseBaseAmount = $chargeSubtotal;
-                $phase = 'full payment';
-            } else {
-                $phaseBaseAmount = max(1.0, round($chargeSubtotal / 2, 2));
-                $phase = $isRemainingBalancePhase ? 'remaining balance' : 'down payment';
-            }
-
-            $taxMode = $this->resolveRepairTaxMode($repair);
-            if ($taxMode === 'vat_inclusive') {
-                $breakdown = VatInclusiveCalculator::extract($phaseBaseAmount, self::REPAIR_VAT_RATE_PERCENT);
-                $dueSubtotal = (float) $breakdown['net'];
-                $vatAmount = (float) $breakdown['vat'];
-                $amount = (float) $breakdown['total'];
-            } else {
-                $dueSubtotal = $phaseBaseAmount;
-                $vatAmount = round($dueSubtotal * (self::REPAIR_VAT_RATE_PERCENT / 100), 2);
-                $amount = round($dueSubtotal + $vatAmount, 2);
-            }
-
-            if ($amount <= 0) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Invalid payable amount',
-                ], 422);
             }
 
             $description = 'SoleSpace Repair #' . ($repair->request_id ?: $repair->id) . ' (' . $phase . ')';
@@ -2216,12 +2497,20 @@ class RepairRequestController extends Controller
                         'send_email_receipt' => false,
                         'show_description' => true,
                         'show_line_items' => true,
-                        'line_items' => [[
-                            'currency' => 'PHP',
-                            'amount' => (int) round($amount * 100),
-                            'name' => $description,
-                            'quantity' => 1,
-                        ]],
+                        'line_items' => array_values(array_filter([
+                            $serviceAmount > 0 ? [
+                                'currency' => 'PHP',
+                                'amount' => (int) round($serviceAmount * 100),
+                                'name' => $description,
+                                'quantity' => 1,
+                            ] : null,
+                            (float) $phaseBreakdown['delivery_amount'] > 0 ? [
+                                'currency' => 'PHP',
+                                'amount' => (int) round((float) $phaseBreakdown['delivery_amount'] * 100),
+                                'name' => $phaseBreakdown['leg'] === 'intake' ? 'Shop pickup fee' : 'Shop return delivery fee',
+                                'quantity' => 1,
+                            ] : null,
+                        ])),
                         'payment_method_types' => $paymentMethodTypes,
                     ],
                 ],
@@ -2261,17 +2550,73 @@ class RepairRequestController extends Controller
                 ], 500);
             }
 
-            $nextPaymentStatus = $this->nextRepairPaymentStatusForRetry($repair, $policy);
+            DB::transaction(function () use ($repair, $phaseBreakdown, $serviceAmount, $linkId, $policy, $taxMode, $settlementService): void {
+                $lockedRepair = RepairRequest::query()->lockForUpdate()->findOrFail($repair->id);
+                $lockedPolicy = $settlementService->normalizeRepairPaymentPolicy(
+                    $lockedRepair->payment_policy_snapshot ?: $lockedRepair->payment_policy
+                );
 
-            $repair->update([
-                'paymongo_link_id' => $linkId,
-                'payment_link_created_at' => now(),
-                'payment_expires_at' => now()->addHour(),
-                'payment_failed_at' => null,
-                'payment_failure_reason' => null,
-                'payment_expired_at' => null,
-                'payment_status' => $nextPaymentStatus,
-            ]);
+                if (! $settlementService->isRepairPaymentDueNow($lockedRepair, $lockedPolicy)
+                    || $settlementService->isRepairPaymentPhaseSettled($lockedRepair, $phaseBreakdown['phase'])) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'payment' => ['This payment phase was already settled. Refresh the repair before trying again.'],
+                    ]);
+                }
+
+                $currentBreakdown = $settlementService->repairPaymentBreakdown($lockedRepair);
+                $currentTaxMode = $settlementService->repairTaxMode($lockedRepair);
+                $paymentPlanChanged = (string) $currentBreakdown['phase'] !== (string) $phaseBreakdown['phase']
+                    || (string) $currentBreakdown['policy'] !== (string) $phaseBreakdown['policy']
+                    || (string) ($currentBreakdown['snapshot_version'] ?? '') !== (string) ($phaseBreakdown['snapshot_version'] ?? '')
+                    || (string) $currentBreakdown['delivery_method'] !== (string) $phaseBreakdown['delivery_method']
+                    || round((float) $currentBreakdown['service_amount'], 2) !== round((float) $phaseBreakdown['service_amount'], 2)
+                    || round((float) $currentBreakdown['delivery_amount'], 2) !== round((float) $phaseBreakdown['delivery_amount'], 2)
+                    || $currentTaxMode !== $taxMode;
+
+                if ($paymentPlanChanged) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'payment' => ['The payable amount or delivery plan changed. Refresh and try again.'],
+                    ]);
+                }
+
+                RepairPaymentSession::query()
+                    ->where('repair_request_id', $lockedRepair->id)
+                    ->where('phase', $currentBreakdown['phase'])
+                    ->where('status', 'pending')
+                    ->update([
+                        'status' => 'invalidated',
+                        'invalidated_at' => now(),
+                    ]);
+
+                RepairPaymentSession::create([
+                    'repair_request_id' => $lockedRepair->id,
+                    'provider' => 'paymongo',
+                    'provider_link_id' => $linkId,
+                    'phase' => $currentBreakdown['phase'],
+                    'status' => 'pending',
+                    'snapshot_version' => $currentBreakdown['snapshot_version'],
+                    'delivery_method' => $currentBreakdown['delivery_method'],
+                    'service_amount' => $serviceAmount,
+                    'delivery_amount' => $currentBreakdown['delivery_amount'],
+                    'quote' => [
+                        ...(is_array($currentBreakdown['quote']) ? $currentBreakdown['quote'] : []),
+                        'payment_policy' => $currentBreakdown['policy'],
+                        'payment_phase' => $currentBreakdown['phase'],
+                        'service_base_amount' => $currentBreakdown['service_amount'],
+                        'tax_mode' => $currentTaxMode,
+                    ],
+                ]);
+
+                $lockedRepair->update([
+                    'paymongo_link_id' => $linkId,
+                    'payment_link_created_at' => now(),
+                    'payment_expires_at' => now()->addHour(),
+                    'payment_failed_at' => null,
+                    'payment_failure_reason' => null,
+                    'payment_expired_at' => null,
+                    'payment_status' => $this->nextRepairPaymentStatusForRetry($lockedRepair, $policy),
+                ]);
+            });
 
             return response()->json([
                 'success' => true,
@@ -2284,6 +2629,8 @@ class RepairRequestController extends Controller
                 'total_amount' => $amount,
                 'tax_mode' => $taxMode,
             ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             \Log::error('Retry payment session failed for repair', [
                 'repair_id' => $id,
@@ -2596,6 +2943,15 @@ class RepairRequestController extends Controller
         // For deposit_50: 'paid' = only the deposit was paid, 'completed' = both payments done.
         // For full_upfront: a single 'paid' should be treated as fully paid.
         $normalizedPolicy = $settlementService->normalizeRepairPaymentPolicy($repair->payment_policy ?? 'deposit_50');
+        if (data_get($repair->logistics_payment_reconciliation, 'status') === 'pending') {
+            return response()->json([
+                'success' => false,
+                'payment_verified' => false,
+                'requires_reconciliation' => true,
+                'message' => 'Payment was received, but the amount or delivery plan changed. The shop must reconcile it before processing can continue.',
+            ], 409);
+        }
+
         $isFullyPaid = $settlementService->isRepairSettled($repair, $normalizedPolicy);
 
         if ($isFullyPaid) {
@@ -2751,6 +3107,15 @@ class RepairRequestController extends Controller
                 'success' => false,
                 'payment_verified' => false,
                 'message' => 'No payable repair phase is currently due.',
+            ], 409);
+        }
+
+        if ($settlementResult === 'reconciliation') {
+            return response()->json([
+                'success' => false,
+                'payment_verified' => false,
+                'requires_reconciliation' => true,
+                'message' => 'Payment was received, but the amount or delivery plan changed. The shop must reconcile it before processing can continue.',
             ], 409);
         }
 
@@ -3258,5 +3623,21 @@ class RepairRequestController extends Controller
             'final_total' => $finalTotal,
             'pricing_breakdown' => $pricingBreakdown,
         ];
+    }
+
+    private function repairLogisticsValidationFailure(string $field, ?string $reason)
+    {
+        $message = match ($reason) {
+            'address_needs_pin' => 'Pin the exact address before choosing shop-owned logistics.',
+            'outside_coverage' => 'This address is outside the shop coverage. Choose walk-in or a third-party courier.',
+            'shop_needs_pin' => 'The shop must pin its location before shop-owned logistics can be used.',
+            default => 'Shop-owned logistics is unavailable for this address.',
+        };
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Validation failed',
+            'errors' => [$field => [$message]],
+        ], 422);
     }
 }

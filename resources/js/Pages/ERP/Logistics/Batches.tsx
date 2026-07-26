@@ -5,7 +5,15 @@ import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import AppLayoutERP from '@/layout/AppLayout_ERP';
 import { logisticsApi } from '@/services/logisticsApi';
-import type { DeliveryBatchPageProps, DeliveryBatchStatus, TrackingShipmentLeg } from '@/types/logistics';
+import {
+  logisticsModuleForSourceType,
+  logisticsModuleLabel,
+  logisticsSourceLabel,
+  type DeliveryBatchPageProps,
+  type DeliveryBatchStatus,
+  type LogisticsModule,
+  type TrackingShipmentLeg,
+} from '@/types/logistics';
 import { workflowFeedback } from '@/utils/workflowFeedback';
 import AvailableDeliveriesPanel from './components/AvailableDeliveriesPanel';
 import BatchCard from './components/BatchCard';
@@ -17,17 +25,27 @@ const errorMessage = (error: unknown) => {
   return Object.values(data?.errors ?? {})[0]?.[0] ?? data?.message ?? 'This batch changed. Refresh and try again.';
 };
 
-const sourceLabel = (leg: TrackingShipmentLeg) => leg.shipment?.source_type === 'order'
-  ? `Order #${leg.shipment.source_id}`
-  : `Leg #${leg.id}`;
+const sourceLabel = (leg: TrackingShipmentLeg) => logisticsSourceLabel(leg.shipment);
 
 export default function Batches() {
-  const { batches, pool, unscheduled = [], riders, dailyRiderCapacity } = usePage<DeliveryBatchPageProps>().props;
+  const {
+    batches,
+    pool,
+    unscheduled = [],
+    riders,
+    dailyRiderCapacity,
+    filters = {},
+    availableModules = [],
+    showModuleFilter = false,
+  } = usePage<DeliveryBatchPageProps>().props;
   const [building, setBuilding] = useState(false);
   const [selectedBatchId, setSelectedBatchId] = useState<number>();
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
-  const [date, setDate] = useState('');
-  const [window, setWindow] = useState('morning');
+  const [date, setDate] = useState(filters.date ?? '');
+  const [window, setWindow] = useState(filters.window && filters.window !== 'all' ? filters.window : 'morning');
+  const [module, setModule] = useState<'all' | LogisticsModule>(
+    filters.module ?? (availableModules.length === 1 ? availableModules[0] : 'all'),
+  );
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
   const [overrideReason, setOverrideReason] = useState('');
@@ -66,6 +84,9 @@ export default function Batches() {
     const leg = allDeliveries.find((candidate) => candidate.id === id);
     return leg ? [leg] : [];
   });
+  const selectedModule = selectedLegs.length
+    ? logisticsModuleForSourceType(selectedLegs[0].shipment?.source_type)
+    : null;
   const selectedBatch = batches.find((batch) => batch.id === selectedBatchId);
   const activeBatches = batches.filter((batch) => !['completed', 'cancelled'].includes(batch.status));
   const historyBatches = batches.filter((batch) => ['completed', 'cancelled'].includes(batch.status));
@@ -100,12 +121,39 @@ export default function Batches() {
     }
     setDate(nextDate);
     setWindow(nextWindow);
+    router.get('/erp/logistics/batches', { module, date: nextDate || undefined, window: nextWindow }, {
+      only: ['batches', 'pool', 'unscheduled', 'filters'],
+      preserveScroll: true,
+      preserveState: true,
+    });
   };
-  const toggle = (id: number, checked: boolean) => setSelectedIds((ids) => checked
-    ? [...ids.filter((selectedId) => selectedId !== id), id]
-    : ids.filter((selectedId) => selectedId !== id));
+  const changeModule = (nextModule: 'all' | LogisticsModule) => {
+    setModule(nextModule);
+    setSelectedIds([]);
+    setScheduledThisAttempt([]);
+    router.get('/erp/logistics/batches', { module: nextModule, date: date || undefined, window }, {
+      only: ['batches', 'pool', 'unscheduled', 'filters'],
+      preserveScroll: true,
+      preserveState: true,
+    });
+  };
+  const clearFilters = () => {
+    setSearch('');
+    setStatus('all');
+    changeSlot('', 'morning');
+  };
+  const toggle = (id: number, checked: boolean) => setSelectedIds((ids) => {
+    if (!checked) return ids.filter((selectedId) => selectedId !== id);
+    const leg = allDeliveries.find((candidate) => candidate.id === id);
+    const legModule = logisticsModuleForSourceType(leg?.shipment?.source_type);
+    if (selectedModule && legModule !== selectedModule) return ids;
+    return [...ids.filter((selectedId) => selectedId !== id), id];
+  });
   const selectAll = (checked: boolean) => {
-    const matchingIds = filteredDeliveries.map((leg) => leg.id);
+    const targetModule = selectedModule ?? logisticsModuleForSourceType(filteredDeliveries[0]?.shipment?.source_type);
+    const matchingIds = filteredDeliveries
+      .filter((leg) => logisticsModuleForSourceType(leg.shipment?.source_type) === targetModule)
+      .map((leg) => leg.id);
     setSelectedIds((ids) => checked
       ? [...ids.filter((id) => !matchingIds.includes(id)), ...matchingIds]
       : ids.filter((id) => !matchingIds.includes(id)));
@@ -272,6 +320,10 @@ export default function Batches() {
     });
   };
   const saveDraft = async () => {
+    if (selectedIds.length < 2) {
+      setError('Select at least 2 deliveries.');
+      return;
+    }
     try {
       setSubmitting(true);
       setError('');
@@ -305,15 +357,27 @@ export default function Batches() {
   return <AppLayoutERP><Head title="Delivery Batches" /><main className="space-y-6 p-4 sm:p-6">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div><h1 className="text-2xl font-bold text-gray-950 dark:text-white">Delivery Batches</h1><p className="mt-1 text-sm text-gray-500">Build, organize, and offer efficient delivery routes.</p></div>
-      <button type="button" onClick={startNewBatch} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-blue-600 px-4 font-semibold text-white hover:bg-blue-700"><Plus size={18} />New Batch</button>
+      <div className="flex flex-wrap items-center gap-2">
+        {showModuleFilter && <select
+          aria-label="Filter batches by module"
+          value={module}
+          onChange={(event) => changeModule(event.target.value as 'all' | LogisticsModule)}
+          className="min-h-11 rounded-xl border border-gray-300 bg-white px-3 text-sm font-semibold"
+        >
+          <option value="all">All modules</option>
+          {availableModules.map((available) => <option key={available} value={available}>{logisticsModuleLabel(available)}</option>)}
+        </select>}
+        <button type="button" onClick={startNewBatch} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-blue-600 px-4 font-semibold text-white hover:bg-blue-700"><Plus size={18} />New Batch</button>
+      </div>
     </div>
     {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-red-700">{error}</p>}
     <div id="batch-workspace" data-testid="batch-workspace" className="grid scroll-mt-28 gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
       <AvailableDeliveriesPanel
         rows={filteredDeliveries} totalRows={allDeliveries.length} selectedIds={selectedIds} loading={refreshing}
+        selectedModule={selectedModule}
         search={search} date={date} window={window} status={status}
         onSearchChange={setSearch} onDateChange={(value) => changeSlot(value, window)} onWindowChange={(value) => changeSlot(date, value)} onStatusChange={setStatus}
-        onToggle={toggle} onSelectAll={selectAll} onClearFilters={() => { setSearch(''); setStatus('all'); setDate(''); setWindow('morning'); }}
+        onToggle={toggle} onSelectAll={selectAll} onClearFilters={clearFilters}
       />
       {building || selectedBatch ? <BatchWorkspace
         batch={selectedBatch} selectedLegs={selectedLegs} date={date} window={window} dailyRiderCapacity={dailyRiderCapacity}

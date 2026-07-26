@@ -1320,6 +1320,8 @@ Route::middleware('auth:user')->prefix('api/customer/repairs')->group(function (
 
     // Change pickup/delivery method before final receipt confirmation
     Route::patch('{id}/delivery-method', [\App\Http\Controllers\Api\RepairRequestController::class, 'changeDeliveryMethod']);
+    Route::post('{id}/external-tracking', [\App\Http\Controllers\Api\RepairRequestController::class, 'updateExternalTracking']);
+    Route::post('{id}/confirm-return-address', [\App\Http\Controllers\Api\RepairRequestController::class, 'confirmReturnAddress']);
 });
 
 Route::middleware(['auth:user', 'check.user.business.type:repair,both'])->prefix('api/repairer/refunds')->group(function () {
@@ -1347,6 +1349,10 @@ Route::middleware(['auth:user', 'permission:access-refund-approval'])->prefix('a
     Route::post('{refund}/approve', [\App\Http\Controllers\Api\RepairRefundWorkflowController::class, 'financeApprove']);
     Route::post('{refund}/reject', [\App\Http\Controllers\Api\RepairRefundWorkflowController::class, 'financeReject']);
     Route::post('{refund}/execute', [\App\Http\Controllers\Api\RepairRefundWorkflowController::class, 'financeExecute']);
+});
+Route::middleware(['auth:user', 'permission:access-refund-approval'])->prefix('api/finance/repair-delivery-reconciliations')->group(function () {
+    Route::get('/', [\App\Http\Controllers\Api\RepairRefundWorkflowController::class, 'financeDeliveryReconciliations']);
+    Route::post('{repair}/resolve', [\App\Http\Controllers\Api\RepairRefundWorkflowController::class, 'resolveFinanceDeliveryReconciliation']);
 });
 
 // Shop repair capacity check — publicly accessible per shop (no auth needed; returns counts only)
@@ -1382,6 +1388,7 @@ Route::middleware(['auth:user', 'check.user.business.type:repair,both'])->prefix
 
 // Public shop-hours fetch — no auth needed, used by the customer schedule modal
 Route::get('/api/repair/shop-hours', [\App\Http\Controllers\Api\RepairAvailabilityController::class, 'shopHours']);
+Route::middleware('auth:user')->get('/api/repair/shops/{shop}/delivery-quote', [\App\Http\Controllers\Api\RepairAvailabilityController::class, 'deliveryQuote']);
 
 Route::middleware(['auth:user', 'check.user.business.type:repair,both'])->prefix('api/repairer/repairs')->group(function () {
     // Get assigned repairs
@@ -1409,6 +1416,7 @@ Route::middleware(['auth:user', 'check.user.business.type:repair,both'])->prefix
     Route::post('{id}/mark-ready', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'markReadyForPickup']);
     Route::post('{id}/ship', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'shipRepair']);
     Route::post('{id}/activate-pickup', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'activatePickup']);
+    Route::post('{id}/cancel-delivery-leg', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'cancelDeliveryLeg']);
 
     // Repair material usage tracking
     Route::get('{id}/materials', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'getRepairMaterialUsage'])

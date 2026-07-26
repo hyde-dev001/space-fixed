@@ -55,6 +55,7 @@ class DeliveryScheduleService
                 ->whereHas('shipment', fn ($query) => $query->where('shop_owner_id', $shop->id))
                 ->whereDate('scheduled_delivery_date', $date->toDateString())
                 ->where('schedule_status', 'scheduled')
+                ->where('status', '!=', 'cancelled')
                 ->count();
             if ($used < $capacity) {
                 return $this->result(

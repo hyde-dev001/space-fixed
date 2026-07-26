@@ -31,6 +31,24 @@ class Shipment extends Model
         'cancelled_at' => 'datetime',
     ];
 
+    public static function moduleForSourceType(string $sourceType): ?string
+    {
+        return match ($sourceType) {
+            'order', 'order_refund' => 'retail',
+            'repair_request' => 'repair',
+            default => null,
+        };
+    }
+
+    public static function sourceTypesForModule(string $module): array
+    {
+        return match ($module) {
+            'retail' => ['order', 'order_refund'],
+            'repair' => ['repair_request'],
+            default => [],
+        };
+    }
+
     public function shopOwner(): BelongsTo
     {
         return $this->belongsTo(ShopOwner::class);

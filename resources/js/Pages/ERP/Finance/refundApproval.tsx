@@ -304,6 +304,19 @@ interface RefundRequest {
 	};
 }
 
+interface DeliveryReconciliation {
+	repair_id: number;
+	request_id: string;
+	customer_name: string;
+	compensation_key: string;
+	phase: "intake" | "return";
+	reason: string;
+	amount: number;
+	status: "pending" | "processing";
+	can_credit_balance: boolean;
+	created_at?: string | null;
+}
+
 const isSameRefundRequest = (left: RefundRequest, right: RefundRequest): boolean => {
 	return left.id === right.id && (left.refundType || "order") === (right.refundType || "order");
 };
@@ -542,6 +555,65 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
 		}
 	};
 
+	const handleResolveDeliveryReconciliation = async (
+		item: DeliveryReconciliation,
+		action: "credit_balance" | "refund_original",
+	) => {
+		const actionLabel = action === "credit_balance" ? "credit the service balance" : "refund the original channel";
+		const result = await Swal.fire({
+			title: action === "credit_balance" ? "Credit service balance?" : "Refund original channel?",
+			text: `This will ${actionLabel} by ₱${item.amount.toFixed(2)} and then unlock the ${item.phase} delivery plan.`,
+			icon: "question",
+			showCancelButton: true,
+			confirmButtonColor: "#2563eb",
+			confirmButtonText: "Confirm",
+		});
+		if (!result.isConfirmed) {
+			return;
+		}
+
+		setIsActionProcessing(true);
+		try {
+			const response = await fetch(
+				`/api/finance/repair-delivery-reconciliations/${item.repair_id}/resolve`,
+				{
+					method: "POST",
+					credentials: "include",
+					headers: {
+						"Content-Type": "application/json",
+						Accept: "application/json",
+						"X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "",
+					},
+					body: JSON.stringify({
+						compensation_key: item.compensation_key,
+						action,
+					}),
+				},
+			);
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data?.message || "Unable to resolve the delivery fee adjustment.");
+			}
+
+			await Swal.fire({
+				title: data?.data?.status === "processing" ? "Refund processing" : "Adjustment completed",
+				text: data?.message || "The delivery fee adjustment was recorded.",
+				icon: "success",
+				confirmButtonColor: "#2563eb",
+			});
+			await fetchRefundRequests();
+		} catch (error) {
+			await Swal.fire({
+				title: "Adjustment failed",
+				text: error instanceof Error ? error.message : "Unable to resolve the delivery fee adjustment.",
+				icon: "error",
+				confirmButtonColor: "#2563eb",
+			});
+		} finally {
+			setIsActionProcessing(false);
+		}
+	};
+
 	return (
 		<div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-700">
 			<div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
@@ -576,6 +648,7 @@ export default function RefundApproval() {
 	const userRole = auth?.user?.role;
 
 	const [requests, setRequests] = useState<RefundRequest[]>([]);
+	const [deliveryReconciliations, setDeliveryReconciliations] = useState<DeliveryReconciliation[]>([]);
 	const [currentPage, setCurrentPage] = useState(1);
 	const [viewModalOpen, setViewModalOpen] = useState(false);
 	const [selectedRequest, setSelectedRequest] = useState<RefundRequest | null>(null);
@@ -646,14 +719,29 @@ export default function RefundApproval() {
 					Accept: "application/json",
 				},
 			});
+			const deliveryParams = new URLSearchParams();
+			if (searchQuery.trim()) {
+				deliveryParams.append("search", searchQuery.trim());
+			}
+			const deliveryResponse = await fetch(
+				`/api/finance/repair-delivery-reconciliations?${deliveryParams.toString()}`,
+				{
+					credentials: "include",
+					headers: { Accept: "application/json" },
+				},
+			);
 
 			const orderData = await orderResponse.json();
 			const repairData = repairResponse.status === 404 ? { data: [] } : await repairResponse.json();
+			const deliveryData = deliveryResponse.status === 404 ? { data: [] } : await deliveryResponse.json();
 			if (!orderResponse.ok) {
 				throw new Error(orderData?.message || "Failed to load refund requests");
 			}
 			if (!repairResponse.ok && repairResponse.status !== 404) {
 				throw new Error(repairData?.message || "Failed to load repair refund requests");
+			}
+			if (!deliveryResponse.ok && deliveryResponse.status !== 404) {
+				throw new Error(deliveryData?.message || "Failed to load delivery fee adjustments");
 			}
 			if (repairResponse.status === 404) {
 				console.warn("Finance repair refund endpoint unavailable: /api/finance/repair-refunds");
@@ -676,6 +764,9 @@ export default function RefundApproval() {
 				[...normalizedOrderRefunds, ...normalizedRepairRefunds].sort((a, b) =>
 					new Date(b.requestDate).getTime() - new Date(a.requestDate).getTime(),
 				),
+			);
+			setDeliveryReconciliations(
+				Array.isArray(deliveryData?.data) ? deliveryData.data : [],
 			);
 		} catch (error) {
 			Swal.fire({
@@ -1194,6 +1285,83 @@ export default function RefundApproval() {
 						description="This month"
 					/>
 				</div>
+
+				<section
+					aria-labelledby="delivery-fee-adjustments-heading"
+					className="bg-white dark:bg-gray-900 border border-amber-200 dark:border-amber-900/60 rounded-2xl p-6 shadow-sm"
+				>
+					<div className="mb-4">
+						<h2 id="delivery-fee-adjustments-heading" className="text-lg font-semibold text-gray-900 dark:text-white">
+							Delivery fee adjustments
+						</h2>
+						<p className="text-sm text-gray-500 dark:text-gray-400">
+							Resolve cancelled or unavailable shop-owned repair deliveries before the customer selects a new plan.
+						</p>
+					</div>
+
+					{deliveryReconciliations.length === 0 ? (
+						<p className="rounded-xl bg-gray-50 dark:bg-gray-800 px-4 py-5 text-sm text-gray-500 dark:text-gray-400">
+							{isLoading ? "Loading delivery fee adjustments..." : "No delivery fee adjustments need Finance action."}
+						</p>
+					) : (
+						<div className="space-y-3">
+							{deliveryReconciliations.map((item) => (
+								<article
+									key={item.compensation_key}
+									className="rounded-xl border border-gray-200 dark:border-gray-700 p-4"
+								>
+									<div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+										<div className="min-w-0">
+											<div className="flex flex-wrap items-center gap-2">
+												<span className="font-semibold text-gray-900 dark:text-white">{item.request_id}</span>
+												<span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+													{item.phase === "return" ? "Return delivery" : "Pickup delivery"}
+												</span>
+												{item.status === "processing" && (
+													<span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-900/40 dark:text-blue-200">
+														Refund processing
+													</span>
+												)}
+											</div>
+											<p className="mt-1 text-sm text-gray-700 dark:text-gray-300">{item.customer_name}</p>
+											<p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+												{item.reason.replaceAll("_", " ")}
+											</p>
+										</div>
+										<div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+											<span className="mr-2 text-lg font-semibold text-gray-900 dark:text-white">
+												₱{Number(item.amount).toFixed(2)}
+											</span>
+											<div>
+												<button
+													type="button"
+													onClick={() => void handleResolveDeliveryReconciliation(item, "credit_balance")}
+													disabled={isActionProcessing || item.status === "processing" || !item.can_credit_balance}
+													className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+												>
+													Credit balance
+												</button>
+												{!item.can_credit_balance && (
+													<p className="mt-1 max-w-56 text-xs text-amber-700 dark:text-amber-300">
+														The remaining service balance is lower than this fee.
+													</p>
+												)}
+											</div>
+											<button
+												type="button"
+												onClick={() => void handleResolveDeliveryReconciliation(item, "refund_original")}
+												disabled={isActionProcessing || item.status === "processing"}
+												className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800 sm:w-auto"
+											>
+												Refund original channel
+											</button>
+										</div>
+									</div>
+								</article>
+							))}
+						</div>
+					)}
+				</section>
 
 				<div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6 shadow-sm">
 					<div className="mb-4">

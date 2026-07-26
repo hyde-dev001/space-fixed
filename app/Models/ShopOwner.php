@@ -166,6 +166,15 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         return $this->hasOne(\App\Models\Logistics\LogisticsSetting::class);
     }
 
+    public function logisticsModules(): array
+    {
+        return match (strtolower(trim((string) $this->business_type))) {
+            'repair' => ['repair'],
+            'both', 'both (retail & repair)' => ['retail', 'repair'],
+            default => ['retail'],
+        };
+    }
+
     /**
      * Get all reports filed against this shop
      */

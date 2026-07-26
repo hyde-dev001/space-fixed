@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Head, usePage, Link } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import ReportShopModal from '../../../components/ReportShopModal';
 import { navigateBackOr } from '../Shared/backNavigation';
+import CustomerAddressManager, { type CustomerAddress } from '@/components/address/CustomerAddressManager';
 
 interface ShopHours {
   day: string;
@@ -81,6 +82,14 @@ interface Props {
   };
 }
 
+type CoverageQuote = {
+  status: 'idle' | 'loading' | 'ready' | 'error';
+  available?: boolean;
+  reason?: string | null;
+  distance_km?: number | null;
+  fee?: number | null;
+};
+
 const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) => {
   const { auth } = usePage().props as any;
   const isAuthenticated = !!auth?.user;
@@ -91,6 +100,8 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
   const [hoverRating, setHoverRating] = useState(0);
   const [selectedServices, setSelectedServices] = useState<number[]>([]);
   const [selectedPackageId, setSelectedPackageId] = useState<number | null>(null);
+  const [selectedAddress, setSelectedAddress] = useState<CustomerAddress | null>(null);
+  const [coverageQuote, setCoverageQuote] = useState<CoverageQuote>({ status: 'idle' });
   const [showMoreActions, setShowMoreActions] = useState(false);
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
   const [imageUploadGroups, setImageUploadGroups] = useState<Array<{id: string; file: File | null; preview: string}>>([{id: '0', file: null, preview: ''}]);
@@ -109,6 +120,36 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
   const [selectedRatingFilter, setSelectedRatingFilter] = useState<number | 'all'>('all');
   const [currentReviewPage, setCurrentReviewPage] = useState(1);
   const reviewsPerPage = 10;
+  const initialAddressId = Number(new URLSearchParams(window.location.search).get('address_id')) || null;
+
+  const handleAddressSelect = useCallback((address: CustomerAddress) => {
+    setSelectedAddress(address);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedAddress) {
+      setCoverageQuote({ status: 'idle' });
+      return;
+    }
+
+    const controller = new AbortController();
+    setCoverageQuote({ status: 'loading' });
+    fetch(`/api/repair/shops/${shop.id}/delivery-quote?address_id=${selectedAddress.id}`, {
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Coverage request failed');
+        return response.json();
+      })
+      .then((quote) => setCoverageQuote({ status: 'ready', ...quote }))
+      .catch((error) => {
+        if ((error as Error).name !== 'AbortError') setCoverageQuote({ status: 'error' });
+      });
+
+    return () => controller.abort();
+  }, [selectedAddress, shop.id]);
 
   const createImageUploadGroup = () => ({
     id: Math.random().toString(36).slice(2, 11),
@@ -299,7 +340,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
   const paymentPolicyHint = normalizedRepairPaymentPolicy === 'full_upfront'
     ? 'Customer pays full amount before service starts.'
     : 'Customer pays half upfront and half when claiming repaired shoes.';
-  const requestRepairHref = `/repair-process?shop=${shop.id}${selectedPackageId ? `&package=${selectedPackageId}` : ''}${selectedServices.length > 0 ? `&services=${selectedServices.join(',')}` : ''}`;
+  const requestRepairHref = `/repair-process?shop=${shop.id}${selectedPackageId ? `&package=${selectedPackageId}` : ''}${selectedServices.length > 0 ? `&services=${selectedServices.join(',')}` : ''}${selectedAddress ? `&address_id=${selectedAddress.id}` : ''}`;
   const selectionSummary = selectedPackageId
     ? '(1 package selected)'
     : selectedServices.length > 0
@@ -515,6 +556,38 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
           <div className="mb-8 xl:mb-12">
             <p className="text-base xl:text-lg text-gray-700 leading-relaxed max-w-3xl">{shop.description}</p>
           </div>
+
+          {isAuthenticated && (
+            <section className="mb-8 space-y-3 xl:mb-10" aria-labelledby="repair-delivery-address-heading">
+              <div className="sr-only" id="repair-delivery-address-heading">Repair delivery address</div>
+              <CustomerAddressManager onSelect={handleAddressSelect} initialAddressId={initialAddressId} />
+              {selectedAddress && (
+                <div className={`rounded-2xl border p-4 ${
+                  coverageQuote.status === 'ready' && coverageQuote.available
+                    ? 'border-green-200 bg-green-50 text-green-900'
+                    : coverageQuote.status === 'ready' && coverageQuote.reason === 'outside_coverage'
+                      ? 'border-amber-200 bg-amber-50 text-amber-900'
+                      : 'border-gray-200 bg-gray-50 text-gray-800'
+                }`} role="status" aria-live="polite">
+                  <p className="font-semibold">
+                    {coverageQuote.status === 'loading' && 'Checking shop-owned logistics coverage...'}
+                    {coverageQuote.status === 'error' && 'Coverage unavailable'}
+                    {coverageQuote.status === 'ready' && coverageQuote.available && 'Within coverage'}
+                    {coverageQuote.status === 'ready' && coverageQuote.reason === 'outside_coverage' && 'Outside coverage'}
+                    {coverageQuote.status === 'ready' && coverageQuote.reason === 'address_needs_pin' && 'Pin required'}
+                    {coverageQuote.status === 'ready' && !coverageQuote.available && !['outside_coverage', 'address_needs_pin'].includes(coverageQuote.reason ?? '') && 'Shop delivery unavailable'}
+                  </p>
+                  {coverageQuote.status === 'ready' && coverageQuote.available && (
+                    <p className="mt-1 text-sm">
+                      {coverageQuote.distance_km != null ? `${coverageQuote.distance_km} km · ` : ''}
+                      Estimated one-way fee: ₱{Number(coverageQuote.fee ?? 0).toLocaleString('en-PH')}
+                    </p>
+                  )}
+                  <p className="mt-1 text-sm">You will choose shop pickup, walk-in, or third-party delivery on the next step.</p>
+                </div>
+              )}
+            </section>
+          )}
 
           {/* Info Grid */}
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 xl:gap-6 mb-8 xl:mb-10">

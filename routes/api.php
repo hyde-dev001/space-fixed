@@ -47,6 +47,14 @@ Route::middleware(['web', 'auth:user', 'throttle:10,1'])->post('/paymongo-proxy'
             return response()->json(['error' => 'Unauthorized'], 401);
         }
 
+        if (! empty($validated['repair_request_id'])) {
+            return app(\App\Http\Controllers\Api\RepairRequestController::class)->retryPaymentSession(
+                $request,
+                (int) $validated['repair_request_id'],
+                app(\App\Services\PaymentSettlementService::class),
+            );
+        }
+
         // --- Resolve the correct PayMongo key ---
         // Shop payments must ALWAYS use the shop's own key.
         // The platform key (.env) is reserved for platform-level payments (e.g. premium subscriptions).

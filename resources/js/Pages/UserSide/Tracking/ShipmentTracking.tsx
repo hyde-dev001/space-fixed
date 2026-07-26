@@ -29,7 +29,8 @@ export default function ShipmentTracking() {
   const [failedProofIds, setFailedProofIds] = useState<number[]>([]);
   const currentLeg = shipment.legs[shipment.legs.length - 1];
   const isReturn = shipment.purpose === 'refund_return';
-  const itemLabel = isReturn ? 'Return' : 'Shipment';
+  const isRepair = shipment.source_type === 'repair_request';
+  const itemLabel = isReturn ? 'Return' : isRepair ? 'Repair Delivery' : 'Shipment';
   const internalTrackingUrl = `/tracking/shipments/${shipment.id}`;
   const trackingNumber = isReturn ? `RET-${shipment.id}` : (currentLeg?.tracking_number || `SHP-${shipment.id}`);
   const trackingUrl = isReturn ? internalTrackingUrl : currentLeg?.tracking_url;
@@ -80,6 +81,25 @@ export default function ShipmentTracking() {
             </div>
           </div>
         </section>
+
+        {shipment.source_summary && (
+          <section className="mb-6 rounded-lg border border-gray-200 bg-white p-5">
+            <div className="grid gap-4 md:grid-cols-3">
+              <div>
+                <p className="text-xs font-semibold uppercase text-gray-500">Repair Request</p>
+                <p className="mt-1 text-sm font-medium text-gray-900">{shipment.source_summary.request_number}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase text-gray-500">Customer</p>
+                <p className="mt-1 text-sm font-medium text-gray-900">{shipment.source_summary.customer_name}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase text-gray-500">Shoe</p>
+                <p className="mt-1 text-sm font-medium text-gray-900">{shipment.source_summary.shoe_summary}</p>
+              </div>
+            </div>
+          </section>
+        )}
 
         {currentLeg?.schedule_status === 'scheduled' && (
           <section className="mb-6 rounded-lg border border-gray-200 bg-white p-5">
@@ -166,8 +186,8 @@ export default function ShipmentTracking() {
         </section>
 
         <div className="mt-6">
-          <Link href="/my-orders" className="text-sm font-semibold text-black underline">
-            Back to orders
+          <Link href={isRepair ? '/my-repairs' : '/my-orders'} className="text-sm font-semibold text-black underline">
+            {isRepair ? 'Back to repairs' : 'Back to orders'}
           </Link>
         </div>
       </main>

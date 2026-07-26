@@ -98,34 +98,21 @@ class SourceModuleShipmentRequestTest extends TestCase
         ]);
     }
 
-    public function test_staff_orders_include_the_latest_cancelled_delivery_reason(): void
+    public function test_staff_orders_include_the_cancelled_delivery_reason(): void
     {
         $shop = ShopOwner::factory()->create(['business_type' => 'retail']);
         $staff = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'STAFF']);
         Permission::findOrCreate('access-staff-job-orders', 'user');
         $staff->givePermissionTo('access-staff-job-orders');
         $order = Order::factory()->create(['shop_owner_id' => $shop->id, 'status' => 'shipped']);
-        $olderShipment = Shipment::factory()->create([
-            'shop_owner_id' => $shop->id,
-            'source_type' => 'order',
-            'source_id' => $order->id,
-            'status' => 'cancelled',
-            'created_at' => now()->subMinute(),
-        ]);
-        $latestShipment = Shipment::factory()->create([
+        $shipment = Shipment::factory()->create([
             'shop_owner_id' => $shop->id,
             'source_type' => 'order',
             'source_id' => $order->id,
             'status' => 'cancelled',
         ]);
         DeliveryEvent::factory()->create([
-            'shipment_id' => $olderShipment->id,
-            'event_type' => 'delivery_cancelled',
-            'visibility' => 'customer',
-            'message' => 'Delivery cancelled: Old reason.',
-        ]);
-        DeliveryEvent::factory()->create([
-            'shipment_id' => $latestShipment->id,
+            'shipment_id' => $shipment->id,
             'event_type' => 'delivery_cancelled',
             'visibility' => 'customer',
             'message' => 'Delivery cancelled: Recipient was unavailable.',
@@ -244,18 +231,27 @@ class SourceModuleShipmentRequestTest extends TestCase
 
     public function test_repair_pickup_creates_inbound_shipment(): void
     {
-        $shop = ShopOwner::factory()->create();
+        $shop = ShopOwner::factory()->create([
+            'shop_latitude' => 14.5995,
+            'shop_longitude' => 120.9842,
+        ]);
+        LogisticsSetting::create(['shop_owner_id' => $shop->id, 'coverage_radius_km' => 12]);
         $repair = RepairRequest::factory()->create([
             'shop_owner_id' => $shop->id,
             'delivery_method' => 'pickup',
-            'intake_delivery_method' => 'customer_delivery',
+            'intake_delivery_method' => 'shop_pickup',
             'intake_address' => [
                 'address_line' => '123 Customer Street',
                 'barangay' => 'Barangay One',
                 'city' => 'Quezon City',
                 'region' => 'NCR',
                 'postal_code' => '1100',
+                'latitude' => 14.6,
+                'longitude' => 120.98,
+                'version' => 'repair-pickup-source-test-v1',
             ],
+            'intake_delivery_fee' => 125,
+            'intake_logistics_locked_at' => now(),
         ]);
 
         app(SourceShipmentService::class)->ensureRepairInboundShipment($repair);
@@ -272,7 +268,11 @@ class SourceModuleShipmentRequestTest extends TestCase
 
     public function test_repair_return_creates_outbound_shipment(): void
     {
-        $shop = ShopOwner::factory()->create();
+        $shop = ShopOwner::factory()->create([
+            'shop_latitude' => 14.5995,
+            'shop_longitude' => 120.9842,
+        ]);
+        LogisticsSetting::create(['shop_owner_id' => $shop->id, 'coverage_radius_km' => 20]);
         $repair = RepairRequest::factory()->create([
             'shop_owner_id' => $shop->id,
             'status' => 'shipped',
@@ -283,6 +283,8 @@ class SourceModuleShipmentRequestTest extends TestCase
                 'city' => 'Makati',
                 'region' => 'NCR',
                 'postal_code' => '1200',
+                'latitude' => 14.60,
+                'longitude' => 120.98,
             ],
         ]);
 

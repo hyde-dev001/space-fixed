@@ -7,22 +7,16 @@ const repairProcessSource = readFileSync(
   'utf8',
 );
 
-describe('repair process return-location integration', () => {
-  it('uses dependent Philippine province and municipality selectors', () => {
-    expect(repairProcessSource).toContain('PHILIPPINE_LOCATIONS');
-    expect(repairProcessSource).toContain('getCityMunicipalityOptions(formData.returnRegion)');
-    expect(repairProcessSource).toContain('normalizeProvinceSelection');
-    expect(repairProcessSource).toContain('normalizeCityMunicipalitySelection');
-    expect(repairProcessSource).toContain('City/Municipality');
-    expect(repairProcessSource).toContain('!formData.returnRegion');
-    expect(repairProcessSource).toContain("returnCity: ''");
-    expect(repairProcessSource).toContain("submitFormData.append('return_city', returnCity)");
-    expect(repairProcessSource).toContain("submitFormData.append('return_region', returnRegion)");
-    expect(repairProcessSource).toContain('handleDropdownTriggerKeyDown');
-    expect(repairProcessSource).toContain('handleListboxKeyDown');
-    expect(repairProcessSource).toContain('aria-expanded={isReturnProvinceDropdownOpen}');
-    expect(repairProcessSource).toContain('aria-expanded={isReturnCityDropdownOpen}');
-    expect(repairProcessSource).not.toContain('PH_CITY_OPTIONS');
-    expect(repairProcessSource).not.toContain('DEFAULT_SHIPPING_REGION');
+describe('repair process saved-address integration', () => {
+  it('delegates structured location and map pin editing to the shared address manager', () => {
+    expect(repairProcessSource).toContain("import CustomerAddressManager");
+    expect(repairProcessSource).toContain('<CustomerAddressManager');
+    expect(repairProcessSource).toContain('initialAddressId={initialAddressId}');
+    expect(repairProcessSource).toContain("submitFormData.append('intake_address_id'");
+    expect(repairProcessSource).toContain("submitFormData.append('return_address_id'");
+    expect(repairProcessSource).toContain("submitFormData.append('same_as_intake_address'");
+    expect(repairProcessSource).toContain('/delivery-quote?address_id=');
+    expect(repairProcessSource).not.toContain("submitFormData.append('return_city'");
+    expect(repairProcessSource).not.toContain("submitFormData.append('return_region'");
   });
 });

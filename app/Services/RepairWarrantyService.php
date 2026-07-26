@@ -6,6 +6,7 @@ use App\Models\RepairRequest;
 use App\Models\RepairWarrantyClaim;
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Models\UserAddress;
 use App\Services\NotificationService;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
@@ -21,9 +22,11 @@ class RepairWarrantyService
     private const MAX_EVIDENCE_IMAGES = 10;
 
     public function __construct(
-        private ?NotificationService $notificationService = null
+        private ?NotificationService $notificationService = null,
+        private ?RepairDeliveryService $repairDeliveryService = null,
     ) {
         $this->notificationService ??= app(NotificationService::class);
+        $this->repairDeliveryService ??= app(RepairDeliveryService::class);
     }
 
     /**
@@ -140,7 +143,11 @@ class RepairWarrantyService
         }
 
         $window = $this->validateEligibility($repair, (int) $customer->id);
-        $this->syncCustomerWarrantyDeliveryAddress($repair, $validated);
+        $this->warrantyDeliveryPlan(
+            $repair,
+            $this->normalizePreferredReturnMethod((string) ($validated['preferred_return_method'] ?? 'walk_in')),
+            $this->normalizePreferredReceiveMethod((string) ($validated['preferred_receive_method'] ?? 'walk_in')),
+        );
 
         return $this->createClaimRecord(
             repair: $repair,
@@ -245,11 +252,13 @@ class RepairWarrantyService
 
             $preferredReturn = $this->normalizePreferredReturnMethod((string) ($lockedClaim->preferred_return_method ?? 'walk_in'));
             $intakeMethod = $preferredReturn;
-            $deliveryMethod = $intakeMethod === 'customer_delivery' ? 'pickup' : 'walk_in';
+            $deliveryMethod = $intakeMethod === 'walk_in' ? 'walk_in' : 'pickup';
             $preferredReceive = $this->normalizePreferredReceiveMethod((string) ($lockedClaim->preferred_receive_method ?? 'walk_in'));
-            $returnAddress = $preferredReceive === 'shop_delivery'
-                ? ($original->return_address ?? $original->pickup_address ?? $original->intake_address)
-                : null;
+            $deliveryPlan = $this->warrantyDeliveryPlan($original, $intakeMethod, $preferredReceive);
+            $intakeFee = (float) $deliveryPlan['intake']['fee'];
+            $returnFee = (float) $deliveryPlan['return']['fee'];
+            $paymentEnabled = $intakeFee > 0 || $returnFee > 0;
+            $paymentStatus = $intakeFee > 0 ? 'pending' : ($returnFee > 0 ? 'paid' : 'completed');
 
             $status = ($handlerSource === 'business_employee' && $handlerUserId)
                 ? 'assigned_to_repairer'
@@ -287,11 +296,12 @@ class RepairWarrantyService
                 'included_services_snapshot' => $original->included_services_snapshot,
                 'add_on_services_snapshot' => $original->add_on_services_snapshot,
                 'pricing_breakdown' => $pricingBreakdown,
-                'payment_status' => 'completed',
-                'payment_enabled' => false,
+                'payment_status' => $paymentStatus,
+                'payment_enabled' => $paymentEnabled,
+                'payment_enabled_at' => $paymentEnabled ? now() : null,
                 'payment_policy' => $original->payment_policy,
                 'payment_policy_snapshot' => $original->payment_policy_snapshot ?: $original->payment_policy,
-                'payment_status_derived' => 'completed',
+                'payment_status_derived' => $paymentStatus,
                 'total_paid_amount' => 0,
                 'total_refunded_amount' => 0,
                 'manual_pos_queue_enabled' => false,
@@ -306,10 +316,15 @@ class RepairWarrantyService
                 'status' => $status,
                 'delivery_method' => $deliveryMethod,
                 'intake_delivery_method' => $intakeMethod,
-                'intake_address' => $intakeMethod === 'customer_delivery' ? ($original->intake_address ?? $original->pickup_address) : null,
-                'pickup_address' => $intakeMethod === 'customer_delivery' ? ($original->pickup_address ?? $original->intake_address) : null,
+                'intake_address' => $deliveryPlan['intake']['snapshot'],
+                'pickup_address' => $deliveryPlan['intake']['snapshot'],
+                'intake_delivery_fee' => $intakeFee,
+                'intake_logistics_quote' => $deliveryPlan['intake']['quote'],
                 'return_delivery_method' => $preferredReceive,
-                'return_address' => $returnAddress,
+                'return_address' => $deliveryPlan['return']['snapshot'],
+                'return_delivery_fee' => $returnFee,
+                'return_logistics_quote' => $deliveryPlan['return']['quote'],
+                'same_as_intake_address' => $deliveryPlan['same_address'],
                 'is_high_value' => false,
                 'requires_owner_approval' => false,
             ]);
@@ -683,56 +698,85 @@ class RepairWarrantyService
 
     private function normalizePreferredReturnMethod(string $method): string
     {
-        return strtolower(trim($method)) === 'customer_delivery'
-            ? 'customer_delivery'
+        $normalized = strtolower(trim($method));
+
+        return in_array($normalized, ['customer_delivery', 'shop_pickup'], true)
+            ? $normalized
             : 'walk_in';
     }
 
     private function normalizePreferredReceiveMethod(string $method): string
     {
-        return strtolower(trim($method)) === 'shop_delivery'
-            ? 'shop_delivery'
+        $normalized = strtolower(trim($method));
+
+        return in_array($normalized, ['customer_pickup', 'shop_delivery'], true)
+            ? $normalized
             : 'walk_in';
     }
 
-    private function syncCustomerWarrantyDeliveryAddress(RepairRequest $repair, array $validated): void
+    private function warrantyDeliveryPlan(
+        RepairRequest $repair,
+        string $intakeMethod,
+        string $returnMethod,
+    ): array
     {
-        $preferredReceiveMethod = $this->normalizePreferredReceiveMethod((string) ($validated['preferred_receive_method'] ?? 'walk_in'));
-        if ($preferredReceiveMethod !== 'shop_delivery') {
-            return;
+        $intake = $this->warrantyDeliveryLeg($repair, 'intake', $intakeMethod);
+        $return = $this->warrantyDeliveryLeg($repair, 'return', $returnMethod);
+
+        return [
+            'intake' => $intake,
+            'return' => $return,
+            'same_address' => (int) data_get($intake, 'snapshot.address_id') > 0
+                && (int) data_get($intake, 'snapshot.address_id') === (int) data_get($return, 'snapshot.address_id'),
+        ];
+    }
+
+    private function warrantyDeliveryLeg(RepairRequest $repair, string $leg, string $method): array
+    {
+        if ($method === 'walk_in') {
+            return ['snapshot' => null, 'fee' => 0.0, 'quote' => null];
         }
 
-        $returnAddress = [
-            'address_line' => trim((string) ($validated['receive_address_line'] ?? '')),
-            'barangay' => trim((string) ($validated['receive_barangay'] ?? '')),
-            'city' => trim((string) ($validated['receive_city'] ?? '')),
-            'region' => trim((string) ($validated['receive_region'] ?? '')),
-            'postal_code' => trim((string) ($validated['receive_postal_code'] ?? '')),
-        ];
+        $field = $leg === 'intake' ? 'intake_address' : 'return_address';
+        $candidates = $leg === 'intake'
+            ? [$repair->intake_address, $repair->pickup_address, $repair->return_address]
+            : [$repair->return_address, $repair->intake_address, $repair->pickup_address];
+        $source = collect($candidates)->first(
+            fn ($snapshot): bool => is_array($snapshot) && (int) ($snapshot['address_id'] ?? 0) > 0
+        );
+        $address = is_array($source)
+            ? UserAddress::query()
+                ->whereKey((int) $source['address_id'])
+                ->where('user_id', $repair->user_id)
+                ->first()
+            : null;
 
-        $requiredDeliveryAddress = [
-            'address_line' => $returnAddress['address_line'],
-            'barangay' => $returnAddress['barangay'],
-            'city' => $returnAddress['city'],
-            'postal_code' => $returnAddress['postal_code'],
-        ];
-
-        $missingAddressFields = collect($requiredDeliveryAddress)
-            ->filter(fn (string $value): bool => $value === '')
-            ->keys()
-            ->values()
-            ->all();
-
-        if (!empty($missingAddressFields)) {
+        if (!$address) {
             throw ValidationException::withMessages([
-                'receive_address' => ['Complete delivery address is required when preferred receive method is shop delivery.'],
+                $field => ['Choose a pinned saved address on the original repair before selecting this delivery method.'],
             ]);
         }
 
-        $repair->forceFill([
-            'return_delivery_method' => 'shop_delivery',
-            'return_address' => $returnAddress,
-        ])->save();
+        $snapshot = $this->repairDeliveryService->snapshot($address, $method);
+        $shopOwned = $method === ($leg === 'intake' ? 'shop_pickup' : 'shop_delivery');
+        if (!$shopOwned) {
+            return ['snapshot' => $snapshot, 'fee' => 0.0, 'quote' => null];
+        }
+
+        $shop = $repair->shopOwner ?: ShopOwner::query()->find($repair->shop_owner_id);
+        $quote = $shop ? $this->repairDeliveryService->quote($shop, $address) : ['available' => false];
+        if (!($quote['available'] ?? false)) {
+            throw ValidationException::withMessages([
+                $field => [($quote['reason'] ?? null) === 'outside_coverage'
+                    ? 'The selected address is outside the shop-owned delivery coverage. Choose walk-in or third-party delivery.'
+                    : 'Shop-owned delivery is currently unavailable for the selected address.'],
+            ]);
+        }
+
+        $quote['address_version'] = $snapshot['version'];
+        $quote['method'] = $method;
+
+        return ['snapshot' => $snapshot, 'fee' => (float) $quote['fee'], 'quote' => $quote];
     }
 
     /**

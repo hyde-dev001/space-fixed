@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ShopOwner;
+use App\Services\RepairDeliveryService;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class RepairAvailabilityController extends Controller
 {
@@ -47,6 +49,20 @@ class RepairAvailabilityController extends Controller
             'shop_id'            => (int) $validated['shop_id'],
             'closed_day_numbers' => $closedDayNumbers,
         ]);
+    }
+
+    public function deliveryQuote(Request $request, ShopOwner $shop, RepairDeliveryService $delivery)
+    {
+        $data = $request->validate(['address_id' => ['required', 'integer']]);
+        $address = $request->user('user')?->addresses()->find($data['address_id']);
+
+        if (! $address) {
+            throw ValidationException::withMessages([
+                'address_id' => 'Choose one of your saved addresses.',
+            ]);
+        }
+
+        return response()->json($delivery->quote($shop, $address));
     }
 
 }

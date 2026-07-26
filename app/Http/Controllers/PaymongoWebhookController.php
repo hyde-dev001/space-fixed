@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Order;
 use App\Models\OrderRefund;
+use App\Models\RepairPaymentSession;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerSubscription;
@@ -114,7 +115,16 @@ class PaymongoWebhookController extends Controller
             return $this->handleOrderPayment($order, $paymentId);
         }
 
-        // Try to find repair request by payment_link_id
+        $repairSession = RepairPaymentSession::query()
+            ->with('repairRequest')
+            ->where('provider_link_id', $paymentLinkId)
+            ->first();
+
+        if ($repairSession?->repairRequest) {
+            return $this->handleRepairPayment($repairSession->repairRequest, $paymentId, $repairSession);
+        }
+
+        // Legacy repair links created before persisted payment sessions.
         $repairRequest = RepairRequest::where('paymongo_link_id', $paymentLinkId)->first();
 
         if ($repairRequest) {
@@ -186,10 +196,10 @@ class PaymongoWebhookController extends Controller
     /**
      * Handle repair request payment
      */
-    private function handleRepairPayment($repairRequest, $paymentId)
+    private function handleRepairPayment($repairRequest, $paymentId, ?RepairPaymentSession $session = null)
     {
         $settlement = app(PaymentSettlementService::class)
-            ->settleRepairPaid($repairRequest, (string) $paymentId, true);
+            ->settleRepairPaid($repairRequest, (string) $paymentId, true, $session);
 
         $result = $settlement['result'] ?? 'settled';
         $settledRepair = $settlement['model'] ?? $repairRequest;
@@ -222,6 +232,17 @@ class PaymongoWebhookController extends Controller
             ]);
 
             return response()->json(['message' => 'No payable phase due'], 200);
+        }
+
+        if ($result === 'reconciliation') {
+            Log::warning('Repair delivery payment requires reconciliation', [
+                'repair_id' => $settledRepair->id,
+                'request_id' => $settledRepair->request_id,
+                'payment_id' => $paymentId,
+                'payment_session_id' => $session?->id,
+            ]);
+
+            return response()->json(['message' => 'Repair payment requires reconciliation'], 200);
         }
 
         $phase = (string) ($settlement['phase'] ?? '');
@@ -365,6 +386,15 @@ class PaymongoWebhookController extends Controller
         $paymentId  = $payments[0]['id'] ?? null;
         $paymentAttributes = $payments[0]['attributes'] ?? [];
         $paidAmount = $this->extractPaidAmount($attributes, $paymentAttributes);
+
+        $repairSession = RepairPaymentSession::query()
+            ->with('repairRequest')
+            ->where('provider_link_id', $sessionId)
+            ->first();
+
+        if ($repairSession?->repairRequest) {
+            return $this->handleRepairPayment($repairSession->repairRequest, $paymentId, $repairSession);
+        }
 
         // Resolve the subscription record (outside the transaction is fine for the lookup)
         $subscription = $this->resolveSubscription($sessionId, $metadata);
@@ -529,6 +559,31 @@ class PaymongoWebhookController extends Controller
     {
         $sessionId = $eventData['id'] ?? null;
         $metadata  = $eventData['attributes']['metadata'] ?? [];
+
+        $repairSession = RepairPaymentSession::query()
+            ->with('repairRequest')
+            ->where('provider_link_id', $sessionId)
+            ->first();
+
+        if ($repairSession?->repairRequest) {
+            DB::transaction(function () use ($repairSession): void {
+                $lockedSession = RepairPaymentSession::query()->lockForUpdate()->findOrFail($repairSession->id);
+                if ($lockedSession->status !== 'pending') {
+                    return;
+                }
+
+                $lockedSession->update([
+                    'status' => 'failed',
+                    'resolved_at' => now(),
+                ]);
+                app(PaymentSettlementService::class)->recordRepairPaymentFailure(
+                    $repairSession->repairRequest,
+                    'paymongo_payment_failed',
+                );
+            });
+
+            return response()->json(['message' => 'Repair payment failure recorded'], 200);
+        }
 
         $subscription = $this->resolveSubscription($sessionId, $metadata);
 

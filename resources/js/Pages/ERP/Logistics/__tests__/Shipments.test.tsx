@@ -4,20 +4,22 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import Swal from 'sweetalert2';
 import Shipments from '../Shipments';
 
-const mocks = vi.hoisted(() => ({ post: vi.fn(() => Promise.resolve()), reload: vi.fn(), props: {} as any }));
+const mocks = vi.hoisted(() => ({ post: vi.fn(() => Promise.resolve()), get: vi.fn(), reload: vi.fn(), props: {} as any }));
 
 const defaultProps = () => ({
   shipments: { data: [{ id: 1, purpose: 'retail_delivery', status: 'active', source_type: 'order', source_id: 10, legs: [{
     id: 2, leg_type: 'outbound', status: 'in_transit', assignments: [{ id: 3, status: 'accepted' }], proofs: [], attempts: [],
     destination_snapshot: { name: 'Miguel Dela Rosa', address: 'Dasmariñas, Cavite', phone: '09053338826' },
   }] }], links: [], from: 1, to: 1, total: 1, current_page: 1, last_page: 1 },
-  filters: { status: 'all', purpose: 'all', window: 'all' }, assignableRiders: [],
+  filters: { status: 'all', purpose: 'all', window: 'all', module: 'all' }, assignableRiders: [],
   canAssign: false, canUpdateStatus: false, canRecordProof: true, canApproveProof: false, riderMode: true, batches: [],
   maxDeliveryAttempts: 2,
+  availableModules: ['retail'],
+  showModuleFilter: false,
 });
 
 vi.mock('@inertiajs/react', () => ({
-  Head: () => null, Link: ({ children }: React.PropsWithChildren) => <a>{children}</a>, router: { get: vi.fn(), reload: mocks.reload },
+  Head: () => null, Link: ({ children }: React.PropsWithChildren) => <a>{children}</a>, router: { get: mocks.get, reload: mocks.reload },
   usePage: () => ({ props: mocks.props }),
 }));
 vi.mock('axios', () => ({ default: { post: mocks.post } }));
@@ -45,6 +47,53 @@ it('shows receiver and address in the delivery table', () => {
   expect(screen.getByText('Batch panel')).toBeInTheDocument();
   expect(screen.getByText('Miguel Dela Rosa')).toBeInTheDocument();
   expect(screen.getByText('Dasmariñas, Cavite')).toBeInTheDocument();
+});
+
+it('shows repair-only purposes and retains compatible filters when changing module', () => {
+  mocks.props = defaultProps();
+  mocks.props.riderMode = false;
+  mocks.props.canRecordProof = false;
+  mocks.props.showModuleFilter = true;
+  mocks.props.availableModules = ['retail', 'repair'];
+  mocks.props.filters = { status: 'active', purpose: 'repair_pickup', window: 'morning', module: 'repair' };
+  mocks.props.shipments.data[0] = {
+    ...mocks.props.shipments.data[0],
+    purpose: 'repair_pickup',
+    source_type: 'repair_request',
+    source_summary: {
+      request_number: 'REP-2026-0042',
+      customer_name: 'Mia Santos',
+      shoe_summary: 'Nike Air Max 90',
+    },
+  };
+
+  render(<Shipments />);
+  expect(screen.getByRole('option', { name: 'Repair Pickup' })).toBeInTheDocument();
+  expect(screen.getByRole('option', { name: 'Repair Return' })).toBeInTheDocument();
+  expect(screen.queryByRole('option', { name: 'Retail Delivery' })).not.toBeInTheDocument();
+  expect(screen.getByText('Repair')).toBeInTheDocument();
+  expect(screen.getByText('Repair REP-2026-0042')).toBeInTheDocument();
+  expect(screen.getByText('Mia Santos · Nike Air Max 90')).toBeInTheDocument();
+
+  fireEvent.change(screen.getByLabelText('Filter shipments by module'), { target: { value: 'retail' } });
+  expect(mocks.get).toHaveBeenCalledWith('/erp/logistics/shipments', {
+    status: 'active',
+    purpose: 'all',
+    window: 'morning',
+    module: 'retail',
+    page: 1,
+  }, {
+    preserveScroll: true,
+    preserveState: true,
+  });
+});
+
+it('hides the redundant module selector for a single-module shop', () => {
+  mocks.props = defaultProps();
+  mocks.props.riderMode = false;
+  render(<Shipments />);
+
+  expect(screen.queryByLabelText('Filter shipments by module')).not.toBeInTheDocument();
 });
 
 it('shows failed-attempt filter and retryable reassignment controls', () => {

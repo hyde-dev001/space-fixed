@@ -134,6 +134,30 @@ class CustomerTrackingTest extends TestCase
         $this->assertArrayNotHasKey('schedule_override_reason', $payload['legs'][0]);
     }
 
+    public function test_repair_tracking_payload_includes_source_summary(): void
+    {
+        $customer = User::factory()->create();
+        $repair = RepairRequest::factory()->create([
+            'user_id' => $customer->id,
+            'request_id' => 'REP-2026-0042',
+            'customer_name' => 'Mia Santos',
+            'brand' => 'Nike',
+            'shoe_type' => 'Air Max 90',
+        ]);
+        $shipment = Shipment::factory()->create([
+            'shop_owner_id' => $repair->shop_owner_id,
+            'source_type' => 'repair_request',
+            'source_id' => $repair->id,
+            'purpose' => 'repair_return',
+        ]);
+
+        $this->assertSame([
+            'request_number' => 'REP-2026-0042',
+            'customer_name' => 'Mia Santos',
+            'shoe_summary' => 'Nike Air Max 90',
+        ], app(CustomerTrackingService::class)->payload($shipment)['source_summary']);
+    }
+
     public function test_customer_payload_exposes_only_safe_latest_failed_attempt_details(): void
     {
         Storage::fake('public');
@@ -213,6 +237,7 @@ class CustomerTrackingTest extends TestCase
         ]);
         $otherShipment = Shipment::factory()->create([
             'shop_owner_id' => $order->shop_owner_id, 'source_type' => 'order', 'source_id' => $order->id,
+            'purpose' => 'retail_return',
         ]);
         $url = "/tracking/shipments/{$shipment->id}/attempts/{$attempt->id}/proof";
 
@@ -234,7 +259,7 @@ class CustomerTrackingTest extends TestCase
         ]);
         $olderShipment = Shipment::factory()->create([
             'shop_owner_id' => $order->shop_owner_id, 'source_type' => 'order',
-            'source_id' => $order->id, 'purpose' => 'retail_delivery',
+            'source_id' => $order->id, 'purpose' => 'retail_return',
         ]);
         $olderLeg = ShipmentLeg::factory()->create([
             'shipment_id' => $olderShipment->id, 'sequence' => 99, 'status' => 'pending',

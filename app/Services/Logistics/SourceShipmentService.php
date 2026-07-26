@@ -8,6 +8,7 @@ use App\Models\OrderRefund;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class SourceShipmentService
 {
@@ -118,64 +119,232 @@ class SourceShipmentService
 
     public function ensureRepairInboundShipment(RepairRequest $repair): Shipment
     {
-        $existing = $this->findExisting('repair_request', (int) $repair->id, 'repair_pickup');
-        if ($existing) {
-            return $existing;
-        }
+        return DB::transaction(function () use ($repair): Shipment {
+            $lockedRepair = RepairRequest::query()
+                ->with('shopOwner')
+                ->whereKey($repair->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $shop = ShopOwner::query()->whereKey($lockedRepair->shop_owner_id)->lockForUpdate()->firstOrFail();
+            $lockedRepair->setRelation('shopOwner', $shop);
 
-        $repair->loadMissing('shopOwner');
+            if ((string) $lockedRepair->intake_delivery_method !== 'shop_pickup') {
+                throw ValidationException::withMessages([
+                    'intake_delivery_method' => ['Only shop-owned repair pickups create Dispatcher shipments.'],
+                ]);
+            }
 
-        return $this->shipments->requestShipment([
-            'shop_owner_id' => (int) $repair->shop_owner_id,
-            'source_type' => 'repair_request',
-            'source_id' => (int) $repair->id,
-            'purpose' => 'repair_pickup',
-            'legs' => [[
+            $existing = $this->findExisting('repair_request', (int) $lockedRepair->id, 'repair_pickup');
+
+            if ($existing && $existing->status->value !== 'cancelled') {
+                return $existing->load('legs');
+            }
+
+            $snapshot = is_array($lockedRepair->intake_address)
+                ? $lockedRepair->intake_address
+                : (is_array($lockedRepair->pickup_address) ? $lockedRepair->pickup_address : []);
+            $coverage = $this->schedules->coverage(
+                $shop,
+                isset($snapshot['latitude']) ? (float) $snapshot['latitude'] : null,
+                isset($snapshot['longitude']) ? (float) $snapshot['longitude'] : null,
+            );
+
+            if (! ($coverage['available'] ?? false)) {
+                throw ValidationException::withMessages([
+                    'intake_address' => ['The repair pickup address is no longer covered by shop-owned logistics.'],
+                ]);
+            }
+
+            $schedule = $this->schedules->estimate(
+                $shop,
+                $lockedRepair->intake_logistics_locked_at ?? $lockedRepair->updated_at ?? now(),
+                isset($snapshot['latitude']) ? (float) $snapshot['latitude'] : null,
+                isset($snapshot['longitude']) ? (float) $snapshot['longitude'] : null,
+            );
+            $legData = [
                 'leg_type' => 'inbound',
                 'origin_snapshot' => [
+                    ...$snapshot,
                     'type' => 'customer',
-                    'name' => (string) ($repair->customer_name ?? 'Customer'),
-                    'phone' => (string) ($repair->phone ?? ''),
-                    'address' => $this->formatAddress($repair->intake_address ?? $repair->pickup_address),
+                    'name' => (string) ($snapshot['name'] ?? $lockedRepair->customer_name ?? 'Customer'),
+                    'phone' => (string) ($snapshot['phone'] ?? $lockedRepair->phone ?? ''),
+                    'address' => $this->formatAddress($snapshot),
+                    'accepted_delivery_fee' => round((float) $lockedRepair->intake_delivery_fee, 2),
+                    'coverage' => $coverage,
                 ],
                 'destination_snapshot' => [
                     'type' => 'shop',
-                    'name' => (string) ($repair->shopOwner?->business_name ?? 'Shop'),
-                    'address' => (string) ($repair->shopOwner?->business_address ?? ''),
+                    'name' => (string) ($shop->business_name ?? 'Shop'),
+                    'address' => (string) ($shop->business_address ?? ''),
+                    'latitude' => $shop->shop_latitude !== null ? (float) $shop->shop_latitude : null,
+                    'longitude' => $shop->shop_longitude !== null ? (float) $shop->shop_longitude : null,
                 ],
-            ]],
-        ]);
+                ...$schedule,
+                'estimated_at' => $schedule ? now() : null,
+            ];
+
+            if ($existing) {
+                $cancelledAt = $existing->cancelled_at ?? $existing->updated_at;
+                if (data_get($lockedRepair->logistics_payment_reconciliation, 'status') !== 'resolved'
+                    || $lockedRepair->intake_logistics_locked_at === null
+                    || $cancelledAt === null
+                    || ! $lockedRepair->intake_logistics_locked_at->greaterThan($cancelledAt)) {
+                    throw ValidationException::withMessages([
+                        'intake' => ['A cancelled pickup can be retried only after compensation and a new paid pickup plan.'],
+                    ]);
+                }
+
+                $leg = $existing->legs()->create([
+                    'sequence' => ((int) $existing->legs()->max('sequence')) + 1,
+                    'leg_type' => $legData['leg_type'],
+                    'status' => 'pending',
+                    'origin_snapshot' => $legData['origin_snapshot'],
+                    'destination_snapshot' => $legData['destination_snapshot'],
+                    'requires_delivery_proof' => true,
+                    'scheduled_delivery_date' => $legData['scheduled_delivery_date'] ?? null,
+                    'delivery_window' => $legData['delivery_window'] ?? null,
+                    'schedule_status' => $legData['schedule_status'] ?? null,
+                    'distance_km' => $legData['distance_km'] ?? null,
+                    'estimated_at' => $legData['estimated_at'],
+                ]);
+                $existing->update([
+                    'status' => 'requested',
+                    'completed_at' => null,
+                    'cancelled_at' => null,
+                ]);
+                $this->events->record($existing, $leg, [
+                    'event_type' => 'shipment_reactivated',
+                    'message' => 'Repair pickup requested again after compensation.',
+                ]);
+                $this->recordScheduleEvents($existing, $leg, $schedule);
+
+                return $existing->fresh(['legs', 'events']);
+            }
+
+            $shipment = $this->shipments->requestShipment([
+                'shop_owner_id' => (int) $lockedRepair->shop_owner_id,
+                'source_type' => 'repair_request',
+                'source_id' => (int) $lockedRepair->id,
+                'purpose' => 'repair_pickup',
+                'legs' => [$legData],
+            ]);
+            $this->recordScheduleEvents($shipment, $shipment->legs->first(), $schedule);
+
+            return $shipment->fresh(['legs', 'events']);
+        });
     }
 
     public function ensureRepairReturnShipment(RepairRequest $repair): Shipment
     {
-        $existing = $this->findExisting('repair_request', (int) $repair->id, 'repair_return');
-        if ($existing) {
-            return $existing;
-        }
+        return DB::transaction(function () use ($repair): Shipment {
+            $lockedRepair = RepairRequest::query()
+                ->with('shopOwner')
+                ->whereKey($repair->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $shop = ShopOwner::query()->whereKey($lockedRepair->shop_owner_id)->lockForUpdate()->firstOrFail();
+            $lockedRepair->setRelation('shopOwner', $shop);
 
-        $repair->loadMissing('shopOwner');
+            if ((string) $lockedRepair->return_delivery_method !== 'shop_delivery') {
+                throw ValidationException::withMessages([
+                    'return_delivery_method' => ['Only shop-owned repair returns create Dispatcher shipments.'],
+                ]);
+            }
 
-        return $this->shipments->requestShipment([
-            'shop_owner_id' => (int) $repair->shop_owner_id,
-            'source_type' => 'repair_request',
-            'source_id' => (int) $repair->id,
-            'purpose' => 'repair_return',
-            'legs' => [[
+            $existing = $this->findExisting('repair_request', (int) $lockedRepair->id, 'repair_return');
+            if ($existing && $existing->status->value !== 'cancelled') {
+                return $existing->load('legs');
+            }
+
+            $snapshot = is_array($lockedRepair->return_address) ? $lockedRepair->return_address : [];
+            $coverage = $this->schedules->coverage(
+                $shop,
+                isset($snapshot['latitude']) ? (float) $snapshot['latitude'] : null,
+                isset($snapshot['longitude']) ? (float) $snapshot['longitude'] : null,
+            );
+            if (! ($coverage['available'] ?? false)) {
+                throw ValidationException::withMessages([
+                    'return_address' => ['The repair return address is no longer covered by shop-owned logistics.'],
+                ]);
+            }
+
+            $schedule = $this->schedules->estimate(
+                $shop,
+                $lockedRepair->return_logistics_locked_at ?? $lockedRepair->updated_at ?? now(),
+                isset($snapshot['latitude']) ? (float) $snapshot['latitude'] : null,
+                isset($snapshot['longitude']) ? (float) $snapshot['longitude'] : null,
+            );
+            $legData = [
                 'leg_type' => 'outbound',
                 'origin_snapshot' => [
                     'type' => 'shop',
-                    'name' => (string) ($repair->shopOwner?->business_name ?? 'Shop'),
-                    'address' => (string) ($repair->shopOwner?->business_address ?? ''),
+                    'name' => (string) ($shop->business_name ?? 'Shop'),
+                    'address' => (string) ($shop->business_address ?? ''),
+                    'latitude' => $shop->shop_latitude !== null ? (float) $shop->shop_latitude : null,
+                    'longitude' => $shop->shop_longitude !== null ? (float) $shop->shop_longitude : null,
                 ],
                 'destination_snapshot' => [
+                    ...$snapshot,
                     'type' => 'customer',
-                    'name' => (string) ($repair->customer_name ?? 'Customer'),
-                    'phone' => (string) ($repair->phone ?? ''),
-                    'address' => $this->formatAddress($repair->return_address),
+                    'name' => (string) ($snapshot['name'] ?? $lockedRepair->customer_name ?? 'Customer'),
+                    'phone' => (string) ($snapshot['phone'] ?? $lockedRepair->phone ?? ''),
+                    'address' => $this->formatAddress($snapshot),
+                    'accepted_delivery_fee' => round((float) $lockedRepair->return_delivery_fee, 2),
+                    'coverage' => $coverage,
                 ],
-            ]],
-        ]);
+                ...$schedule,
+                'estimated_at' => $schedule ? now() : null,
+            ];
+
+            if ($existing) {
+                $cancelledAt = $existing->cancelled_at ?? $existing->updated_at;
+                if (data_get($lockedRepair->logistics_payment_reconciliation, 'status') !== 'resolved'
+                    || $lockedRepair->return_logistics_locked_at === null
+                    || $cancelledAt === null
+                    || ! $lockedRepair->return_logistics_locked_at->greaterThan($cancelledAt)) {
+                    throw ValidationException::withMessages([
+                        'return' => ['A cancelled return can be retried only after compensation and a new paid return plan.'],
+                    ]);
+                }
+
+                $leg = $existing->legs()->create([
+                    'sequence' => ((int) $existing->legs()->max('sequence')) + 1,
+                    'leg_type' => $legData['leg_type'],
+                    'status' => 'pending',
+                    'origin_snapshot' => $legData['origin_snapshot'],
+                    'destination_snapshot' => $legData['destination_snapshot'],
+                    'requires_delivery_proof' => true,
+                    'scheduled_delivery_date' => $legData['scheduled_delivery_date'] ?? null,
+                    'delivery_window' => $legData['delivery_window'] ?? null,
+                    'schedule_status' => $legData['schedule_status'] ?? null,
+                    'distance_km' => $legData['distance_km'] ?? null,
+                    'estimated_at' => $legData['estimated_at'],
+                ]);
+                $existing->update([
+                    'status' => 'requested',
+                    'completed_at' => null,
+                    'cancelled_at' => null,
+                ]);
+                $this->events->record($existing, $leg, [
+                    'event_type' => 'shipment_reactivated',
+                    'message' => 'Repair return requested again after compensation.',
+                ]);
+                $this->recordScheduleEvents($existing, $leg, $schedule);
+
+                return $existing->fresh(['legs', 'events']);
+            }
+
+            $shipment = $this->shipments->requestShipment([
+                'shop_owner_id' => (int) $lockedRepair->shop_owner_id,
+                'source_type' => 'repair_request',
+                'source_id' => (int) $lockedRepair->id,
+                'purpose' => 'repair_return',
+                'legs' => [$legData],
+            ]);
+            $this->recordScheduleEvents($shipment, $shipment->legs->first(), $schedule);
+
+            return $shipment->fresh(['legs', 'events']);
+        });
     }
 
     private function findExisting(string $sourceType, int $sourceId, string $purpose): ?Shipment
@@ -194,11 +363,33 @@ class SourceShipmentService
                 $address['address_line'] ?? null,
                 $address['barangay'] ?? null,
                 $address['city'] ?? null,
+                $address['province'] ?? null,
                 $address['region'] ?? null,
                 $address['postal_code'] ?? null,
             ])->filter()->implode(', ');
         }
 
         return (string) ($address ?? '');
+    }
+
+    private function recordScheduleEvents(Shipment $shipment, $leg, array $schedule): void
+    {
+        if (($schedule['schedule_status'] ?? null) === 'scheduled') {
+            $this->events->record($shipment, $leg, [
+                'event_type' => 'delivery_schedule_created',
+                'message' => 'Delivery scheduled.',
+            ]);
+            $this->events->record($shipment, $leg, [
+                'event_type' => 'delivery_estimated',
+                'visibility' => 'customer',
+                'message' => 'Estimated pickup scheduled.',
+            ]);
+        } elseif ($schedule) {
+            $this->events->record($shipment, $leg, [
+                'event_type' => 'delivery_schedule_attention',
+                'message' => 'Delivery schedule requires dispatcher attention.',
+                'metadata' => ['schedule_status' => $schedule['schedule_status']],
+            ]);
+        }
     }
 }

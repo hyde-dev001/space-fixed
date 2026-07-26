@@ -54,6 +54,7 @@ class CustomerTrackingService
             'purpose' => $shipment->purpose,
             'status' => $shipment->status->value,
             'source_type' => $shipment->source_type,
+            'source_summary' => $this->repairSourceSummary($shipment),
             'created_at' => optional($shipment->created_at)->toISOString(),
             'legs' => $shipment->legs->map(function ($leg) use ($shipment) {
                 $attempt = $leg->attempts->first();
@@ -97,5 +98,31 @@ class CustomerTrackingService
     private function safeSnapshot(?array $snapshot): ?array
     {
         return $snapshot ? collect($snapshot)->except(['phone', 'rider_name', 'rider_phone', 'internal_notes'])->all() : null;
+    }
+
+    private function repairSourceSummary(Shipment $shipment): ?array
+    {
+        if ($shipment->source_type !== 'repair_request') {
+            return null;
+        }
+
+        $repair = RepairRequest::query()
+            ->with('user:id,name,first_name,last_name')
+            ->where('shop_owner_id', $shipment->shop_owner_id)
+            ->find($shipment->source_id);
+        if (! $repair) {
+            return null;
+        }
+
+        $customer = $repair->customer_name
+            ?: $repair->user?->name
+            ?: trim("{$repair->user?->first_name} {$repair->user?->last_name}");
+        $shoe = trim(implode(' ', array_filter([$repair->brand, $repair->shoe_type])));
+
+        return [
+            'request_number' => $repair->request_id ?: (string) $repair->id,
+            'customer_name' => $customer ?: 'Customer not provided',
+            'shoe_summary' => $shoe ?: ($repair->description ?: 'Repair item'),
+        ];
     }
 }

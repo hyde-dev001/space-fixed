@@ -9,6 +9,8 @@ use App\Models\Logistics\LogisticsSetting;
 use App\Models\Logistics\DeliveryBatch;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\Logistics\DeliveryAssignment;
+use App\Models\RepairRequest;
+use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\Logistics\RiderProfileSyncService;
 use Illuminate\Http\RedirectResponse;
@@ -41,13 +43,17 @@ class ErpLogisticsController extends Controller
             $user->can('manage-logistics-riders')
         );
         $canAssign = $user && $user->can('assign-logistics-deliveries');
+        $shop = ShopOwner::query()->findOrFail($shopOwnerId);
+        [$module, $availableModules] = $this->logisticsModuleFilter($shop, (string) $request->query('module', 'all'));
         $status = in_array($request->query('status'), ['all', 'incomplete', 'requested', 'active', 'completed', 'cancelled', 'awaiting_proof_approval', 'failed_attempts'], true)
             ? $request->query('status') : 'all';
         $purpose = $request->query('purpose', 'all');
+        $deliveryWindow = in_array($request->query('window'), ['morning', 'afternoon'], true)
+            ? $request->query('window') : 'all';
         $maxDeliveryAttempts = (int) LogisticsSetting::firstOrCreate(['shop_owner_id' => $shopOwnerId])->max_delivery_attempts;
 
         return Inertia::render('ERP/Logistics/Shipments', [
-            'shipments' => Shipment::query()
+            'shipments' => tap(Shipment::query()
                 ->with(['legs' => function ($query) use ($user, $isDispatcher) {
                     $query->with(['assignments.riderProfile', 'proofs', 'attempts' => fn ($attempts) => $attempts
                         ->where('attempt_type', 'delivery')
@@ -69,6 +75,10 @@ class ErpLogisticsController extends Controller
                     }
                 }])
                 ->where('shop_owner_id', $shopOwnerId)
+                ->when($module !== 'all', fn ($query) => $query
+                    ->whereIn('source_type', Shipment::sourceTypesForModule($module)))
+                ->when($deliveryWindow !== 'all', fn ($query) => $query
+                    ->whereHas('legs', fn ($legs) => $legs->where('delivery_window', $deliveryWindow)))
                 ->when($status === 'incomplete', function ($query) {
                     $query->whereNotIn('status', ['completed', 'cancelled']);
                 })
@@ -94,11 +104,18 @@ class ErpLogisticsController extends Controller
                 })
                 ->latest()
                 ->paginate(10)
-                ->withQueryString(),
+                ->withQueryString(), fn ($shipments) => $this->attachRepairSourceSummaries(
+                    $shipments->getCollection(),
+                    $shopOwnerId,
+                )),
             'filters' => [
                 'status' => $status,
                 'purpose' => $purpose,
+                'module' => $module,
+                'window' => $deliveryWindow,
             ],
+            'availableModules' => $availableModules,
+            'showModuleFilter' => count($availableModules) > 1,
             'canAssign' => $canAssign,
             'canUpdateStatus' => false,
             'canRecordProof' => false,
@@ -213,27 +230,64 @@ class ErpLogisticsController extends Controller
         ]);
     }
 
-    public function batches(): Response
+    public function batches(Request $request): Response
     {
         $shopOwnerId = $this->authorizedShopOwnerId('manage-logistics-batches');
+        $shop = ShopOwner::query()->findOrFail($shopOwnerId);
+        [$module, $availableModules] = $this->logisticsModuleFilter($shop, (string) $request->query('module', 'all'));
+        $deliveryWindow = in_array($request->query('window'), ['morning', 'afternoon'], true)
+            ? $request->query('window') : 'all';
+        $deliveryDate = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $request->query('date'))
+            ? (string) $request->query('date') : null;
         $settings = LogisticsSetting::firstOrCreate(['shop_owner_id' => $shopOwnerId]);
         $attemptRelations = ['attempts' => fn ($attempts) => $attempts
             ->where('attempt_type', 'delivery')->where('status', 'failed')->latest('attempted_at')->latest('id')->limit(1)];
+        $filterLegModule = fn ($query) => $query
+            ->when($module !== 'all', fn ($shipments) => $shipments
+                ->whereIn('source_type', Shipment::sourceTypesForModule($module)));
+        $batches = DeliveryBatch::with(['riderProfile', 'legs.shipment', 'legs.attempts' => $attemptRelations['attempts']])
+            ->where('shop_owner_id', $shopOwnerId)
+            ->when($module !== 'all', fn ($query) => $this->filterBatchesByModule($query, $module))
+            ->when($deliveryDate, fn ($query) => $query->whereDate('delivery_date', $deliveryDate))
+            ->when($deliveryWindow !== 'all', fn ($query) => $query->where('delivery_window', $deliveryWindow))
+            ->latest()
+            ->get()
+            ->each(function (DeliveryBatch $batch): void {
+                $modules = $batch->legs
+                    ->map(fn ($leg) => Shipment::moduleForSourceType((string) $leg->shipment?->source_type))
+                    ->unique();
+                $batch->setAttribute('module', $modules->count() === 1 && $modules->first()
+                    ? $modules->first()
+                    : 'mixed');
+            });
+        $pool = ShipmentLeg::with(['shipment', ...$attemptRelations])
+            ->withCount(['attempts as failed_attempt_count' => fn ($attempts) => $attempts->where('attempt_type', 'delivery')->where('status', 'failed')])
+            ->whereHas('shipment', fn ($query) => $filterLegModule($query->where('shop_owner_id', $shopOwnerId)))
+            ->whereNull('delivery_batch_id')->where('schedule_status', 'scheduled')->where('status', 'pending')
+            ->when($deliveryDate, fn ($query) => $query->whereDate('scheduled_delivery_date', $deliveryDate))
+            ->when($deliveryWindow !== 'all', fn ($query) => $query->where('delivery_window', $deliveryWindow))
+            ->get();
+        $unscheduled = ShipmentLeg::with(['shipment', ...$attemptRelations])
+            ->withCount(['attempts as failed_attempt_count' => fn ($attempts) => $attempts->where('attempt_type', 'delivery')->where('status', 'failed')])
+            ->whereHas('shipment', fn ($query) => $filterLegModule($query->where('shop_owner_id', $shopOwnerId)))
+            ->whereNull('delivery_batch_id')->where('status', 'pending')
+            ->where(fn ($query) => $query->whereNull('schedule_status')->orWhere('schedule_status', '!=', 'scheduled'))
+            ->get();
+        $this->attachRepairSourceSummaries(
+            $batches->flatMap->legs->pluck('shipment')->merge($pool->pluck('shipment'))->merge($unscheduled->pluck('shipment')),
+            $shopOwnerId,
+        );
+
         return Inertia::render('ERP/Logistics/Batches', [
-            'batches' => DeliveryBatch::with(['riderProfile', 'legs.shipment', 'legs.attempts' => $attemptRelations['attempts']])->where('shop_owner_id', $shopOwnerId)->latest()->get(),
-            'pool' => \App\Models\Logistics\ShipmentLeg::with(['shipment', ...$attemptRelations])
-                ->withCount(['attempts as failed_attempt_count' => fn ($attempts) => $attempts->where('attempt_type', 'delivery')->where('status', 'failed')])
-                ->whereHas('shipment', fn ($query) => $query->where('shop_owner_id', $shopOwnerId))
-                ->whereNull('delivery_batch_id')->where('schedule_status', 'scheduled')->where('status', 'pending')->get(),
-            'unscheduled' => ShipmentLeg::with(['shipment', ...$attemptRelations])
-                ->withCount(['attempts as failed_attempt_count' => fn ($attempts) => $attempts->where('attempt_type', 'delivery')->where('status', 'failed')])
-                ->whereHas('shipment', fn ($query) => $query->where('shop_owner_id', $shopOwnerId))
-                ->whereNull('delivery_batch_id')->where('status', 'pending')
-                ->where(fn ($query) => $query->whereNull('schedule_status')->orWhere('schedule_status', '!=', 'scheduled'))
-                ->get(),
+            'batches' => $batches,
+            'pool' => $pool,
+            'unscheduled' => $unscheduled,
             'riders' => RiderProfile::where('shop_owner_id', $shopOwnerId)->where('active', true)->where('availability_status', 'available')->get(),
             'dailyRiderCapacity' => (int) $settings->daily_rider_capacity,
             'maxDeliveryAttempts' => (int) $settings->max_delivery_attempts,
+            'filters' => ['module' => $module, 'date' => $deliveryDate, 'window' => $deliveryWindow],
+            'availableModules' => $availableModules,
+            'showModuleFilter' => count($availableModules) > 1,
         ]);
     }
 
@@ -267,6 +321,62 @@ class ErpLogisticsController extends Controller
             'unassigned' => (clone $legs)->where('status', 'pending')->whereDoesntHave('assignments', fn ($q) => $q->whereIn('status', ['assigned', 'accepted']))->count(),
             'rider_workload' => DeliveryAssignment::query()->whereIn('status', ['assigned', 'accepted'])->whereHas('leg.shipment', fn ($q) => $q->where('shop_owner_id', $shopOwnerId))->count(),
             'delivery_success_rate' => $delivered + $failed ? round($delivered * 100 / ($delivered + $failed), 1) : 0,
+        ];
+    }
+
+    private function logisticsModuleFilter(ShopOwner $shop, string $requested): array
+    {
+        $available = $shop->logisticsModules();
+        $selected = count($available) === 1
+            ? $available[0]
+            : (in_array($requested, $available, true) ? $requested : 'all');
+
+        return [$selected, $available];
+    }
+
+    private function filterBatchesByModule($query, string $module)
+    {
+        $sourceTypes = Shipment::sourceTypesForModule($module);
+
+        return $query
+            ->whereHas('legs.shipment', fn ($shipments) => $shipments->whereIn('source_type', $sourceTypes))
+            ->whereDoesntHave('legs.shipment', fn ($shipments) => $shipments->whereNotIn('source_type', $sourceTypes));
+    }
+
+    private function attachRepairSourceSummaries(iterable $shipments, int $shopOwnerId): void
+    {
+        $shipments = collect($shipments)
+            ->filter(fn ($shipment) => $shipment instanceof Shipment && $shipment->source_type === 'repair_request')
+            ->unique('id');
+        if ($shipments->isEmpty()) {
+            return;
+        }
+
+        $repairs = RepairRequest::query()
+            ->with('user:id,name,first_name,last_name')
+            ->where('shop_owner_id', $shopOwnerId)
+            ->whereIn('id', $shipments->pluck('source_id'))
+            ->get()
+            ->keyBy('id');
+
+        $shipments->each(function (Shipment $shipment) use ($repairs): void {
+            if ($repair = $repairs->get($shipment->source_id)) {
+                $shipment->setAttribute('source_summary', $this->repairSourceSummary($repair));
+            }
+        });
+    }
+
+    private function repairSourceSummary(RepairRequest $repair): array
+    {
+        $customer = $repair->customer_name
+            ?: $repair->user?->name
+            ?: trim("{$repair->user?->first_name} {$repair->user?->last_name}");
+        $shoe = trim(implode(' ', array_filter([$repair->brand, $repair->shoe_type])));
+
+        return [
+            'request_number' => $repair->request_id ?: (string) $repair->id,
+            'customer_name' => $customer ?: 'Customer not provided',
+            'shoe_summary' => $shoe ?: ($repair->description ?: 'Repair item'),
         ];
     }
 }
