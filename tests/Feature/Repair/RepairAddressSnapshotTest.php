@@ -36,6 +36,11 @@ class RepairAddressSnapshotTest extends TestCase
         ])->assertOk()->assertJsonPath('success', true);
 
         $repair = RepairRequest::query()->latest('id')->firstOrFail();
+        $this->assertFalse((bool) $repair->payment_enabled);
+        $this->assertNull($repair->payment_enabled_at);
+        $this->actingAs($shop, 'shop_owner')
+            ->postJson("/api/shop-owner/repairs/{$repair->id}/activate-payment")
+            ->assertStatus(400);
         $this->assertSame($address->id, $repair->intake_address['address_id']);
         $this->assertSame($address->id, $repair->return_address['address_id']);
         $this->assertSame($repair->intake_address['address_line'], $repair->return_address['address_line']);

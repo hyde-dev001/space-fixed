@@ -3803,6 +3803,23 @@ export default function JobOrdersRepair() {
                   </div>
                 )}
                 
+                {(viewOrder.status === "owner_approved" ||
+                  viewOrder.status === "repairer_accepted" ||
+                  viewOrder.status === "waiting_customer_confirmation" ||
+                  viewOrder.status === "pending") &&
+                  !viewOrder.payment_enabled &&
+                  !isPosManualWalkIn(viewOrder) &&
+                  !isWarrantyNoChargeOrder(viewOrder) && (
+                    <button
+                      type="button"
+                      onClick={() => handleActivatePayment(String(viewOrder.database_id))}
+                      className="rounded-lg bg-amber-600 px-4 py-2.5 font-semibold text-white transition-colors hover:bg-amber-700"
+                      aria-label="Activate Payment"
+                    >
+                      Activate Payment
+                    </button>
+                  )}
+
                 {viewOrder.status === "pending" && viewOrder.intakeHandoff && (
                   <div className="min-w-[16rem] flex-1">
                     <button

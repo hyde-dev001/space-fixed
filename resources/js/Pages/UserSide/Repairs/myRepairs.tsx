@@ -399,7 +399,7 @@ const getReturnMethod = (order: RepairOrder): 'walk_in' | 'customer_pickup' | 's
 };
 
 const isOnlineIntakeFlow = (order: RepairOrder): boolean => {
-  return getIntakeMethod(order) === 'customer_delivery';
+  return getIntakeMethod(order) !== 'walk_in';
 };
 
 const isOnlineReturnFlow = (order: RepairOrder): boolean => {
@@ -4116,7 +4116,7 @@ const MyRepairs: React.FC = () => {
                         )}
                       {order.status === 'repairer_accepted' && order.conversation_id && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (
                         <>
-                          {isOnlineIntakeFlow(order) && (
+                          {isOnlineIntakeFlow(order) && order.payment_enabled && (
                             <button
                               onClick={() => handlePayNow(order.id)}
                               disabled={!order.payment_enabled || processingPayment}
@@ -4158,7 +4158,7 @@ const MyRepairs: React.FC = () => {
                       
                       {order.status === 'pending' && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (
                         <>
-                          {isOnlineIntakeFlow(order) && (
+                          {isOnlineIntakeFlow(order) && order.payment_enabled && (
                             <button
                               onClick={() => handlePayNow(order.id)}
                               disabled={!order.payment_enabled || processingPayment}

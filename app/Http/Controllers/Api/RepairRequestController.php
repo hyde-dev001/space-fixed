@@ -235,7 +235,7 @@ class RepairRequestController extends Controller
         }
 
         $deliveryMethod = $intakeDeliveryMethod === 'walk_in' ? 'walk_in' : 'pickup';
-        $autoEnableOnlinePayment = in_array($intakeDeliveryMethod, ['walk_in', 'shop_pickup'], true);
+        $autoEnableOnlinePayment = $intakeDeliveryMethod === 'walk_in';
 
         try {
             // Generate unique request ID
