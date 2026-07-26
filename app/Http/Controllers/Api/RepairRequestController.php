@@ -3529,6 +3529,8 @@ class RepairRequestController extends Controller
 
         $pricingSnapshot = $this->calculateRepairPricingSnapshot($repair);
         $finalTotal = (float) ($pricingSnapshot['final_total'] ?? 0);
+        $deliveryFees = $repair->paidShopOwnedDeliveryFees();
+        $grandTotal = round($finalTotal + $deliveryFees['total'], 2);
 
         if ($finalTotal <= 0) {
             return null;
@@ -3545,7 +3547,7 @@ class RepairRequestController extends Controller
             'customer_email' => $repair->email,
             'date' => now(),
             'due_date' => $isSettled ? null : now()->addDays(7),
-            'total' => $finalTotal,
+            'total' => $grandTotal,
             'tax_amount' => 0,
             'status' => $isSettled ? 'paid' : 'sent',
             'payment_date' => $isSettled ? ($repair->payment_completed_at ?? now()) : null,
@@ -3558,6 +3560,11 @@ class RepairRequestController extends Controller
                 'repair_request_number' => $repair->request_id,
                 'payment_status' => $repair->payment_status,
                 'generated_on_status' => 'picked_up',
+                'service_amount' => $finalTotal,
+                'intake_delivery_fee' => $deliveryFees['intake'],
+                'return_delivery_fee' => $deliveryFees['return'],
+                'shipping_fee' => $deliveryFees['total'],
+                'grand_total' => $grandTotal,
             ],
         ]);
 
@@ -3577,6 +3584,25 @@ class RepairRequestController extends Controller
             'account_id' => null,
         ]);
 
+        foreach ([
+            'Shop-owned intake pickup' => $deliveryFees['intake'],
+            'Shop-owned return delivery' => $deliveryFees['return'],
+        ] as $description => $fee) {
+            if ($fee <= 0) {
+                continue;
+            }
+
+            InvoiceItem::create([
+                'invoice_id' => $invoice->id,
+                'description' => $description,
+                'quantity' => 1,
+                'unit_price' => $fee,
+                'tax_rate' => 0,
+                'amount' => $fee,
+                'account_id' => null,
+            ]);
+        }
+
         activity()
             ->performedOn($repair)
             ->withProperties([
@@ -3584,7 +3610,7 @@ class RepairRequestController extends Controller
                 'invoice_reference' => $invoice->reference,
                 'repair_request_id' => $repair->id,
                 'repair_request_number' => $repair->request_id,
-                'total' => $finalTotal,
+                'total' => $grandTotal,
             ])
             ->log('Auto-generated invoice for picked-up repair request');
 
