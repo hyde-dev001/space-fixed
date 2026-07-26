@@ -181,6 +181,9 @@ final class RepairDeliveryService
 
             if (! ($coverage['available'] ?? false)) {
                 $createdCompensation = $this->startIntakeCompensation($lockedRepair, $coverage);
+                if ($sponsoredWarranty) {
+                    $lockedRepair->update(['intake_logistics_locked_at' => null]);
+                }
 
                 return null;
             }
@@ -250,6 +253,13 @@ final class RepairDeliveryService
             );
             if (! ($coverage['available'] ?? false)) {
                 $createdCompensation = $this->startReturnCompensation($lockedRepair, $coverage);
+                if ($sponsoredWarranty) {
+                    $lockedRepair->update([
+                        'return_logistics_locked_at' => null,
+                        'return_address_confirmed_at' => null,
+                        'return_address_confirmed_version' => null,
+                    ]);
+                }
 
                 return null;
             }

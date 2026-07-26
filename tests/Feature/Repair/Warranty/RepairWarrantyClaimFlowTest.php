@@ -158,9 +158,11 @@ class RepairWarrantyClaimFlowTest extends TestCase
             ->count());
     }
 
-    public function test_shop_sponsored_warranty_coverage_loss_creates_no_refund_or_shipment(): void
+    public function test_shop_sponsored_warranty_intake_coverage_loss_unlocks_customer_fallback(): void
     {
-        [$settings, , , $linked, $delivery] = $this->approveShopSponsoredWarranty();
+        [$settings, , $address, $linked, $delivery] = $this->approveShopSponsoredWarranty();
+        $customer = User::query()->findOrFail($linked->user_id);
+        $returnLock = $linked->return_logistics_locked_at->copy();
         $linked->update(['status' => 'repairer_accepted']);
         $settings->update(['coverage_radius_km' => 0.01]);
 
@@ -171,9 +173,70 @@ class RepairWarrantyClaimFlowTest extends TestCase
             ->where('source_id', $linked->id)
             ->where('purpose', 'repair_pickup')
             ->count());
-        $this->assertNull($linked->fresh()->logistics_payment_reconciliation);
-        $this->assertSame(0.0, (float) $linked->fresh()->total_refunded_amount);
+        $failed = $linked->fresh();
+        $this->assertNull($failed->intake_logistics_locked_at);
+        $this->assertTrue($failed->return_logistics_locked_at->equalTo($returnLock));
+        $this->assertSame('shop_pickup', (string) $failed->intake_delivery_method);
+        $this->assertSame('repairer_accepted', (string) $failed->status);
+        $this->assertNull($failed->logistics_payment_reconciliation);
+        $this->assertSame(0.0, (float) $failed->total_refunded_amount);
         $this->assertDatabaseCount('pos_refunds', 0);
+
+        $this->actingAs($customer, 'user')
+            ->patchJson("/api/customer/repairs/{$linked->id}/delivery-method", [
+                'intake_delivery_method' => 'customer_delivery',
+                'intake_address_id' => $address->id,
+            ])
+            ->assertOk();
+
+        $fallback = $linked->fresh();
+        $this->assertSame('customer_delivery', (string) $fallback->intake_delivery_method);
+        $this->assertSame(0.0, (float) $fallback->intake_delivery_fee);
+        $this->assertNotNull($fallback->intake_logistics_locked_at);
+        $this->assertTrue($fallback->return_logistics_locked_at->equalTo($returnLock));
+    }
+
+    public function test_shop_sponsored_warranty_return_coverage_loss_unlocks_customer_fallback(): void
+    {
+        [$settings, , $address, $linked, $delivery] = $this->approveShopSponsoredWarranty();
+        $customer = User::query()->findOrFail($linked->user_id);
+        $intakeLock = $linked->intake_logistics_locked_at->copy();
+        $linked->update(['status' => 'ready_for_pickup']);
+        $settings->update(['coverage_radius_km' => 0.01]);
+
+        $this->assertNull($delivery->tryCreateReturnShipment($linked->fresh()));
+        $this->assertNull($delivery->tryCreateReturnShipment($linked->fresh()));
+        $this->assertSame(0, Shipment::query()
+            ->where('source_type', 'repair_request')
+            ->where('source_id', $linked->id)
+            ->where('purpose', 'repair_return')
+            ->count());
+        $failed = $linked->fresh();
+        $this->assertNull($failed->return_logistics_locked_at);
+        $this->assertNull($failed->return_address_confirmed_at);
+        $this->assertNull($failed->return_address_confirmed_version);
+        $this->assertTrue($failed->intake_logistics_locked_at->equalTo($intakeLock));
+        $this->assertSame('shop_delivery', (string) $failed->return_delivery_method);
+        $this->assertSame('ready_for_pickup', (string) $failed->status);
+        $this->assertNull($failed->logistics_payment_reconciliation);
+        $this->assertSame(0.0, (float) $failed->total_refunded_amount);
+        $this->assertDatabaseCount('pos_refunds', 0);
+
+        $this->actingAs($customer, 'user')
+            ->patchJson("/api/customer/repairs/{$linked->id}/delivery-method", [
+                'return_delivery_method' => 'customer_pickup',
+                'return_address_id' => $address->id,
+                'same_as_intake_address' => false,
+            ])
+            ->assertOk();
+
+        $fallback = $linked->fresh();
+        $this->assertSame('customer_pickup', (string) $fallback->return_delivery_method);
+        $this->assertSame(0.0, (float) $fallback->return_delivery_fee);
+        $this->assertNotNull($fallback->return_logistics_locked_at);
+        $this->assertNull($fallback->return_address_confirmed_at);
+        $this->assertNull($fallback->return_address_confirmed_version);
+        $this->assertTrue($fallback->intake_logistics_locked_at->equalTo($intakeLock));
     }
 
     public function test_duplicate_shop_sponsored_warranty_intake_cancellation_without_shipment_is_idempotent(): void
