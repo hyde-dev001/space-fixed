@@ -45,6 +45,9 @@ class ErpLogisticsController extends Controller
         );
         $canAssign = $user && $user->can('assign-logistics-deliveries');
         $shop = ShopOwner::query()->findOrFail($shopOwnerId);
+        $search = trim((string) ($request->validate([
+            'search' => ['nullable', 'string', 'max:100'],
+        ])['search'] ?? ''));
         [$module, $availableModules] = $this->logisticsModuleFilter($shop, (string) $request->query('module', 'all'));
         $status = in_array($request->query('status'), ['all', 'incomplete', 'requested', 'active', 'completed', 'cancelled', 'awaiting_proof_approval', 'failed_attempts'], true)
             ? $request->query('status') : 'all';
@@ -76,6 +79,7 @@ class ErpLogisticsController extends Controller
                     }
                 }])
                 ->where('shop_owner_id', $shopOwnerId)
+                ->when($search !== '', fn ($query) => $this->filterShipmentsBySearch($query, $search, $shopOwnerId))
                 ->when($module !== 'all', fn ($query) => $query
                     ->whereIn('source_type', Shipment::sourceTypesForModule($module)))
                 ->when($deliveryWindow !== 'all', fn ($query) => $query
@@ -114,6 +118,7 @@ class ErpLogisticsController extends Controller
                 'purpose' => $purpose,
                 'module' => $module,
                 'window' => $deliveryWindow,
+                'search' => $search,
             ],
             'availableModules' => $availableModules,
             'showModuleFilter' => count($availableModules) > 1,
@@ -141,6 +146,9 @@ class ErpLogisticsController extends Controller
             abort(403);
         }
         $shopOwnerId = (int) $user->shop_owner_id;
+        $search = trim((string) ($request->validate([
+            'search' => ['nullable', 'string', 'max:100'],
+        ])['search'] ?? ''));
         $status = in_array($request->query('status'), ['assigned', 'picked_up', 'in_transit', 'delivery_attempted', 'awaiting_proof_approval', 'delivered', 'cancelled'], true)
             ? $request->query('status')
             : 'all';
@@ -171,6 +179,7 @@ class ErpLogisticsController extends Controller
         return Inertia::render('ERP/Logistics/MyDeliveries', [
             'shipments' => tap(Shipment::query()
                 ->where('shop_owner_id', $shopOwnerId)
+                ->when($search !== '', fn ($query) => $this->filterShipmentsBySearch($query, $search, $shopOwnerId))
                 ->whereHas('legs', $legMatches)
                 ->with(['legs' => function ($query) use ($legMatches) {
                     $legMatches($query);
@@ -185,7 +194,7 @@ class ErpLogisticsController extends Controller
                     $shipments->getCollection(),
                     $shopOwnerId,
                 )),
-            'filters' => ['status' => $status, 'window' => $window],
+            'filters' => ['status' => $status, 'window' => $window, 'search' => $search],
             'canAssign' => false,
             'canUpdateStatus' => $user->can('update-logistics-status'),
             'canRecordProof' => $user->can('record-logistics-proof'),
@@ -345,6 +354,46 @@ class ErpLogisticsController extends Controller
         return $query
             ->whereHas('legs.shipment', fn ($shipments) => $shipments->whereIn('source_type', $sourceTypes))
             ->whereDoesntHave('legs.shipment', fn ($shipments) => $shipments->whereNotIn('source_type', $sourceTypes));
+    }
+
+    private function filterShipmentsBySearch($query, string $search, int $shopOwnerId)
+    {
+        if ($search === '') {
+            return $query;
+        }
+
+        $like = "%{$search}%";
+        $orderIds = Order::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where(function ($orders) use ($like, $shopOwnerId) {
+                $orders
+                    ->where('order_number', 'like', $like)
+                    ->orWhere('customer_name', 'like', $like)
+                    ->orWhere('customer_phone', 'like', $like)
+                    ->orWhere('customer_address', 'like', $like)
+                    ->orWhere('shipping_address_line', 'like', $like)
+                    ->orWhere('shipping_barangay', 'like', $like)
+                    ->orWhere('shipping_city', 'like', $like)
+                    ->orWhere('shipping_province', 'like', $like)
+                    ->orWhereHas('items', fn ($items) => $items
+                        ->where('product_name', 'like', $like)
+                        ->orWhereHas('product', fn ($products) => $products
+                            ->where('shop_owner_id', $shopOwnerId)
+                            ->where('brand', 'like', $like)));
+            })
+            ->pluck('id');
+
+        return $query->where(function ($shipments) use ($like, $orderIds) {
+            $shipments
+                ->where('id', 'like', $like)
+                ->orWhere('source_id', 'like', $like)
+                ->orWhereHas('legs', fn ($legs) => $legs
+                    ->where('origin_snapshot', 'like', $like)
+                    ->orWhere('destination_snapshot', 'like', $like))
+                ->orWhere(fn ($retail) => $retail
+                    ->where('source_type', 'order')
+                    ->whereIn('source_id', $orderIds));
+        });
     }
 
     private function attachRepairSourceSummaries(iterable $shipments, int $shopOwnerId): void

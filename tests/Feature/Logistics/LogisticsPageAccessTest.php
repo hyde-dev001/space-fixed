@@ -458,6 +458,191 @@ class LogisticsPageAccessTest extends TestCase
         $this->assertSame([$wanted->id], $shipmentIds);
     }
 
+    public function test_dispatcher_searches_shipments_by_order_contact_and_product(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+
+        $shop = ShopOwner::factory()->create(['business_type' => 'retail']);
+        $otherShop = ShopOwner::factory()->create(['business_type' => 'retail']);
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $dispatcher->assignRole('Logistics Dispatcher');
+
+        $product = Product::create([
+            'shop_owner_id' => $shop->id,
+            'name' => 'Orbit Runner',
+            'slug' => 'orbit-runner-search',
+            'price' => 3200,
+            'brand' => 'SearchBrand',
+        ]);
+        $order = Order::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'order_number' => 'ORD-SEARCH-1001',
+            'customer_name' => 'Order Customer',
+            'customer_phone' => '09171112222',
+            'customer_address' => 'Order Address, Cavite',
+        ]);
+        $order->items()->create([
+            'product_id' => $product->id,
+            'product_name' => 'Orbit Runner',
+            'price' => 3200,
+            'quantity' => 1,
+            'subtotal' => 3200,
+        ]);
+        $wanted = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+            'source_id' => $order->id,
+        ]);
+        ShipmentLeg::factory()->create([
+            'shipment_id' => $wanted->id,
+            'leg_type' => 'outbound',
+            'destination_snapshot' => [
+                'name' => 'Receiver Snapshot',
+                'phone' => '09998887777',
+                'address' => 'Cavite Search Address',
+            ],
+        ]);
+        $unmatched = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'manual',
+            'source_id' => 987654,
+        ]);
+        ShipmentLeg::factory()->create(['shipment_id' => $unmatched->id]);
+
+        foreach ([
+            (string) $wanted->id,
+            'ORD-SEARCH-1001',
+            'Receiver Snapshot',
+            '09998887777',
+            'Cavite Search Address',
+            'SearchBrand',
+            'Orbit Runner',
+        ] as $search) {
+            $props = $this->actingAs($dispatcher, 'user')
+                ->get('/erp/logistics/shipments?'.http_build_query(['search' => $search]))
+                ->assertOk()
+                ->viewData('page')['props'];
+
+            $this->assertSame($search, $props['filters']['search']);
+            $this->assertSame([$wanted->id], collect($props['shipments']['data'])->pluck('id')->all());
+        }
+
+        $otherProduct = Product::create([
+            'shop_owner_id' => $otherShop->id,
+            'name' => 'Foreign Model',
+            'slug' => 'foreign-model-search',
+            'price' => 5000,
+            'brand' => 'ForeignBrand',
+        ]);
+        $otherOrder = Order::factory()->create(['shop_owner_id' => $otherShop->id]);
+        $otherOrder->items()->create([
+            'product_id' => $otherProduct->id,
+            'product_name' => 'Foreign Model',
+            'price' => 5000,
+            'quantity' => 1,
+            'subtotal' => 5000,
+        ]);
+        $manipulated = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+            'source_id' => $otherOrder->id,
+        ]);
+        ShipmentLeg::factory()->create(['shipment_id' => $manipulated->id]);
+
+        $localOrder = Order::factory()->create(['shop_owner_id' => $shop->id]);
+        $localOrder->items()->create([
+            'product_id' => $otherProduct->id,
+            'product_name' => 'Neutral Saved Model',
+            'price' => 2500,
+            'quantity' => 1,
+            'subtotal' => 2500,
+        ]);
+        $crossProduct = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+            'source_id' => $localOrder->id,
+        ]);
+        ShipmentLeg::factory()->create(['shipment_id' => $crossProduct->id]);
+
+        $ids = collect($this->actingAs($dispatcher, 'user')
+            ->get('/erp/logistics/shipments?search=ForeignBrand')
+            ->assertOk()
+            ->viewData('page')['props']['shipments']['data'])
+            ->pluck('id')
+            ->all();
+        $this->assertSame([], $ids);
+    }
+
+    public function test_rider_search_remains_assignment_scoped(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+
+        $shop = ShopOwner::factory()->create(['business_type' => 'retail']);
+        $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $rider->assignRole('Logistics Rider');
+        $otherRider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $otherRider->assignRole('Logistics Rider');
+        $profile = RiderProfile::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'linked_type' => User::class,
+            'linked_id' => $rider->id,
+        ]);
+        $otherProfile = RiderProfile::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'linked_type' => User::class,
+            'linked_id' => $otherRider->id,
+        ]);
+
+        $assignedOrder = Order::factory()->create(['shop_owner_id' => $shop->id]);
+        $assignedOrder->items()->create([
+            'product_name' => 'Assigned Runner',
+            'price' => 2000,
+            'quantity' => 1,
+            'subtotal' => 2000,
+        ]);
+        $assignedShipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+            'source_id' => $assignedOrder->id,
+        ]);
+        $assignedLeg = ShipmentLeg::factory()->create(['shipment_id' => $assignedShipment->id]);
+        DeliveryAssignment::factory()->create([
+            'shipment_leg_id' => $assignedLeg->id,
+            'rider_profile_id' => $profile->id,
+        ]);
+
+        $hiddenOrder = Order::factory()->create(['shop_owner_id' => $shop->id]);
+        $hiddenOrder->items()->create([
+            'product_name' => 'Hidden Runner',
+            'price' => 2500,
+            'quantity' => 1,
+            'subtotal' => 2500,
+        ]);
+        $hiddenShipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+            'source_id' => $hiddenOrder->id,
+        ]);
+        $hiddenLeg = ShipmentLeg::factory()->create(['shipment_id' => $hiddenShipment->id]);
+        DeliveryAssignment::factory()->create([
+            'shipment_leg_id' => $hiddenLeg->id,
+            'rider_profile_id' => $otherProfile->id,
+        ]);
+
+        $assigned = $this->actingAs($rider, 'user')
+            ->get('/erp/logistics/deliveries?search=Assigned%20Runner')
+            ->assertOk()
+            ->viewData('page')['props'];
+        $this->assertSame('Assigned Runner', $assigned['filters']['search']);
+        $this->assertSame([$assignedShipment->id], collect($assigned['shipments']['data'])->pluck('id')->all());
+
+        $hidden = $this->actingAs($rider, 'user')
+            ->get('/erp/logistics/deliveries?search=Hidden%20Runner')
+            ->assertOk()
+            ->viewData('page')['props'];
+        $this->assertSame([], collect($hidden['shipments']['data'])->pluck('id')->all());
+    }
+
     public function test_dispatcher_module_filter_scopes_shipments_and_single_module_shops(): void
     {
         $this->seed(RolesAndPermissionsSeeder::class);
