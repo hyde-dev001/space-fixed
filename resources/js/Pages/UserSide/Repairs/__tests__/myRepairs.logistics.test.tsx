@@ -556,6 +556,71 @@ describe("MyRepairs warranty logistics", () => {
         "Warranty service and shop-owned shipping are covered by the shop.",
       )).toBeInTheDocument();
     });
+
+    it("keeps sponsored customer-delivery tracking editable until staff receipt", async () => {
+      const sponsoredIntake = {
+        ...warranty,
+        status: "repairer_accepted",
+        payment_status: "completed",
+        payment_enabled: false,
+        intake_delivery_method: "customer_delivery",
+        intake_logistics_locked_at: "2026-07-26T10:00:00.000Z",
+        received_at: null,
+        logistics_shipments: [],
+      };
+      mocks.repair = repair(sponsoredIntake);
+      mocks.post.mockResolvedValueOnce({
+        data: { success: true, message: "Tracking details saved." },
+      });
+
+      render(<MyRepairs />);
+      const pendingTabs = await screen.findAllByRole("button", { name: /Pending/i });
+      fireEvent.click(pendingTabs[0]);
+
+      const editableTracking = await screen.findByRole("region", { name: "Intake courier tracking" });
+      expect(within(editableTracking).queryByText("Locked after handoff")).not.toBeInTheDocument();
+      fireEvent.change(within(editableTracking).getByLabelText("Intake carrier"), {
+        target: { value: "J&T" },
+      });
+      fireEvent.change(within(editableTracking).getByLabelText("Intake tracking number"), {
+        target: { value: "WARRANTY-INTAKE-123" },
+      });
+      fireEvent.click(within(editableTracking).getByRole("button", { name: "Save intake tracking" }));
+
+      await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
+        "/api/customer/repairs/77/external-tracking",
+        {
+          leg: "intake",
+          carrier: "J&T",
+          tracking_number: "WARRANTY-INTAKE-123",
+          tracking_url: null,
+        },
+      ));
+
+      cleanup();
+      mocks.repair = repair({
+        ...sponsoredIntake,
+        status: "received",
+        received_at: "2026-07-26T11:00:00.000Z",
+        intake_address: {
+          external_tracking: {
+            carrier: "J&T",
+            tracking_number: "WARRANTY-INTAKE-123",
+            tracking_url: null,
+          },
+        },
+      });
+
+      render(<MyRepairs />);
+      const receivedTabs = await screen.findAllByRole("button", { name: /Received/i });
+      fireEvent.click(receivedTabs[0]);
+
+      const lockedTracking = await screen.findByRole("region", { name: "Intake courier tracking" });
+      expect(within(lockedTracking).getByText("Locked after handoff")).toBeInTheDocument();
+      expect(within(lockedTracking).getByText("WARRANTY-INTAKE-123")).toBeInTheDocument();
+      expect(within(lockedTracking).queryByLabelText("Intake carrier")).not.toBeInTheDocument();
+      expect(within(lockedTracking).queryByRole("button", { name: "Save intake tracking" })).not.toBeInTheDocument();
+    });
   });
 
   it("keeps sponsored customer-pickup tracking editable until staff handoff", async () => {

@@ -996,6 +996,7 @@ class RepairRequestController extends Controller
                         : ($repair->scheduled_dropoff_date ? $repair->scheduled_dropoff_date->format('M d, Y') : null),
                     'estimated_delivery_date' => $repair->estimated_delivery_date ? $repair->estimated_delivery_date->format('M d, Y') : null,
                     'completed_at' => $repair->completed_at ? $repair->completed_at->format('M d, Y') : null,
+                    'received_at' => $repair->received_at?->toISOString(),
                     'shop_id' => $repair->shop_owner_id,
                     'shop_owner_id' => $repair->shop_owner_id,
                     'shop_name' => $repair->shopOwner ? $repair->shopOwner->business_name : 'Unknown Shop',
@@ -1944,11 +1945,17 @@ class RepairRequestController extends Controller
                     'leg' => ['External tracking is available only for customer-arranged delivery.'],
                 ]);
             }
+            $shopSponsoredWarranty = (bool) ($repair->is_warranty_job ?? false)
+                || (string) ($repair->billing_mode ?? '') === 'warranty_no_charge';
+            $sponsoredIntakeAwaitingReceipt = $isIntake
+                && $repair->received_at === null
+                && $shopSponsoredWarranty;
             $sponsoredReturnAwaitingHandoff = ! $isIntake
                 && ! (bool) $repair->pickup_enabled
-                && ((bool) ($repair->is_warranty_job ?? false)
-                    || (string) ($repair->billing_mode ?? '') === 'warranty_no_charge');
-            if ($repair->{$lockField} !== null && ! $sponsoredReturnAwaitingHandoff) {
+                && $shopSponsoredWarranty;
+            if ($repair->{$lockField} !== null
+                && ! $sponsoredIntakeAwaitingReceipt
+                && ! $sponsoredReturnAwaitingHandoff) {
                 throw \Illuminate\Validation\ValidationException::withMessages([
                     'leg' => ['This delivery handoff is locked and tracking can no longer be changed.'],
                 ]);

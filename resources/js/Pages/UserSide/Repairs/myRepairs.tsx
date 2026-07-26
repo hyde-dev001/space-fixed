@@ -124,6 +124,7 @@ type RepairOrder = {
   estimated_delivery_date?: string | null;
   duration?: string;
   completed_at?: string;
+  received_at?: string | null;
   shop_id?: number | null;
   shop_name: string;
   shop_address: string;
@@ -1025,6 +1026,7 @@ const CustomerExternalTrackingCard: React.FC<{
   const tracking = snapshot?.external_tracking;
   const locked = Boolean(isIntake
     ? order.intake_logistics_locked_at
+      && (!isWarrantyNoChargeOrder(order) || order.received_at)
     : order.return_logistics_locked_at
       && (!isWarrantyNoChargeOrder(order) || order.pickup_enabled));
   const title = `${isIntake ? 'Intake' : 'Return'} courier tracking`;
