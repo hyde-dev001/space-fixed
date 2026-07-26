@@ -46,7 +46,7 @@ class RepairPosPaymentService
 
         $paidAmount = collect($payload['payment_lines'])->sum(fn ($line) => (float) $line['amount']);
 
-        if (round($paidAmount, 2) !== round($dueAmount, 2)) {
+        if (round($dueAmount, 2) <= 0 || round($paidAmount, 2) !== round($dueAmount, 2)) {
             throw ValidationException::withMessages([
                 'payment_lines' => ['Paid amount must exactly match due amount.'],
             ]);
@@ -78,7 +78,7 @@ class RepairPosPaymentService
             $vatAmount = (float) $serviceTax['vat'];
             $dueAmount = (float) $phaseBreakdown['total_amount'];
 
-            if (round($paidAmount, 2) !== round($dueAmount, 2)) {
+            if (round($dueAmount, 2) <= 0 || round($paidAmount, 2) !== round($dueAmount, 2)) {
                 throw ValidationException::withMessages([
                     'payment_lines' => ['Paid amount must exactly match due amount.'],
                 ]);

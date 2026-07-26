@@ -14,6 +14,7 @@ use App\Services\RepairDeliveryService;
 use App\Services\RepairPosPaymentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 class RepairLogisticsPaymentTest extends TestCase
@@ -414,10 +415,59 @@ class RepairLogisticsPaymentTest extends TestCase
         $this->assertSame('failed', $repair->fresh()->payment_status);
     }
 
-    public function test_zero_cost_warranty_still_charges_selected_shop_delivery_fee(): void
+    public function test_is_warranty_job_delivery_fee_cannot_be_collected_from_customer(): void
+    {
+        $this->assertWarrantyDeliveryFeeCannotBeCollected([
+            'is_warranty_job' => true,
+            'billing_mode' => 'warranty',
+        ], 'repair-warranty-job-delivery-fee-001');
+    }
+
+    public function test_warranty_no_charge_billing_mode_delivery_fee_cannot_be_collected_from_customer(): void
+    {
+        $this->assertWarrantyDeliveryFeeCannotBeCollected([
+            'is_warranty_job' => false,
+            'billing_mode' => 'warranty_no_charge',
+        ], 'repair-warranty-mode-delivery-fee-001');
+    }
+
+    public function test_zero_tender_warranty_payment_cannot_create_pos_transaction(): void
     {
         [$repair, $customer, $actor] = $this->coveredRepair('full_upfront', 0);
-        $repair->update(['is_warranty_job' => true, 'billing_mode' => 'warranty']);
+        $repair->update([
+            'is_warranty_job' => true,
+            'billing_mode' => 'warranty',
+            'intake_delivery_method' => 'walk_in',
+            'intake_delivery_fee' => 0,
+            'intake_logistics_quote' => null,
+        ]);
+
+        $exception = null;
+        try {
+            app(RepairPosPaymentService::class)->checkout($repair->fresh(), [
+                'due_type' => 'full',
+                'customer_type' => 'registered',
+                'customer_id' => $customer->id,
+                'idempotency_key' => 'repair-warranty-zero-tender-001',
+                'payment_lines' => [['tender_type' => 'cash', 'amount' => 0]],
+            ], $actor->id);
+        } catch (ValidationException $caught) {
+            $exception = $caught;
+        }
+
+        $this->assertNotNull($exception);
+        $this->assertArrayHasKey('payment_lines', $exception->errors());
+        $this->assertDatabaseMissing('pos_transactions', [
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+        ]);
+        $this->assertSame(0.0, (float) $repair->fresh()->total_paid_amount);
+    }
+
+    private function assertWarrantyDeliveryFeeCannotBeCollected(array $markers, string $idempotencyKey): void
+    {
+        [$repair, $customer, $actor] = $this->coveredRepair('full_upfront', 0);
+        $repair->update($markers);
         $due = (float) $repair->intake_delivery_fee;
 
         $response = $this->actingAs($actor, 'user')->postJson('/api/repair-pos/checkout', [
@@ -425,15 +475,26 @@ class RepairLogisticsPaymentTest extends TestCase
             'due_type' => 'full',
             'customer_type' => 'registered',
             'customer_id' => $customer->id,
-            'idempotency_key' => 'repair-warranty-delivery-fee-001',
+            'idempotency_key' => $idempotencyKey,
             'payment_lines' => [['tender_type' => 'cash', 'amount' => $due]],
         ]);
 
-        $response->assertOk();
-        $transaction = PosTransaction::findOrFail((int) $response->json('transaction_id'));
-        $this->assertSame('0.00', number_format((float) data_get($transaction->metadata, 'service_amount'), 2, '.', ''));
-        $this->assertSame(number_format($due, 2, '.', ''), number_format((float) $transaction->total_amount, 2, '.', ''));
-        $this->assertSame(number_format($due, 2, '.', ''), number_format((float) $repair->fresh()->total_paid_amount, 2, '.', ''));
+        $response->assertUnprocessable()
+            ->assertJsonValidationErrors('payment_lines');
+        $this->assertDatabaseMissing('pos_transactions', [
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+        ]);
+
+        $breakdown = app(PaymentSettlementService::class)->repairPaymentBreakdown($repair->fresh(), 'full');
+        foreach (['service_total', 'service_amount', 'delivery_amount', 'total_amount'] as $amount) {
+            $this->assertSame('0.00', number_format((float) $breakdown[$amount], 2, '.', ''));
+        }
+
+        $freshRepair = $repair->fresh();
+        $this->assertSame(0.0, (float) $freshRepair->total_paid_amount);
+        $this->assertSame(number_format($due, 2, '.', ''), number_format((float) $freshRepair->intake_delivery_fee, 2, '.', ''));
+        $this->assertSame(number_format($due, 2, '.', ''), number_format((float) data_get($freshRepair->intake_logistics_quote, 'fee'), 2, '.', ''));
     }
 
     public function test_late_online_callback_after_pos_phase_does_not_apply_service_twice(): void
