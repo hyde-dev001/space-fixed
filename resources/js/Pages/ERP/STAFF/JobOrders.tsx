@@ -3,6 +3,7 @@ import Swal from "sweetalert2";
 import { Head, usePage } from "@inertiajs/react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import ErrorModal from "../../../components/common/ErrorModal";
+import { calculateRetailRevenue } from "../../../utils/deliveryRevenue";
 import axios from "axios";
 
 const SHOP_OWNED_LOGISTICS = "Shop-owned logistics";
@@ -601,13 +602,18 @@ export default function JobOrdersPage() {
       || String(o.latest_refund?.flow_type || '').toLowerCase() === 'request_approval'
     ).length;
 
-    // Net revenue = order amount minus succeeded refunds (POS + online), clamped at zero.
     const totalRevenue = orders
       .filter((o) => o.status !== "cancelled")
       .reduce((sum, o) => {
-        const grossAmount = Math.max(0, parseAmount(o.total_amount));
-        const refundedAmount = getCombinedSucceededRefundAmount(o, grossAmount);
-        return sum + Math.max(0, grossAmount - refundedAmount);
+        const orderGrandTotal = Math.max(0, parseAmount(o.grand_total));
+        return sum + calculateRetailRevenue({
+          productRevenueExVat: Math.max(0, parseAmount(o.total_amount)),
+          shippingFee: Math.max(0, parseAmount(o.shipping_fee)),
+          refundedAmount: getCombinedSucceededRefundAmount(o, orderGrandTotal),
+          orderGrandTotal,
+          paymentStatus: o.paymentStatus,
+          carrierCompany: o.carrierCompany,
+        });
       }, 0);
 
     return { total, pending, processing, shipped, delivered, refund, totalRevenue };
@@ -1791,7 +1797,7 @@ export default function JobOrdersPage() {
             value={`₱${stats.totalRevenue.toLocaleString()}`}
             icon={CurrencyDollarIcon}
             color="success"
-            description="From all orders before VAT"
+            description="Products + paid shop-owned delivery, excl. VAT"
           />
         </div>
 

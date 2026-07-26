@@ -4,6 +4,7 @@ import { Head, router, usePage } from "@inertiajs/react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import ErrorModal from "../../../components/common/ErrorModal";
 import axios from "axios";
+import { calculateRepairRevenue } from "../../../utils/deliveryRevenue";
 import { buildRepairBreakdown, type RepairTaxMode } from "../../../utils/repairPricing";
 import repairMaterialsApi, { type RepairMaterialUsage, type RepairMaterialInventoryItem, type RepairMaterialPlanItem } from "../../../services/repairMaterialsApi";
 
@@ -70,8 +71,12 @@ type RepairOrder = {
   brand?: string;
   serviceType?: "pickup" | "walkin";
   intakeDeliveryMethod?: "walk_in" | "customer_delivery" | "shop_pickup";
+  intakeDeliveryFee?: number | string | null;
+  intakeLogisticsLockedAt?: string | null;
   intakeHandoff?: IntakeHandoff | null;
   returnDeliveryMethod?: "walk_in" | "customer_pickup" | "shop_delivery";
+  returnDeliveryFee?: number | string | null;
+  returnLogisticsLockedAt?: string | null;
   returnHandoff?: ReturnHandoff | null;
   pickupAddressLine?: string;
   pickupBarangay?: string;
@@ -841,8 +846,12 @@ export default function JobOrdersRepair() {
           shoeType: repair.shoe_type,
           brand: repair.brand,
           intakeDeliveryMethod: repair.intake_delivery_method || (repair.delivery_method === 'walk_in' ? 'walk_in' : 'customer_delivery'),
+          intakeDeliveryFee: toNumber(repair.intake_delivery_fee),
+          intakeLogisticsLockedAt: repair.intake_logistics_locked_at || null,
           intakeHandoff: repair.intake_handoff || null,
           returnDeliveryMethod: repair.return_delivery_method || (repair.delivery_method === 'walk_in' ? 'walk_in' : 'customer_pickup'),
+          returnDeliveryFee: toNumber(repair.return_delivery_fee),
+          returnLogisticsLockedAt: repair.return_logistics_locked_at || null,
           returnHandoff: repair.return_handoff || null,
           serviceType: deliveryMethodOverrides[String(repair.id)] || ((repair.intake_delivery_method || repair.delivery_method) === 'walk_in' ? 'walkin' : 'pickup'),
           pickupAddressLine: (repair.intake_address || repair.pickup_address)?.address_line || null,
@@ -1286,38 +1295,20 @@ export default function JobOrdersRepair() {
     const totalRevenue = orders
       .filter(o => o.status !== "cancelled" && !isRejectedWorkflowStatus(o.status) && !isWarrantyNoChargeOrder(o))
       .reduce((sum, o) => {
-        const orderGrandTotal = toNumber(o.grandTotal) ?? toNumber(o.total) ?? 0;
-        const orderNetTotal = toNumber(o.finalPrice ?? o.total) ?? 0;
-        if (orderGrandTotal <= 0 || orderNetTotal <= 0) {
-          return sum;
-        }
-
-        const recordedPaid = toNumber(o.totalPaidAmount);
-        const fallbackPaidStatus = (o.payment_status ?? '').toLowerCase();
-        const fallbackPolicy = o.payment_policy ?? 'deposit_50';
-
-        let grossPaid = 0;
-        if (recordedPaid !== null && recordedPaid > 0) {
-          grossPaid = recordedPaid;
-        } else if (fallbackPaidStatus === 'completed') {
-          grossPaid = orderGrandTotal;
-        } else if (fallbackPaidStatus === 'paid' || fallbackPaidStatus === 'partially_paid') {
-          grossPaid = fallbackPolicy === 'full_upfront'
-            ? orderGrandTotal
-            : Math.round(orderGrandTotal * 0.5 * 100) / 100;
-        }
-
-        const refundedAmount = toNumber(o.totalRefundedAmount) ?? 0;
-        const netCollected = Math.max(0, grossPaid - refundedAmount);
-        if (netCollected <= 0) {
-          return sum;
-        }
-
-        // Convert gross collected to net-of-VAT by scaling against the order's VAT-exclusive baseline.
-        const realizedRatio = Math.min(1, netCollected / orderGrandTotal);
-        const realizedRevenueExVat = orderNetTotal * realizedRatio;
-
-        return sum + realizedRevenueExVat;
+        return sum + calculateRepairRevenue({
+          serviceGrossAmount: toNumber(o.grandTotal) ?? toNumber(o.total) ?? 0,
+          serviceNetAmount: toNumber(o.finalPrice ?? o.total) ?? 0,
+          totalPaidAmount: toNumber(o.totalPaidAmount) ?? 0,
+          refundedAmount: toNumber(o.totalRefundedAmount) ?? 0,
+          paymentStatus: o.payment_status,
+          paymentPolicy: o.payment_policy,
+          intakeDeliveryMethod: o.intakeDeliveryMethod,
+          intakeDeliveryFee: toNumber(o.intakeDeliveryFee) ?? 0,
+          intakeLogisticsLockedAt: o.intakeLogisticsLockedAt,
+          returnDeliveryMethod: o.returnDeliveryMethod,
+          returnDeliveryFee: toNumber(o.returnDeliveryFee) ?? 0,
+          returnLogisticsLockedAt: o.returnLogisticsLockedAt,
+        });
       }, 0);
     return { total, underReview, pending, received, inProgress, workCompleted, readyForPickup, pickedUp, completedAll, warranty, rejected, cancelled, totalRevenue };
   }, [orders]);
@@ -2673,7 +2664,7 @@ export default function JobOrdersRepair() {
             changeType="increase"
             icon={CurrencyDollarIcon}
             color="success"
-            description="From repair services before VAT"
+            description="Services + paid shop-owned delivery, excl. VAT"
           />
         </div>
 
