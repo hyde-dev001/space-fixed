@@ -490,6 +490,58 @@ describe("MyRepairs return logistics", () => {
 });
 
 describe("MyRepairs warranty logistics", () => {
+  it("keeps customer-arranged and walk-in intake available outside shop coverage", async () => {
+    mocks.repair = repair({
+      status: "repairer_accepted",
+      is_warranty_job: true,
+      billing_mode: "warranty_no_charge",
+      payment_status: "completed",
+      payment_enabled: false,
+      intake_delivery_method: "customer_delivery",
+      intake_logistics_locked_at: null,
+    });
+    mocks.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        available: false,
+        reason: "Outside shop rider coverage.",
+        distance_km: 20,
+        coverage_radius_km: 15,
+        fee: 0,
+      }),
+    });
+
+    render(<MyRepairs />);
+    const pendingTabs = await screen.findAllByRole("button", { name: /Pending/i });
+    fireEvent.click(pendingTabs[0]);
+
+    expect(await screen.findByText("Outside shop rider coverage.")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /Shop rider pickup/i })).toBeDisabled();
+
+    const walkIn = screen.getByRole("radio", { name: /Walk-in delivery to shop/i });
+    expect(walkIn).toBeEnabled();
+    fireEvent.click(walkIn);
+    fireEvent.click(screen.getByRole("button", { name: "Save intake plan" }));
+    await waitFor(() => expect(mocks.patch).toHaveBeenCalledWith(
+      "/api/customer/repairs/77/delivery-method",
+      { intake_delivery_method: "walk_in" },
+    ));
+
+    mocks.patch.mockClear();
+    const customerDelivery = screen.getByRole("radio", { name: /Customer-arranged delivery/i });
+    await waitFor(() => expect(customerDelivery).toBeEnabled());
+    fireEvent.click(customerDelivery);
+    fireEvent.click(screen.getByRole("button", { name: "Use saved pickup address" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save intake plan" }));
+    await waitFor(() => expect(mocks.patch).toHaveBeenCalledWith(
+      "/api/customer/repairs/77/delivery-method",
+      {
+        intake_delivery_method: "customer_delivery",
+        intake_address_id: 42,
+      },
+    ));
+  });
+
   it("lets the customer rebook a cancelled sponsored intake pickup", async () => {
     mocks.repair = repair({
       status: "repairer_accepted",
@@ -521,7 +573,7 @@ describe("MyRepairs warranty logistics", () => {
       "/api/repair/shops/9/delivery-quote?address_id=42",
       expect.objectContaining({ credentials: "include" }),
     ));
-    const rebookButton = await screen.findByRole("button", { name: "Rebook shop rider pickup" });
+    const rebookButton = await screen.findByRole("button", { name: "Save intake plan" });
     await waitFor(() => expect(rebookButton).toBeEnabled());
     fireEvent.click(rebookButton);
 

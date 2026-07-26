@@ -425,6 +425,7 @@ const getReturnMethodLabel = (order: RepairOrder): string => {
     : 'Shop rider delivery';
 };
 
+type IntakeDeliveryMethod = 'walk_in' | 'customer_delivery' | 'shop_pickup';
 type ReturnDeliveryMethod = 'walk_in' | 'customer_pickup' | 'shop_delivery';
 
 const formatRepairAddress = (address?: RepairAddressSnapshot | null): string => {
@@ -477,6 +478,7 @@ const SponsoredIntakeReplanCard: React.FC<{
   const currentAddressId = order.intake_address?.address_id
     ? Number(order.intake_address.address_id)
     : null;
+  const [method, setMethod] = useState<IntakeDeliveryMethod>(() => getIntakeMethod(order));
   const [selectedAddress, setSelectedAddress] = useState<CustomerAddress | null>(null);
   const [coverage, setCoverage] = useState<DeliveryQuote | null>(null);
   const [coverageLoading, setCoverageLoading] = useState(false);
@@ -486,6 +488,9 @@ const SponsoredIntakeReplanCard: React.FC<{
   const [success, setSuccess] = useState<string | null>(null);
   const effectiveAddressId = selectedAddress?.id ?? currentAddressId;
   const shopId = order.shop_owner_id ?? order.shop_id;
+  const addressRequired = method !== 'walk_in';
+  const shopPickupUnavailable = method === 'shop_pickup'
+    && (coverageLoading || !coverage?.available);
 
   useEffect(() => {
     if (!shopId || !effectiveAddressId) {
@@ -534,7 +539,12 @@ const SponsoredIntakeReplanCard: React.FC<{
   }, []);
 
   const handleRebook = async () => {
-    if (!effectiveAddressId || !coverage?.available) {
+    if (addressRequired && !effectiveAddressId) {
+      setError('Choose one of your saved addresses.');
+      return;
+    }
+
+    if (method === 'shop_pickup' && !coverage?.available) {
       setError(coverage?.reason || 'Choose an address within shop rider coverage.');
       return;
     }
@@ -545,13 +555,13 @@ const SponsoredIntakeReplanCard: React.FC<{
 
     try {
       const response = await axios.patch(`/api/customer/repairs/${order.id}/delivery-method`, {
-        intake_delivery_method: 'shop_pickup',
-        intake_address_id: effectiveAddressId,
+        intake_delivery_method: method,
+        ...(addressRequired ? { intake_address_id: effectiveAddressId } : {}),
       });
-      setSuccess(response.data?.message || 'Sponsored pickup rebooked.');
+      setSuccess(response.data?.message || 'Intake plan updated.');
       await onRefresh();
     } catch (reason) {
-      setError(getRequestErrorMessage(reason, 'Unable to rebook the sponsored pickup.'));
+      setError(getRequestErrorMessage(reason, 'Unable to update the intake plan.'));
     } finally {
       setSaving(false);
     }
@@ -561,18 +571,77 @@ const SponsoredIntakeReplanCard: React.FC<{
     <section className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:p-6">
       <h4 className="text-lg font-bold text-black">Rebook sponsored pickup</h4>
       <p className="mt-1 text-sm text-gray-600">
-        Choose a covered address for the replacement pickup. The shop will cover the rider fee.
+        Choose how to get the shoes back to the shop.
       </p>
 
-      <div className="mt-4">
-        <CustomerAddressManager
-          onSelect={handleAddressSelect}
-          initialAddressId={currentAddressId}
-          disabled={saving}
-          title="Saved pickup address"
-          description="Choose or pin the address for the replacement pickup."
-        />
-      </div>
+      <fieldset className="mt-4 space-y-3">
+        <legend className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
+          Intake method
+        </legend>
+        <label className="flex items-start gap-3 text-sm text-gray-800">
+          <input
+            type="radio"
+            name={`sponsored-intake-method-${order.id}`}
+            checked={method === 'walk_in'}
+            disabled={saving}
+            onChange={() => {
+              setMethod('walk_in');
+              setError(null);
+              setSuccess(null);
+            }}
+          />
+          <span>
+            <span className="block font-semibold">Walk-in delivery to shop</span>
+            <span className="text-xs text-gray-500">Bring the shoes directly to the shop.</span>
+          </span>
+        </label>
+        <label className="flex items-start gap-3 text-sm text-gray-800">
+          <input
+            type="radio"
+            name={`sponsored-intake-method-${order.id}`}
+            checked={method === 'customer_delivery'}
+            disabled={saving}
+            onChange={() => {
+              setMethod('customer_delivery');
+              setError(null);
+              setSuccess(null);
+            }}
+          />
+          <span>
+            <span className="block font-semibold">Customer-arranged delivery</span>
+            <span className="text-xs text-gray-500">Use your own third-party courier.</span>
+          </span>
+        </label>
+        <label className="flex items-start gap-3 text-sm text-gray-800">
+          <input
+            type="radio"
+            name={`sponsored-intake-method-${order.id}`}
+            checked={method === 'shop_pickup'}
+            disabled={saving || coverageLoading || !coverage?.available}
+            onChange={() => {
+              setMethod('shop_pickup');
+              setError(null);
+              setSuccess(null);
+            }}
+          />
+          <span>
+            <span className="block font-semibold">Shop rider pickup</span>
+            <span className="text-xs text-gray-500">The shop covers pickup from a supported address.</span>
+          </span>
+        </label>
+      </fieldset>
+
+      {addressRequired && (
+        <div className="mt-4">
+          <CustomerAddressManager
+            onSelect={handleAddressSelect}
+            initialAddressId={currentAddressId}
+            disabled={saving}
+            title="Saved pickup address"
+            description="Choose or pin the address for this intake plan."
+          />
+        </div>
+      )}
 
       <div className="mt-4 rounded-xl border border-gray-200 bg-white p-3 text-sm">
         {coverageLoading ? (
@@ -601,10 +670,10 @@ const SponsoredIntakeReplanCard: React.FC<{
       <button
         type="button"
         onClick={handleRebook}
-        disabled={saving || coverageLoading || !coverage?.available}
+        disabled={saving || (addressRequired && !effectiveAddressId) || shopPickupUnavailable}
         className="mt-4 inline-flex w-full items-center justify-center rounded-full bg-[#16233b] px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300 sm:w-auto"
       >
-        {saving ? 'Rebooking...' : 'Rebook shop rider pickup'}
+        {saving ? 'Saving...' : 'Save intake plan'}
       </button>
     </section>
   );
@@ -4073,7 +4142,6 @@ const MyRepairs: React.FC = () => {
                     />
 
                     {isWarrantyNoChargeOrder(order)
-                      && getIntakeMethod(order) === 'shop_pickup'
                       && !order.intake_logistics_locked_at && (
                         <SponsoredIntakeReplanCard
                           order={order}

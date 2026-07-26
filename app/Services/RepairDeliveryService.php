@@ -306,7 +306,7 @@ final class RepairDeliveryService
                 && $method === $expectedMethod
                 && $lockedRepair->{$lockField} === null
                 && (float) $lockedRepair->{$feeField} > 0
-                && $shipment?->status->value === 'cancelled'
+                && ($shipment === null || $shipment->status->value === 'cancelled')
             ) {
                 return [
                     'repair' => $lockedRepair->fresh(),

@@ -176,6 +176,35 @@ class RepairWarrantyClaimFlowTest extends TestCase
         $this->assertDatabaseCount('pos_refunds', 0);
     }
 
+    public function test_duplicate_shop_sponsored_warranty_intake_cancellation_without_shipment_is_idempotent(): void
+    {
+        [, $repairer, , $linked] = $this->approveShopSponsoredWarranty();
+        $linked->update(['status' => 'repairer_accepted']);
+
+        $this->actingAs($repairer, 'user')->postJson(
+            "/api/repairer/repairs/{$linked->id}/cancel-delivery-leg",
+            ['leg' => 'intake', 'reason' => 'Cancel before rider planning.'],
+        )->assertOk();
+
+        $this->assertNull($linked->fresh()->intake_logistics_locked_at);
+        $this->assertSame(0, Shipment::query()
+            ->where('source_type', 'repair_request')
+            ->where('source_id', $linked->id)
+            ->where('purpose', 'repair_pickup')
+            ->count());
+
+        $this->actingAs($repairer, 'user')->postJson(
+            "/api/repairer/repairs/{$linked->id}/cancel-delivery-leg",
+            ['leg' => 'intake', 'reason' => 'Repeated cancellation request.'],
+        )
+            ->assertOk()
+            ->assertJsonPath('data.reconciliation', null);
+
+        $this->assertNull($linked->fresh()->logistics_payment_reconciliation);
+        $this->assertSame(0.0, (float) $linked->fresh()->total_refunded_amount);
+        $this->assertDatabaseCount('pos_refunds', 0);
+    }
+
     public function test_cancelled_shop_sponsored_warranty_intake_can_be_replanned_and_retried_without_refund(): void
     {
         [, $repairer, $address, $linked, $delivery] = $this->approveShopSponsoredWarranty();
