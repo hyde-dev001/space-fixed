@@ -4,6 +4,7 @@ import axios from 'axios';
 import Swal from 'sweetalert2';
 import AppLayoutERP from '@/layout/AppLayout_ERP';
 import { Table, TableBody, TableCell, TableHeader, TableRow } from '@/components/ui/table';
+import RetailOrderSummary from './components/RetailOrderSummary';
 import {
   logisticsModuleForSourceType,
   logisticsModuleLabel,
@@ -384,6 +385,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                       {shipment.source_summary && <span className="mt-1 block text-xs text-gray-500">
                         {shipment.source_summary.customer_name} · {shipment.source_summary.shoe_summary}
                       </span>}
+                      <RetailOrderSummary summary={shipment.order_summary} />
                     </TableCell>
                     <TableCell className="px-6 py-4 text-gray-600 dark:text-gray-300">{shipment.legs?.length ?? 0}</TableCell>
                     {hasActionColumn && (
@@ -402,6 +404,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                     <TableRow>
                       <TableCell colSpan={hasActionColumn ? 8 : 7} className="bg-gray-50 px-6 py-5 dark:bg-gray-900/40">
                         <div className="space-y-3">
+                          <RetailOrderSummary summary={shipment.order_summary} expanded />
                           {(shipment.legs ?? []).map((leg) => {
                             const recipient = contact(leg);
                             const activeAssignment = leg.assignments?.find((assignment) => ['assigned', 'accepted'].includes(assignment.status));

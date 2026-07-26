@@ -7,7 +7,18 @@ import Shipments from '../Shipments';
 const mocks = vi.hoisted(() => ({ post: vi.fn(() => Promise.resolve()), get: vi.fn(), reload: vi.fn(), props: {} as any }));
 
 const defaultProps = () => ({
-  shipments: { data: [{ id: 1, purpose: 'retail_delivery', status: 'active', source_type: 'order', source_id: 10, legs: [{
+  shipments: { data: [{ id: 1, purpose: 'retail_delivery', status: 'active', source_type: 'order', source_id: 10, order_summary: {
+    available: true,
+    order_id: 10,
+    order_number: 'ORD-LOG-1001',
+    total_quantity: 5,
+    variant_count: 2,
+    model_count: 2,
+    items: [
+      { id: 101, brand: 'Nike', model: 'Air Max 90', image: 'products/air-max.jpg', color: 'Black', size: '9', quantity: 2 },
+      { id: 102, brand: null, model: 'Classic Runner', image: null, color: 'White', size: '8', quantity: 3 },
+    ],
+  }, legs: [{
     id: 2, leg_type: 'outbound', status: 'in_transit', assignments: [{ id: 3, status: 'accepted' }], proofs: [], attempts: [],
     destination_snapshot: { name: 'Miguel Dela Rosa', address: 'Dasmariñas, Cavite', phone: '09053338826' },
   }] }], links: [], from: 1, to: 1, total: 1, current_page: 1, last_page: 1 },
@@ -47,6 +58,20 @@ it('shows receiver and address in the delivery table', () => {
   expect(screen.getByText('Batch panel')).toBeInTheDocument();
   expect(screen.getByText('Miguel Dela Rosa')).toBeInTheDocument();
   expect(screen.getByText('Dasmariñas, Cavite')).toBeInTheDocument();
+});
+
+it('shows a compact retail summary and every variant when expanded', () => {
+  render(<Shipments />);
+
+  expect(screen.getByText('Nike Air Max 90')).toBeInTheDocument();
+  expect(screen.getByText(/5 pairs/)).toBeInTheDocument();
+  expect(screen.getByText(/2 variants/)).toBeInTheDocument();
+  expect(screen.getByText(/\+1 more/)).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  expect(screen.getByText(/Black.*Size 9.*Qty 2/)).toBeInTheDocument();
+  expect(screen.getByText('Classic Runner')).toBeInTheDocument();
+  expect(screen.getByText(/White.*Size 8.*Qty 3/)).toBeInTheDocument();
 });
 
 it('shows repair-only purposes and retains compatible filters when changing module', () => {
