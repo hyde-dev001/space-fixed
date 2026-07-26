@@ -21,7 +21,7 @@ const shipment: any = {
 
 vi.mock('@inertiajs/react', () => ({
   Head: () => null,
-  Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
+  Link: ({ children, href }: { children: React.ReactNode; href: string }) => <a href={href}>{children}</a>,
   usePage: () => ({ props: { shipment } }),
 }));
 vi.mock('../../Shared/Navigation', () => ({ default: () => null }));
