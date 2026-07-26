@@ -8,6 +8,8 @@ use App\Models\Logistics\LogisticsSetting;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
+use App\Models\Order;
+use App\Models\Product;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\User;
@@ -93,7 +95,11 @@ class LogisticsPageAccessTest extends TestCase
             'status' => 'delivered',
             'destination_snapshot' => ['name' => 'Saved Ana', 'address' => 'Saved address'],
         ]];
-        $batch = DeliveryBatch::factory()->create(['shop_owner_id' => $shop->id, 'stop_snapshot' => $stopSnapshot]);
+        $batch = DeliveryBatch::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'status' => 'completed',
+            'stop_snapshot' => $stopSnapshot,
+        ]);
         $shipment = Shipment::factory()->create([
             'shop_owner_id' => $shop->id,
             'source_type' => 'order',
@@ -113,6 +119,7 @@ class LogisticsPageAccessTest extends TestCase
         $this->assertSame([$batch->id], collect($props['batches'])->pluck('id')->all());
         $this->assertSame('order', $props['batches'][0]['legs'][0]['shipment']['source_type']);
         $this->assertSame(55, $props['batches'][0]['legs'][0]['shipment']['source_id']);
+        $this->assertArrayNotHasKey('order_summary', $props['batches'][0]['legs'][0]['shipment']);
         $this->assertSame('Ana Reyes', $props['batches'][0]['legs'][0]['destination_snapshot']['name']);
         $this->assertSame($stopSnapshot, $props['batches'][0]['stop_snapshot']);
     }
@@ -240,7 +247,15 @@ class LogisticsPageAccessTest extends TestCase
             'linked_id' => $otherUser->id,
         ]);
 
-        $assignedShipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+        $assignedOrder = Order::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'order_number' => 'ORD-RIDER-001',
+        ]);
+        $assignedShipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+            'source_id' => $assignedOrder->id,
+        ]);
         $assignedLeg = ShipmentLeg::factory()->create(['shipment_id' => $assignedShipment->id]);
         DeliveryAssignment::factory()->create([
             'shipment_leg_id' => $assignedLeg->id,
@@ -263,6 +278,10 @@ class LogisticsPageAccessTest extends TestCase
             ->all();
 
         $this->assertSame([$assignedShipment->id], $shipmentIds);
+        $this->assertSame(
+            'ORD-RIDER-001',
+            $response->viewData('page')['props']['shipments']['data'][0]['order_summary']['order_number'],
+        );
     }
 
     public function test_offered_batch_stays_out_of_delivery_table_until_rider_accepts(): void
@@ -327,6 +346,7 @@ class LogisticsPageAccessTest extends TestCase
             $this->assertSame([$wanted->id], collect($shipments)->pluck('id')->all());
             $this->assertSame([$wantedLeg->id], collect($shipments[0]['legs'])->pluck('id')->all());
             $this->assertSame(['status' => 'in_transit', 'window' => 'today'], $response->viewData('page')['props']['filters']);
+            $this->assertSame('2026-07-15', $response->viewData('page')['props']['today']);
 
             foreach (['pending', 'not-a-status'] as $status) {
                 $response = $this->actingAs($rider->fresh(), 'user')
@@ -444,6 +464,191 @@ class LogisticsPageAccessTest extends TestCase
         $this->assertSame([$wanted->id], $shipmentIds);
     }
 
+    public function test_dispatcher_searches_shipments_by_order_contact_and_product(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+
+        $shop = ShopOwner::factory()->create(['business_type' => 'retail']);
+        $otherShop = ShopOwner::factory()->create(['business_type' => 'retail']);
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $dispatcher->assignRole('Logistics Dispatcher');
+
+        $product = Product::create([
+            'shop_owner_id' => $shop->id,
+            'name' => 'Orbit Runner',
+            'slug' => 'orbit-runner-search',
+            'price' => 3200,
+            'brand' => 'SearchBrand',
+        ]);
+        $order = Order::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'order_number' => 'ORD-SEARCH-1001',
+            'customer_name' => 'Order Customer',
+            'customer_phone' => '09171112222',
+            'customer_address' => 'Order Address, Cavite',
+        ]);
+        $order->items()->create([
+            'product_id' => $product->id,
+            'product_name' => 'Orbit Runner',
+            'price' => 3200,
+            'quantity' => 1,
+            'subtotal' => 3200,
+        ]);
+        $wanted = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+            'source_id' => $order->id,
+        ]);
+        ShipmentLeg::factory()->create([
+            'shipment_id' => $wanted->id,
+            'leg_type' => 'outbound',
+            'destination_snapshot' => [
+                'name' => 'Receiver Snapshot',
+                'phone' => '09998887777',
+                'address' => 'Cavite Search Address',
+            ],
+        ]);
+        $unmatched = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'manual',
+            'source_id' => 987654,
+        ]);
+        ShipmentLeg::factory()->create(['shipment_id' => $unmatched->id]);
+
+        foreach ([
+            (string) $wanted->id,
+            'ORD-SEARCH-1001',
+            'Receiver Snapshot',
+            '09998887777',
+            'Cavite Search Address',
+            'SearchBrand',
+            'Orbit Runner',
+        ] as $search) {
+            $props = $this->actingAs($dispatcher, 'user')
+                ->get('/erp/logistics/shipments?'.http_build_query(['search' => $search]))
+                ->assertOk()
+                ->viewData('page')['props'];
+
+            $this->assertSame($search, $props['filters']['search']);
+            $this->assertSame([$wanted->id], collect($props['shipments']['data'])->pluck('id')->all());
+        }
+
+        $otherProduct = Product::create([
+            'shop_owner_id' => $otherShop->id,
+            'name' => 'Foreign Model',
+            'slug' => 'foreign-model-search',
+            'price' => 5000,
+            'brand' => 'ForeignBrand',
+        ]);
+        $otherOrder = Order::factory()->create(['shop_owner_id' => $otherShop->id]);
+        $otherOrder->items()->create([
+            'product_id' => $otherProduct->id,
+            'product_name' => 'Foreign Model',
+            'price' => 5000,
+            'quantity' => 1,
+            'subtotal' => 5000,
+        ]);
+        $manipulated = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+            'source_id' => $otherOrder->id,
+        ]);
+        ShipmentLeg::factory()->create(['shipment_id' => $manipulated->id]);
+
+        $localOrder = Order::factory()->create(['shop_owner_id' => $shop->id]);
+        $localOrder->items()->create([
+            'product_id' => $otherProduct->id,
+            'product_name' => 'Neutral Saved Model',
+            'price' => 2500,
+            'quantity' => 1,
+            'subtotal' => 2500,
+        ]);
+        $crossProduct = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+            'source_id' => $localOrder->id,
+        ]);
+        ShipmentLeg::factory()->create(['shipment_id' => $crossProduct->id]);
+
+        $ids = collect($this->actingAs($dispatcher, 'user')
+            ->get('/erp/logistics/shipments?search=ForeignBrand')
+            ->assertOk()
+            ->viewData('page')['props']['shipments']['data'])
+            ->pluck('id')
+            ->all();
+        $this->assertSame([], $ids);
+    }
+
+    public function test_rider_search_remains_assignment_scoped(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+
+        $shop = ShopOwner::factory()->create(['business_type' => 'retail']);
+        $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $rider->assignRole('Logistics Rider');
+        $otherRider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $otherRider->assignRole('Logistics Rider');
+        $profile = RiderProfile::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'linked_type' => User::class,
+            'linked_id' => $rider->id,
+        ]);
+        $otherProfile = RiderProfile::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'linked_type' => User::class,
+            'linked_id' => $otherRider->id,
+        ]);
+
+        $assignedOrder = Order::factory()->create(['shop_owner_id' => $shop->id]);
+        $assignedOrder->items()->create([
+            'product_name' => 'Assigned Runner',
+            'price' => 2000,
+            'quantity' => 1,
+            'subtotal' => 2000,
+        ]);
+        $assignedShipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+            'source_id' => $assignedOrder->id,
+        ]);
+        $assignedLeg = ShipmentLeg::factory()->create(['shipment_id' => $assignedShipment->id]);
+        DeliveryAssignment::factory()->create([
+            'shipment_leg_id' => $assignedLeg->id,
+            'rider_profile_id' => $profile->id,
+        ]);
+
+        $hiddenOrder = Order::factory()->create(['shop_owner_id' => $shop->id]);
+        $hiddenOrder->items()->create([
+            'product_name' => 'Hidden Runner',
+            'price' => 2500,
+            'quantity' => 1,
+            'subtotal' => 2500,
+        ]);
+        $hiddenShipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+            'source_id' => $hiddenOrder->id,
+        ]);
+        $hiddenLeg = ShipmentLeg::factory()->create(['shipment_id' => $hiddenShipment->id]);
+        DeliveryAssignment::factory()->create([
+            'shipment_leg_id' => $hiddenLeg->id,
+            'rider_profile_id' => $otherProfile->id,
+        ]);
+
+        $assigned = $this->actingAs($rider, 'user')
+            ->get('/erp/logistics/deliveries?search=Assigned%20Runner')
+            ->assertOk()
+            ->viewData('page')['props'];
+        $this->assertSame('Assigned Runner', $assigned['filters']['search']);
+        $this->assertSame([$assignedShipment->id], collect($assigned['shipments']['data'])->pluck('id')->all());
+
+        $hidden = $this->actingAs($rider, 'user')
+            ->get('/erp/logistics/deliveries?search=Hidden%20Runner')
+            ->assertOk()
+            ->viewData('page')['props'];
+        $this->assertSame([], collect($hidden['shipments']['data'])->pluck('id')->all());
+    }
+
     public function test_dispatcher_module_filter_scopes_shipments_and_single_module_shops(): void
     {
         $this->seed(RolesAndPermissionsSeeder::class);
@@ -544,6 +749,176 @@ class LogisticsPageAccessTest extends TestCase
             ->viewData('page')['props'];
         $this->assertSame($expected, collect($batches['batches'])
             ->firstWhere('id', $batch->id)['legs'][0]['shipment']['source_summary']);
+    }
+
+    public function test_logistics_pages_include_retail_order_variants_and_totals(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+
+        $shop = ShopOwner::factory()->create(['business_type' => 'retail']);
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $dispatcher->assignRole('Logistics Dispatcher');
+        Permission::findOrCreate('manage-logistics-batches', 'user');
+        $dispatcher->givePermissionTo('manage-logistics-batches');
+
+        $product = Product::create([
+            'shop_owner_id' => $shop->id,
+            'name' => 'Air Max 90',
+            'slug' => 'air-max-90-logistics-test',
+            'price' => 5000,
+            'brand' => 'Nike',
+        ]);
+        $order = Order::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'order_number' => 'ORD-LOG-1001',
+        ]);
+        $order->items()->createMany([
+            [
+                'product_id' => $product->id,
+                'product_name' => 'Air Max 90',
+                'price' => 5000,
+                'quantity' => 2,
+                'subtotal' => 10000,
+                'size' => '9',
+                'color' => 'Black',
+                'product_image' => 'products/air-max-black.jpg',
+            ],
+            [
+                'product_name' => 'Classic Runner',
+                'price' => 3000,
+                'quantity' => 3,
+                'subtotal' => 9000,
+                'size' => '8',
+                'color' => 'White',
+                'product_image' => 'products/classic-runner.jpg',
+            ],
+        ]);
+
+        $shipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+            'source_id' => $order->id,
+        ]);
+        $batch = DeliveryBatch::factory()->create(['shop_owner_id' => $shop->id]);
+        ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id,
+            'delivery_batch_id' => $batch->id,
+        ]);
+
+        $shipmentProps = $this->actingAs($dispatcher, 'user')
+            ->get('/erp/logistics/shipments')
+            ->assertOk()
+            ->viewData('page')['props'];
+        $payload = collect($shipmentProps['shipments']['data'])->firstWhere('id', $shipment->id);
+        $summary = $payload['order_summary'];
+
+        $this->assertTrue($summary['available']);
+        $this->assertSame('ORD-LOG-1001', $summary['order_number']);
+        $this->assertSame(5, $summary['total_quantity']);
+        $this->assertSame(2, $summary['variant_count']);
+        $this->assertSame(2, $summary['model_count']);
+        $this->assertCount(1, $payload['legs']);
+        $this->assertSame([
+            ['brand' => 'Nike', 'model' => 'Air Max 90', 'color' => 'Black', 'size' => '9', 'quantity' => 2],
+            ['brand' => null, 'model' => 'Classic Runner', 'color' => 'White', 'size' => '8', 'quantity' => 3],
+        ], collect($summary['items'])->map(fn ($item) => collect($item)
+            ->only(['brand', 'model', 'color', 'size', 'quantity'])
+            ->all())->all());
+
+        $batchProps = $this->actingAs($dispatcher, 'user')
+            ->get('/erp/logistics/batches')
+            ->assertOk()
+            ->viewData('page')['props'];
+        $this->assertSame(
+            $summary,
+            collect($batchProps['batches'])->firstWhere('id', $batch->id)['legs'][0]['shipment']['order_summary'],
+        );
+    }
+
+    public function test_missing_and_cross_shop_orders_use_safe_logistics_fallbacks(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+
+        $shop = ShopOwner::factory()->create(['business_type' => 'both (retail & repair)']);
+        $otherShop = ShopOwner::factory()->create(['business_type' => 'retail']);
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $dispatcher->assignRole('Logistics Dispatcher');
+
+        $otherProduct = Product::create([
+            'shop_owner_id' => $otherShop->id,
+            'name' => 'Secret Runner',
+            'slug' => 'secret-runner-cross-shop',
+            'price' => 4000,
+            'brand' => 'Hidden Brand',
+        ]);
+        $localOrder = Order::factory()->create(['shop_owner_id' => $shop->id]);
+        $localOrder->items()->create([
+            'product_id' => $otherProduct->id,
+            'product_name' => 'Saved Runner',
+            'price' => 2500,
+            'quantity' => 2,
+            'subtotal' => 5000,
+            'size' => '10',
+            'color' => 'Gray',
+        ]);
+        $otherOrder = Order::factory()->create(['shop_owner_id' => $otherShop->id]);
+
+        $local = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+            'source_id' => $localOrder->id,
+        ]);
+        $missing = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+            'source_id' => 999999,
+        ]);
+        $crossShop = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+            'source_id' => $otherOrder->id,
+        ]);
+        $refund = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order_refund',
+        ]);
+        $repair = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'repair_request',
+        ]);
+        foreach ([$local, $missing, $crossShop, $refund, $repair] as $shipment) {
+            ShipmentLeg::factory()->create(['shipment_id' => $shipment->id]);
+        }
+
+        $shipments = collect($this->actingAs($dispatcher, 'user')
+            ->get('/erp/logistics/shipments')
+            ->assertOk()
+            ->viewData('page')['props']['shipments']['data'])
+            ->keyBy('id');
+
+        $fallback = fn (Shipment $shipment) => [
+            'available' => false,
+            'order_id' => $shipment->source_id,
+            'order_number' => null,
+            'items' => [],
+            'total_quantity' => 0,
+            'variant_count' => 0,
+            'model_count' => 0,
+        ];
+
+        $this->assertSame($fallback($missing), $shipments[$missing->id]['order_summary']);
+        $this->assertSame($fallback($crossShop), $shipments[$crossShop->id]['order_summary']);
+        $this->assertSame([
+            'brand' => null,
+            'model' => 'Saved Runner',
+            'color' => 'Gray',
+            'size' => '10',
+            'quantity' => 2,
+        ], collect($shipments[$local->id]['order_summary']['items'][0])
+            ->only(['brand', 'model', 'color', 'size', 'quantity'])
+            ->all());
+        $this->assertArrayNotHasKey('order_summary', $shipments[$refund->id]);
+        $this->assertArrayNotHasKey('order_summary', $shipments[$repair->id]);
     }
 
     public function test_dispatcher_can_filter_shipments_awaiting_proof_approval(): void

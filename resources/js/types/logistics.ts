@@ -18,6 +18,26 @@ export type LogisticsSourceSummary = {
   shoe_summary: string;
 };
 
+export type LogisticsOrderItemSummary = {
+  id: number;
+  brand?: string | null;
+  model: string;
+  image?: string | null;
+  color?: string | null;
+  size?: string | null;
+  quantity: number;
+};
+
+export type LogisticsOrderSummary = {
+  available: boolean;
+  order_id: number;
+  order_number?: string | null;
+  items: LogisticsOrderItemSummary[];
+  total_quantity: number;
+  variant_count: number;
+  model_count: number;
+};
+
 export const logisticsSourceLabel = (shipment?: {
   source_type: string;
   source_id: number;
@@ -80,6 +100,7 @@ export type TrackingShipmentLeg = {
     source_type: string;
     source_id: number;
     source_summary?: LogisticsSourceSummary | null;
+    order_summary?: LogisticsOrderSummary | null;
   };
   assignments?: Array<{
     id: number;
@@ -117,6 +138,7 @@ export type TrackingShipment = {
   status: string;
   source_type: string;
   source_summary?: LogisticsSourceSummary | null;
+  order_summary?: LogisticsOrderSummary | null;
   created_at?: string | null;
   legs: TrackingShipmentLeg[];
   events: TrackingShipmentEvent[];
@@ -158,6 +180,7 @@ export type LogisticsShipment = {
   source_type: string;
   source_id: number;
   source_summary?: LogisticsSourceSummary | null;
+  order_summary?: LogisticsOrderSummary | null;
   created_at?: string | null;
   legs?: TrackingShipmentLeg[];
 };

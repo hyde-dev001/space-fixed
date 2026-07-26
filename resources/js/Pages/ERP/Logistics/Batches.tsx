@@ -76,7 +76,8 @@ export default function Batches() {
       if (!needsScheduling && leg.delivery_window !== window) return false;
       if (!query) return true;
       const destination = leg.destination_snapshot;
-      return [sourceLabel(leg), destination?.name, destination?.phone, destination?.address]
+      const products = leg.shipment?.order_summary?.items.flatMap((item) => [item.brand, item.model]) ?? [];
+      return [sourceLabel(leg), destination?.name, destination?.phone, destination?.address, ...products]
         .some((value) => String(value ?? '').toLowerCase().includes(query));
     });
   }, [allDeliveries, date, search, status, unscheduledIds, window]);
