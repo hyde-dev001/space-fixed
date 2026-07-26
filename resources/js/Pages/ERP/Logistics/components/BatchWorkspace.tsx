@@ -42,7 +42,7 @@ export default function BatchWorkspace({
   const rejectedAt = formatRejectionTime(batch?.rejected_at);
   const cancellationReason = batch?.cancellation_reason || batch?.dispatcher_override_reason;
   const overCapacity = legs.length > capacity;
-  const canSave = !batch && Boolean(date) && legs.length > 0 && !submitting && (!overCapacity || Boolean(overrideReason.trim()));
+  const canSave = !batch && Boolean(date) && legs.length >= 2 && !submitting && (!overCapacity || Boolean(overrideReason.trim()));
 
   return <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
     <div className="border-b border-gray-100 p-4 dark:border-gray-700">
@@ -81,6 +81,7 @@ export default function BatchWorkspace({
     <div className="sticky bottom-0 flex min-h-16 flex-wrap items-center justify-end gap-2 border-t bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
       {batch?.status === 'draft' && <button type="button" onClick={onReview} className="min-h-11 rounded-xl border border-blue-600 px-4 text-sm font-semibold text-blue-700">Review &amp; Offer</button>}
       {batch && batch.status !== 'draft' && <span className="mr-auto text-sm font-medium text-gray-500">This route is read-only at the {batch.status.replaceAll('_', ' ')} stage.</span>}
+      {!batch && legs.length < 2 && <span className="mr-auto text-sm font-semibold text-amber-700">Select at least 2 deliveries</span>}
       {!batch && <button type="button" disabled={!canSave} onClick={onSave} className="min-h-11 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40">{submitting ? 'Saving Draft...' : 'Save Draft'}</button>}
     </div>
   </section>;

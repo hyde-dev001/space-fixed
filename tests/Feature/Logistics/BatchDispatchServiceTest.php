@@ -24,13 +24,13 @@ class BatchDispatchServiceTest extends TestCase
 
     public function test_assigned_unscheduled_leg_can_be_scheduled(): void
     {
-        $shop = ShopOwner::factory()->create();
+        $shop = ShopOwner::factory()->create(['business_type' => 'retail']);
         LogisticsSetting::updateOrCreate(['shop_owner_id' => $shop->id], [
             'operating_days' => [1, 2, 3, 4, 5, 6, 7],
             'blackout_dates' => [],
         ]);
         $leg = ShipmentLeg::factory()->create([
-            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id,
+            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id, 'source_type' => 'order'])->id,
             'status' => 'assigned',
             'schedule_status' => 'unscheduled',
             'delivery_batch_id' => null,
@@ -90,9 +90,9 @@ class BatchDispatchServiceTest extends TestCase
 
     public function test_draft_offer_accept_and_start_preserve_individual_leg_state(): void
     {
-        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company', 'business_type' => 'retail']);
         $rider = RiderProfile::factory()->create(['shop_owner_id' => $shop->id, 'active' => true, 'availability_status' => 'available']);
-        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id, 'source_type' => 'order']);
         $legs = ShipmentLeg::factory()->count(2)->create([
             'shipment_id' => $shipment->id, 'scheduled_delivery_date' => '2026-07-15',
             'delivery_window' => 'morning', 'schedule_status' => 'scheduled', 'status' => 'pending',
@@ -112,15 +112,15 @@ class BatchDispatchServiceTest extends TestCase
 
     public function test_rejection_returns_batch_to_draft_and_cancellation_returns_legs_to_pool(): void
     {
-        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company', 'business_type' => 'retail']);
         $rider = RiderProfile::factory()->create(['shop_owner_id' => $shop->id, 'active' => true, 'availability_status' => 'available']);
-        $leg = ShipmentLeg::factory()->create([
-            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id,
+        $legs = ShipmentLeg::factory()->count(2)->create([
+            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id, 'source_type' => 'order'])->id,
             'scheduled_delivery_date' => '2026-07-15', 'delivery_window' => 'morning',
             'schedule_status' => 'scheduled', 'status' => 'pending',
         ]);
         $service = app(BatchDispatchService::class);
-        $batch = $service->offer($service->createDraft($shop, '2026-07-15', 'morning', [$leg->id]), $rider, $shop);
+        $batch = $service->offer($service->createDraft($shop, '2026-07-15', 'morning', $legs->pluck('id')->all()), $rider, $shop);
 
         $this->expectException(ValidationException::class);
         $service->reject($batch, $rider, '');
@@ -128,19 +128,19 @@ class BatchDispatchServiceTest extends TestCase
 
     public function test_rejection_reason_and_cancel_are_recorded(): void
     {
-        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company', 'business_type' => 'retail']);
         $rider = RiderProfile::factory()->create(['shop_owner_id' => $shop->id, 'active' => true, 'availability_status' => 'available']);
         $shipment = Shipment::factory()->create([
             'shop_owner_id' => $shop->id, 'source_type' => 'order', 'source_id' => 72,
         ]);
-        $leg = ShipmentLeg::factory()->create([
+        $legs = ShipmentLeg::factory()->count(2)->create([
             'shipment_id' => $shipment->id,
             'scheduled_delivery_date' => '2026-07-15', 'delivery_window' => 'morning',
             'schedule_status' => 'scheduled', 'status' => 'pending',
             'destination_snapshot' => ['name' => 'Miguel Dela Rosa', 'address' => 'Bacoor, Cavite'],
         ]);
         $service = app(BatchDispatchService::class);
-        $batch = $service->offer($service->createDraft($shop, '2026-07-15', 'morning', [$leg->id]), $rider, $shop);
+        $batch = $service->offer($service->createDraft($shop, '2026-07-15', 'morning', $legs->pluck('id')->all()), $rider, $shop);
 
         $rejected = $service->reject($batch, $rider, 'Vehicle unavailable');
         $this->assertSame('draft', $rejected->status);
@@ -158,7 +158,7 @@ class BatchDispatchServiceTest extends TestCase
         $this->assertSame('No longer required', $cancelled->cancellation_reason);
         $this->assertSame(72, $cancelled->cancelled_stops[0]['shipment']['source_id']);
         $this->assertSame('Miguel Dela Rosa', $cancelled->cancelled_stops[0]['destination_snapshot']['name']);
-        $this->assertNull($leg->fresh()->delivery_batch_id);
+        $this->assertTrue($legs->every(fn (ShipmentLeg $leg) => $leg->fresh()->delivery_batch_id === null));
     }
 
     public function test_cancelled_batch_can_be_restored_to_draft(): void
@@ -494,10 +494,101 @@ class BatchDispatchServiceTest extends TestCase
         $this->assertSame('Operational priority', $event->metadata['capacity_override_reason']);
     }
 
-    private function draftFixture(int $count = 1): array
+    public function test_batch_creation_and_replacement_reject_single_or_mixed_module_stops_without_mutation(): void
     {
-        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
-        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+        $shop = ShopOwner::factory()->create(['business_type' => 'both']);
+        $retailShipment = Shipment::factory()->create(['shop_owner_id' => $shop->id, 'source_type' => 'order']);
+        $repairShipment = Shipment::factory()->create(['shop_owner_id' => $shop->id, 'source_type' => 'repair_request']);
+        $retailLegs = ShipmentLeg::factory()->count(2)->create([
+            'shipment_id' => $retailShipment->id,
+            'scheduled_delivery_date' => '2026-07-15',
+            'delivery_window' => 'morning',
+            'schedule_status' => 'scheduled',
+            'status' => 'pending',
+        ]);
+        $repairLeg = ShipmentLeg::factory()->create([
+            'shipment_id' => $repairShipment->id,
+            'scheduled_delivery_date' => '2026-07-15',
+            'delivery_window' => 'morning',
+            'schedule_status' => 'scheduled',
+            'status' => 'pending',
+        ]);
+        $service = app(BatchDispatchService::class);
+
+        foreach ([
+            [$retailLegs->first()->id],
+            [$retailLegs->first()->id, $repairLeg->id],
+        ] as $ids) {
+            try {
+                $service->createDraft($shop, '2026-07-15', 'morning', $ids);
+                $this->fail('Invalid batch composition was accepted.');
+            } catch (ValidationException $exception) {
+                $this->assertArrayHasKey('legs', $exception->errors());
+                $this->assertSame(0, DeliveryBatch::query()->count());
+                $this->assertTrue(
+                    ShipmentLeg::query()->whereIn('id', $ids)->get()->every(
+                        fn (ShipmentLeg $leg) => $leg->delivery_batch_id === null
+                    )
+                );
+            }
+        }
+
+        $batch = $service->createDraft($shop, '2026-07-15', 'morning', $retailLegs->pluck('id')->all());
+        try {
+            $service->replaceStops($batch, [$retailLegs->first()->id]);
+            $this->fail('A full replacement reduced a batch below two stops.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('legs', $exception->errors());
+            $this->assertSame(2, $batch->fresh()->assigned_stop_count);
+        }
+
+        $reduced = $service->removeStop($batch, $retailLegs->first());
+        $this->assertSame(1, $reduced?->assigned_stop_count);
+    }
+
+    public function test_shop_module_rules_reject_disallowed_batch_and_schedule_before_settings_or_leg_changes(): void
+    {
+        $shop = ShopOwner::factory()->create(['business_type' => 'repair']);
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id, 'source_type' => 'order']);
+        $legs = ShipmentLeg::factory()->count(2)->create([
+            'shipment_id' => $shipment->id,
+            'scheduled_delivery_date' => '2026-07-15',
+            'delivery_window' => 'morning',
+            'schedule_status' => 'scheduled',
+            'status' => 'pending',
+        ]);
+        $service = app(BatchDispatchService::class);
+
+        try {
+            $service->createDraft($shop, '2026-07-15', 'morning', $legs->pluck('id')->all());
+            $this->fail('Repair-only shop accepted a Retail batch.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('legs', $exception->errors());
+            $this->assertDatabaseCount('logistics_settings', 0);
+            $this->assertDatabaseCount('delivery_batches', 0);
+        }
+
+        $unscheduled = ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id,
+            'scheduled_delivery_date' => null,
+            'delivery_window' => null,
+            'schedule_status' => 'unscheduled',
+            'status' => 'pending',
+        ]);
+        try {
+            $service->schedule($shop, '2026-07-15', 'morning', [$unscheduled->id]);
+            $this->fail('Repair-only shop scheduled a Retail delivery.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('legs', $exception->errors());
+            $this->assertDatabaseCount('logistics_settings', 0);
+            $this->assertNull($unscheduled->fresh()->scheduled_delivery_date);
+        }
+    }
+
+    private function draftFixture(int $count = 2): array
+    {
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company', 'business_type' => 'retail']);
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id, 'source_type' => 'order']);
         $legs = ShipmentLeg::factory()->count($count)->create([
             'shipment_id' => $shipment->id, 'scheduled_delivery_date' => '2026-07-15',
             'delivery_window' => 'morning', 'schedule_status' => 'scheduled', 'status' => 'pending',

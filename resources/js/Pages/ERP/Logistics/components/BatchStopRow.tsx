@@ -2,7 +2,7 @@ import React, { useRef } from 'react';
 import { usePage } from '@inertiajs/react';
 import { ArrowDown, ArrowUp, Flame, GripVertical, MapPin, Phone, Trash2 } from 'lucide-react';
 import { useDrag, useDrop } from 'react-dnd';
-import type { TrackingShipmentLeg } from '@/types/logistics';
+import { logisticsModuleForSourceType, logisticsModuleLabel, logisticsSourceLabel, type TrackingShipmentLeg } from '@/types/logistics';
 
 const text = (value?: string | null) => value || 'Not provided';
 const label = (value?: string | null) => value ? value.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()) : 'Not scheduled';
@@ -23,7 +23,7 @@ export default function BatchStopRow({ leg, index, total, editable = false, busy
   const { maxDeliveryAttempts = 2 } = usePage<{ maxDeliveryAttempts?: number }>().props;
   const ref = useRef<HTMLDivElement>(null);
   const terminal = ['delivered', 'cancelled'].includes(leg.status);
-  const source = leg.shipment?.source_type === 'order' ? `Order #${leg.shipment.source_id}` : `Leg #${leg.id}`;
+  const source = logisticsSourceLabel(leg.shipment);
   const destination = leg.destination_snapshot;
   const failedAttempt = leg.attempts?.[0];
   const failedAttemptCount = leg.failed_attempt_count ?? failedAttempt?.attempt_number ?? 0;
@@ -47,12 +47,14 @@ export default function BatchStopRow({ leg, index, total, editable = false, busy
         <div className="flex flex-wrap items-center gap-2">
           <p className="font-semibold text-gray-950 dark:text-white">{destination?.name || source}</p>
           <span className="rounded-full bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-200">{source}</span>
+          <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">{logisticsModuleLabel(logisticsModuleForSourceType(leg.shipment?.source_type))}</span>
           {leg.urgent_at && <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-1 text-xs font-bold text-red-700"><Flame size={12} />Urgent</span>}
           {failedAttempt?.status === 'failed' && <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-bold text-amber-800">Failed attempt - {failedAttemptCount}/{maxDeliveryAttempts}</span>}
         </div>
         <div className="mt-2 grid gap-1 text-sm text-gray-600 dark:text-gray-300">
           <span className="inline-flex items-center gap-2"><Phone size={14} />{text(destination?.phone)}</span>
           <span className="inline-flex items-start gap-2"><MapPin className="mt-0.5 shrink-0" size={14} />{text(destination?.address)}</span>
+          {leg.shipment?.source_summary?.shoe_summary && <span>{leg.shipment.source_summary.shoe_summary}</span>}
           {failedAttempt?.reason_code && <span>{label(failedAttempt.reason_code)}</span>}
           <span>{leg.scheduled_delivery_date ? formatDate(leg.scheduled_delivery_date) : 'Not scheduled'}{leg.delivery_window ? ` · ${label(leg.delivery_window)}` : ''} · {label(leg.status)}</span>
         </div>

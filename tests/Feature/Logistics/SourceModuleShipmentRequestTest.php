@@ -231,18 +231,27 @@ class SourceModuleShipmentRequestTest extends TestCase
 
     public function test_repair_pickup_creates_inbound_shipment(): void
     {
-        $shop = ShopOwner::factory()->create();
+        $shop = ShopOwner::factory()->create([
+            'shop_latitude' => 14.5995,
+            'shop_longitude' => 120.9842,
+        ]);
+        LogisticsSetting::create(['shop_owner_id' => $shop->id, 'coverage_radius_km' => 12]);
         $repair = RepairRequest::factory()->create([
             'shop_owner_id' => $shop->id,
             'delivery_method' => 'pickup',
-            'intake_delivery_method' => 'customer_delivery',
+            'intake_delivery_method' => 'shop_pickup',
             'intake_address' => [
                 'address_line' => '123 Customer Street',
                 'barangay' => 'Barangay One',
                 'city' => 'Quezon City',
                 'region' => 'NCR',
                 'postal_code' => '1100',
+                'latitude' => 14.6,
+                'longitude' => 120.98,
+                'version' => 'repair-pickup-source-test-v1',
             ],
+            'intake_delivery_fee' => 125,
+            'intake_logistics_locked_at' => now(),
         ]);
 
         app(SourceShipmentService::class)->ensureRepairInboundShipment($repair);
@@ -259,7 +268,11 @@ class SourceModuleShipmentRequestTest extends TestCase
 
     public function test_repair_return_creates_outbound_shipment(): void
     {
-        $shop = ShopOwner::factory()->create();
+        $shop = ShopOwner::factory()->create([
+            'shop_latitude' => 14.5995,
+            'shop_longitude' => 120.9842,
+        ]);
+        LogisticsSetting::create(['shop_owner_id' => $shop->id, 'coverage_radius_km' => 20]);
         $repair = RepairRequest::factory()->create([
             'shop_owner_id' => $shop->id,
             'status' => 'shipped',
@@ -270,6 +283,8 @@ class SourceModuleShipmentRequestTest extends TestCase
                 'city' => 'Makati',
                 'region' => 'NCR',
                 'postal_code' => '1200',
+                'latitude' => 14.60,
+                'longitude' => 120.98,
             ],
         ]);
 

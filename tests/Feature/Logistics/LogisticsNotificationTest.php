@@ -141,7 +141,10 @@ class LogisticsNotificationTest extends TestCase
 
     public function test_rider_is_notified_once_when_a_batch_is_offered(): void
     {
-        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $shop = ShopOwner::factory()->create([
+            'registration_type' => 'company',
+            'business_type' => 'retail',
+        ]);
         $riderUser = User::factory()->create(['shop_owner_id' => $shop->id]);
         $rider = RiderProfile::factory()->create([
             'shop_owner_id' => $shop->id,
@@ -150,7 +153,10 @@ class LogisticsNotificationTest extends TestCase
             'active' => true,
             'availability_status' => 'available',
         ]);
-        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+        $shipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+        ]);
         $legs = ShipmentLeg::factory()->count(2)->create([
             'shipment_id' => $shipment->id,
             'scheduled_delivery_date' => '2026-07-15',
@@ -184,7 +190,10 @@ class LogisticsNotificationTest extends TestCase
     public function test_dispatcher_is_notified_for_each_batch_rejection_event(): void
     {
         $this->seed(RolesAndPermissionsSeeder::class);
-        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $shop = ShopOwner::factory()->create([
+            'registration_type' => 'company',
+            'business_type' => 'retail',
+        ]);
         $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
         $dispatcher->assignRole('Logistics Dispatcher');
         $riderUser = User::factory()->create(['shop_owner_id' => $shop->id]);
@@ -195,8 +204,11 @@ class LogisticsNotificationTest extends TestCase
             'active' => true,
             'availability_status' => 'available',
         ]);
-        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
-        $leg = ShipmentLeg::factory()->create([
+        $shipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+        ]);
+        $legs = ShipmentLeg::factory()->count(2)->create([
             'shipment_id' => $shipment->id,
             'scheduled_delivery_date' => '2026-07-15',
             'delivery_window' => 'morning',
@@ -204,7 +216,7 @@ class LogisticsNotificationTest extends TestCase
             'status' => 'pending',
         ]);
         $service = app(BatchDispatchService::class);
-        $batch = $service->offer($service->createDraft($shop, '2026-07-15', 'morning', [$leg->id]), $rider, $shop);
+        $batch = $service->offer($service->createDraft($shop, '2026-07-15', 'morning', $legs->pluck('id')->all()), $rider, $shop);
 
         $rejected = $service->reject($batch, $rider, 'Vehicle unavailable');
         $notification = Notification::query()->where('user_id', $dispatcher->id)

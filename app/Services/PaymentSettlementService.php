@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Finance\Invoice;
 use App\Models\Order;
 use App\Models\PosTransaction;
+use App\Models\PosRefund;
 use App\Models\RepairPaymentSession;
 use App\Models\RepairRequest;
 use Illuminate\Support\Facades\DB;
@@ -17,6 +18,7 @@ class PaymentSettlementService
     public function __construct(
         private readonly NotificationService $notificationService,
         private readonly RepairDeliveryService $repairDeliveryService,
+        private readonly RepairPosRefundService $repairRefundService,
     ) {
     }
 
@@ -38,6 +40,9 @@ class PaymentSettlementService
                 ? round(max(0, $serviceTotal - $this->resolveRepairInitialServiceAmount($repair)), 2)
                 : 0.0);
         $leg = $phase === 'initial' ? 'intake' : 'return';
+        if ($this->hasResolvedDeliveryCompensation($repair, $leg)) {
+            $serviceAmount = 0.0;
+        }
         $delivery = $this->repairDeliveryService->paymentDetails($repair, $leg);
         $deliveryAmount = round((float) $delivery['delivery_amount'], 2);
 
@@ -90,8 +95,15 @@ class PaymentSettlementService
         }
 
         $repair->update($updates);
+        $settledRepair = $repair->fresh();
 
-        return $repair->fresh();
+        if ($phase === 'initial') {
+            $this->repairDeliveryService->tryCreateIntakeShipment($settledRepair);
+        } else {
+            $this->repairDeliveryService->tryCreateReturnShipment($settledRepair);
+        }
+
+        return $settledRepair->fresh();
     }
 
     public function settleOrderPaid(Order $order, ?string $paymentId = null, bool $ignoreExpiry = false): array
@@ -206,7 +218,9 @@ class PaymentSettlementService
                 'status' => 'pending',  // Always proceed to pending after payment
                 'total_paid_amount' => $totalPaidAmount,
                 'payment_status_derived' => 'completed',
+                'intake_logistics_locked_at' => now(),
             ]);
+            $this->repairDeliveryService->tryCreateIntakeShipment($repair->fresh());
 
             return [
                 'result' => 'settled',
@@ -231,7 +245,11 @@ class PaymentSettlementService
         if ($isDepositPhase) {
             // After deposit payment, always proceed to pending status
             // High-value approval is for rejection decisions only, not payment workflow
-            $repair->update(['status' => 'pending']);
+            $repair->update([
+                'status' => 'pending',
+                'intake_logistics_locked_at' => now(),
+            ]);
+            $this->repairDeliveryService->tryCreateIntakeShipment($repair->fresh());
         }
 
         return [
@@ -267,6 +285,374 @@ class PaymentSettlementService
         ]);
 
         return $repair->fresh();
+    }
+
+    public function canCreditDeliveryCompensation(RepairRequest $repair, float $amount): bool
+    {
+        return $amount > 0 && $this->outstandingRepairServiceBalance($repair) >= round($amount, 2);
+    }
+
+    public function resolveRepairDeliveryReconciliation(
+        RepairRequest $repair,
+        string $compensationKey,
+        string $action,
+        int $actorId,
+    ): array {
+        $prepared = DB::transaction(function () use ($repair, $compensationKey, $action, $actorId): array {
+            $locked = RepairRequest::query()->whereKey($repair->id)->lockForUpdate()->firstOrFail();
+            $reconciliation = is_array($locked->logistics_payment_reconciliation)
+                ? $locked->logistics_payment_reconciliation
+                : [];
+            $entries = collect(data_get($reconciliation, 'entries', []))
+                ->filter(fn ($entry): bool => is_array($entry))
+                ->values();
+            $index = $entries->search(
+                fn (array $entry): bool => (string) ($entry['compensation_key'] ?? '') === $compensationKey
+                    && (string) ($entry['type'] ?? '') === 'delivery_compensation'
+            );
+            if ($index === false) {
+                throw ValidationException::withMessages([
+                    'compensation_key' => ['The delivery compensation item was not found.'],
+                ]);
+            }
+
+            $entry = $entries->get($index);
+            if ((string) ($entry['status'] ?? data_get($reconciliation, 'status')) === 'resolved') {
+                return ['repair' => $locked, 'entry' => $entry, 'already_resolved' => true];
+            }
+            if ((string) ($entry['status'] ?? 'pending') === 'processing') {
+                return [
+                    'repair' => $locked,
+                    'entry' => $entry,
+                    'already_resolved' => false,
+                    'processing' => true,
+                ];
+            }
+
+            $amount = round((float) ($entry['reconciliation_amount'] ?? 0), 2);
+            if ($amount <= 0) {
+                throw ValidationException::withMessages(['amount' => ['The delivery compensation amount is invalid.']]);
+            }
+            if ($action === 'credit_balance' && ! $this->canCreditDeliveryCompensation($locked, $amount)) {
+                throw ValidationException::withMessages([
+                    'action' => ['The exact delivery fee cannot be credited because the remaining service balance is lower. Refund the original channel instead.'],
+                ]);
+            }
+
+            $entry = [
+                ...$entry,
+                'status' => 'processing',
+                'resolution_action' => $action,
+                'resolution_started_at' => now()->toISOString(),
+                'resolved_by' => $actorId,
+            ];
+            $entries->put($index, $entry);
+            $locked->update([
+                'logistics_payment_reconciliation' => [
+                    ...$reconciliation,
+                    'status' => 'pending',
+                    'entries' => $entries->all(),
+                ],
+            ]);
+
+            return [
+                'repair' => $locked->fresh(),
+                'entry' => $entry,
+                'already_resolved' => false,
+                'processing' => false,
+            ];
+        }, 5);
+
+        if ($prepared['already_resolved']) {
+            return [
+                'status' => 'resolved',
+                'repair' => $prepared['repair']->fresh(),
+                'entry' => $prepared['entry'],
+            ];
+        }
+
+        $entry = $prepared['entry'];
+        $refund = null;
+        if ($action === 'refund_original') {
+            $existingRefundId = (int) ($entry['pos_refund_id'] ?? 0);
+            $existingRefund = $existingRefundId > 0 ? PosRefund::query()->find($existingRefundId) : null;
+
+            try {
+                $refund = $this->repairRefundService->executeDeliveryCompensation(
+                    $prepared['repair']->fresh(),
+                    (float) $entry['reconciliation_amount'],
+                    $actorId,
+                    $existingRefund,
+                );
+            } catch (\Throwable $exception) {
+                $this->markDeliveryReconciliationRetryable(
+                    $prepared['repair'],
+                    $compensationKey,
+                    $exception->getMessage(),
+                );
+                throw $exception;
+            }
+
+            if (in_array((string) $refund->status, ['failed', 'rejected', 'cancelled'], true)) {
+                $message = (string) ($refund->failure_reason ?: 'The original-channel refund failed and can be retried.');
+                $this->markDeliveryReconciliationRetryable(
+                    $prepared['repair'],
+                    $compensationKey,
+                    $message,
+                );
+                throw ValidationException::withMessages(['action' => [$message]]);
+            }
+
+            if ((string) $refund->status !== 'succeeded') {
+                $this->storeDeliveryReconciliationRefund(
+                    $prepared['repair'],
+                    $compensationKey,
+                    $refund,
+                );
+
+                return [
+                    'status' => 'processing',
+                    'repair' => $prepared['repair']->fresh(),
+                    'entry' => [
+                        ...$entry,
+                        'pos_refund_id' => (int) $refund->id,
+                    ],
+                ];
+            }
+        }
+
+        $resolved = $this->finalizeDeliveryReconciliation(
+            $prepared['repair'],
+            $compensationKey,
+            $action,
+            $actorId,
+            $refund,
+        );
+        $this->notificationService->notifyRepairDeliveryReconciliation(
+            $resolved['repair'],
+            (string) $resolved['entry']['phase'],
+            'resolved',
+            (float) $resolved['entry']['reconciliation_amount'],
+            $compensationKey,
+        );
+
+        return [
+            'status' => 'resolved',
+            'repair' => $resolved['repair'],
+            'entry' => $resolved['entry'],
+        ];
+    }
+
+    private function finalizeDeliveryReconciliation(
+        RepairRequest $repair,
+        string $compensationKey,
+        string $action,
+        int $actorId,
+        ?PosRefund $refund,
+    ): array {
+        return DB::transaction(function () use ($repair, $compensationKey, $action, $actorId, $refund): array {
+            $locked = RepairRequest::query()->whereKey($repair->id)->lockForUpdate()->firstOrFail();
+            $reconciliation = is_array($locked->logistics_payment_reconciliation)
+                ? $locked->logistics_payment_reconciliation
+                : [];
+            $entries = collect(data_get($reconciliation, 'entries', []))
+                ->filter(fn ($entry): bool => is_array($entry))
+                ->values();
+            $index = $entries->search(
+                fn (array $entry): bool => (string) ($entry['compensation_key'] ?? '') === $compensationKey
+            );
+            if ($index === false) {
+                throw ValidationException::withMessages([
+                    'compensation_key' => ['The delivery compensation item was not found.'],
+                ]);
+            }
+            $entry = $entries->get($index);
+            if ((string) ($entry['status'] ?? '') === 'resolved') {
+                return ['repair' => $locked, 'entry' => $entry];
+            }
+            if ($action === 'refund_original' && (string) ($refund?->status ?? '') !== 'succeeded') {
+                throw ValidationException::withMessages([
+                    'action' => ['The original-channel refund has not completed. The delivery plan remains locked.'],
+                ]);
+            }
+
+            $amount = round((float) ($entry['reconciliation_amount'] ?? 0), 2);
+            $phase = (string) $entry['phase'];
+            $entry = [
+                ...$entry,
+                'status' => 'resolved',
+                'resolution_action' => $action,
+                'resolved_by' => $actorId,
+                'resolved_at' => now()->toISOString(),
+                'credited_amount' => $action === 'credit_balance' ? $amount : 0,
+                'refunded_amount' => $action === 'refund_original' ? $amount : 0,
+                'pos_refund_id' => $refund?->id,
+            ];
+            $entries->put($index, $entry);
+            $hasPending = $entries->contains(
+                fn (array $item): bool => in_array((string) ($item['status'] ?? 'pending'), ['pending', 'processing'], true)
+            );
+            $updates = [
+                'logistics_payment_reconciliation' => [
+                    ...$reconciliation,
+                    ...$entry,
+                    'status' => $hasPending ? 'pending' : 'resolved',
+                    'entries' => $entries->all(),
+                    'total_reconciliation_amount' => round((float) $entries
+                        ->filter(fn (array $item): bool => in_array(
+                            (string) ($item['status'] ?? 'pending'),
+                            ['pending', 'processing'],
+                            true,
+                        ))
+                        ->sum(fn (array $item): float => (float) ($item['reconciliation_amount'] ?? 0)), 2),
+                    'resolved_at' => $hasPending ? null : now()->toISOString(),
+                ],
+                "{$phase}_delivery_fee" => 0,
+                "{$phase}_logistics_quote" => null,
+                "{$phase}_logistics_locked_at" => null,
+            ];
+            if ($phase === 'return') {
+                $updates += [
+                    'return_address_confirmed_at' => null,
+                    'return_address_confirmed_version' => null,
+                    'pickup_enabled' => false,
+                    'pickup_enabled_at' => null,
+                    'pickup_enabled_by' => null,
+                ];
+            }
+            if ($action === 'refund_original') {
+                $updates['total_paid_amount'] = max(0, round((float) $locked->total_paid_amount - $amount, 2));
+                $updates['payment_status'] = 'paid';
+            }
+
+            $locked->update($updates);
+
+            return ['repair' => $locked->fresh(), 'entry' => $entry];
+        }, 5);
+    }
+
+    private function markDeliveryReconciliationRetryable(
+        RepairRequest $repair,
+        string $compensationKey,
+        string $message,
+    ): void {
+        DB::transaction(function () use ($repair, $compensationKey, $message): void {
+            $locked = RepairRequest::query()->whereKey($repair->id)->lockForUpdate()->firstOrFail();
+            $reconciliation = is_array($locked->logistics_payment_reconciliation)
+                ? $locked->logistics_payment_reconciliation
+                : [];
+            $entries = collect(data_get($reconciliation, 'entries', []))
+                ->map(fn ($entry): array => is_array($entry)
+                    && (string) ($entry['compensation_key'] ?? '') === $compensationKey
+                        ? [
+                            ...$entry,
+                            'status' => 'pending',
+                            'last_error' => $message,
+                            'last_failed_at' => now()->toISOString(),
+                        ]
+                        : $entry)
+                ->all();
+            $locked->update([
+                'logistics_payment_reconciliation' => [
+                    ...$reconciliation,
+                    'status' => 'pending',
+                    'entries' => $entries,
+                ],
+            ]);
+        });
+    }
+
+    private function storeDeliveryReconciliationRefund(
+        RepairRequest $repair,
+        string $compensationKey,
+        PosRefund $refund,
+    ): void {
+        DB::transaction(function () use ($repair, $compensationKey, $refund): void {
+            $locked = RepairRequest::query()->whereKey($repair->id)->lockForUpdate()->firstOrFail();
+            $reconciliation = is_array($locked->logistics_payment_reconciliation)
+                ? $locked->logistics_payment_reconciliation
+                : [];
+            $entries = collect(data_get($reconciliation, 'entries', []))
+                ->map(fn ($entry): array => is_array($entry)
+                    && (string) ($entry['compensation_key'] ?? '') === $compensationKey
+                        ? [
+                            ...$entry,
+                            'status' => 'processing',
+                            'pos_refund_id' => (int) $refund->id,
+                            'refund_status' => (string) $refund->status,
+                        ]
+                        : $entry)
+                ->all();
+            $locked->update([
+                'logistics_payment_reconciliation' => [
+                    ...$reconciliation,
+                    'status' => 'pending',
+                    'entries' => $entries,
+                ],
+            ]);
+        });
+    }
+
+    private function outstandingRepairServiceBalance(RepairRequest $repair): float
+    {
+        $policy = $this->normalizeRepairPaymentPolicy($repair->payment_policy_snapshot ?: $repair->payment_policy);
+        $serviceTotal = $this->resolveRepairServiceTotal($repair, $policy, 'initial');
+        $posServicePaid = (float) PosTransaction::query()
+            ->where('module_type', 'repair')
+            ->where('module_reference_id', $repair->id)
+            ->whereIn('status', ['paid', 'partially_refunded', 'refunded'])
+            ->get()
+            ->sum(fn (PosTransaction $transaction): float => (float) data_get($transaction->metadata, 'service_amount', 0));
+        $sessionServicePaid = (float) RepairPaymentSession::query()
+            ->where('repair_request_id', $repair->id)
+            ->whereIn('status', ['paid', 'reconciliation'])
+            ->get()
+            ->sum(function (RepairPaymentSession $session) use ($repair): float {
+                if ((string) $session->status === 'paid') {
+                    return (float) $session->service_amount;
+                }
+
+                $entry = collect(data_get($repair->logistics_payment_reconciliation, 'entries', []))
+                    ->firstWhere('payment_session_id', $session->id);
+
+                return (float) data_get($entry, 'service_amount_applied', 0);
+            });
+        $credits = (float) collect(data_get($repair->logistics_payment_reconciliation, 'entries', []))
+            ->filter(fn ($entry): bool => is_array($entry)
+                && (string) ($entry['status'] ?? '') === 'resolved'
+                && (string) ($entry['resolution_action'] ?? '') === 'credit_balance')
+            ->sum(fn (array $entry): float => (float) ($entry['credited_amount'] ?? 0));
+        $fallbackDelivery = ($repair->intake_logistics_locked_at ? (float) $repair->intake_delivery_fee : 0)
+            + ($repair->return_logistics_locked_at ? (float) $repair->return_delivery_fee : 0);
+        $fallbackServicePaid = max(0, (float) $repair->total_paid_amount - $fallbackDelivery);
+        $servicePaid = max($fallbackServicePaid, $posServicePaid + $sessionServicePaid + $credits);
+
+        return max(0, round($serviceTotal - $servicePaid, 2));
+    }
+
+    private function hasResolvedDeliveryCompensation(RepairRequest $repair, string $phase): bool
+    {
+        $reconciliation = is_array($repair->logistics_payment_reconciliation)
+            ? $repair->logistics_payment_reconciliation
+            : [];
+
+        return collect(data_get($reconciliation, 'entries', []))
+            ->contains(fn ($entry): bool => is_array($entry)
+                && (string) ($entry['type'] ?? '') === 'delivery_compensation'
+                && (string) ($entry['phase'] ?? '') === $phase
+                && (string) ($entry['status'] ?? data_get($reconciliation, 'status')) === 'resolved');
+    }
+
+    private function needsReplacementDeliveryPayment(RepairRequest $repair): bool
+    {
+        return ($this->hasResolvedDeliveryCompensation($repair, 'intake')
+                && (string) $repair->intake_delivery_method === 'shop_pickup'
+                && $repair->intake_logistics_locked_at === null
+                && (float) $repair->intake_delivery_fee > 0)
+            || ($this->hasResolvedDeliveryCompensation($repair, 'return')
+                && (string) $repair->return_delivery_method === 'shop_delivery'
+                && $repair->return_logistics_locked_at === null
+                && (float) $repair->return_delivery_fee > 0);
     }
 
     public function recordOrderPaymentFailure(Order $order, string $reason): array
@@ -449,6 +835,10 @@ class PaymentSettlementService
             return false;
         }
 
+        if ($this->needsReplacementDeliveryPayment($repair)) {
+            return true;
+        }
+
         if ($this->isRepairSettled($repair, $resolvedPolicy)) {
             return false;
         }
@@ -485,6 +875,10 @@ class PaymentSettlementService
         $resolvedPolicy = $policy ?? $this->normalizeRepairPaymentPolicy($repair->payment_policy ?? 'deposit_50');
 
         if (data_get($repair->logistics_payment_reconciliation, 'status') === 'pending') {
+            return false;
+        }
+
+        if ($this->needsReplacementDeliveryPayment($repair)) {
             return false;
         }
 
@@ -853,7 +1247,12 @@ class PaymentSettlementService
 
                 return round((float) ($entry['service_base_amount_applied'] ?? $serviceBaseAmount), 2);
             });
-        $recordedAmount = round($posAmount + $onlineAmount, 2);
+        $serviceCredits = (float) collect(data_get($repair->logistics_payment_reconciliation, 'entries', []))
+            ->filter(fn ($entry): bool => is_array($entry)
+                && (string) ($entry['status'] ?? '') === 'resolved'
+                && (string) ($entry['resolution_action'] ?? '') === 'credit_balance')
+            ->sum(fn (array $entry): float => (float) ($entry['credited_amount'] ?? 0));
+        $recordedAmount = round($posAmount + $onlineAmount + $serviceCredits, 2);
 
         if ($recordedAmount <= 0
             && in_array((string) $repair->payment_status, ['paid', 'partially_paid', 'completed'], true)) {

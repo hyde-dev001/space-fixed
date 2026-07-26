@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Logistics;
 use App\Http\Controllers\Controller;
 use App\Models\Logistics\DeliveryBatch;
 use App\Models\Logistics\RiderProfile;
+use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\ShopOwner;
 use App\Models\User;
@@ -16,18 +17,26 @@ use Illuminate\Support\Facades\Auth;
 
 class DeliveryBatchController extends Controller
 {
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
         $shop = $this->dispatcherShop();
-        return response()->json(['batches' => DeliveryBatch::with(['riderProfile', 'legs.assignments'])
-            ->where('shop_owner_id', $shop->id)->latest()->get()]);
+        $module = $this->module($shop, $request->validate(['module' => ['nullable', 'in:all,retail,repair']])['module'] ?? 'all');
+        return response()->json(['batches' => DeliveryBatch::with(['riderProfile', 'legs.assignments', 'legs.shipment'])
+            ->where('shop_owner_id', $shop->id)
+            ->when($module !== 'all', fn ($query) => $this->filterBatchesByModule($query, $module))
+            ->latest()->get()]);
     }
 
     public function suggestions(Request $request, BatchSuggestionService $service): JsonResponse
     {
         $shop = $this->dispatcherShop();
-        $data = $request->validate(['delivery_date' => ['required', 'date'], 'delivery_window' => ['required', 'in:morning,afternoon']]);
-        return response()->json(['suggestions' => $service->suggest($shop, now()->parse($data['delivery_date']), $data['delivery_window'])]);
+        $data = $request->validate([
+            'delivery_date' => ['required', 'date'],
+            'delivery_window' => ['required', 'in:morning,afternoon'],
+            'module' => ['nullable', 'in:all,retail,repair'],
+        ]);
+        $module = $this->module($shop, $data['module'] ?? 'all');
+        return response()->json(['suggestions' => $service->suggest($shop, now()->parse($data['delivery_date']), $data['delivery_window'], $module)]);
     }
 
     public function store(Request $request, BatchDispatchService $service): JsonResponse
@@ -35,7 +44,7 @@ class DeliveryBatchController extends Controller
         $shop = $this->dispatcherShop();
         $data = $request->validate([
             'delivery_date' => ['required', 'date'], 'delivery_window' => ['required', 'in:morning,afternoon'],
-            'leg_ids' => ['required', 'array', 'min:1'], 'leg_ids.*' => ['integer', 'distinct'],
+            'leg_ids' => ['required', 'array', 'min:2'], 'leg_ids.*' => ['integer', 'distinct'],
             'dispatcher_override_reason' => ['nullable', 'string', 'max:1000'],
         ]);
         return response()->json(['batch' => $service->createDraft($shop, $data['delivery_date'], $data['delivery_window'], $data['leg_ids'], $data['dispatcher_override_reason'] ?? null)], 201);
@@ -67,7 +76,7 @@ class DeliveryBatchController extends Controller
     public function update(Request $request, DeliveryBatch $batch, BatchDispatchService $service): JsonResponse
     {
         $this->dispatcherShop($batch);
-        $ids = $request->validate(['leg_ids' => ['required', 'array', 'min:1'], 'leg_ids.*' => ['integer', 'distinct']])['leg_ids'];
+        $ids = $request->validate(['leg_ids' => ['required', 'array', 'min:2'], 'leg_ids.*' => ['integer', 'distinct']])['leg_ids'];
         return response()->json(['batch' => $service->replaceStops($batch, $ids)]);
     }
 
@@ -134,5 +143,21 @@ class DeliveryBatchController extends Controller
             ->where('linked_type', User::class)->where('linked_id', $user->id)->first();
         abort_unless($rider, 403);
         return $rider;
+    }
+
+    private function module(ShopOwner $shop, string $requested): string
+    {
+        $available = $shop->logisticsModules();
+        return count($available) === 1
+            ? $available[0]
+            : (in_array($requested, $available, true) ? $requested : 'all');
+    }
+
+    private function filterBatchesByModule($query, string $module)
+    {
+        $sourceTypes = Shipment::sourceTypesForModule($module);
+        return $query
+            ->whereHas('legs.shipment', fn ($shipments) => $shipments->whereIn('source_type', $sourceTypes))
+            ->whereDoesntHave('legs.shipment', fn ($shipments) => $shipments->whereNotIn('source_type', $sourceTypes));
     }
 }

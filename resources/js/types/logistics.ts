@@ -1,3 +1,37 @@
+export type LogisticsModule = 'retail' | 'repair';
+
+export const logisticsModuleForSourceType = (sourceType?: string | null): LogisticsModule | null => {
+  if (sourceType === 'order' || sourceType === 'order_refund') return 'retail';
+  if (sourceType === 'repair_request') return 'repair';
+  return null;
+};
+
+export const logisticsModuleLabel = (module?: LogisticsModule | 'mixed' | null) => {
+  if (module === 'retail') return 'Retail';
+  if (module === 'repair') return 'Repair';
+  return 'Mixed (legacy)';
+};
+
+export type LogisticsSourceSummary = {
+  request_number: string;
+  customer_name: string;
+  shoe_summary: string;
+};
+
+export const logisticsSourceLabel = (shipment?: {
+  source_type: string;
+  source_id: number;
+  source_summary?: LogisticsSourceSummary | null;
+} | null) => {
+  if (!shipment) return 'Delivery';
+  if (shipment.source_type === 'repair_request') {
+    return `Repair ${shipment.source_summary?.request_number || `#${shipment.source_id}`}`;
+  }
+  if (shipment.source_type === 'order_refund') return `Return #${shipment.source_id}`;
+  if (shipment.source_type === 'order') return `Order #${shipment.source_id}`;
+  return `Delivery #${shipment.source_id}`;
+};
+
 export type DeliveryContactSnapshot = {
   type?: string;
   name?: string;
@@ -45,6 +79,7 @@ export type TrackingShipmentLeg = {
     id: number;
     source_type: string;
     source_id: number;
+    source_summary?: LogisticsSourceSummary | null;
   };
   assignments?: Array<{
     id: number;
@@ -81,6 +116,7 @@ export type TrackingShipment = {
   purpose: string;
   status: string;
   source_type: string;
+  source_summary?: LogisticsSourceSummary | null;
   created_at?: string | null;
   legs: TrackingShipmentLeg[];
   events: TrackingShipmentEvent[];
@@ -121,6 +157,7 @@ export type LogisticsShipment = {
   status: string;
   source_type: string;
   source_id: number;
+  source_summary?: LogisticsSourceSummary | null;
   created_at?: string | null;
   legs?: TrackingShipmentLeg[];
 };
@@ -150,6 +187,7 @@ export type DeliveryBatch = {
   stop_snapshot?: TrackingShipmentLeg[] | null;
   cancelled_stops?: TrackingShipmentLeg[] | null;
   dispatcher_override_reason?: string | null;
+  module?: LogisticsModule | 'mixed';
   rider_profile?: LogisticsRider | null;
   legs: TrackingShipmentLeg[];
 };
@@ -160,4 +198,11 @@ export type DeliveryBatchPageProps = {
   unscheduled: TrackingShipmentLeg[];
   riders: LogisticsRider[];
   dailyRiderCapacity: number;
+  filters?: {
+    module?: 'all' | LogisticsModule;
+    date?: string | null;
+    window?: 'all' | 'morning' | 'afternoon';
+  };
+  availableModules?: LogisticsModule[];
+  showModuleFilter?: boolean;
 };

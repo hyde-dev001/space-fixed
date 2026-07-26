@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   markUrgent: vi.fn(),
   cancelBatch: vi.fn(),
   restoreBatch: vi.fn(),
+  get: vi.fn(),
   reload: vi.fn(),
   toast: vi.fn(),
   error: vi.fn(),
@@ -21,7 +22,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@inertiajs/react', () => ({
   Head: () => null,
-  router: { reload: mocks.reload },
+  router: { get: mocks.get, reload: mocks.reload },
   usePage: () => ({ props: mocks.props }),
 }));
 vi.mock('@/layout/AppLayout_ERP', () => ({ default: ({ children }: React.PropsWithChildren) => <>{children}</> }));
@@ -52,6 +53,21 @@ const scheduledLeg = {
   shipment: { id: 80, source_type: 'order', source_id: 81 },
   destination_snapshot: { name: 'Ben Cruz', phone: '09987654321', address: 'Imus, Cavite' },
 };
+const repairLeg = {
+  id: 9,
+  status: 'pending',
+  shipment: {
+    id: 90,
+    source_type: 'repair_request',
+    source_id: 91,
+    source_summary: {
+      request_number: 'REP-2026-0042',
+      customer_name: 'Cara Santos',
+      shoe_summary: 'Adidas Ultraboost',
+    },
+  },
+  destination_snapshot: { name: 'Cara Santos', phone: '09170000000', address: 'Bacoor, Cavite' },
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -62,6 +78,9 @@ beforeEach(() => {
     unscheduled: [unscheduledLeg],
     dailyRiderCapacity: 10,
     maxDeliveryAttempts: 2,
+    filters: { module: 'all', date: null, window: 'all' },
+    availableModules: ['retail'],
+    showModuleFilter: false,
   };
   mocks.scheduleLegs.mockResolvedValue({});
   mocks.createBatch.mockResolvedValue({ data: { batch: { id: 41 } } });
@@ -141,6 +160,54 @@ it('selects only matching eligible deliveries and reports the count', () => {
   expect(screen.getByRole('checkbox', { name: /order #55/i })).toBeChecked();
 });
 
+it('requires two compatible deliveries and disables the other module', () => {
+  mocks.props = {
+    ...mocks.props,
+    unscheduled: [unscheduledLeg, repairLeg],
+    availableModules: ['retail', 'repair'],
+    showModuleFilter: true,
+  };
+  render(<Batches />);
+  expect(screen.getByLabelText('Filter batches by module')).toBeInTheDocument();
+
+  openBuilder();
+  expect(screen.getByText('Select at least 2 deliveries')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Save Draft' })).toBeDisabled();
+
+  selectOrder55();
+  expect(screen.getByRole('button', { name: 'Save Draft' })).toBeDisabled();
+  expect(screen.getByRole('checkbox', { name: /repair REP-2026-0042/i })).toBeDisabled();
+  expect(screen.getByText('Choose one module per batch')).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('checkbox', { name: /order #81/i }));
+  expect(screen.getByRole('button', { name: 'Save Draft' })).toBeEnabled();
+});
+
+it('requests backend-filtered batch data for the selected module and slot', () => {
+  mocks.props = {
+    ...mocks.props,
+    availableModules: ['retail', 'repair'],
+    showModuleFilter: true,
+  };
+  render(<Batches />);
+
+  fireEvent.change(screen.getByLabelText('Filter batches by module'), { target: { value: 'repair' } });
+  expect(mocks.get).toHaveBeenLastCalledWith('/erp/logistics/batches', {
+    module: 'repair',
+    date: undefined,
+    window: 'morning',
+  }, expect.objectContaining({ only: ['batches', 'pool', 'unscheduled', 'filters'] }));
+});
+
+it('shows repair request, customer, and shoe details in the delivery pool', () => {
+  mocks.props = { ...mocks.props, pool: [], unscheduled: [repairLeg] };
+  render(<Batches />);
+
+  expect(screen.getByText('Repair REP-2026-0042')).toBeInTheDocument();
+  expect(screen.getByText('Cara Santos')).toBeInTheDocument();
+  expect(screen.getByText('Adidas Ultraboost')).toBeInTheDocument();
+});
+
 it('distinguishes no deliveries from no filter matches', () => {
   const { rerender } = render(<Batches />);
   openBuilder();
@@ -189,7 +256,7 @@ it('retries draft creation without scheduling the same stops twice', async () =>
   mocks.createBatch.mockRejectedValueOnce({ response: { data: { message: 'Please retry.' } } });
   render(<Batches />);
   openBuilder();
-  selectOrder55();
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Select all matching deliveries' }));
   fireEvent.click(screen.getByRole('button', { name: 'Save Draft' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('Please retry.');
 
@@ -204,7 +271,7 @@ it('shows a Swal error when draft creation is rejected', async () => {
   });
   render(<Batches />);
   openBuilder();
-  selectOrder55();
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Select all matching deliveries' }));
   fireEvent.click(screen.getByRole('button', { name: 'Save Draft' }));
 
   await waitFor(() => expect(mocks.error).toHaveBeenCalledWith(
@@ -217,13 +284,16 @@ it('shows a Swal error when draft creation is rejected', async () => {
 it('keeps the saved batch selected after refreshed props hydrate it', async () => {
   const { rerender } = render(<Batches />);
   openBuilder();
-  selectOrder55();
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Select all matching deliveries' }));
   fireEvent.click(screen.getByRole('button', { name: 'Save Draft' }));
   await waitFor(() => expect(mocks.createBatch).toHaveBeenCalled());
 
   mocks.props = { ...mocks.props, batches: [{
     id: 41, delivery_date: '2026-07-15', delivery_window: 'morning', status: 'draft', capacity: 10,
-    assigned_stop_count: 1, rider_profile: null, legs: [{ ...unscheduledLeg, stop_sequence: 1, scheduled_delivery_date: '2026-07-15', delivery_window: 'morning' }],
+    assigned_stop_count: 2, rider_profile: null, legs: [
+      { ...unscheduledLeg, stop_sequence: 1, scheduled_delivery_date: '2026-07-15', delivery_window: 'morning' },
+      { ...scheduledLeg, stop_sequence: 2 },
+    ],
   }] };
   rerender(<Batches />);
 

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AlertTriangle, ChevronDown, ChevronUp, MoreHorizontal } from 'lucide-react';
-import type { DeliveryBatch, TrackingShipmentLeg } from '@/types/logistics';
+import { logisticsModuleLabel, type DeliveryBatch, type TrackingShipmentLeg } from '@/types/logistics';
 import BatchStopRow from './BatchStopRow';
 
 const formatDate = (value: string) => new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(`${value.slice(0, 10)}T00:00:00Z`));
@@ -40,6 +40,7 @@ export default function BatchCard({ batch, onOpen, onReview, onCancel, onRestore
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="font-bold text-gray-950 dark:text-white">Batch #{batch.id}</h3>
             <span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">{label(batch.status)}</span>
+            <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">{logisticsModuleLabel(batch.module)}</span>
           </div>
           <p className="mt-1 text-sm text-gray-500">{formatDate(batch.delivery_date)} · {label(batch.delivery_window)}</p>
           <p className="mt-1 text-sm text-gray-700 dark:text-gray-200">{batch.rider_profile?.name || 'Not assigned'}</p>

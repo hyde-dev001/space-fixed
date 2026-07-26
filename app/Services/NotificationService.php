@@ -7,6 +7,7 @@ use App\Models\NotificationPreference;
 use App\Models\User;
 use App\Models\ShopOwner;
 use App\Models\Order;
+use App\Models\RepairRequest;
 use App\Enums\NotificationType;
 use App\Mail\NotificationEmail;
 use App\Services\Notifications\RecipientResolver;
@@ -457,6 +458,76 @@ class NotificationService
             data: $repairData,
             actionUrl: '/my-repairs'
         );
+    }
+
+    public function notifyRepairDeliveryReconciliation(
+        RepairRequest $repair,
+        string $phase,
+        string $event,
+        float $amount,
+        string $reconciliationKey,
+    ): void {
+        $resolvedEvent = $event === 'resolved' ? 'resolved' : 'created';
+        $groupKey = "repair-delivery-reconciliation-{$resolvedEvent}-{$repair->id}-{$phase}-"
+            .substr(sha1($reconciliationKey), 0, 12);
+        $phaseLabel = $phase === 'return' ? 'return delivery' : 'pickup delivery';
+        $amountLabel = number_format($amount, 2);
+        $title = $resolvedEvent === 'resolved'
+            ? 'Repair Delivery Compensation Resolved'
+            : 'Repair Delivery Compensation Required';
+        $customerMessage = $resolvedEvent === 'resolved'
+            ? "The ₱{$amountLabel} {$phaseLabel} fee adjustment has been completed. You may now update the delivery plan."
+            : "The ₱{$amountLabel} {$phaseLabel} fee needs Finance adjustment before the delivery plan can be changed.";
+        $financeMessage = $resolvedEvent === 'resolved'
+            ? "Repair {$repair->request_id} {$phaseLabel} compensation has been resolved."
+            : "Repair {$repair->request_id} needs a ₱{$amountLabel} {$phaseLabel} compensation decision.";
+        $data = [
+            'repair_id' => (int) $repair->id,
+            'request_id' => (string) $repair->request_id,
+            'phase' => $phase,
+            'event' => $resolvedEvent,
+            'amount' => round($amount, 2),
+        ];
+
+        if ((int) $repair->user_id > 0
+            && ! Notification::query()->where('user_id', $repair->user_id)->where('group_key', $groupKey)->exists()) {
+            $this->sendToUser(
+                userId: (int) $repair->user_id,
+                type: NotificationType::REPAIR_STATUS_UPDATE,
+                title: $title,
+                message: $customerMessage,
+                data: $data,
+                actionUrl: '/my-repairs',
+                shopId: (int) $repair->shop_owner_id,
+                priority: 'high',
+                groupKey: $groupKey,
+                requiresAction: $resolvedEvent === 'created',
+            );
+        }
+
+        User::query()
+            ->where('shop_owner_id', $repair->shop_owner_id)
+            ->where('status', 'active')
+            ->get()
+            ->filter(fn (User $user): bool => $user->can('access-refund-approval'))
+            ->each(function (User $user) use ($repair, $title, $financeMessage, $data, $groupKey, $resolvedEvent): void {
+                if (Notification::query()->where('user_id', $user->id)->where('group_key', $groupKey)->exists()) {
+                    return;
+                }
+
+                $this->sendToUser(
+                    userId: (int) $user->id,
+                    type: NotificationType::REFUND_REQUEST,
+                    title: $title,
+                    message: $financeMessage,
+                    data: $data,
+                    actionUrl: '/finance?section=refund-approvals',
+                    shopId: (int) $repair->shop_owner_id,
+                    priority: 'high',
+                    groupKey: $groupKey,
+                    requiresAction: $resolvedEvent === 'created',
+                );
+            });
     }
 
     /**
@@ -2210,4 +2281,3 @@ class NotificationService
             ]);
     }
 }
-

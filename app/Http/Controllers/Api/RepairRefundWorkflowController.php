@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\PosRefund;
+use App\Models\RepairRequest;
+use App\Services\PaymentSettlementService;
 use App\Services\ShopOwnerApprovalPolicyService;
 use App\Services\RepairOnlineRefundWorkflowService;
 use App\Services\RepairPosRefundService;
@@ -14,6 +16,88 @@ use Illuminate\Validation\ValidationException;
 
 class RepairRefundWorkflowController extends Controller
 {
+    public function financeDeliveryReconciliations(Request $request, PaymentSettlementService $payments)
+    {
+        $actor = Auth::guard('user')->user();
+        $search = strtolower(trim((string) $request->input('search', '')));
+        $repairs = RepairRequest::query()
+            ->with('user:id,name')
+            ->where('shop_owner_id', (int) ($actor->shop_owner_id ?? 0))
+            ->whereNotNull('logistics_payment_reconciliation')
+            ->latest('id')
+            ->get();
+
+        $items = $repairs->flatMap(function (RepairRequest $repair) use ($payments): array {
+            $reconciliation = is_array($repair->logistics_payment_reconciliation)
+                ? $repair->logistics_payment_reconciliation
+                : [];
+            if ((string) data_get($reconciliation, 'status') !== 'pending') {
+                return [];
+            }
+
+            return collect(data_get($reconciliation, 'entries', []))
+                ->filter(fn ($entry): bool => is_array($entry)
+                    && (string) ($entry['type'] ?? '') === 'delivery_compensation'
+                    && in_array((string) ($entry['status'] ?? 'pending'), ['pending', 'processing'], true))
+                ->map(function (array $entry) use ($repair, $payments): array {
+                    $amount = round((float) ($entry['reconciliation_amount'] ?? 0), 2);
+
+                    return [
+                        'repair_id' => (int) $repair->id,
+                        'request_id' => (string) $repair->request_id,
+                        'customer_name' => (string) ($repair->customer_name ?: $repair->user?->name ?: 'Customer'),
+                        'compensation_key' => (string) $entry['compensation_key'],
+                        'phase' => (string) $entry['phase'],
+                        'reason' => (string) ($entry['reason'] ?? 'delivery_unavailable'),
+                        'amount' => $amount,
+                        'status' => (string) ($entry['status'] ?? 'pending'),
+                        'created_at' => $entry['created_at'] ?? null,
+                        'can_credit_balance' => $payments->canCreditDeliveryCompensation($repair, $amount),
+                    ];
+                })
+                ->values()
+                ->all();
+        })->when($search !== '', fn ($items) => $items->filter(
+            fn (array $item): bool => str_contains(strtolower(
+                $item['request_id'].' '.$item['customer_name'].' '.$item['phase']
+            ), $search)
+        ))->values();
+
+        return response()->json(['data' => $items]);
+    }
+
+    public function resolveFinanceDeliveryReconciliation(
+        Request $request,
+        RepairRequest $repair,
+        PaymentSettlementService $payments,
+    ) {
+        $actor = Auth::guard('user')->user();
+        abort_unless((int) ($actor->shop_owner_id ?? 0) === (int) $repair->shop_owner_id, 403);
+        $validated = $request->validate([
+            'compensation_key' => ['required', 'string', 'max:255'],
+            'action' => ['required', 'in:credit_balance,refund_original'],
+        ]);
+
+        $result = $payments->resolveRepairDeliveryReconciliation(
+            $repair,
+            (string) $validated['compensation_key'],
+            (string) $validated['action'],
+            (int) $actor->id,
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => $result['status'] === 'resolved'
+                ? 'Delivery fee compensation resolved.'
+                : 'Original-channel refund is still processing. The delivery plan remains locked.',
+            'data' => [
+                'status' => $result['status'],
+                'repair_id' => (int) $repair->id,
+                'entry' => $result['entry'],
+            ],
+        ], $result['status'] === 'processing' ? 202 : 200);
+    }
+
     public function financeIndex(Request $request)
     {
         $actor = Auth::guard('user')->user();

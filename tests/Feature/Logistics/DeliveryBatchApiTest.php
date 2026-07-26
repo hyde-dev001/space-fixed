@@ -19,10 +19,10 @@ class DeliveryBatchApiTest extends TestCase
 
     public function test_dispatcher_schedules_unscheduled_legs(): void
     {
-        $shop = ShopOwner::factory()->create();
+        $shop = ShopOwner::factory()->create(['business_type' => 'retail']);
         LogisticsSetting::create(['shop_owner_id' => $shop->id, 'operating_days' => range(1, 7)]);
         $leg = ShipmentLeg::factory()->create([
-            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id,
+            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id, 'source_type' => 'order'])->id,
             'scheduled_delivery_date' => null, 'delivery_window' => null, 'schedule_status' => null, 'status' => 'pending',
         ]);
         $date = today()->addDay()->toDateString();
@@ -39,20 +39,20 @@ class DeliveryBatchApiTest extends TestCase
 
     public function test_dispatcher_creates_and_offers_batch_then_assigned_rider_accepts(): void
     {
-        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company', 'business_type' => 'retail']);
         $user = User::factory()->create(['shop_owner_id' => $shop->id]);
         $rider = RiderProfile::factory()->create([
             'shop_owner_id' => $shop->id, 'linked_type' => User::class, 'linked_id' => $user->id,
             'active' => true, 'availability_status' => 'available',
         ]);
-        $leg = ShipmentLeg::factory()->create([
-            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id,
+        $legs = ShipmentLeg::factory()->count(2)->create([
+            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id, 'source_type' => 'order'])->id,
             'scheduled_delivery_date' => '2026-07-15', 'delivery_window' => 'morning',
             'schedule_status' => 'scheduled', 'status' => 'pending',
         ]);
 
         $batchId = $this->actingAs($shop, 'shop_owner')->postJson('/api/logistics/batches', [
-            'delivery_date' => '2026-07-15', 'delivery_window' => 'morning', 'leg_ids' => [$leg->id],
+            'delivery_date' => '2026-07-15', 'delivery_window' => 'morning', 'leg_ids' => $legs->pluck('id')->all(),
         ])->assertCreated()->json('batch.id');
         $this->postJson("/api/logistics/batches/{$batchId}/offer", ['rider_profile_id' => $rider->id])->assertOk();
         $this->actingAs($user, 'user')->postJson("/api/logistics/batches/{$batchId}/accept")
@@ -70,8 +70,8 @@ class DeliveryBatchApiTest extends TestCase
 
     public function test_offer_capacity_override_is_validated_forwarded_and_enforced(): void
     {
-        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
-        LogisticsSetting::create(['shop_owner_id' => $shop->id, 'daily_rider_capacity' => 1]);
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company', 'business_type' => 'retail']);
+        LogisticsSetting::create(['shop_owner_id' => $shop->id, 'daily_rider_capacity' => 2]);
         $rider = RiderProfile::factory()->create([
             'shop_owner_id' => $shop->id, 'active' => true, 'availability_status' => 'available',
             'daily_capacity' => null,
@@ -80,13 +80,13 @@ class DeliveryBatchApiTest extends TestCase
             'shop_owner_id' => $shop->id, 'rider_profile_id' => $rider->id,
             'delivery_date' => '2026-07-15', 'status' => 'offered', 'assigned_stop_count' => 1,
         ]);
-        $leg = ShipmentLeg::factory()->create([
-            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id,
+        $legs = ShipmentLeg::factory()->count(2)->create([
+            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id, 'source_type' => 'order'])->id,
             'scheduled_delivery_date' => '2026-07-15', 'delivery_window' => 'morning',
             'schedule_status' => 'scheduled', 'status' => 'pending',
         ]);
         $batchId = $this->actingAs($shop, 'shop_owner')->postJson('/api/logistics/batches', [
-            'delivery_date' => '2026-07-15', 'delivery_window' => 'morning', 'leg_ids' => [$leg->id],
+            'delivery_date' => '2026-07-15', 'delivery_window' => 'morning', 'leg_ids' => $legs->pluck('id')->all(),
         ])->assertCreated()->json('batch.id');
         $url = "/api/logistics/batches/{$batchId}/offer";
 
@@ -99,5 +99,89 @@ class DeliveryBatchApiTest extends TestCase
             ->assertOk()->assertJsonPath('batch.status', 'offered');
 
         $this->assertSame('Operational priority', DeliveryEvent::where('event_type', 'batch_offered')->latest('id')->firstOrFail()->metadata['capacity_override_reason']);
+    }
+
+    public function test_batch_api_rejects_single_and_mixed_module_stops(): void
+    {
+        $shop = ShopOwner::factory()->create(['business_type' => 'both']);
+        $retail = ShipmentLeg::factory()->create([
+            'shipment_id' => Shipment::factory()->create([
+                'shop_owner_id' => $shop->id,
+                'source_type' => 'order',
+            ])->id,
+            'scheduled_delivery_date' => '2026-07-15',
+            'delivery_window' => 'morning',
+            'schedule_status' => 'scheduled',
+            'status' => 'pending',
+        ]);
+        $repair = ShipmentLeg::factory()->create([
+            'shipment_id' => Shipment::factory()->create([
+                'shop_owner_id' => $shop->id,
+                'source_type' => 'repair_request',
+            ])->id,
+            'scheduled_delivery_date' => '2026-07-15',
+            'delivery_window' => 'morning',
+            'schedule_status' => 'scheduled',
+            'status' => 'pending',
+        ]);
+        $payload = ['delivery_date' => '2026-07-15', 'delivery_window' => 'morning'];
+
+        $this->actingAs($shop, 'shop_owner')
+            ->postJson('/api/logistics/batches', [...$payload, 'leg_ids' => [$retail->id]])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('leg_ids');
+
+        $this->postJson('/api/logistics/batches', [...$payload, 'leg_ids' => [$retail->id, $repair->id]])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('legs');
+
+        $this->assertDatabaseCount('delivery_batches', 0);
+        $this->assertNull($retail->fresh()->delivery_batch_id);
+        $this->assertNull($repair->fresh()->delivery_batch_id);
+    }
+
+    public function test_batch_index_and_suggestions_apply_the_authorized_module(): void
+    {
+        $shop = ShopOwner::factory()->create([
+            'business_type' => 'both',
+            'shop_latitude' => 14.5995,
+            'shop_longitude' => 120.9842,
+        ]);
+        LogisticsSetting::create(['shop_owner_id' => $shop->id, 'daily_rider_capacity' => 3]);
+        RiderProfile::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'active' => true,
+            'availability_status' => 'available',
+            'work_days' => [3],
+            'leave_dates' => [],
+        ]);
+        $retailShipment = Shipment::factory()->create(['shop_owner_id' => $shop->id, 'source_type' => 'order']);
+        $repairShipment = Shipment::factory()->create(['shop_owner_id' => $shop->id, 'source_type' => 'repair_request']);
+        $retailBatch = DeliveryBatch::factory()->create(['shop_owner_id' => $shop->id]);
+        $repairBatch = DeliveryBatch::factory()->create(['shop_owner_id' => $shop->id]);
+        ShipmentLeg::factory()->count(2)->create(['shipment_id' => $retailShipment->id, 'delivery_batch_id' => $retailBatch->id]);
+        ShipmentLeg::factory()->count(2)->create(['shipment_id' => $repairShipment->id, 'delivery_batch_id' => $repairBatch->id]);
+        $repairSuggestionLegs = ShipmentLeg::factory()->count(2)->create([
+            'shipment_id' => $repairShipment->id,
+            'scheduled_delivery_date' => '2026-07-15',
+            'delivery_window' => 'morning',
+            'schedule_status' => 'scheduled',
+            'status' => 'pending',
+            'destination_snapshot' => ['latitude' => 14.60, 'longitude' => 120.98],
+        ]);
+
+        $this->actingAs($shop, 'shop_owner')
+            ->getJson('/api/logistics/batches?module=repair')
+            ->assertOk()
+            ->assertJsonCount(1, 'batches')
+            ->assertJsonPath('batches.0.id', $repairBatch->id);
+
+        $suggestions = $this->getJson('/api/logistics/batch-suggestions?delivery_date=2026-07-15&delivery_window=morning&module=repair')
+            ->assertOk()
+            ->json('suggestions');
+
+        $this->assertCount(1, $suggestions);
+        $this->assertSame('repair', $suggestions[0]['module']);
+        $this->assertEqualsCanonicalizing($repairSuggestionLegs->pluck('id')->all(), $suggestions[0]['leg_ids']);
     }
 }

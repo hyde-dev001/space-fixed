@@ -8,6 +8,7 @@ use App\Models\Logistics\LogisticsSetting;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
+use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\User;
 use Database\Seeders\RolesAndPermissionsSeeder;
@@ -23,7 +24,7 @@ class LogisticsPageAccessTest extends TestCase
 
     public function test_shop_owner_can_access_logistics_pages(): void
     {
-        $shop = ShopOwner::factory()->create();
+        $shop = ShopOwner::factory()->create(['business_type' => 'both']);
 
         $this->actingAs($shop, 'shop_owner')->get('/shop-owner/logistics')->assertOk();
         $this->actingAs($shop, 'shop_owner')->get('/shop-owner/logistics/shipments')->assertOk();
@@ -79,7 +80,7 @@ class LogisticsPageAccessTest extends TestCase
 
     public function test_batches_page_includes_tenant_stop_details_and_capacity(): void
     {
-        $shop = ShopOwner::factory()->create();
+        $shop = ShopOwner::factory()->create(['business_type' => 'retail']);
         $otherShop = ShopOwner::factory()->create();
         LogisticsSetting::create(['shop_owner_id' => $shop->id, 'daily_rider_capacity' => 12]);
         $staff = User::factory()->create(['shop_owner_id' => $shop->id]);
@@ -114,6 +115,79 @@ class LogisticsPageAccessTest extends TestCase
         $this->assertSame(55, $props['batches'][0]['legs'][0]['shipment']['source_id']);
         $this->assertSame('Ana Reyes', $props['batches'][0]['legs'][0]['destination_snapshot']['name']);
         $this->assertSame($stopSnapshot, $props['batches'][0]['stop_snapshot']);
+    }
+
+    public function test_batches_page_filters_every_collection_by_module_but_keeps_unscheduled_slot_agnostic(): void
+    {
+        $shop = ShopOwner::factory()->create(['business_type' => 'both']);
+        $staff = User::factory()->create(['shop_owner_id' => $shop->id]);
+        Permission::findOrCreate('manage-logistics-batches', 'user');
+        $staff->givePermissionTo('manage-logistics-batches');
+        $date = '2026-07-15';
+        $retailShipment = Shipment::factory()->create(['shop_owner_id' => $shop->id, 'source_type' => 'order']);
+        $repairShipment = Shipment::factory()->create(['shop_owner_id' => $shop->id, 'source_type' => 'repair_request']);
+        $retailBatch = DeliveryBatch::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'delivery_date' => $date,
+            'delivery_window' => 'morning',
+        ]);
+        $repairBatch = DeliveryBatch::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'delivery_date' => $date,
+            'delivery_window' => 'morning',
+        ]);
+        $mixedBatch = DeliveryBatch::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'delivery_date' => $date,
+            'delivery_window' => 'morning',
+        ]);
+        ShipmentLeg::factory()->create(['shipment_id' => $retailShipment->id, 'delivery_batch_id' => $retailBatch->id]);
+        ShipmentLeg::factory()->create(['shipment_id' => $repairShipment->id, 'delivery_batch_id' => $repairBatch->id]);
+        ShipmentLeg::factory()->create(['shipment_id' => $retailShipment->id, 'delivery_batch_id' => $mixedBatch->id]);
+        ShipmentLeg::factory()->create(['shipment_id' => $repairShipment->id, 'delivery_batch_id' => $mixedBatch->id]);
+        $repairPool = ShipmentLeg::factory()->create([
+            'shipment_id' => $repairShipment->id,
+            'scheduled_delivery_date' => $date,
+            'delivery_window' => 'morning',
+            'schedule_status' => 'scheduled',
+            'status' => 'pending',
+        ]);
+        ShipmentLeg::factory()->create([
+            'shipment_id' => $retailShipment->id,
+            'scheduled_delivery_date' => $date,
+            'delivery_window' => 'morning',
+            'schedule_status' => 'scheduled',
+            'status' => 'pending',
+        ]);
+        $repairUnscheduled = ShipmentLeg::factory()->create([
+            'shipment_id' => $repairShipment->id,
+            'scheduled_delivery_date' => null,
+            'delivery_window' => null,
+            'schedule_status' => 'unscheduled',
+            'status' => 'pending',
+        ]);
+
+        $repairProps = $this->actingAs($staff, 'user')
+            ->get("/erp/logistics/batches?module=repair&date={$date}&window=morning")
+            ->assertOk()
+            ->viewData('page')['props'];
+
+        $this->assertSame([$repairBatch->id], collect($repairProps['batches'])->pluck('id')->all());
+        $this->assertSame([$repairPool->id], collect($repairProps['pool'])->pluck('id')->all());
+        $this->assertSame([$repairUnscheduled->id], collect($repairProps['unscheduled'])->pluck('id')->all());
+        $this->assertSame('repair', $repairProps['filters']['module']);
+
+        $allProps = $this->actingAs($staff, 'user')
+            ->get("/erp/logistics/batches?module=all&date={$date}&window=morning")
+            ->assertOk()
+            ->viewData('page')['props'];
+        $mixed = collect($allProps['batches'])->firstWhere('id', $mixedBatch->id);
+
+        $this->assertSame('mixed', $mixed['module']);
+        $this->assertEqualsCanonicalizing(
+            [$retailBatch->id, $repairBatch->id, $mixedBatch->id],
+            collect($allProps['batches'])->pluck('id')->all(),
+        );
     }
 
     public function test_logistics_rider_can_access_my_deliveries_through_legacy_shipments_link(): void
@@ -308,7 +382,7 @@ class LogisticsPageAccessTest extends TestCase
     {
         $this->seed(RolesAndPermissionsSeeder::class);
 
-        $shop = ShopOwner::factory()->create();
+        $shop = ShopOwner::factory()->create(['business_type' => 'both']);
         LogisticsSetting::create(['shop_owner_id' => $shop->id, 'max_delivery_attempts' => 3]);
         $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
         $dispatcher->assignRole('Logistics Dispatcher');
@@ -339,7 +413,7 @@ class LogisticsPageAccessTest extends TestCase
     {
         $this->seed(RolesAndPermissionsSeeder::class);
 
-        $shop = ShopOwner::factory()->create();
+        $shop = ShopOwner::factory()->create(['business_type' => 'both']);
         $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
         $dispatcher->assignRole('Logistics Dispatcher');
 
@@ -370,10 +444,112 @@ class LogisticsPageAccessTest extends TestCase
         $this->assertSame([$wanted->id], $shipmentIds);
     }
 
+    public function test_dispatcher_module_filter_scopes_shipments_and_single_module_shops(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        $shop = ShopOwner::factory()->create(['business_type' => 'both (retail & repair)']);
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $dispatcher->assignRole('Logistics Dispatcher');
+        $retail = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+            'purpose' => 'retail_delivery',
+        ]);
+        $repair = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'repair_request',
+            'purpose' => 'repair_return',
+        ]);
+        ShipmentLeg::factory()->create(['shipment_id' => $retail->id, 'delivery_window' => 'morning']);
+        ShipmentLeg::factory()->create(['shipment_id' => $repair->id, 'delivery_window' => 'afternoon']);
+
+        $response = $this->actingAs($dispatcher, 'user')
+            ->get('/erp/logistics/shipments?module=repair&window=afternoon')
+            ->assertOk();
+        $props = $response->viewData('page')['props'];
+
+        $this->assertSame('repair', $props['filters']['module']);
+        $this->assertSame('afternoon', $props['filters']['window']);
+        $this->assertSame(['retail', 'repair'], $props['availableModules']);
+        $this->assertTrue($props['showModuleFilter']);
+        $this->assertSame([$repair->id], collect($props['shipments']['data'])->pluck('id')->all());
+
+        $repairShop = ShopOwner::factory()->create(['business_type' => 'repair']);
+        $repairDispatcher = User::factory()->create(['shop_owner_id' => $repairShop->id]);
+        $repairDispatcher->assignRole('Logistics Dispatcher');
+        $repairOnly = Shipment::factory()->create([
+            'shop_owner_id' => $repairShop->id,
+            'source_type' => 'repair_request',
+        ]);
+        Shipment::factory()->create(['shop_owner_id' => $repairShop->id, 'source_type' => 'order']);
+
+        $single = $this->actingAs($repairDispatcher, 'user')
+            ->get('/erp/logistics/shipments?module=retail')
+            ->assertOk()
+            ->viewData('page')['props'];
+
+        $this->assertSame('repair', $single['filters']['module']);
+        $this->assertFalse($single['showModuleFilter']);
+        $this->assertSame([$repairOnly->id], collect($single['shipments']['data'])->pluck('id')->all());
+    }
+
+    public function test_dispatcher_pages_include_repair_source_summary(): void
+    {
+        $shop = ShopOwner::factory()->create(['business_type' => 'both']);
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        Permission::findOrCreate('assign-logistics-deliveries', 'user');
+        Permission::findOrCreate('manage-logistics-batches', 'user');
+        $dispatcher->givePermissionTo(['assign-logistics-deliveries', 'manage-logistics-batches']);
+        $repair = RepairRequest::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'request_id' => 'REP-2026-0042',
+            'customer_name' => 'Mia Santos',
+            'brand' => 'Nike',
+            'shoe_type' => 'Air Max 90',
+        ]);
+        $pickup = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'repair_request',
+            'source_id' => $repair->id,
+            'purpose' => 'repair_pickup',
+        ]);
+        ShipmentLeg::factory()->create(['shipment_id' => $pickup->id]);
+        $return = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'repair_request',
+            'source_id' => $repair->id,
+            'purpose' => 'repair_return',
+        ]);
+        $batch = DeliveryBatch::factory()->create(['shop_owner_id' => $shop->id]);
+        ShipmentLeg::factory()->create([
+            'shipment_id' => $return->id,
+            'delivery_batch_id' => $batch->id,
+        ]);
+        $expected = [
+            'request_number' => 'REP-2026-0042',
+            'customer_name' => 'Mia Santos',
+            'shoe_summary' => 'Nike Air Max 90',
+        ];
+
+        $shipments = $this->actingAs($dispatcher, 'user')
+            ->get('/erp/logistics/shipments?module=repair')
+            ->assertOk()
+            ->viewData('page')['props'];
+        $this->assertSame($expected, collect($shipments['shipments']['data'])
+            ->firstWhere('id', $pickup->id)['source_summary']);
+
+        $batches = $this->actingAs($dispatcher, 'user')
+            ->get('/erp/logistics/batches?module=repair')
+            ->assertOk()
+            ->viewData('page')['props'];
+        $this->assertSame($expected, collect($batches['batches'])
+            ->firstWhere('id', $batch->id)['legs'][0]['shipment']['source_summary']);
+    }
+
     public function test_dispatcher_can_filter_shipments_awaiting_proof_approval(): void
     {
         $this->seed(RolesAndPermissionsSeeder::class);
-        $shop = ShopOwner::factory()->create();
+        $shop = ShopOwner::factory()->create(['business_type' => 'both']);
         $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
         $dispatcher->assignRole('Logistics Dispatcher');
         $awaiting = Shipment::factory()->create(['shop_owner_id' => $shop->id, 'status' => 'active']);

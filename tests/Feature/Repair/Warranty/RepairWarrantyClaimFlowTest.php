@@ -2,10 +2,14 @@
 
 namespace Tests\Feature\Repair\Warranty;
 
+use App\Models\Logistics\LogisticsSetting;
+use App\Models\Logistics\Shipment;
 use App\Models\RepairRequest;
 use App\Models\RepairWarrantyClaim;
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Models\UserAddress;
+use App\Services\RepairDeliveryService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -92,28 +96,28 @@ class RepairWarrantyClaimFlowTest extends TestCase
         $this->assertSame(0.0, (float) $repair->total_refunded_amount);
     }
 
-    public function test_approve_claim_uses_preferred_receive_method_for_linked_return_delivery(): void
+    public function test_approve_claim_copies_versioned_addresses_and_charges_shop_owned_delivery_fees(): void
     {
-        [, $repairer, $repair, $claim] = $this->seedPendingClaimContext();
+        [$shop, $repairer, $repair, $claim] = $this->seedPendingClaimContext();
+        $shop->update([
+            'shop_latitude' => 14.5995,
+            'shop_longitude' => 120.9842,
+        ]);
+        LogisticsSetting::query()->create([
+            'shop_owner_id' => $shop->id,
+            'coverage_radius_km' => 12,
+        ]);
+        $address = $this->addressFor(User::query()->findOrFail($repair->user_id));
+        $delivery = app(RepairDeliveryService::class);
 
         $repair->forceFill([
-            'pickup_address' => [
-                'address_line' => '12 Sample Street',
-                'barangay' => 'Barangay Uno',
-                'city' => 'Makati',
-                'region' => 'NCR',
-                'postal_code' => '1200',
-            ],
-            'return_address' => [
-                'address_line' => '34 Return Avenue',
-                'barangay' => 'Barangay Dos',
-                'city' => 'Pasig',
-                'region' => 'NCR',
-                'postal_code' => '1600',
-            ],
+            'intake_address' => $delivery->snapshot($address, 'customer_delivery'),
+            'pickup_address' => $delivery->snapshot($address, 'customer_delivery'),
+            'return_address' => $delivery->snapshot($address, 'customer_pickup'),
         ])->save();
 
         $claim->forceFill([
+            'preferred_return_method' => 'shop_pickup',
             'preferred_receive_method' => 'shop_delivery',
         ])->save();
 
@@ -126,8 +130,82 @@ class RepairWarrantyClaimFlowTest extends TestCase
 
         $linked = RepairRequest::query()->findOrFail((int) $claim->fresh()->approved_repair_request_id);
 
+        $this->assertSame('pickup', (string) $linked->delivery_method);
+        $this->assertSame('shop_pickup', (string) $linked->intake_delivery_method);
         $this->assertSame('shop_delivery', (string) $linked->return_delivery_method);
-        $this->assertSame('Pasig', (string) data_get($linked->return_address, 'city'));
+        $this->assertSame($address->id, data_get($linked->intake_address, 'address_id'));
+        $this->assertSame($address->id, data_get($linked->return_address, 'address_id'));
+        $this->assertSame(
+            $delivery->snapshot($address, 'shop_pickup')['version'],
+            data_get($linked->intake_address, 'version')
+        );
+        $this->assertSame(
+            $delivery->snapshot($address, 'shop_delivery')['version'],
+            data_get($linked->return_address, 'version')
+        );
+        $this->assertGreaterThan(0, (float) $linked->intake_delivery_fee);
+        $this->assertGreaterThan(0, (float) $linked->return_delivery_fee);
+        $this->assertTrue((bool) data_get($linked->intake_logistics_quote, 'available'));
+        $this->assertTrue((bool) data_get($linked->return_logistics_quote, 'available'));
+        $this->assertTrue((bool) $linked->payment_enabled);
+        $this->assertSame('pending', (string) $linked->payment_status);
+        $this->assertSame(0.0, (float) $linked->final_total);
+        $this->assertSame(
+            0,
+            Shipment::query()
+                ->where('source_type', 'repair_request')
+                ->where('source_id', $linked->id)
+                ->count()
+        );
+    }
+
+    public function test_outside_coverage_blocks_shop_owned_warranty_delivery_but_allows_third_party(): void
+    {
+        [$shop, $repairer, $repair, $claim] = $this->seedPendingClaimContext();
+        $shop->update([
+            'shop_latitude' => 14.5995,
+            'shop_longitude' => 120.9842,
+        ]);
+        LogisticsSetting::query()->create([
+            'shop_owner_id' => $shop->id,
+            'coverage_radius_km' => 2,
+        ]);
+        $address = $this->addressFor(
+            User::query()->findOrFail($repair->user_id),
+            ['latitude' => 15.2, 'longitude' => 121.7],
+        );
+        $delivery = app(RepairDeliveryService::class);
+        $repair->forceFill([
+            'intake_address' => $delivery->snapshot($address, 'customer_delivery'),
+            'pickup_address' => $delivery->snapshot($address, 'customer_delivery'),
+        ])->save();
+        $claim->forceFill(['preferred_return_method' => 'shop_pickup'])->save();
+
+        $this->actingAs($repairer, 'user')
+            ->postJson("/api/repairer/warranty-claims/{$claim->id}/approve")
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('intake_address');
+
+        $this->assertNull($claim->fresh()->approved_repair_request_id);
+
+        $claim->forceFill(['preferred_return_method' => 'customer_delivery'])->save();
+
+        $this->actingAs($repairer, 'user')
+            ->postJson("/api/repairer/warranty-claims/{$claim->id}/approve")
+            ->assertOk();
+
+        $linked = RepairRequest::query()->findOrFail((int) $claim->fresh()->approved_repair_request_id);
+        $this->assertSame('customer_delivery', (string) $linked->intake_delivery_method);
+        $this->assertSame(0.0, (float) $linked->intake_delivery_fee);
+        $this->assertSame('completed', (string) $linked->payment_status);
+        $this->assertFalse((bool) $linked->payment_enabled);
+        $this->assertSame(
+            0,
+            Shipment::query()
+                ->where('source_type', 'repair_request')
+                ->where('source_id', $linked->id)
+                ->count()
+        );
     }
 
     public function test_reject_claim_persists_reason_and_creates_no_linked_job(): void
@@ -381,5 +459,23 @@ class RepairWarrantyClaimFlowTest extends TestCase
         ]);
 
         return [$shopOwner, $repairer, $repair, $claim];
+    }
+
+    private function addressFor(User $customer, array $overrides = []): UserAddress
+    {
+        return UserAddress::query()->create(array_merge([
+            'user_id' => $customer->id,
+            'name' => $customer->name,
+            'phone' => '09171234567',
+            'region' => 'CALABARZON',
+            'province' => 'Cavite',
+            'city' => 'General Trias City',
+            'barangay' => 'Buenavista II',
+            'postal_code' => '4107',
+            'address_line' => '126 Ilang-ilang Street',
+            'latitude' => 14.6000,
+            'longitude' => 120.9800,
+            'delivery_instructions' => 'Blue gate',
+        ], $overrides));
     }
 }

@@ -4,12 +4,14 @@ namespace App\Services;
 
 use App\Enums\NotificationType;
 use App\Models\Notification;
+use App\Models\PosPaymentLine;
 use App\Models\PosRefund;
 use App\Models\PosTransaction;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Services\ShopOwnerApprovalPolicyService;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -92,7 +94,9 @@ class RepairPosRefundService
             'requested_at' => now(),
         ]);
 
-        $this->notifyRefundRequested($refund, $source, $requested);
+        if ($workflowSource !== 'delivery_reconciliation') {
+            $this->notifyRefundRequested($refund, $source, $requested);
+        }
 
         return $refund;
     }
@@ -173,6 +177,118 @@ class RepairPosRefundService
         }
 
         return $refund->fresh('legs');
+    }
+
+    public function executeDeliveryCompensation(
+        RepairRequest $repair,
+        float $amount,
+        int $actorId,
+        ?PosRefund $existingRefund = null,
+    ): PosRefund {
+        if ($existingRefund) {
+            if ((string) $existingRefund->status === 'processing') {
+                return $this->reconcileGatewayProcessingRefund($existingRefund);
+            }
+            if ((string) $existingRefund->status === 'succeeded') {
+                return $existingRefund->fresh();
+            }
+        }
+
+        $source = PosTransaction::query()
+            ->where('module_type', 'repair')
+            ->where('module_reference_id', $repair->id)
+            ->whereIn('status', ['paid', 'partially_refunded', 'refunded'])
+            ->latest('paid_at')
+            ->latest('id')
+            ->first();
+
+        if (! $source) {
+            $paymentReference = collect(is_array($repair->paymongo_payment_ids) ? $repair->paymongo_payment_ids : [])
+                ->push((string) ($repair->paymongo_payment_id ?? ''))
+                ->map(fn ($reference) => trim((string) $reference))
+                ->first(fn (string $reference): bool => $this->looksLikeGatewayProviderReference($reference));
+
+            if (! $paymentReference || (float) $repair->total_paid_amount < $amount) {
+                throw ValidationException::withMessages([
+                    'action' => ['No refundable original payment channel was found for this delivery fee.'],
+                ]);
+            }
+
+            $source = DB::transaction(function () use ($repair, $paymentReference, $actorId): PosTransaction {
+                $paidAmount = round((float) $repair->total_paid_amount, 2);
+                $transaction = PosTransaction::create([
+                    'transaction_no' => 'POS-BKF-DEL-'.now()->format('YmdHis').'-'.strtoupper(Str::random(4)),
+                    'shop_owner_id' => (int) $repair->shop_owner_id,
+                    'module_type' => 'repair',
+                    'module_reference_id' => (int) $repair->id,
+                    'customer_type' => 'registered',
+                    'customer_id' => (int) $repair->user_id,
+                    'due_type' => 'full',
+                    'subtotal' => $paidAmount,
+                    'tax_amount' => 0,
+                    'discount_amount' => 0,
+                    'total_amount' => $paidAmount,
+                    'paid_amount' => $paidAmount,
+                    'status' => 'paid',
+                    'paid_at' => now(),
+                    'created_by' => $actorId > 0 ? $actorId : null,
+                    'metadata' => ['source' => 'repair_delivery_reconciliation_backfill'],
+                ]);
+                PosPaymentLine::create([
+                    'pos_transaction_id' => $transaction->id,
+                    'tender_type' => str_starts_with(strtolower($paymentReference), 'pmc_')
+                        ? 'paymongo_card'
+                        : 'paymongo_wallet',
+                    'provider_reference' => $paymentReference,
+                    'amount' => $paidAmount,
+                    'status' => 'paid',
+                    'paid_at' => now(),
+                ]);
+
+                return $transaction;
+            });
+        }
+
+        $refund = $existingRefund;
+        if (! $refund || in_array((string) $refund->status, self::FINAL_STATUSES, true)) {
+            $refund = $this->createRefundWithSplitLegs($source, [
+                'workflow_source' => 'delivery_reconciliation',
+                'request_type' => 'partial',
+                'requested_amount' => round($amount, 2),
+                'reason_code' => 'delivery_fee_reconciliation',
+                'reason_notes' => 'Finance-approved repair delivery fee compensation.',
+                'paymongo_payment_id' => $repair->paymongo_payment_id,
+                'paymongo_payment_ids' => is_array($repair->paymongo_payment_ids)
+                    ? $repair->paymongo_payment_ids
+                    : [],
+            ], $actorId);
+            $refund->update([
+                'repairer_status' => 'approved',
+                'finance_status' => 'approved',
+                'shop_owner_status' => 'skipped',
+                'status' => 'approved',
+                'approved_amount' => round($amount, 2),
+                'approved_by' => $actorId > 0 ? $actorId : null,
+                'approved_at' => now(),
+            ]);
+        }
+
+        $refund->loadMissing('legs');
+        $hasGateway = $refund->legs->contains(
+            fn ($leg): bool => (string) $leg->leg_type === 'gateway' && (float) $leg->requested_amount > 0
+        );
+
+        return $this->execute(
+            $refund->fresh('legs'),
+            $actorId,
+            $hasGateway ? 'gateway' : 'manual',
+            'Repair delivery fee compensation.',
+            [
+                'execution_channel' => $hasGateway ? null : 'manual_cash',
+                'execution_reference' => 'DELIVERY-COMP-'.$repair->id,
+                'execution_amount' => round($amount, 2),
+            ],
+        );
     }
 
     private function inferGatewayAmount(PosTransaction $source, float $requestedAmount, string $workflowSource = 'pos'): float
@@ -951,6 +1067,7 @@ class RepairPosRefundService
             ]);
         }
 
+        if ((string) $refund->workflow_source !== 'delivery_reconciliation') {
             $this->notifyRefundParties(
                 refund: $refund,
                 source: $source,
@@ -959,6 +1076,7 @@ class RepairPosRefundService
                 actionUrl: '/my-repairs',
                 includeOwner: true,
             );
+        }
 
         return $refund->fresh();
     }

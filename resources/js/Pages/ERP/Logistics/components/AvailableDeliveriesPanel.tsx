@@ -1,16 +1,19 @@
 import React from 'react';
 import { Search, SlidersHorizontal, X } from 'lucide-react';
-import type { TrackingShipmentLeg } from '@/types/logistics';
-
-const sourceLabel = (leg: TrackingShipmentLeg) => leg.shipment?.source_type === 'order'
-  ? `Order #${leg.shipment.source_id}`
-  : `Leg #${leg.id}`;
+import {
+  logisticsModuleForSourceType,
+  logisticsModuleLabel,
+  logisticsSourceLabel,
+  type LogisticsModule,
+  type TrackingShipmentLeg,
+} from '@/types/logistics';
 
 type Props = {
   rows: TrackingShipmentLeg[];
   totalRows: number;
   loading?: boolean;
   selectedIds: number[];
+  selectedModule?: LogisticsModule | null;
   search: string;
   date: string;
   window: string;
@@ -25,7 +28,7 @@ type Props = {
 };
 
 export default function AvailableDeliveriesPanel({
-  rows, totalRows, selectedIds, search, date, window, status, loading = false,
+  rows, totalRows, selectedIds, selectedModule, search, date, window, status, loading = false,
   onSearchChange, onDateChange, onWindowChange, onStatusChange,
   onToggle, onSelectAll, onClearFilters,
 }: Props) {
@@ -73,14 +76,19 @@ export default function AvailableDeliveriesPanel({
       {!loading && rows.map((leg) => {
         const destination = leg.destination_snapshot;
         const scheduled = Boolean(leg.scheduled_delivery_date);
-        return <label key={leg.id} className="flex min-h-20 cursor-pointer items-start gap-3 rounded-xl border border-gray-200 p-3 hover:border-blue-300 hover:bg-blue-50/40 dark:border-gray-700">
-          <input type="checkbox" checked={selectedIds.includes(leg.id)} onChange={(event) => onToggle(leg.id, event.target.checked)} className="mt-1" />
+        const module = logisticsModuleForSourceType(leg.shipment?.source_type);
+        const incompatible = Boolean(selectedModule && module !== selectedModule);
+        return <label key={leg.id} className={`flex min-h-20 items-start gap-3 rounded-xl border border-gray-200 p-3 dark:border-gray-700 ${incompatible ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:border-blue-300 hover:bg-blue-50/40'}`}>
+          <input type="checkbox" disabled={incompatible} checked={selectedIds.includes(leg.id)} onChange={(event) => onToggle(leg.id, event.target.checked)} className="mt-1" />
           <span className="min-w-0 flex-1">
             <span className="flex flex-wrap items-center gap-2">
-              <strong className="text-sm text-gray-950 dark:text-white">{sourceLabel(leg)}</strong>
+              <strong className="text-sm text-gray-950 dark:text-white">{logisticsSourceLabel(leg.shipment)}</strong>
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">{logisticsModuleLabel(module)}</span>
               <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${scheduled ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>{scheduled ? 'Scheduled' : 'Needs scheduling'}</span>
+              {incompatible && <span className="text-xs font-semibold text-amber-700">Choose one module per batch</span>}
             </span>
-            <span className="mt-1 block text-sm text-gray-700 dark:text-gray-200">{destination?.name || 'Customer not provided'}</span>
+            <span className="mt-1 block text-sm text-gray-700 dark:text-gray-200">{leg.shipment?.source_summary?.customer_name || destination?.name || 'Customer not provided'}</span>
+            {leg.shipment?.source_summary?.shoe_summary && <span className="block text-xs font-medium text-gray-600">{leg.shipment.source_summary.shoe_summary}</span>}
             <span className="block truncate text-xs text-gray-500">{destination?.phone || 'No phone'} · {destination?.address || 'No address'}</span>
           </span>
         </label>;

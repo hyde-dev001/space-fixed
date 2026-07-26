@@ -28,6 +28,9 @@ vi.mock('../../Shared/Navigation', () => ({ default: () => null }));
 
 describe('ShipmentTracking', () => {
   beforeEach(() => {
+    shipment.purpose = 'retail_delivery';
+    shipment.source_type = 'order';
+    shipment.source_summary = null;
     shipment.status = 'active';
     shipment.legs = [{
       id: 2,
@@ -55,6 +58,24 @@ describe('ShipmentTracking', () => {
     expect(screen.getByText('Delivery Method')).toBeInTheDocument();
     expect(screen.getByText('SoleSpace Shop Logistics')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Open SoleSpace tracking' })).not.toBeInTheDocument();
+  });
+
+  it('shows repair source details and returns to repairs', () => {
+    shipment.purpose = 'repair_return';
+    shipment.source_type = 'repair_request';
+    shipment.source_summary = {
+      request_number: 'REP-2026-0042',
+      customer_name: 'Mia Santos',
+      shoe_summary: 'Nike Air Max 90',
+    };
+
+    render(<ShipmentTracking />);
+
+    expect(screen.getByRole('heading', { name: 'Repair Return' })).toBeInTheDocument();
+    expect(screen.getByText('REP-2026-0042')).toBeInTheDocument();
+    expect(screen.getByText('Mia Santos')).toBeInTheDocument();
+    expect(screen.getByText('Nike Air Max 90')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Back to repairs' })).toBeInTheDocument();
   });
 
   it('shows a customer-friendly status while delivery proof is being verified', () => {

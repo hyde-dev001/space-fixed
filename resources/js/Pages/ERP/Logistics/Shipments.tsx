@@ -4,12 +4,21 @@ import axios from 'axios';
 import Swal from 'sweetalert2';
 import AppLayoutERP from '@/layout/AppLayout_ERP';
 import { Table, TableBody, TableCell, TableHeader, TableRow } from '@/components/ui/table';
-import type { LogisticsShipment, PaginatedResponse, TrackingShipmentLeg } from '@/types/logistics';
+import {
+  logisticsModuleForSourceType,
+  logisticsModuleLabel,
+  logisticsSourceLabel,
+  type LogisticsModule,
+  type LogisticsShipment,
+  type PaginatedResponse,
+  type TrackingShipmentLeg,
+} from '@/types/logistics';
 
 type ShipmentFilters = {
   status: string;
   purpose?: string;
   window: string;
+  module?: 'all' | LogisticsModule;
 };
 
 const statusOptions = [
@@ -34,12 +43,12 @@ const riderStatusOptions = [
   ['cancelled', 'Cancelled'],
 ];
 
-const purposeOptions = [
-  ['all', 'All Types'],
-  ['retail_delivery', 'Retail Delivery'],
-  ['repair_pickup', 'Repair Pickup'],
-  ['repair_return', 'Repair Return'],
-  ['refund_return', 'Refund Return'],
+const purposeOptions: Array<[string, string, 'all' | LogisticsModule]> = [
+  ['all', 'All Types', 'all'],
+  ['retail_delivery', 'Retail Delivery', 'retail'],
+  ['refund_return', 'Refund Return', 'retail'],
+  ['repair_pickup', 'Repair Pickup', 'repair'],
+  ['repair_return', 'Repair Return', 'repair'],
 ];
 
 function label(value: string) {
@@ -70,7 +79,7 @@ const toast = (icon: 'success' | 'error' | 'warning', title: string) => Swal.fir
 });
 
 export default function Shipments({ children }: React.PropsWithChildren) {
-  const { shipments, filters, assignableRiders, canAssign, canUpdateStatus, canRecordProof, canApproveProof, riderMode, maxDeliveryAttempts = 2 } = usePage<{
+  const { shipments, filters, assignableRiders, canAssign, canUpdateStatus, canRecordProof, canApproveProof, riderMode, maxDeliveryAttempts = 2, availableModules = [], showModuleFilter = false } = usePage<{
     shipments: PaginatedResponse<LogisticsShipment>;
     filters: ShipmentFilters;
     assignableRiders: Array<{ id: number; name: string; phone?: string | null }>;
@@ -80,6 +89,8 @@ export default function Shipments({ children }: React.PropsWithChildren) {
     canApproveProof: boolean;
     riderMode: boolean;
     maxDeliveryAttempts?: number;
+    availableModules?: LogisticsModule[];
+    showModuleFilter?: boolean;
   }>().props;
   const [expandedShipmentId, setExpandedShipmentId] = useState<number | null>(null);
   const [selectedRiders, setSelectedRiders] = useState<Record<number, string>>({});
@@ -94,11 +105,18 @@ export default function Shipments({ children }: React.PropsWithChildren) {
   const hasActionColumn = riderMode || canAssign || canUpdateStatus || canRecordProof || canApproveProof;
 
   const updateFilter = (key: keyof ShipmentFilters, value: string) => {
-    router.get(riderMode ? '/erp/logistics/deliveries' : '/erp/logistics/shipments', { ...filters, [key]: value, page: 1 }, {
+    const next = { ...filters, [key]: value, page: 1 };
+    if (key === 'module') {
+      const purpose = purposeOptions.find(([option]) => option === filters.purpose);
+      if (purpose && purpose[2] !== 'all' && purpose[2] !== value) next.purpose = 'all';
+    }
+    router.get(riderMode ? '/erp/logistics/deliveries' : '/erp/logistics/shipments', next, {
       preserveScroll: true,
       preserveState: true,
     });
   };
+  const selectedModule = filters.module ?? (availableModules.length === 1 ? availableModules[0] : 'all');
+  const visiblePurposeOptions = purposeOptions.filter(([, , module]) => selectedModule === 'all' || module === 'all' || module === selectedModule);
 
   const act = async (url: string, body?: FormData | Record<string, string>, issue = false) => {
     setActionError(null);
@@ -286,7 +304,26 @@ export default function Shipments({ children }: React.PropsWithChildren) {
               className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
               aria-label="Filter shipments by type"
             >
-              {purposeOptions.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
+              {visiblePurposeOptions.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
+            </select>}
+            {!riderMode && showModuleFilter && <select
+              value={selectedModule}
+              onChange={(event) => updateFilter('module', event.target.value)}
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+              aria-label="Filter shipments by module"
+            >
+              <option value="all">All modules</option>
+              {availableModules.map((module) => <option key={module} value={module}>{logisticsModuleLabel(module)}</option>)}
+            </select>}
+            {!riderMode && <select
+              value={filters.window ?? 'all'}
+              onChange={(event) => updateFilter('window', event.target.value)}
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+              aria-label="Filter shipments by delivery window"
+            >
+              <option value="all">All windows</option>
+              <option value="morning">Morning</option>
+              <option value="afternoon">Afternoon</option>
             </select>}
             {riderMode && <select
               value={filters.window}
@@ -339,7 +376,15 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                         {label(shipment.status)}
                       </span>
                     </TableCell>
-                    <TableCell className="px-6 py-4 text-gray-600 dark:text-gray-300">{shipment.source_type} #{shipment.source_id}</TableCell>
+                    <TableCell className="px-6 py-4 text-gray-600 dark:text-gray-300">
+                      <span className="mr-2 inline-flex rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
+                        {logisticsModuleLabel(logisticsModuleForSourceType(shipment.source_type))}
+                      </span>
+                      <span>{logisticsSourceLabel(shipment)}</span>
+                      {shipment.source_summary && <span className="mt-1 block text-xs text-gray-500">
+                        {shipment.source_summary.customer_name} · {shipment.source_summary.shoe_summary}
+                      </span>}
+                    </TableCell>
                     <TableCell className="px-6 py-4 text-gray-600 dark:text-gray-300">{shipment.legs?.length ?? 0}</TableCell>
                     {hasActionColumn && (
                       <TableCell className="px-6 py-4">
