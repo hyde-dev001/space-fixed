@@ -476,11 +476,12 @@ final class RepairDeliveryService
         $canRelease = in_array((string) $repair->status, $expectedStatuses, true)
             && $paymentSatisfied
             && ! (bool) $repair->pickup_enabled
-            && $repair->return_logistics_locked_at === null
+            && ($method === 'shop_delivery' || $repair->return_logistics_locked_at === null)
             && ($method !== 'shop_delivery' || $state['approved']);
 
         $blockedReason = null;
-        if ((bool) $repair->pickup_enabled || $repair->return_logistics_locked_at !== null) {
+        if ((bool) $repair->pickup_enabled
+            || ($method !== 'shop_delivery' && $repair->return_logistics_locked_at !== null)) {
             $blockedReason = 'Customer receipt confirmation is already active.';
         } elseif (! in_array((string) $repair->status, $expectedStatuses, true)) {
             $blockedReason = $method === 'shop_delivery'
