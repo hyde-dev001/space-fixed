@@ -96,39 +96,9 @@ class RepairWarrantyClaimFlowTest extends TestCase
         $this->assertSame(0.0, (float) $repair->total_refunded_amount);
     }
 
-    public function test_approve_claim_copies_versioned_addresses_and_charges_shop_owned_delivery_fees(): void
+    public function test_approve_claim_preserves_shop_owned_quotes_as_shop_sponsored_delivery(): void
     {
-        [$shop, $repairer, $repair, $claim] = $this->seedPendingClaimContext();
-        $shop->update([
-            'shop_latitude' => 14.5995,
-            'shop_longitude' => 120.9842,
-        ]);
-        LogisticsSetting::query()->create([
-            'shop_owner_id' => $shop->id,
-            'coverage_radius_km' => 12,
-        ]);
-        $address = $this->addressFor(User::query()->findOrFail($repair->user_id));
-        $delivery = app(RepairDeliveryService::class);
-
-        $repair->forceFill([
-            'intake_address' => $delivery->snapshot($address, 'customer_delivery'),
-            'pickup_address' => $delivery->snapshot($address, 'customer_delivery'),
-            'return_address' => $delivery->snapshot($address, 'customer_pickup'),
-        ])->save();
-
-        $claim->forceFill([
-            'preferred_return_method' => 'shop_pickup',
-            'preferred_receive_method' => 'shop_delivery',
-        ])->save();
-
-        $response = $this->actingAs($repairer, 'user')->postJson(
-            "/api/repairer/warranty-claims/{$claim->id}/approve"
-        );
-
-        $response->assertStatus(200)
-            ->assertJsonPath('success', true);
-
-        $linked = RepairRequest::query()->findOrFail((int) $claim->fresh()->approved_repair_request_id);
+        [, , $address, $linked, $delivery] = $this->approveShopSponsoredWarranty();
 
         $this->assertSame('pickup', (string) $linked->delivery_method);
         $this->assertSame('shop_pickup', (string) $linked->intake_delivery_method);
@@ -147,9 +117,18 @@ class RepairWarrantyClaimFlowTest extends TestCase
         $this->assertGreaterThan(0, (float) $linked->return_delivery_fee);
         $this->assertTrue((bool) data_get($linked->intake_logistics_quote, 'available'));
         $this->assertTrue((bool) data_get($linked->return_logistics_quote, 'available'));
-        $this->assertTrue((bool) $linked->payment_enabled);
-        $this->assertSame('pending', (string) $linked->payment_status);
+        $this->assertFalse((bool) $linked->payment_enabled);
+        $this->assertNull($linked->payment_enabled_at);
+        $this->assertSame('completed', (string) $linked->payment_status);
+        $this->assertSame('completed', (string) $linked->payment_status_derived);
+        $this->assertSame(0.0, (float) $linked->total_paid_amount);
         $this->assertSame(0.0, (float) $linked->final_total);
+        $this->assertNotNull($linked->intake_logistics_locked_at);
+        $this->assertNotNull($linked->return_logistics_locked_at);
+        $this->assertSame(
+            data_get($linked->return_address, 'version'),
+            (string) $linked->return_address_confirmed_version,
+        );
         $this->assertSame(
             0,
             Shipment::query()
@@ -157,6 +136,64 @@ class RepairWarrantyClaimFlowTest extends TestCase
                 ->where('source_id', $linked->id)
                 ->count()
         );
+
+        $linked->update(['status' => 'repairer_accepted']);
+        $delivery->tryCreateIntakeShipment($linked->fresh());
+        $delivery->tryCreateIntakeShipment($linked->fresh());
+
+        $this->assertSame(1, Shipment::query()
+            ->where('source_type', 'repair_request')
+            ->where('source_id', $linked->id)
+            ->where('purpose', 'repair_pickup')
+            ->count());
+
+        $linked->update(['status' => 'ready_for_pickup']);
+        $delivery->tryCreateReturnShipment($linked->fresh());
+        $delivery->tryCreateReturnShipment($linked->fresh());
+
+        $this->assertSame(1, Shipment::query()
+            ->where('source_type', 'repair_request')
+            ->where('source_id', $linked->id)
+            ->where('purpose', 'repair_return')
+            ->count());
+    }
+
+    public function test_shop_sponsored_warranty_coverage_loss_creates_no_refund_or_shipment(): void
+    {
+        [$settings, , , $linked, $delivery] = $this->approveShopSponsoredWarranty();
+        $linked->update(['status' => 'repairer_accepted']);
+        $settings->update(['coverage_radius_km' => 0.01]);
+
+        $this->assertNull($delivery->tryCreateIntakeShipment($linked->fresh()));
+        $this->assertNull($delivery->tryCreateIntakeShipment($linked->fresh()));
+        $this->assertSame(0, Shipment::query()
+            ->where('source_type', 'repair_request')
+            ->where('source_id', $linked->id)
+            ->where('purpose', 'repair_pickup')
+            ->count());
+        $this->assertNull($linked->fresh()->logistics_payment_reconciliation);
+        $this->assertSame(0.0, (float) $linked->fresh()->total_refunded_amount);
+        $this->assertDatabaseCount('pos_refunds', 0);
+    }
+
+    public function test_cancelling_unstarted_shop_sponsored_warranty_leg_creates_no_refund(): void
+    {
+        [, $repairer, , $linked, $delivery] = $this->approveShopSponsoredWarranty();
+        $linked->update(['status' => 'repairer_accepted']);
+        $shipment = $delivery->tryCreateIntakeShipment($linked->fresh());
+
+        $result = $delivery->cancelPaidDeliveryLeg(
+            $linked->fresh(),
+            'intake',
+            'Customer requested a different pickup address.',
+            (int) $repairer->id,
+        );
+
+        $this->assertSame('cancelled', $shipment?->fresh()->status->value);
+        $this->assertFalse($result['created']);
+        $this->assertNull($linked->fresh()->logistics_payment_reconciliation);
+        $this->assertSame(0.0, (float) $linked->fresh()->total_refunded_amount);
+        $this->assertDatabaseCount('pos_refunds', 0);
     }
 
     public function test_outside_coverage_blocks_shop_owned_warranty_delivery_but_allows_third_party(): void
@@ -459,6 +496,47 @@ class RepairWarrantyClaimFlowTest extends TestCase
         ]);
 
         return [$shopOwner, $repairer, $repair, $claim];
+    }
+
+    /**
+     * @return array{0: LogisticsSetting, 1: User, 2: UserAddress, 3: RepairRequest, 4: RepairDeliveryService}
+     */
+    private function approveShopSponsoredWarranty(): array
+    {
+        [$shop, $repairer, $repair, $claim] = $this->seedPendingClaimContext();
+        $shop->update([
+            'shop_latitude' => 14.5995,
+            'shop_longitude' => 120.9842,
+        ]);
+        $settings = LogisticsSetting::query()->create([
+            'shop_owner_id' => $shop->id,
+            'coverage_radius_km' => 12,
+        ]);
+        $address = $this->addressFor(User::query()->findOrFail($repair->user_id));
+        $delivery = app(RepairDeliveryService::class);
+
+        $repair->forceFill([
+            'intake_address' => $delivery->snapshot($address, 'customer_delivery'),
+            'pickup_address' => $delivery->snapshot($address, 'customer_delivery'),
+            'return_address' => $delivery->snapshot($address, 'customer_pickup'),
+        ])->save();
+        $claim->forceFill([
+            'preferred_return_method' => 'shop_pickup',
+            'preferred_receive_method' => 'shop_delivery',
+        ])->save();
+
+        $this->actingAs($repairer, 'user')
+            ->postJson("/api/repairer/warranty-claims/{$claim->id}/approve")
+            ->assertOk()
+            ->assertJsonPath('success', true);
+
+        return [
+            $settings,
+            $repairer,
+            $address,
+            RepairRequest::query()->findOrFail((int) $claim->fresh()->approved_repair_request_id),
+            $delivery,
+        ];
     }
 
     private function addressFor(User $customer, array $overrides = []): UserAddress

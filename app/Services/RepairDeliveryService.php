@@ -596,6 +596,11 @@ final class RepairDeliveryService
         string $reason,
         array $details = [],
     ): ?array {
+        if ((bool) ($repair->is_warranty_job ?? false)
+            || (string) ($repair->billing_mode ?? '') === 'warranty_no_charge') {
+            return null;
+        }
+
         $isIntake = $phase === 'intake';
         $snapshot = $isIntake ? $repair->intake_address : $repair->return_address;
         $lock = $isIntake ? $repair->intake_logistics_locked_at : $repair->return_logistics_locked_at;
