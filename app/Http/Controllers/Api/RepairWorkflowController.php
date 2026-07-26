@@ -2313,10 +2313,14 @@ class RepairWorkflowController extends Controller
             (string) $validated['reason'],
             (int) $user->id,
         );
+        $sponsoredWarranty = (bool) ($result['repair']->is_warranty_job ?? false)
+            || (string) ($result['repair']->billing_mode ?? '') === 'warranty_no_charge';
 
         return response()->json([
             'success' => true,
-            'message' => 'Delivery leg cancelled. Finance compensation is required before the delivery plan can be changed.',
+            'message' => $sponsoredWarranty
+                ? 'Delivery leg cancelled. The customer can update the sponsored delivery plan.'
+                : 'Delivery leg cancelled. Finance compensation is required before the delivery plan can be changed.',
             'data' => [
                 'repair' => $result['repair'],
                 'reconciliation' => $result['reconciliation'],

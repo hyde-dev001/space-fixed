@@ -1661,6 +1661,8 @@ class RepairRequestController extends Controller
                     'message' => 'Repair request not found',
                 ], 404);
             }
+            $shopSponsoredWarranty = (bool) ($repair->is_warranty_job ?? false)
+                || (string) ($repair->billing_mode ?? '') === 'warranty_no_charge';
             if ($hasIntakeUpdate && $repair->intake_logistics_locked_at !== null) {
                 throw \Illuminate\Validation\ValidationException::withMessages([
                     'intake_delivery_method' => ['The paid intake delivery plan is locked and can no longer be changed.'],
@@ -1758,6 +1760,7 @@ class RepairRequestController extends Controller
                 && ((string) ($repair->return_delivery_method ?? '') !== $returnMethod
                     || (string) data_get($repair->return_address, 'version', '') !== (string) data_get($returnSnapshot, 'version', '')
                     || round((float) $repair->return_delivery_fee, 2) !== round($returnFee, 2));
+            $replannedAt = $shopSponsoredWarranty ? now() : null;
 
             $repair->update([
                 ...($hasIntakeUpdate ? [
@@ -1767,15 +1770,23 @@ class RepairRequestController extends Controller
                     'intake_address' => $intakeSnapshot,
                     'intake_delivery_fee' => $intakeFee,
                     'intake_logistics_quote' => $intakeQuote,
+                    ...($shopSponsoredWarranty ? ['intake_logistics_locked_at' => $replannedAt] : []),
                 ] : []),
                 ...($rebuildReturn ? [
                     'return_delivery_method' => $returnMethod,
                     'return_address' => $returnSnapshot,
                     'return_delivery_fee' => $returnFee,
                     'return_logistics_quote' => $returnQuote,
+                    ...($shopSponsoredWarranty ? [
+                        'return_logistics_locked_at' => $replannedAt,
+                        'return_address_confirmed_at' => $returnMethod === 'shop_delivery' ? $replannedAt : null,
+                        'return_address_confirmed_version' => $returnMethod === 'shop_delivery'
+                            ? data_get($returnSnapshot, 'version')
+                            : null,
+                    ] : []),
                 ] : []),
                 'same_as_intake_address' => $sameAsIntake,
-                ...($returnChanged ? [
+                ...(! $shopSponsoredWarranty && $returnChanged ? [
                     'return_address_confirmed_at' => null,
                     'return_address_confirmed_version' => null,
                 ] : []),

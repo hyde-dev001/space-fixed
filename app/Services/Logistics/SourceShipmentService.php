@@ -185,12 +185,19 @@ class SourceShipmentService
 
             if ($existing) {
                 $cancelledAt = $existing->cancelled_at ?? $existing->updated_at;
-                if (data_get($lockedRepair->logistics_payment_reconciliation, 'status') !== 'resolved'
+                $sponsoredWarranty = (bool) ($lockedRepair->is_warranty_job ?? false)
+                    || (string) ($lockedRepair->billing_mode ?? '') === 'warranty_no_charge';
+                if ((! $sponsoredWarranty
+                        && data_get($lockedRepair->logistics_payment_reconciliation, 'status') !== 'resolved')
                     || $lockedRepair->intake_logistics_locked_at === null
                     || $cancelledAt === null
-                    || ! $lockedRepair->intake_logistics_locked_at->greaterThan($cancelledAt)) {
+                    || ($sponsoredWarranty
+                        ? $lockedRepair->intake_logistics_locked_at->lessThan($cancelledAt)
+                        : ! $lockedRepair->intake_logistics_locked_at->greaterThan($cancelledAt))) {
                     throw ValidationException::withMessages([
-                        'intake' => ['A cancelled pickup can be retried only after compensation and a new paid pickup plan.'],
+                        'intake' => [$sponsoredWarranty
+                            ? 'A cancelled pickup can be retried only after a new sponsored pickup plan.'
+                            : 'A cancelled pickup can be retried only after compensation and a new paid pickup plan.'],
                     ]);
                 }
 
@@ -214,7 +221,9 @@ class SourceShipmentService
                 ]);
                 $this->events->record($existing, $leg, [
                     'event_type' => 'shipment_reactivated',
-                    'message' => 'Repair pickup requested again after compensation.',
+                    'message' => $sponsoredWarranty
+                        ? 'Repair pickup requested again after sponsored delivery replanning.'
+                        : 'Repair pickup requested again after compensation.',
                 ]);
                 $this->recordScheduleEvents($existing, $leg, $schedule);
 
@@ -298,12 +307,19 @@ class SourceShipmentService
 
             if ($existing) {
                 $cancelledAt = $existing->cancelled_at ?? $existing->updated_at;
-                if (data_get($lockedRepair->logistics_payment_reconciliation, 'status') !== 'resolved'
+                $sponsoredWarranty = (bool) ($lockedRepair->is_warranty_job ?? false)
+                    || (string) ($lockedRepair->billing_mode ?? '') === 'warranty_no_charge';
+                if ((! $sponsoredWarranty
+                        && data_get($lockedRepair->logistics_payment_reconciliation, 'status') !== 'resolved')
                     || $lockedRepair->return_logistics_locked_at === null
                     || $cancelledAt === null
-                    || ! $lockedRepair->return_logistics_locked_at->greaterThan($cancelledAt)) {
+                    || ($sponsoredWarranty
+                        ? $lockedRepair->return_logistics_locked_at->lessThan($cancelledAt)
+                        : ! $lockedRepair->return_logistics_locked_at->greaterThan($cancelledAt))) {
                     throw ValidationException::withMessages([
-                        'return' => ['A cancelled return can be retried only after compensation and a new paid return plan.'],
+                        'return' => [$sponsoredWarranty
+                            ? 'A cancelled return can be retried only after a new sponsored return plan.'
+                            : 'A cancelled return can be retried only after compensation and a new paid return plan.'],
                     ]);
                 }
 
@@ -327,7 +343,9 @@ class SourceShipmentService
                 ]);
                 $this->events->record($existing, $leg, [
                     'event_type' => 'shipment_reactivated',
-                    'message' => 'Repair return requested again after compensation.',
+                    'message' => $sponsoredWarranty
+                        ? 'Repair return requested again after sponsored delivery replanning.'
+                        : 'Repair return requested again after compensation.',
                 ]);
                 $this->recordScheduleEvents($existing, $leg, $schedule);
 

@@ -156,18 +156,20 @@ final class RepairDeliveryService
                 return $existing->load('legs');
             }
 
+            $sponsoredWarranty = $this->isSponsoredWarranty($lockedRepair);
             $reconciliationStatus = data_get($lockedRepair->logistics_payment_reconciliation, 'status');
-            if ($reconciliationStatus === 'pending') {
-                return null;
-            }
-            if (! $this->hasFreshIntakePaymentAfterCompensation($lockedRepair)) {
+            if (! $sponsoredWarranty
+                && ($reconciliationStatus === 'pending'
+                    || ! $this->hasFreshIntakePaymentAfterCompensation($lockedRepair))) {
                 return null;
             }
             if ($existing) {
                 $cancelledAt = $existing->cancelled_at ?? $existing->updated_at;
-                if ($reconciliationStatus !== 'resolved'
+                if ((! $sponsoredWarranty && $reconciliationStatus !== 'resolved')
                     || $cancelledAt === null
-                    || ! $lockedRepair->intake_logistics_locked_at->greaterThan($cancelledAt)) {
+                    || ($sponsoredWarranty
+                        ? $lockedRepair->intake_logistics_locked_at->lessThan($cancelledAt)
+                        : ! $lockedRepair->intake_logistics_locked_at->greaterThan($cancelledAt))) {
                     return null;
                 }
             }
@@ -226,16 +228,20 @@ final class RepairDeliveryService
                 return $existing->load('legs');
             }
 
+            $sponsoredWarranty = $this->isSponsoredWarranty($lockedRepair);
             $reconciliationStatus = data_get($lockedRepair->logistics_payment_reconciliation, 'status');
-            if ($reconciliationStatus === 'pending'
-                || ! $this->hasFreshReturnPaymentAfterCompensation($lockedRepair)) {
+            if (! $sponsoredWarranty
+                && ($reconciliationStatus === 'pending'
+                    || ! $this->hasFreshReturnPaymentAfterCompensation($lockedRepair))) {
                 return null;
             }
             if ($existing) {
                 $cancelledAt = $existing->cancelled_at ?? $existing->updated_at;
-                if ($reconciliationStatus !== 'resolved'
+                if ((! $sponsoredWarranty && $reconciliationStatus !== 'resolved')
                     || $cancelledAt === null
-                    || ! $lockedRepair->return_logistics_locked_at->greaterThan($cancelledAt)) {
+                    || ($sponsoredWarranty
+                        ? $lockedRepair->return_logistics_locked_at->lessThan($cancelledAt)
+                        : ! $lockedRepair->return_logistics_locked_at->greaterThan($cancelledAt))) {
                     return null;
                 }
             }
@@ -283,6 +289,7 @@ final class RepairDeliveryService
         $createdCompensation = null;
         $result = DB::transaction(function () use ($repair, $phase, $reason, $actorId, &$createdCompensation): array {
             $lockedRepair = RepairRequest::query()->whereKey($repair->id)->lockForUpdate()->firstOrFail();
+            $sponsoredWarranty = $this->isSponsoredWarranty($lockedRepair);
             $isIntake = $phase === 'intake';
             $method = (string) ($isIntake
                 ? $lockedRepair->intake_delivery_method
@@ -377,6 +384,16 @@ final class RepairDeliveryService
                     'pickup_enabled' => false,
                     'pickup_enabled_at' => null,
                     'pickup_enabled_by' => null,
+                ]);
+            }
+
+            if ($sponsoredWarranty) {
+                $lockedRepair->update([
+                    $lockField => null,
+                    ...(! $isIntake ? [
+                        'return_address_confirmed_at' => null,
+                        'return_address_confirmed_version' => null,
+                    ] : []),
                 ]);
             }
 
@@ -596,8 +613,7 @@ final class RepairDeliveryService
         string $reason,
         array $details = [],
     ): ?array {
-        if ((bool) ($repair->is_warranty_job ?? false)
-            || (string) ($repair->billing_mode ?? '') === 'warranty_no_charge') {
+        if ($this->isSponsoredWarranty($repair)) {
             return null;
         }
 
@@ -654,6 +670,12 @@ final class RepairDeliveryService
         ]);
 
         return $entry;
+    }
+
+    private function isSponsoredWarranty(RepairRequest $repair): bool
+    {
+        return (bool) ($repair->is_warranty_job ?? false)
+            || (string) ($repair->billing_mode ?? '') === 'warranty_no_charge';
     }
 
     private function currentPendingCompensation(RepairRequest $repair, string $phase): ?array

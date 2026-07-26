@@ -176,24 +176,107 @@ class RepairWarrantyClaimFlowTest extends TestCase
         $this->assertDatabaseCount('pos_refunds', 0);
     }
 
-    public function test_cancelling_unstarted_shop_sponsored_warranty_leg_creates_no_refund(): void
+    public function test_cancelled_shop_sponsored_warranty_intake_can_be_replanned_and_retried_without_refund(): void
     {
-        [, $repairer, , $linked, $delivery] = $this->approveShopSponsoredWarranty();
+        [, $repairer, $address, $linked, $delivery] = $this->approveShopSponsoredWarranty();
+        $customer = User::query()->findOrFail($linked->user_id);
         $linked->update(['status' => 'repairer_accepted']);
         $shipment = $delivery->tryCreateIntakeShipment($linked->fresh());
+        $this->assertNotNull($shipment);
 
-        $result = $delivery->cancelPaidDeliveryLeg(
-            $linked->fresh(),
-            'intake',
-            'Customer requested a different pickup address.',
-            (int) $repairer->id,
+        $cancel = $this->actingAs($repairer, 'user')->postJson(
+            "/api/repairer/repairs/{$linked->id}/cancel-delivery-leg",
+            ['leg' => 'intake', 'reason' => 'Customer requested a different pickup address.'],
         );
 
+        $cancel->assertOk();
         $this->assertSame('cancelled', $shipment?->fresh()->status->value);
-        $this->assertFalse($result['created']);
+        $this->assertNull($linked->fresh()->logistics_payment_reconciliation);
+        $this->assertNull($delivery->tryCreateIntakeShipment($linked->fresh()));
+
+        $this->actingAs($customer, 'user')
+            ->patchJson("/api/customer/repairs/{$linked->id}/delivery-method", [
+                'intake_delivery_method' => 'shop_pickup',
+                'intake_address_id' => $address->id,
+            ])
+            ->assertOk();
+
+        $replanned = $linked->fresh();
+        $this->assertFalse((bool) $replanned->payment_enabled);
+        $this->assertSame('completed', (string) $replanned->payment_status);
+        $this->assertNotNull($replanned->intake_logistics_locked_at);
+        $this->assertGreaterThan(0, (float) $replanned->intake_delivery_fee);
+        $this->assertTrue((bool) data_get($replanned->intake_logistics_quote, 'available'));
+
+        $replacement = $delivery->tryCreateIntakeShipment($replanned);
+        $delivery->tryCreateIntakeShipment($linked->fresh());
+
+        $this->assertSame($shipment->id, $replacement?->id);
+        $this->assertSame(1, Shipment::query()
+            ->where('source_type', 'repair_request')
+            ->where('source_id', $linked->id)
+            ->where('purpose', 'repair_pickup')
+            ->count());
+        $this->assertSame(2, $shipment->fresh()->legs()->count());
+        $this->assertSame(1, $shipment->fresh()->legs()->where('status', '!=', 'cancelled')->count());
         $this->assertNull($linked->fresh()->logistics_payment_reconciliation);
         $this->assertSame(0.0, (float) $linked->fresh()->total_refunded_amount);
         $this->assertDatabaseCount('pos_refunds', 0);
+        $this->assertStringNotContainsString('Finance', (string) $cancel->json('message'));
+    }
+
+    public function test_cancelled_shop_sponsored_warranty_return_can_be_replanned_and_retried_without_refund(): void
+    {
+        [, $repairer, $address, $linked, $delivery] = $this->approveShopSponsoredWarranty();
+        $customer = User::query()->findOrFail($linked->user_id);
+        $linked->update(['status' => 'ready_for_pickup']);
+        $shipment = $delivery->tryCreateReturnShipment($linked->fresh());
+        $this->assertNotNull($shipment);
+
+        $cancel = $this->actingAs($repairer, 'user')->postJson(
+            "/api/repairer/repairs/{$linked->id}/cancel-delivery-leg",
+            ['leg' => 'return', 'reason' => 'Customer requested a different return address.'],
+        );
+
+        $cancel->assertOk();
+        $this->assertSame('cancelled', $shipment?->fresh()->status->value);
+        $this->assertSame('ready_for_pickup', (string) $linked->fresh()->status);
+        $this->assertNull($linked->fresh()->logistics_payment_reconciliation);
+        $this->assertNull($delivery->tryCreateReturnShipment($linked->fresh()));
+
+        $this->actingAs($customer, 'user')
+            ->patchJson("/api/customer/repairs/{$linked->id}/delivery-method", [
+                'return_delivery_method' => 'shop_delivery',
+                'return_address_id' => $address->id,
+            ])
+            ->assertOk();
+
+        $replanned = $linked->fresh();
+        $this->assertFalse((bool) $replanned->payment_enabled);
+        $this->assertSame('completed', (string) $replanned->payment_status);
+        $this->assertNotNull($replanned->return_logistics_locked_at);
+        $this->assertSame(
+            data_get($replanned->return_address, 'version'),
+            (string) $replanned->return_address_confirmed_version,
+        );
+        $this->assertGreaterThan(0, (float) $replanned->return_delivery_fee);
+        $this->assertTrue((bool) data_get($replanned->return_logistics_quote, 'available'));
+
+        $replacement = $delivery->tryCreateReturnShipment($replanned);
+        $delivery->tryCreateReturnShipment($linked->fresh());
+
+        $this->assertSame($shipment->id, $replacement?->id);
+        $this->assertSame(1, Shipment::query()
+            ->where('source_type', 'repair_request')
+            ->where('source_id', $linked->id)
+            ->where('purpose', 'repair_return')
+            ->count());
+        $this->assertSame(2, $shipment->fresh()->legs()->count());
+        $this->assertSame(1, $shipment->fresh()->legs()->where('status', '!=', 'cancelled')->count());
+        $this->assertNull($linked->fresh()->logistics_payment_reconciliation);
+        $this->assertSame(0.0, (float) $linked->fresh()->total_refunded_amount);
+        $this->assertDatabaseCount('pos_refunds', 0);
+        $this->assertStringNotContainsString('Finance', (string) $cancel->json('message'));
     }
 
     public function test_outside_coverage_blocks_shop_owned_warranty_delivery_but_allows_third_party(): void
@@ -464,6 +547,8 @@ class RepairWarrantyClaimFlowTest extends TestCase
         $customer = User::factory()->create();
         $repairer = User::factory()->create([
             'shop_owner_id' => $shopOwner->id,
+            'role' => 'REPAIRER',
+            'status' => 'active',
         ]);
 
         $repair = RepairRequest::factory()->create([
