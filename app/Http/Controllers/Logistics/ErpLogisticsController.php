@@ -194,7 +194,11 @@ class ErpLogisticsController extends Controller
                     $shipments->getCollection(),
                     $shopOwnerId,
                 )),
-            'filters' => ['status' => $status, 'window' => $window, 'search' => $search],
+            'filters' => [
+                'status' => $status,
+                'window' => $window,
+                ...($search !== '' ? ['search' => $search] : []),
+            ],
             'canAssign' => false,
             'canUpdateStatus' => $user->can('update-logistics-status'),
             'canRecordProof' => $user->can('record-logistics-proof'),
