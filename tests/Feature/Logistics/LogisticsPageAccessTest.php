@@ -95,7 +95,11 @@ class LogisticsPageAccessTest extends TestCase
             'status' => 'delivered',
             'destination_snapshot' => ['name' => 'Saved Ana', 'address' => 'Saved address'],
         ]];
-        $batch = DeliveryBatch::factory()->create(['shop_owner_id' => $shop->id, 'stop_snapshot' => $stopSnapshot]);
+        $batch = DeliveryBatch::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'status' => 'completed',
+            'stop_snapshot' => $stopSnapshot,
+        ]);
         $shipment = Shipment::factory()->create([
             'shop_owner_id' => $shop->id,
             'source_type' => 'order',
@@ -115,6 +119,7 @@ class LogisticsPageAccessTest extends TestCase
         $this->assertSame([$batch->id], collect($props['batches'])->pluck('id')->all());
         $this->assertSame('order', $props['batches'][0]['legs'][0]['shipment']['source_type']);
         $this->assertSame(55, $props['batches'][0]['legs'][0]['shipment']['source_id']);
+        $this->assertArrayNotHasKey('order_summary', $props['batches'][0]['legs'][0]['shipment']);
         $this->assertSame('Ana Reyes', $props['batches'][0]['legs'][0]['destination_snapshot']['name']);
         $this->assertSame($stopSnapshot, $props['batches'][0]['stop_snapshot']);
     }
@@ -341,6 +346,7 @@ class LogisticsPageAccessTest extends TestCase
             $this->assertSame([$wanted->id], collect($shipments)->pluck('id')->all());
             $this->assertSame([$wantedLeg->id], collect($shipments[0]['legs'])->pluck('id')->all());
             $this->assertSame(['status' => 'in_transit', 'window' => 'today'], $response->viewData('page')['props']['filters']);
+            $this->assertSame('2026-07-15', $response->viewData('page')['props']['today']);
 
             foreach (['pending', 'not-a-status'] as $status) {
                 $response = $this->actingAs($rider->fresh(), 'user')

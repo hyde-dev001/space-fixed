@@ -88,7 +88,7 @@ const toast = (icon: 'success' | 'error' | 'warning', title: string) => Swal.fir
 });
 
 export default function Shipments({ children }: React.PropsWithChildren) {
-  const { shipments, filters, assignableRiders, canAssign, canUpdateStatus, canRecordProof, canApproveProof, riderMode, maxDeliveryAttempts = 2, availableModules = [], showModuleFilter = false } = usePage<{
+  const { shipments, filters, assignableRiders, canAssign, canUpdateStatus, canRecordProof, canApproveProof, riderMode, maxDeliveryAttempts = 2, availableModules = [], showModuleFilter = false, today } = usePage<{
     shipments: PaginatedResponse<LogisticsShipment>;
     filters: ShipmentFilters;
     assignableRiders: Array<{ id: number; name: string; phone?: string | null }>;
@@ -100,6 +100,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
     maxDeliveryAttempts?: number;
     availableModules?: LogisticsModule[];
     showModuleFilter?: boolean;
+    today: string;
   }>().props;
   const [expandedShipmentId, setExpandedShipmentId] = useState<number | null>(null);
   const [selectedRiders, setSelectedRiders] = useState<Record<number, string>>({});
@@ -386,7 +387,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
             const failed = legs.some((leg) => leg.attempts?.[0]?.status === 'failed');
             const awaitingProof = legs.some((leg) => leg.status === 'awaiting_proof_approval');
             const overdue = legs.some((leg) => Boolean(leg.scheduled_delivery_date)
-              && leg.scheduled_delivery_date!.slice(0, 10) < new Date().toISOString().slice(0, 10)
+              && leg.scheduled_delivery_date!.slice(0, 10) < today
               && !['delivered', 'cancelled'].includes(leg.status));
             const expanded = expandedShipmentId === shipment.id;
 
@@ -429,6 +430,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                 </div>
                 <button
                   type="button"
+                  aria-label={shipments.data.length > 1 ? `${expanded ? 'Close' : 'Open'} delivery for Shipment ${shipment.id}` : undefined}
                   aria-expanded={expanded}
                   aria-controls={`shipment-${shipment.id}-details`}
                   onClick={() => setExpandedShipmentId(expanded ? null : shipment.id)}

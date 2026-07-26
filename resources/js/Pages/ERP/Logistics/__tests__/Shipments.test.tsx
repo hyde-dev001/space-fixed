@@ -25,6 +25,7 @@ const defaultProps = () => ({
   filters: { status: 'all', purpose: 'all', window: 'all', module: 'all' }, assignableRiders: [],
   canAssign: false, canUpdateStatus: false, canRecordProof: true, canApproveProof: false, riderMode: true, batches: [],
   maxDeliveryAttempts: 2,
+  today: '2026-07-21',
   availableModules: ['retail'],
   showModuleFilter: false,
 });
@@ -112,6 +113,29 @@ it('shows readable schedules and operational indicators', () => {
   } finally {
     vi.useRealTimers();
   }
+});
+
+it('uses the shop-local date for overdue deliveries at the UTC boundary', () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-07-20T17:00:00Z'));
+  try {
+    mocks.props.shipments.data[0].legs[0].scheduled_delivery_date = '2026-07-20';
+    render(<Shipments />);
+
+    expect(screen.getByText('Overdue')).toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('identifies each shipment in expansion control labels', () => {
+  const second = structuredClone(mocks.props.shipments.data[0]);
+  second.id = 2;
+  mocks.props.shipments.data.push(second);
+  render(<Shipments />);
+
+  expect(screen.getByRole('button', { name: 'Open delivery for Shipment 1' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Open delivery for Shipment 2' })).toBeInTheDocument();
 });
 
 it('distinguishes empty history from filtered results', () => {

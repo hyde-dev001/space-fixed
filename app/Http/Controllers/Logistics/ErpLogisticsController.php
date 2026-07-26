@@ -122,6 +122,7 @@ class ErpLogisticsController extends Controller
             ],
             'availableModules' => $availableModules,
             'showModuleFilter' => count($availableModules) > 1,
+            'today' => now(config('app.shop_timezone', 'Asia/Manila'))->toDateString(),
             'canAssign' => $canAssign,
             'canUpdateStatus' => false,
             'canRecordProof' => false,
@@ -204,6 +205,7 @@ class ErpLogisticsController extends Controller
             'canRecordProof' => $user->can('record-logistics-proof'),
             'canApproveProof' => false,
             'riderMode' => true,
+            'today' => now($shopTimezone)->toDateString(),
             'assignableRiders' => [],
             'batches' => DeliveryBatch::query()->with(['legs.proofs', 'riderProfile'])
                 ->where('shop_owner_id', $shopOwnerId)
@@ -291,7 +293,9 @@ class ErpLogisticsController extends Controller
             ->where(fn ($query) => $query->whereNull('schedule_status')->orWhere('schedule_status', '!=', 'scheduled'))
             ->get();
         $this->attachShipmentSummaries(
-            $batches->flatMap->legs->pluck('shipment')->merge($pool->pluck('shipment'))->merge($unscheduled->pluck('shipment')),
+            $batches->whereNotIn('status', ['completed', 'cancelled'])->flatMap->legs->pluck('shipment')
+                ->merge($pool->pluck('shipment'))
+                ->merge($unscheduled->pluck('shipment')),
             $shopOwnerId,
         );
 
@@ -385,7 +389,7 @@ class ErpLogisticsController extends Controller
                             ->where('shop_owner_id', $shopOwnerId)
                             ->where('brand', 'like', $like)));
             })
-            ->pluck('id');
+            ->select('id');
 
         return $query->where(function ($shipments) use ($like, $orderIds) {
             $shipments
