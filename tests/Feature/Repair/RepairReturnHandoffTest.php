@@ -9,6 +9,7 @@ use App\Models\Logistics\ShipmentLeg;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Services\Logistics\ShipmentLegService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -99,9 +100,10 @@ class RepairReturnHandoffTest extends TestCase
         $this->assertDatabaseCount('finance_invoices', 1);
     }
 
-    public function test_shop_delivery_requires_dispatcher_approved_proof_before_staff_handoff_and_customer_receipt(): void
+    public function test_shop_delivery_plan_lock_does_not_block_handoff_after_dispatcher_approval(): void
     {
         [$repair, $customer, $repairer] = $this->repairFixture('shop_delivery', 'shipped');
+        $repair->update(['return_logistics_locked_at' => now()]);
         [$shipment, $leg] = $this->returnShipment($repair, 'active', 'delivered');
         $proof = HandoffProof::factory()->create([
             'shipment_leg_id' => $leg->id,
@@ -113,19 +115,21 @@ class RepairReturnHandoffTest extends TestCase
             ->postJson("/api/repairer/repairs/{$repair->id}/activate-pickup")
             ->assertUnprocessable();
 
+        $leg->update(['status' => 'awaiting_proof_approval', 'requires_delivery_proof' => true]);
         $proof->update(['review_status' => 'approved', 'reviewed_at' => now()]);
-        $shipment->update(['status' => 'completed', 'completed_at' => now()]);
+        app(ShipmentLegService::class)->markDelivered($leg->fresh());
 
         $this->assertSame('shipped', $repair->fresh()->status);
-        $this->assertFalse((bool) $repair->fresh()->pickup_enabled);
-
-        $this->actingAs($customer, 'user')
-            ->postJson("/api/customer/repairs/{$repair->id}/confirm-pickup")
-            ->assertUnprocessable();
+        $this->assertTrue(app(\App\Services\RepairDeliveryService::class)
+            ->returnHandoff($repair->fresh(), true)['can_release']);
 
         $this->actingAs($repairer, 'user')
             ->postJson("/api/repairer/repairs/{$repair->id}/activate-pickup")
             ->assertOk();
+
+        $this->assertTrue((bool) $repair->fresh()->pickup_enabled);
+        $this->assertNotNull($repair->fresh()->return_logistics_locked_at);
+        $this->assertSame('completed', $shipment->fresh()->status->value);
 
         $this->actingAs($customer, 'user')
             ->postJson("/api/customer/repairs/{$repair->id}/confirm-pickup")

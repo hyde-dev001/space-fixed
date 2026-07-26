@@ -2432,7 +2432,8 @@ class RepairWorkflowController extends Controller
                     'status' => ['The repair is not ready for this return handoff.'],
                 ]);
             }
-            if ((bool) $repair->pickup_enabled || $repair->return_logistics_locked_at !== null) {
+            if ((bool) $repair->pickup_enabled
+                || ($method !== 'shop_delivery' && $repair->return_logistics_locked_at !== null)) {
                 throw ValidationException::withMessages([
                     'status' => ['Customer receipt confirmation is already active.'],
                 ]);
@@ -2453,7 +2454,7 @@ class RepairWorkflowController extends Controller
                 'pickup_enabled' => true,
                 'pickup_enabled_at' => now(),
                 'pickup_enabled_by' => $shopOwner?->id ?? $user->id,
-                'return_logistics_locked_at' => now(),
+                'return_logistics_locked_at' => $repair->return_logistics_locked_at ?? now(),
             ];
             if ($method === 'customer_pickup') {
                 $updates['status'] = 'shipped';
