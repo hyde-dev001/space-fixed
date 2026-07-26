@@ -26,25 +26,42 @@ class DashboardController extends Controller
     private function repairRevenueExpression(): string
     {
         $vatDivisor = self::VAT_DIVISOR;
+        $serviceGross = 'COALESCE(final_total, total, 0)';
+        $delivery = "(
+            CASE WHEN intake_delivery_method = 'shop_pickup' AND intake_logistics_locked_at IS NOT NULL
+                THEN COALESCE(intake_delivery_fee, 0) ELSE 0 END
+            +
+            CASE WHEN return_delivery_method = 'shop_delivery' AND return_logistics_locked_at IS NOT NULL
+                THEN COALESCE(return_delivery_fee, 0) ELSE 0 END
+        )";
+        $recordedNet = '(COALESCE(total_paid_amount, 0) - COALESCE(total_refunded_amount, 0))';
+        $fallbackPaid = "CASE
+            WHEN payment_status = 'completed' THEN ({$serviceGross} + {$delivery})
+            WHEN payment_status IN ('paid', 'partially_paid') THEN (
+                CASE WHEN COALESCE(payment_policy_snapshot, payment_policy, 'deposit_50') = 'deposit_50'
+                    THEN ({$serviceGross} * 0.5)
+                    ELSE {$serviceGross}
+                END + {$delivery}
+            )
+            ELSE 0
+        END";
+        $netCollected = "CASE
+            WHEN (COALESCE(total_paid_amount, 0) > 0 OR COALESCE(total_refunded_amount, 0) > 0)
+                THEN CASE WHEN {$recordedNet} < 0 THEN 0 ELSE {$recordedNet} END
+            ELSE {$fallbackPaid}
+        END";
+        $realizedDelivery = "CASE
+            WHEN {$delivery} < ({$netCollected}) THEN {$delivery}
+            ELSE ({$netCollected})
+        END";
+        $serviceCollected = "(({$netCollected}) - ({$realizedDelivery}))";
+        $serviceRevenue = "CASE
+            WHEN {$serviceGross} <= 0 THEN 0
+            WHEN {$serviceCollected} >= {$serviceGross} THEN ({$serviceGross} / {$vatDivisor})
+            ELSE ({$serviceCollected} / {$vatDivisor})
+        END";
 
-        return "
-            CASE
-                WHEN (COALESCE(total_paid_amount, 0) > 0 OR COALESCE(total_refunded_amount, 0) > 0)
-                    THEN CASE
-                        WHEN (COALESCE(total_paid_amount, 0) - COALESCE(total_refunded_amount, 0)) < 0 THEN 0
-                        ELSE ((COALESCE(total_paid_amount, 0) - COALESCE(total_refunded_amount, 0)) / {$vatDivisor})
-                    END
-                WHEN payment_status = 'completed'
-                    THEN (COALESCE(final_total, total, 0) / {$vatDivisor})
-                WHEN payment_status = 'paid'
-                    THEN CASE
-                        WHEN COALESCE(payment_policy_snapshot, payment_policy, 'deposit_50') = 'deposit_50'
-                            THEN ((COALESCE(final_total, total, 0) * 0.5) / {$vatDivisor})
-                        ELSE (COALESCE(final_total, total, 0) / {$vatDivisor})
-                    END
-                ELSE 0
-            END
-        ";
+        return "({$serviceRevenue} + {$realizedDelivery})";
     }
 
     private function computeRepairRevenue($query): float
@@ -108,12 +125,16 @@ class DashboardController extends Controller
 
     private function computeRetailNetRevenue(int $shopOwnerId, ?Carbon $from = null, ?Carbon $to = null, ?Carbon $onDate = null): float
     {
-        $hasVatAmountColumn = Schema::hasColumn('orders', 'vat_amount');
+        $hasShippingFeeColumn = Schema::hasColumn('orders', 'shipping_fee');
+        $hasCarrierCompanyColumn = Schema::hasColumn('orders', 'carrier_company');
 
         $ordersQuery = Order::query()
             ->select('id')
             ->selectRaw($this->retailGrossRevenueExpression() . ' as gross_amount')
-            ->selectRaw(($hasVatAmountColumn ? 'COALESCE(vat_amount, 0)' : '0') . ' as vat_amount')
+            ->selectRaw('COALESCE(total_amount, 0) as item_subtotal')
+            ->selectRaw(($hasShippingFeeColumn ? 'COALESCE(shipping_fee, 0)' : '0') . ' as shipping_fee')
+            ->selectRaw(($hasCarrierCompanyColumn ? 'COALESCE(carrier_company, \'\')' : '\'\'') . ' as carrier_company')
+            ->addSelect('payment_status')
             ->where('shop_owner_id', $shopOwnerId)
             ->where('status', '!=', OrderStatus::CANCELLED->value);
 
@@ -132,22 +153,21 @@ class DashboardController extends Controller
         foreach ($orders as $order) {
             $orderId = (int) ($order->id ?? 0);
             $grossAmount = max(0.0, (float) ($order->gross_amount ?? 0.0));
-            if ($orderId <= 0 || $grossAmount <= 0) {
+            if ($orderId <= 0) {
                 continue;
             }
 
             $totalRefunded = max(0.0, (float) ($refundAmountByOrder[$orderId] ?? 0.0));
-            $recognizedAmount = max(0.0, $grossAmount - min($grossAmount, $totalRefunded));
-            if ($recognizedAmount <= 0) {
-                continue;
-            }
+            $itemSubtotal = max(0.0, (float) ($order->item_subtotal ?? 0.0));
+            $productRevenue = max(0.0, $itemSubtotal - min($itemSubtotal, $totalRefunded));
+            $fullyRefunded = $grossAmount > 0 && $totalRefunded >= $grossAmount - 0.01;
+            $paid = in_array(strtolower((string) $order->payment_status), ['paid', 'completed'], true);
+            $shopOwned = strtolower(trim((string) $order->carrier_company)) === 'shop-owned logistics';
+            $deliveryRevenue = $paid && $shopOwned && !$fullyRefunded
+                ? max(0.0, (float) ($order->shipping_fee ?? 0.0))
+                : 0.0;
 
-            $vatAmount = max(0.0, (float) ($order->vat_amount ?? 0.0));
-            $vatExcludedAmount = ($hasVatAmountColumn && $vatAmount > 0)
-                ? ($recognizedAmount / self::VAT_DIVISOR)
-                : $recognizedAmount;
-
-            $netRevenue += max(0.0, $vatExcludedAmount);
+            $netRevenue += $productRevenue + $deliveryRevenue;
         }
 
         return round($netRevenue, 2);
