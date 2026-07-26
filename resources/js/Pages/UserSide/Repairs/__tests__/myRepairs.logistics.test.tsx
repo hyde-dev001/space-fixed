@@ -446,6 +446,21 @@ describe("MyRepairs return logistics", () => {
     expect(await screen.findByText("Tracking details saved.")).toBeInTheDocument();
   });
 
+  it("keeps an ordinary paid locked return plan read-only before handoff", async () => {
+    mocks.repair = repair({
+      return_delivery_method: "customer_pickup",
+      return_logistics_locked_at: "2026-07-26T10:00:00.000Z",
+      pickup_enabled: false,
+    });
+
+    await renderReadyRepair();
+
+    const tracking = screen.getByRole("region", { name: "Return courier tracking" });
+    expect(within(tracking).getByText("Locked after handoff")).toBeInTheDocument();
+    expect(within(tracking).queryByLabelText("Return carrier")).not.toBeInTheDocument();
+    expect(within(tracking).queryByRole("button", { name: "Save return tracking" })).not.toBeInTheDocument();
+  });
+
   it("shows locked customer tracking read-only and uses an explicit receipt confirmation label", async () => {
     mocks.repair = repair({
       status: "ready_for_pickup",
@@ -490,6 +505,67 @@ describe("MyRepairs return logistics", () => {
 });
 
 describe("MyRepairs warranty logistics", () => {
+  it("keeps sponsored customer-pickup tracking editable until staff handoff", async () => {
+    const sponsoredPickup = {
+      is_warranty_job: true,
+      billing_mode: "warranty_no_charge",
+      payment_status: "completed",
+      payment_enabled: false,
+      return_delivery_method: "customer_pickup",
+      return_logistics_locked_at: "2026-07-26T10:00:00.000Z",
+    };
+    mocks.repair = repair({
+      ...sponsoredPickup,
+      pickup_enabled: false,
+    });
+    mocks.post.mockResolvedValueOnce({
+      data: { success: true, message: "Tracking details saved." },
+    });
+
+    await renderReadyRepair();
+
+    const editableTracking = screen.getByRole("region", { name: "Return courier tracking" });
+    expect(within(editableTracking).queryByText("Locked after handoff")).not.toBeInTheDocument();
+    fireEvent.change(within(editableTracking).getByLabelText("Return carrier"), {
+      target: { value: "Lalamove" },
+    });
+    fireEvent.change(within(editableTracking).getByLabelText("Return tracking number"), {
+      target: { value: "WARRANTY-RETURN-123" },
+    });
+    fireEvent.click(within(editableTracking).getByRole("button", { name: "Save return tracking" }));
+
+    await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
+      "/api/customer/repairs/77/external-tracking",
+      {
+        leg: "return",
+        carrier: "Lalamove",
+        tracking_number: "WARRANTY-RETURN-123",
+        tracking_url: null,
+      },
+    ));
+
+    cleanup();
+    mocks.repair = repair({
+      ...sponsoredPickup,
+      pickup_enabled: true,
+      return_address: {
+        external_tracking: {
+          carrier: "Lalamove",
+          tracking_number: "WARRANTY-RETURN-123",
+          tracking_url: null,
+        },
+      },
+    });
+
+    await renderReadyRepair();
+
+    const lockedTracking = screen.getByRole("region", { name: "Return courier tracking" });
+    expect(within(lockedTracking).getByText("Locked after handoff")).toBeInTheDocument();
+    expect(within(lockedTracking).getByText("WARRANTY-RETURN-123")).toBeInTheDocument();
+    expect(within(lockedTracking).queryByLabelText("Return carrier")).not.toBeInTheDocument();
+    expect(within(lockedTracking).queryByRole("button", { name: "Save return tracking" })).not.toBeInTheDocument();
+  });
+
   it("keeps customer-arranged and walk-in intake available outside shop coverage", async () => {
     mocks.repair = repair({
       status: "repairer_accepted",
