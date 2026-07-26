@@ -234,6 +234,42 @@ const renderReadyRepair = async () => {
   await screen.findAllByText("Scuffed sneakers");
 };
 
+describe("MyRepairs intake payment", () => {
+  it("hides payment until the repairer activates it", async () => {
+    mocks.repair = repair({
+      status: "repairer_accepted",
+      payment_status: "pending",
+      payment_enabled: false,
+      conversation_id: 15,
+      logistics_shipments: [],
+      intake_logistics_locked_at: null,
+    });
+
+    render(<MyRepairs />);
+    const pendingTabs = await screen.findAllByRole("button", { name: /Pending/i });
+    fireEvent.click(pendingTabs[0]);
+
+    expect(screen.queryByRole("button", { name: "PAY NOW" })).not.toBeInTheDocument();
+  });
+
+  it("lets an accepted shop-pickup customer pay online", async () => {
+    mocks.repair = repair({
+      status: "repairer_accepted",
+      payment_status: "pending",
+      payment_enabled: true,
+      conversation_id: 15,
+      logistics_shipments: [],
+      intake_logistics_locked_at: null,
+    });
+
+    render(<MyRepairs />);
+    const pendingTabs = await screen.findAllByRole("button", { name: /Pending/i });
+    fireEvent.click(pendingTabs[0]);
+
+    expect(await screen.findByRole("button", { name: "PAY NOW" })).toBeEnabled();
+  });
+});
+
 describe("MyRepairs return logistics", () => {
   it("shows the server return plan, exact amount, and purpose-specific tracking events", async () => {
     await renderReadyRepair();

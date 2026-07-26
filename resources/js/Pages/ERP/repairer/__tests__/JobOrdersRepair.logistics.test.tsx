@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import JobOrdersRepair from '../JobOrdersRepair';
 
@@ -111,6 +111,23 @@ const openDetails = async () => {
 };
 
 describe('JobOrdersRepair intake logistics', () => {
+  it('shows payment activation in accepted repair details when needed', async () => {
+    mocks.repair = {
+      ...repair('shop_pickup'),
+      status: 'repairer_accepted',
+      payment_status: 'pending',
+      payment_enabled: false,
+      intake_handoff: null,
+    };
+
+    render(<JobOrdersRepair />);
+    await openDetails();
+
+    const modal = screen.getByRole('heading', { name: 'Repair Service Details' }).closest('div.fixed');
+    expect(modal).not.toBeNull();
+    expect(within(modal as HTMLElement).getByRole('button', { name: 'Activate Payment' })).toBeEnabled();
+  });
+
   it.each([
     ['walk_in', 'Customer drop-off'],
     ['customer_delivery', 'Customer-arranged courier'],
