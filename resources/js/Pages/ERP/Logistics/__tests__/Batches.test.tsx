@@ -50,8 +50,23 @@ const scheduledLeg = {
   status: 'pending',
   scheduled_delivery_date: '2026-07-15',
   delivery_window: 'morning',
-  shipment: { id: 80, source_type: 'order', source_id: 81 },
-  destination_snapshot: { name: 'Ben Cruz', phone: '09987654321', address: 'Imus, Cavite' },
+  shipment: {
+    id: 80,
+    source_type: 'order',
+    source_id: 81,
+    order_summary: {
+      available: true,
+      order_number: '#81',
+      total_quantity: 5,
+      variant_count: 2,
+      model_count: 2,
+      items: [
+        { id: 1, brand: 'Adidas', model: 'Ultraboost', color: 'Black', size: '9', quantity: 3, image: null },
+        { id: 2, brand: 'Puma', model: 'Suede', color: 'Blue', size: '10', quantity: 2, image: null },
+      ],
+    },
+  },
+  destination_snapshot: { name: 'Ben Cruz', phone: '09987654321', address: 'Imus, Cavite', delivery_instructions: 'Call upon arrival' },
 };
 const repairLeg = {
   id: 9,
@@ -128,6 +143,8 @@ it.each([
   ['customer', 'Ana', 'Order #55'],
   ['phone', '0917123', 'Order #55'],
   ['address', 'Imus', 'Order #81'],
+  ['brand', 'Adidas', 'Order #81'],
+  ['model', 'Ultraboost', 'Order #81'],
 ])('searches by %s', (_field, query, expected) => {
   render(<Batches />);
   openBuilder();
@@ -135,6 +152,17 @@ it.each([
 
   expect(screen.getByText(expected)).toBeInTheDocument();
   expect(screen.getAllByRole('checkbox', { name: /order #/i })).toHaveLength(1);
+});
+
+it('identifies the products and quantity in available deliveries', () => {
+  render(<Batches />);
+  openBuilder();
+
+  const delivery = screen.getByRole('checkbox', { name: /order #81/i }).closest('label');
+  expect(delivery).not.toBeNull();
+  expect(within(delivery!).getByText('Adidas Ultraboost')).toBeInTheDocument();
+  expect(within(delivery!).getByText(/5 pairs.*2 variants.*\+1 more/)).toBeInTheDocument();
+  expect(within(delivery!).getByText('Delivery instructions')).toBeInTheDocument();
 });
 
 it('filters by schedule status and clears all filters', () => {
@@ -362,6 +390,15 @@ function openDraft(legs = [
   render(<Batches />);
   fireEvent.click(screen.getByRole('button', { name: 'Edit batch 1' }));
 }
+
+it('identifies the products and quantity in a live route stop', () => {
+  openDraft([{ ...scheduledLeg, stop_sequence: 1 }]);
+
+  const stop = screen.getByRole('article', { name: 'Stop 1: Ben Cruz' });
+  expect(within(stop).getByText('Adidas Ultraboost')).toBeInTheDocument();
+  expect(within(stop).getByText(/5 pairs.*2 variants.*\+1 more/)).toBeInTheDocument();
+  expect(within(stop).getByText('Delivery instructions')).toBeInTheDocument();
+});
 
 it('persists one ordered id list when a saved draft stop moves', async () => {
   openDraft();

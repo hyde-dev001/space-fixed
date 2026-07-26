@@ -3,6 +3,7 @@ import { usePage } from '@inertiajs/react';
 import { ArrowDown, ArrowUp, Flame, GripVertical, MapPin, Phone, Trash2 } from 'lucide-react';
 import { useDrag, useDrop } from 'react-dnd';
 import { logisticsModuleForSourceType, logisticsModuleLabel, logisticsSourceLabel, type TrackingShipmentLeg } from '@/types/logistics';
+import RetailOrderSummary from './RetailOrderSummary';
 
 const text = (value?: string | null) => value || 'Not provided';
 const label = (value?: string | null) => value ? value.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()) : 'Not scheduled';
@@ -39,7 +40,7 @@ export default function BatchStopRow({ leg, index, total, editable = false, busy
   }), [index, onMove]);
   drag(drop(ref));
 
-  return <div ref={ref} className={`rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition dark:border-gray-700 dark:bg-gray-800 ${isDragging ? 'opacity-50' : ''}`}>
+  return <article ref={ref} aria-label={`Stop ${index + 1}: ${destination?.name || source}`} className={`rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition dark:border-gray-700 dark:bg-gray-800 ${isDragging ? 'opacity-50' : ''}`}>
     <div className="flex items-start gap-3">
       {editable && <button type="button" aria-label={`Drag stop ${index + 1}`} title="Drag to reorder" className="mt-1 cursor-grab text-gray-400"><GripVertical size={18} /></button>}
       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white">{index + 1}</span>
@@ -58,6 +59,9 @@ export default function BatchStopRow({ leg, index, total, editable = false, busy
           {failedAttempt?.reason_code && <span>{label(failedAttempt.reason_code)}</span>}
           <span>{leg.scheduled_delivery_date ? formatDate(leg.scheduled_delivery_date) : 'Not scheduled'}{leg.delivery_window ? ` · ${label(leg.delivery_window)}` : ''} · {label(leg.status)}</span>
         </div>
+        <div className="mt-3">
+          <RetailOrderSummary summary={leg.shipment?.order_summary} instructions={destination?.delivery_instructions} />
+        </div>
       </div>
       <div className="flex flex-wrap justify-end gap-1">
         {editable && <>
@@ -68,5 +72,5 @@ export default function BatchStopRow({ leg, index, total, editable = false, busy
         {!terminal && onToggleUrgent && <button type="button" aria-label={`${leg.urgent_at ? 'Clear urgent' : 'Mark urgent'} stop ${index + 1}`} title={leg.urgent_at ? 'Clear urgent' : 'Mark urgent'} disabled={busy} onClick={() => onToggleUrgent(leg)} className={`rounded-lg border p-2 disabled:opacity-30 ${leg.urgent_at ? 'border-red-300 bg-red-50 text-red-700' : 'text-gray-600'}`}><Flame size={16} /></button>}
       </div>
     </div>
-  </div>;
+  </article>;
 }

@@ -7,6 +7,7 @@ import {
   type LogisticsModule,
   type TrackingShipmentLeg,
 } from '@/types/logistics';
+import RetailOrderSummary from './RetailOrderSummary';
 
 type Props = {
   rows: TrackingShipmentLeg[];
@@ -46,7 +47,7 @@ export default function AvailableDeliveriesPanel({
       <label className="relative mt-4 block">
         <span className="sr-only">Search deliveries</span>
         <Search className="absolute left-3 top-3 text-gray-400" size={18} />
-        <input aria-label="Search deliveries" value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Order, customer, phone, or address" className="min-h-11 w-full rounded-xl border border-gray-300 py-2 pl-10 pr-3 text-sm" />
+        <input aria-label="Search deliveries" value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Order, customer, phone, address, or product" className="min-h-11 w-full rounded-xl border border-gray-300 py-2 pl-10 pr-3 text-sm" />
       </label>
       <div className="mt-3 grid gap-2 sm:grid-cols-3">
         <input aria-label="Delivery date" type="date" value={date} onChange={(event) => onDateChange(event.target.value)} className="min-h-11 rounded-xl border border-gray-300 px-3 text-sm" />
@@ -90,6 +91,9 @@ export default function AvailableDeliveriesPanel({
             <span className="mt-1 block text-sm text-gray-700 dark:text-gray-200">{leg.shipment?.source_summary?.customer_name || destination?.name || 'Customer not provided'}</span>
             {leg.shipment?.source_summary?.shoe_summary && <span className="block text-xs font-medium text-gray-600">{leg.shipment.source_summary.shoe_summary}</span>}
             <span className="block truncate text-xs text-gray-500">{destination?.phone || 'No phone'} · {destination?.address || 'No address'}</span>
+            <span className="mt-3 block">
+              <RetailOrderSummary summary={leg.shipment?.order_summary} instructions={destination?.delivery_instructions} />
+            </span>
           </span>
         </label>;
       })}
