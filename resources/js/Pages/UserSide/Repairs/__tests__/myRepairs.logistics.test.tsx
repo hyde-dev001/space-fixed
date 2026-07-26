@@ -505,6 +505,59 @@ describe("MyRepairs return logistics", () => {
 });
 
 describe("MyRepairs warranty logistics", () => {
+  describe.each([
+    {
+      marker: "is_warranty_job",
+      warranty: { is_warranty_job: true, billing_mode: "warranty" },
+    },
+    {
+      marker: "warranty_no_charge billing mode",
+      warranty: { is_warranty_job: false, billing_mode: "warranty_no_charge" },
+    },
+  ])("forged payment payload with $marker", ({ warranty }) => {
+    it.each(["repairer_accepted", "pending", "ready_for_pickup"])(
+      "hides payment status and actions while %s",
+      async (status) => {
+        mocks.repair = repair({
+          ...warranty,
+          status,
+          payment_status: "pending",
+          payment_enabled: true,
+          conversation_id: 15,
+          logistics_shipments: [],
+        });
+
+        render(<MyRepairs />);
+        const tabName = status === "ready_for_pickup" ? /Ready for Pickup/i : /Pending/i;
+        const tabs = await screen.findAllByRole("button", { name: tabName });
+        fireEvent.click(tabs[0]);
+        await screen.findAllByText("Scuffed sneakers");
+
+        expect(screen.queryAllByText("PAY NOW")).toHaveLength(0);
+        expect(screen.queryByRole("button", { name: "PAY NOW" })).not.toBeInTheDocument();
+      },
+    );
+
+    it("explains that warranty service and shop-owned shipping are covered", async () => {
+      mocks.repair = repair({
+        ...warranty,
+        status: "repairer_accepted",
+        payment_status: "pending",
+        payment_enabled: true,
+        conversation_id: 15,
+        logistics_shipments: [],
+      });
+
+      render(<MyRepairs />);
+      const pendingTabs = await screen.findAllByRole("button", { name: /Pending/i });
+      fireEvent.click(pendingTabs[0]);
+
+      expect(await screen.findByText(
+        "Warranty service and shop-owned shipping are covered by the shop.",
+      )).toBeInTheDocument();
+    });
+  });
+
   it("keeps sponsored customer-pickup tracking editable until staff handoff", async () => {
     const sponsoredPickup = {
       is_warranty_job: true,

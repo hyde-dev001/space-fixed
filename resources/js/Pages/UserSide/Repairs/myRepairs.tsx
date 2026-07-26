@@ -3315,6 +3315,7 @@ const MyRepairs: React.FC = () => {
       order.payment_status !== 'paid' &&
       order.payment_status !== 'completed' &&
       Boolean(order.payment_enabled) &&
+      !isWarrantyNoChargeOrder(order) &&
       !processingPayment
     ) {
       return 'PAY NOW';
@@ -4267,7 +4268,7 @@ const MyRepairs: React.FC = () => {
                         </div>
                         <div className="text-right">
                           {isWarrantyNoChargeOrder(order) ? (
-                            <p className="mb-2 text-xs text-amber-700">Warranty rework has no additional charge.</p>
+                            <p className="mb-2 text-xs text-amber-700">Warranty service and shop-owned shipping are covered by the shop.</p>
                           ) : (
                             <div className="space-y-1 mb-2 text-xs text-gray-500">
                               <div className="flex items-center justify-end gap-3">
@@ -4335,7 +4336,7 @@ const MyRepairs: React.FC = () => {
                         )}
                       {order.status === 'repairer_accepted' && order.conversation_id && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (
                         <>
-                          {isOnlineIntakeFlow(order) && order.payment_enabled && (
+                          {!isWarrantyNoChargeOrder(order) && isOnlineIntakeFlow(order) && order.payment_enabled && (
                             <button
                               onClick={() => handlePayNow(order.id)}
                               disabled={!order.payment_enabled || processingPayment}
@@ -4377,7 +4378,7 @@ const MyRepairs: React.FC = () => {
                       
                       {order.status === 'pending' && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (
                         <>
-                          {isOnlineIntakeFlow(order) && order.payment_enabled && (
+                          {!isWarrantyNoChargeOrder(order) && isOnlineIntakeFlow(order) && order.payment_enabled && (
                             <button
                               onClick={() => handlePayNow(order.id)}
                               disabled={!order.payment_enabled || processingPayment}
@@ -4407,7 +4408,7 @@ const MyRepairs: React.FC = () => {
                       {(order.status === 'ready_for_pickup' || order.status === 'shipped') && (
                         <>
                           {/* For deposit_50 only — full_upfront is already paid */}
-                          {order.status === 'ready_for_pickup' && isOnlineReturnFlow(order) && (order.payment_policy ?? 'deposit_50') !== 'full_upfront' && order.payment_status !== 'completed' && (
+                          {!isWarrantyNoChargeOrder(order) && order.status === 'ready_for_pickup' && isOnlineReturnFlow(order) && (order.payment_policy ?? 'deposit_50') !== 'full_upfront' && order.payment_status !== 'completed' && (
                             <button
                               onClick={() => handlePayNow(order.id)}
                               disabled={!order.payment_enabled || processingPayment}
