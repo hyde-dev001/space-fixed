@@ -45,8 +45,13 @@ revenue separate from repair service revenue.
 - Add paid intake and return delivery fees to the picked-up repair invoice total.
 - Store service and delivery amounts separately in invoice metadata.
 - Create separate invoice lines for shop-owned intake pickup and return delivery.
-- Add paid delivery fees to the repair page revenue card while keeping the
-  existing service VAT calculation unchanged.
+- Store the invoice metadata keys `service_amount`, `intake_delivery_fee`,
+  `return_delivery_fee`, `shipping_fee`, and `grand_total`.
+- Calculate the repair page revenue as:
+  `realized service revenue excluding VAT + paid locked intake fee + paid locked return fee`.
+  Delivery fees must not enter the service VAT ratio and must be added only once.
+  This preserves the application's current treatment of delivery fees while
+  keeping service revenue net of VAT.
 - Preserve the existing refund/reconciliation behavior; compensated fees whose
   payment lock is cleared are excluded.
 
@@ -66,7 +71,7 @@ revenue separate from repair service revenue.
 - Invoice tests prove paid shop-owned fees create separate delivery lines and
   increase invoice total, while unpaid quotes do not.
 - Revenue tests prove the repair revenue card includes only paid/locked delivery
-  fees.
+  fees, including partial-payment and compensated-fee cases.
 
 ## Out of Scope
 
