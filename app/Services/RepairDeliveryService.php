@@ -525,12 +525,14 @@ final class RepairDeliveryService
 
     private function handoffState(RepairRequest $repair, string $purpose): array
     {
-        $shipment = Shipment::query()
-            ->with(['legs.proofs', 'events'])
-            ->where('source_type', 'repair_request')
-            ->where('source_id', $repair->id)
-            ->where('purpose', $purpose)
-            ->first();
+        $shipment = $repair->relationLoaded('logisticsShipments')
+            ? $repair->logisticsShipments->firstWhere('purpose', $purpose)
+            : Shipment::query()
+                ->with(['legs.proofs', 'events'])
+                ->where('source_type', 'repair_request')
+                ->where('source_id', $repair->id)
+                ->where('purpose', $purpose)
+                ->first();
         $leg = $shipment?->legs
             ->reject(fn ($candidate): bool => $candidate->status->value === 'cancelled')
             ->sortByDesc('sequence')

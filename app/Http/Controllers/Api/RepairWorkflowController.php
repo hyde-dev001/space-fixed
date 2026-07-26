@@ -281,7 +281,14 @@ class RepairWorkflowController extends Controller
                 }
 
                 // Shop owner sees all repairs for their shop
-                $repairs = RepairRequest::with(['user', 'services', 'shopOwner', 'repairer'])
+                $repairs = RepairRequest::with([
+                    'user',
+                    'services',
+                    'shopOwner',
+                    'repairer',
+                    'logisticsShipments.legs.proofs',
+                    'logisticsShipments.events',
+                ])
                     ->withSum(['posTransactions as pos_paid_amount' => function ($query) {
                         $query->whereIn('status', ['paid', 'partially_refunded', 'refunded']);
                     }], 'paid_amount')
@@ -332,7 +339,14 @@ class RepairWorkflowController extends Controller
                     ], 422);
                 }
 
-                $repairs = RepairRequest::with(['user', 'services', 'shopOwner', 'repairer'])
+                $repairs = RepairRequest::with([
+                    'user',
+                    'services',
+                    'shopOwner',
+                    'repairer',
+                    'logisticsShipments.legs.proofs',
+                    'logisticsShipments.events',
+                ])
                     ->withSum(['posTransactions as pos_paid_amount' => function ($query) {
                         $query->whereIn('status', ['paid', 'partially_refunded', 'refunded']);
                     }], 'paid_amount')
@@ -364,7 +378,13 @@ class RepairWorkflowController extends Controller
             }
             
             // Get repairs assigned to this repairer
-            $repairs = RepairRequest::with(['user', 'services', 'shopOwner'])
+            $repairs = RepairRequest::with([
+                'user',
+                'services',
+                'shopOwner',
+                'logisticsShipments.legs.proofs',
+                'logisticsShipments.events',
+            ])
                 ->withSum(['posTransactions as pos_paid_amount' => function ($query) {
                     $query->whereIn('status', ['paid', 'partially_refunded', 'refunded']);
                 }], 'paid_amount')
