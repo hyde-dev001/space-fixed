@@ -198,7 +198,7 @@ class RepairWarrantyClaimFlowTest extends TestCase
 
     public function test_shop_sponsored_warranty_return_coverage_loss_unlocks_customer_fallback(): void
     {
-        [$settings, , $address, $linked, $delivery] = $this->approveShopSponsoredWarranty();
+        [$settings, $repairer, $address, $linked, $delivery] = $this->approveShopSponsoredWarranty();
         $customer = User::query()->findOrFail($linked->user_id);
         $intakeLock = $linked->intake_logistics_locked_at->copy();
         $linked->update(['status' => 'ready_for_pickup']);
@@ -237,6 +237,17 @@ class RepairWarrantyClaimFlowTest extends TestCase
         $this->assertNull($fallback->return_address_confirmed_at);
         $this->assertNull($fallback->return_address_confirmed_version);
         $this->assertTrue($fallback->intake_logistics_locked_at->equalTo($intakeLock));
+        $this->assertTrue($delivery->returnHandoff($fallback, true)['can_release']);
+
+        $this->actingAs($repairer, 'user')
+            ->postJson("/api/repairer/repairs/{$linked->id}/activate-pickup")
+            ->assertOk();
+
+        $this->actingAs($customer, 'user')
+            ->postJson("/api/customer/repairs/{$linked->id}/confirm-pickup")
+            ->assertOk();
+
+        $this->assertSame('picked_up', (string) $linked->fresh()->status);
     }
 
     public function test_duplicate_shop_sponsored_warranty_intake_cancellation_without_shipment_is_idempotent(): void

@@ -251,6 +251,58 @@ class RepairReturnHandoffTest extends TestCase
             ->assertUnprocessable();
     }
 
+    public function test_sponsored_customer_pickup_plan_lock_allows_tracking_before_staff_handoff(): void
+    {
+        [$repair, $customer] = $this->repairFixture('customer_pickup');
+        $repair->forceFill([
+            'is_warranty_job' => true,
+            'billing_mode' => 'warranty_no_charge',
+            'return_logistics_locked_at' => now(),
+        ])->save();
+
+        $this->actingAs($customer, 'user')
+            ->postJson("/api/customer/repairs/{$repair->id}/external-tracking", [
+                'leg' => 'return',
+                'carrier' => 'Lalamove',
+                'tracking_number' => 'WARRANTY-RETURN-123',
+            ])
+            ->assertOk();
+
+        $repair->refresh();
+        $this->assertSame(
+            'WARRANTY-RETURN-123',
+            data_get($repair->return_address, 'external_tracking.tracking_number'),
+        );
+        $this->assertNotNull($repair->return_logistics_locked_at);
+        $this->assertFalse((bool) $repair->pickup_enabled);
+    }
+
+    public function test_non_warranty_return_plan_lock_still_blocks_tracking_and_handoff(): void
+    {
+        [$repair, $customer, $repairer] = $this->repairFixture('customer_pickup');
+        $repair->update(['return_logistics_locked_at' => now()]);
+
+        $this->assertFalse(app(\App\Services\RepairDeliveryService::class)
+            ->returnHandoff($repair->fresh(), true)['can_release']);
+
+        $this->actingAs($customer, 'user')
+            ->postJson("/api/customer/repairs/{$repair->id}/external-tracking", [
+                'leg' => 'return',
+                'carrier' => 'Lalamove',
+                'tracking_number' => 'PAID-RETURN-123',
+            ])
+            ->assertUnprocessable();
+
+        $this->actingAs($repairer, 'user')
+            ->postJson("/api/repairer/repairs/{$repair->id}/activate-pickup")
+            ->assertUnprocessable();
+
+        $repair->refresh();
+        $this->assertFalse((bool) $repair->pickup_enabled);
+        $this->assertSame('ready_for_pickup', (string) $repair->status);
+        $this->assertNull(data_get($repair->return_address, 'external_tracking'));
+    }
+
     public function test_job_order_payload_exposes_the_authoritative_return_handoff_gate(): void
     {
         [$repair, , $repairer] = $this->repairFixture('customer_pickup');

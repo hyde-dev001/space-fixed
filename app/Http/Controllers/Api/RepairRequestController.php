@@ -1944,7 +1944,11 @@ class RepairRequestController extends Controller
                     'leg' => ['External tracking is available only for customer-arranged delivery.'],
                 ]);
             }
-            if ($repair->{$lockField} !== null) {
+            $sponsoredReturnAwaitingHandoff = ! $isIntake
+                && ! (bool) $repair->pickup_enabled
+                && ((bool) ($repair->is_warranty_job ?? false)
+                    || (string) ($repair->billing_mode ?? '') === 'warranty_no_charge');
+            if ($repair->{$lockField} !== null && ! $sponsoredReturnAwaitingHandoff) {
                 throw \Illuminate\Validation\ValidationException::withMessages([
                     'leg' => ['This delivery handoff is locked and tracking can no longer be changed.'],
                 ]);

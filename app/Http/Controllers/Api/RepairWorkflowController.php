@@ -2430,6 +2430,9 @@ class RepairWorkflowController extends Controller
             $allowedStatuses = $method === 'shop_delivery'
                 ? ['shipped']
                 : ['ready_for_pickup', 'ready-for-pickup'];
+            $sponsoredNonShopPlan = $method !== 'shop_delivery'
+                && ((bool) ($repair->is_warranty_job ?? false)
+                    || (string) ($repair->billing_mode ?? '') === 'warranty_no_charge');
 
             if (! in_array((string) $repair->status, $allowedStatuses, true)) {
                 throw ValidationException::withMessages([
@@ -2437,7 +2440,9 @@ class RepairWorkflowController extends Controller
                 ]);
             }
             if ((bool) $repair->pickup_enabled
-                || ($method !== 'shop_delivery' && $repair->return_logistics_locked_at !== null)) {
+                || ($method !== 'shop_delivery'
+                    && $repair->return_logistics_locked_at !== null
+                    && ! $sponsoredNonShopPlan)) {
                 throw ValidationException::withMessages([
                     'status' => ['Customer receipt confirmation is already active.'],
                 ]);

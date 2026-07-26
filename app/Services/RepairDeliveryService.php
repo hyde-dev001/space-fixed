@@ -510,15 +510,18 @@ final class RepairDeliveryService
             : ($method === 'customer_pickup'
                 ? ['ready_for_pickup', 'ready-for-pickup']
                 : ['shipped']);
+        $sponsoredNonShopPlan = $method !== 'shop_delivery' && $this->isSponsoredWarranty($repair);
         $canRelease = in_array((string) $repair->status, $expectedStatuses, true)
             && $paymentSatisfied
             && ! (bool) $repair->pickup_enabled
-            && ($method === 'shop_delivery' || $repair->return_logistics_locked_at === null)
+            && ($method === 'shop_delivery' || $repair->return_logistics_locked_at === null || $sponsoredNonShopPlan)
             && ($method !== 'shop_delivery' || $state['approved']);
 
         $blockedReason = null;
         if ((bool) $repair->pickup_enabled
-            || ($method !== 'shop_delivery' && $repair->return_logistics_locked_at !== null)) {
+            || ($method !== 'shop_delivery'
+                && $repair->return_logistics_locked_at !== null
+                && ! $sponsoredNonShopPlan)) {
             $blockedReason = 'Customer receipt confirmation is already active.';
         } elseif (! in_array((string) $repair->status, $expectedStatuses, true)) {
             $blockedReason = $method === 'shop_delivery'
