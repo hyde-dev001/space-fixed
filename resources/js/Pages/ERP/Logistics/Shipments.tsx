@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
+import { CalendarDays, ChevronDown, MapPin, Search, UserRound } from 'lucide-react';
 import Swal from 'sweetalert2';
 import AppLayoutERP from '@/layout/AppLayout_ERP';
-import { Table, TableBody, TableCell, TableHeader, TableRow } from '@/components/ui/table';
 import RetailOrderSummary from './components/RetailOrderSummary';
 import {
   logisticsModuleForSourceType,
@@ -20,6 +20,7 @@ type ShipmentFilters = {
   purpose?: string;
   window: string;
   module?: 'all' | LogisticsModule;
+  search?: string;
 };
 
 const statusOptions = [
@@ -69,6 +70,13 @@ function contact(leg?: TrackingShipmentLeg) {
   return { name: value('name'), phone: value('phone'), address: value('address'), instructions: value('delivery_instructions') };
 }
 
+const formatDate = (value?: string | null) => value
+  ? new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(`${value.slice(0, 10)}T00:00:00Z`))
+  : 'Not scheduled';
+
+const shortAddress = (value: string, max = 72) =>
+  value.length > max ? `${value.slice(0, max - 1).trimEnd()}…` : value;
+
 const toast = (icon: 'success' | 'error' | 'warning', title: string) => Swal.fire({
   toast: true,
   position: 'top-end',
@@ -103,7 +111,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
   const [issueProofFiles, setIssueProofFiles] = useState<Record<number, File | null>>({});
   const [issueForms, setIssueForms] = useState<Record<number, { reason_code: string; notes: string }>>({});
   const [deliveryOutcomes, setDeliveryOutcomes] = useState<Record<number, 'proof' | 'issue'>>({});
-  const hasActionColumn = riderMode || canAssign || canUpdateStatus || canRecordProof || canApproveProof;
+  const [search, setSearch] = useState(filters.search ?? '');
 
   const updateFilter = (key: keyof ShipmentFilters, value: string) => {
     const next = { ...filters, [key]: value, page: 1 };
@@ -118,6 +126,11 @@ export default function Shipments({ children }: React.PropsWithChildren) {
   };
   const selectedModule = filters.module ?? (availableModules.length === 1 ? availableModules[0] : 'all');
   const visiblePurposeOptions = purposeOptions.filter(([, , module]) => selectedModule === 'all' || module === 'all' || module === selectedModule);
+  const hasActiveFilters = Boolean(filters.search?.trim())
+    || filters.status !== 'all'
+    || (filters.purpose ?? 'all') !== 'all'
+    || (filters.window ?? 'all') !== 'all'
+    || (showModuleFilter && selectedModule !== 'all');
 
   const act = async (url: string, body?: FormData | Record<string, string>, issue = false) => {
     setActionError(null);
@@ -290,6 +303,23 @@ export default function Shipments({ children }: React.PropsWithChildren) {
         {children}
 
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <form role="search" onSubmit={(event) => {
+            event.preventDefault();
+            updateFilter('search', search.trim());
+          }} className="flex w-full max-w-md gap-2">
+            <label className="relative min-w-0 flex-1">
+              <span className="sr-only">Search shipments</span>
+              <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
+              <input
+                aria-label="Search shipments"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Shipment, order, customer, or product"
+                className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-3 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+              />
+            </label>
+            <button type="submit" className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white">Search</button>
+          </form>
           <div className="flex flex-wrap items-center gap-3">
             <select
               value={filters.status}
@@ -339,73 +369,85 @@ export default function Shipments({ children }: React.PropsWithChildren) {
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableCell isHeader className="px-6 py-4 font-semibold text-gray-900 dark:text-white">ID</TableCell>
-                  <TableCell isHeader className="px-6 py-4 font-semibold text-gray-900 dark:text-white">Purpose</TableCell>
-                  <TableCell isHeader className="px-6 py-4 font-semibold text-gray-900 dark:text-white">Receiver</TableCell>
-                  <TableCell isHeader className="px-6 py-4 font-semibold text-gray-900 dark:text-white">Address</TableCell>
-                  <TableCell isHeader className="px-6 py-4 font-semibold text-gray-900 dark:text-white">Status</TableCell>
-                  <TableCell isHeader className="px-6 py-4 font-semibold text-gray-900 dark:text-white">Source</TableCell>
-                  <TableCell isHeader className="px-6 py-4 font-semibold text-gray-900 dark:text-white">Legs</TableCell>
-                  {hasActionColumn && <TableCell isHeader className="px-6 py-4 font-semibold text-gray-900 dark:text-white">Action</TableCell>}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {shipments.data.length === 0 ? (
-                  <TableRow>
-                    <TableCell className="px-6 py-6 text-sm text-gray-500 dark:text-gray-400">No shipments found.</TableCell>
-                    <TableCell className="px-6 py-6" />
-                    <TableCell className="px-6 py-6" />
-                    <TableCell className="px-6 py-6" />
-                    <TableCell className="px-6 py-6" />
-                    <TableCell className="px-6 py-6" />
-                    <TableCell className="px-6 py-6" />
-                  </TableRow>
-                ) : shipments.data.map((shipment) => (
-                  <React.Fragment key={shipment.id}>
-                  <TableRow className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                    <TableCell className="px-6 py-4 font-semibold text-gray-900 dark:text-white">#{shipment.id}</TableCell>
-                    <TableCell className="px-6 py-4 text-gray-600 dark:text-gray-300">{label(shipment.purpose)}</TableCell>
-                    <TableCell className="px-6 py-4 text-gray-600 dark:text-gray-300">{contact(shipment.legs?.[0]).name || '—'}</TableCell>
-                    <TableCell className="max-w-xs px-6 py-4 text-gray-600 dark:text-gray-300">{contact(shipment.legs?.[0]).address || '—'}</TableCell>
-                    <TableCell className="px-6 py-4">
-                      <span className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${statusClass(shipment.status)}`}>
-                        {label(shipment.status)}
-                      </span>
-                    </TableCell>
-                    <TableCell className="px-6 py-4 text-gray-600 dark:text-gray-300">
-                      <span className="mr-2 inline-flex rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
-                        {logisticsModuleLabel(logisticsModuleForSourceType(shipment.source_type))}
-                      </span>
-                      <span>{logisticsSourceLabel(shipment)}</span>
-                      {shipment.source_summary && <span className="mt-1 block text-xs text-gray-500">
-                        {shipment.source_summary.customer_name} · {shipment.source_summary.shoe_summary}
-                      </span>}
-                      <RetailOrderSummary summary={shipment.order_summary} />
-                    </TableCell>
-                    <TableCell className="px-6 py-4 text-gray-600 dark:text-gray-300">{shipment.legs?.length ?? 0}</TableCell>
-                    {hasActionColumn && (
-                      <TableCell className="px-6 py-4">
-                        <button
-                          type="button"
-                          onClick={() => setExpandedShipmentId(expandedShipmentId === shipment.id ? null : shipment.id)}
-                          className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100"
-                        >
-                          {expandedShipmentId === shipment.id ? 'Close' : 'Open delivery'}
-                        </button>
-                      </TableCell>
-                    )}
-                  </TableRow>
-                  {hasActionColumn && expandedShipmentId === shipment.id && (
-                    <TableRow>
-                      <TableCell colSpan={hasActionColumn ? 8 : 7} className="bg-gray-50 px-6 py-5 dark:bg-gray-900/40">
-                        <div className="space-y-3">
-                          <RetailOrderSummary summary={shipment.order_summary} expanded />
-                          {(shipment.legs ?? []).map((leg) => {
+        <div className="space-y-3">
+          {shipments.data.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-10 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800">
+              {hasActiveFilters ? 'No shipments match your filters.' : 'No shipments yet.'}
+            </div>
+          ) : shipments.data.map((shipment) => {
+            const legs = shipment.legs ?? [];
+            const firstLeg = legs[0];
+            const recipient = contact(firstLeg);
+            const activeAssignments = legs
+              .flatMap((leg) => leg.assignments ?? [])
+              .filter((assignment) => ['assigned', 'accepted'].includes(assignment.status));
+            const rider = activeAssignments[0]?.rider_profile?.name ?? 'Unassigned';
+            const urgent = legs.some((leg) => Boolean(leg.urgent_at));
+            const failed = legs.some((leg) => leg.attempts?.[0]?.status === 'failed');
+            const awaitingProof = legs.some((leg) => leg.status === 'awaiting_proof_approval');
+            const overdue = legs.some((leg) => Boolean(leg.scheduled_delivery_date)
+              && leg.scheduled_delivery_date!.slice(0, 10) < new Date().toISOString().slice(0, 10)
+              && !['delivered', 'cancelled'].includes(leg.status));
+            const expanded = expandedShipmentId === shipment.id;
+
+            return <article key={shipment.id} className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+              <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] lg:items-center">
+                <div className="min-w-0 space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <strong className="text-gray-950 dark:text-white">Shipment #{shipment.id}</strong>
+                    <span className={`rounded-full px-2 py-1 text-xs font-semibold ${statusClass(shipment.status)}`}>{label(shipment.status)}</span>
+                    <span className="rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-700 dark:bg-gray-700 dark:text-gray-200">{label(shipment.purpose)}</span>
+                    <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
+                      {logisticsModuleLabel(logisticsModuleForSourceType(shipment.source_type))}
+                    </span>
+                    <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
+                      {shipment.source_type === 'order' && shipment.order_summary?.order_number
+                        ? `Order ${shipment.order_summary.order_number}`
+                        : logisticsSourceLabel(shipment)}
+                    </span>
+                  </div>
+                  {shipment.source_summary && <p className="text-sm text-gray-600 dark:text-gray-300">{shipment.source_summary.customer_name} · {shipment.source_summary.shoe_summary}</p>}
+                  <RetailOrderSummary summary={shipment.order_summary} />
+                </div>
+                <div className="grid gap-2 text-sm text-gray-600 dark:text-gray-300">
+                  <span className="inline-flex items-center gap-2"><UserRound size={16} />{recipient.name || 'Customer not provided'}</span>
+                  <span title={recipient.address || undefined} className="inline-flex items-start gap-2">
+                    <MapPin className="mt-0.5 shrink-0" size={16} />
+                    {recipient.address ? shortAddress(recipient.address) : 'Address not provided'}
+                  </span>
+                  <span className="inline-flex items-center gap-2">
+                    <CalendarDays size={16} />
+                    {formatDate(firstLeg?.scheduled_delivery_date)}{firstLeg?.delivery_window ? ` · ${label(firstLeg.delivery_window)}` : ''}
+                  </span>
+                  <span>Rider: {rider}</span>
+                  <div className="flex flex-wrap gap-2">
+                    {urgent && <span className="rounded-full bg-red-100 px-2 py-1 text-xs font-semibold text-red-700">Urgent</span>}
+                    {overdue && <span className="rounded-full bg-orange-100 px-2 py-1 text-xs font-semibold text-orange-700">Overdue</span>}
+                    {failed && <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">Failed attempt</span>}
+                    {awaitingProof && <span className="rounded-full bg-purple-100 px-2 py-1 text-xs font-semibold text-purple-700">Awaiting proof</span>}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  aria-expanded={expanded}
+                  aria-controls={`shipment-${shipment.id}-details`}
+                  onClick={() => setExpandedShipmentId(expanded ? null : shipment.id)}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100"
+                >
+                  {expanded ? 'Close delivery' : 'Open delivery'}
+                  <ChevronDown className={`transition-transform ${expanded ? 'rotate-180' : ''}`} size={16} />
+                </button>
+              </div>
+              {expanded && (
+                <div
+                  id={`shipment-${shipment.id}-details`}
+                  role="region"
+                  aria-label={`Shipment ${shipment.id} details`}
+                  className="space-y-4 border-t border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/40"
+                >
+                  {shipment.source_type === 'order' && <RetailOrderSummary summary={shipment.order_summary} expanded />}
+                  <div className="space-y-3">
+                    {(shipment.legs ?? []).map((leg) => {
                             const recipient = contact(leg);
                             const activeAssignment = leg.assignments?.find((assignment) => ['assigned', 'accepted'].includes(assignment.status));
                             const latestAttempt = leg.attempts?.[0];
@@ -424,21 +466,22 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                             const deliveryOutcome = deliveryOutcomes[leg.id];
 
                             return (
-                              <div key={leg.id} className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between dark:border-gray-700 dark:bg-gray-800">
+                              <div key={leg.id} className="grid gap-4 rounded-lg border border-gray-200 bg-white p-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] dark:border-gray-700 dark:bg-gray-800">
                                 <div>
-                                  <p className="text-sm font-semibold text-gray-900 dark:text-white">{label(leg.leg_type)} leg</p>
+                                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Delivery details · {label(leg.leg_type)} leg</h3>
                                   <p className="text-xs text-gray-500 dark:text-gray-400">{label(leg.status)}</p>
                                   <div className="mt-2 space-y-1 text-sm text-gray-700 dark:text-gray-200">
                                     <p><strong>Receiver:</strong> {recipient.name || 'Not provided'}</p>
                                     <p><strong>Phone:</strong> {recipient.phone || 'Not provided'}</p>
                                     <p><strong>Address:</strong> {recipient.address || 'Not provided'}</p>
                                     {recipient.instructions && <p><strong>Instructions:</strong> {recipient.instructions}</p>}
-                                    <p><strong>Schedule:</strong> {leg.scheduled_delivery_date || 'Not scheduled'}{leg.delivery_window ? ` · ${label(leg.delivery_window)}` : ''}</p>
+                                    <p><strong>Schedule:</strong> {formatDate(leg.scheduled_delivery_date)}{leg.delivery_window ? ` · ${label(leg.delivery_window)}` : ''}</p>
                                     {leg.stop_sequence && <p><strong>Stop:</strong> {leg.stop_sequence}</p>}
                                   </div>
                                   {!riderMode && latestAttempt?.status === 'failed' && <div className="mt-2 space-y-1 text-xs text-gray-600 dark:text-gray-300"><span className="inline-flex rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">Failed attempt - {failedAttemptCount}/{maxDeliveryAttempts}</span>{attemptsMaxed && <p className="font-semibold text-red-600">Subject for refund</p>}{latestAttempt.reason_code && <p>{label(latestAttempt.reason_code)}</p>}{latestAttempt.notes && <p>Internal note: {latestAttempt.notes}</p>}{latestAttempt.file_path && <a href={`/storage/${latestAttempt.file_path}`} target="_blank" rel="noreferrer" className="inline-block font-semibold text-blue-600 hover:underline">View failed-attempt photo</a>}</div>}
                                 </div>
-                                <div className="flex min-w-0 flex-col gap-3 sm:min-w-[22rem]">
+                                <div className="flex min-w-0 flex-col gap-3">
+                                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Assignment and progress</h3>
                                   {canUpdateStatus && leg.status === 'assigned' && <button type="button" onClick={() => void act(`/api/logistics/legs/${leg.id}/picked-up`)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">Picked up</button>}
                                   {canUpdateStatus && leg.status === 'picked_up' && <button type="button" onClick={() => void act(`/api/logistics/legs/${leg.id}/in-transit`)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">In transit</button>}
                                   {showOutcomeChoice && <div role="group" aria-label="Choose delivery outcome" className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-900/40"><p className="mb-2 text-sm font-semibold text-gray-900 dark:text-white">What happened with this delivery?</p><div className="grid gap-2 sm:grid-cols-2"><button type="button" onClick={() => chooseDeliveryOutcome(leg.id, 'proof')} className={`rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${deliveryOutcome === 'proof' ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-300 bg-white text-gray-700 hover:border-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200'}`}>Delivered successfully</button><button type="button" onClick={() => chooseDeliveryOutcome(leg.id, 'issue')} className={`rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${deliveryOutcome === 'issue' ? 'border-amber-600 bg-amber-600 text-white' : 'border-gray-300 bg-white text-gray-700 hover:border-amber-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200'}`}>Couldn't deliver</button></div></div>}
@@ -507,22 +550,19 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                 ))}
                               </div>
                             );
-                          })}
-                          {canAssign && assignableRiders.length === 0 && (shipment.legs ?? []).some((leg) => !leg.assignments?.some((assignment) => ['assigned', 'accepted'].includes(assignment.status)) && !['delivered', 'cancelled'].includes(leg.status)) && <p className="text-sm text-amber-700">No active available riders. Create or make a logistics rider available first.</p>}
-                          {assignmentError && <p className="text-sm text-red-600">{assignmentError}</p>}
-                          {actionError && <p className="text-sm text-red-600">{actionError}</p>}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                  </React.Fragment>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                    })}
+                    {canAssign && assignableRiders.length === 0 && (shipment.legs ?? []).some((leg) => !leg.assignments?.some((assignment) => ['assigned', 'accepted'].includes(assignment.status)) && !['delivered', 'cancelled'].includes(leg.status)) && <p className="text-sm text-amber-700">No active available riders. Create or make a logistics rider available first.</p>}
+                    {assignmentError && <p className="text-sm text-red-600">{assignmentError}</p>}
+                    {actionError && <p className="text-sm text-red-600">{actionError}</p>}
+                  </div>
+                </div>
+              )}
+            </article>;
+          })}
+        </div>
 
-          {shipments.total > 0 && (
-            <div className="flex items-center justify-between border-t border-gray-200 px-6 py-4 dark:border-gray-700">
+        {shipments.total > 0 && (
+            <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-white px-6 py-4 dark:border-gray-700 dark:bg-gray-800">
               <div className="text-sm text-gray-700 dark:text-gray-300">
                 Showing <span className="font-medium">{shipments.from}</span> to <span className="font-medium">{shipments.to}</span> of{' '}
                 <span className="font-medium">{shipments.total}</span>
@@ -552,8 +592,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                 ))}
               </div>
             </div>
-          )}
-        </div>
+        )}
       </div>
     </AppLayoutERP>
   );

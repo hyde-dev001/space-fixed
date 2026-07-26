@@ -53,11 +53,94 @@ const setDispatcherLeg = (leg: Record<string, unknown>) => {
   mocks.props.shipments.data[0].legs = [leg];
 };
 
-it('shows receiver and address in the delivery table', () => {
+it('renders responsive shipment cards without a wide table', () => {
   render(<Shipments><p>Batch panel</p></Shipments>);
   expect(screen.getByText('Batch panel')).toBeInTheDocument();
   expect(screen.getByText('Miguel Dela Rosa')).toBeInTheDocument();
+  expect(screen.queryByRole('table')).not.toBeInTheDocument();
   expect(screen.getByText('Dasmariñas, Cavite')).toBeInTheDocument();
+});
+
+it('expands shipment details accessibly without mutation permission', () => {
+  mocks.props.canRecordProof = false;
+  render(<Shipments />);
+
+  const open = screen.getByRole('button', { name: 'Open delivery' });
+  expect(open).toHaveAttribute('aria-expanded', 'false');
+  fireEvent.click(open);
+  expect(screen.getByRole('button', { name: 'Close delivery' })).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByRole('region', { name: 'Shipment 1 details' })).toBeInTheDocument();
+});
+
+it('submits server-side search and resets pagination', () => {
+  render(<Shipments />);
+  fireEvent.change(screen.getByLabelText('Search shipments'), { target: { value: 'Air Max' } });
+  fireEvent.submit(screen.getByRole('search'));
+
+  expect(mocks.get).toHaveBeenCalledWith('/erp/logistics/deliveries', {
+    status: 'all',
+    purpose: 'all',
+    window: 'all',
+    module: 'all',
+    search: 'Air Max',
+    page: 1,
+  }, {
+    preserveScroll: true,
+    preserveState: true,
+  });
+});
+
+it('shows readable schedules and operational indicators', () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-07-21T00:00:00Z'));
+  try {
+    mocks.props.shipments.data[0].legs[0] = {
+      ...mocks.props.shipments.data[0].legs[0],
+      status: 'awaiting_proof_approval',
+      scheduled_delivery_date: '2026-07-20',
+      delivery_window: 'morning',
+      urgent_at: '2026-07-19T01:00:00Z',
+      attempts: [{ id: 7, status: 'failed', attempt_number: 1 }],
+    };
+    render(<Shipments />);
+
+    expect(screen.getByText('Jul 20, 2026 · Morning')).toBeInTheDocument();
+    expect(screen.getByText('Urgent')).toBeInTheDocument();
+    expect(screen.getByText('Overdue')).toBeInTheDocument();
+    expect(screen.getByText('Failed attempt')).toBeInTheDocument();
+    expect(screen.getByText('Awaiting proof')).toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('distinguishes empty history from filtered results', () => {
+  mocks.props.shipments = { data: [], links: [], from: null, to: null, total: 0, current_page: 1, last_page: 1 };
+  const view = render(<Shipments />);
+  expect(screen.getByText('No shipments yet.')).toBeInTheDocument();
+
+  mocks.props.filters.search = 'Nike';
+  view.rerender(<Shipments />);
+  expect(screen.getByText('No shipments match your filters.')).toBeInTheDocument();
+});
+
+it('shows missing order fallback inside the card and shortens long addresses', () => {
+  const longAddress = '123 Very Long Street, Barangay Sample, DasmariÃ±as City, Cavite, Region IV-A, 4114';
+  mocks.props.shipments.data[0].order_summary = {
+    available: false,
+    order_id: 10,
+    order_number: null,
+    items: [],
+    total_quantity: 0,
+    variant_count: 0,
+    model_count: 0,
+  };
+  mocks.props.shipments.data[0].legs[0].destination_snapshot.address = longAddress;
+
+  render(<Shipments />);
+  expect(screen.getByRole('article')).toBeInTheDocument();
+  expect(screen.getByText('Order details unavailable')).toBeInTheDocument();
+  expect(screen.getByTitle(longAddress)).toHaveTextContent('…');
 });
 
 it('shows a compact retail summary and every variant when expanded', () => {
@@ -85,6 +168,7 @@ it('shows repair-only purposes and retains compatible filters when changing modu
     ...mocks.props.shipments.data[0],
     purpose: 'repair_pickup',
     source_type: 'repair_request',
+    order_summary: null,
     source_summary: {
       request_number: 'REP-2026-0042',
       customer_name: 'Mia Santos',
