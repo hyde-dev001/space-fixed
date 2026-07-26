@@ -61,7 +61,7 @@ vi.mock("@/components/address/CustomerAddressManager", () => ({
           is_default: false,
         })}
       >
-        Use saved return address
+        {title === "Saved pickup address" ? "Use saved pickup address" : "Use saved return address"}
       </button>
     </div>
   ),
@@ -490,6 +490,51 @@ describe("MyRepairs return logistics", () => {
 });
 
 describe("MyRepairs warranty logistics", () => {
+  it("lets the customer rebook a cancelled sponsored intake pickup", async () => {
+    mocks.repair = repair({
+      status: "repairer_accepted",
+      is_warranty_job: true,
+      billing_mode: "warranty_no_charge",
+      payment_status: "completed",
+      payment_enabled: false,
+      intake_logistics_locked_at: null,
+      logistics_shipments: [{ id: 11, purpose: "repair_pickup", status: "cancelled" }],
+    });
+    mocks.patch.mockResolvedValueOnce({
+      data: {
+        success: true,
+        message: "Delivery plan updated.",
+        intake_delivery_method: "shop_pickup",
+        intake_address: { address_id: 42, version: "intake-v2" },
+        intake_delivery_fee: 90,
+        intake_logistics_quote: { available: true, fee: 90, method: "shop_pickup" },
+      },
+    });
+
+    render(<MyRepairs />);
+    const pendingTabs = await screen.findAllByRole("button", { name: /Pending/i });
+    fireEvent.click(pendingTabs[0]);
+
+    expect(await screen.findByRole("heading", { name: "Rebook sponsored pickup" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Use saved pickup address" }));
+    await waitFor(() => expect(mocks.fetch).toHaveBeenCalledWith(
+      "/api/repair/shops/9/delivery-quote?address_id=42",
+      expect.objectContaining({ credentials: "include" }),
+    ));
+    const rebookButton = await screen.findByRole("button", { name: "Rebook shop rider pickup" });
+    await waitFor(() => expect(rebookButton).toBeEnabled());
+    fireEvent.click(rebookButton);
+
+    await waitFor(() => expect(mocks.patch).toHaveBeenCalledWith(
+      "/api/customer/repairs/77/delivery-method",
+      {
+        intake_delivery_method: "shop_pickup",
+        intake_address_id: 42,
+      },
+    ));
+    expect(await screen.findByRole("status")).toHaveTextContent("Delivery plan updated.");
+  });
+
   it("reuses the pinned repair address and exposes shop-owned and third-party choices", async () => {
     mocks.repair = repair({
       status: "picked_up",

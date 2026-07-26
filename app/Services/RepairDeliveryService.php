@@ -294,6 +294,26 @@ final class RepairDeliveryService
             $feeField = $isIntake ? 'intake_delivery_fee' : 'return_delivery_fee';
             $snapshot = $isIntake ? $lockedRepair->intake_address : $lockedRepair->return_address;
             $expectedMethod = $isIntake ? 'shop_pickup' : 'shop_delivery';
+            $shipment = Shipment::query()
+                ->where('source_type', 'repair_request')
+                ->where('source_id', $lockedRepair->id)
+                ->where('purpose', $isIntake ? 'repair_pickup' : 'repair_return')
+                ->lockForUpdate()
+                ->first();
+
+            if (
+                $sponsoredWarranty
+                && $method === $expectedMethod
+                && $lockedRepair->{$lockField} === null
+                && (float) $lockedRepair->{$feeField} > 0
+                && $shipment?->status->value === 'cancelled'
+            ) {
+                return [
+                    'repair' => $lockedRepair->fresh(),
+                    'reconciliation' => $lockedRepair->logistics_payment_reconciliation,
+                    'created' => false,
+                ];
+            }
 
             if ($method !== $expectedMethod || $lockedRepair->{$lockField} === null || (float) $lockedRepair->{$feeField} <= 0) {
                 throw ValidationException::withMessages([
@@ -310,12 +330,6 @@ final class RepairDeliveryService
                 ];
             }
 
-            $shipment = Shipment::query()
-                ->where('source_type', 'repair_request')
-                ->where('source_id', $lockedRepair->id)
-                ->where('purpose', $isIntake ? 'repair_pickup' : 'repair_return')
-                ->lockForUpdate()
-                ->first();
             $activeLeg = $shipment
                 ? ShipmentLeg::query()
                     ->where('shipment_id', $shipment->id)

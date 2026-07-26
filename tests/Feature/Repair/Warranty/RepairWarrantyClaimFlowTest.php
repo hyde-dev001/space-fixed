@@ -192,6 +192,17 @@ class RepairWarrantyClaimFlowTest extends TestCase
         $cancel->assertOk();
         $this->assertSame('cancelled', $shipment?->fresh()->status->value);
         $this->assertNull($linked->fresh()->logistics_payment_reconciliation);
+        $firstCancelledAt = $shipment->fresh()->cancelled_at;
+
+        $this->actingAs($repairer, 'user')->postJson(
+            "/api/repairer/repairs/{$linked->id}/cancel-delivery-leg",
+            ['leg' => 'intake', 'reason' => 'Repeated cancellation request.'],
+        )
+            ->assertOk()
+            ->assertJsonPath('data.reconciliation', null);
+
+        $this->assertTrue($shipment->fresh()->cancelled_at->equalTo($firstCancelledAt));
+        $this->assertSame(1, $shipment->fresh()->legs()->count());
         $cancelledAt = $shipment->fresh()->cancelled_at->copy()->startOfSecond();
         $shipment->update(['cancelled_at' => $cancelledAt]);
         $linked->refresh()->update(['intake_logistics_locked_at' => $cancelledAt]);

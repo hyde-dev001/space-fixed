@@ -470,6 +470,146 @@ const getRequestErrorMessage = (error: unknown, fallback: string): string => {
   return typeof firstValidationError === 'string' ? firstValidationError : fallback;
 };
 
+const SponsoredIntakeReplanCard: React.FC<{
+  order: RepairOrder;
+  onRefresh: () => Promise<unknown>;
+}> = ({ order, onRefresh }) => {
+  const currentAddressId = order.intake_address?.address_id
+    ? Number(order.intake_address.address_id)
+    : null;
+  const [selectedAddress, setSelectedAddress] = useState<CustomerAddress | null>(null);
+  const [coverage, setCoverage] = useState<DeliveryQuote | null>(null);
+  const [coverageLoading, setCoverageLoading] = useState(false);
+  const [coverageError, setCoverageError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const effectiveAddressId = selectedAddress?.id ?? currentAddressId;
+  const shopId = order.shop_owner_id ?? order.shop_id;
+
+  useEffect(() => {
+    if (!shopId || !effectiveAddressId) {
+      return;
+    }
+
+    let active = true;
+    setCoverageLoading(true);
+    setCoverageError(null);
+
+    fetch(`/api/repair/shops/${shopId}/delivery-quote?address_id=${effectiveAddressId}`, {
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
+    })
+      .then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload?.message || 'Unable to check shop rider coverage.');
+        }
+        return (payload?.data ?? payload) as DeliveryQuote;
+      })
+      .then((quote) => {
+        if (!active) return;
+        setCoverage(quote);
+      })
+      .catch((reason: Error) => {
+        if (!active) return;
+        setCoverage(null);
+        setCoverageError(reason.message || 'Unable to check shop rider coverage.');
+      })
+      .finally(() => {
+        if (active) setCoverageLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [effectiveAddressId, shopId]);
+
+  const handleAddressSelect = useCallback((address: CustomerAddress) => {
+    setSelectedAddress(address);
+    setCoverage(null);
+    setCoverageError(null);
+    setError(null);
+    setSuccess(null);
+  }, []);
+
+  const handleRebook = async () => {
+    if (!effectiveAddressId || !coverage?.available) {
+      setError(coverage?.reason || 'Choose an address within shop rider coverage.');
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const response = await axios.patch(`/api/customer/repairs/${order.id}/delivery-method`, {
+        intake_delivery_method: 'shop_pickup',
+        intake_address_id: effectiveAddressId,
+      });
+      setSuccess(response.data?.message || 'Sponsored pickup rebooked.');
+      await onRefresh();
+    } catch (reason) {
+      setError(getRequestErrorMessage(reason, 'Unable to rebook the sponsored pickup.'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:p-6">
+      <h4 className="text-lg font-bold text-black">Rebook sponsored pickup</h4>
+      <p className="mt-1 text-sm text-gray-600">
+        Choose a covered address for the replacement pickup. The shop will cover the rider fee.
+      </p>
+
+      <div className="mt-4">
+        <CustomerAddressManager
+          onSelect={handleAddressSelect}
+          initialAddressId={currentAddressId}
+          disabled={saving}
+          title="Saved pickup address"
+          description="Choose or pin the address for the replacement pickup."
+        />
+      </div>
+
+      <div className="mt-4 rounded-xl border border-gray-200 bg-white p-3 text-sm">
+        {coverageLoading ? (
+          <p className="font-semibold text-gray-600">Checking coverage...</p>
+        ) : coverage?.available ? (
+          <p className="font-semibold text-green-700">Within coverage · Rider fee covered by shop</p>
+        ) : (
+          <p className="font-semibold text-amber-700">
+            {coverage?.reason || 'Shop rider coverage is not available for this address.'}
+          </p>
+        )}
+        {coverageError && <p className="mt-1 text-red-700">{coverageError}</p>}
+      </div>
+
+      {error && (
+        <p role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </p>
+      )}
+      {success && (
+        <p role="status" className="mt-4 rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+          {success}
+        </p>
+      )}
+
+      <button
+        type="button"
+        onClick={handleRebook}
+        disabled={saving || coverageLoading || !coverage?.available}
+        className="mt-4 inline-flex w-full items-center justify-center rounded-full bg-[#16233b] px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300 sm:w-auto"
+      >
+        {saving ? 'Rebooking...' : 'Rebook shop rider pickup'}
+      </button>
+    </section>
+  );
+};
+
 const ReturnDeliveryPlanCard: React.FC<{
   order: RepairOrder;
   onRefresh: () => Promise<unknown>;
@@ -3931,6 +4071,15 @@ const MyRepairs: React.FC = () => {
                       leg="intake"
                       onRefresh={() => fetchRepairs({ silent: true })}
                     />
+
+                    {isWarrantyNoChargeOrder(order)
+                      && getIntakeMethod(order) === 'shop_pickup'
+                      && !order.intake_logistics_locked_at && (
+                        <SponsoredIntakeReplanCard
+                          order={order}
+                          onRefresh={() => fetchRepairs({ silent: true })}
+                        />
+                      )}
 
                     {(['completed', 'ready_for_pickup', 'shipped'] as RepairStatus[]).includes(order.status) && (
                       <ReturnDeliveryPlanCard
