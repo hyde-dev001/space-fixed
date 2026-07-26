@@ -73,6 +73,7 @@ class PaymentSettlementService
             ? round((float) $breakdown['service_total'] - round((float) $breakdown['service_total'] * 0.5, 2) + (float) $repair->return_delivery_fee, 2)
             : round((float) $repair->return_delivery_fee, 2);
         $completed = $phase === 'final' || ($phase === 'initial' && $finalDue <= 0);
+        $advanceAcceptedRepair = $phase === 'initial' && (string) $repair->status === 'repairer_accepted';
         $paymentReferences = $this->appendRepairPaymentReference(
             is_array($repair->paymongo_payment_ids) ? $repair->paymongo_payment_ids : null,
             $paymentReference,
@@ -99,6 +100,9 @@ class PaymentSettlementService
 
         if ($phase === 'initial') {
             $this->repairDeliveryService->tryCreateIntakeShipment($settledRepair);
+            if ($advanceAcceptedRepair) {
+                $settledRepair->update(['status' => 'pending']);
+            }
         } else {
             $this->repairDeliveryService->tryCreateReturnShipment($settledRepair);
         }

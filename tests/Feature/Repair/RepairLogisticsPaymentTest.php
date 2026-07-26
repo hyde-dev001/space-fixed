@@ -310,7 +310,10 @@ class RepairLogisticsPaymentTest extends TestCase
     public function test_direct_payment_verification_resolves_the_current_persisted_session(): void
     {
         [$repair] = $this->coveredRepair('deposit_50', 1000);
-        $repair->update(['paymongo_link_id' => 'cs_current_verified_session']);
+        $repair->update([
+            'status' => 'repairer_accepted',
+            'paymongo_link_id' => 'cs_current_verified_session',
+        ]);
         $session = RepairPaymentSession::create([
             'repair_request_id' => $repair->id,
             'provider' => 'paymongo',
@@ -335,6 +338,7 @@ class RepairLogisticsPaymentTest extends TestCase
             number_format((float) $repair->total_paid_amount, 2, '.', '')
         );
         $this->assertNotNull($repair->intake_logistics_locked_at);
+        $this->assertSame('pending', $repair->status);
     }
 
     public function test_paymongo_checkout_session_webhook_settles_a_repair_session_instead_of_subscription_flow(): void

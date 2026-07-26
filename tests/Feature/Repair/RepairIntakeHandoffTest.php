@@ -73,6 +73,29 @@ class RepairIntakeHandoffTest extends TestCase
         $this->assertTrue($receivedAt->equalTo($repair->fresh()->received_at));
     }
 
+    public function test_paid_accepted_repair_can_recover_after_approved_pickup_delivery(): void
+    {
+        [$repair, $repairer] = $this->repairFixture('shop_pickup');
+        $repair->update(['status' => 'repairer_accepted']);
+        [, $leg] = $this->pickupShipment($repair, 'completed', 'delivered');
+        HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'handoff_type' => 'delivery',
+            'review_status' => 'approved',
+        ]);
+
+        $this->actingAs($repairer, 'user')
+            ->getJson('/api/repairer/repairs')
+            ->assertOk()
+            ->assertJsonPath('data.0.intake_handoff.can_confirm_receipt', true);
+
+        $this->actingAs($repairer, 'user')
+            ->postJson("/api/repairer/repairs/{$repair->id}/mark-received")
+            ->assertOk();
+
+        $this->assertSame('received', $repair->fresh()->status);
+    }
+
     public function test_non_dispatcher_intake_methods_lock_when_staff_physically_receives_them(): void
     {
         foreach (['walk_in', 'customer_delivery'] as $method) {

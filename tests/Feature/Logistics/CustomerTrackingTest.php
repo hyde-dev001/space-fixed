@@ -54,6 +54,24 @@ class CustomerTrackingTest extends TestCase
             ->assertOk();
     }
 
+    public function test_customer_can_load_own_tracking_as_json_for_inline_repair_updates(): void
+    {
+        $customer = User::factory()->create();
+        $repair = RepairRequest::factory()->create(['user_id' => $customer->id]);
+        $shipment = Shipment::factory()->create([
+            'shop_owner_id' => $repair->shop_owner_id,
+            'source_type' => 'repair_request',
+            'source_id' => $repair->id,
+            'purpose' => 'repair_pickup',
+        ]);
+
+        $this->actingAs($customer, 'user')
+            ->getJson("/tracking/shipments/{$shipment->id}")
+            ->assertOk()
+            ->assertJsonPath('shipment.id', $shipment->id)
+            ->assertJsonPath('shipment.purpose', 'repair_pickup');
+    }
+
     public function test_my_orders_includes_shop_owned_tracking_status_and_rider(): void
     {
         $customer = User::factory()->create();

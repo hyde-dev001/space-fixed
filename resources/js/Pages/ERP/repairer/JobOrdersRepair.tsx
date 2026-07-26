@@ -2989,7 +2989,7 @@ export default function JobOrdersRepair() {
                             </button>
                           )}
 
-                          {order.status === "pending" && order.intakeHandoff && (
+                          {order.intakeHandoff && (order.status === "pending" || canMarkReceived(order)) && (
                             <button
                               onClick={() => handleMarkReceived(order)}
                               disabled={!canMarkReceived(order)}
@@ -3820,7 +3820,7 @@ export default function JobOrdersRepair() {
                     </button>
                   )}
 
-                {viewOrder.status === "pending" && viewOrder.intakeHandoff && (
+                {viewOrder.intakeHandoff && (viewOrder.status === "pending" || canMarkReceived(viewOrder)) && (
                   <div className="min-w-[16rem] flex-1">
                     <button
                       type="button"

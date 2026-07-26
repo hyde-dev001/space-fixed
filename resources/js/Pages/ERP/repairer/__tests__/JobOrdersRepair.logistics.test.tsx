@@ -174,6 +174,18 @@ describe('JobOrdersRepair intake logistics', () => {
     });
   });
 
+  it('offers physical receipt for an already-paid accepted repair with an approved handoff', async () => {
+    mocks.repair = {
+      ...repair('shop_pickup', true),
+      status: 'repairer_accepted',
+    };
+
+    render(<JobOrdersRepair />);
+    await openDetails();
+
+    expect(screen.getByRole('button', { name: 'Confirm physical receipt' })).toBeEnabled();
+  });
+
   it('does not offer manual shipping for automatic shop rider returns', async () => {
     mocks.repair = {
       ...repair('shop_pickup'),
