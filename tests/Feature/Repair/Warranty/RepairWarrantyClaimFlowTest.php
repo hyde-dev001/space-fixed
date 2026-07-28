@@ -252,13 +252,21 @@ class RepairWarrantyClaimFlowTest extends TestCase
 
     public function test_duplicate_shop_sponsored_warranty_intake_cancellation_without_shipment_is_idempotent(): void
     {
-        [, $repairer, , $linked] = $this->approveShopSponsoredWarranty();
+        [, $repairer, $address, $linked, $delivery] = $this->approveShopSponsoredWarranty();
+        $customer = User::query()->findOrFail($linked->user_id);
         $linked->update(['status' => 'repairer_accepted']);
+        $originalCancellation = [
+            'leg' => 'intake',
+            'reason' => 'Cancel before rider planning.',
+            ...$delivery->intakeHandoff($linked->fresh(), true)['cancellation_target'],
+        ];
 
         $this->actingAs($repairer, 'user')->postJson(
             "/api/repairer/repairs/{$linked->id}/cancel-delivery-leg",
-            ['leg' => 'intake', 'reason' => 'Cancel before rider planning.'],
-        )->assertOk();
+            $originalCancellation,
+        )
+            ->assertOk()
+            ->assertJsonPath('data.replayed', false);
 
         $this->assertNull($linked->fresh()->intake_logistics_locked_at);
         $this->assertSame(0, Shipment::query()
@@ -269,11 +277,30 @@ class RepairWarrantyClaimFlowTest extends TestCase
 
         $this->actingAs($repairer, 'user')->postJson(
             "/api/repairer/repairs/{$linked->id}/cancel-delivery-leg",
-            ['leg' => 'intake', 'reason' => 'Repeated cancellation request.'],
+            $originalCancellation,
         )
             ->assertOk()
+            ->assertJsonPath('data.replayed', true)
             ->assertJsonPath('data.reconciliation', null);
 
+        $this->actingAs($customer, 'user')
+            ->patchJson("/api/customer/repairs/{$linked->id}/delivery-method", [
+                'intake_delivery_method' => 'shop_pickup',
+                'intake_address_id' => $address->id,
+            ])
+            ->assertOk();
+        $replacement = $delivery->tryCreateIntakeShipment($linked->fresh());
+        $this->assertNotNull($replacement);
+
+        $this->actingAs($repairer, 'user')->postJson(
+            "/api/repairer/repairs/{$linked->id}/cancel-delivery-leg",
+            $originalCancellation,
+        )
+            ->assertOk()
+            ->assertJsonPath('data.replayed', true);
+
+        $this->assertSame('requested', $replacement?->fresh()->status->value);
+        $this->assertSame('pending', $replacement?->fresh('legs')->legs->first()->status->value);
         $this->assertNull($linked->fresh()->logistics_payment_reconciliation);
         $this->assertSame(0.0, (float) $linked->fresh()->total_refunded_amount);
         $this->assertDatabaseCount('pos_refunds', 0);
@@ -286,10 +313,15 @@ class RepairWarrantyClaimFlowTest extends TestCase
         $linked->update(['status' => 'repairer_accepted']);
         $shipment = $delivery->tryCreateIntakeShipment($linked->fresh());
         $this->assertNotNull($shipment);
+        $originalCancellation = [
+            'leg' => 'intake',
+            'reason' => 'Customer requested a different pickup address.',
+            ...$delivery->intakeHandoff($linked->fresh(), true)['cancellation_target'],
+        ];
 
         $cancel = $this->actingAs($repairer, 'user')->postJson(
             "/api/repairer/repairs/{$linked->id}/cancel-delivery-leg",
-            ['leg' => 'intake', 'reason' => 'Customer requested a different pickup address.'],
+            $originalCancellation,
         );
 
         $cancel->assertOk();
@@ -299,7 +331,7 @@ class RepairWarrantyClaimFlowTest extends TestCase
 
         $this->actingAs($repairer, 'user')->postJson(
             "/api/repairer/repairs/{$linked->id}/cancel-delivery-leg",
-            ['leg' => 'intake', 'reason' => 'Repeated cancellation request.'],
+            $originalCancellation,
         )
             ->assertOk()
             ->assertJsonPath('data.reconciliation', null);
@@ -344,6 +376,17 @@ class RepairWarrantyClaimFlowTest extends TestCase
             ->count());
         $this->assertSame(2, $shipment->fresh()->legs()->count());
         $this->assertSame(1, $shipment->fresh()->legs()->where('status', '!=', 'cancelled')->count());
+
+        $this->actingAs($repairer, 'user')->postJson(
+            "/api/repairer/repairs/{$linked->id}/cancel-delivery-leg",
+            $originalCancellation,
+        )
+            ->assertOk()
+            ->assertJsonPath('data.replayed', true);
+
+        $this->assertSame('requested', $shipment->fresh()->status->value);
+        $this->assertSame('pending', $replacement?->fresh('legs')->legs->last()->status->value);
+        $this->assertSame(1, $shipment->fresh()->legs()->where('status', '!=', 'cancelled')->count());
         $this->assertNull($linked->fresh()->logistics_payment_reconciliation);
         $this->assertSame(0.0, (float) $linked->fresh()->total_refunded_amount);
         $this->assertDatabaseCount('pos_refunds', 0);
@@ -357,10 +400,15 @@ class RepairWarrantyClaimFlowTest extends TestCase
         $linked->update(['status' => 'ready_for_pickup']);
         $shipment = $delivery->tryCreateReturnShipment($linked->fresh());
         $this->assertNotNull($shipment);
+        $originalCancellation = [
+            'leg' => 'return',
+            'reason' => 'Customer requested a different return address.',
+            ...$delivery->returnHandoff($linked->fresh(), true)['cancellation_target'],
+        ];
 
         $cancel = $this->actingAs($repairer, 'user')->postJson(
             "/api/repairer/repairs/{$linked->id}/cancel-delivery-leg",
-            ['leg' => 'return', 'reason' => 'Customer requested a different return address.'],
+            $originalCancellation,
         );
 
         $cancel->assertOk();

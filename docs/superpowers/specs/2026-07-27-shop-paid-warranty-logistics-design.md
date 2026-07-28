@@ -53,4 +53,3 @@ This supersedes the earlier repair-logistics rule that made warranty delivery fe
 - Return readiness can create exactly one return shipment without customer payment.
 - Coverage failures still block shop-owned warranty methods while walk-in and third-party remain available.
 - Existing paid repair payment, reconciliation, shipment, and delivery-revenue tests remain green.
-

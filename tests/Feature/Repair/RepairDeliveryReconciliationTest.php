@@ -72,10 +72,26 @@ class RepairDeliveryReconciliationTest extends TestCase
         [$repair, , $repairer] = $this->paidIntakeRepair();
         $shipment = app(RepairDeliveryService::class)->tryCreateIntakeShipment($repair->fresh());
         $leg = $shipment->legs->first();
+        $cancellation = $this->cancellationPayload(
+            $repair->fresh(),
+            'intake',
+            'Customer requested a different pickup address.',
+        );
+        $this->actingAs($repairer, 'user')
+            ->getJson('/api/repairer/repairs')
+            ->assertOk()
+            ->assertJsonPath('data.0.intake_handoff.cancellation_target.shipment_leg_id', $leg->id)
+            ->assertJsonPath('data.0.intake_handoff.cancellation_target.plan_token', $cancellation['plan_token']);
+
+        $this->actingAs($repairer, 'user')->postJson(
+            "/api/repairer/repairs/{$repair->id}/cancel-delivery-leg",
+            ['leg' => 'intake', 'reason' => 'Missing cancellation target.'],
+        )->assertUnprocessable();
+        $this->assertSame('pending', $leg->fresh()->status->value);
 
         $first = $this->actingAs($repairer, 'user')->postJson(
             "/api/repairer/repairs/{$repair->id}/cancel-delivery-leg",
-            ['leg' => 'intake', 'reason' => 'Customer requested a different pickup address.'],
+            $cancellation,
         );
         $first->assertOk()->assertJsonPath('data.reconciliation.status', 'pending');
 
@@ -86,7 +102,7 @@ class RepairDeliveryReconciliationTest extends TestCase
 
         $this->actingAs($repairer, 'user')->postJson(
             "/api/repairer/repairs/{$repair->id}/cancel-delivery-leg",
-            ['leg' => 'intake', 'reason' => 'Repeated request.'],
+            $cancellation,
         )->assertOk();
         $this->assertCount(1, data_get($repair->fresh()->logistics_payment_reconciliation, 'entries', []));
 
@@ -97,7 +113,7 @@ class RepairDeliveryReconciliationTest extends TestCase
 
             $this->actingAs($lateRepairer, 'user')->postJson(
                 "/api/repairer/repairs/{$lateRepair->id}/cancel-delivery-leg",
-                ['leg' => 'intake', 'reason' => 'Too late.'],
+                $this->cancellationPayload($lateRepair->fresh(), 'intake', 'Too late.'),
             )->assertUnprocessable();
             $this->assertNull($lateRepair->fresh()->logistics_payment_reconciliation);
         }
@@ -115,7 +131,7 @@ class RepairDeliveryReconciliationTest extends TestCase
 
         $this->actingAs($otherStaff, 'user')->postJson(
             "/api/repairer/repairs/{$repair->id}/cancel-delivery-leg",
-            ['leg' => 'intake', 'reason' => 'Wrong shop.'],
+            $this->cancellationPayload($repair->fresh(), 'intake', 'Wrong shop.'),
         )->assertForbidden();
 
         $this->actingAs($otherStaff, 'user')
@@ -131,7 +147,7 @@ class RepairDeliveryReconciliationTest extends TestCase
 
         $this->actingAs($repair->repairer, 'user')->postJson(
             "/api/repairer/repairs/{$repair->id}/cancel-delivery-leg",
-            ['leg' => 'intake', 'reason' => 'Pickup plan changed.'],
+            $this->cancellationPayload($repair->fresh(), 'intake', 'Pickup plan changed.'),
         )->assertOk();
         $key = (string) data_get($repair->fresh()->logistics_payment_reconciliation, 'entries.0.compensation_key');
         $paidBefore = (float) $repair->fresh()->total_paid_amount;
@@ -223,7 +239,7 @@ class RepairDeliveryReconciliationTest extends TestCase
         app(RepairDeliveryService::class)->tryCreateIntakeShipment($repair->fresh());
         $this->actingAs($repair->repairer, 'user')->postJson(
             "/api/repairer/repairs/{$repair->id}/cancel-delivery-leg",
-            ['leg' => 'intake', 'reason' => 'Refund delivery fee.'],
+            $this->cancellationPayload($repair->fresh(), 'intake', 'Refund delivery fee.'),
         )->assertOk();
         $key = (string) data_get($repair->fresh()->logistics_payment_reconciliation, 'entries.0.compensation_key');
 
@@ -256,7 +272,7 @@ class RepairDeliveryReconciliationTest extends TestCase
         app(RepairDeliveryService::class)->tryCreateIntakeShipment($repair->fresh());
         $this->actingAs($repairer, 'user')->postJson(
             "/api/repairer/repairs/{$repair->id}/cancel-delivery-leg",
-            ['leg' => 'intake', 'reason' => 'No service balance remains.'],
+            $this->cancellationPayload($repair->fresh(), 'intake', 'No service balance remains.'),
         )->assertOk();
         $key = (string) data_get($repair->fresh()->logistics_payment_reconciliation, 'entries.0.compensation_key');
 
@@ -294,7 +310,7 @@ class RepairDeliveryReconciliationTest extends TestCase
 
         $this->actingAs($repairer, 'user')->postJson(
             "/api/repairer/repairs/{$repair->id}/cancel-delivery-leg",
-            ['leg' => 'return', 'reason' => 'Customer changed the return address.'],
+            $this->cancellationPayload($repair->fresh(), 'return', 'Customer changed the return address.'),
         )->assertOk();
 
         $this->assertSame('ready_for_pickup', $repair->fresh()->status);
@@ -394,5 +410,19 @@ class RepairDeliveryReconciliationTest extends TestCase
         ]);
 
         return [$repair, $customer, $repairer, $finance, $settings, $shop];
+    }
+
+    private function cancellationPayload(RepairRequest $repair, string $phase, string $reason): array
+    {
+        $delivery = app(RepairDeliveryService::class);
+        $handoff = $phase === 'intake'
+            ? $delivery->intakeHandoff($repair, true)
+            : $delivery->returnHandoff($repair, true);
+
+        return [
+            'leg' => $phase,
+            'reason' => $reason,
+            ...$handoff['cancellation_target'],
+        ];
     }
 }

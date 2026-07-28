@@ -291,9 +291,19 @@ final class RepairDeliveryService
         string $phase,
         string $reason,
         int $actorId,
+        ?int $targetShipmentLegId,
+        string $targetPlanToken,
     ): array {
         $createdCompensation = null;
-        $result = DB::transaction(function () use ($repair, $phase, $reason, $actorId, &$createdCompensation): array {
+        $result = DB::transaction(function () use (
+            $repair,
+            $phase,
+            $reason,
+            $actorId,
+            $targetShipmentLegId,
+            $targetPlanToken,
+            &$createdCompensation,
+        ): array {
             $lockedRepair = RepairRequest::query()->whereKey($repair->id)->lockForUpdate()->firstOrFail();
             $sponsoredWarranty = $this->isSponsoredWarranty($lockedRepair);
             $isIntake = $phase === 'intake';
@@ -310,18 +320,26 @@ final class RepairDeliveryService
                 ->where('purpose', $isIntake ? 'repair_pickup' : 'repair_return')
                 ->lockForUpdate()
                 ->first();
+            $activeLeg = $shipment
+                ? ShipmentLeg::query()
+                    ->where('shipment_id', $shipment->id)
+                    ->where('status', '!=', 'cancelled')
+                    ->latest('sequence')
+                    ->lockForUpdate()
+                    ->first()
+                : null;
+            $currentPlanToken = $this->cancellationPlanToken($lockedRepair, $phase);
 
             if (
-                $sponsoredWarranty
-                && $method === $expectedMethod
-                && $lockedRepair->{$lockField} === null
-                && (float) $lockedRepair->{$feeField} > 0
-                && ($shipment === null || $shipment->status->value === 'cancelled')
+                $currentPlanToken === null
+                || ! hash_equals($currentPlanToken, $targetPlanToken)
+                || $activeLeg?->id !== $targetShipmentLegId
             ) {
                 return [
                     'repair' => $lockedRepair->fresh(),
                     'reconciliation' => $lockedRepair->logistics_payment_reconciliation,
                     'created' => false,
+                    'replayed' => true,
                 ];
             }
 
@@ -337,17 +355,9 @@ final class RepairDeliveryService
                     'repair' => $lockedRepair->fresh(),
                     'reconciliation' => $lockedRepair->logistics_payment_reconciliation,
                     'created' => false,
+                    'replayed' => true,
                 ];
             }
-
-            $activeLeg = $shipment
-                ? ShipmentLeg::query()
-                    ->where('shipment_id', $shipment->id)
-                    ->where('status', '!=', 'cancelled')
-                    ->latest('sequence')
-                    ->lockForUpdate()
-                    ->first()
-                : null;
 
             if ($activeLeg && ! in_array($activeLeg->status->value, ['pending', 'assigned', 'pickup_scheduled'], true)) {
                 throw ValidationException::withMessages([
@@ -434,6 +444,7 @@ final class RepairDeliveryService
                 'repair' => $lockedRepair,
                 'reconciliation' => $lockedRepair->logistics_payment_reconciliation,
                 'created' => $createdCompensation !== null,
+                'replayed' => false,
             ];
         }, 5);
 
@@ -479,6 +490,7 @@ final class RepairDeliveryService
             'blocked_reason' => $blockedReason,
             'scheduled_delivery_date' => $state['leg']?->scheduled_delivery_date?->toDateString(),
             'delivery_window' => $state['leg']?->delivery_window,
+            'cancellation_target' => $this->cancellationTarget($repair, 'intake', $state['leg']),
             'events' => $state['events']->map(fn ($event): array => [
                 'id' => $event->id,
                 'event_type' => $event->event_type,
@@ -553,6 +565,7 @@ final class RepairDeliveryService
             'leg_id' => $state['leg']?->id,
             'leg_status' => $state['leg']?->status?->value,
             'proof_status' => $state['proof']?->review_status,
+            'cancellation_target' => $this->cancellationTarget($repair, 'return', $state['leg']),
             'events' => $state['events']->map(fn ($event): array => [
                 'id' => $event->id,
                 'event_type' => $event->event_type,
@@ -562,6 +575,40 @@ final class RepairDeliveryService
                 'created_at' => optional($event->created_at)->toISOString(),
             ])->values()->all(),
         ];
+    }
+
+    private function cancellationTarget(RepairRequest $repair, string $phase, ?ShipmentLeg $leg): ?array
+    {
+        $isIntake = $phase === 'intake';
+        $method = (string) ($isIntake ? $repair->intake_delivery_method : $repair->return_delivery_method);
+        $fee = (float) ($isIntake ? $repair->intake_delivery_fee : $repair->return_delivery_fee);
+        $token = $this->cancellationPlanToken($repair, $phase);
+
+        if ($method !== ($isIntake ? 'shop_pickup' : 'shop_delivery') || $fee <= 0 || $token === null) {
+            return null;
+        }
+
+        return [
+            'shipment_leg_id' => $leg?->id,
+            'plan_token' => $token,
+        ];
+    }
+
+    private function cancellationPlanToken(RepairRequest $repair, string $phase): ?string
+    {
+        $isIntake = $phase === 'intake';
+        $snapshot = $isIntake ? $repair->intake_address : $repair->return_address;
+        $lock = $isIntake ? $repair->intake_logistics_locked_at : $repair->return_logistics_locked_at;
+
+        if ($lock === null) {
+            return null;
+        }
+
+        return hash('sha256', implode('|', [
+            $phase,
+            (string) data_get($snapshot, 'version', ''),
+            $lock->toISOString(),
+        ]));
     }
 
     private function handoffState(RepairRequest $repair, string $purpose): array

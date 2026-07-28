@@ -2299,6 +2299,8 @@ class RepairWorkflowController extends Controller
         $validated = $request->validate([
             'leg' => ['required', 'in:intake,return'],
             'reason' => ['required', 'string', 'max:500'],
+            'shipment_leg_id' => ['present', 'nullable', 'integer', 'min:1'],
+            'plan_token' => ['required', 'string', 'regex:/\A[a-f0-9]{64}\z/'],
         ]);
         $repair = RepairRequest::query()->findOrFail($id);
         abort_unless(
@@ -2312,18 +2314,23 @@ class RepairWorkflowController extends Controller
             (string) $validated['leg'],
             (string) $validated['reason'],
             (int) $user->id,
+            isset($validated['shipment_leg_id']) ? (int) $validated['shipment_leg_id'] : null,
+            (string) $validated['plan_token'],
         );
         $sponsoredWarranty = (bool) ($result['repair']->is_warranty_job ?? false)
             || (string) ($result['repair']->billing_mode ?? '') === 'warranty_no_charge';
 
         return response()->json([
             'success' => true,
-            'message' => $sponsoredWarranty
-                ? 'Delivery leg cancelled. The customer can update the sponsored delivery plan.'
-                : 'Delivery leg cancelled. Finance compensation is required before the delivery plan can be changed.',
+            'message' => $result['replayed']
+                ? 'This delivery cancellation was already processed.'
+                : ($sponsoredWarranty
+                    ? 'Delivery leg cancelled. The customer can update the sponsored delivery plan.'
+                    : 'Delivery leg cancelled. Finance compensation is required before the delivery plan can be changed.'),
             'data' => [
                 'repair' => $result['repair'],
                 'reconciliation' => $result['reconciliation'],
+                'replayed' => $result['replayed'],
             ],
         ]);
     }
