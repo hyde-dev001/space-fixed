@@ -497,6 +497,8 @@ This is the scope of the next implementation plan:
 - reuse existing rider actions and proof transitions;
 - enforce the one-active-work rule in both existing start paths;
 - prevent active, completed, cancelled, declined, and stale records from appearing in the wrong group;
+- treat standalone work as a direct assignment because Phase 1 does not add standalone offer/accept/decline endpoints;
+- detect legacy multiple-active conflicts and disable their rider mutations in the page;
 - retain loaded details and show a basic browser offline/online notice; and
 - add focused automated coverage for classification, progress, filtering, and start guards.
 
@@ -513,6 +515,7 @@ Phase 1 does **not** show the new I’ve arrived action until the arrival event 
 
 - Verify or add automatic batch completion across all terminal resolution types.
 - Harden idempotency for every rider transition.
+- Add server-side arbitration for advancing work when corrupt legacy data already contains multiple active items.
 - Add clearer stale-record refresh behavior and conflict messaging.
 
 ### Phase 4 — Advanced operations
@@ -528,6 +531,8 @@ Each phase requires its own implementation plan and verification. Completing Pha
 - Dispatcher page visual redesign.
 - New arrival-event endpoints and the I’ve arrived action.
 - New issue-reporting or dispatcher-resolution behavior.
+- New standalone offer, acceptance, or decline behavior.
+- Server-side repair/arbitration of pre-existing multiple-active records beyond disabling rider mutations in the Phase 1 UI and preventing new starts.
 - Changes to terminal-state and automatic batch-completion rules.
 - Custom map rendering.
 - Automatic route optimization.
