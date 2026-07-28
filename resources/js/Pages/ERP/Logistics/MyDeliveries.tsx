@@ -419,7 +419,7 @@ function CurrentDeliveryCard({
             </div>
             <div
               role="progressbar"
-              aria-label={`Batch progress: ${progress.completed} of ${progress.total} delivered`}
+              aria-label={`${item.kind === 'batch' ? 'Batch' : 'Delivery'} progress: ${progress.completed} of ${progress.total} delivered`}
               aria-valuenow={progress.percent}
               aria-valuemin={0}
               aria-valuemax={100}
@@ -906,13 +906,6 @@ export default function MyDeliveries() {
           </p>
         </header>
 
-        <OfferRegion
-          offers={deliveryData.offers}
-          online={online}
-          pendingAction={pendingAction}
-          runAction={runAction}
-        />
-
         {deliveryData.has_active_conflict && (
           <div role="alert" className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100">
             <strong>More than one active delivery was found.</strong> Contact dispatch before continuing either assignment.
@@ -929,9 +922,15 @@ export default function MyDeliveries() {
           canRecordProof={canRecordProof}
           runAction={runAction}
         />
+        <OfferRegion
+          offers={deliveryData.offers}
+          online={online}
+          pendingAction={pendingAction}
+          runAction={runAction}
+        />
         <UpNextCard
           item={deliveryData.up_next}
-          locked={deliveryData.has_active_conflict}
+          locked={deliveryData.has_active_conflict || Boolean(deliveryData.current)}
           online={online}
           pendingAction={pendingAction}
           canRecordProof={canRecordProof}

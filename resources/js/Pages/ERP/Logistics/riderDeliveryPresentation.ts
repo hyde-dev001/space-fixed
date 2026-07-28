@@ -5,7 +5,12 @@ import type {
   TrackingShipmentLeg,
 } from '@/types/logistics';
 
-const actionableStatuses = new Set(['assigned', 'picked_up', 'in_transit']);
+const actionableStatuses = new Set([
+  'assigned',
+  'pickup_scheduled',
+  'picked_up',
+  'in_transit',
+]);
 
 export const orderedDeliveries = (deliveries: TrackingShipmentLeg[]) =>
   [...deliveries].sort(

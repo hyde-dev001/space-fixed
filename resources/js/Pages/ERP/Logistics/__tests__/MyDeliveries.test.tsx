@@ -132,6 +132,20 @@ describe('MyDeliveries task-first hierarchy', () => {
     expect(screen.getByText('Single delivery #9')).toBeVisible();
   });
 
+  it('keeps Current delivery before new assignment offers', () => {
+    mocks.props.deliveryData.current = workItem('single', 'in_transit', [
+      leg(9, null, 'in_transit'),
+    ]);
+    mocks.props.deliveryData.offers = [
+      workItem('batch', 'offered', [leg(1, 1)], { group: 'offer' }),
+    ];
+
+    render(<MyDeliveries />);
+
+    const page = screen.getByTestId('erp-layout').textContent ?? '';
+    expect(page.indexOf('Current delivery')).toBeLessThan(page.indexOf('New assignment'));
+  });
+
   it('counts only delivered stops and expands batch sequence on demand', () => {
     mocks.props.deliveryData.current = workItem('batch', 'in_progress', [
       leg(1, 1, 'delivered', 'Completed customer'),
@@ -247,6 +261,19 @@ describe('MyDeliveries rider interactions', () => {
 
     expect(mocks.startBatch).toHaveBeenCalledWith(7);
     await waitFor(() => expect(screen.getByRole('button', { name: 'Start batch' })).toBeEnabled());
+  });
+
+  it('does not start Up Next while another delivery is current', () => {
+    mocks.props.deliveryData.current = workItem('single', 'in_transit', [
+      leg(9, null, 'in_transit'),
+    ]);
+    mocks.props.deliveryData.up_next = workItem('batch', 'accepted', [leg(1, 1)], {
+      group: 'upcoming',
+    });
+
+    render(<MyDeliveries />);
+
+    expect(screen.getByRole('button', { name: 'Start batch' })).toBeDisabled();
   });
 
   it('confirms standalone pickup with proof when present and without proof when absent', async () => {

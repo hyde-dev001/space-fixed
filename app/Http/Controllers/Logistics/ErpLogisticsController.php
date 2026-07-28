@@ -201,7 +201,7 @@ class ErpLogisticsController extends Controller
             ->with([
                 'shipment',
                 'proofs',
-                'assignments.riderProfile',
+                'assignments' => fn ($query) => $query->where('rider_profile_id', $rider->id),
                 'latestAssignment.riderProfile',
                 'attempts' => fn ($query) => $query
                     ->where('attempt_type', 'delivery')

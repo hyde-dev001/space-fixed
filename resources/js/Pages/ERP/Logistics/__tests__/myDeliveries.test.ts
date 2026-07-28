@@ -23,6 +23,12 @@ describe('rider delivery presentation rules', () => {
     ] as any)?.id).toBe(3);
   });
 
+  it('treats a scheduled pickup as the next rider action', () => {
+    expect(nextActionableDelivery([
+      { id: 1, status: 'pickup_scheduled', stop_sequence: 1 },
+    ] as any)?.id).toBe(1);
+  });
+
   it('matches mixed work in either business filter', () => {
     const item = { business_types: ['repair', 'retail'] } as any;
 

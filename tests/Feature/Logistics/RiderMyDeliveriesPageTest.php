@@ -233,6 +233,18 @@ class RiderMyDeliveriesPageTest extends TestCase
         $this->assertSame(1, collect($all['list']['data'])->where('key', "single:{$first->id}")->count());
     }
 
+    public function test_standalone_payload_contains_only_the_current_riders_assignments(): void
+    {
+        [, $leg] = $this->shipmentWithLeg('retail_delivery', ['status' => 'assigned']);
+        $otherRider = RiderProfile::factory()->create(['shop_owner_id' => $this->shop->id]);
+        $this->assign($leg, $otherRider, 'assigned', ['assigned_at' => '2026-07-29 08:00:00']);
+        $assignment = $this->assign($leg, $this->rider, 'assigned', ['assigned_at' => '2026-07-29 09:00:00']);
+
+        $delivery = $this->deliveryData()['up_next']['deliveries'][0];
+
+        $this->assertSame([$assignment->id], collect($delivery['assignments'])->pluck('id')->all());
+    }
+
     private function deliveryData(string $query = ''): array
     {
         return $this->actingAs($this->user->fresh(), 'user')
