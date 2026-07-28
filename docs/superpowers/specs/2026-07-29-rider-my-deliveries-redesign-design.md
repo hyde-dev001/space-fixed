@@ -242,7 +242,7 @@ The rider may continue to the next eligible delivery while a prior delivery is a
 
 ### 5. Complete a delivery
 
-The rider receives a short success confirmation. In a batch, the next unresolved delivery automatically becomes current and the progress updates. The rider does not return to the batch list between stops.
+The rider receives a short success confirmation. In a batch, the next actionable delivery automatically becomes current and the progress updates. The rider does not return to the batch list between stops.
 
 For a standalone delivery, the current work item closes and the next accepted assignment becomes eligible to start.
 
