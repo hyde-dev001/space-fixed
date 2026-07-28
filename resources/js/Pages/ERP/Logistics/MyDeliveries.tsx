@@ -1,4 +1,5 @@
 import AppLayoutERP from '@/layout/AppLayout_ERP';
+import { logisticsApi } from '@/services/logisticsApi';
 import type {
   RiderDeliveryIssue,
   RiderDeliveryPageData,
@@ -6,8 +7,9 @@ import type {
   RiderDeliveryWorkItem,
   TrackingShipmentLeg,
 } from '@/types/logistics';
-import { Head, usePage } from '@inertiajs/react';
-import { useState } from 'react';
+import { Head, router, usePage } from '@inertiajs/react';
+import axios from 'axios';
+import { FormEvent, useEffect, useState } from 'react';
 import {
   completedProgress,
   deliveryContact,
@@ -15,6 +17,8 @@ import {
   nextActionableDelivery,
   orderedDeliveries,
 } from './riderDeliveryPresentation';
+
+type ActionRunner = (key: string, action: () => Promise<unknown>) => void;
 
 const tabLabels: Record<RiderDeliveryTab, string> = {
   upcoming: 'Upcoming',
@@ -135,14 +139,242 @@ function DeliverySequence({ item }: { item: RiderDeliveryWorkItem }) {
   );
 }
 
+function DeliveryActions({
+  item,
+  delivery,
+  locked,
+  online,
+  pendingAction,
+  canRecordProof,
+  runAction,
+}: {
+  item: RiderDeliveryWorkItem;
+  delivery?: TrackingShipmentLeg;
+  locked: boolean;
+  online: boolean;
+  pendingAction: string | null;
+  canRecordProof: boolean;
+  runAction: ActionRunner;
+}) {
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [showIssue, setShowIssue] = useState(false);
+  const [issueReason, setIssueReason] = useState('');
+  const [issueNotes, setIssueNotes] = useState('');
+  const [issueFile, setIssueFile] = useState<File | null>(null);
+  const mutationDisabled = locked || !online;
+  const buttonClass =
+    'min-h-11 w-full rounded-xl bg-blue-600 px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50';
+
+  if (item.kind === 'batch' && item.status === 'accepted') {
+    const key = `batch-start:${item.id}`;
+
+    return (
+      <button
+        type="button"
+        disabled={mutationDisabled || pendingAction === key}
+        onClick={() => runAction(key, () => logisticsApi.startBatch(item.id))}
+        className={buttonClass}
+      >
+        Start batch
+      </button>
+    );
+  }
+
+  if (!delivery) return null;
+
+  if (['assigned', 'pickup_scheduled'].includes(delivery.status)) {
+    const key = `pickup:${delivery.id}`;
+    const pickupProof = delivery.proofs
+      ?.filter(({ handoff_type }) => handoff_type === 'pickup')
+      .at(-1);
+
+    return (
+      <button
+        type="button"
+        disabled={mutationDisabled || pendingAction === key}
+        onClick={() =>
+          runAction(
+            key,
+            () =>
+              pickupProof
+                ? logisticsApi.confirmPickup(delivery.id, pickupProof.id)
+                : logisticsApi.markPickedUp(delivery.id),
+          )
+        }
+        className={buttonClass}
+      >
+        Confirm pickup
+      </button>
+    );
+  }
+
+  if (delivery.status === 'picked_up') {
+    const key = `delivery-start:${delivery.id}`;
+
+    return (
+      <button
+        type="button"
+        disabled={mutationDisabled || pendingAction === key}
+        onClick={() =>
+          runAction(
+            key,
+            () =>
+              item.kind === 'batch'
+                ? logisticsApi.outForDelivery(delivery.id)
+                : logisticsApi.markInTransit(delivery.id),
+          )
+        }
+        className={buttonClass}
+      >
+        Start delivery
+      </button>
+    );
+  }
+
+  if (delivery.status !== 'in_transit') return null;
+
+  const proofKey = `proof:${delivery.id}`;
+  const issueKey = `issue:${delivery.id}`;
+  const assignment = delivery.assignments?.find(({ status }) =>
+    ['assigned', 'accepted'].includes(status),
+  );
+
+  const submitProof = () => {
+    if (!proofFile) return;
+    const form = new FormData();
+    form.append('handoff_type', 'delivery');
+    form.append('proof_type', 'photo');
+    form.append('proof_file', proofFile);
+    runAction(proofKey, () =>
+      axios.post(`/api/logistics/legs/${delivery.id}/proof`, form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }),
+    );
+  };
+
+  const submitIssue = () => {
+    if (!issueFile || !issueReason || !assignment) return;
+    const form = new FormData();
+    form.append('delivery_assignment_id', String(assignment.id));
+    form.append('reason_code', issueReason);
+    if (issueNotes.trim()) form.append('notes', issueNotes.trim());
+    form.append('proof_file', issueFile);
+    runAction(issueKey, () =>
+      axios.post(`/api/logistics/legs/${delivery.id}/report-issue`, form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }),
+    );
+  };
+
+  return (
+    <div className="space-y-3">
+      {canRecordProof && (
+        <div className="space-y-2 rounded-xl bg-slate-50 p-3 dark:bg-slate-800">
+          <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
+            Delivery proof
+            <input
+              type="file"
+              accept="image/*"
+              aria-label="Delivery proof"
+              onChange={(event) => setProofFile(event.target.files?.[0] ?? null)}
+              className="mt-2 block w-full text-sm"
+            />
+          </label>
+          <button
+            type="button"
+            disabled={mutationDisabled || !proofFile || pendingAction === proofKey}
+            onClick={submitProof}
+            className={buttonClass}
+          >
+            Submit delivery proof
+          </button>
+        </div>
+      )}
+
+      <button
+        type="button"
+        disabled={mutationDisabled}
+        onClick={() => setShowIssue((current) => !current)}
+        className="min-h-11 w-full rounded-xl border border-amber-400 px-4 text-sm font-bold text-amber-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-amber-200"
+      >
+        Report issue
+      </button>
+
+      {showIssue && (
+        <div className="space-y-3 rounded-xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/30">
+          <label className="block text-sm font-semibold">
+            Issue reason
+            <select
+              aria-label="Issue reason"
+              value={issueReason}
+              onChange={(event) => setIssueReason(event.target.value)}
+              className="mt-1 min-h-11 w-full rounded-xl border border-amber-300 bg-white px-3 dark:bg-slate-900"
+            >
+              <option value="">Choose a reason</option>
+              <option value="recipient_unavailable">Recipient unavailable</option>
+              <option value="wrong_or_incomplete_address">Wrong or incomplete address</option>
+              <option value="recipient_refused">Recipient refused</option>
+              <option value="vehicle_or_delivery_problem">Vehicle or delivery problem</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+          <label className="block text-sm font-semibold">
+            Notes
+            <textarea
+              aria-label="Issue notes"
+              value={issueNotes}
+              onChange={(event) => setIssueNotes(event.target.value)}
+              className="mt-1 min-h-20 w-full rounded-xl border border-amber-300 bg-white p-3 dark:bg-slate-900"
+            />
+          </label>
+          <label className="block text-sm font-semibold">
+            Issue photo
+            <input
+              type="file"
+              accept="image/*"
+              aria-label="Issue photo"
+              onChange={(event) => setIssueFile(event.target.files?.[0] ?? null)}
+              className="mt-2 block w-full text-sm"
+            />
+          </label>
+          <button
+            type="button"
+            disabled={
+              mutationDisabled ||
+              !assignment ||
+              !issueReason ||
+              !issueFile ||
+              pendingAction === issueKey
+            }
+            onClick={submitIssue}
+            className={buttonClass}
+          >
+            Submit issue
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CurrentDeliveryCard({
   item,
   showSequence,
   onToggleSequence,
+  locked,
+  online,
+  pendingAction,
+  canRecordProof,
+  runAction,
 }: {
   item: RiderDeliveryWorkItem | null;
   showSequence: boolean;
   onToggleSequence: () => void;
+  locked: boolean;
+  online: boolean;
+  pendingAction: string | null;
+  canRecordProof: boolean;
+  runAction: ActionRunner;
 }) {
   if (!item) {
     return (
@@ -205,6 +437,17 @@ function CurrentDeliveryCard({
                 Current delivery · {actionable.stop_sequence ?? 1} of {item.deliveries.length}
               </p>
               <DeliveryContact delivery={actionable} />
+              <div className="mt-4">
+                <DeliveryActions
+                  item={item}
+                  delivery={actionable}
+                  locked={locked}
+                  online={online}
+                  pendingAction={pendingAction}
+                  canRecordProof={canRecordProof}
+                  runAction={runAction}
+                />
+              </div>
             </>
           ) : (
             <div className="rounded-xl bg-slate-50 p-4 dark:bg-slate-800">
@@ -237,8 +480,24 @@ function CurrentDeliveryCard({
   );
 }
 
-function UpNextCard({ item }: { item: RiderDeliveryWorkItem | null }) {
+function UpNextCard({
+  item,
+  locked,
+  online,
+  pendingAction,
+  canRecordProof,
+  runAction,
+}: {
+  item: RiderDeliveryWorkItem | null;
+  locked: boolean;
+  online: boolean;
+  pendingAction: string | null;
+  canRecordProof: boolean;
+  runAction: ActionRunner;
+}) {
+  const [showDetails, setShowDetails] = useState(false);
   if (!item) return null;
+  const actionable = nextActionableDelivery(item.deliveries);
 
   return (
     <section aria-label="Up next">
@@ -254,18 +513,50 @@ function UpNextCard({ item }: { item: RiderDeliveryWorkItem | null }) {
           </div>
           <StatusChip status={item.status} />
         </div>
+        <div className="mt-4">
+          <DeliveryActions
+            item={item}
+            delivery={actionable}
+            locked={locked}
+            online={online}
+            pendingAction={pendingAction}
+            canRecordProof={canRecordProof}
+            runAction={runAction}
+          />
+        </div>
         <button
           type="button"
+          onClick={() => setShowDetails((current) => !current)}
           className="mt-4 min-h-11 w-full rounded-xl border border-blue-300 px-4 text-sm font-bold text-blue-700 dark:border-blue-700 dark:text-blue-300"
         >
-          View details
+          {showDetails ? 'Hide details' : 'View details'}
         </button>
+        {showDetails && actionable && (
+          <div className="mt-4 border-t border-slate-200 pt-4 dark:border-slate-700">
+            <DeliveryContact delivery={actionable} />
+          </div>
+        )}
       </article>
     </section>
   );
 }
 
-function OfferCard({ item }: { item: RiderDeliveryWorkItem }) {
+function OfferCard({
+  item,
+  online,
+  pendingAction,
+  runAction,
+}: {
+  item: RiderDeliveryWorkItem;
+  online: boolean;
+  pendingAction: string | null;
+  runAction: ActionRunner;
+}) {
+  const [declining, setDeclining] = useState(false);
+  const [reason, setReason] = useState('');
+  const acceptKey = `offer-accept:${item.id}`;
+  const declineKey = `offer-decline:${item.id}`;
+
   return (
     <article className="rounded-2xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30">
       <div className="flex items-start justify-between gap-3">
@@ -278,23 +569,83 @@ function OfferCard({ item }: { item: RiderDeliveryWorkItem }) {
         </div>
         <StatusChip status={item.status} />
       </div>
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          disabled={!online || pendingAction === acceptKey}
+          onClick={() => runAction(acceptKey, () => logisticsApi.acceptBatch(item.id))}
+          className="min-h-11 rounded-xl bg-blue-600 px-4 text-sm font-bold text-white disabled:opacity-50"
+        >
+          Accept batch
+        </button>
+        <button
+          type="button"
+          disabled={!online}
+          onClick={() => setDeclining((current) => !current)}
+          className="min-h-11 rounded-xl border border-amber-500 px-4 text-sm font-bold text-amber-900 disabled:opacity-50 dark:text-amber-100"
+        >
+          Decline batch
+        </button>
+      </div>
+      {declining && (
+        <div className="mt-3 space-y-2">
+          <label className="block text-sm font-semibold text-amber-950 dark:text-amber-100">
+            Decline reason
+            <input
+              type="text"
+              aria-label="Decline reason"
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              className="mt-1 min-h-11 w-full rounded-xl border border-amber-300 bg-white px-3 dark:bg-slate-900"
+            />
+          </label>
+          <button
+            type="button"
+            disabled={!online || !reason.trim() || pendingAction === declineKey}
+            onClick={() =>
+              runAction(declineKey, () => logisticsApi.rejectBatch(item.id, reason.trim()))
+            }
+            className="min-h-11 w-full rounded-xl bg-amber-700 px-4 text-sm font-bold text-white disabled:opacity-50"
+          >
+            Confirm decline
+          </button>
+        </div>
+      )}
     </article>
   );
 }
 
-function OfferRegion({ offers }: { offers: RiderDeliveryWorkItem[] }) {
+function OfferRegion({
+  offers,
+  online,
+  pendingAction,
+  runAction,
+}: {
+  offers: RiderDeliveryWorkItem[];
+  online: boolean;
+  pendingAction: string | null;
+  runAction: ActionRunner;
+}) {
   if (!offers.length) return null;
 
   return (
     <section aria-label="New assignment offers" className="space-y-3">
-      <OfferCard item={offers[0]} />
+      <OfferCard item={offers[0]} online={online} pendingAction={pendingAction} runAction={runAction} />
       {offers.length > 1 && (
         <details className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
           <summary className="min-h-11 cursor-pointer py-2 text-sm font-bold text-slate-800 dark:text-slate-100">
             {offers.length - 1} more {offers.length === 2 ? 'offer' : 'offers'}
           </summary>
           <div className="mt-3 space-y-3">
-            {offers.slice(1).map((offer) => <OfferCard key={offer.key} item={offer} />)}
+            {offers.slice(1).map((offer) => (
+              <OfferCard
+                key={offer.key}
+                item={offer}
+                online={online}
+                pendingAction={pendingAction}
+                runAction={runAction}
+              />
+            ))}
           </div>
         </details>
       )}
@@ -337,7 +688,16 @@ function CompactListItem({ item }: { item: RiderDeliveryWorkItem | RiderDelivery
   );
 }
 
-function DeliveryLists({ deliveryData }: { deliveryData: RiderDeliveryPageData }) {
+function DeliveryLists({
+  deliveryData,
+  navigate,
+}: {
+  deliveryData: RiderDeliveryPageData;
+  navigate: (patch: Partial<RiderDeliveryPageData['filters']>, page?: number) => void;
+}) {
+  const [search, setSearch] = useState(deliveryData.filters.search);
+  useEffect(() => setSearch(deliveryData.filters.search), [deliveryData.filters.search]);
+
   const emptyMessage = {
     upcoming: 'No upcoming deliveries',
     history: 'No delivery history',
@@ -356,6 +716,7 @@ function DeliveryLists({ deliveryData }: { deliveryData: RiderDeliveryPageData }
             key={tab}
             type="button"
             aria-current={deliveryData.filters.tab === tab ? 'page' : undefined}
+            onClick={() => navigate({ tab })}
             className={`min-h-11 shrink-0 rounded-xl px-4 text-sm font-bold ${
               deliveryData.filters.tab === tab
                 ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
@@ -373,7 +734,11 @@ function DeliveryLists({ deliveryData }: { deliveryData: RiderDeliveryPageData }
           <select
             aria-label="Business type"
             value={deliveryData.filters.business}
-            readOnly
+            onChange={(event) =>
+              navigate({
+                business: event.target.value as RiderDeliveryPageData['filters']['business'],
+              })
+            }
             className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-900"
           >
             <option value="all">All businesses</option>
@@ -386,7 +751,11 @@ function DeliveryLists({ deliveryData }: { deliveryData: RiderDeliveryPageData }
           <select
             aria-label="Delivery time"
             value={deliveryData.filters.window}
-            readOnly
+            onChange={(event) =>
+              navigate({
+                window: event.target.value as RiderDeliveryPageData['filters']['window'],
+              })
+            }
             className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-900"
           >
             <option value="all">All time</option>
@@ -394,18 +763,38 @@ function DeliveryLists({ deliveryData }: { deliveryData: RiderDeliveryPageData }
             <option value="week">This week</option>
           </select>
         </label>
-        <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-          Search
-          <input
-            type="search"
-            aria-label="Search deliveries"
-            value={deliveryData.filters.search}
-            readOnly
-            placeholder="Delivery, customer, address"
-            className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-900"
-          />
-        </label>
+        <form
+          role="search"
+          onSubmit={(event: FormEvent) => {
+            event.preventDefault();
+            navigate({ search });
+          }}
+          className="space-y-2"
+        >
+          <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+            Search
+            <input
+              type="search"
+              aria-label="Search deliveries"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Delivery, customer, address"
+              className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-900"
+            />
+          </label>
+          <button type="submit" className="sr-only">Search deliveries</button>
+        </form>
       </div>
+
+      <button
+        type="button"
+        onClick={() =>
+          navigate({ tab: 'upcoming', business: 'all', window: 'all', search: '' })
+        }
+        className="min-h-11 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200"
+      >
+        Clear filters
+      </button>
 
       <div className="space-y-3">
         {deliveryData.list.data.length ? (
@@ -416,17 +805,85 @@ function DeliveryLists({ deliveryData }: { deliveryData: RiderDeliveryPageData }
           </div>
         )}
       </div>
+
+      {deliveryData.list.links.some(({ url }) => url) && (
+        <nav aria-label="Delivery pages" className="flex flex-wrap justify-center gap-2">
+          {deliveryData.list.links.map((link) => {
+            if (!link.url) return null;
+            const label = link.label.replace(/&laquo;|&raquo;/g, '').trim();
+            const page = Number(new URL(link.url, window.location.origin).searchParams.get('page') ?? 1);
+
+            return (
+              <button
+                key={`${link.label}:${page}`}
+                type="button"
+                aria-label={`Page ${label}`}
+                aria-current={link.active ? 'page' : undefined}
+                onClick={() => navigate({}, page)}
+                className="min-h-11 min-w-11 rounded-xl border border-slate-300 px-3 text-sm font-semibold dark:border-slate-700"
+              >
+                {label}
+              </button>
+            );
+          })}
+        </nav>
+      )}
     </section>
   );
 }
 
 export default function MyDeliveries() {
-  const { deliveryData } = usePage<{
+  const { deliveryData, canRecordProof } = usePage<{
     deliveryData: RiderDeliveryPageData;
     canRecordProof: boolean;
     maxDeliveryAttempts: number;
   }>().props;
   const [showSequence, setShowSequence] = useState(false);
+  const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [lastSynced] = useState(() =>
+    new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+  );
+
+  useEffect(() => {
+    const connected = () => setOnline(true);
+    const disconnected = () => setOnline(false);
+    window.addEventListener('online', connected);
+    window.addEventListener('offline', disconnected);
+
+    return () => {
+      window.removeEventListener('online', connected);
+      window.removeEventListener('offline', disconnected);
+    };
+  }, []);
+
+  const runAction: ActionRunner = (key, action) => {
+    if (!online) return;
+    setPendingAction(key);
+    setActionError(null);
+    void action()
+      .then(() => router.reload({ only: ['deliveryData'] }))
+      .catch((error: any) => {
+        const errors = error.response?.data?.errors;
+        setActionError(
+          error.response?.data?.message ??
+            (errors ? Object.values(errors).flat().join(' ') : 'Unable to update this delivery.'),
+        );
+      })
+      .finally(() => setPendingAction(null));
+  };
+
+  const navigate = (
+    patch: Partial<RiderDeliveryPageData['filters']>,
+    page = 1,
+  ) => {
+    router.get(
+      '/erp/logistics/deliveries',
+      { ...deliveryData.filters, ...patch, page },
+      { preserveScroll: true, preserveState: true },
+    );
+  };
 
   return (
     <AppLayoutERP>
@@ -437,12 +894,24 @@ export default function MyDeliveries() {
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             See what needs your attention now.
           </p>
-          <p role="status" className="mt-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
-            <span aria-hidden="true">●</span> Online · Updated just now
+          <p
+            role="status"
+            aria-live="polite"
+            className={`mt-2 text-xs font-semibold ${
+              online ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300'
+            }`}
+          >
+            <span aria-hidden="true">{online ? '●' : '!'}</span>{' '}
+            {online ? 'Online' : 'Offline'} · Last sync {lastSynced}
           </p>
         </header>
 
-        <OfferRegion offers={deliveryData.offers} />
+        <OfferRegion
+          offers={deliveryData.offers}
+          online={online}
+          pendingAction={pendingAction}
+          runAction={runAction}
+        />
 
         {deliveryData.has_active_conflict && (
           <div role="alert" className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100">
@@ -454,9 +923,26 @@ export default function MyDeliveries() {
           item={deliveryData.current}
           showSequence={showSequence}
           onToggleSequence={() => setShowSequence((current) => !current)}
+          locked={deliveryData.has_active_conflict}
+          online={online}
+          pendingAction={pendingAction}
+          canRecordProof={canRecordProof}
+          runAction={runAction}
         />
-        <UpNextCard item={deliveryData.up_next} />
-        <DeliveryLists deliveryData={deliveryData} />
+        <UpNextCard
+          item={deliveryData.up_next}
+          locked={deliveryData.has_active_conflict}
+          online={online}
+          pendingAction={pendingAction}
+          canRecordProof={canRecordProof}
+          runAction={runAction}
+        />
+        {actionError && (
+          <div role="alert" className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-900">
+            {actionError}
+          </div>
+        )}
+        <DeliveryLists deliveryData={deliveryData} navigate={navigate} />
       </div>
     </AppLayoutERP>
   );
