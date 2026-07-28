@@ -17,7 +17,7 @@
 ### Create
 
 - `app/Services/Logistics/RiderActiveWorkGuard.php` — one shared, transaction-safe active-work check used by batch and standalone starts.
-- `resources/js/Pages/ERP/Logistics/myDeliveries.ts` — pure presentation rules for progress, actionable delivery selection, labels, and business matching.
+- `resources/js/Pages/ERP/Logistics/riderDeliveryPresentation.ts` — pure presentation rules for progress, actionable delivery selection, labels, and business matching.
 - `resources/js/Pages/ERP/Logistics/__tests__/myDeliveries.test.ts` — focused unit tests for those pure rules.
 - `tests/Feature/Logistics/RiderMyDeliveriesPageTest.php` — read-model and filter behavior for the rider page.
 
@@ -456,7 +456,7 @@ git commit -m "feat: add rider delivery work-item read model"
 **Files:**
 
 - Modify: `resources/js/types/logistics.ts`
-- Create: `resources/js/Pages/ERP/Logistics/myDeliveries.ts`
+- Create: `resources/js/Pages/ERP/Logistics/riderDeliveryPresentation.ts`
 - Create: `resources/js/Pages/ERP/Logistics/__tests__/myDeliveries.test.ts`
 
 - [ ] **Step 1: Write failing unit tests**
@@ -466,7 +466,7 @@ import {
   completedProgress,
   nextActionableDelivery,
   matchesBusiness,
-} from '../myDeliveries';
+} from '../riderDeliveryPresentation';
 
 it('counts only delivered stops as complete', () => {
   expect(completedProgress([
@@ -597,7 +597,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add resources/js/types/logistics.ts resources/js/Pages/ERP/Logistics/myDeliveries.ts resources/js/Pages/ERP/Logistics/__tests__/myDeliveries.test.ts
+git add resources/js/types/logistics.ts resources/js/Pages/ERP/Logistics/riderDeliveryPresentation.ts resources/js/Pages/ERP/Logistics/__tests__/myDeliveries.test.ts
 git commit -m "feat: add rider delivery presentation rules"
 ```
 

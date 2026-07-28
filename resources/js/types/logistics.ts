@@ -101,6 +101,7 @@ export type TrackingShipmentLeg = {
     source_id: number;
     source_summary?: LogisticsSourceSummary | null;
     order_summary?: LogisticsOrderSummary | null;
+    purpose: string;
   };
   assignments?: Array<{
     id: number;
@@ -228,4 +229,53 @@ export type DeliveryBatchPageProps = {
   };
   availableModules?: LogisticsModule[];
   showModuleFilter?: boolean;
+};
+
+export type RiderDeliveryBusiness = 'all' | 'retail' | 'repair';
+export type RiderDeliveryTab = 'upcoming' | 'history' | 'issues' | 'all';
+
+export type RiderDeliveryWorkItem = {
+  item_type: 'work';
+  key: string;
+  kind: 'batch' | 'single';
+  id: number;
+  status: string;
+  group: 'offer' | 'current' | 'upcoming' | 'history' | 'conflict';
+  business_types: Array<Exclude<RiderDeliveryBusiness, 'all'>>;
+  business_label: string;
+  delivery_date?: string | null;
+  delivery_window?: 'morning' | 'afternoon' | null;
+  started_at?: string | null;
+  offered_at?: string | null;
+  response_deadline?: string | null;
+  terminal_at?: string | null;
+  matched_delivery_id?: number | null;
+  deliveries: TrackingShipmentLeg[];
+};
+
+export type RiderDeliveryIssue = {
+  item_type: 'issue';
+  key: string;
+  id: number;
+  delivery_id: number;
+  parent_key: string;
+  business_types: Array<Exclude<RiderDeliveryBusiness, 'all'>>;
+  reason?: string | null;
+  attempted_at?: string | null;
+  delivery_date?: string | null;
+};
+
+export type RiderDeliveryPageData = {
+  offers: RiderDeliveryWorkItem[];
+  current: RiderDeliveryWorkItem | null;
+  active_conflicts: RiderDeliveryWorkItem[];
+  has_active_conflict: boolean;
+  up_next: RiderDeliveryWorkItem | null;
+  list: PaginatedResponse<RiderDeliveryWorkItem | RiderDeliveryIssue>;
+  filters: {
+    tab: RiderDeliveryTab;
+    business: RiderDeliveryBusiness;
+    window: 'all' | 'today' | 'week';
+    search: string;
+  };
 };
