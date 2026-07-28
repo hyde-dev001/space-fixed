@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-29  
 **Status:** Approved direction; implementation pending  
-**Scope:** Rider-facing `My Deliveries` page and the minimum shared status safeguards required to make it reliable
+**Scope:** Target rider-facing `My Deliveries` experience, with an explicit first implementation slice covering the page redesign and the minimum shared active-work safeguard
 
 ## Summary
 
@@ -83,7 +83,17 @@ Search, business type, date, status, and sorting controls belong only to the low
 | Current | One in-progress batch or standalone delivery | In progress | Pinned and expanded |
 | Upcoming | Accepted but not started | Scheduled next | Compact and sorted by schedule |
 | Issue | Failed attempt or unresolved delivery exception | Delivery issue | Visible until resolved |
-| History | Completed or cancelled work | Completed / Cancelled | Read-only and collapsed |
+| History | Completed, cancelled, or rider-declined work | Completed / Cancelled / Declined | Read-only and collapsed |
+
+### Lower-list entities
+
+The lists use deterministic entity types:
+
+- **Upcoming, History, and All** contain work-item cards. A work item is either a batch or one standalone delivery.
+- **Issues** contains individual unresolved delivery exceptions. A batched delivery issue shows its parent batch ID and sequence; a standalone issue shows “Single delivery.”
+- A delivery issue remains visible inside its parent batch sequence and may also appear in Issues. Both views reference the same delivery and attempt IDs; they are not duplicate records.
+- Declining an offer removes it from Needs response and places a read-only work-item entry in History as Declined.
+- Searching for an individual delivery ID in All returns its parent batch card, automatically expanded to the matching delivery. A standalone match returns its own card.
 
 ### Delivery status labels
 
@@ -193,10 +203,24 @@ The dominant action follows the actual state:
 | Item received | Confirm pickup |
 | Ready for drop-off | Start delivery |
 | At customer | I’ve arrived |
-| Handover complete | Submit proof |
-| Required proof valid | Complete delivery |
+| Handover complete | Submit delivery proof |
 
 Call, instructions, and Report issue remain secondary actions.
+
+The canonical transitions are:
+
+| Input state/event | Rider action | Result |
+|---|---|---|
+| Assigned | Open directions | No status change |
+| Assigned at pickup | I’ve arrived | Idempotent `pickup_arrived` event; status remains Assigned |
+| Assigned with required pickup evidence | Confirm pickup | Picked up |
+| Picked up | Start delivery | In transit |
+| In transit at drop-off | I’ve arrived | Idempotent `dropoff_arrived` event; status remains In transit |
+| In transit with required delivery proof | Submit delivery proof | Awaiting proof approval |
+| Awaiting proof approval | No rider completion action | Authorized dispatcher approval changes status to Delivered |
+| Any eligible active state | Report issue | Failed attempt/issue record using existing delivery-attempt rules |
+
+The rider may continue to the next eligible delivery while a prior delivery is awaiting proof approval, but that prior delivery does not count as completed. The batch remains in progress until every delivery reaches a terminal resolved state.
 
 ### 5. Complete a delivery
 
@@ -378,6 +402,16 @@ A durable offline mutation queue is a long-term improvement because it requires 
 
 Unknown states must render as “Status unavailable” with View details rather than disappearing or exposing raw enum text.
 
+## Deterministic Ordering
+
+- Pending offers: response deadline first when present, then `offered_at` ascending, then work-item ID ascending.
+- Current conflict fallback: `started_at` ascending, then work-item type, then ID ascending.
+- Upcoming: delivery date ascending, Morning before Afternoon, accepted/assigned time ascending, then ID ascending.
+- Issues: latest attempt time descending, then delivery ID descending.
+- History: terminal timestamp descending, falling back to `updated_at`, then ID descending.
+
+These rules prevent refreshed data with equal dates from changing order unexpectedly.
+
 ## Current vs Proposed Experience
 
 | Current | Proposed |
@@ -425,9 +459,55 @@ Unknown states must render as “Status unavailable” with View details rather 
 - Predictive ETA and delay alerts.
 - Offer expiration.
 
-## Out of Scope
+## Implementation Phases
+
+The target design above is intentionally broader than the first code change. Planning and implementation must proceed in these independently deployable slices.
+
+### Phase 1 — Task-first rider page
+
+This is the scope of the next implementation plan:
+
+- build a deterministic rider read model for pending offers, one current work item, upcoming work items, history, and existing unresolved issues;
+- unify batch and standalone presentation without creating synthetic batches;
+- implement the Current Delivery, Up Next, and lower-list hierarchy;
+- add All/Retail/Repair filtering to lower lists;
+- expand batch deliveries inline and collapse non-current details;
+- correct progress so only Delivered counts as completed;
+- reuse existing rider actions and proof transitions;
+- enforce the one-active-work rule in both existing start paths;
+- prevent active, completed, cancelled, declined, and stale records from appearing in the wrong group;
+- retain loaded details and show a basic browser offline/online notice; and
+- add focused automated coverage for classification, progress, filtering, and start guards.
+
+Phase 1 does **not** show the new I’ve arrived action until the arrival event endpoint exists.
+
+### Phase 2 — Arrival and issue workflow
+
+- Add idempotent pickup-arrived and dropoff-arrived events.
+- Expose I’ve arrived contextually.
+- Improve rider issue reporting with conditional evidence.
+- Add dispatcher-facing resolution instructions consumed by the rider page.
+
+### Phase 3 — Completion and synchronization hardening
+
+- Verify or add automatic batch completion across all terminal resolution types.
+- Harden idempotency for every rider transition.
+- Add clearer stale-record refresh behavior and conflict messaging.
+
+### Phase 4 — Advanced operations
+
+- Durable offline mutation queue.
+- Active-route changes with rider acknowledgement.
+- Live location, predictive ETA, and route optimization.
+
+Each phase requires its own implementation plan and verification. Completing Phase 1 must not imply that later-phase controls shown in the target mockup are already functional.
+
+## Phase 1 Out of Scope
 
 - Dispatcher page visual redesign.
+- New arrival-event endpoints and the I’ve arrived action.
+- New issue-reporting or dispatcher-resolution behavior.
+- Changes to terminal-state and automatic batch-completion rules.
 - Custom map rendering.
 - Automatic route optimization.
 - Live GPS tracking.
@@ -436,20 +516,19 @@ Unknown states must render as “Status unavailable” with View details rather 
 - Active route editing after the rider starts.
 - New bulk-completion behavior.
 
-## Acceptance Criteria
+## Phase 1 Acceptance Criteria
 
 1. The rider sees at most one Current Delivery.
 2. The Current Delivery may represent a batch or standalone assignment.
-3. The page never presents multiple competing next actions.
+3. Inside the Current Delivery execution area, exactly one state-changing primary action is shown for the current delivery. A separate pending-offer region may show Accept and Decline without changing which delivery is current.
 4. Only delivered stops count toward completed progress.
 5. Current work and pending offers remain visible regardless of list filters.
 6. Upcoming, History, Issues, and All lists support Retail/Repair filtering.
 7. A batch exposes all deliveries through one inline expansion.
-8. Completing one delivery advances only that delivery and promotes the next eligible delivery.
-9. Starting a batch is rejected when a standalone delivery is active, and vice versa.
+8. When one delivery becomes Delivered, only that delivery advances; the page updates progress and promotes the next eligible delivery.
+9. Starting a batch is rejected by the server when a standalone delivery is active, and starting a standalone delivery is rejected when a batch is active.
 10. Completed, rejected, and cancelled work does not remain in the active area.
 11. Status is communicated with text and icon/shape, not color alone.
 12. Essential loaded details remain readable when the browser goes offline.
-13. Duplicate action attempts do not create duplicate status transitions or events.
+13. Repeated batch or standalone start requests do not create duplicate active transitions.
 14. Existing dispatcher pages continue to own single assignment and batch creation workflows.
-
