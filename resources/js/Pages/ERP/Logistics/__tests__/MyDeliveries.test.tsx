@@ -1,238 +1,450 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import MyDeliveries from '../MyDeliveries';
 
 const mocks = vi.hoisted(() => ({
-  props: { batches: [] as any[] },
+  props: {
+    deliveryData: {
+      offers: [],
+      current: null,
+      active_conflicts: [],
+      has_active_conflict: false,
+      up_next: null,
+      list: {
+        data: [],
+        links: [],
+        from: null,
+        to: null,
+        total: 0,
+        current_page: 1,
+        last_page: 1,
+      },
+      filters: { tab: 'upcoming', business: 'all', window: 'all', search: '' },
+    } as any,
+    canRecordProof: true,
+    maxDeliveryAttempts: 2,
+  },
+  reload: vi.fn(),
+  get: vi.fn(),
+  post: vi.fn(() => Promise.resolve()),
   acceptBatch: vi.fn(() => Promise.resolve()),
   rejectBatch: vi.fn(() => Promise.resolve()),
   startBatch: vi.fn(() => Promise.resolve()),
   markPickedUp: vi.fn(() => Promise.resolve()),
   confirmPickup: vi.fn(() => Promise.resolve()),
   outForDelivery: vi.fn(() => Promise.resolve()),
-  confirm: vi.fn(() => Promise.resolve({ isConfirmed: true })),
-  alert: vi.fn(() => Promise.resolve()),
-  warning: vi.fn(() => Promise.resolve()),
-  reload: vi.fn(),
+  markInTransit: vi.fn(() => Promise.resolve()),
 }));
 
-vi.mock('@inertiajs/react', () => ({ usePage: () => ({ props: mocks.props }), router: { reload: mocks.reload } }));
-vi.mock('@/services/logisticsApi', () => ({ logisticsApi: mocks }));
-vi.mock('@/utils/workflowFeedback', () => ({ workflowFeedback: {
-  confirm: mocks.confirm,
-  alert: mocks.alert,
-  warning: mocks.warning,
+vi.mock('@inertiajs/react', () => ({
+  Head: ({ title }: { title: string }) => <div data-testid="head-title">{title}</div>,
+  usePage: () => ({ props: mocks.props }),
+  router: { reload: mocks.reload, get: mocks.get },
+}));
+vi.mock('@/layout/AppLayout_ERP', () => ({
+  default: ({ children }: React.PropsWithChildren) => <main data-testid="erp-layout">{children}</main>,
+}));
+vi.mock('axios', () => ({ default: { post: mocks.post } }));
+vi.mock('@/services/logisticsApi', () => ({ logisticsApi: {
+  acceptBatch: mocks.acceptBatch,
+  rejectBatch: mocks.rejectBatch,
+  startBatch: mocks.startBatch,
+  markPickedUp: mocks.markPickedUp,
+  confirmPickup: mocks.confirmPickup,
+  outForDelivery: mocks.outForDelivery,
+  markInTransit: mocks.markInTransit,
 } }));
-vi.mock('../Shipments', () => ({ default: ({ children }: React.PropsWithChildren) => <main data-testid="erp-layout">{children}</main> }));
 
-const leg = (id: number, stop_sequence: number | null, status = 'assigned', snapshot: Record<string, string> = {}) => ({
-  id, stop_sequence, status, leg_type: 'outbound', destination_snapshot: snapshot, proofs: [],
+const leg = (
+  id: number,
+  stop_sequence: number | null,
+  status = 'assigned',
+  name = `Customer ${id}`,
+) => ({
+  id,
+  sequence: 1,
+  stop_sequence,
+  status,
+  leg_type: 'outbound',
+  destination_snapshot: {
+    name,
+    phone: `0900${id}`,
+    address: `Address ${id}`,
+    delivery_instructions: `Instruction ${id}`,
+  },
+  shipment: { id: id + 100, source_type: 'order', source_id: id + 200, purpose: 'retail_delivery' },
+  proofs: [],
+  assignments: [],
+  attempts: [],
 });
 
-const batch = (status = 'in_progress', legs: any[] = [], id = 1) => ({
-  id, delivery_date: '2026-07-15', delivery_window: 'morning', status, capacity: 10, assigned_stop_count: legs.length, legs,
+const workItem = (
+  kind: 'batch' | 'single',
+  status: string,
+  deliveries: any[],
+  overrides: Record<string, unknown> = {},
+) => ({
+  item_type: 'work',
+  key: `${kind}:${kind === 'batch' ? 7 : deliveries[0]?.id ?? 9}`,
+  kind,
+  id: kind === 'batch' ? 7 : deliveries[0]?.id ?? 9,
+  status,
+  group: 'current',
+  business_types: ['retail'],
+  business_label: 'Retail delivery',
+  delivery_date: '2026-07-29',
+  delivery_window: 'morning',
+  deliveries,
+  ...overrides,
 });
 
 beforeEach(() => {
-  mocks.props.batches = [];
+  mocks.props.deliveryData = {
+    offers: [],
+    current: null,
+    active_conflicts: [],
+    has_active_conflict: false,
+    up_next: null,
+    list: {
+      data: [],
+      links: [],
+      from: null,
+      to: null,
+      total: 0,
+      current_page: 1,
+      last_page: 1,
+    },
+    filters: { tab: 'upcoming', business: 'all', window: 'all', search: '' },
+  };
   vi.clearAllMocks();
 });
 
-describe('MyDeliveries', () => {
-  it('sorts stops and derives progress, completion, and the next stop', () => {
-    mocks.props.batches = [batch('in_progress', [
-      leg(16, null),
-      leg(15, 3, 'delivered'),
-      leg(14, 2),
-      leg(13, 2, 'awaiting_proof_approval'),
-      leg(12, 1, 'assigned', { name: 'Miguel', phone: '0905', address: 'Cavite' }),
-    ])];
+describe('MyDeliveries task-first hierarchy', () => {
+  it('shows the page heading, connection status, and one current-delivery card', () => {
+    mocks.props.deliveryData.current = workItem('single', 'in_transit', [leg(9, null, 'in_transit')]);
 
     render(<MyDeliveries />);
 
-    expect(screen.getByText('2 of 5 completed')).toBeInTheDocument();
-    expect(screen.getByText('Next stop')).toBeInTheDocument();
-    expect(screen.getByText('Proof submitted')).toBeInTheDocument();
-    expect(screen.getByText('Delivered')).toBeInTheDocument();
-    expect(screen.getAllByTestId('batch-stop').map((stop) => stop.dataset.legId)).toEqual(['12', '13', '14', '15', '16']);
-    expect(screen.getByText('Miguel')).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'My Deliveries' })).toBeVisible();
+    expect(screen.getByText(/Online/)).toBeVisible();
+    expect(screen.getAllByRole('heading', { name: 'Current delivery' })).toHaveLength(1);
+    expect(screen.getByText('Single delivery #9')).toBeVisible();
   });
 
-  it('expands one non-next stop and resets it when proof advances the route', () => {
-    const first = leg(1, 1, 'assigned', { name: 'First', address: 'A' });
-    const second = leg(2, 2, 'assigned', { name: 'Second', address: 'B' });
-    const third = leg(3, 3, 'assigned', { name: 'Third', address: 'C' });
-    mocks.props.batches = [batch('in_progress', [first, second, third])];
+  it('keeps Current delivery before new assignment offers', () => {
+    mocks.props.deliveryData.current = workItem('single', 'in_transit', [
+      leg(9, null, 'in_transit'),
+    ]);
+    mocks.props.deliveryData.offers = [
+      workItem('batch', 'offered', [leg(1, 1)], { group: 'offer' }),
+    ];
+
+    render(<MyDeliveries />);
+
+    const page = screen.getByTestId('erp-layout').textContent ?? '';
+    expect(page.indexOf('Current delivery')).toBeLessThan(page.indexOf('New assignment'));
+  });
+
+  it('counts only delivered stops and expands batch sequence on demand', () => {
+    mocks.props.deliveryData.current = workItem('batch', 'in_progress', [
+      leg(1, 1, 'delivered', 'Completed customer'),
+      leg(2, 2, 'awaiting_proof_approval', 'Waiting customer'),
+      leg(3, 3, 'assigned', 'Current customer'),
+    ]);
+
+    render(<MyDeliveries />);
+
+    expect(screen.getByText('1 of 3 completed')).toBeVisible();
+    expect(screen.getByRole('progressbar', { name: 'Batch progress: 1 of 3 delivered' })).toBeVisible();
+    expect(screen.getByText('Current customer')).toBeVisible();
+    expect(screen.queryByText('Waiting customer')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'View all 3 deliveries' }));
+
+    const sequence = screen.getByTestId('delivery-sequence');
+    expect(sequence).toHaveTextContent('Completed customer');
+    expect(sequence).toHaveTextContent('Waiting customer');
+    expect(screen.getByRole('button', { name: 'Hide delivery sequence' })).toBeVisible();
+  });
+
+  it('shows one compact Up Next item', () => {
+    mocks.props.deliveryData.up_next = workItem('batch', 'accepted', [leg(4, 1), leg(5, 2)], {
+      key: 'batch:12',
+      id: 12,
+      group: 'upcoming',
+      business_label: 'Repair pickup',
+      business_types: ['repair'],
+    });
+
+    render(<MyDeliveries />);
+
+    const region = screen.getByRole('region', { name: 'Up next' });
+    expect(within(region).getByText('Batch #12')).toBeVisible();
+    expect(region).toHaveTextContent('2 deliveries');
+    expect(within(region).getByRole('button', { name: 'View details' })).toBeVisible();
+  });
+
+  it('shows semantic lower-list tabs and business filter', () => {
+    render(<MyDeliveries />);
+
+    for (const label of ['Upcoming', 'History', 'Issues', 'All']) {
+      expect(screen.getByRole('button', { name: label })).toBeVisible();
+    }
+    expect(screen.getByLabelText('Business type')).toHaveValue('all');
+  });
+
+  it('distinguishes batch and standalone work without bulk controls', () => {
+    mocks.props.deliveryData.list.data = [
+      workItem('batch', 'completed', [leg(1, 1)], { group: 'history' }),
+      workItem('single', 'delivered', [leg(8, null, 'delivered')], {
+        key: 'single:8',
+        id: 8,
+        group: 'history',
+      }),
+    ];
+    mocks.props.deliveryData.list.total = 2;
+
+    render(<MyDeliveries />);
+
+    expect(screen.getByText('Batch #7')).toBeVisible();
+    expect(screen.getByText('Single delivery #8')).toBeVisible();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Mark Picked Up \(/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Leg #/)).not.toBeInTheDocument();
+  });
+
+  it('shows readable empty and active-conflict states', () => {
+    const { rerender } = render(<MyDeliveries />);
+
+    expect(screen.getByText('No delivery in progress')).toBeVisible();
+    expect(screen.getByText('No upcoming deliveries')).toBeVisible();
+
+    mocks.props.deliveryData.has_active_conflict = true;
+    mocks.props.deliveryData.active_conflicts = [
+      workItem('batch', 'in_progress', [leg(1, 1)], { group: 'conflict' }),
+    ];
+    rerender(<MyDeliveries />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/More than one active delivery/);
+  });
+});
+
+describe('MyDeliveries rider interactions', () => {
+  it('accepts an offer and asks for a reason only after Decline is selected', async () => {
+    mocks.props.deliveryData.offers = [
+      workItem('batch', 'offered', [leg(1, 1)], { group: 'offer' }),
+    ];
+
+    render(<MyDeliveries />);
+
+    expect(screen.queryByLabelText('Decline reason')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Accept batch' }));
+    expect(mocks.acceptBatch).toHaveBeenCalledWith(7);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Accept batch' })).toBeEnabled());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Decline batch' }));
+    fireEvent.change(screen.getByLabelText('Decline reason'), { target: { value: 'Schedule conflict' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm decline' }));
+
+    expect(mocks.rejectBatch).toHaveBeenCalledWith(7, 'Schedule conflict');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Confirm decline' })).toBeEnabled());
+  });
+
+  it('starts an accepted batch from Up Next', async () => {
+    mocks.props.deliveryData.up_next = workItem('batch', 'accepted', [leg(1, 1)], {
+      group: 'upcoming',
+    });
+
+    render(<MyDeliveries />);
+    fireEvent.click(screen.getByRole('button', { name: 'Start batch' }));
+
+    expect(mocks.startBatch).toHaveBeenCalledWith(7);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Start batch' })).toBeEnabled());
+  });
+
+  it('does not start Up Next while another delivery is current', () => {
+    mocks.props.deliveryData.current = workItem('single', 'in_transit', [
+      leg(9, null, 'in_transit'),
+    ]);
+    mocks.props.deliveryData.up_next = workItem('batch', 'accepted', [leg(1, 1)], {
+      group: 'upcoming',
+    });
+
+    render(<MyDeliveries />);
+
+    expect(screen.getByRole('button', { name: 'Start batch' })).toBeDisabled();
+  });
+
+  it('confirms standalone pickup with proof when present and without proof when absent', async () => {
+    const withProof = {
+      ...leg(9, null, 'assigned'),
+      proofs: [{ id: 44, handoff_type: 'pickup', proof_type: 'photo' }],
+    };
+    mocks.props.deliveryData.up_next = workItem('single', 'assigned', [withProof], {
+      group: 'upcoming',
+    });
     const view = render(<MyDeliveries />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open delivery for stop 2' }));
-    expect(screen.getByText('Second')).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Open delivery for stop 3' }));
-    expect(screen.queryByText('Second')).not.toBeInTheDocument();
-    expect(screen.getByText('Third')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm pickup' }));
+    expect(mocks.confirmPickup).toHaveBeenCalledWith(9, 44);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Confirm pickup' })).toBeEnabled());
 
-    first.status = 'awaiting_proof_approval';
-    mocks.props.batches = [batch('in_progress', [first, second, third])];
+    mocks.props.deliveryData.up_next = workItem('single', 'assigned', [leg(10, null, 'assigned')], {
+      key: 'single:10',
+      id: 10,
+      group: 'upcoming',
+    });
     view.rerender(<MyDeliveries />);
-    expect(screen.getByText('1 of 3 completed')).toBeInTheDocument();
-    expect(screen.getByText('Second')).toBeVisible();
-    expect(screen.queryByText('Third')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm pickup' }));
+
+    expect(mocks.markPickedUp).toHaveBeenCalledWith(10);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Confirm pickup' })).toBeEnabled());
   });
 
-  it('handles empty, completed, and missing contact states', () => {
-    const { rerender } = render(<MyDeliveries />);
-    expect(screen.queryByText('My delivery batches')).not.toBeInTheDocument();
+  it('starts batch and standalone delivery with their existing endpoints', async () => {
+    mocks.props.deliveryData.current = workItem('batch', 'in_progress', [leg(2, 1, 'picked_up')]);
+    const view = render(<MyDeliveries />);
 
-    mocks.props.batches = [batch('in_progress', [])];
-    rerender(<MyDeliveries />);
-    expect(screen.getByText('No stops in this batch')).toBeInTheDocument();
-    expect(screen.getByText('0 completed')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Start delivery' }));
+    expect(mocks.outForDelivery).toHaveBeenCalledWith(2);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Start delivery' })).toBeEnabled());
 
-    mocks.props.batches = [batch('in_progress', [leg(4, 1, 'delivered')])];
-    rerender(<MyDeliveries />);
-    expect(screen.getByText('All stops completed')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Open delivery for stop 1' }));
-    expect(screen.getAllByText('Not provided')).toHaveLength(3);
-    expect(screen.queryByRole('link', { name: 'Call' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Directions' })).not.toBeInTheDocument();
+    mocks.props.deliveryData.current = workItem('single', 'picked_up', [leg(3, null, 'picked_up')]);
+    view.rerender(<MyDeliveries />);
+    fireEvent.click(screen.getByRole('button', { name: 'Start delivery' }));
+
+    expect(mocks.markInTransit).toHaveBeenCalledWith(3);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Start delivery' })).toBeEnabled());
   });
 
-  it('preserves batch and delivery workflow actions', () => {
-    const pickupLeg = { ...leg(2, 1, 'assigned'), proofs: [{ id: 8, handoff_type: 'pickup' }] };
-    mocks.props.batches = [batch('offered', [pickupLeg])];
-    const { rerender } = render(<MyDeliveries />);
-    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
-    expect(mocks.acceptBatch).toHaveBeenCalledWith(1);
-    expect(screen.getByRole('button', { name: 'Reject' })).toBeDisabled();
+  it('submits delivery proof and an existing issue payload', async () => {
+    const delivery = {
+      ...leg(5, 1, 'in_transit'),
+      assignments: [{ id: 55, status: 'accepted' }],
+    };
+    mocks.props.deliveryData.current = workItem('single', 'in_transit', [delivery]);
+    render(<MyDeliveries />);
 
-    mocks.props.batches = [batch('accepted', [pickupLeg])];
-    rerender(<MyDeliveries />);
-    expect(screen.getByRole('button', { name: 'Start batch' })).toBeInTheDocument();
+    const proof = new File(['proof'], 'proof.jpg', { type: 'image/jpeg' });
+    fireEvent.change(screen.getByLabelText('Delivery proof'), { target: { files: [proof] } });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit delivery proof' }));
+    expect(mocks.post).toHaveBeenCalledWith(
+      '/api/logistics/legs/5/proof',
+      expect.any(FormData),
+      expect.objectContaining({ headers: { 'Content-Type': 'multipart/form-data' } }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Submit delivery proof' })).toBeEnabled(),
+    );
 
-    mocks.props.batches = [batch('in_progress', [pickupLeg, leg(3, 2, 'picked_up')])];
-    rerender(<MyDeliveries />);
-    expect(screen.getByRole('button', { name: 'Confirm pickup' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Open delivery for stop 2' }));
-    expect(screen.getByRole('button', { name: 'Out for delivery' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Report issue' }));
+    fireEvent.change(screen.getByLabelText('Issue reason'), {
+      target: { value: 'recipient_unavailable' },
+    });
+    fireEvent.change(screen.getByLabelText('Issue photo'), { target: { files: [proof] } });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit issue' }));
+
+    expect(mocks.post).toHaveBeenCalledWith(
+      '/api/logistics/legs/5/report-issue',
+      expect.any(FormData),
+      expect.objectContaining({ headers: { 'Content-Type': 'multipart/form-data' } }),
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Submit issue' })).toBeEnabled());
   });
 
-  it('shows per-batch selection only for eligible stops in an in-progress batch', () => {
-    mocks.props.batches = [
-      batch('in_progress', [leg(1, 1), leg(2, 2, 'picked_up'), leg(3, 3, 'delivered')]),
-      batch('accepted', [leg(4, 1)], 2),
+  it('shows no state-changing action while waiting for proof approval', () => {
+    mocks.props.deliveryData.current = workItem('single', 'awaiting_proof_approval', [
+      leg(6, null, 'awaiting_proof_approval'),
+    ]);
+
+    render(<MyDeliveries />);
+
+    expect(screen.getAllByText('Waiting for proof approval')).not.toHaveLength(0);
+    expect(screen.queryByRole('button', { name: 'Confirm pickup' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Start delivery' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Submit delivery proof' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Report issue' })).not.toBeInTheDocument();
+  });
+
+  it('locks delivery mutations during an active conflict but leaves contact links available', () => {
+    mocks.props.deliveryData.current = workItem('single', 'picked_up', [leg(7, null, 'picked_up')]);
+    mocks.props.deliveryData.has_active_conflict = true;
+    mocks.props.deliveryData.active_conflicts = [
+      workItem('batch', 'in_progress', [leg(8, 1, 'in_transit')], { group: 'conflict' }),
     ];
 
     render(<MyDeliveries />);
 
-    expect(screen.getByRole('checkbox', { name: 'Select stop 1 in batch 1' })).toBeInTheDocument();
-    expect(screen.getByRole('checkbox', { name: 'Select stop 2 in batch 1' })).toBeInTheDocument();
-    expect(screen.queryByRole('checkbox', { name: 'Select stop 3 in batch 1' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('checkbox', { name: 'Select stop 1 in batch 2' })).not.toBeInTheDocument();
-    expect(screen.getByRole('checkbox', { name: 'Select all eligible stops in batch 1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Start delivery' })).toBeDisabled();
+    expect(screen.getByRole('link', { name: 'Call' })).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Directions' })).toBeVisible();
   });
 
-  it('selects eligible stops only inside the chosen batch', () => {
-    mocks.props.batches = [batch('in_progress', [leg(1, 1)]), batch('in_progress', [leg(2, 1)], 2)];
-    render(<MyDeliveries />);
-
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Select all eligible stops in batch 1' }));
-
-    expect(screen.getByRole('checkbox', { name: 'Select stop 1 in batch 1' })).toBeChecked();
-    expect(screen.getByRole('checkbox', { name: 'Select stop 1 in batch 2' })).not.toBeChecked();
-  });
-
-  it('bulk-picks only assigned stops from a mixed selection and reports skipped stops', async () => {
-    mocks.props.batches = [batch('in_progress', [leg(1, 1), leg(2, 2, 'picked_up')])];
-    render(<MyDeliveries />);
-
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Select stop 1 in batch 1' }));
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Select stop 2 in batch 1' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Mark Picked Up (1)' }));
-
-    await waitFor(() => expect(mocks.markPickedUp).toHaveBeenCalledWith(1));
-    expect(mocks.markPickedUp).toHaveBeenCalledTimes(1);
-    expect(mocks.outForDelivery).not.toHaveBeenCalled();
-    expect(mocks.confirm).toHaveBeenCalledTimes(1);
-    expect(mocks.alert).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining('1 skipped') }));
-    expect(mocks.reload).toHaveBeenCalledWith({ only: ['batches', 'shipments'] });
-    expect(screen.getByRole('checkbox', { name: 'Select stop 1 in batch 1' })).not.toBeChecked();
-  });
-
-  it('bulk-starts transit only for selected picked-up stops', async () => {
-    mocks.props.batches = [batch('in_progress', [leg(1, 1), leg(2, 2, 'picked_up')])];
-    render(<MyDeliveries />);
-
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Select all eligible stops in batch 1' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Mark In Transit (1)' }));
-
-    await waitFor(() => expect(mocks.outForDelivery).toHaveBeenCalledWith(2));
-    expect(mocks.outForDelivery).toHaveBeenCalledTimes(1);
-    expect(mocks.markPickedUp).not.toHaveBeenCalled();
-    expect(mocks.reload).toHaveBeenCalledWith({ only: ['batches', 'shipments'] });
-  });
-
-  it('reports partial failures without cancelling successful stops', async () => {
-    mocks.markPickedUp.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('stale'));
-    mocks.props.batches = [batch('in_progress', [leg(1, 1), leg(2, 2)])];
-    render(<MyDeliveries />);
-
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Select all eligible stops in batch 1' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Mark Picked Up (2)' }));
-
-    await waitFor(() => expect(mocks.alert).toHaveBeenCalledWith(expect.objectContaining({
-      text: expect.stringMatching(/1 successful.*1 failed/),
-    })));
-    expect(mocks.markPickedUp).toHaveBeenCalledTimes(2);
-  });
-
-  it('does not send requests when bulk confirmation is cancelled', async () => {
-    mocks.confirm.mockResolvedValueOnce({ isConfirmed: false });
-    mocks.props.batches = [batch('in_progress', [leg(1, 1)])];
-    render(<MyDeliveries />);
-
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Select stop 1 in batch 1' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Mark Picked Up (1)' }));
-
-    await waitFor(() => expect(mocks.confirm).toHaveBeenCalledTimes(1));
-    expect(mocks.markPickedUp).not.toHaveBeenCalled();
-  });
-
-  it('disables batch selection and actions while bulk requests are pending', async () => {
-    let finishRequest: (() => void) | undefined;
-    mocks.markPickedUp.mockReturnValueOnce(new Promise<void>((resolve) => { finishRequest = resolve; }));
-    mocks.props.batches = [batch('in_progress', [leg(1, 1)])];
-    render(<MyDeliveries />);
-
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Select stop 1 in batch 1' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Mark Picked Up (1)' }));
-
-    await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Select stop 1 in batch 1' })).toBeDisabled());
-    expect(screen.getByRole('checkbox', { name: 'Select all eligible stops in batch 1' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Mark Picked Up (1)' })).toBeDisabled();
-
-    finishRequest?.();
-    await waitFor(() => expect(mocks.reload).toHaveBeenCalledWith({ only: ['batches', 'shipments'] }));
-  });
-
-  it('disables bulk controls in every batch while any bulk request is pending', async () => {
-    let finishRequest: (() => void) | undefined;
-    mocks.markPickedUp.mockReturnValueOnce(new Promise<void>((resolve) => { finishRequest = resolve; }));
-    mocks.props.batches = [
-      batch('in_progress', [leg(1, 1)]),
-      batch('in_progress', [leg(2, 1)], 2),
+  it('updates lower-list filters, clears them, and preserves filter state for pagination', () => {
+    mocks.props.deliveryData.filters = {
+      tab: 'history',
+      business: 'retail',
+      window: 'week',
+      search: 'Miguel',
+    };
+    mocks.props.deliveryData.list.links = [
+      { url: '/erp/logistics/deliveries?page=2', label: '2', active: false },
     ];
+
     render(<MyDeliveries />);
 
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Select stop 1 in batch 1' }));
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Select stop 1 in batch 2' }));
-    fireEvent.click(screen.getAllByRole('button', { name: 'Mark Picked Up (1)' })[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Issues' }));
+    expect(mocks.get).toHaveBeenCalledWith(
+      '/erp/logistics/deliveries',
+      expect.objectContaining({ tab: 'issues', page: 1 }),
+      expect.objectContaining({ preserveScroll: true, preserveState: true }),
+    );
 
-    await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Select stop 1 in batch 2' })).toBeDisabled());
-    expect(screen.getAllByRole('button', { name: 'Mark Picked Up (1)' })[1]).toBeDisabled();
-    expect(mocks.confirm).toHaveBeenCalledTimes(1);
+    fireEvent.change(screen.getByLabelText('Business type'), { target: { value: 'repair' } });
+    expect(mocks.get).toHaveBeenCalledWith(
+      '/erp/logistics/deliveries',
+      expect.objectContaining({ business: 'repair', page: 1 }),
+      expect.objectContaining({ preserveScroll: true, preserveState: true }),
+    );
 
-    finishRequest?.();
-    await waitFor(() => expect(mocks.reload).toHaveBeenCalledWith({ only: ['batches', 'shipments'] }));
+    fireEvent.change(screen.getByLabelText('Search deliveries'), { target: { value: 'Batch 12' } });
+    fireEvent.submit(screen.getByRole('search'));
+    expect(mocks.get).toHaveBeenCalledWith(
+      '/erp/logistics/deliveries',
+      expect.objectContaining({ search: 'Batch 12', page: 1 }),
+      expect.any(Object),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(mocks.get).toHaveBeenCalledWith(
+      '/erp/logistics/deliveries',
+      expect.objectContaining({
+        tab: 'upcoming',
+        business: 'all',
+        window: 'all',
+        search: '',
+        page: 1,
+      }),
+      expect.any(Object),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Page 2' }));
+    expect(mocks.get).toHaveBeenCalledWith(
+      '/erp/logistics/deliveries',
+      expect.objectContaining({ ...mocks.props.deliveryData.filters, page: 2 }),
+      expect.any(Object),
+    );
+  });
+
+  it('keeps loaded data visible and disables mutations while offline', () => {
+    mocks.props.deliveryData.current = workItem('single', 'picked_up', [leg(11, null, 'picked_up')]);
+    render(<MyDeliveries />);
+
+    fireEvent(window, new Event('offline'));
+
+    expect(screen.getByText(/Offline/)).toBeVisible();
+    expect(screen.getByText('Customer 11')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Start delivery' })).toBeDisabled();
   });
 });

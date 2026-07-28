@@ -2,7 +2,11 @@
 
 namespace Tests\Feature\Logistics;
 
+use App\Models\Logistics\DeliveryAssignment;
+use App\Models\Logistics\DeliveryBatch;
+use App\Models\Logistics\DeliveryEvent;
 use App\Models\Logistics\HandoffProof;
+use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\Order;
@@ -110,6 +114,55 @@ class ShipmentLegServiceTest extends TestCase
         $this->expectException(ValidationException::class);
 
         app(ShipmentLegService::class)->markInTransit($leg);
+    }
+
+    public function test_rider_cannot_start_a_standalone_delivery_while_a_batch_is_active(): void
+    {
+        $rider = RiderProfile::factory()->create();
+        DeliveryBatch::factory()->create([
+            'shop_owner_id' => $rider->shop_owner_id,
+            'rider_profile_id' => $rider->id,
+            'status' => 'in_progress',
+        ]);
+        $leg = $this->standaloneLegFor($rider);
+
+        try {
+            app(ShipmentLegService::class)->markPickedUp($leg, $rider);
+            $this->fail('The rider started a standalone delivery while a batch was active.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('active_work', $exception->errors());
+        }
+
+        $this->assertSame('assigned', $leg->fresh()->status->value);
+    }
+
+    public function test_rider_cannot_start_a_second_standalone_delivery(): void
+    {
+        $rider = RiderProfile::factory()->create();
+        $activeLeg = $this->standaloneLegFor($rider, 'in_transit');
+        $leg = $this->standaloneLegFor($rider);
+
+        try {
+            app(ShipmentLegService::class)->markPickedUp($leg, $rider);
+            $this->fail('The rider started a second standalone delivery.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('active_work', $exception->errors());
+        }
+
+        $this->assertSame('in_transit', $activeLeg->fresh()->status->value);
+        $this->assertSame('assigned', $leg->fresh()->status->value);
+    }
+
+    public function test_repeating_start_for_the_same_standalone_delivery_is_idempotent(): void
+    {
+        $rider = RiderProfile::factory()->create();
+        $leg = $this->standaloneLegFor($rider);
+        $service = app(ShipmentLegService::class);
+
+        $started = $service->markPickedUp($leg, $rider);
+
+        $this->assertSame('picked_up', $service->markPickedUp($started, $rider)->status->value);
+        $this->assertSame(1, DeliveryEvent::where('event_type', 'picked_up')->count());
     }
 
     public function test_cancelled_leg_cannot_be_delivered(): void
@@ -279,5 +332,22 @@ class ShipmentLegServiceTest extends TestCase
 
         $this->assertSame('active', $shipment->fresh()->status->value);
         $this->assertNull($shipment->fresh()->completed_at);
+    }
+
+    private function standaloneLegFor(RiderProfile $rider, string $status = 'assigned'): ShipmentLeg
+    {
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $rider->shop_owner_id])->id,
+            'status' => $status,
+            'delivery_batch_id' => null,
+            'requires_pickup_proof' => false,
+        ]);
+        DeliveryAssignment::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'rider_profile_id' => $rider->id,
+            'status' => 'accepted',
+        ]);
+
+        return $leg;
     }
 }

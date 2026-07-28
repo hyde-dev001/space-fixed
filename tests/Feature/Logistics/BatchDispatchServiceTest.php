@@ -4,10 +4,11 @@ namespace Tests\Feature\Logistics;
 
 use App\Models\Employee;
 use App\Models\HR\LeaveRequest;
-use App\Models\Logistics\RiderProfile;
+use App\Models\Logistics\DeliveryAssignment;
 use App\Models\Logistics\DeliveryBatch;
 use App\Models\Logistics\DeliveryEvent;
 use App\Models\Logistics\LogisticsSetting;
+use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\ShopOwner;
@@ -216,7 +217,7 @@ class BatchDispatchServiceTest extends TestCase
         $connection->setEventDispatcher(clone $dispatcher);
         try {
             $connection->listen(function ($query) use (&$attached, $leg, $batch) {
-                if (!$attached && str_starts_with(strtolower(ltrim($query->sql)), 'select')
+                if (! $attached && str_starts_with(strtolower(ltrim($query->sql)), 'select')
                     && str_contains($query->sql, 'delivery_batch_id') && str_contains($query->sql, 'shipment_legs')) {
                     $attached = true;
                     ShipmentLeg::query()->whereKey($leg->id)->update([
@@ -394,6 +395,70 @@ class BatchDispatchServiceTest extends TestCase
 
         $this->expectException(ValidationException::class);
         $service->cancel($started, 'Unsafe cancellation');
+    }
+
+    public function test_rider_cannot_start_a_batch_while_a_standalone_delivery_is_active(): void
+    {
+        [$shop, $legs, $service] = $this->draftFixture();
+        $rider = RiderProfile::factory()->create(['shop_owner_id' => $shop->id]);
+        $batch = $service->accept(
+            $service->offer($service->createDraft($shop, '2026-07-15', 'morning', $legs->pluck('id')->all()), $rider, $shop),
+            $rider,
+        );
+        $activeLeg = ShipmentLeg::factory()->create(['status' => 'in_transit', 'delivery_batch_id' => null]);
+        DeliveryAssignment::factory()->create([
+            'shipment_leg_id' => $activeLeg->id,
+            'rider_profile_id' => $rider->id,
+            'status' => 'accepted',
+        ]);
+
+        try {
+            $service->start($batch, $rider);
+            $this->fail('The rider started a batch while a standalone delivery was active.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('active_work', $exception->errors());
+        }
+
+        $this->assertSame('accepted', $batch->fresh()->status);
+    }
+
+    public function test_rider_cannot_start_a_second_batch(): void
+    {
+        [$shop, $legs, $service] = $this->draftFixture();
+        $rider = RiderProfile::factory()->create(['shop_owner_id' => $shop->id]);
+        DeliveryBatch::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'rider_profile_id' => $rider->id,
+            'status' => 'in_progress',
+        ]);
+        $batch = $service->accept(
+            $service->offer($service->createDraft($shop, '2026-07-15', 'morning', $legs->pluck('id')->all()), $rider, $shop),
+            $rider,
+        );
+
+        try {
+            $service->start($batch, $rider);
+            $this->fail('The rider started a second batch.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('active_work', $exception->errors());
+        }
+
+        $this->assertSame('accepted', $batch->fresh()->status);
+    }
+
+    public function test_repeating_start_for_the_same_batch_remains_idempotent(): void
+    {
+        [$shop, $legs, $service] = $this->draftFixture();
+        $rider = RiderProfile::factory()->create(['shop_owner_id' => $shop->id]);
+        $batch = $service->accept(
+            $service->offer($service->createDraft($shop, '2026-07-15', 'morning', $legs->pluck('id')->all()), $rider, $shop),
+            $rider,
+        );
+
+        $started = $service->start($batch, $rider);
+
+        $this->assertSame('in_progress', $service->start($started, $rider)->status);
+        $this->assertSame(1, DeliveryEvent::where('event_type', 'batch_started')->count());
     }
 
     public function test_offer_rejects_unavailable_or_off_schedule_rider(): void

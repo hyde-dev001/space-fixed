@@ -1,228 +1,948 @@
-import React, { useEffect, useState } from 'react';
-import { router, usePage } from '@inertiajs/react';
+import AppLayoutERP from '@/layout/AppLayout_ERP';
 import { logisticsApi } from '@/services/logisticsApi';
-import type { DeliveryBatch } from '@/types/logistics';
-import { workflowFeedback } from '@/utils/workflowFeedback';
-import Shipments from './Shipments';
+import type {
+  RiderDeliveryIssue,
+  RiderDeliveryPageData,
+  RiderDeliveryTab,
+  RiderDeliveryWorkItem,
+  TrackingShipmentLeg,
+} from '@/types/logistics';
+import { Head, router, usePage } from '@inertiajs/react';
+import axios from 'axios';
+import { FormEvent, useEffect, useState } from 'react';
+import {
+  completedProgress,
+  deliveryContact,
+  deliveryStatusLabel,
+  nextActionableDelivery,
+  orderedDeliveries,
+} from './riderDeliveryPresentation';
 
-const destination = (leg: DeliveryBatch['legs'][number]) => {
-  const snapshot = (leg.leg_type === 'inbound' ? leg.origin_snapshot : leg.destination_snapshot) ?? {};
-  const value = (key: string) => typeof snapshot[key] === 'string' ? snapshot[key] as string : '';
-  return { name: value('name'), phone: value('phone'), address: value('address'), instructions: value('delivery_instructions') };
+type ActionRunner = (key: string, action: () => Promise<unknown>) => void;
+
+const tabLabels: Record<RiderDeliveryTab, string> = {
+  upcoming: 'Upcoming',
+  history: 'History',
+  issues: 'Issues',
+  all: 'All',
 };
 
-const complete = (status: string) => ['awaiting_proof_approval', 'delivered'].includes(status);
-const label = (value: string) => value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
-const ordered = (batch: DeliveryBatch) => [...batch.legs].sort((a, b) =>
-  (a.stop_sequence ?? Number.MAX_SAFE_INTEGER) - (b.stop_sequence ?? Number.MAX_SAFE_INTEGER) || a.id - b.id
-);
+const itemTitle = (item: RiderDeliveryWorkItem) =>
+  item.kind === 'batch' ? `Batch #${item.id}` : `Single delivery #${item.id}`;
 
-export default function MyDeliveries() {
-  const { batches = [] } = usePage<{ batches: DeliveryBatch[] }>().props;
-  const [reasons, setReasons] = useState<Record<number, string>>({});
-  const [expandedLegs, setExpandedLegs] = useState<Record<number, number | null>>({});
-  const [selectedByBatch, setSelectedByBatch] = useState<Record<number, number[]>>({});
-  const [processingBatchId, setProcessingBatchId] = useState<number | null>(null);
-  const nextSignature = batches.map((batch) => `${batch.id}:${ordered(batch).find((leg) => !complete(leg.status))?.id ?? 'done'}`).join('|');
-  const act = async (action: () => Promise<unknown>) => { await action(); router.reload(); };
+const deliveryCount = (item: RiderDeliveryWorkItem) =>
+  `${item.deliveries.length} ${item.deliveries.length === 1 ? 'delivery' : 'deliveries'}`;
 
-  const setBatchSelection = (batchId: number, legIds: number[]) => {
-    setSelectedByBatch((current) => ({ ...current, [batchId]: legIds }));
-  };
+const scheduleText = (item: RiderDeliveryWorkItem) => {
+  const date = item.delivery_date ? String(item.delivery_date).split('T')[0] : 'Not scheduled';
+  const window = item.delivery_window
+    ? item.delivery_window.replace(/\b\w/g, (letter) => letter.toUpperCase())
+    : null;
 
-  const toggleStop = (batchId: number, legId: number) => {
-    const selected = selectedByBatch[batchId] ?? [];
-    setBatchSelection(batchId, selected.includes(legId) ? selected.filter((id) => id !== legId) : [...selected, legId]);
-  };
+  return window ? `${date} · ${window}` : date;
+};
 
-  const runBulkAction = async (batch: DeliveryBatch, action: 'picked_up' | 'in_transit') => {
-    const selected = new Set(selectedByBatch[batch.id] ?? []);
-    const sourceStatus = action === 'picked_up' ? 'assigned' : 'picked_up';
-    const eligible = ordered(batch).filter((leg) => selected.has(leg.id) && leg.status === sourceStatus);
-    const skipped = selected.size - eligible.length;
-    const actionLabel = action === 'picked_up' ? 'Mark Picked Up' : 'Mark In Transit';
+function StatusChip({ status }: { status: string }) {
+  const symbol = ['delivered', 'completed'].includes(status)
+    ? '✓'
+    : ['cancelled', 'declined', 'delivery_attempted'].includes(status)
+      ? '!'
+      : '•';
 
-    if (!eligible.length) {
-      await workflowFeedback.warning('No eligible stops', `${selected.size} selected · ${skipped} skipped`);
-      return;
-    }
+  return (
+    <span className="inline-flex min-h-7 items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-100">
+      <span aria-hidden="true">{symbol}</span>
+      {deliveryStatusLabel(status)}
+    </span>
+  );
+}
 
-    const confirmation = await workflowFeedback.confirm({
-      title: `${actionLabel}?`,
-      text: `${eligible.length} eligible · ${skipped} skipped`,
-      confirmButtonText: actionLabel,
-    });
-    if (!confirmation.isConfirmed) return;
+function DeliveryContact({ delivery }: { delivery: TrackingShipmentLeg }) {
+  const contact = deliveryContact(delivery);
 
-    setProcessingBatchId(batch.id);
-    try {
-      const results = await Promise.allSettled(eligible.map((leg) => action === 'picked_up'
-        ? logisticsApi.markPickedUp(leg.id)
-        : logisticsApi.outForDelivery(leg.id)));
-      const successful = results.filter((result) => result.status === 'fulfilled').length;
-      const failed = results.length - successful;
-
-      await workflowFeedback.alert({
-        icon: failed ? 'warning' : 'success',
-        title: `${actionLabel} complete`,
-        text: `${successful} successful · ${skipped} skipped · ${failed} failed`,
-      });
-      setBatchSelection(batch.id, []);
-      router.reload({ only: ['batches', 'shipments'] });
-    } finally {
-      setProcessingBatchId(null);
-    }
-  };
-
-  useEffect(() => setExpandedLegs({}), [nextSignature]);
-
-  return <Shipments>
-    {batches.length > 0 && <section className="space-y-4">
+  return (
+    <div className="space-y-3">
       <div>
-        <h2 className="text-xl font-bold text-gray-950">My delivery batches</h2>
-        <p className="text-sm text-gray-500">Follow the highlighted stop and submit proof to advance your route.</p>
+        <p className="text-base font-bold text-slate-950 dark:text-white">
+          {contact.name || 'Customer details unavailable'}
+        </p>
+        <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-300">
+          {contact.address || 'Address not provided'}
+        </p>
+        {contact.instructions && (
+          <p className="mt-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/40 dark:text-amber-100">
+            <strong>Instruction:</strong> {contact.instructions}
+          </p>
+        )}
       </div>
 
-      {batches.map((batch) => {
-        const legs = ordered(batch);
-        const completed = legs.filter((leg) => complete(leg.status)).length;
-        const nextLeg = legs.find((leg) => !complete(leg.status));
-        const percent = legs.length ? Math.round((completed / legs.length) * 100) : 0;
-        const selectableLegs = batch.status === 'in_progress'
-          ? legs.filter((leg) => ['assigned', 'picked_up'].includes(leg.status))
-          : [];
-        const selectedIds = selectedByBatch[batch.id] ?? [];
-        const selectedAssigned = legs.filter((leg) => selectedIds.includes(leg.id) && leg.status === 'assigned').length;
-        const selectedPickedUp = legs.filter((leg) => selectedIds.includes(leg.id) && leg.status === 'picked_up').length;
-        const allSelected = selectableLegs.length > 0 && selectableLegs.every((leg) => selectedIds.includes(leg.id));
-        const isProcessing = processingBatchId !== null;
+      <div className="grid grid-cols-2 gap-2">
+        {contact.phone ? (
+          <a
+            href={`tel:${contact.phone}`}
+            className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-800 dark:border-slate-600 dark:text-slate-100"
+          >
+            Call
+          </a>
+        ) : (
+          <span className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 px-3 text-sm text-slate-400">
+            No phone
+          </span>
+        )}
+        {contact.address ? (
+          <a
+            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(contact.address)}`}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex min-h-11 items-center justify-center rounded-xl border border-blue-300 px-3 text-sm font-semibold text-blue-700 dark:border-blue-700 dark:text-blue-300"
+          >
+            Directions
+          </a>
+        ) : (
+          <span className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 px-3 text-sm text-slate-400">
+            No address
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
 
-        return <article key={batch.id} className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-          <header className="border-b border-gray-100 p-4 sm:p-5">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <h3 className="font-bold text-gray-950">Batch #{batch.id}</h3>
-                <p className="text-sm text-gray-500">{String(batch.delivery_date).split('T')[0]} · {label(batch.delivery_window)}</p>
+function DeliverySequence({ item }: { item: RiderDeliveryWorkItem }) {
+  return (
+    <ol data-testid="delivery-sequence" className="mt-4 space-y-2 border-t border-slate-200 pt-4 dark:border-slate-700">
+      {orderedDeliveries(item.deliveries).map((delivery, index) => {
+        const contact = deliveryContact(delivery);
+        const sequence = delivery.stop_sequence ?? index + 1;
+        const symbol = delivery.status === 'delivered' ? '✓' : delivery.status === 'delivery_attempted' ? '!' : sequence;
+
+        return (
+          <li key={delivery.id} className="flex gap-3 rounded-xl bg-slate-50 p-3 dark:bg-slate-800">
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-white text-sm font-bold text-slate-700 ring-1 ring-slate-200 dark:bg-slate-900 dark:text-slate-100 dark:ring-slate-700">
+              {symbol}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-semibold text-slate-950 dark:text-white">
+                  Delivery #{delivery.id} · Stop {sequence}
+                </p>
+                <StatusChip status={delivery.status} />
               </div>
-              <span className="w-fit rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">{label(batch.status)}</span>
+              <p className="mt-1 truncate text-sm text-slate-600 dark:text-slate-300">
+                {contact.name || 'Customer'} · {contact.address || 'Address unavailable'}
+              </p>
             </div>
-            <div className="mt-4 flex items-center justify-between text-sm">
-              <span className="font-semibold text-gray-700">{legs.length ? `${completed} of ${legs.length} completed` : '0 completed'}</span>
-              <span className="text-gray-500">{percent}%</span>
-            </div>
-            <div className="mt-2 h-2 overflow-hidden rounded-full bg-gray-100" role="progressbar" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
-              <div className="h-full rounded-full bg-green-500 transition-all" style={{ width: `${percent}%` }} />
-            </div>
-            {selectableLegs.length > 0 && <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-4">
-              <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-                <input
-                  type="checkbox"
-                  aria-label={`Select all eligible stops in batch ${batch.id}`}
-                  checked={allSelected}
-                  disabled={isProcessing}
-                  onChange={() => setBatchSelection(batch.id, allSelected ? [] : selectableLegs.map((leg) => leg.id))}
-                  className="h-4 w-4 rounded border-gray-300 text-blue-600"
-                />
-                Select all
-              </label>
-              <span className="mr-auto text-sm text-gray-500">{selectedIds.length} selected</span>
-              <button
-                type="button"
-                disabled={!selectedIds.length || isProcessing}
-                onClick={() => runBulkAction(batch, 'picked_up')}
-                className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-              >Mark Picked Up ({selectedAssigned})</button>
-              <button
-                type="button"
-                disabled={!selectedIds.length || isProcessing}
-                onClick={() => runBulkAction(batch, 'in_transit')}
-                className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-              >Mark In Transit ({selectedPickedUp})</button>
-              <button
-                type="button"
-                disabled={!selectedIds.length || isProcessing}
-                onClick={() => setBatchSelection(batch.id, [])}
-                className="rounded-lg border px-3 py-2 text-sm font-semibold text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >Clear</button>
-            </div>}
-          </header>
-
-          <div className="space-y-3 p-4 sm:p-5">
-            {legs.length === 0 && <p className="rounded-lg bg-gray-50 p-4 text-sm text-gray-500">No stops in this batch</p>}
-            {legs.length > 0 && !nextLeg && <p className="rounded-lg bg-green-50 p-3 text-sm font-semibold text-green-700">All stops completed</p>}
-
-            {legs.map((leg) => {
-              const recipient = destination(leg);
-              const pickup = leg.proofs?.filter((proof) => proof.handoff_type === 'pickup').at(-1);
-              const isDone = complete(leg.status);
-              const isNext = nextLeg?.id === leg.id;
-              const isExpanded = isNext || expandedLegs[batch.id] === leg.id;
-              const isSelectable = batch.status === 'in_progress' && ['assigned', 'picked_up'].includes(leg.status);
-              const stop = leg.stop_sequence ?? '—';
-
-              return <div
-                key={leg.id}
-                data-testid="batch-stop"
-                data-leg-id={leg.id}
-                className={`rounded-xl border p-4 transition ${isNext ? 'border-blue-400 bg-blue-50/60 ring-1 ring-blue-200' : isDone ? 'border-gray-200 bg-gray-50 opacity-70' : 'border-gray-200'}`}
-              >
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    {isSelectable && <input
-                      type="checkbox"
-                      aria-label={`Select stop ${stop} in batch ${batch.id}`}
-                      checked={selectedIds.includes(leg.id)}
-                      disabled={isProcessing}
-                      onChange={() => toggleStop(batch.id, leg.id)}
-                      className="h-4 w-4 rounded border-gray-300 text-blue-600"
-                    />}
-                    <span className={`grid h-9 w-9 place-items-center rounded-full text-sm font-bold ${isDone ? 'bg-green-100 text-green-700' : isNext ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}>
-                      {isDone ? '✓' : stop}
-                    </span>
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-semibold text-gray-950">Stop {stop}</p>
-                        {isNext && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-bold text-blue-700">Next stop</span>}
-                        {leg.status === 'awaiting_proof_approval' && <span className="text-xs font-semibold text-green-700">Proof submitted</span>}
-                        {leg.status === 'delivered' && <span className="text-xs font-semibold text-green-700">Delivered</span>}
-                      </div>
-                      <p className="text-xs text-gray-500">Leg #{leg.id}</p>
-                    </div>
-                  </div>
-                  {!isNext && <button
-                    type="button"
-                    aria-label={`${isExpanded ? 'Close' : 'Open delivery'} for stop ${stop}`}
-                    onClick={() => setExpandedLegs((current) => ({ ...current, [batch.id]: isExpanded ? null : leg.id }))}
-                    className="rounded-lg border border-blue-200 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50"
-                  >{isExpanded ? 'Close' : 'Open delivery'}</button>}
-                </div>
-
-                {isExpanded && <div className="mt-4 border-t border-gray-200 pt-4">
-                  <div className="grid gap-2 text-sm text-gray-700 sm:grid-cols-2">
-                    <p><strong>Receiver:</strong> {recipient.name || 'Not provided'}</p>
-                    <p><strong>Phone:</strong> {recipient.phone || 'Not provided'}</p>
-                    <p className="sm:col-span-2"><strong>Address:</strong> {recipient.address || 'Not provided'}</p>
-                    {recipient.instructions && <p className="sm:col-span-2"><strong>Instructions:</strong> {recipient.instructions}</p>}
-                  </div>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {recipient.phone && <a href={`tel:${recipient.phone}`} className="rounded-lg border px-3 py-2 text-sm font-semibold text-gray-700">Call</a>}
-                    {recipient.address && <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(recipient.address)}`} target="_blank" rel="noreferrer" className="rounded-lg border px-3 py-2 text-sm font-semibold text-gray-700">Directions</a>}
-                    {batch.status === 'in_progress' && leg.status === 'assigned' && pickup && <button className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white" onClick={() => act(() => logisticsApi.confirmPickup(leg.id, pickup.id))}>Confirm pickup</button>}
-                    {batch.status === 'in_progress' && leg.status === 'picked_up' && <button className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white" onClick={() => act(() => logisticsApi.outForDelivery(leg.id))}>Out for delivery</button>}
-                  </div>
-                </div>}
-              </div>;
-            })}
-
-            {batch.status === 'offered' && <div className="flex flex-wrap gap-2 border-t pt-4">
-              <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white" onClick={() => act(() => logisticsApi.acceptBatch(batch.id))}>Accept</button>
-              <input aria-label={`Rejection reason for batch ${batch.id}`} className="rounded-lg border px-3 py-2 text-sm" placeholder="Reason for rejection" value={reasons[batch.id] || ''} onChange={(event) => setReasons({ ...reasons, [batch.id]: event.target.value })} />
-              <button disabled={!reasons[batch.id]?.trim()} className="rounded-lg border px-4 py-2 text-sm font-semibold disabled:opacity-50" onClick={() => act(() => logisticsApi.rejectBatch(batch.id, reasons[batch.id]))}>Reject</button>
-            </div>}
-            {batch.status === 'accepted' && <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white" onClick={() => act(() => logisticsApi.startBatch(batch.id))}>Start batch</button>}
-          </div>
-        </article>;
+          </li>
+        );
       })}
-    </section>}
-  </Shipments>;
+    </ol>
+  );
+}
+
+function DeliveryActions({
+  item,
+  delivery,
+  locked,
+  online,
+  pendingAction,
+  canRecordProof,
+  runAction,
+}: {
+  item: RiderDeliveryWorkItem;
+  delivery?: TrackingShipmentLeg;
+  locked: boolean;
+  online: boolean;
+  pendingAction: string | null;
+  canRecordProof: boolean;
+  runAction: ActionRunner;
+}) {
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [showIssue, setShowIssue] = useState(false);
+  const [issueReason, setIssueReason] = useState('');
+  const [issueNotes, setIssueNotes] = useState('');
+  const [issueFile, setIssueFile] = useState<File | null>(null);
+  const mutationDisabled = locked || !online;
+  const buttonClass =
+    'min-h-11 w-full rounded-xl bg-blue-600 px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50';
+
+  if (item.kind === 'batch' && item.status === 'accepted') {
+    const key = `batch-start:${item.id}`;
+
+    return (
+      <button
+        type="button"
+        disabled={mutationDisabled || pendingAction === key}
+        onClick={() => runAction(key, () => logisticsApi.startBatch(item.id))}
+        className={buttonClass}
+      >
+        Start batch
+      </button>
+    );
+  }
+
+  if (!delivery) return null;
+
+  if (['assigned', 'pickup_scheduled'].includes(delivery.status)) {
+    const key = `pickup:${delivery.id}`;
+    const pickupProof = delivery.proofs
+      ?.filter(({ handoff_type }) => handoff_type === 'pickup')
+      .at(-1);
+
+    return (
+      <button
+        type="button"
+        disabled={mutationDisabled || pendingAction === key}
+        onClick={() =>
+          runAction(
+            key,
+            () =>
+              pickupProof
+                ? logisticsApi.confirmPickup(delivery.id, pickupProof.id)
+                : logisticsApi.markPickedUp(delivery.id),
+          )
+        }
+        className={buttonClass}
+      >
+        Confirm pickup
+      </button>
+    );
+  }
+
+  if (delivery.status === 'picked_up') {
+    const key = `delivery-start:${delivery.id}`;
+
+    return (
+      <button
+        type="button"
+        disabled={mutationDisabled || pendingAction === key}
+        onClick={() =>
+          runAction(
+            key,
+            () =>
+              item.kind === 'batch'
+                ? logisticsApi.outForDelivery(delivery.id)
+                : logisticsApi.markInTransit(delivery.id),
+          )
+        }
+        className={buttonClass}
+      >
+        Start delivery
+      </button>
+    );
+  }
+
+  if (delivery.status !== 'in_transit') return null;
+
+  const proofKey = `proof:${delivery.id}`;
+  const issueKey = `issue:${delivery.id}`;
+  const assignment = delivery.assignments?.find(({ status }) =>
+    ['assigned', 'accepted'].includes(status),
+  );
+
+  const submitProof = () => {
+    if (!proofFile) return;
+    const form = new FormData();
+    form.append('handoff_type', 'delivery');
+    form.append('proof_type', 'photo');
+    form.append('proof_file', proofFile);
+    runAction(proofKey, () =>
+      axios.post(`/api/logistics/legs/${delivery.id}/proof`, form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }),
+    );
+  };
+
+  const submitIssue = () => {
+    if (!issueFile || !issueReason || !assignment) return;
+    const form = new FormData();
+    form.append('delivery_assignment_id', String(assignment.id));
+    form.append('reason_code', issueReason);
+    if (issueNotes.trim()) form.append('notes', issueNotes.trim());
+    form.append('proof_file', issueFile);
+    runAction(issueKey, () =>
+      axios.post(`/api/logistics/legs/${delivery.id}/report-issue`, form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }),
+    );
+  };
+
+  return (
+    <div className="space-y-3">
+      {canRecordProof && (
+        <div className="space-y-2 rounded-xl bg-slate-50 p-3 dark:bg-slate-800">
+          <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
+            Delivery proof
+            <input
+              type="file"
+              accept="image/*"
+              aria-label="Delivery proof"
+              onChange={(event) => setProofFile(event.target.files?.[0] ?? null)}
+              className="mt-2 block w-full text-sm"
+            />
+          </label>
+          <button
+            type="button"
+            disabled={mutationDisabled || !proofFile || pendingAction === proofKey}
+            onClick={submitProof}
+            className={buttonClass}
+          >
+            Submit delivery proof
+          </button>
+        </div>
+      )}
+
+      <button
+        type="button"
+        disabled={mutationDisabled}
+        onClick={() => setShowIssue((current) => !current)}
+        className="min-h-11 w-full rounded-xl border border-amber-400 px-4 text-sm font-bold text-amber-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-amber-200"
+      >
+        Report issue
+      </button>
+
+      {showIssue && (
+        <div className="space-y-3 rounded-xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/30">
+          <label className="block text-sm font-semibold">
+            Issue reason
+            <select
+              aria-label="Issue reason"
+              value={issueReason}
+              onChange={(event) => setIssueReason(event.target.value)}
+              className="mt-1 min-h-11 w-full rounded-xl border border-amber-300 bg-white px-3 dark:bg-slate-900"
+            >
+              <option value="">Choose a reason</option>
+              <option value="recipient_unavailable">Recipient unavailable</option>
+              <option value="wrong_or_incomplete_address">Wrong or incomplete address</option>
+              <option value="recipient_refused">Recipient refused</option>
+              <option value="vehicle_or_delivery_problem">Vehicle or delivery problem</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+          <label className="block text-sm font-semibold">
+            Notes
+            <textarea
+              aria-label="Issue notes"
+              value={issueNotes}
+              onChange={(event) => setIssueNotes(event.target.value)}
+              className="mt-1 min-h-20 w-full rounded-xl border border-amber-300 bg-white p-3 dark:bg-slate-900"
+            />
+          </label>
+          <label className="block text-sm font-semibold">
+            Issue photo
+            <input
+              type="file"
+              accept="image/*"
+              aria-label="Issue photo"
+              onChange={(event) => setIssueFile(event.target.files?.[0] ?? null)}
+              className="mt-2 block w-full text-sm"
+            />
+          </label>
+          <button
+            type="button"
+            disabled={
+              mutationDisabled ||
+              !assignment ||
+              !issueReason ||
+              !issueFile ||
+              pendingAction === issueKey
+            }
+            onClick={submitIssue}
+            className={buttonClass}
+          >
+            Submit issue
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CurrentDeliveryCard({
+  item,
+  showSequence,
+  onToggleSequence,
+  locked,
+  online,
+  pendingAction,
+  canRecordProof,
+  runAction,
+}: {
+  item: RiderDeliveryWorkItem | null;
+  showSequence: boolean;
+  onToggleSequence: () => void;
+  locked: boolean;
+  online: boolean;
+  pendingAction: string | null;
+  canRecordProof: boolean;
+  runAction: ActionRunner;
+}) {
+  if (!item) {
+    return (
+      <section aria-labelledby="current-delivery-heading">
+        <h2 id="current-delivery-heading" className="mb-3 text-lg font-bold text-slate-950 dark:text-white">
+          Current delivery
+        </h2>
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-5 text-center dark:border-slate-700 dark:bg-slate-900">
+          <p className="font-semibold text-slate-800 dark:text-slate-100">No delivery in progress</p>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Your next scheduled assignment appears below.</p>
+        </div>
+      </section>
+    );
+  }
+
+  const progress = completedProgress(item.deliveries);
+  const actionable = nextActionableDelivery(item.deliveries);
+
+  return (
+    <section aria-labelledby="current-delivery-heading">
+      <h2 id="current-delivery-heading" className="mb-3 text-lg font-bold text-slate-950 dark:text-white">
+        Current delivery
+      </h2>
+      <article className="overflow-hidden rounded-2xl border-2 border-blue-400 bg-white shadow-sm dark:bg-slate-900">
+        <header className="space-y-4 border-b border-blue-100 p-4 dark:border-blue-900">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide text-blue-700 dark:text-blue-300">
+                {item.business_label}
+              </p>
+              <h3 className="mt-1 text-xl font-extrabold text-slate-950 dark:text-white">{itemTitle(item)}</h3>
+            </div>
+            <StatusChip status={item.status} />
+          </div>
+
+          <div>
+            <div className="mb-2 flex items-center justify-between gap-3 text-sm">
+              <span className="font-semibold text-slate-700 dark:text-slate-200">
+                {progress.completed} of {progress.total} completed
+              </span>
+              <span className="text-slate-500 dark:text-slate-400">{progress.percent}%</span>
+            </div>
+            <div
+              role="progressbar"
+              aria-label={`${item.kind === 'batch' ? 'Batch' : 'Delivery'} progress: ${progress.completed} of ${progress.total} delivered`}
+              aria-valuenow={progress.percent}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700"
+            >
+              <div className="h-full rounded-full bg-blue-600" style={{ width: `${progress.percent}%` }} />
+            </div>
+          </div>
+        </header>
+
+        <div className="p-4">
+          {actionable ? (
+            <>
+              <p className="mb-3 text-sm font-bold text-blue-700 dark:text-blue-300">
+                Current delivery · {actionable.stop_sequence ?? 1} of {item.deliveries.length}
+              </p>
+              <DeliveryContact delivery={actionable} />
+              <div className="mt-4">
+                <DeliveryActions
+                  item={item}
+                  delivery={actionable}
+                  locked={locked}
+                  online={online}
+                  pendingAction={pendingAction}
+                  canRecordProof={canRecordProof}
+                  runAction={runAction}
+                />
+              </div>
+            </>
+          ) : (
+            <div className="rounded-xl bg-slate-50 p-4 dark:bg-slate-800">
+              <p className="font-semibold text-slate-900 dark:text-white">
+                {item.deliveries.some(({ status }) => status === 'awaiting_proof_approval')
+                  ? 'Waiting for proof approval'
+                  : 'No rider action needed right now'}
+              </p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                This page will update when the delivery is ready to continue.
+              </p>
+            </div>
+          )}
+
+          {item.kind === 'batch' && item.deliveries.length > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={onToggleSequence}
+                className="mt-4 min-h-11 w-full rounded-xl border border-slate-300 px-4 text-sm font-bold text-slate-800 dark:border-slate-600 dark:text-slate-100"
+              >
+                {showSequence ? 'Hide delivery sequence' : `View all ${item.deliveries.length} deliveries`}
+              </button>
+              {showSequence && <DeliverySequence item={item} />}
+            </>
+          )}
+        </div>
+      </article>
+    </section>
+  );
+}
+
+function UpNextCard({
+  item,
+  locked,
+  online,
+  pendingAction,
+  canRecordProof,
+  runAction,
+}: {
+  item: RiderDeliveryWorkItem | null;
+  locked: boolean;
+  online: boolean;
+  pendingAction: string | null;
+  canRecordProof: boolean;
+  runAction: ActionRunner;
+}) {
+  const [showDetails, setShowDetails] = useState(false);
+  if (!item) return null;
+  const actionable = nextActionableDelivery(item.deliveries);
+
+  return (
+    <section aria-label="Up next">
+      <h2 className="mb-3 text-lg font-bold text-slate-950 dark:text-white">Up next</h2>
+      <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{item.business_label}</p>
+            <h3 className="mt-1 font-bold text-slate-950 dark:text-white">{itemTitle(item)}</h3>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+              {scheduleText(item)} · {deliveryCount(item)}
+            </p>
+          </div>
+          <StatusChip status={item.status} />
+        </div>
+        <div className="mt-4">
+          <DeliveryActions
+            item={item}
+            delivery={actionable}
+            locked={locked}
+            online={online}
+            pendingAction={pendingAction}
+            canRecordProof={canRecordProof}
+            runAction={runAction}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowDetails((current) => !current)}
+          className="mt-4 min-h-11 w-full rounded-xl border border-blue-300 px-4 text-sm font-bold text-blue-700 dark:border-blue-700 dark:text-blue-300"
+        >
+          {showDetails ? 'Hide details' : 'View details'}
+        </button>
+        {showDetails && actionable && (
+          <div className="mt-4 border-t border-slate-200 pt-4 dark:border-slate-700">
+            <DeliveryContact delivery={actionable} />
+          </div>
+        )}
+      </article>
+    </section>
+  );
+}
+
+function OfferCard({
+  item,
+  online,
+  pendingAction,
+  runAction,
+}: {
+  item: RiderDeliveryWorkItem;
+  online: boolean;
+  pendingAction: string | null;
+  runAction: ActionRunner;
+}) {
+  const [declining, setDeclining] = useState(false);
+  const [reason, setReason] = useState('');
+  const acceptKey = `offer-accept:${item.id}`;
+  const declineKey = `offer-decline:${item.id}`;
+
+  return (
+    <article className="rounded-2xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wide text-amber-800 dark:text-amber-200">New assignment</p>
+          <h3 className="mt-1 font-bold text-slate-950 dark:text-white">{itemTitle(item)}</h3>
+          <p className="mt-1 text-sm text-slate-700 dark:text-slate-200">
+            {scheduleText(item)} · {deliveryCount(item)}
+          </p>
+        </div>
+        <StatusChip status={item.status} />
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          disabled={!online || pendingAction === acceptKey}
+          onClick={() => runAction(acceptKey, () => logisticsApi.acceptBatch(item.id))}
+          className="min-h-11 rounded-xl bg-blue-600 px-4 text-sm font-bold text-white disabled:opacity-50"
+        >
+          Accept batch
+        </button>
+        <button
+          type="button"
+          disabled={!online}
+          onClick={() => setDeclining((current) => !current)}
+          className="min-h-11 rounded-xl border border-amber-500 px-4 text-sm font-bold text-amber-900 disabled:opacity-50 dark:text-amber-100"
+        >
+          Decline batch
+        </button>
+      </div>
+      {declining && (
+        <div className="mt-3 space-y-2">
+          <label className="block text-sm font-semibold text-amber-950 dark:text-amber-100">
+            Decline reason
+            <input
+              type="text"
+              aria-label="Decline reason"
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              className="mt-1 min-h-11 w-full rounded-xl border border-amber-300 bg-white px-3 dark:bg-slate-900"
+            />
+          </label>
+          <button
+            type="button"
+            disabled={!online || !reason.trim() || pendingAction === declineKey}
+            onClick={() =>
+              runAction(declineKey, () => logisticsApi.rejectBatch(item.id, reason.trim()))
+            }
+            className="min-h-11 w-full rounded-xl bg-amber-700 px-4 text-sm font-bold text-white disabled:opacity-50"
+          >
+            Confirm decline
+          </button>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function OfferRegion({
+  offers,
+  online,
+  pendingAction,
+  runAction,
+}: {
+  offers: RiderDeliveryWorkItem[];
+  online: boolean;
+  pendingAction: string | null;
+  runAction: ActionRunner;
+}) {
+  if (!offers.length) return null;
+
+  return (
+    <section aria-label="New assignment offers" className="space-y-3">
+      <OfferCard item={offers[0]} online={online} pendingAction={pendingAction} runAction={runAction} />
+      {offers.length > 1 && (
+        <details className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+          <summary className="min-h-11 cursor-pointer py-2 text-sm font-bold text-slate-800 dark:text-slate-100">
+            {offers.length - 1} more {offers.length === 2 ? 'offer' : 'offers'}
+          </summary>
+          <div className="mt-3 space-y-3">
+            {offers.slice(1).map((offer) => (
+              <OfferCard
+                key={offer.key}
+                item={offer}
+                online={online}
+                pendingAction={pendingAction}
+                runAction={runAction}
+              />
+            ))}
+          </div>
+        </details>
+      )}
+    </section>
+  );
+}
+
+function CompactListItem({ item }: { item: RiderDeliveryWorkItem | RiderDeliveryIssue }) {
+  if (item.item_type === 'issue') {
+    return (
+      <article className="rounded-xl border border-amber-300 bg-white p-4 dark:border-amber-800 dark:bg-slate-900">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="font-bold text-slate-950 dark:text-white">Issue · Delivery #{item.delivery_id}</p>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{item.parent_key.replace(':', ' #')}</p>
+          </div>
+          <StatusChip status="delivery_attempted" />
+        </div>
+      </article>
+    );
+  }
+
+  return (
+    <details className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+      <summary className="min-h-11 cursor-pointer list-none">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="font-bold text-slate-950 dark:text-white">{itemTitle(item)}</p>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+              {item.business_label} · {scheduleText(item)} · {deliveryCount(item)}
+            </p>
+          </div>
+          <StatusChip status={item.status} />
+        </div>
+      </summary>
+      <div className="mt-3 border-t border-slate-200 pt-3 dark:border-slate-700">
+        <DeliverySequence item={item} />
+      </div>
+    </details>
+  );
+}
+
+function DeliveryLists({
+  deliveryData,
+  navigate,
+}: {
+  deliveryData: RiderDeliveryPageData;
+  navigate: (patch: Partial<RiderDeliveryPageData['filters']>, page?: number) => void;
+}) {
+  const [search, setSearch] = useState(deliveryData.filters.search);
+  useEffect(() => setSearch(deliveryData.filters.search), [deliveryData.filters.search]);
+
+  const emptyMessage = {
+    upcoming: 'No upcoming deliveries',
+    history: 'No delivery history',
+    issues: 'No unresolved delivery issues',
+    all: 'No deliveries found',
+  }[deliveryData.filters.tab];
+
+  return (
+    <section aria-labelledby="delivery-list-heading" className="space-y-4">
+      <h2 id="delivery-list-heading" className="text-lg font-bold text-slate-950 dark:text-white">
+        Deliveries
+      </h2>
+      <div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1" aria-label="Delivery lists">
+        {(Object.keys(tabLabels) as RiderDeliveryTab[]).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            aria-current={deliveryData.filters.tab === tab ? 'page' : undefined}
+            onClick={() => navigate({ tab })}
+            className={`min-h-11 shrink-0 rounded-xl px-4 text-sm font-bold ${
+              deliveryData.filters.tab === tab
+                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                : 'bg-white text-slate-600 ring-1 ring-slate-200 dark:bg-slate-900 dark:text-slate-300 dark:ring-slate-700'
+            }`}
+          >
+            {tabLabels[tab]}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+          Business type
+          <select
+            aria-label="Business type"
+            value={deliveryData.filters.business}
+            onChange={(event) =>
+              navigate({
+                business: event.target.value as RiderDeliveryPageData['filters']['business'],
+              })
+            }
+            className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-900"
+          >
+            <option value="all">All businesses</option>
+            <option value="retail">Retail</option>
+            <option value="repair">Repair</option>
+          </select>
+        </label>
+        <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+          Time
+          <select
+            aria-label="Delivery time"
+            value={deliveryData.filters.window}
+            onChange={(event) =>
+              navigate({
+                window: event.target.value as RiderDeliveryPageData['filters']['window'],
+              })
+            }
+            className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-900"
+          >
+            <option value="all">All time</option>
+            <option value="today">Today</option>
+            <option value="week">This week</option>
+          </select>
+        </label>
+        <form
+          role="search"
+          onSubmit={(event: FormEvent) => {
+            event.preventDefault();
+            navigate({ search });
+          }}
+          className="space-y-2"
+        >
+          <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+            Search
+            <input
+              type="search"
+              aria-label="Search deliveries"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Delivery, customer, address"
+              className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-900"
+            />
+          </label>
+          <button type="submit" className="sr-only">Search deliveries</button>
+        </form>
+      </div>
+
+      <button
+        type="button"
+        onClick={() =>
+          navigate({ tab: 'upcoming', business: 'all', window: 'all', search: '' })
+        }
+        className="min-h-11 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200"
+      >
+        Clear filters
+      </button>
+
+      <div className="space-y-3">
+        {deliveryData.list.data.length ? (
+          deliveryData.list.data.map((item) => <CompactListItem key={item.key} item={item} />)
+        ) : (
+          <div className="rounded-xl border border-dashed border-slate-300 bg-white p-5 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+            {emptyMessage}
+          </div>
+        )}
+      </div>
+
+      {deliveryData.list.links.some(({ url }) => url) && (
+        <nav aria-label="Delivery pages" className="flex flex-wrap justify-center gap-2">
+          {deliveryData.list.links.map((link) => {
+            if (!link.url) return null;
+            const label = link.label.replace(/&laquo;|&raquo;/g, '').trim();
+            const page = Number(new URL(link.url, window.location.origin).searchParams.get('page') ?? 1);
+
+            return (
+              <button
+                key={`${link.label}:${page}`}
+                type="button"
+                aria-label={`Page ${label}`}
+                aria-current={link.active ? 'page' : undefined}
+                onClick={() => navigate({}, page)}
+                className="min-h-11 min-w-11 rounded-xl border border-slate-300 px-3 text-sm font-semibold dark:border-slate-700"
+              >
+                {label}
+              </button>
+            );
+          })}
+        </nav>
+      )}
+    </section>
+  );
+}
+
+export default function MyDeliveries() {
+  const { deliveryData, canRecordProof } = usePage<{
+    deliveryData: RiderDeliveryPageData;
+    canRecordProof: boolean;
+    maxDeliveryAttempts: number;
+  }>().props;
+  const [showSequence, setShowSequence] = useState(false);
+  const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [lastSynced] = useState(() =>
+    new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+  );
+
+  useEffect(() => {
+    const connected = () => setOnline(true);
+    const disconnected = () => setOnline(false);
+    window.addEventListener('online', connected);
+    window.addEventListener('offline', disconnected);
+
+    return () => {
+      window.removeEventListener('online', connected);
+      window.removeEventListener('offline', disconnected);
+    };
+  }, []);
+
+  const runAction: ActionRunner = (key, action) => {
+    if (!online) return;
+    setPendingAction(key);
+    setActionError(null);
+    void action()
+      .then(() => router.reload({ only: ['deliveryData'] }))
+      .catch((error: any) => {
+        const errors = error.response?.data?.errors;
+        setActionError(
+          error.response?.data?.message ??
+            (errors ? Object.values(errors).flat().join(' ') : 'Unable to update this delivery.'),
+        );
+      })
+      .finally(() => setPendingAction(null));
+  };
+
+  const navigate = (
+    patch: Partial<RiderDeliveryPageData['filters']>,
+    page = 1,
+  ) => {
+    router.get(
+      '/erp/logistics/deliveries',
+      { ...deliveryData.filters, ...patch, page },
+      { preserveScroll: true, preserveState: true },
+    );
+  };
+
+  return (
+    <AppLayoutERP>
+      <Head title="My Deliveries" />
+      <div className="mx-auto max-w-3xl space-y-6 pb-10">
+        <header>
+          <h1 className="text-2xl font-extrabold text-slate-950 dark:text-white">My Deliveries</h1>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            See what needs your attention now.
+          </p>
+          <p
+            role="status"
+            aria-live="polite"
+            className={`mt-2 text-xs font-semibold ${
+              online ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300'
+            }`}
+          >
+            <span aria-hidden="true">{online ? '●' : '!'}</span>{' '}
+            {online ? 'Online' : 'Offline'} · Last sync {lastSynced}
+          </p>
+        </header>
+
+        {deliveryData.has_active_conflict && (
+          <div role="alert" className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100">
+            <strong>More than one active delivery was found.</strong> Contact dispatch before continuing either assignment.
+          </div>
+        )}
+
+        <CurrentDeliveryCard
+          item={deliveryData.current}
+          showSequence={showSequence}
+          onToggleSequence={() => setShowSequence((current) => !current)}
+          locked={deliveryData.has_active_conflict}
+          online={online}
+          pendingAction={pendingAction}
+          canRecordProof={canRecordProof}
+          runAction={runAction}
+        />
+        <OfferRegion
+          offers={deliveryData.offers}
+          online={online}
+          pendingAction={pendingAction}
+          runAction={runAction}
+        />
+        <UpNextCard
+          item={deliveryData.up_next}
+          locked={deliveryData.has_active_conflict || Boolean(deliveryData.current)}
+          online={online}
+          pendingAction={pendingAction}
+          canRecordProof={canRecordProof}
+          runAction={runAction}
+        />
+        {actionError && (
+          <div role="alert" className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-900">
+            {actionError}
+          </div>
+        )}
+        <DeliveryLists deliveryData={deliveryData} navigate={navigate} />
+      </div>
+    </AppLayoutERP>
+  );
 }

@@ -70,6 +70,11 @@ class ShipmentLeg extends Model
         return $this->hasMany(DeliveryAssignment::class);
     }
 
+    public function latestAssignment(): HasOne
+    {
+        return $this->hasOne(DeliveryAssignment::class)->latestOfMany();
+    }
+
     public function attempts(): HasMany
     {
         return $this->hasMany(DeliveryAttempt::class);
@@ -100,5 +105,8 @@ class ShipmentLeg extends Model
         return $this->hasOne(self::class, 'return_for_leg_id');
     }
 
-    public function incidents(): HasMany { return $this->hasMany(DeliveryIncident::class); }
+    public function incidents(): HasMany
+    {
+        return $this->hasMany(DeliveryIncident::class);
+    }
 }
