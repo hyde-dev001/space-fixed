@@ -2,8 +2,8 @@
 
 namespace App\Services\Logistics;
 
-use App\Models\Logistics\DeliveryAttempt;
 use App\Models\Logistics\DeliveryAssignment;
+use App\Models\Logistics\DeliveryAttempt;
 use App\Models\Logistics\DeliveryBatch;
 use App\Models\Logistics\HandoffProof;
 use App\Models\Logistics\RiderProfile;
@@ -21,32 +21,53 @@ class ShipmentLegService
         private ProofService $proofs,
         private DeliveryEventService $events,
         private OrderRefundService $refunds,
-    ) {
-    }
+        private RiderActiveWorkGuard $activeWork,
+    ) {}
 
-    public function markPickedUp(ShipmentLeg $leg): ShipmentLeg
+    public function markPickedUp(ShipmentLeg $leg, ?RiderProfile $rider = null): ShipmentLeg
     {
-        $leg->loadMissing(['shipment', 'deliveryBatch']);
-        $this->assertTransitionAllowed($leg, ['assigned', 'pickup_scheduled', 'delivery_attempted'], 'picked up');
+        return DB::transaction(function () use ($leg, $rider) {
+            $leg = ShipmentLeg::query()
+                ->with(['shipment', 'deliveryBatch'])
+                ->lockForUpdate()
+                ->findOrFail($leg->id);
 
-        if ($leg->shipment->source_type === 'order_refund' && $leg->shipment->purpose === 'refund_return') {
-            $refund = OrderRefund::query()->find($leg->shipment->source_id);
-            if (!$refund || $refund->shop_owner_status !== 'approved' || $refund->finance_status !== 'approved') {
-                throw ValidationException::withMessages([
-                    'refund' => 'Finance and Staff approvals are required before return pickup.',
-                ]);
+            if (! $leg->delivery_batch_id && $leg->status->value === 'picked_up') {
+                if ($rider && $leg->assignments()->where('rider_profile_id', $rider->id)->whereIn('status', ['assigned', 'accepted'])->exists()) {
+                    return $leg;
+                }
+
+                throw ValidationException::withMessages(['rider' => 'This delivery is not assigned to this rider.']);
             }
-        }
 
-        if ($leg->delivery_batch_id && $leg->deliveryBatch?->status !== 'in_progress') {
-            throw ValidationException::withMessages(['status' => 'This stop can only be picked up from an in-progress batch.']);
-        }
+            $this->assertTransitionAllowed($leg, ['assigned', 'pickup_scheduled', 'delivery_attempted'], 'picked up');
 
-        if (!$this->proofs->hasRequiredPickupProof($leg)) {
-            throw ValidationException::withMessages(['proof' => 'Pickup proof is required before marking this leg picked up.']);
-        }
+            if ($leg->shipment->source_type === 'order_refund' && $leg->shipment->purpose === 'refund_return') {
+                $refund = OrderRefund::query()->find($leg->shipment->source_id);
+                if (! $refund || $refund->shop_owner_status !== 'approved' || $refund->finance_status !== 'approved') {
+                    throw ValidationException::withMessages([
+                        'refund' => 'Finance and Staff approvals are required before return pickup.',
+                    ]);
+                }
+            }
 
-        return $this->transition($leg, 'picked_up', ['picked_up_at' => now()], 'picked_up', 'Shipment leg picked up.');
+            if ($leg->delivery_batch_id && $leg->deliveryBatch?->status !== 'in_progress') {
+                throw ValidationException::withMessages(['status' => 'This stop can only be picked up from an in-progress batch.']);
+            }
+
+            if (! $this->proofs->hasRequiredPickupProof($leg)) {
+                throw ValidationException::withMessages(['proof' => 'Pickup proof is required before marking this leg picked up.']);
+            }
+
+            if (! $leg->delivery_batch_id) {
+                if (! $rider || ! $leg->assignments()->where('rider_profile_id', $rider->id)->whereIn('status', ['assigned', 'accepted'])->exists()) {
+                    throw ValidationException::withMessages(['rider' => 'This delivery is not assigned to this rider.']);
+                }
+                $this->activeWork->assertCanStartStandalone($rider, $leg);
+            }
+
+            return $this->transition($leg, 'picked_up', ['picked_up_at' => now()], 'picked_up', 'Shipment leg picked up.');
+        });
     }
 
     public function confirmPickup(ShipmentLeg $leg, HandoffProof $proof, RiderProfile $rider): ShipmentLeg
@@ -55,23 +76,32 @@ class ShipmentLegService
             $leg = ShipmentLeg::query()->lockForUpdate()->findOrFail($leg->id);
             $proof = HandoffProof::query()->lockForUpdate()->findOrFail($proof->id);
             if ($proof->shipment_leg_id !== $leg->id || $proof->handoff_type !== 'pickup'
-                || !$leg->assignments()->where('rider_profile_id', $rider->id)->whereIn('status', ['assigned', 'accepted'])->exists()) {
+                || ! $leg->assignments()->where('rider_profile_id', $rider->id)->whereIn('status', ['assigned', 'accepted'])->exists()) {
                 throw ValidationException::withMessages(['proof' => 'Pickup proof is not assigned to this rider.']);
             }
-            if ($leg->status->value === 'picked_up' && $proof->review_status === 'approved') return $leg;
+            if ($leg->status->value === 'picked_up' && $proof->review_status === 'approved') {
+                return $leg;
+            }
             $proof->update(['review_status' => 'approved', 'reviewed_by_type' => RiderProfile::class, 'reviewed_by_id' => $rider->id, 'reviewed_at' => now()]);
-            return $this->markPickedUp($leg);
+
+            return $this->markPickedUp($leg, $rider);
         });
     }
 
     public function rejectPickup(ShipmentLeg $leg, HandoffProof $proof, RiderProfile $rider, string $reason): ShipmentLeg
     {
-        if (!filled($reason)) throw ValidationException::withMessages(['reason' => 'Rejection reason is required.']);
+        if (! filled($reason)) {
+            throw ValidationException::withMessages(['reason' => 'Rejection reason is required.']);
+        }
+
         return DB::transaction(function () use ($leg, $proof, $rider, $reason) {
             $leg = ShipmentLeg::query()->lockForUpdate()->findOrFail($leg->id);
             $proof = HandoffProof::query()->lockForUpdate()->findOrFail($proof->id);
-            if (!$leg->assignments()->where('rider_profile_id', $rider->id)->whereIn('status', ['assigned', 'accepted'])->exists()) abort(403);
+            if (! $leg->assignments()->where('rider_profile_id', $rider->id)->whereIn('status', ['assigned', 'accepted'])->exists()) {
+                abort(403);
+            }
             $proof->update(['review_status' => 'rejected', 'rejection_reason' => $reason, 'reviewed_by_type' => RiderProfile::class, 'reviewed_by_id' => $rider->id, 'reviewed_at' => now()]);
+
             return $leg;
         });
     }
@@ -80,11 +110,14 @@ class ShipmentLegService
     {
         return DB::transaction(function () use ($leg, $rider) {
             $leg = ShipmentLeg::query()->with(['shipment', 'deliveryBatch'])->lockForUpdate()->findOrFail($leg->id);
-            if ($leg->status->value === 'in_transit' && $leg->out_for_delivery_at) return $leg;
+            if ($leg->status->value === 'in_transit' && $leg->out_for_delivery_at) {
+                return $leg;
+            }
             if ($leg->status->value !== 'picked_up' || $leg->deliveryBatch?->status !== 'in_progress'
-                || !$leg->assignments()->where('rider_profile_id', $rider->id)->where('status', 'accepted')->exists()) {
+                || ! $leg->assignments()->where('rider_profile_id', $rider->id)->where('status', 'accepted')->exists()) {
                 throw ValidationException::withMessages(['status' => 'This stop cannot start delivery.']);
             }
+
             return $this->transition($leg, 'in_transit', ['out_for_delivery_at' => now()], 'out_for_delivery', 'Your delivery is out for delivery.');
         });
     }
@@ -105,15 +138,16 @@ class ShipmentLegService
             'delivered'
         );
 
-        if (!$this->proofs->hasRequiredDeliveryProof($leg)) {
+        if (! $this->proofs->hasRequiredDeliveryProof($leg)) {
             throw ValidationException::withMessages(['proof' => 'Delivery proof is required before marking this leg delivered.']);
         }
 
         $delivered = $this->transition($leg, 'delivered', ['delivered_at' => now()], 'delivered', 'Shipment leg delivered.');
         $batch = $delivered->deliveryBatch;
-        if ($batch && !$batch->legs()->where('status', '!=', 'delivered')->exists()) {
+        if ($batch && ! $batch->legs()->where('status', '!=', 'delivered')->exists()) {
             $batch->update(['status' => 'completed', 'completed_at' => now()]);
         }
+
         return $delivered;
     }
 
@@ -121,7 +155,7 @@ class ShipmentLegService
     {
         $leg->loadMissing('shipment');
         $this->assertTransitionAllowed($leg, ['delivery_attempted', 'needs_resolution'], 'cancelled');
-        if ($leg->picked_up_at && !in_array($leg->resolution_type, ['returned', 'loss_confirmed'], true)) {
+        if ($leg->picked_up_at && ! in_array($leg->resolution_type, ['returned', 'loss_confirmed'], true)) {
             throw ValidationException::withMessages(['custody' => 'Post-pickup cancellation requires a confirmed return or loss resolution.']);
         }
 
@@ -145,24 +179,32 @@ class ShipmentLegService
 
     public function resolveRetry(ShipmentLeg $leg, string $reason): ShipmentLeg
     {
-        if (!filled($reason)) throw ValidationException::withMessages(['reason' => 'Resolution reason is required.']);
+        if (! filled($reason)) {
+            throw ValidationException::withMessages(['reason' => 'Resolution reason is required.']);
+        }
+
         return DB::transaction(function () use ($leg, $reason) {
             $leg = ShipmentLeg::query()->with('shipment')->lockForUpdate()->findOrFail($leg->id);
             $this->assertTransitionAllowed($leg, ['needs_resolution'], 'scheduled for retry');
             $leg->update(['status' => 'pending', 'resolution_type' => 'retry', 'resolution_reason' => $reason, 'scheduled_delivery_date' => now(config('app.shop_timezone', 'Asia/Manila'))->addDay()->toDateString()]);
             $this->events->record($leg->shipment, $leg, ['event_type' => 'delivery_retry_authorized', 'visibility' => 'customer', 'message' => 'Another delivery attempt has been scheduled.']);
+
             return $leg->fresh();
         });
     }
 
     public function requireReturn(ShipmentLeg $leg, string $reason): ShipmentLeg
     {
-        if (!filled($reason)) throw ValidationException::withMessages(['reason' => 'Return reason is required.']);
+        if (! filled($reason)) {
+            throw ValidationException::withMessages(['reason' => 'Return reason is required.']);
+        }
+
         return DB::transaction(function () use ($leg, $reason) {
             $leg = ShipmentLeg::query()->with('shipment')->lockForUpdate()->findOrFail($leg->id);
             $this->assertTransitionAllowed($leg, ['needs_resolution'], 'return required');
             $leg->update(['resolution_type' => 'return_required', 'resolution_reason' => $reason]);
             $this->events->record($leg->shipment, $leg, ['event_type' => 'return_required', 'visibility' => 'customer', 'message' => 'The parcel is awaiting return to the shop.']);
+
             return $leg->fresh();
         });
     }
@@ -171,11 +213,13 @@ class ShipmentLegService
     {
         return DB::transaction(function () use ($leg) {
             $leg = ShipmentLeg::query()->with(['shipment', 'assignments'])->lockForUpdate()->findOrFail($leg->id);
-            if (!in_array($leg->status->value, ['delivery_attempted', 'needs_resolution'], true) || $leg->resolution_type !== 'return_required') {
+            if (! in_array($leg->status->value, ['delivery_attempted', 'needs_resolution'], true) || $leg->resolution_type !== 'return_required') {
                 throw ValidationException::withMessages(['status' => 'Return can only start from a return-required failed delivery.']);
             }
             $existing = ShipmentLeg::where('return_for_leg_id', $leg->id)->first();
-            if ($existing) return $existing;
+            if ($existing) {
+                return $existing;
+            }
             $return = $leg->shipment->legs()->create([
                 'sequence' => $leg->shipment->legs()->max('sequence') + 1, 'leg_type' => 'return_to_shop',
                 'status' => 'picked_up', 'return_for_leg_id' => $leg->id,
@@ -183,12 +227,15 @@ class ShipmentLegService
                 'requires_delivery_proof' => true,
             ]);
             $assignment = $leg->assignments->firstWhere('status', 'accepted') ?? $leg->assignments->firstWhere('status', 'assigned');
-            if ($assignment) $return->assignments()->create([
-                'assignment_type' => 'internal_rider', 'rider_profile_id' => $assignment->rider_profile_id,
-                'assigned_by_type' => $assignment->assigned_by_type, 'assigned_by_id' => $assignment->assigned_by_id,
-                'status' => 'accepted', 'assigned_at' => now(), 'accepted_at' => now(),
-            ]);
+            if ($assignment) {
+                $return->assignments()->create([
+                    'assignment_type' => 'internal_rider', 'rider_profile_id' => $assignment->rider_profile_id,
+                    'assigned_by_type' => $assignment->assigned_by_type, 'assigned_by_id' => $assignment->assigned_by_id,
+                    'status' => 'accepted', 'assigned_at' => now(), 'accepted_at' => now(),
+                ]);
+            }
             $this->events->record($leg->shipment, $return, ['event_type' => 'return_to_shop_started', 'visibility' => 'customer', 'message' => 'The parcel is being returned to the shop.']);
+
             return $return;
         });
     }
@@ -199,12 +246,19 @@ class ShipmentLegService
             $return = ShipmentLeg::query()->lockForUpdate()->findOrFail($return->id);
             $proof = HandoffProof::query()->lockForUpdate()->findOrFail($proof->id);
             if ($return->leg_type !== 'return_to_shop' || $proof->shipment_leg_id !== $return->id || $proof->handoff_type !== 'receive'
-                || !$return->assignments()->where('rider_profile_id', $rider->id)->where('status', 'accepted')->exists()) abort(403);
-            if ($return->status->value === 'delivered' && $proof->review_status === 'approved') return $return;
-            if (!in_array($proof->review_status, ['pending', 'rider_confirmed'], true)) {
+                || ! $return->assignments()->where('rider_profile_id', $rider->id)->where('status', 'accepted')->exists()) {
+                abort(403);
+            }
+            if ($return->status->value === 'delivered' && $proof->review_status === 'approved') {
+                return $return;
+            }
+            if (! in_array($proof->review_status, ['pending', 'rider_confirmed'], true)) {
                 throw ValidationException::withMessages(['proof' => 'This return handoff proof cannot be confirmed.']);
             }
-            if ($proof->review_status === 'pending') $proof->update(['review_status' => 'rider_confirmed', 'reviewed_by_type' => RiderProfile::class, 'reviewed_by_id' => $rider->id, 'reviewed_at' => now()]);
+            if ($proof->review_status === 'pending') {
+                $proof->update(['review_status' => 'rider_confirmed', 'reviewed_by_type' => RiderProfile::class, 'reviewed_by_id' => $rider->id, 'reviewed_at' => now()]);
+            }
+
             return $return;
         });
     }
@@ -215,26 +269,34 @@ class ShipmentLegService
             $return = ShipmentLeg::query()->with('shipment')->lockForUpdate()->findOrFail($return->id);
             $proof = HandoffProof::query()->lockForUpdate()->findOrFail($proof->id);
             if ($return->shipment->shop_owner_id !== $shop->id || $return->leg_type !== 'return_to_shop'
-                || $proof->shipment_leg_id !== $return->id || $proof->handoff_type !== 'receive') abort(403);
+                || $proof->shipment_leg_id !== $return->id || $proof->handoff_type !== 'receive') {
+                abort(403);
+            }
             $original = ShipmentLeg::query()->lockForUpdate()->findOrFail($return->return_for_leg_id);
             if ($return->status->value === 'delivered' && $proof->review_status === 'approved') {
                 $this->completeFailedDeliveryRefundReturn($return, $original);
+
                 return $return->fresh();
             }
-            if ($proof->review_status !== 'rider_confirmed') abort(403);
+            if ($proof->review_status !== 'rider_confirmed') {
+                abort(403);
+            }
             $proof->update(['review_status' => 'approved', 'reviewed_by_type' => ShopOwner::class, 'reviewed_by_id' => $shop->id, 'reviewed_at' => now()]);
             $return->update(['status' => 'delivered', 'delivered_at' => now()]);
             $original->update(['status' => 'cancelled', 'resolution_type' => 'returned']);
             $this->completeFailedDeliveryRefundReturn($return, $original);
             $return->shipment->update(['status' => 'cancelled', 'cancelled_at' => now()]);
             $this->events->record($return->shipment, $return, ['event_type' => 'return_received', 'visibility' => 'customer', 'message' => 'The returned parcel was received by the shop.']);
+
             return $return->fresh();
         });
     }
 
     private function completeFailedDeliveryRefundReturn(ShipmentLeg $return, ShipmentLeg $original): void
     {
-        if ($return->shipment->source_type !== 'order' || $return->shipment->purpose !== 'retail_delivery') return;
+        if ($return->shipment->source_type !== 'order' || $return->shipment->purpose !== 'retail_delivery') {
+            return;
+        }
 
         $refund = OrderRefund::query()
             ->with('items')
@@ -243,7 +305,9 @@ class ShipmentLegService
             ->where('idempotency_key', "delivery-attempts-exhausted:{$return->shipment->source_id}:{$original->id}")
             ->latest('id')
             ->first();
-        if (!$refund) return;
+        if (! $refund) {
+            return;
+        }
 
         $result = $this->refunds->confirmReturnReceived($refund, null, lineDispositions: $refund->items->map(fn ($line) => [
             'order_item_id' => (int) $line->order_item_id,
@@ -262,13 +326,14 @@ class ShipmentLegService
         }
 
         $batchId = $leg->delivery_batch_id;
+
         return DB::transaction(function () use ($leg, $payload, $allowAssigned, $batchId) {
             $idempotencyKey = trim((string) ($payload['idempotency_key'] ?? ''));
             $assignmentId = (int) ($payload['delivery_assignment_id'] ?? 0);
             $assignment = $assignmentId > 0
                 ? DeliveryAssignment::query()->lockForUpdate()->find($assignmentId)
                 : null;
-            if ($assignmentId > 0 && (!$assignment || (int) $assignment->shipment_leg_id !== (int) $leg->id)) {
+            if ($assignmentId > 0 && (! $assignment || (int) $assignment->shipment_leg_id !== (int) $leg->id)) {
                 throw ValidationException::withMessages(['delivery_assignment_id' => 'This assignment does not belong to the delivery leg.']);
             }
 
@@ -285,7 +350,9 @@ class ShipmentLegService
                     ->where('shipment_leg_id', $leg->id)
                     ->where('idempotency_key', $idempotencyKey)
                     ->first();
-                if ($existing) return $existing;
+                if ($existing) {
+                    return $existing;
+                }
             }
 
             if ($assignment) {
@@ -294,14 +361,16 @@ class ShipmentLegService
                     ->where('attempt_type', $payload['attempt_type'] ?? 'delivery')
                     ->where('delivery_assignment_id', $assignment->id)
                     ->first();
-                if ($existing) return $existing;
+                if ($existing) {
+                    return $existing;
+                }
             }
 
             $batch = $batchId
                 ? DeliveryBatch::query()->lockForUpdate()->find($batchId)
                 : null;
             $leg = ShipmentLeg::query()->with('shipment.shopOwner.logisticsSetting')->lockForUpdate()->findOrFail($leg->id);
-            if ((int) $leg->delivery_batch_id !== (int) $batchId || ($batchId && !$batch)) {
+            if ((int) $leg->delivery_batch_id !== (int) $batchId || ($batchId && ! $batch)) {
                 throw ValidationException::withMessages(['leg' => 'This stop changed batches. Please try again.']);
             }
             if ($leg->leg_type === 'return_to_shop') {
@@ -311,10 +380,10 @@ class ShipmentLegService
             if ($leg->delivery_batch_id && empty($payload['file_path'])) {
                 throw ValidationException::withMessages(['proof' => 'A failed-attempt photo is required.']);
             }
-            if (!$assignment) {
+            if (! $assignment) {
                 $assignment = $leg->assignments()->whereIn('status', ['assigned', 'accepted'])->lockForUpdate()->first();
             }
-            if (!$assignment || !in_array($assignment->status, ['assigned', 'accepted'], true)) {
+            if (! $assignment || ! in_array($assignment->status, ['assigned', 'accepted'], true)) {
                 throw ValidationException::withMessages(['delivery_assignment_id' => 'An active delivery assignment is required.']);
             }
 
@@ -339,8 +408,10 @@ class ShipmentLegService
             $needsResolution = $attemptNumber >= $max;
             $settings = $leg->shipment->shopOwner->logisticsSetting;
             $next = now(config('app.shop_timezone', 'Asia/Manila'))->addDay();
-            while (!in_array($next->dayOfWeekIso, $settings?->operating_days ?? [1, 2, 3, 4, 5, 6], true)
-                || in_array($next->toDateString(), $settings?->blackout_dates ?? [], true)) $next->addDay();
+            while (! in_array($next->dayOfWeekIso, $settings?->operating_days ?? [1, 2, 3, 4, 5, 6], true)
+                || in_array($next->toDateString(), $settings?->blackout_dates ?? [], true)) {
+                $next->addDay();
+            }
             $nextDate = $next->toDateString();
             $leg->update([
                 'status' => $needsResolution ? 'needs_resolution' : 'pending',
@@ -393,7 +464,7 @@ class ShipmentLegService
     {
         $paymentMethod = strtolower((string) ($order->payment_method ?? ''));
 
-        return !in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery'], true)
+        return ! in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery'], true)
             && in_array((string) ($order->payment_status ?? ''), ['paid', 'completed'], true);
     }
 
@@ -419,7 +490,7 @@ class ShipmentLegService
     {
         $current = $leg->status->value;
 
-        if (!in_array($current, $fromStatuses, true)) {
+        if (! in_array($current, $fromStatuses, true)) {
             throw ValidationException::withMessages([
                 'status' => "Shipment leg cannot be marked {$target} from {$current}.",
             ]);
@@ -433,6 +504,7 @@ class ShipmentLegService
 
         if ($statuses->isNotEmpty() && $statuses->every(fn ($status) => $status === 'cancelled')) {
             $shipment->update(['status' => 'cancelled', 'completed_at' => null]);
+
             return;
         }
 
@@ -442,6 +514,7 @@ class ShipmentLegService
             $shipment->update(['status' => 'completed', 'completed_at' => now()]);
             $this->completeShopOwnedRetailOrder($shipment);
             $this->completeShopOwnedReturn($shipment);
+
             return;
         }
 

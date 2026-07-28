@@ -5,8 +5,8 @@ namespace App\Http\Controllers\Api\Logistics;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Logistics\AssignShipmentLegRequest;
 use App\Http\Requests\Logistics\RecordHandoffProofRequest;
-use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\HandoffProof;
+use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\ShopOwner;
@@ -75,7 +75,7 @@ class ShipmentController extends Controller
 
         $payload = $request->validated();
         if ($request->hasFile('proof_file')) {
-            $payload['file_path'] = $request->file('proof_file')->store('logistics-proof/' . $leg->id, 'public');
+            $payload['file_path'] = $request->file('proof_file')->store('logistics-proof/'.$leg->id, 'public');
         }
 
         return response()->json([
@@ -86,8 +86,12 @@ class ShipmentController extends Controller
     public function pickedUp(ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse
     {
         $this->authorizeLegUpdate($leg);
+        $user = Auth::guard('user')->user();
+        $rider = ! $leg->delivery_batch_id || ($user instanceof User && $this->userHasActiveAssignment($leg, $user))
+            ? $this->assignedRiderProfile($leg)
+            : null;
 
-        return response()->json(['leg' => $legs->markPickedUp($leg)]);
+        return response()->json(['leg' => $legs->markPickedUp($leg, $rider)]);
     }
 
     public function inTransit(ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse
@@ -105,6 +109,7 @@ class ShipmentController extends Controller
     public function rejectPickup(Request $request, ShipmentLeg $leg, HandoffProof $proof, ShipmentLegService $legs): JsonResponse
     {
         $reason = $request->validate(['reason' => ['required', 'string', 'max:1000']])['reason'];
+
         return response()->json(['leg' => $legs->rejectPickup($leg, $proof, $this->assignedRiderProfile($leg), $reason)]);
     }
 
@@ -135,6 +140,7 @@ class ShipmentController extends Controller
             abort_unless(in_array($locked->handoff_type, ['delivery', 'receive'], true), 422);
             abort_unless($locked->leg->status->value === 'awaiting_proof_approval', 422);
             $locked->update(['review_status' => 'approved', 'reviewed_by_type' => $actor::class, 'reviewed_by_id' => $actor->id, 'reviewed_at' => now()]);
+
             return $legs->markDelivered($locked->leg);
         });
 
@@ -217,7 +223,9 @@ class ShipmentController extends Controller
             'notes' => ['nullable', 'string'],
             'proof_file' => ['required', 'image', 'max:10240'],
         ]);
-        if ($request->hasFile('proof_file')) $payload['file_path'] = $request->file('proof_file')->store('logistics-attempt/' . $leg->id, 'public');
+        if ($request->hasFile('proof_file')) {
+            $payload['file_path'] = $request->file('proof_file')->store('logistics-attempt/'.$leg->id, 'public');
+        }
 
         try {
             $attempt = $legs->recordFailedAttempt($leg, [
@@ -270,6 +278,7 @@ class ShipmentController extends Controller
         $shop = $this->authorizedShop('assign-logistics-deliveries');
         $leg->loadMissing('shipment');
         $this->abortUnlessTenant($leg->shipment->shop_owner_id, $shop);
+
         return response()->json(['leg' => $legs->resolveRetry($leg, $request->validate(['reason' => ['required', 'string', 'max:1000']])['reason'])]);
     }
 
@@ -278,6 +287,7 @@ class ShipmentController extends Controller
         $shop = $this->authorizedShop('assign-logistics-deliveries');
         $leg->loadMissing('shipment');
         $this->abortUnlessTenant($leg->shipment->shop_owner_id, $shop);
+
         return response()->json(['leg' => $legs->requireReturn($leg, $request->validate(['reason' => ['required', 'string', 'max:1000']])['reason'])]);
     }
 
@@ -286,6 +296,7 @@ class ShipmentController extends Controller
         $shop = $this->authorizedShop('resolve-logistics-exceptions');
         $leg->loadMissing('shipment');
         $this->abortUnlessTenant($leg->shipment->shop_owner_id, $shop);
+
         return response()->json(['leg' => $legs->createReturnToShop($leg)], 201);
     }
 
@@ -299,6 +310,7 @@ class ShipmentController extends Controller
         $shop = $this->authorizedShopForProofApproval();
         $leg->loadMissing('shipment');
         $this->abortUnlessTenant($leg->shipment->shop_owner_id, $shop);
+
         return response()->json(['leg' => $legs->confirmReturnReceipt($leg, $proof, $shop)]);
     }
 
@@ -315,7 +327,7 @@ class ShipmentController extends Controller
     private function authorizeIssueReport(ShipmentLeg $leg): User
     {
         $user = Auth::guard('user')->user();
-        if (!$user instanceof User || !$user->can('update-logistics-status') || !$user->shopOwner) {
+        if (! $user instanceof User || ! $user->can('update-logistics-status') || ! $user->shopOwner) {
             abort(403);
         }
 
@@ -333,7 +345,7 @@ class ShipmentController extends Controller
         }
 
         $user = Auth::guard('user')->user();
-        if (!$user instanceof User || !$user->can('update-logistics-status') || !$user->shopOwner) {
+        if (! $user instanceof User || ! $user->can('update-logistics-status') || ! $user->shopOwner) {
             abort(403);
         }
 
@@ -360,11 +372,11 @@ class ShipmentController extends Controller
         }
 
         $user = Auth::guard('user')->user();
-        if (!$user instanceof User || !$user->shopOwner) {
+        if (! $user instanceof User || ! $user->shopOwner) {
             abort(403);
         }
 
-        if (!$user->can($permission)) {
+        if (! $user->can($permission)) {
             abort(403);
         }
 
@@ -378,7 +390,7 @@ class ShipmentController extends Controller
         }
 
         $user = Auth::guard('user')->user();
-        if (!$user instanceof User || !$user->shopOwner || !$this->canApproveProof($user)) {
+        if (! $user instanceof User || ! $user->shopOwner || ! $this->canApproveProof($user)) {
             abort(403);
         }
 
@@ -404,7 +416,7 @@ class ShipmentController extends Controller
         }
 
         $user = Auth::guard('user')->user();
-        if (!$user instanceof User) {
+        if (! $user instanceof User) {
             abort(403);
         }
 
@@ -412,7 +424,7 @@ class ShipmentController extends Controller
             return;
         }
 
-        if (!$this->userHasActiveAssignment($leg, $user)) {
+        if (! $this->userHasActiveAssignment($leg, $user)) {
             abort(403);
         }
     }
@@ -435,6 +447,7 @@ class ShipmentController extends Controller
         $profile = RiderProfile::query()->where('linked_type', User::class)->where('linked_id', $user->id)
             ->whereHas('assignments', fn ($query) => $query->where('shipment_leg_id', $leg->id)->whereIn('status', ['assigned', 'accepted']))->first();
         abort_unless($profile, 403);
+
         return $profile;
     }
 }
