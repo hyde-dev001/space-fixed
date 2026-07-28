@@ -268,6 +268,8 @@ Arrival verification uses the immutable coordinates already stored on the active
 - drop-off arrival targets `destination_snapshot`; and
 - later edits to a shop or customer address do not move an active delivery's target.
 
+Phase 2 must also complete the snapshot contract for newly created legs. Every shop and customer origin or destination snapshot stores latitude and longitude from the accepted shop/customer address at creation time. This includes retail shop origins and both ends of refund-return legs, which are incomplete in legacy records. Existing legs are not guessed or backfilled; a legacy target without coordinates follows the Location unavailable exception path.
+
 When the rider taps I've arrived, the client requests a one-time high-accuracy location and submits latitude, longitude, reported accuracy, and capture time. The server validates the rider assignment and leg state, resolves the target itself, calculates the distance, and records one of these results:
 
 | Result | Condition | Rider behavior |
@@ -278,6 +280,8 @@ When the rider taps I've arrived, the client requests a one-time high-accuracy l
 | Location unavailable | Permission denied, GPS failed, or the target has no coordinates | Require a reason when online, record an unverified arrival, and allow the rider to continue |
 | Offline | The request cannot reach the server | Do not claim success; retain the loaded delivery and offer Retry after reconnect |
 
+GPS evidence is usable only when latitude and longitude are finite and in their legal ranges, accuracy is finite and between 0 and 5,000 m, accuracy does not exceed `arrival_radius_m`, and `captured_at` is no more than five minutes old or one minute in the future relative to server time. Evidence outside those rules cannot produce a Verified arrival and follows the low-accuracy or location-unavailable reason flow.
+
 Outside or unverified reasons use rider-friendly choices:
 
 - GPS location is inaccurate;
@@ -287,7 +291,7 @@ Outside or unverified reasons use rider-friendly choices:
 - Safety concern; and
 - Other, with required notes.
 
-The `pickup_arrived` and `dropoff_arrived` events store the verification result, distance, configured radius, reported accuracy, capture time, submitted coordinates, and exception reason in internal metadata. Exact rider coordinates remain internal and are not exposed to the customer.
+The `pickup_arrived` and `dropoff_arrived` events are explicitly recorded with `visibility = internal`. They store the verification result, distance, configured radius, reported accuracy, capture time, submitted coordinates, and exception reason in internal metadata. Exact rider coordinates remain internal and are not exposed to the customer.
 
 Each arrival event is idempotent per shipment leg and event type. A repeated tap or retry returns the existing event and cannot create duplicate arrivals. Arrival does not change the canonical shipment-leg status.
 
@@ -313,6 +317,7 @@ A customer-visible proof must meet every condition:
 
 - the proof belongs to a leg in the customer's shipment;
 - `handoff_type` is `delivery` or `receive`;
+- `proof_type` is `photo`;
 - `review_status` is `approved`;
 - the leg is Delivered; and
 - the original file still exists.
@@ -321,16 +326,20 @@ Pending, rejected, pickup, failed-attempt, and internal issue evidence must neve
 
 The proof viewer provides:
 
-- the original image with full-screen viewing and zoom;
-- an accessible download or open-original action;
+- a customer-safe image with full-screen viewing and zoom;
+- an accessible download action for that customer-safe image;
 - delivered date and time;
 - customer-visible delivery location from the destination snapshot;
 - tracking number; and
 - delivery status.
 
-These details are rendered as a UI overlay or adjacent details. The original uploaded file is preserved unchanged; Phase 2 does not generate or store a permanently watermarked duplicate. Raw rider GPS coordinates and internal geofence exception reasons are not customer-visible.
+These details are rendered as a UI overlay or adjacent details. The original uploaded file is preserved unchanged in private storage for audit. The customer image response is generated from that private original with EXIF and other embedded metadata stripped; the sanitized response is not stored as a permanently watermarked duplicate. The download action serves the same sanitized response. Raw rider GPS coordinates and internal geofence exception reasons are not customer-visible.
 
-The existing customer shipment ownership check protects both the tracking payload and the proof-file response. Retail orders, order returns, and repair shipments use the same rule. A missing or unreadable approved file shows Proof unavailable without rendering a broken image or exposing its storage path.
+Successful handoff proof uploads use server-generated paths on the private disk. Rider-facing HTTP requests cannot submit or select `file_path`; they must upload the file. Existing successful handoff files under public storage must be moved to private storage and their public copies removed before being eligible for customer POD viewing.
+
+The existing customer shipment ownership check protects both the tracking payload and the private, sanitized proof-file response. Retail orders, order returns, and repair shipments use the same rule. A missing or unreadable approved file shows Proof unavailable without rendering a broken image or exposing its storage path.
+
+If historical data contains multiple eligible proofs for one Delivered leg, select deterministically: prefer `delivery` over `receive`, then order by `reviewed_at` descending and proof ID descending.
 
 ### 6. Report an issue
 
@@ -608,12 +617,15 @@ Phase 1 does **not** show the new I’ve arrived action until the arrival event 
 - Add `arrival_radius_m` to Logistics Settings with a 100 m default and 50-500 m range.
 - Keep the existing `coverage_radius_km` as one shared service radius for pickup and delivery.
 - Add a Leaflet service-area preview centered on the saved shop pin without duplicating shop-location editing.
+- Complete shop/customer coordinates in every newly created shipment-leg snapshot.
 - Expose I've arrived contextually for both batched and standalone deliveries.
 - Allow outside-geofence, low-accuracy, and unavailable-location arrivals only with a required reason.
 - Show verified and exception arrival details in the existing dispatcher delivery timeline.
 - Improve rider issue reporting with conditional evidence.
 - Add dispatcher-facing resolution instructions consumed by the rider page.
 - Expose only approved delivery or receive proof to the owning customer after the leg is Delivered.
+- Move successful handoff proofs behind private, ownership-checked responses and reject client-selected file paths.
+- Strip embedded image metadata from customer responses while preserving the private original.
 - Render proof date/time, destination, tracking number, and status as UI details while preserving the original image.
 
 ### Phase 3 — Completion and synchronization hardening
@@ -639,7 +651,7 @@ Each phase requires its own implementation plan and verification. Completing Pha
 - Separate pickup and delivery service radii.
 - Per-customer arrival radii.
 - Editing the canonical shop pin from Logistics Settings.
-- Permanent image watermarking or generating a second proof image.
+- Permanent image watermarking or storing a second customer proof image.
 - Durable offline arrival submission.
 - Automatic route optimization or predictive ETA.
 
@@ -648,18 +660,21 @@ Each phase requires its own implementation plan and verification. Completing Pha
 1. Logistics Settings shows one Leaflet service-area preview using the saved shop pin and existing shared `coverage_radius_km`.
 2. The same service radius governs shop-owned retail delivery, repair pickup, and repair return eligibility.
 3. Logistics Settings stores one arrival radius in meters, defaults it to 100 m, and validates 50-500 m.
-4. Pickup and drop-off arrival targets come from the active shipment leg snapshots rather than client-supplied target coordinates.
+4. Every newly created leg snapshot includes its shop/customer coordinates; pickup and drop-off arrival targets come from those snapshots rather than client-supplied target coordinates.
 5. I've arrived appears only for the assigned rider in an eligible active leg state.
-6. A verified pickup or drop-off records one idempotent arrival event without changing the shipment-leg status.
-7. Outside-geofence, low-accuracy, and unavailable-location arrivals require a reason and remain non-blocking.
-8. Repeated arrival taps or retries return the existing event rather than creating duplicates.
-9. Offline arrival attempts are not shown as saved and provide a clear retry path.
-10. Dispatcher delivery details distinguish Verified arrival, Outside geofence, Low accuracy, and Location unavailable using text and icons.
-11. The owning customer sees View proof of delivery only after an approved delivery or receive proof belongs to a Delivered leg.
-12. Pending, rejected, pickup, failed-attempt, internal issue, cross-shipment, and cross-customer files cannot be fetched through the POD endpoint.
-13. The proof viewer renders date/time, destination summary, tracking number, and status without modifying the original stored image.
-14. Missing approved proof files degrade to Proof unavailable without exposing storage paths.
-15. Batched and standalone deliveries use the same arrival and customer-proof rules.
+6. Only fresh, valid GPS evidence whose accuracy does not exceed the configured arrival radius can produce a Verified arrival.
+7. A verified pickup or drop-off records one explicitly internal, idempotent arrival event without changing the shipment-leg status.
+8. Outside-geofence, low-accuracy, unavailable-location, and legacy missing-coordinate arrivals require a reason and remain non-blocking.
+9. Repeated arrival taps or retries return the existing event rather than creating duplicates.
+10. Offline arrival attempts are not shown as saved and provide a clear retry path.
+11. Dispatcher delivery details distinguish Verified arrival, Outside geofence, Low accuracy, and Location unavailable using text and icons.
+12. The owning customer sees View proof of delivery only after an approved delivery or receive photo belongs to a Delivered leg.
+13. Successful handoff proof uploads use server-generated private paths, and legacy public handoff files are removed from public storage when migrated.
+14. Pending, rejected, pickup, failed-attempt, internal issue, cross-shipment, and cross-customer files cannot be fetched through the POD endpoint.
+15. The proof viewer renders date/time, destination summary, tracking number, and status while preserving the private original and stripping embedded metadata from the customer response.
+16. When multiple eligible proofs exist, delivery precedes receive, then newest `reviewed_at`, then highest proof ID.
+17. Missing approved proof files degrade to Proof unavailable without exposing storage paths.
+18. Batched and standalone deliveries use the same arrival and customer-proof rules.
 
 ## Phase 1 Out of Scope
 
