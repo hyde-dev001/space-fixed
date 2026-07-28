@@ -1,7 +1,7 @@
 # Rider My Deliveries Redesign
 
-**Date:** 2026-07-29  
-**Status:** Approved direction; implementation pending  
+**Date:** 2026-07-29
+**Status:** Approved direction; implementation pending
 **Scope:** Target rider-facing `My Deliveries` experience, with an explicit first implementation slice covering the page redesign and the minimum shared active-work safeguard
 
 ## Summary

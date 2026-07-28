@@ -32,12 +32,12 @@ class BatchDispatchService
                 throw ValidationException::withMessages(['legs' => 'One or more deliveries cannot be scheduled.']);
             }
             $modules = $legs->map(fn ($leg) => Shipment::moduleForSourceType((string) $leg->shipment->source_type));
-            if ($modules->contains(null) || $modules->contains(fn ($module) => !in_array($module, $shop->logisticsModules(), true))) {
+            if ($modules->contains(null) || $modules->contains(fn ($module) => ! in_array($module, $shop->logisticsModules(), true))) {
                 throw ValidationException::withMessages(['legs' => 'This shop cannot schedule one or more delivery modules.']);
             }
             $deliveryDate = Carbon::parse($date)->startOfDay();
             $settings = $shop->logisticsSetting()->firstOrCreate([]);
-            if (!in_array($deliveryDate->dayOfWeekIso, $settings->operating_days, true)
+            if (! in_array($deliveryDate->dayOfWeekIso, $settings->operating_days, true)
                 || in_array($deliveryDate->toDateString(), $settings->blackout_dates, true)) {
                 throw ValidationException::withMessages(['delivery_date' => 'Choose an operating day that is not a blackout date.']);
             }
@@ -349,7 +349,7 @@ class BatchDispatchService
             throw ValidationException::withMessages(['legs' => 'Retail and Repair deliveries cannot share a batch.']);
         }
 
-        if (!in_array($modules->first(), $shop->logisticsModules(), true)) {
+        if (! in_array($modules->first(), $shop->logisticsModules(), true)) {
             throw ValidationException::withMessages(['legs' => 'This shop cannot dispatch that delivery module.']);
         }
     }

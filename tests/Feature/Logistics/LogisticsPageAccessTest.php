@@ -625,7 +625,10 @@ class LogisticsPageAccessTest extends TestCase
             'source_type' => 'order',
             'source_id' => $assignedOrder->id,
         ]);
-        $assignedLeg = ShipmentLeg::factory()->create(['shipment_id' => $assignedShipment->id]);
+        $assignedLeg = ShipmentLeg::factory()->create([
+            'shipment_id' => $assignedShipment->id,
+            'status' => 'assigned',
+        ]);
         DeliveryAssignment::factory()->create([
             'shipment_leg_id' => $assignedLeg->id,
             'rider_profile_id' => $profile->id,
@@ -643,24 +646,27 @@ class LogisticsPageAccessTest extends TestCase
             'source_type' => 'order',
             'source_id' => $hiddenOrder->id,
         ]);
-        $hiddenLeg = ShipmentLeg::factory()->create(['shipment_id' => $hiddenShipment->id]);
+        $hiddenLeg = ShipmentLeg::factory()->create([
+            'shipment_id' => $hiddenShipment->id,
+            'status' => 'assigned',
+        ]);
         DeliveryAssignment::factory()->create([
             'shipment_leg_id' => $hiddenLeg->id,
             'rider_profile_id' => $otherProfile->id,
         ]);
 
         $assigned = $this->actingAs($rider, 'user')
-            ->get('/erp/logistics/deliveries?search=Assigned%20Runner')
+            ->get('/erp/logistics/deliveries?tab=all&search=Assigned%20Runner')
             ->assertOk()
-            ->viewData('page')['props'];
+            ->viewData('page')['props']['deliveryData'];
         $this->assertSame('Assigned Runner', $assigned['filters']['search']);
-        $this->assertSame([$assignedShipment->id], collect($assigned['shipments']['data'])->pluck('id')->all());
+        $this->assertSame(["single:{$assignedLeg->id}"], collect($assigned['list']['data'])->pluck('key')->all());
 
         $hidden = $this->actingAs($rider, 'user')
-            ->get('/erp/logistics/deliveries?search=Hidden%20Runner')
+            ->get('/erp/logistics/deliveries?tab=all&search=Hidden%20Runner')
             ->assertOk()
-            ->viewData('page')['props'];
-        $this->assertSame([], collect($hidden['shipments']['data'])->pluck('id')->all());
+            ->viewData('page')['props']['deliveryData'];
+        $this->assertSame([], collect($hidden['list']['data'])->pluck('key')->all());
     }
 
     public function test_dispatcher_module_filter_scopes_shipments_and_single_module_shops(): void

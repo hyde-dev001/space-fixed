@@ -214,6 +214,11 @@ class ErpLogisticsController extends Controller
             ->whereHas('assignments', fn ($query) => $query->where('rider_profile_id', $rider->id))
             ->get();
 
+        $this->attachShipmentSummaries(
+            $batches->flatMap->legs->pluck('shipment')->merge($standalone->pluck('shipment')),
+            $shopOwnerId,
+        );
+
         $workItems = $batches
             ->map(fn (DeliveryBatch $batch) => $this->batchWorkItem($batch, $rider))
             ->concat($standalone->map(fn (ShipmentLeg $leg) => $this->standaloneWorkItem($leg, $rider)))
@@ -528,6 +533,8 @@ class ErpLogisticsController extends Controller
         $details = $deliveries->flatMap(function (array $leg) {
             $destination = $leg['destination_snapshot'] ?? [];
             $shipment = $leg['shipment'] ?? [];
+            $order = $shipment['order_summary'] ?? [];
+            $repair = $shipment['source_summary'] ?? [];
 
             return [
                 $leg['id'] ?? null,
@@ -536,6 +543,14 @@ class ErpLogisticsController extends Controller
                 $destination['name'] ?? null,
                 $destination['phone'] ?? null,
                 $destination['address'] ?? null,
+                $order['order_number'] ?? null,
+                ...collect($order['items'] ?? [])->flatMap(fn (array $item) => [
+                    $item['brand'] ?? null,
+                    $item['model'] ?? null,
+                ])->all(),
+                $repair['request_number'] ?? null,
+                $repair['customer_name'] ?? null,
+                $repair['shoe_summary'] ?? null,
             ];
         });
 
