@@ -89,11 +89,13 @@ Search, business type, date, status, and sorting controls belong only to the low
 
 The lists use deterministic entity types:
 
-- **Upcoming, History, and All** contain work-item cards. A work item is either a batch or one standalone delivery.
+- **Upcoming and History** contain work-item cards. A work item is either a batch or one standalone delivery.
 - **Issues** contains individual unresolved delivery exceptions. A batched delivery issue shows its parent batch ID and sequence; a standalone issue shows “Single delivery.”
 - A delivery issue remains visible inside its parent batch sequence and may also appear in Issues. Both views reference the same delivery and attempt IDs; they are not duplicate records.
 - Declining an offer removes it from Needs response and places a read-only work-item entry in History as Declined.
+- **All** contains every work item assigned or offered to the rider: pending offers, Current, Upcoming, completed, cancelled, declined, and work items containing issues. Each work item appears once in All by type and ID. Current and pending offers remain pinned above as the authoritative action surfaces; their compact All entries link back to the pinned card and do not repeat primary actions.
 - Searching for an individual delivery ID in All returns its parent batch card, automatically expanded to the matching delivery. A standalone match returns its own card.
+- Filtering All may hide a compact duplicate entry, but it never hides the authoritative pinned Current or pending-offer card.
 
 ### Delivery status labels
 
@@ -190,7 +192,23 @@ If no work item is active, Start batch or Start delivery becomes available. If a
 
 The assignment becomes Current Delivery.
 
-For a batch, only the first unresolved delivery is expanded. For a standalone assignment, the same card is used without batch progress or sequence controls.
+For a batch, only the first actionable delivery is expanded. For a standalone assignment, the same card is used without batch progress or sequence controls.
+
+An actionable delivery is the first stop by sequence whose server state permits a rider transition:
+
+- Assigned
+- Picked up
+- In transit
+
+The selector skips Delivered, Cancelled, Awaiting proof approval, and issue states waiting for dispatcher resolution. Skipped proof-pending and issue deliveries remain visible in the expanded sequence and Issues tab.
+
+If an active work item has no actionable delivery:
+
+- show “Waiting for proof approval” when proof-pending deliveries remain;
+- show “Waiting for dispatcher” when unresolved issues remain; or
+- show the existing terminal summary when every delivery is resolved.
+
+These waiting states have no rider state-changing primary action.
 
 ### 4. Process the current delivery
 
@@ -245,6 +263,8 @@ Photo or notes are requested only when required. The affected delivery moves to 
 ## Mobile-First Wireframe Description
 
 Reference mockup: `.superpowers/mockups/my-deliveries-mobile.svg`
+
+The mockup represents the target experience. Its I’ve arrived control belongs to Phase 2 and must not appear in the Phase 1 implementation.
 
 ### Header
 
@@ -409,6 +429,7 @@ Unknown states must render as “Status unavailable” with View details rather 
 - Upcoming: delivery date ascending, Morning before Afternoon, accepted/assigned time ascending, then ID ascending.
 - Issues: latest attempt time descending, then delivery ID descending.
 - History: terminal timestamp descending, falling back to `updated_at`, then ID descending.
+- All: Current, Needs response, Upcoming, unresolved non-current work, then History; apply the corresponding group tie-breaker within each rank.
 
 These rules prevent refreshed data with equal dates from changing order unexpectedly.
 
@@ -520,7 +541,7 @@ Each phase requires its own implementation plan and verification. Completing Pha
 
 1. The rider sees at most one Current Delivery.
 2. The Current Delivery may represent a batch or standalone assignment.
-3. Inside the Current Delivery execution area, exactly one state-changing primary action is shown for the current delivery. A separate pending-offer region may show Accept and Decline without changing which delivery is current.
+3. Inside the Current Delivery execution area, at most one state-changing primary action is shown. Waiting states may show none. Open directions may appear as a non-state-changing navigation action, and the separate pending-offer region may show Accept and Decline without changing which delivery is current.
 4. Only delivered stops count toward completed progress.
 5. Current work and pending offers remain visible regardless of list filters.
 6. Upcoming, History, Issues, and All lists support Retail/Repair filtering.
