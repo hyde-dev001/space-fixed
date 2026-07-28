@@ -3,12 +3,12 @@
 namespace App\Http\Controllers\Logistics;
 
 use App\Http\Controllers\Controller;
+use App\Models\Logistics\DeliveryAssignment;
+use App\Models\Logistics\DeliveryBatch;
+use App\Models\Logistics\LogisticsSetting;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
-use App\Models\Logistics\LogisticsSetting;
-use App\Models\Logistics\DeliveryBatch;
 use App\Models\Logistics\ShipmentLeg;
-use App\Models\Logistics\DeliveryAssignment;
 use App\Models\Order;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
@@ -16,7 +16,11 @@ use App\Models\User;
 use App\Services\Logistics\RiderProfileSyncService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -146,72 +150,442 @@ class ErpLogisticsController extends Controller
         if (! $user || ! $user->shop_owner_id || ! $user->can('operate-logistics-deliveries')) {
             abort(403);
         }
+
         $shopOwnerId = (int) $user->shop_owner_id;
         $search = trim((string) ($request->validate([
             'search' => ['nullable', 'string', 'max:100'],
         ])['search'] ?? ''));
-        $status = in_array($request->query('status'), ['assigned', 'picked_up', 'in_transit', 'delivery_attempted', 'awaiting_proof_approval', 'delivered', 'cancelled'], true)
-            ? $request->query('status')
+        $tab = in_array($request->query('tab'), ['upcoming', 'history', 'issues', 'all'], true)
+            ? $request->query('tab')
+            : 'upcoming';
+        $business = in_array($request->query('business'), ['all', 'retail', 'repair'], true)
+            ? $request->query('business')
             : 'all';
-        $window = in_array($request->query('window'), ['today', 'week'], true) ? $request->query('window') : 'all';
+        $window = in_array($request->query('window'), ['today', 'week'], true)
+            ? $request->query('window')
+            : 'all';
         $shopTimezone = config('app.shop_timezone', 'Asia/Manila');
-        $databaseTimezone = config('database.connections.'.config('database.default').'.timezone', config('app.timezone', 'UTC'));
         $dates = match ($window) {
             'today' => [now($shopTimezone)->startOfDay(), now($shopTimezone)->endOfDay()],
             'week' => [now($shopTimezone)->startOfWeek(), now($shopTimezone)->endOfWeek()],
             default => null,
         };
-        $assignmentMatches = function ($assignments) use ($user, $dates, $databaseTimezone) {
-            $assignments->whereIn('status', ['assigned', 'accepted'])
-                ->whereHas('riderProfile', fn ($riders) => $riders
-                    ->where('linked_type', User::class)
-                    ->where('linked_id', $user->id))
-                ->when($dates, fn ($query) => $query->whereBetween('assigned_at', [
-                    $dates[0]->setTimezone($databaseTimezone),
-                    $dates[1]->setTimezone($databaseTimezone),
-                ]));
+
+        $rider = RiderProfile::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where('linked_type', User::class)
+            ->where('linked_id', $user->id)
+            ->firstOrFail();
+
+        $batches = DeliveryBatch::query()
+            ->with([
+                'legs.shipment',
+                'legs.proofs',
+                'legs.assignments' => fn ($query) => $query->where('rider_profile_id', $rider->id),
+                'legs.attempts' => fn ($query) => $query
+                    ->where('attempt_type', 'delivery')
+                    ->where('status', 'failed')
+                    ->latest('attempted_at')
+                    ->latest('id'),
+            ])
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where(function ($query) use ($rider) {
+                $query->where('rider_profile_id', $rider->id)
+                    ->orWhereHas('legs.assignments', fn ($assignments) => $assignments
+                        ->where('rider_profile_id', $rider->id)
+                        ->where('status', 'rejected'));
+            })
+            ->get();
+
+        $standalone = ShipmentLeg::query()
+            ->with([
+                'shipment',
+                'proofs',
+                'assignments.riderProfile',
+                'latestAssignment.riderProfile',
+                'attempts' => fn ($query) => $query
+                    ->where('attempt_type', 'delivery')
+                    ->where('status', 'failed')
+                    ->latest('attempted_at')
+                    ->latest('id'),
+            ])
+            ->whereNull('delivery_batch_id')
+            ->whereHas('shipment', fn ($query) => $query->where('shop_owner_id', $shopOwnerId))
+            ->whereHas('assignments', fn ($query) => $query->where('rider_profile_id', $rider->id))
+            ->get();
+
+        $workItems = $batches
+            ->map(fn (DeliveryBatch $batch) => $this->batchWorkItem($batch, $rider))
+            ->concat($standalone->map(fn (ShipmentLeg $leg) => $this->standaloneWorkItem($leg, $rider)))
+            ->filter()
+            ->values();
+
+        $currentCandidates = $workItems->where('group', 'current')
+            ->sortBy(fn (array $item) => [
+                $item['started_at'] ?? '9999-12-31',
+                $item['kind'],
+                $item['id'],
+            ])
+            ->values();
+        $current = $currentCandidates->first();
+        $activeConflicts = $currentCandidates->slice(1)->map(function (array $item) {
+            $item['group'] = 'conflict';
+
+            return $item;
+        })->values();
+        $conflictKeys = $activeConflicts->pluck('key')->all();
+        $workItems = $workItems->map(function (array $item) use ($conflictKeys) {
+            if (in_array($item['key'], $conflictKeys, true)) {
+                $item['group'] = 'conflict';
+            }
+
+            return $item;
+        });
+
+        $offers = $workItems->where('group', 'offer')
+            ->sortBy(fn (array $item) => [
+                $item['response_deadline'] ?? '9999-12-31',
+                $item['offered_at'] ?? '9999-12-31',
+                $item['key'],
+            ])
+            ->values();
+        $upcoming = $workItems->where('group', 'upcoming')
+            ->sortBy(fn (array $item) => [
+                $item['delivery_date'] ?? '9999-12-31',
+                $item['delivery_window'] === 'morning' ? 0 : 1,
+                $item['assignment_at'] ?? '9999-12-31',
+                $item['key'],
+            ])
+            ->values();
+        $upNext = $upcoming->first();
+
+        $issues = $this->issueItems($batches, $standalone, $rider);
+        $source = match ($tab) {
+            'upcoming' => $workItems->where('group', 'upcoming')
+                ->reject(fn (array $item) => $item['key'] === ($upNext['key'] ?? null)),
+            'history' => $workItems->where('group', 'history'),
+            'issues' => $issues,
+            'all' => $workItems,
         };
-        $legMatches = function ($legs) use ($assignmentMatches, $status) {
-            $legs->when($status !== 'all', fn ($query) => $query->where('status', $status))
-                ->whereDoesntHave('deliveryBatch', fn ($query) => $query->where('status', 'offered'))
-                ->whereHas('assignments', $assignmentMatches);
-        };
+        $filtered = $source
+            ->when($business !== 'all', fn (Collection $items) => $items->filter(
+                fn (array $item) => in_array($business, $item['business_types'], true)
+            ))
+            ->when($dates, fn (Collection $items) => $items->filter(
+                fn (array $item) => filled($item['delivery_date'])
+                    && Carbon::parse($item['delivery_date'], $shopTimezone)
+                        ->betweenIncluded($dates[0], $dates[1])
+            ))
+            ->when($search !== '', function (Collection $items) use ($search) {
+                $needle = Str::lower($search);
+
+                return $items->filter(
+                    fn (array $item) => str_contains(Str::lower($item['search_text']), $needle)
+                )->map(function (array $item) use ($needle) {
+                    if ($item['item_type'] === 'work') {
+                        $match = collect($item['deliveries'])->first(
+                            fn (array $leg) => Str::lower((string) $leg['id']) === $needle
+                                || Str::lower("delivery {$leg['id']}") === $needle
+                        );
+                        $item['matched_delivery_id'] = $match['id'] ?? null;
+                    }
+
+                    return $item;
+                });
+            });
+        $filtered = $this->sortDeliveryItems($filtered, $tab)
+            ->map(fn (array $item) => $this->visibleDeliveryItem($item))
+            ->values();
 
         return Inertia::render('ERP/Logistics/MyDeliveries', [
-            'shipments' => tap(Shipment::query()
-                ->where('shop_owner_id', $shopOwnerId)
-                ->when($search !== '', fn ($query) => $this->filterShipmentsBySearch($query, $search, $shopOwnerId))
-                ->whereHas('legs', $legMatches)
-                ->with(['legs' => function ($query) use ($legMatches) {
-                    $legMatches($query);
-                    $query->with(['assignments.riderProfile', 'proofs', 'attempts' => fn ($attempts) => $attempts
-                        ->where('attempt_type', 'delivery')
-                        ->where('status', 'failed')
-                        ->latest('attempted_at')
-                        ->latest('id')
-                        ->limit(1)]);
-                }])
-                ->latest()->paginate(10)->withQueryString(), fn ($shipments) => $this->attachShipmentSummaries(
-                    $shipments->getCollection(),
-                    $shopOwnerId,
-                )),
-            'filters' => [
-                'status' => $status,
-                'window' => $window,
-                ...($search !== '' ? ['search' => $search] : []),
+            'deliveryData' => [
+                'offers' => $offers->map(fn (array $item) => $this->visibleDeliveryItem($item)),
+                'current' => $current ? $this->visibleDeliveryItem($current) : null,
+                'active_conflicts' => $activeConflicts->map(fn (array $item) => $this->visibleDeliveryItem($item)),
+                'has_active_conflict' => $activeConflicts->isNotEmpty(),
+                'up_next' => $upNext ? $this->visibleDeliveryItem($upNext) : null,
+                'list' => $this->paginateDeliveryItems($filtered, $request),
+                'filters' => compact('tab', 'business', 'window', 'search'),
             ],
-            'canAssign' => false,
-            'canUpdateStatus' => $user->can('update-logistics-status'),
             'canRecordProof' => $user->can('record-logistics-proof'),
-            'canApproveProof' => false,
-            'riderMode' => true,
-            'today' => now($shopTimezone)->toDateString(),
-            'assignableRiders' => [],
-            'batches' => DeliveryBatch::query()->with(['legs.proofs', 'riderProfile'])
-                ->where('shop_owner_id', $shopOwnerId)
-                ->whereHas('riderProfile', fn ($query) => $query->where('linked_type', User::class)->where('linked_id', $user->id))
-                ->whereIn('status', ['offered', 'accepted', 'in_progress'])->orderBy('delivery_date')->get(),
+            'maxDeliveryAttempts' => (int) LogisticsSetting::firstOrCreate([
+                'shop_owner_id' => $shopOwnerId,
+            ])->max_delivery_attempts,
         ]);
+    }
+
+    private function batchWorkItem(DeliveryBatch $batch, RiderProfile $rider): ?array
+    {
+        $rejected = $batch->legs
+            ->flatMap->assignments
+            ->where('rider_profile_id', $rider->id)
+            ->where('status', 'rejected')
+            ->sortByDesc('id')
+            ->first();
+        $isCurrentRider = (int) $batch->rider_profile_id === $rider->id;
+        $group = $isCurrentRider ? match ($batch->status) {
+            'offered' => 'offer',
+            'accepted' => 'upcoming',
+            'in_progress' => 'current',
+            'completed', 'cancelled' => 'history',
+            default => null,
+        } : ($rejected ? 'history' : null);
+
+        if (! $group) {
+            return null;
+        }
+
+        $status = $isCurrentRider ? $batch->status : 'declined';
+        $deliveries = $batch->legs->map(fn (ShipmentLeg $leg) => $this->deliveryPayload($leg))->values();
+        $businessTypes = $this->businessTypes($batch->legs->pluck('shipment.purpose'));
+
+        return [
+            'item_type' => 'work',
+            'key' => "batch:{$batch->id}",
+            'kind' => 'batch',
+            'id' => $batch->id,
+            'status' => $status,
+            'group' => $group,
+            'business_types' => $businessTypes,
+            'business_label' => $this->businessLabel($businessTypes, $batch->legs->first()?->shipment?->purpose),
+            'delivery_date' => $batch->delivery_date?->toDateString(),
+            'delivery_window' => $batch->delivery_window,
+            'started_at' => $batch->started_at?->toISOString(),
+            'offered_at' => $batch->offered_at?->toISOString(),
+            'response_deadline' => null,
+            'assignment_at' => $batch->accepted_at?->toISOString() ?? $batch->offered_at?->toISOString(),
+            'terminal_at' => $batch->completed_at?->toISOString()
+                ?? $batch->cancelled_at?->toISOString()
+                ?? $batch->rejected_at?->toISOString()
+                ?? $rejected?->rejected_at?->toISOString(),
+            'updated_at' => $batch->updated_at?->toISOString(),
+            'matched_delivery_id' => null,
+            'deliveries' => $deliveries->all(),
+            'search_text' => $this->workSearchText("batch {$batch->id}", $deliveries),
+        ];
+    }
+
+    private function standaloneWorkItem(ShipmentLeg $leg, RiderProfile $rider): ?array
+    {
+        $riderAssignment = $leg->assignments
+            ->where('rider_profile_id', $rider->id)
+            ->sortByDesc('id')
+            ->first();
+        if (! $riderAssignment) {
+            return null;
+        }
+
+        $latestAssignment = $leg->latestAssignment;
+        $isCurrentRider = $latestAssignment?->is($riderAssignment)
+            && (int) $latestAssignment->rider_profile_id === $rider->id
+            && in_array($latestAssignment->status, ['assigned', 'accepted'], true);
+        $legStatus = $leg->status->value;
+
+        if (! $isCurrentRider) {
+            $group = 'history';
+            $status = $latestAssignment?->isNot($riderAssignment)
+                ? 'reassigned'
+                : match ($riderAssignment->status) {
+                    'rejected' => 'declined',
+                    'cancelled' => 'cancelled',
+                    default => $legStatus,
+                };
+        } else {
+            $group = match ($legStatus) {
+                'assigned', 'pickup_scheduled' => 'upcoming',
+                'picked_up', 'in_transit', 'delivery_attempted', 'awaiting_proof_approval' => 'current',
+                'delivered', 'cancelled' => 'history',
+                default => null,
+            };
+            $status = $legStatus;
+        }
+
+        if (! $group) {
+            return null;
+        }
+
+        $purpose = $leg->shipment?->purpose;
+        $businessTypes = $this->businessTypes([$purpose]);
+        $deliveries = collect([$this->deliveryPayload($leg)]);
+
+        return [
+            'item_type' => 'work',
+            'key' => "single:{$leg->id}",
+            'kind' => 'single',
+            'id' => $leg->id,
+            'status' => $status,
+            'group' => $group,
+            'business_types' => $businessTypes,
+            'business_label' => $this->businessLabel($businessTypes, $purpose),
+            'delivery_date' => $leg->scheduled_delivery_date?->toDateString(),
+            'delivery_window' => $leg->delivery_window,
+            'started_at' => $leg->out_for_delivery_at?->toISOString()
+                ?? $leg->picked_up_at?->toISOString()
+                ?? $latestAssignment?->accepted_at?->toISOString()
+                ?? $latestAssignment?->assigned_at?->toISOString(),
+            'offered_at' => null,
+            'response_deadline' => null,
+            'assignment_at' => $latestAssignment?->accepted_at?->toISOString()
+                ?? $latestAssignment?->assigned_at?->toISOString(),
+            'terminal_at' => $leg->delivered_at?->toISOString()
+                ?? $leg->failed_at?->toISOString()
+                ?? $riderAssignment->completed_at?->toISOString()
+                ?? $riderAssignment->cancelled_at?->toISOString()
+                ?? $riderAssignment->rejected_at?->toISOString(),
+            'updated_at' => $leg->updated_at?->toISOString(),
+            'matched_delivery_id' => null,
+            'deliveries' => $deliveries->all(),
+            'search_text' => $this->workSearchText("single {$leg->id}", $deliveries),
+        ];
+    }
+
+    private function issueItems(Collection $batches, Collection $standalone, RiderProfile $rider): Collection
+    {
+        $batchLegs = $batches->flatMap(function (DeliveryBatch $batch) {
+            return $batch->legs->map(fn (ShipmentLeg $leg) => [$leg, "batch:{$batch->id}"]);
+        });
+        $standaloneLegs = $standalone->map(fn (ShipmentLeg $leg) => [$leg, "single:{$leg->id}"]);
+
+        return $batchLegs->concat($standaloneLegs)
+            ->map(function (array $record) use ($rider) {
+                [$leg, $parentKey] = $record;
+                if ($leg->status->value !== 'delivery_attempted' || filled($leg->resolution_type)) {
+                    return null;
+                }
+
+                $assignment = $leg->assignments
+                    ->where('rider_profile_id', $rider->id)
+                    ->sortByDesc('id')
+                    ->first();
+                $attempt = $leg->attempts->first();
+                if (! $assignment || ! $attempt || (int) $attempt->delivery_assignment_id !== $assignment->id) {
+                    return null;
+                }
+
+                $businessTypes = $this->businessTypes([$leg->shipment?->purpose]);
+                $deliveries = collect([$this->deliveryPayload($leg)]);
+
+                return [
+                    'item_type' => 'issue',
+                    'key' => "issue:{$attempt->id}",
+                    'id' => $attempt->id,
+                    'delivery_id' => $leg->id,
+                    'parent_key' => $parentKey,
+                    'business_types' => $businessTypes,
+                    'reason' => $attempt->reason_code,
+                    'attempted_at' => $attempt->attempted_at?->toISOString(),
+                    'delivery_date' => $leg->scheduled_delivery_date?->toDateString(),
+                    'search_text' => $this->workSearchText(
+                        "{$parentKey} issue {$attempt->reason_code}",
+                        $deliveries,
+                    ),
+                ];
+            })
+            ->filter()
+            ->values();
+    }
+
+    private function deliveryPayload(ShipmentLeg $leg): array
+    {
+        $payload = $leg->toArray();
+        $payload['status'] = $leg->status->value;
+        $payload['failed_attempt_count'] = $leg->attempts->count();
+
+        return $payload;
+    }
+
+    private function businessTypes(iterable $purposes): array
+    {
+        return collect($purposes)
+            ->map(fn (?string $purpose) => match ($purpose) {
+                'repair_pickup', 'repair_return' => 'repair',
+                'retail_delivery', 'refund_return' => 'retail',
+                default => null,
+            })
+            ->filter()
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
+    }
+
+    private function businessLabel(array $businessTypes, ?string $purpose): string
+    {
+        if (count($businessTypes) > 1) {
+            return 'Mixed';
+        }
+
+        return match ($purpose) {
+            'repair_pickup' => 'Repair pickup',
+            'repair_return' => 'Repair return',
+            'refund_return' => 'Retail return',
+            default => 'Retail delivery',
+        };
+    }
+
+    private function workSearchText(string $prefix, Collection $deliveries): string
+    {
+        $details = $deliveries->flatMap(function (array $leg) {
+            $destination = $leg['destination_snapshot'] ?? [];
+            $shipment = $leg['shipment'] ?? [];
+
+            return [
+                $leg['id'] ?? null,
+                $shipment['id'] ?? null,
+                $shipment['purpose'] ?? null,
+                $destination['name'] ?? null,
+                $destination['phone'] ?? null,
+                $destination['address'] ?? null,
+            ];
+        });
+
+        return collect([$prefix])->concat($details)->filter()->implode(' ');
+    }
+
+    private function sortDeliveryItems(Collection $items, string $tab): Collection
+    {
+        return match ($tab) {
+            'upcoming' => $items->sortBy(fn (array $item) => [
+                $item['delivery_date'] ?? '9999-12-31',
+                $item['delivery_window'] === 'morning' ? 0 : 1,
+                $item['assignment_at'] ?? '9999-12-31',
+                $item['key'],
+            ]),
+            'history' => $items->sortByDesc(fn (array $item) => [
+                $item['terminal_at'] ?? '',
+                $item['updated_at'] ?? '',
+                $item['key'],
+            ]),
+            'issues' => $items->sortByDesc(fn (array $item) => [
+                $item['attempted_at'] ?? '',
+                $item['delivery_id'],
+            ]),
+            'all' => $items->sortBy(fn (array $item) => [
+                ['current' => 0, 'offer' => 1, 'upcoming' => 2, 'conflict' => 3, 'history' => 4][$item['group']],
+                $item['delivery_date'] ?? $item['started_at'] ?? $item['terminal_at'] ?? '9999-12-31',
+                $item['key'],
+            ]),
+        };
+    }
+
+    private function visibleDeliveryItem(array $item): array
+    {
+        unset($item['search_text'], $item['assignment_at'], $item['updated_at']);
+
+        return $item;
+    }
+
+    private function paginateDeliveryItems(Collection $items, Request $request): LengthAwarePaginator
+    {
+        $page = max(1, $request->integer('page', 1));
+
+        return new LengthAwarePaginator(
+            $items->forPage($page, 10)->values(),
+            $items->count(),
+            10,
+            $page,
+            ['path' => $request->url(), 'query' => $request->query()],
+        );
     }
 
     public function riders(Request $request): Response

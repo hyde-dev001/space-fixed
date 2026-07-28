@@ -205,6 +205,11 @@ class LogisticsPageAccessTest extends TestCase
         $shop = ShopOwner::factory()->create();
         $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
         $rider->assignRole('Logistics Rider');
+        RiderProfile::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'linked_type' => User::class,
+            'linked_id' => $rider->id,
+        ]);
 
         $this->assertTrue($rider->fresh()->can('view-logistics-shipments'));
         $this->assertTrue($rider->fresh()->can('access-logistics-dashboard'));
@@ -256,14 +261,14 @@ class LogisticsPageAccessTest extends TestCase
             'source_type' => 'order',
             'source_id' => $assignedOrder->id,
         ]);
-        $assignedLeg = ShipmentLeg::factory()->create(['shipment_id' => $assignedShipment->id]);
+        $assignedLeg = ShipmentLeg::factory()->create(['shipment_id' => $assignedShipment->id, 'status' => 'assigned']);
         DeliveryAssignment::factory()->create([
             'shipment_leg_id' => $assignedLeg->id,
             'rider_profile_id' => $riderProfile->id,
         ]);
 
         $otherShipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
-        $otherLeg = ShipmentLeg::factory()->create(['shipment_id' => $otherShipment->id]);
+        $otherLeg = ShipmentLeg::factory()->create(['shipment_id' => $otherShipment->id, 'status' => 'assigned']);
         DeliveryAssignment::factory()->create([
             'shipment_leg_id' => $otherLeg->id,
             'rider_profile_id' => $otherProfile->id,
@@ -273,15 +278,9 @@ class LogisticsPageAccessTest extends TestCase
             ->get('/erp/logistics/deliveries')
             ->assertOk();
 
-        $shipmentIds = collect($response->viewData('page')['props']['shipments']['data'])
-            ->pluck('id')
-            ->all();
-
-        $this->assertSame([$assignedShipment->id], $shipmentIds);
-        $this->assertSame(
-            'ORD-RIDER-001',
-            $response->viewData('page')['props']['shipments']['data'][0]['order_summary']['order_number'],
-        );
+        $deliveryData = $response->viewData('page')['props']['deliveryData'];
+        $this->assertSame("single:{$assignedLeg->id}", $deliveryData['up_next']['key']);
+        $this->assertNotSame("single:{$otherLeg->id}", $deliveryData['up_next']['key']);
     }
 
     public function test_offered_batch_stays_out_of_delivery_table_until_rider_accepts(): void
@@ -297,16 +296,19 @@ class LogisticsPageAccessTest extends TestCase
         $assignment = DeliveryAssignment::factory()->create(['shipment_leg_id' => $leg->id, 'rider_profile_id' => $profile->id, 'status' => 'assigned']);
 
         $response = $this->actingAs($rider->fresh(), 'user')->get('/erp/logistics/deliveries')->assertOk();
-        $this->assertEmpty($response->viewData('page')['props']['shipments']['data']);
-        $this->assertSame([$batch->id], collect($response->viewData('page')['props']['batches'])->pluck('id')->all());
+        $deliveryData = $response->viewData('page')['props']['deliveryData'];
+        $this->assertSame(["batch:{$batch->id}"], collect($deliveryData['offers'])->pluck('key')->all());
+        $this->assertNull($deliveryData['up_next']);
 
         $batch->update(['status' => 'accepted']);
         $assignment->update(['status' => 'accepted']);
         $response = $this->actingAs($rider->fresh(), 'user')->get('/erp/logistics/deliveries')->assertOk();
-        $this->assertSame([$shipment->id], collect($response->viewData('page')['props']['shipments']['data'])->pluck('id')->all());
+        $deliveryData = $response->viewData('page')['props']['deliveryData'];
+        $this->assertEmpty($deliveryData['offers']);
+        $this->assertSame("batch:{$batch->id}", $deliveryData['up_next']['key']);
     }
 
-    public function test_logistics_rider_filters_to_their_matching_leg_status_and_today_assignment(): void
+    public function test_logistics_rider_today_filter_applies_to_the_lower_list(): void
     {
         $this->seed(RolesAndPermissionsSeeder::class);
         Carbon::setTestNow('2026-07-15 01:00:00 UTC');
@@ -320,18 +322,37 @@ class LogisticsPageAccessTest extends TestCase
             $riderProfile = RiderProfile::factory()->create(['shop_owner_id' => $shop->id, 'linked_type' => User::class, 'linked_id' => $rider->id]);
             $otherProfile = RiderProfile::factory()->create(['shop_owner_id' => $shop->id, 'linked_type' => User::class, 'linked_id' => $otherRider->id]);
 
-            $wanted = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
-            $wantedLeg = ShipmentLeg::factory()->create(['shipment_id' => $wanted->id, 'status' => 'in_transit']);
-            DeliveryAssignment::factory()->create(['shipment_leg_id' => $wantedLeg->id, 'rider_profile_id' => $riderProfile->id, 'assigned_at' => '2026-07-15 00:30:00 UTC']);
-            $siblingLeg = ShipmentLeg::factory()->create(['shipment_id' => $wanted->id, 'status' => 'picked_up']);
-            DeliveryAssignment::factory()->create(['shipment_leg_id' => $siblingLeg->id, 'rider_profile_id' => $riderProfile->id, 'assigned_at' => '2026-07-15 00:30:00 UTC']);
+            $firstToday = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+            $firstTodayLeg = ShipmentLeg::factory()->create([
+                'shipment_id' => $firstToday->id,
+                'status' => 'assigned',
+                'scheduled_delivery_date' => '2026-07-15',
+                'delivery_window' => 'morning',
+            ]);
+            DeliveryAssignment::factory()->create(['shipment_leg_id' => $firstTodayLeg->id, 'rider_profile_id' => $riderProfile->id, 'assigned_at' => '2026-07-15 00:30:00 UTC']);
+            $secondToday = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+            $secondTodayLeg = ShipmentLeg::factory()->create([
+                'shipment_id' => $secondToday->id,
+                'status' => 'assigned',
+                'scheduled_delivery_date' => '2026-07-15',
+                'delivery_window' => 'afternoon',
+            ]);
+            DeliveryAssignment::factory()->create(['shipment_leg_id' => $secondTodayLeg->id, 'rider_profile_id' => $riderProfile->id, 'assigned_at' => '2026-07-15 00:30:00 UTC']);
 
-            $wrongStatus = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
-            $wrongStatusLeg = ShipmentLeg::factory()->create(['shipment_id' => $wrongStatus->id, 'status' => 'picked_up']);
-            DeliveryAssignment::factory()->create(['shipment_leg_id' => $wrongStatusLeg->id, 'rider_profile_id' => $riderProfile->id, 'assigned_at' => '2026-07-15 00:30:00 UTC']);
+            $outside = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+            $outsideLeg = ShipmentLeg::factory()->create([
+                'shipment_id' => $outside->id,
+                'status' => 'assigned',
+                'scheduled_delivery_date' => '2026-07-16',
+            ]);
+            DeliveryAssignment::factory()->create(['shipment_leg_id' => $outsideLeg->id, 'rider_profile_id' => $riderProfile->id, 'assigned_at' => '2026-07-15 00:30:00 UTC']);
 
             $otherRiderShipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
-            $otherRiderLeg = ShipmentLeg::factory()->create(['shipment_id' => $otherRiderShipment->id, 'status' => 'in_transit']);
+            $otherRiderLeg = ShipmentLeg::factory()->create([
+                'shipment_id' => $otherRiderShipment->id,
+                'status' => 'assigned',
+                'scheduled_delivery_date' => '2026-07-15',
+            ]);
             DeliveryAssignment::factory()->create(['shipment_leg_id' => $otherRiderLeg->id, 'rider_profile_id' => $otherProfile->id, 'assigned_at' => '2026-07-15 00:30:00 UTC']);
 
             $excludedStatus = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
@@ -339,26 +360,16 @@ class LogisticsPageAccessTest extends TestCase
             DeliveryAssignment::factory()->create(['shipment_leg_id' => $excludedLeg->id, 'rider_profile_id' => $riderProfile->id, 'assigned_at' => '2026-07-15 00:30:00 UTC']);
 
             $response = $this->actingAs($rider->fresh(), 'user')
-                ->get('/erp/logistics/deliveries?status=in_transit&window=today')
+                ->get('/erp/logistics/deliveries?window=today')
                 ->assertOk();
 
-            $shipments = $response->viewData('page')['props']['shipments']['data'];
-            $this->assertSame([$wanted->id], collect($shipments)->pluck('id')->all());
-            $this->assertSame([$wantedLeg->id], collect($shipments[0]['legs'])->pluck('id')->all());
-            $this->assertSame(['status' => 'in_transit', 'window' => 'today'], $response->viewData('page')['props']['filters']);
-            $this->assertSame('2026-07-15', $response->viewData('page')['props']['today']);
-
-            foreach (['pending', 'not-a-status'] as $status) {
-                $response = $this->actingAs($rider->fresh(), 'user')
-                    ->get("/erp/logistics/deliveries?status={$status}&window=today")
-                    ->assertOk();
-
-                $this->assertEqualsCanonicalizing(
-                    [$wanted->id, $wrongStatus->id, $excludedStatus->id],
-                    collect($response->viewData('page')['props']['shipments']['data'])->pluck('id')->all(),
-                );
-                $this->assertSame('all', $response->viewData('page')['props']['filters']['status']);
-            }
+            $deliveryData = $response->viewData('page')['props']['deliveryData'];
+            $this->assertSame("single:{$firstTodayLeg->id}", $deliveryData['up_next']['key']);
+            $this->assertSame(["single:{$secondTodayLeg->id}"], collect($deliveryData['list']['data'])->pluck('key')->all());
+            $this->assertSame('today', $deliveryData['filters']['window']);
+            $this->assertNotContains("single:{$outsideLeg->id}", collect($deliveryData['list']['data'])->pluck('key')->all());
+            $this->assertNotContains("single:{$otherRiderLeg->id}", collect($deliveryData['list']['data'])->pluck('key')->all());
+            $this->assertNotContains("single:{$excludedLeg->id}", collect($deliveryData['list']['data'])->pluck('key')->all());
         } finally {
             Carbon::setTestNow();
         }
@@ -377,22 +388,25 @@ class LogisticsPageAccessTest extends TestCase
             $profile = RiderProfile::factory()->create(['shop_owner_id' => $shop->id, 'linked_type' => User::class, 'linked_id' => $rider->id]);
 
             $monday = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
-            $mondayLeg = ShipmentLeg::factory()->create(['shipment_id' => $monday->id, 'status' => 'in_transit']);
+            $mondayLeg = ShipmentLeg::factory()->create(['shipment_id' => $monday->id, 'status' => 'assigned', 'scheduled_delivery_date' => '2026-07-13']);
             DeliveryAssignment::factory()->create(['shipment_leg_id' => $mondayLeg->id, 'rider_profile_id' => $profile->id, 'assigned_at' => '2026-07-12 16:00:00 UTC']);
 
             $sunday = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
-            $sundayLeg = ShipmentLeg::factory()->create(['shipment_id' => $sunday->id, 'status' => 'in_transit']);
+            $sundayLeg = ShipmentLeg::factory()->create(['shipment_id' => $sunday->id, 'status' => 'assigned', 'scheduled_delivery_date' => '2026-07-19']);
             DeliveryAssignment::factory()->create(['shipment_leg_id' => $sundayLeg->id, 'rider_profile_id' => $profile->id, 'assigned_at' => '2026-07-19 15:59:59 UTC']);
 
             $outside = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
-            $outsideLeg = ShipmentLeg::factory()->create(['shipment_id' => $outside->id, 'status' => 'in_transit']);
+            $outsideLeg = ShipmentLeg::factory()->create(['shipment_id' => $outside->id, 'status' => 'assigned', 'scheduled_delivery_date' => '2026-07-20']);
             DeliveryAssignment::factory()->create(['shipment_leg_id' => $outsideLeg->id, 'rider_profile_id' => $profile->id, 'assigned_at' => '2026-07-19 16:00:00 UTC']);
 
             $response = $this->actingAs($rider->fresh(), 'user')
-                ->get('/erp/logistics/deliveries?window=week')
+                ->get('/erp/logistics/deliveries?tab=all&window=week')
                 ->assertOk();
 
-            $this->assertEqualsCanonicalizing([$monday->id, $sunday->id], collect($response->viewData('page')['props']['shipments']['data'])->pluck('id')->all());
+            $this->assertEqualsCanonicalizing(
+                ["single:{$mondayLeg->id}", "single:{$sundayLeg->id}"],
+                collect($response->viewData('page')['props']['deliveryData']['list']['data'])->pluck('key')->all(),
+            );
         } finally {
             Carbon::setTestNow();
         }
