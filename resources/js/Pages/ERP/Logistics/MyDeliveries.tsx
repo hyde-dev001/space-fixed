@@ -7,9 +7,10 @@ import type {
   RiderDeliveryWorkItem,
   TrackingShipmentLeg,
 } from '@/types/logistics';
+import { workflowFeedback } from '@/utils/workflowFeedback';
 import { Head, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import {
   completedProgress,
   deliveryContact,
@@ -18,7 +19,12 @@ import {
   orderedDeliveries,
 } from './riderDeliveryPresentation';
 
-type ActionRunner = (key: string, action: () => Promise<unknown>) => void;
+type ActionConfirmation = Parameters<typeof workflowFeedback.confirm>[0];
+type ActionRunner = (
+  key: string,
+  action: () => Promise<unknown>,
+  confirmation?: ActionConfirmation,
+) => void;
 
 const tabLabels: Record<RiderDeliveryTab, string> = {
   upcoming: 'Upcoming',
@@ -161,7 +167,7 @@ function DeliveryActions({
   const [issueReason, setIssueReason] = useState('');
   const [issueNotes, setIssueNotes] = useState('');
   const [issueFile, setIssueFile] = useState<File | null>(null);
-  const mutationDisabled = locked || !online;
+  const mutationDisabled = locked || !online || pendingAction !== null;
   const buttonClass =
     'min-h-11 w-full rounded-xl bg-blue-600 px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50';
 
@@ -172,7 +178,13 @@ function DeliveryActions({
       <button
         type="button"
         disabled={mutationDisabled || pendingAction === key}
-        onClick={() => runAction(key, () => logisticsApi.startBatch(item.id))}
+        onClick={() =>
+          runAction(key, () => logisticsApi.startBatch(item.id), {
+            title: `Start batch #${item.id}?`,
+            text: 'This will begin the batch and make its first stop active.',
+            confirmButtonText: 'Start batch',
+          })
+        }
         className={buttonClass}
       >
         Start batch
@@ -181,6 +193,10 @@ function DeliveryActions({
   }
 
   if (!delivery) return null;
+  const deliveryReference =
+    item.kind === 'batch'
+      ? `stop ${delivery.stop_sequence ?? delivery.id} in batch #${item.id}`
+      : `delivery #${delivery.id}`;
 
   if (['assigned', 'pickup_scheduled'].includes(delivery.status)) {
     const key = `pickup:${delivery.id}`;
@@ -199,6 +215,11 @@ function DeliveryActions({
               pickupProof
                 ? logisticsApi.confirmPickup(delivery.id, pickupProof.id)
                 : logisticsApi.markPickedUp(delivery.id),
+            {
+              title: `Confirm pickup for ${deliveryReference}?`,
+              text: 'This confirms that the parcel is now in your custody.',
+              confirmButtonText: 'Confirm pickup',
+            },
           )
         }
         className={buttonClass}
@@ -222,6 +243,11 @@ function DeliveryActions({
               item.kind === 'batch'
                 ? logisticsApi.outForDelivery(delivery.id)
                 : logisticsApi.markInTransit(delivery.id),
+            {
+              title: `Start ${deliveryReference}?`,
+              text: 'This marks the parcel as on the way to its destination.',
+              confirmButtonText: 'Start delivery',
+            },
           )
         }
         className={buttonClass}
@@ -245,10 +271,17 @@ function DeliveryActions({
     form.append('handoff_type', 'delivery');
     form.append('proof_type', 'photo');
     form.append('proof_file', proofFile);
-    runAction(proofKey, () =>
-      axios.post(`/api/logistics/legs/${delivery.id}/proof`, form, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      }),
+    runAction(
+      proofKey,
+      () =>
+        axios.post(`/api/logistics/legs/${delivery.id}/proof`, form, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        }),
+      {
+        title: `Submit proof for ${deliveryReference}?`,
+        text: `${proofFile.name} will be attached to this delivery.`,
+        confirmButtonText: 'Submit proof',
+      },
     );
   };
 
@@ -259,10 +292,17 @@ function DeliveryActions({
     form.append('reason_code', issueReason);
     if (issueNotes.trim()) form.append('notes', issueNotes.trim());
     form.append('proof_file', issueFile);
-    runAction(issueKey, () =>
-      axios.post(`/api/logistics/legs/${delivery.id}/report-issue`, form, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      }),
+    runAction(
+      issueKey,
+      () =>
+        axios.post(`/api/logistics/legs/${delivery.id}/report-issue`, form, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        }),
+      {
+        title: `Submit issue for ${deliveryReference}?`,
+        text: 'This records a failed delivery attempt for dispatcher review.',
+        confirmButtonText: 'Submit issue',
+      },
     );
   };
 
@@ -439,6 +479,7 @@ function CurrentDeliveryCard({
               <DeliveryContact delivery={actionable} />
               <div className="mt-4">
                 <DeliveryActions
+                  key={actionable.id}
                   item={item}
                   delivery={actionable}
                   locked={locked}
@@ -515,6 +556,7 @@ function UpNextCard({
         </div>
         <div className="mt-4">
           <DeliveryActions
+            key={`${item.key}:${actionable?.id ?? 'none'}`}
             item={item}
             delivery={actionable}
             locked={locked}
@@ -572,8 +614,14 @@ function OfferCard({
       <div className="mt-4 grid grid-cols-2 gap-2">
         <button
           type="button"
-          disabled={!online || pendingAction === acceptKey}
-          onClick={() => runAction(acceptKey, () => logisticsApi.acceptBatch(item.id))}
+          disabled={!online || pendingAction !== null}
+          onClick={() =>
+            runAction(acceptKey, () => logisticsApi.acceptBatch(item.id), {
+              title: `Accept batch #${item.id}?`,
+              text: 'This assignment will be added to your delivery work.',
+              confirmButtonText: 'Accept batch',
+            })
+          }
           className="min-h-11 rounded-xl bg-blue-600 px-4 text-sm font-bold text-white disabled:opacity-50"
         >
           Accept batch
@@ -601,7 +649,7 @@ function OfferCard({
           </label>
           <button
             type="button"
-            disabled={!online || !reason.trim() || pendingAction === declineKey}
+            disabled={!online || !reason.trim() || pendingAction !== null}
             onClick={() =>
               runAction(declineKey, () => logisticsApi.rejectBatch(item.id, reason.trim()))
             }
@@ -841,6 +889,7 @@ export default function MyDeliveries() {
   const [showSequence, setShowSequence] = useState(false);
   const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const actionInFlight = useRef(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [lastSynced] = useState(() =>
     new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -858,20 +907,35 @@ export default function MyDeliveries() {
     };
   }, []);
 
-  const runAction: ActionRunner = (key, action) => {
-    if (!online) return;
+  const runAction: ActionRunner = (key, action, confirmation) => {
+    if (!online || actionInFlight.current) return;
+    actionInFlight.current = true;
     setPendingAction(key);
     setActionError(null);
-    void action()
-      .then(() => router.reload({ only: ['deliveryData'] }))
-      .catch((error: any) => {
+
+    const finish = () => {
+      actionInFlight.current = false;
+      setPendingAction(null);
+    };
+
+    void (async () => {
+      try {
+        if (confirmation && !(await workflowFeedback.confirm(confirmation)).isConfirmed) {
+          finish();
+          return;
+        }
+
+        await action();
+        router.reload({ only: ['deliveryData'], onFinish: finish });
+      } catch (error: any) {
         const errors = error.response?.data?.errors;
         setActionError(
           error.response?.data?.message ??
             (errors ? Object.values(errors).flat().join(' ') : 'Unable to update this delivery.'),
         );
-      })
-      .finally(() => setPendingAction(null));
+        finish();
+      }
+    })();
   };
 
   const navigate = (

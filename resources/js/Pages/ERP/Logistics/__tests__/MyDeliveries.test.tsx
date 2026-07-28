@@ -25,9 +25,10 @@ const mocks = vi.hoisted(() => ({
     canRecordProof: true,
     maxDeliveryAttempts: 2,
   },
-  reload: vi.fn(),
+  reload: vi.fn((options?: { onFinish?: () => void }) => options?.onFinish?.()),
   get: vi.fn(),
   post: vi.fn(() => Promise.resolve()),
+  confirm: vi.fn(() => Promise.resolve({ isConfirmed: true })),
   acceptBatch: vi.fn(() => Promise.resolve()),
   rejectBatch: vi.fn(() => Promise.resolve()),
   startBatch: vi.fn(() => Promise.resolve()),
@@ -46,6 +47,9 @@ vi.mock('@/layout/AppLayout_ERP', () => ({
   default: ({ children }: React.PropsWithChildren) => <main data-testid="erp-layout">{children}</main>,
 }));
 vi.mock('axios', () => ({ default: { post: mocks.post } }));
+vi.mock('@/utils/workflowFeedback', () => ({
+  workflowFeedback: { confirm: mocks.confirm },
+}));
 vi.mock('@/services/logisticsApi', () => ({ logisticsApi: {
   acceptBatch: mocks.acceptBatch,
   rejectBatch: mocks.rejectBatch,
@@ -231,6 +235,55 @@ describe('MyDeliveries task-first hierarchy', () => {
 });
 
 describe('MyDeliveries rider interactions', () => {
+  it('clears the selected proof when a batch advances to its next delivery', async () => {
+    const first = leg(5, 1, 'in_transit');
+    const second = leg(6, 2, 'in_transit');
+    mocks.props.deliveryData.current = workItem('batch', 'in_progress', [first, second]);
+    const view = render(<MyDeliveries />);
+    const proof = new File(['first proof'], 'first-proof.jpg', { type: 'image/jpeg' });
+
+    fireEvent.change(screen.getByLabelText('Delivery proof'), { target: { files: [proof] } });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit delivery proof' }));
+    await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
+      '/api/logistics/legs/5/proof',
+      expect.any(FormData),
+      expect.any(Object),
+    ));
+
+    mocks.post.mockClear();
+    mocks.props.deliveryData.current = workItem('batch', 'in_progress', [
+      { ...first, status: 'awaiting_proof_approval' },
+      second,
+    ]);
+    view.rerender(<MyDeliveries />);
+
+    expect(screen.getByRole('button', { name: 'Submit delivery proof' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Submit delivery proof' }));
+    expect(mocks.post).not.toHaveBeenCalled();
+  });
+
+  it('confirms once and sends one request during repeated pickup taps', async () => {
+    let confirmPickup: (result: { isConfirmed: boolean }) => void = () => undefined;
+    mocks.confirm.mockImplementationOnce(() => new Promise((resolve) => {
+      confirmPickup = resolve;
+    }));
+    mocks.props.deliveryData.up_next = workItem('single', 'assigned', [leg(9, null)], {
+      group: 'upcoming',
+    });
+    render(<MyDeliveries />);
+
+    const button = screen.getByRole('button', { name: 'Confirm pickup' });
+    fireEvent.click(button);
+    fireEvent.click(button);
+
+    expect(mocks.confirm).toHaveBeenCalledTimes(1);
+    expect(mocks.markPickedUp).not.toHaveBeenCalled();
+
+    confirmPickup({ isConfirmed: true });
+
+    await waitFor(() => expect(mocks.markPickedUp).toHaveBeenCalledTimes(1));
+  });
+
   it('accepts an offer and asks for a reason only after Decline is selected', async () => {
     mocks.props.deliveryData.offers = [
       workItem('batch', 'offered', [leg(1, 1)], { group: 'offer' }),
@@ -240,7 +293,7 @@ describe('MyDeliveries rider interactions', () => {
 
     expect(screen.queryByLabelText('Decline reason')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Accept batch' }));
-    expect(mocks.acceptBatch).toHaveBeenCalledWith(7);
+    await waitFor(() => expect(mocks.acceptBatch).toHaveBeenCalledWith(7));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Accept batch' })).toBeEnabled());
 
     fireEvent.click(screen.getByRole('button', { name: 'Decline batch' }));
@@ -259,7 +312,7 @@ describe('MyDeliveries rider interactions', () => {
     render(<MyDeliveries />);
     fireEvent.click(screen.getByRole('button', { name: 'Start batch' }));
 
-    expect(mocks.startBatch).toHaveBeenCalledWith(7);
+    await waitFor(() => expect(mocks.startBatch).toHaveBeenCalledWith(7));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Start batch' })).toBeEnabled());
   });
 
@@ -287,7 +340,7 @@ describe('MyDeliveries rider interactions', () => {
     const view = render(<MyDeliveries />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Confirm pickup' }));
-    expect(mocks.confirmPickup).toHaveBeenCalledWith(9, 44);
+    await waitFor(() => expect(mocks.confirmPickup).toHaveBeenCalledWith(9, 44));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Confirm pickup' })).toBeEnabled());
 
     mocks.props.deliveryData.up_next = workItem('single', 'assigned', [leg(10, null, 'assigned')], {
@@ -298,7 +351,7 @@ describe('MyDeliveries rider interactions', () => {
     view.rerender(<MyDeliveries />);
     fireEvent.click(screen.getByRole('button', { name: 'Confirm pickup' }));
 
-    expect(mocks.markPickedUp).toHaveBeenCalledWith(10);
+    await waitFor(() => expect(mocks.markPickedUp).toHaveBeenCalledWith(10));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Confirm pickup' })).toBeEnabled());
   });
 
@@ -307,14 +360,14 @@ describe('MyDeliveries rider interactions', () => {
     const view = render(<MyDeliveries />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Start delivery' }));
-    expect(mocks.outForDelivery).toHaveBeenCalledWith(2);
+    await waitFor(() => expect(mocks.outForDelivery).toHaveBeenCalledWith(2));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Start delivery' })).toBeEnabled());
 
     mocks.props.deliveryData.current = workItem('single', 'picked_up', [leg(3, null, 'picked_up')]);
     view.rerender(<MyDeliveries />);
     fireEvent.click(screen.getByRole('button', { name: 'Start delivery' }));
 
-    expect(mocks.markInTransit).toHaveBeenCalledWith(3);
+    await waitFor(() => expect(mocks.markInTransit).toHaveBeenCalledWith(3));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Start delivery' })).toBeEnabled());
   });
 
@@ -329,11 +382,11 @@ describe('MyDeliveries rider interactions', () => {
     const proof = new File(['proof'], 'proof.jpg', { type: 'image/jpeg' });
     fireEvent.change(screen.getByLabelText('Delivery proof'), { target: { files: [proof] } });
     fireEvent.click(screen.getByRole('button', { name: 'Submit delivery proof' }));
-    expect(mocks.post).toHaveBeenCalledWith(
+    await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
       '/api/logistics/legs/5/proof',
       expect.any(FormData),
       expect.objectContaining({ headers: { 'Content-Type': 'multipart/form-data' } }),
-    );
+    ));
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Submit delivery proof' })).toBeEnabled(),
     );
@@ -345,11 +398,11 @@ describe('MyDeliveries rider interactions', () => {
     fireEvent.change(screen.getByLabelText('Issue photo'), { target: { files: [proof] } });
     fireEvent.click(screen.getByRole('button', { name: 'Submit issue' }));
 
-    expect(mocks.post).toHaveBeenCalledWith(
+    await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
       '/api/logistics/legs/5/report-issue',
       expect.any(FormData),
       expect.objectContaining({ headers: { 'Content-Type': 'multipart/form-data' } }),
-    );
+    ));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Submit issue' })).toBeEnabled());
   });
 
