@@ -2299,6 +2299,8 @@ class RepairWorkflowController extends Controller
         $validated = $request->validate([
             'leg' => ['required', 'in:intake,return'],
             'reason' => ['required', 'string', 'max:500'],
+            'shipment_leg_id' => ['present', 'nullable', 'integer', 'min:1'],
+            'plan_token' => ['required', 'string', 'regex:/\A[a-f0-9]{64}\z/'],
         ]);
         $repair = RepairRequest::query()->findOrFail($id);
         abort_unless(
@@ -2312,14 +2314,23 @@ class RepairWorkflowController extends Controller
             (string) $validated['leg'],
             (string) $validated['reason'],
             (int) $user->id,
+            isset($validated['shipment_leg_id']) ? (int) $validated['shipment_leg_id'] : null,
+            (string) $validated['plan_token'],
         );
+        $sponsoredWarranty = (bool) ($result['repair']->is_warranty_job ?? false)
+            || (string) ($result['repair']->billing_mode ?? '') === 'warranty_no_charge';
 
         return response()->json([
             'success' => true,
-            'message' => 'Delivery leg cancelled. Finance compensation is required before the delivery plan can be changed.',
+            'message' => $result['replayed']
+                ? 'This delivery cancellation was already processed.'
+                : ($sponsoredWarranty
+                    ? 'Delivery leg cancelled. The customer can update the sponsored delivery plan.'
+                    : 'Delivery leg cancelled. Finance compensation is required before the delivery plan can be changed.'),
             'data' => [
                 'repair' => $result['repair'],
                 'reconciliation' => $result['reconciliation'],
+                'replayed' => $result['replayed'],
             ],
         ]);
     }
@@ -2426,6 +2437,9 @@ class RepairWorkflowController extends Controller
             $allowedStatuses = $method === 'shop_delivery'
                 ? ['shipped']
                 : ['ready_for_pickup', 'ready-for-pickup'];
+            $sponsoredNonShopPlan = $method !== 'shop_delivery'
+                && ((bool) ($repair->is_warranty_job ?? false)
+                    || (string) ($repair->billing_mode ?? '') === 'warranty_no_charge');
 
             if (! in_array((string) $repair->status, $allowedStatuses, true)) {
                 throw ValidationException::withMessages([
@@ -2433,7 +2447,9 @@ class RepairWorkflowController extends Controller
                 ]);
             }
             if ((bool) $repair->pickup_enabled
-                || ($method !== 'shop_delivery' && $repair->return_logistics_locked_at !== null)) {
+                || ($method !== 'shop_delivery'
+                    && $repair->return_logistics_locked_at !== null
+                    && ! $sponsoredNonShopPlan)) {
                 throw ValidationException::withMessages([
                     'status' => ['Customer receipt confirmation is already active.'],
                 ]);

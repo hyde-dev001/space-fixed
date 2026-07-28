@@ -124,6 +124,7 @@ type RepairOrder = {
   estimated_delivery_date?: string | null;
   duration?: string;
   completed_at?: string;
+  received_at?: string | null;
   shop_id?: number | null;
   shop_name: string;
   shop_address: string;
@@ -425,6 +426,7 @@ const getReturnMethodLabel = (order: RepairOrder): string => {
     : 'Shop rider delivery';
 };
 
+type IntakeDeliveryMethod = 'walk_in' | 'customer_delivery' | 'shop_pickup';
 type ReturnDeliveryMethod = 'walk_in' | 'customer_pickup' | 'shop_delivery';
 
 const formatRepairAddress = (address?: RepairAddressSnapshot | null): string => {
@@ -468,6 +470,214 @@ const getRequestErrorMessage = (error: unknown, fallback: string): string => {
   );
 
   return typeof firstValidationError === 'string' ? firstValidationError : fallback;
+};
+
+const SponsoredIntakeReplanCard: React.FC<{
+  order: RepairOrder;
+  onRefresh: () => Promise<unknown>;
+}> = ({ order, onRefresh }) => {
+  const currentAddressId = order.intake_address?.address_id
+    ? Number(order.intake_address.address_id)
+    : null;
+  const [method, setMethod] = useState<IntakeDeliveryMethod>(() => getIntakeMethod(order));
+  const [selectedAddress, setSelectedAddress] = useState<CustomerAddress | null>(null);
+  const [coverage, setCoverage] = useState<DeliveryQuote | null>(null);
+  const [coverageLoading, setCoverageLoading] = useState(false);
+  const [coverageError, setCoverageError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const effectiveAddressId = selectedAddress?.id ?? currentAddressId;
+  const shopId = order.shop_owner_id ?? order.shop_id;
+  const addressRequired = method !== 'walk_in';
+  const shopPickupUnavailable = method === 'shop_pickup'
+    && (coverageLoading || !coverage?.available);
+
+  useEffect(() => {
+    if (!shopId || !effectiveAddressId) {
+      return;
+    }
+
+    let active = true;
+    setCoverageLoading(true);
+    setCoverageError(null);
+
+    fetch(`/api/repair/shops/${shopId}/delivery-quote?address_id=${effectiveAddressId}`, {
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
+    })
+      .then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload?.message || 'Unable to check shop rider coverage.');
+        }
+        return (payload?.data ?? payload) as DeliveryQuote;
+      })
+      .then((quote) => {
+        if (!active) return;
+        setCoverage(quote);
+      })
+      .catch((reason: Error) => {
+        if (!active) return;
+        setCoverage(null);
+        setCoverageError(reason.message || 'Unable to check shop rider coverage.');
+      })
+      .finally(() => {
+        if (active) setCoverageLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [effectiveAddressId, shopId]);
+
+  const handleAddressSelect = useCallback((address: CustomerAddress) => {
+    setSelectedAddress(address);
+    setCoverage(null);
+    setCoverageError(null);
+    setError(null);
+    setSuccess(null);
+  }, []);
+
+  const handleRebook = async () => {
+    if (addressRequired && !effectiveAddressId) {
+      setError('Choose one of your saved addresses.');
+      return;
+    }
+
+    if (method === 'shop_pickup' && !coverage?.available) {
+      setError(coverage?.reason || 'Choose an address within shop rider coverage.');
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const response = await axios.patch(`/api/customer/repairs/${order.id}/delivery-method`, {
+        intake_delivery_method: method,
+        ...(addressRequired ? { intake_address_id: effectiveAddressId } : {}),
+      });
+      setSuccess(response.data?.message || 'Intake plan updated.');
+      await onRefresh();
+    } catch (reason) {
+      setError(getRequestErrorMessage(reason, 'Unable to update the intake plan.'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:p-6">
+      <h4 className="text-lg font-bold text-black">Rebook sponsored pickup</h4>
+      <p className="mt-1 text-sm text-gray-600">
+        Choose how to get the shoes back to the shop.
+      </p>
+
+      <fieldset className="mt-4 space-y-3">
+        <legend className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
+          Intake method
+        </legend>
+        <label className="flex items-start gap-3 text-sm text-gray-800">
+          <input
+            type="radio"
+            name={`sponsored-intake-method-${order.id}`}
+            checked={method === 'walk_in'}
+            disabled={saving}
+            onChange={() => {
+              setMethod('walk_in');
+              setError(null);
+              setSuccess(null);
+            }}
+          />
+          <span>
+            <span className="block font-semibold">Walk-in delivery to shop</span>
+            <span className="text-xs text-gray-500">Bring the shoes directly to the shop.</span>
+          </span>
+        </label>
+        <label className="flex items-start gap-3 text-sm text-gray-800">
+          <input
+            type="radio"
+            name={`sponsored-intake-method-${order.id}`}
+            checked={method === 'customer_delivery'}
+            disabled={saving}
+            onChange={() => {
+              setMethod('customer_delivery');
+              setError(null);
+              setSuccess(null);
+            }}
+          />
+          <span>
+            <span className="block font-semibold">Customer-arranged delivery</span>
+            <span className="text-xs text-gray-500">Use your own third-party courier.</span>
+          </span>
+        </label>
+        <label className="flex items-start gap-3 text-sm text-gray-800">
+          <input
+            type="radio"
+            name={`sponsored-intake-method-${order.id}`}
+            checked={method === 'shop_pickup'}
+            disabled={saving || coverageLoading || !coverage?.available}
+            onChange={() => {
+              setMethod('shop_pickup');
+              setError(null);
+              setSuccess(null);
+            }}
+          />
+          <span>
+            <span className="block font-semibold">Shop rider pickup</span>
+            <span className="text-xs text-gray-500">The shop covers pickup from a supported address.</span>
+          </span>
+        </label>
+      </fieldset>
+
+      {addressRequired && (
+        <div className="mt-4">
+          <CustomerAddressManager
+            onSelect={handleAddressSelect}
+            initialAddressId={currentAddressId}
+            disabled={saving}
+            title="Saved pickup address"
+            description="Choose or pin the address for this intake plan."
+          />
+        </div>
+      )}
+
+      <div className="mt-4 rounded-xl border border-gray-200 bg-white p-3 text-sm">
+        {coverageLoading ? (
+          <p className="font-semibold text-gray-600">Checking coverage...</p>
+        ) : coverage?.available ? (
+          <p className="font-semibold text-green-700">Within coverage · Rider fee covered by shop</p>
+        ) : (
+          <p className="font-semibold text-amber-700">
+            {coverage?.reason || 'Shop rider coverage is not available for this address.'}
+          </p>
+        )}
+        {coverageError && <p className="mt-1 text-red-700">{coverageError}</p>}
+      </div>
+
+      {error && (
+        <p role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </p>
+      )}
+      {success && (
+        <p role="status" className="mt-4 rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+          {success}
+        </p>
+      )}
+
+      <button
+        type="button"
+        onClick={handleRebook}
+        disabled={saving || (addressRequired && !effectiveAddressId) || shopPickupUnavailable}
+        className="mt-4 inline-flex w-full items-center justify-center rounded-full bg-[#16233b] px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300 sm:w-auto"
+      >
+        {saving ? 'Saving...' : 'Save intake plan'}
+      </button>
+    </section>
+  );
 };
 
 const ReturnDeliveryPlanCard: React.FC<{
@@ -816,7 +1026,9 @@ const CustomerExternalTrackingCard: React.FC<{
   const tracking = snapshot?.external_tracking;
   const locked = Boolean(isIntake
     ? order.intake_logistics_locked_at
-    : order.return_logistics_locked_at);
+      && (!isWarrantyNoChargeOrder(order) || order.received_at)
+    : order.return_logistics_locked_at
+      && (!isWarrantyNoChargeOrder(order) || order.pickup_enabled));
   const title = `${isIntake ? 'Intake' : 'Return'} courier tracking`;
   const fieldPrefix = isIntake ? 'Intake' : 'Return';
   const [carrier, setCarrier] = useState(tracking?.carrier ?? '');
@@ -3105,6 +3317,7 @@ const MyRepairs: React.FC = () => {
       order.payment_status !== 'paid' &&
       order.payment_status !== 'completed' &&
       Boolean(order.payment_enabled) &&
+      !isWarrantyNoChargeOrder(order) &&
       !processingPayment
     ) {
       return 'PAY NOW';
@@ -3932,6 +4145,14 @@ const MyRepairs: React.FC = () => {
                       onRefresh={() => fetchRepairs({ silent: true })}
                     />
 
+                    {isWarrantyNoChargeOrder(order)
+                      && !order.intake_logistics_locked_at && (
+                        <SponsoredIntakeReplanCard
+                          order={order}
+                          onRefresh={() => fetchRepairs({ silent: true })}
+                        />
+                      )}
+
                     {(['completed', 'ready_for_pickup', 'shipped'] as RepairStatus[]).includes(order.status) && (
                       <ReturnDeliveryPlanCard
                         order={order}
@@ -4049,7 +4270,7 @@ const MyRepairs: React.FC = () => {
                         </div>
                         <div className="text-right">
                           {isWarrantyNoChargeOrder(order) ? (
-                            <p className="mb-2 text-xs text-amber-700">Warranty rework has no additional charge.</p>
+                            <p className="mb-2 text-xs text-amber-700">Warranty service and shop-owned shipping are covered by the shop.</p>
                           ) : (
                             <div className="space-y-1 mb-2 text-xs text-gray-500">
                               <div className="flex items-center justify-end gap-3">
@@ -4117,7 +4338,7 @@ const MyRepairs: React.FC = () => {
                         )}
                       {order.status === 'repairer_accepted' && order.conversation_id && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (
                         <>
-                          {isOnlineIntakeFlow(order) && order.payment_enabled && (
+                          {!isWarrantyNoChargeOrder(order) && isOnlineIntakeFlow(order) && order.payment_enabled && (
                             <button
                               onClick={() => handlePayNow(order.id)}
                               disabled={!order.payment_enabled || processingPayment}
@@ -4159,7 +4380,7 @@ const MyRepairs: React.FC = () => {
                       
                       {order.status === 'pending' && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (
                         <>
-                          {isOnlineIntakeFlow(order) && order.payment_enabled && (
+                          {!isWarrantyNoChargeOrder(order) && isOnlineIntakeFlow(order) && order.payment_enabled && (
                             <button
                               onClick={() => handlePayNow(order.id)}
                               disabled={!order.payment_enabled || processingPayment}
@@ -4189,7 +4410,7 @@ const MyRepairs: React.FC = () => {
                       {(order.status === 'ready_for_pickup' || order.status === 'shipped') && (
                         <>
                           {/* For deposit_50 only — full_upfront is already paid */}
-                          {order.status === 'ready_for_pickup' && isOnlineReturnFlow(order) && (order.payment_policy ?? 'deposit_50') !== 'full_upfront' && order.payment_status !== 'completed' && (
+                          {!isWarrantyNoChargeOrder(order) && order.status === 'ready_for_pickup' && isOnlineReturnFlow(order) && (order.payment_policy ?? 'deposit_50') !== 'full_upfront' && order.payment_status !== 'completed' && (
                             <button
                               onClick={() => handlePayNow(order.id)}
                               disabled={!order.payment_enabled || processingPayment}

@@ -45,6 +45,11 @@ class PaymentSettlementService
         }
         $delivery = $this->repairDeliveryService->paymentDetails($repair, $leg);
         $deliveryAmount = round((float) $delivery['delivery_amount'], 2);
+        $shopSponsoredWarranty = (bool) ($repair->is_warranty_job ?? false)
+            || strtolower((string) ($repair->billing_mode ?? '')) === 'warranty_no_charge';
+        if ($shopSponsoredWarranty) {
+            $serviceTotal = $serviceAmount = $deliveryAmount = 0.0;
+        }
 
         return [
             'policy' => $policy,

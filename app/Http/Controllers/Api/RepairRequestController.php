@@ -996,6 +996,7 @@ class RepairRequestController extends Controller
                         : ($repair->scheduled_dropoff_date ? $repair->scheduled_dropoff_date->format('M d, Y') : null),
                     'estimated_delivery_date' => $repair->estimated_delivery_date ? $repair->estimated_delivery_date->format('M d, Y') : null,
                     'completed_at' => $repair->completed_at ? $repair->completed_at->format('M d, Y') : null,
+                    'received_at' => $repair->received_at?->toISOString(),
                     'shop_id' => $repair->shop_owner_id,
                     'shop_owner_id' => $repair->shop_owner_id,
                     'shop_name' => $repair->shopOwner ? $repair->shopOwner->business_name : 'Unknown Shop',
@@ -1661,12 +1662,18 @@ class RepairRequestController extends Controller
                     'message' => 'Repair request not found',
                 ], 404);
             }
-            if ($hasIntakeUpdate && $repair->intake_logistics_locked_at !== null) {
+            $shopSponsoredWarranty = (bool) ($repair->is_warranty_job ?? false)
+                || (string) ($repair->billing_mode ?? '') === 'warranty_no_charge';
+            if ($hasIntakeUpdate
+                && $repair->intake_logistics_locked_at !== null
+                && ! $shopSponsoredWarranty) {
                 throw \Illuminate\Validation\ValidationException::withMessages([
                     'intake_delivery_method' => ['The paid intake delivery plan is locked and can no longer be changed.'],
                 ]);
             }
-            if ($hasReturnUpdate && $repair->return_logistics_locked_at !== null) {
+            if ($hasReturnUpdate
+                && $repair->return_logistics_locked_at !== null
+                && ! $shopSponsoredWarranty) {
                 throw \Illuminate\Validation\ValidationException::withMessages([
                     'return_delivery_method' => ['The paid return delivery plan is locked and can no longer be changed.'],
                 ]);
@@ -1676,6 +1683,25 @@ class RepairRequestController extends Controller
             $sameAsIntake = array_key_exists('same_as_intake_address', $validated)
                 ? (bool) $validated['same_as_intake_address']
                 : (bool) $repair->same_as_intake_address;
+            $matchesLockedPlan = function (string $leg, string $method, int $addressId) use ($delivery, $repair, $user): bool {
+                $storedMethod = (string) ($leg === 'intake'
+                    ? $repair->intake_delivery_method
+                    : $repair->return_delivery_method);
+                $storedSnapshot = $leg === 'intake' ? $repair->intake_address : $repair->return_address;
+                if ($storedMethod !== $method) {
+                    return false;
+                }
+                if ($method === 'walk_in') {
+                    return $storedSnapshot === null;
+                }
+
+                $address = $user->addresses()->find($addressId);
+                $storedVersion = (string) data_get($storedSnapshot, 'version', '');
+
+                return $address !== null
+                    && $storedVersion !== ''
+                    && hash_equals($storedVersion, (string) $delivery->snapshot($address, $method)['version']);
+            };
             $buildPlan = function (string $leg, string $method, int $addressId) use ($delivery, $repair, $user): array {
                 if ($method === 'walk_in') {
                     return [null, 0.0, null];
@@ -1713,17 +1739,28 @@ class RepairRequestController extends Controller
             $intakeSnapshot = $repair->intake_address;
             $intakeFee = (float) $repair->intake_delivery_fee;
             $intakeQuote = $repair->intake_logistics_quote;
-            if ($hasIntakeUpdate) {
-                $intakeAddressId = (int) ($validated['intake_address_id']
-                    ?? data_get($repair->intake_address, 'address_id')
-                    ?? 0);
+            $intakeAddressId = (int) ($validated['intake_address_id']
+                ?? data_get($repair->intake_address, 'address_id')
+                ?? 0);
+            $intakeLockedReplay = $hasIntakeUpdate
+                && $repair->intake_logistics_locked_at !== null
+                && $matchesLockedPlan('intake', $intakeMethod, $intakeAddressId);
+            if ($hasIntakeUpdate
+                && $repair->intake_logistics_locked_at !== null
+                && ! $intakeLockedReplay) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'intake_delivery_method' => ['The paid intake delivery plan is locked and can no longer be changed.'],
+                ]);
+            }
+            $applyIntakeUpdate = $hasIntakeUpdate && ! $intakeLockedReplay;
+            if ($applyIntakeUpdate) {
                 [$intakeSnapshot, $intakeFee, $intakeQuote] = $buildPlan(
                     'intake',
                     $intakeMethod,
                     $intakeAddressId,
                 );
             }
-            $intakeChanged = $hasIntakeUpdate
+            $intakeChanged = $applyIntakeUpdate
                 && ((string) ($repair->intake_delivery_method ?? '') !== $intakeMethod
                     || (string) data_get($repair->intake_address, 'version', '') !== (string) data_get($intakeSnapshot, 'version', '')
                     || round((float) $repair->intake_delivery_fee, 2) !== round($intakeFee, 2));
@@ -1735,19 +1772,31 @@ class RepairRequestController extends Controller
             if ($returnMethod === 'pickup') {
                 $returnMethod = 'customer_pickup';
             }
+            $returnAddressId = (int) ($validated['return_address_id']
+                ?? ($sameAsIntake ? data_get($intakeSnapshot, 'address_id') : null)
+                ?? data_get($repair->return_address, 'address_id')
+                ?? 0);
+            $returnLockedReplay = $hasReturnUpdate
+                && $repair->return_logistics_locked_at !== null
+                && $matchesLockedPlan('return', $returnMethod, $returnAddressId)
+                && (! array_key_exists('same_as_intake_address', $validated)
+                    || $sameAsIntake === (bool) $repair->same_as_intake_address);
+            if ($hasReturnUpdate
+                && $repair->return_logistics_locked_at !== null
+                && ! $returnLockedReplay) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'return_delivery_method' => ['The paid return delivery plan is locked and can no longer be changed.'],
+                ]);
+            }
             $refreshLinkedReturn = $sameAsIntake
                 && $repair->return_logistics_locked_at === null
                 && $intakeMethod !== 'walk_in'
                 && ($intakeChanged || array_key_exists('same_as_intake_address', $validated));
-            $rebuildReturn = $hasReturnUpdate || $refreshLinkedReturn;
+            $rebuildReturn = ($hasReturnUpdate && ! $returnLockedReplay) || $refreshLinkedReturn;
             $returnSnapshot = $repair->return_address;
             $returnFee = (float) $repair->return_delivery_fee;
             $returnQuote = $repair->return_logistics_quote;
             if ($rebuildReturn) {
-                $returnAddressId = (int) ($validated['return_address_id']
-                    ?? ($sameAsIntake ? data_get($intakeSnapshot, 'address_id') : null)
-                    ?? data_get($repair->return_address, 'address_id')
-                    ?? 0);
                 [$returnSnapshot, $returnFee, $returnQuote] = $buildPlan(
                     'return',
                     $returnMethod,
@@ -1758,28 +1807,40 @@ class RepairRequestController extends Controller
                 && ((string) ($repair->return_delivery_method ?? '') !== $returnMethod
                     || (string) data_get($repair->return_address, 'version', '') !== (string) data_get($returnSnapshot, 'version', '')
                     || round((float) $repair->return_delivery_fee, 2) !== round($returnFee, 2));
+            $replannedAt = $shopSponsoredWarranty ? now()->addSecond() : null;
 
-            $repair->update([
-                ...($hasIntakeUpdate ? [
+            $updates = [
+                ...($applyIntakeUpdate ? [
                     'delivery_method' => $intakeMethod === 'walk_in' ? 'walk_in' : 'pickup',
                     'pickup_address' => $intakeSnapshot,
                     'intake_delivery_method' => $intakeMethod,
                     'intake_address' => $intakeSnapshot,
                     'intake_delivery_fee' => $intakeFee,
                     'intake_logistics_quote' => $intakeQuote,
+                    ...($shopSponsoredWarranty ? ['intake_logistics_locked_at' => $replannedAt] : []),
                 ] : []),
                 ...($rebuildReturn ? [
                     'return_delivery_method' => $returnMethod,
                     'return_address' => $returnSnapshot,
                     'return_delivery_fee' => $returnFee,
                     'return_logistics_quote' => $returnQuote,
+                    ...($shopSponsoredWarranty ? [
+                        'return_logistics_locked_at' => $replannedAt,
+                        'return_address_confirmed_at' => $returnMethod === 'shop_delivery' ? $replannedAt : null,
+                        'return_address_confirmed_version' => $returnMethod === 'shop_delivery'
+                            ? data_get($returnSnapshot, 'version')
+                            : null,
+                    ] : []),
                 ] : []),
-                'same_as_intake_address' => $sameAsIntake,
-                ...($returnChanged ? [
+                ...($rebuildReturn ? ['same_as_intake_address' => $sameAsIntake] : []),
+                ...(! $shopSponsoredWarranty && $returnChanged ? [
                     'return_address_confirmed_at' => null,
                     'return_address_confirmed_version' => null,
                 ] : []),
-            ]);
+            ];
+            if ($updates !== []) {
+                $repair->update($updates);
+            }
 
             if ($intakeChanged) {
                 RepairPaymentSession::query()
@@ -1933,7 +1994,17 @@ class RepairRequestController extends Controller
                     'leg' => ['External tracking is available only for customer-arranged delivery.'],
                 ]);
             }
-            if ($repair->{$lockField} !== null) {
+            $shopSponsoredWarranty = (bool) ($repair->is_warranty_job ?? false)
+                || (string) ($repair->billing_mode ?? '') === 'warranty_no_charge';
+            $sponsoredIntakeAwaitingReceipt = $isIntake
+                && $repair->received_at === null
+                && $shopSponsoredWarranty;
+            $sponsoredReturnAwaitingHandoff = ! $isIntake
+                && ! (bool) $repair->pickup_enabled
+                && $shopSponsoredWarranty;
+            if ($repair->{$lockField} !== null
+                && ! $sponsoredIntakeAwaitingReceipt
+                && ! $sponsoredReturnAwaitingHandoff) {
                 throw \Illuminate\Validation\ValidationException::withMessages([
                     'leg' => ['This delivery handoff is locked and tracking can no longer be changed.'],
                 ]);

@@ -11,6 +11,7 @@ use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\Logistics\ShipmentLegService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class RepairReturnHandoffTest extends TestCase
@@ -251,6 +252,108 @@ class RepairReturnHandoffTest extends TestCase
             ->assertUnprocessable();
     }
 
+    #[DataProvider('sponsoredIntakeWarrantyMarkers')]
+    public function test_sponsored_customer_delivery_tracking_stays_editable_until_staff_receipt(array $warrantyMarker): void
+    {
+        [$repair, $customer, $repairer] = $this->repairFixture('walk_in', 'pending');
+        $repair->forceFill([
+            ...$warrantyMarker,
+            'intake_delivery_method' => 'customer_delivery',
+            'intake_address' => ['version' => 'intake-v1', 'address_line' => '1 Customer Street'],
+            'intake_logistics_locked_at' => now(),
+        ])->save();
+
+        $this->actingAs($customer, 'user')
+            ->postJson("/api/customer/repairs/{$repair->id}/external-tracking", [
+                'leg' => 'intake',
+                'carrier' => 'J&T',
+                'tracking_number' => 'WARRANTY-INTAKE-123',
+            ])
+            ->assertOk();
+
+        $this->actingAs($repairer, 'user')
+            ->postJson("/api/repairer/repairs/{$repair->id}/mark-received")
+            ->assertOk();
+
+        $repair->refresh();
+        $this->assertSame('received', $repair->status);
+        $this->assertNotNull($repair->received_at);
+        $this->assertSame(
+            'WARRANTY-INTAKE-123',
+            data_get($repair->intake_address, 'external_tracking.tracking_number'),
+        );
+
+        $customerRepairs = $this->actingAs($customer, 'user')
+            ->getJson('/api/customer/repairs')
+            ->assertOk();
+        $this->assertNotNull($customerRepairs->json('data.0.received_at'));
+
+        $this->actingAs($customer, 'user')
+            ->postJson("/api/customer/repairs/{$repair->id}/external-tracking", [
+                'leg' => 'intake',
+                'carrier' => 'J&T',
+                'tracking_number' => 'CHANGED-AFTER-RECEIPT',
+            ])
+            ->assertUnprocessable();
+
+        $this->assertSame(
+            'WARRANTY-INTAKE-123',
+            data_get($repair->fresh()->intake_address, 'external_tracking.tracking_number'),
+        );
+    }
+
+    public function test_sponsored_customer_pickup_plan_lock_allows_tracking_before_staff_handoff(): void
+    {
+        [$repair, $customer] = $this->repairFixture('customer_pickup');
+        $repair->forceFill([
+            'is_warranty_job' => true,
+            'billing_mode' => 'warranty_no_charge',
+            'return_logistics_locked_at' => now(),
+        ])->save();
+
+        $this->actingAs($customer, 'user')
+            ->postJson("/api/customer/repairs/{$repair->id}/external-tracking", [
+                'leg' => 'return',
+                'carrier' => 'Lalamove',
+                'tracking_number' => 'WARRANTY-RETURN-123',
+            ])
+            ->assertOk();
+
+        $repair->refresh();
+        $this->assertSame(
+            'WARRANTY-RETURN-123',
+            data_get($repair->return_address, 'external_tracking.tracking_number'),
+        );
+        $this->assertNotNull($repair->return_logistics_locked_at);
+        $this->assertFalse((bool) $repair->pickup_enabled);
+    }
+
+    public function test_non_warranty_return_plan_lock_still_blocks_tracking_and_handoff(): void
+    {
+        [$repair, $customer, $repairer] = $this->repairFixture('customer_pickup');
+        $repair->update(['return_logistics_locked_at' => now()]);
+
+        $this->assertFalse(app(\App\Services\RepairDeliveryService::class)
+            ->returnHandoff($repair->fresh(), true)['can_release']);
+
+        $this->actingAs($customer, 'user')
+            ->postJson("/api/customer/repairs/{$repair->id}/external-tracking", [
+                'leg' => 'return',
+                'carrier' => 'Lalamove',
+                'tracking_number' => 'PAID-RETURN-123',
+            ])
+            ->assertUnprocessable();
+
+        $this->actingAs($repairer, 'user')
+            ->postJson("/api/repairer/repairs/{$repair->id}/activate-pickup")
+            ->assertUnprocessable();
+
+        $repair->refresh();
+        $this->assertFalse((bool) $repair->pickup_enabled);
+        $this->assertSame('ready_for_pickup', (string) $repair->status);
+        $this->assertNull(data_get($repair->return_address, 'external_tracking'));
+    }
+
     public function test_job_order_payload_exposes_the_authoritative_return_handoff_gate(): void
     {
         [$repair, , $repairer] = $this->repairFixture('customer_pickup');
@@ -261,6 +364,20 @@ class RepairReturnHandoffTest extends TestCase
             ->assertJsonPath('data.0.return_handoff.method', 'customer_pickup')
             ->assertJsonPath('data.0.return_handoff.can_release', true)
             ->assertJsonPath('data.0.return_handoff.action_label', 'Confirm courier handoff');
+    }
+
+    public static function sponsoredIntakeWarrantyMarkers(): array
+    {
+        return [
+            'warranty job marker' => [[
+                'is_warranty_job' => true,
+                'billing_mode' => 'warranty',
+            ]],
+            'warranty no-charge billing marker' => [[
+                'is_warranty_job' => false,
+                'billing_mode' => 'warranty_no_charge',
+            ]],
+        ];
     }
 
     private function repairFixture(string $method, string $status = 'ready_for_pickup'): array
