@@ -31,6 +31,8 @@ const mocks = vi.hoisted(() => ({
   confirm: vi.fn(() => Promise.resolve({ isConfirmed: true })),
   acceptBatch: vi.fn(() => Promise.resolve()),
   rejectBatch: vi.fn(() => Promise.resolve()),
+  acceptLeg: vi.fn(() => Promise.resolve()),
+  rejectLeg: vi.fn(() => Promise.resolve()),
   startBatch: vi.fn(() => Promise.resolve()),
   markPickedUp: vi.fn(() => Promise.resolve()),
   confirmPickup: vi.fn(() => Promise.resolve()),
@@ -55,6 +57,8 @@ vi.mock('@/utils/workflowFeedback', () => ({
 vi.mock('@/services/logisticsApi', () => ({ logisticsApi: {
   acceptBatch: mocks.acceptBatch,
   rejectBatch: mocks.rejectBatch,
+  acceptLeg: mocks.acceptLeg,
+  rejectLeg: mocks.rejectLeg,
   startBatch: mocks.startBatch,
   markPickedUp: mocks.markPickedUp,
   confirmPickup: mocks.confirmPickup,
@@ -327,6 +331,25 @@ describe('MyDeliveries rider interactions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Confirm decline' }));
 
     expect(mocks.rejectBatch).toHaveBeenCalledWith(7, 'Schedule conflict');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Confirm decline' })).toBeEnabled());
+  });
+
+  it('accepts or declines a standalone delivery offer through its leg endpoints', async () => {
+    mocks.props.deliveryData.offers = [
+      workItem('single', 'offered', [leg(9, null)], { group: 'offer' }),
+    ];
+
+    render(<MyDeliveries />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Accept delivery' }));
+    await waitFor(() => expect(mocks.acceptLeg).toHaveBeenCalledWith(9));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Accept delivery' })).toBeEnabled());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Decline delivery' }));
+    fireEvent.change(screen.getByLabelText('Decline reason'), { target: { value: 'Schedule conflict' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm decline' }));
+
+    await waitFor(() => expect(mocks.rejectLeg).toHaveBeenCalledWith(9, 'Schedule conflict'));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Confirm decline' })).toBeEnabled());
   });
 

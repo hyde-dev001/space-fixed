@@ -73,8 +73,8 @@ class ShipmentLegService
             }
 
             if (! $leg->delivery_batch_id) {
-                if (! $rider || ! $leg->assignments()->where('rider_profile_id', $rider->id)->whereIn('status', ['assigned', 'accepted'])->exists()) {
-                    throw ValidationException::withMessages(['rider' => 'This delivery is not assigned to this rider.']);
+                if (! $rider || ! $leg->assignments()->where('rider_profile_id', $rider->id)->where('status', 'accepted')->exists()) {
+                    throw ValidationException::withMessages(['rider' => 'Accept this delivery offer before starting it.']);
                 }
                 $this->activeWork->assertCanStartStandalone($rider, $leg);
             }
@@ -89,8 +89,8 @@ class ShipmentLegService
             $leg = ShipmentLeg::query()->lockForUpdate()->findOrFail($leg->id);
             $proof = HandoffProof::query()->lockForUpdate()->findOrFail($proof->id);
             if ($proof->shipment_leg_id !== $leg->id || $proof->handoff_type !== 'pickup'
-                || ! $leg->assignments()->where('rider_profile_id', $rider->id)->whereIn('status', ['assigned', 'accepted'])->exists()) {
-                throw ValidationException::withMessages(['proof' => 'Pickup proof is not assigned to this rider.']);
+                || ! $leg->assignments()->where('rider_profile_id', $rider->id)->where('status', 'accepted')->exists()) {
+                throw ValidationException::withMessages(['proof' => 'Accept this delivery offer before confirming pickup.']);
             }
             if ($leg->status->value === 'picked_up' && $proof->review_status === 'approved') {
                 return $leg;

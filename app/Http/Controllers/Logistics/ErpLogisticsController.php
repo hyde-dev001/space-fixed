@@ -408,6 +408,10 @@ class ErpLogisticsController extends Controller
                     'cancelled' => 'cancelled',
                     default => $legStatus,
                 };
+        } elseif ($riderAssignment->status === 'assigned'
+            && in_array($legStatus, ['assigned', 'pickup_scheduled'], true)) {
+            $group = 'offer';
+            $status = 'offered';
         } else {
             $group = match ($legStatus) {
                 'assigned', 'pickup_scheduled' => 'upcoming',
@@ -441,7 +445,9 @@ class ErpLogisticsController extends Controller
                 ?? $leg->picked_up_at?->toISOString()
                 ?? $latestAssignment?->accepted_at?->toISOString()
                 ?? $latestAssignment?->assigned_at?->toISOString(),
-            'offered_at' => null,
+            'offered_at' => $riderAssignment->status === 'assigned'
+                ? $riderAssignment->assigned_at?->toISOString()
+                : null,
             'response_deadline' => null,
             'assignment_at' => $latestAssignment?->accepted_at?->toISOString()
                 ?? $latestAssignment?->assigned_at?->toISOString(),

@@ -66,4 +66,53 @@ class AssignmentService
             return $assignment;
         });
     }
+
+    public function respondToOffer(ShipmentLeg $leg, RiderProfile $rider, bool $accepted, ?string $reason = null): DeliveryAssignment
+    {
+        if (! $accepted && ! filled($reason)) {
+            throw ValidationException::withMessages(['rejection_reason' => 'Rejection reason is required.']);
+        }
+
+        return DB::transaction(function () use ($leg, $rider, $accepted, $reason) {
+            $leg = ShipmentLeg::query()->with('shipment')->lockForUpdate()->findOrFail($leg->id);
+            if ($leg->delivery_batch_id) {
+                throw ValidationException::withMessages(['shipment_leg_id' => 'Batch offers must be answered as a batch.']);
+            }
+
+            $assignment = DeliveryAssignment::query()
+                ->where('shipment_leg_id', $leg->id)
+                ->where('rider_profile_id', $rider->id)
+                ->latest('id')
+                ->lockForUpdate()
+                ->first();
+
+            if (! $assignment || ($assignment->status !== 'assigned' && ! ($accepted && $assignment->status === 'accepted'))) {
+                throw ValidationException::withMessages(['shipment_leg_id' => 'This delivery offer is no longer available.']);
+            }
+
+            if ($assignment->status === 'accepted') {
+                return $assignment;
+            }
+
+            $assignment->update($accepted
+                ? ['status' => 'accepted', 'accepted_at' => now()]
+                : ['status' => 'rejected', 'rejection_reason' => $reason, 'rejected_at' => now()]);
+
+            if (! $accepted) {
+                $leg->update(['status' => 'pending']);
+            }
+
+            $this->events->record($leg->shipment, $leg, [
+                'event_type' => $accepted ? 'leg_offer_accepted' : 'leg_offer_rejected',
+                'visibility' => 'internal',
+                'message' => $accepted ? 'Delivery offer accepted.' : 'Delivery offer rejected.',
+                'metadata' => [
+                    'rider_profile_id' => $rider->id,
+                    'rejection_reason' => $accepted ? null : $reason,
+                ],
+            ]);
+
+            return $assignment->fresh();
+        });
+    }
 }
