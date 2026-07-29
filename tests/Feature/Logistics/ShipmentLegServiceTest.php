@@ -6,6 +6,7 @@ use App\Models\Logistics\DeliveryAssignment;
 use App\Models\Logistics\DeliveryBatch;
 use App\Models\Logistics\DeliveryEvent;
 use App\Models\Logistics\HandoffProof;
+use App\Models\Logistics\LogisticsSetting;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
@@ -13,6 +14,7 @@ use App\Models\Order;
 use App\Models\OrderRefund;
 use App\Models\ShopOwner;
 use App\Services\Logistics\ShipmentLegService;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -325,6 +327,40 @@ class ShipmentLegServiceTest extends TestCase
             ->where('shipment_leg_id', $leg->id)
             ->where('event_type', 'pickup_attempt_failed')
             ->count());
+    }
+
+    public function test_failed_repair_pickup_retry_uses_the_next_shop_operating_day(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-07-31 09:00', config('app.shop_timezone', 'Asia/Manila')));
+        [$leg, $assignment] = $this->assignedRepairPickup();
+        LogisticsSetting::create([
+            'shop_owner_id' => $leg->shipment->shop_owner_id,
+            'operating_days' => [1, 2, 3, 4, 5],
+            'blackout_dates' => [],
+        ]);
+        $service = app(ShipmentLegService::class);
+        $service->recordFailedAttempt($leg, [
+            'attempt_type' => 'pickup',
+            'delivery_assignment_id' => $assignment->id,
+            'idempotency_key' => '9c769aa6-d2d2-49c0-a355-86fc52cf61d4',
+            'reason_code' => 'customer_requested_reschedule',
+            'file_path' => "logistics-attempt/{$leg->id}/door.jpg",
+        ], true);
+
+        $retried = $service->resolveRetry($leg->fresh(), 'Customer requested Monday pickup.');
+
+        $this->assertSame('pending', $retried->status->value);
+        $this->assertSame('retry', $retried->resolution_type);
+        $this->assertSame('Customer requested Monday pickup.', $retried->resolution_reason);
+        $this->assertSame('2026-08-03', $retried->scheduled_delivery_date->toDateString());
+        $this->assertNull($retried->delivery_batch_id);
+        $this->assertFalse($retried->assignments()->whereIn('status', ['assigned', 'accepted'])->exists());
+        $this->assertDatabaseHas('delivery_events', [
+            'shipment_leg_id' => $leg->id,
+            'event_type' => 'pickup_rescheduled',
+            'visibility' => 'customer',
+            'message' => 'Another pickup attempt has been scheduled.',
+        ]);
     }
 
     public function test_delivery_attempted_leg_can_be_cancelled_and_records_internal_and_customer_events(): void

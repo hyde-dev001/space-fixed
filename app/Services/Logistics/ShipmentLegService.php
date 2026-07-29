@@ -210,8 +210,21 @@ class ShipmentLegService
         return DB::transaction(function () use ($leg, $reason) {
             $leg = ShipmentLeg::query()->with('shipment')->lockForUpdate()->findOrFail($leg->id);
             $this->assertTransitionAllowed($leg, ['needs_resolution'], 'scheduled for retry');
-            $leg->update(['status' => 'pending', 'resolution_type' => 'retry', 'resolution_reason' => $reason, 'scheduled_delivery_date' => now(config('app.shop_timezone', 'Asia/Manila'))->addDay()->toDateString()]);
-            $this->events->record($leg->shipment, $leg, ['event_type' => 'delivery_retry_authorized', 'visibility' => 'customer', 'message' => 'Another delivery attempt has been scheduled.']);
+            $failedPickup = $leg->shipment->purpose === 'repair_pickup'
+                && $leg->resolution_type === 'pickup_failed';
+            $leg->update([
+                'status' => 'pending',
+                'resolution_type' => 'retry',
+                'resolution_reason' => $reason,
+                'scheduled_delivery_date' => $this->nextOperatingDate($leg),
+            ]);
+            $this->events->record($leg->shipment, $leg, [
+                'event_type' => $failedPickup ? 'pickup_rescheduled' : 'delivery_retry_authorized',
+                'visibility' => 'customer',
+                'message' => $failedPickup
+                    ? 'Another pickup attempt has been scheduled.'
+                    : 'Another delivery attempt has been scheduled.',
+            ]);
 
             return $leg->fresh();
         });
@@ -481,18 +494,11 @@ class ShipmentLegService
             } else {
                 $max = $leg->shipment->shopOwner->logisticsSetting?->max_delivery_attempts ?? 2;
                 $needsResolution = $attemptNumber >= $max;
-                $settings = $leg->shipment->shopOwner->logisticsSetting;
-                $next = now(config('app.shop_timezone', 'Asia/Manila'))->addDay();
-                while (! in_array($next->dayOfWeekIso, $settings?->operating_days ?? [1, 2, 3, 4, 5, 6], true)
-                    || in_array($next->toDateString(), $settings?->blackout_dates ?? [], true)) {
-                    $next->addDay();
-                }
-                $nextDate = $next->toDateString();
                 $leg->update([
                     'status' => $needsResolution ? 'needs_resolution' : 'pending',
                     'failed_at' => now(),
                     'attempt_number' => $attemptNumber + 1,
-                    'scheduled_delivery_date' => $needsResolution ? $leg->scheduled_delivery_date : $nextDate,
+                    'scheduled_delivery_date' => $needsResolution ? $leg->scheduled_delivery_date : $this->nextOperatingDate($leg),
                     'delivery_batch_id' => null,
                     'stop_sequence' => null,
                     'resolution_type' => $needsResolution ? 'return_required' : null,
@@ -551,6 +557,20 @@ class ShipmentLegService
 
             return $attempt;
         });
+    }
+
+    private function nextOperatingDate(ShipmentLeg $leg): string
+    {
+        $leg->loadMissing('shipment.shopOwner.logisticsSetting');
+        $settings = $leg->shipment->shopOwner->logisticsSetting;
+        $next = now(config('app.shop_timezone', 'Asia/Manila'))->addDay();
+
+        while (! in_array($next->dayOfWeekIso, $settings?->operating_days ?? [1, 2, 3, 4, 5, 6], true)
+            || in_array($next->toDateString(), $settings?->blackout_dates ?? [], true)) {
+            $next->addDay();
+        }
+
+        return $next->toDateString();
     }
 
     private function isPaidOnlineOrder(Order $order): bool

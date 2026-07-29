@@ -9,6 +9,7 @@ use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\UserAddress;
 use App\Services\Logistics\DeliveryScheduleService;
+use App\Services\Logistics\DeliveryEventService;
 use App\Services\Logistics\SourceShipmentService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -21,6 +22,7 @@ final class RepairDeliveryService
         private ShippingEstimateService $shipping,
         private SourceShipmentService $sourceShipments,
         private NotificationService $notifications,
+        private DeliveryEventService $events,
     ) {
     }
 
@@ -293,6 +295,7 @@ final class RepairDeliveryService
         int $actorId,
         ?int $targetShipmentLegId,
         string $targetPlanToken,
+        bool $requireFailedPickup = false,
     ): array {
         $createdCompensation = null;
         $result = DB::transaction(function () use (
@@ -302,6 +305,7 @@ final class RepairDeliveryService
             $actorId,
             $targetShipmentLegId,
             $targetPlanToken,
+            $requireFailedPickup,
             &$createdCompensation,
         ): array {
             $lockedRepair = RepairRequest::query()->whereKey($repair->id)->lockForUpdate()->firstOrFail();
@@ -359,7 +363,18 @@ final class RepairDeliveryService
                 ];
             }
 
-            if ($activeLeg && ! in_array($activeLeg->status->value, ['pending', 'assigned', 'pickup_scheduled'], true)) {
+            $failedPickup = $isIntake
+                && $activeLeg?->status->value === 'needs_resolution'
+                && $activeLeg->resolution_type === 'pickup_failed'
+                && $activeLeg->picked_up_at === null;
+            if ($requireFailedPickup && ! $failedPickup) {
+                throw ValidationException::withMessages([
+                    'status' => ['This failed pickup was already changed. Refresh and try again.'],
+                ]);
+            }
+            if ($activeLeg
+                && ! in_array($activeLeg->status->value, ['pending', 'assigned', 'pickup_scheduled'], true)
+                && ! $failedPickup) {
                 throw ValidationException::withMessages([
                     'status' => ['This delivery can no longer be cancelled because rider custody or delivery processing already started.'],
                 ]);
@@ -396,6 +411,14 @@ final class RepairDeliveryService
                             'cancelled_at' => now(),
                             'cancellation_reason' => 'All delivery stops were cancelled before pickup.',
                         ]);
+                }
+
+                if ($failedPickup) {
+                    $this->events->record($shipment, $activeLeg, [
+                        'event_type' => 'pickup_cancelled',
+                        'visibility' => 'customer',
+                        'message' => 'The scheduled pickup was cancelled.',
+                    ]);
                 }
             }
 
