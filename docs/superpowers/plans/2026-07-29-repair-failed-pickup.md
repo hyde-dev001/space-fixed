@@ -124,12 +124,18 @@ public function test_failed_repair_pickup_waits_for_dispatcher_without_return_or
         'event_type' => 'pickup_attempt_failed',
         'visibility' => 'customer',
     ]);
+    $this->assertDatabaseHas('delivery_events', [
+        'shipment_leg_id' => $leg->id,
+        'event_type' => 'pickup_attempt_failed',
+        'visibility' => 'internal',
+    ]);
 }
 ```
 
 For the batch case, assert that the failed leg is detached, the other stop
 remains attached, `assigned_stop_count` is updated, and the batch remains
-`in_progress`.
+`in_progress`. Also assert an idempotent replay creates neither a second
+customer event nor a second internal event.
 
 - [ ] **Step 2: Write failing API validation and replay tests**
 
@@ -286,8 +292,10 @@ if ($isPickup) {
 ```
 
 Keep assignment cancellation and batch count updates common to both branches.
-Use `pickup_attempt_failed` and **Pickup attempt unsuccessful.** for pickup;
-leave the delivery event unchanged.
+Record two `pickup_attempt_failed` events inside the transaction: an internal
+event with the reason code in metadata and a neutral customer event using
+**The pickup could not be completed.** Never expose internal notes in the
+customer event. Leave the delivery event unchanged.
 
 - [ ] **Step 5: Extend the multipart controller without a new route**
 
@@ -563,6 +571,15 @@ Assert:
 - `picked_up`, `in_transit`, and any `picked_up_at` state still reject
   cancellation.
 
+Add a stale retry/cancel race test:
+
+1. Read the failed-pickup cancellation target.
+2. Reschedule the same leg with `resolveRetry`, moving it to `pending`.
+3. Submit Cancel Pickup using the stale target and the dispatcher-only
+   failed-pickup guard.
+4. Assert validation fails, the leg stays `pending`, and no cancellation,
+   compensation, or `pickup_cancelled` event is created.
+
 - [ ] **Step 3: Run the focused tests to verify failure**
 
 Run:
@@ -603,14 +620,21 @@ leave the delivery retry event unchanged.
 
 - [ ] **Step 5: Permit only the approved pre-custody repair cancellation**
 
-In `RepairDeliveryService::cancelPaidDeliveryLeg`, replace the broad status
-rejection with:
+Add a final optional `bool $requireFailedPickup = false` parameter to
+`RepairDeliveryService::cancelPaidDeliveryLeg`. After locking and reloading the
+active leg inside the existing transaction, derive:
 
 ```php
 $failedPickup = $isIntake
     && $activeLeg?->status->value === 'needs_resolution'
     && $activeLeg->resolution_type === 'pickup_failed'
     && $activeLeg->picked_up_at === null;
+
+if ($requireFailedPickup && ! $failedPickup) {
+    throw ValidationException::withMessages([
+        'status' => ['This failed pickup was already changed. Refresh and try again.'],
+    ]);
+}
 
 if ($activeLeg
     && ! in_array($activeLeg->status->value, ['pending', 'assigned', 'pickup_scheduled'], true)
@@ -620,6 +644,11 @@ if ($activeLeg
     ]);
 }
 ```
+
+The `$requireFailedPickup` check must run against the row reloaded under
+`lockForUpdate`; do not trust the controller's earlier state check or the
+unchanged plan token. Existing customer pre-custody cancellations retain the
+default `false` behavior.
 
 Record one `pickup_cancelled` customer event inside the same transaction when
 `$failedPickup` is true. Reuse `DeliveryEventService`; do not expose internal
@@ -638,7 +667,7 @@ For `repair_pickup` plus `pickup_failed`:
 4. Read the current `cancellation_target` from
    `RepairDeliveryService::intakeHandoff`.
 5. Call `cancelPaidDeliveryLeg` with phase `intake`, the current leg ID, plan
-   token, reason, and dispatcher user ID.
+   token, reason, dispatcher user ID, and `requireFailedPickup: true`.
 6. Return the fresh leg and a customer-safe message.
 
 Keep the existing failed-delivery cancellation branch unchanged.
