@@ -369,6 +369,70 @@ class LogisticsPageAccessTest extends TestCase
         $this->assertStringNotContainsString('121.234567', $serialized);
     }
 
+    public function test_reassigned_pickup_hides_the_previous_assignments_arrival(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        $shop = ShopOwner::factory()->create();
+        $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $rider->assignRole('Logistics Rider');
+        $profile = RiderProfile::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'linked_type' => User::class,
+            'linked_id' => $rider->id,
+        ]);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id,
+            'status' => 'assigned',
+        ]);
+        $previousAssignment = DeliveryAssignment::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'rider_profile_id' => $profile->id,
+            'status' => 'cancelled',
+        ]);
+        $previousArrival = $leg->events()->create([
+            'shipment_id' => $leg->shipment_id,
+            'event_type' => 'pickup_arrived',
+            'visibility' => 'internal',
+            'metadata' => [
+                'delivery_assignment_id' => $previousAssignment->id,
+                'result' => 'verified',
+            ],
+        ]);
+        $currentAssignment = DeliveryAssignment::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'rider_profile_id' => $profile->id,
+            'status' => 'accepted',
+        ]);
+
+        $props = $this->actingAs($rider->fresh(), 'user')
+            ->get('/erp/logistics/deliveries')
+            ->assertOk()
+            ->viewData('page')['props'];
+
+        $this->assertSame([], $props['deliveryData']['up_next']['deliveries'][0]['arrivals']);
+
+        $currentArrival = $leg->events()->create([
+            'shipment_id' => $leg->shipment_id,
+            'event_type' => 'pickup_arrived',
+            'visibility' => 'internal',
+            'metadata' => [
+                'delivery_assignment_id' => $currentAssignment->id,
+                'result' => 'verified',
+            ],
+        ]);
+
+        $refreshed = $this->actingAs($rider->fresh(), 'user')
+            ->get('/erp/logistics/deliveries')
+            ->assertOk()
+            ->viewData('page')['props'];
+
+        $this->assertSame(
+            $currentArrival->id,
+            $refreshed['deliveryData']['up_next']['deliveries'][0]['arrivals']['pickup']['id'],
+        );
+        $this->assertNotSame($previousArrival->id, $currentArrival->id);
+    }
+
     public function test_dispatcher_pages_receive_the_same_safe_arrival_summaries_without_coordinates(): void
     {
         $shop = ShopOwner::factory()->create(['business_type' => 'both']);

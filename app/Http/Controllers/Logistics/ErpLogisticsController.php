@@ -13,6 +13,7 @@ use App\Models\Order;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Services\Logistics\ArrivalService;
 use App\Services\Logistics\RiderProfileSyncService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -26,6 +27,8 @@ use Inertia\Response;
 
 class ErpLogisticsController extends Controller
 {
+    public function __construct(private ArrivalService $arrivals) {}
+
     public function dashboard(): Response
     {
         $shopOwnerId = $this->authorizedShopOwnerId('access-logistics-dashboard');
@@ -536,8 +539,13 @@ class ErpLogisticsController extends Controller
 
     private function arrivalPayload(ShipmentLeg $leg): array
     {
-        return $leg->events
-            ->keyBy(fn ($event) => $event->event_type === 'pickup_arrived' ? 'pickup' : 'dropoff')
+        $assignment = $leg->relationLoaded('assignments')
+            ? $leg->assignments->whereIn('status', ['assigned', 'accepted'])->sortByDesc('id')->first()
+            : null;
+
+        return collect(['pickup' => 'pickup_arrived', 'dropoff' => 'dropoff_arrived'])
+            ->map(fn (string $eventType) => $this->arrivals->eventForAssignment($leg, $eventType, $assignment))
+            ->filter()
             ->map(fn ($event) => [
                 'id' => $event->id,
                 'arrival_type' => $event->event_type === 'pickup_arrived' ? 'pickup' : 'dropoff',

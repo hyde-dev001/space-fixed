@@ -299,7 +299,7 @@ function DeliveryActions({
     ['assigned', 'accepted'].includes(status),
   );
   const issueKey = `${isRepairPickup ? 'pickup-issue' : 'issue'}:${delivery.id}`;
-  const issueRequestKey = `${isRepairPickup ? 'pickup' : 'delivery'}:${delivery.id}`;
+  const issueRequestKey = `${isRepairPickup ? 'pickup' : 'delivery'}:${delivery.id}:${assignment?.id ?? 'none'}`;
   const issueOptions = isRepairPickup ? pickupIssueReasons : deliveryIssueReasons;
   const deliveryReference =
     item.kind === 'batch'

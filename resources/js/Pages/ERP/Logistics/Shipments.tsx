@@ -428,10 +428,13 @@ export default function Shipments({ children }: React.PropsWithChildren) {
               .filter((assignment) => ['assigned', 'accepted'].includes(assignment.status));
             const rider = activeAssignments[0]?.rider_profile?.name ?? 'Unassigned';
             const urgent = legs.some((leg) => Boolean(leg.urgent_at));
+            const pickupAttempt = legs.some((leg) => shipment.purpose === 'repair_pickup'
+              && leg.attempts?.[0]?.attempt_type === 'pickup');
             const failedPickup = legs.some((leg) => shipment.purpose === 'repair_pickup'
               && leg.status === 'needs_resolution'
               && leg.resolution_type === 'pickup_failed'
               && leg.attempts?.[0]?.attempt_type === 'pickup');
+            const pickupRescheduled = pickupAttempt && !failedPickup;
             const failed = legs.some((leg) => leg.attempts?.[0]?.status === 'failed');
             const awaitingProof = legs.some((leg) => leg.status === 'awaiting_proof_approval');
             const overdue = legs.some((leg) => Boolean(leg.scheduled_delivery_date)
@@ -474,6 +477,8 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                     {overdue && <span className="rounded-full bg-orange-100 px-2 py-1 text-xs font-semibold text-orange-700">Overdue</span>}
                     {failedPickup
                       ? <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">Failed pickup · Needs action</span>
+                      : pickupRescheduled
+                        ? <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-800">Pickup rescheduled</span>
                       : failed && <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">Failed attempt</span>}
                     {awaitingProof && <span className="rounded-full bg-purple-100 px-2 py-1 text-xs font-semibold text-purple-700">Awaiting proof</span>}
                   </div>
@@ -503,12 +508,14 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                             const recipient = contact(leg);
                             const activeAssignment = leg.assignments?.find((assignment) => ['assigned', 'accepted'].includes(assignment.status));
                             const latestAttempt = leg.attempts?.[0];
-                            const isFailedPickup = shipment.purpose === 'repair_pickup'
-                              && leg.status === 'needs_resolution'
-                              && leg.resolution_type === 'pickup_failed'
+                            const isPickupAttempt = shipment.purpose === 'repair_pickup'
                               && latestAttempt?.attempt_type === 'pickup';
+                            const isFailedPickup = isPickupAttempt
+                              && leg.status === 'needs_resolution'
+                              && leg.resolution_type === 'pickup_failed';
                             const failedAttemptCount = leg.failed_attempt_count ?? latestAttempt?.attempt_number ?? 0;
-                            const attemptsMaxed = !isFailedPickup && failedAttemptCount >= maxDeliveryAttempts;
+                            const failedPickupCount = leg.failed_pickup_count ?? latestAttempt?.attempt_number ?? 0;
+                            const attemptsMaxed = !isPickupAttempt && failedAttemptCount >= maxDeliveryAttempts;
                             const canAssignLeg = leg.status === 'pending' && !activeAssignment && !attemptsMaxed;
                             const isReturnToShop = leg.leg_type === 'return_to_shop';
                             const returnProof = leg.proofs?.find((proof) => proof.handoff_type === 'receive');
@@ -547,9 +554,10 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                     </p>
                                   )}
                                   {!riderMode && latestAttempt?.status === 'failed' && (
-                                    isFailedPickup
+                                    isPickupAttempt
                                       ? <div className="mt-2 space-y-1 text-xs text-gray-600 dark:text-gray-300">
-                                          <span className="inline-flex rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">Failed pickup · Needs action</span>
+                                          <span className="inline-flex rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">{isFailedPickup ? 'Failed pickup · Needs action' : 'Pickup rescheduled'}</span>
+                                          <p>Failed pickup · {failedPickupCount} {failedPickupCount === 1 ? 'attempt' : 'attempts'}</p>
                                           {latestAttempt.reason_code && <p>{label(latestAttempt.reason_code)}</p>}
                                           {formatDateTime(latestAttempt.attempted_at) && <p>Reported {formatDateTime(latestAttempt.attempted_at)}</p>}
                                           {latestAttempt.file_path && <a href={`/storage/${latestAttempt.file_path}`} target="_blank" rel="noreferrer" className="inline-block font-semibold text-blue-600 hover:underline">View failed-pickup photo</a>}

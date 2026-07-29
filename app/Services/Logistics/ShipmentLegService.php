@@ -46,6 +46,7 @@ class ShipmentLegService
         private DeliveryEventService $events,
         private OrderRefundService $refunds,
         private RiderActiveWorkGuard $activeWork,
+        private ArrivalService $arrivals,
     ) {}
 
     public function markPickedUp(ShipmentLeg $leg, ?RiderProfile $rider = null): ShipmentLeg
@@ -435,6 +436,12 @@ class ShipmentLegService
             if ($leg->leg_type === 'return_to_shop') {
                 throw ValidationException::withMessages(['leg' => 'Return-to-shop legs use the return handoff workflow.']);
             }
+            if (! $assignment) {
+                $assignment = $leg->assignments()->whereIn('status', ['assigned', 'accepted'])->lockForUpdate()->first();
+            }
+            if (! $assignment || ! in_array($assignment->status, ['assigned', 'accepted'], true)) {
+                throw ValidationException::withMessages(['delivery_assignment_id' => 'An active delivery assignment is required.']);
+            }
             if ($isPickup) {
                 if ($leg->shipment->source_type !== 'repair_request'
                     || $leg->shipment->purpose !== 'repair_pickup') {
@@ -446,7 +453,7 @@ class ShipmentLegService
                 if ($leg->picked_up_at) {
                     throw ValidationException::withMessages(['status' => 'This pickup was already confirmed.']);
                 }
-                if (! $leg->events()->where('event_type', 'pickup_arrived')->exists()) {
+                if (! $this->arrivals->eventForAssignment($leg, 'pickup_arrived', $assignment)) {
                     throw ValidationException::withMessages([
                         'arrival' => 'Record your pickup arrival before reporting a failed pickup.',
                     ]);
@@ -458,13 +465,6 @@ class ShipmentLegService
                     'delivery attempted',
                 );
             }
-            if (! $assignment) {
-                $assignment = $leg->assignments()->whereIn('status', ['assigned', 'accepted'])->lockForUpdate()->first();
-            }
-            if (! $assignment || ! in_array($assignment->status, ['assigned', 'accepted'], true)) {
-                throw ValidationException::withMessages(['delivery_assignment_id' => 'An active delivery assignment is required.']);
-            }
-
             $attemptNumber = $leg->attempts()->where('attempt_type', $attemptType)->count() + 1;
             $attempt = $leg->attempts()->create([
                 'delivery_assignment_id' => $assignment->id,

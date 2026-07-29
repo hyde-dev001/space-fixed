@@ -9,6 +9,7 @@ use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\Notification;
 use App\Models\Order;
+use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\Logistics\ShipmentLegService;
@@ -400,6 +401,78 @@ class LogisticsApiTest extends TestCase
         $this->assertSame(1, $leg->attempts()->where('attempt_type', 'pickup')->count());
         $this->assertSame('needs_resolution', $leg->fresh()->status->value);
         $this->assertCount(1, Storage::disk('public')->allFiles());
+    }
+
+    public function test_reassigned_repair_and_warranty_pickups_require_a_fresh_arrival_and_increment_attempts(): void
+    {
+        Storage::fake('public');
+        Permission::findOrCreate('update-logistics-status', 'user');
+
+        foreach ([false, true] as $isWarranty) {
+            [$shop, $leg, $rider] = $this->assignedRepairPickupLeg();
+            $repair = RepairRequest::factory()->create([
+                'shop_owner_id' => $shop->id,
+                'is_warranty_job' => $isWarranty,
+            ]);
+            $leg->shipment->update(['source_id' => $repair->id]);
+            $rider->givePermissionTo('update-logistics-status');
+
+            $this->actingAs($rider, 'user')
+                ->post("/api/logistics/legs/{$leg->id}/report-issue", [
+                    ...$this->failedPickupPayload($leg),
+                    'idempotency_key' => $isWarranty
+                        ? '11111111-1111-4111-8111-111111111111'
+                        : '22222222-2222-4222-8222-222222222222',
+                    'proof_file' => $this->fakeAttemptPhoto($isWarranty ? 'warranty-first.png' : 'repair-first.png'),
+                ], ['Accept' => 'application/json'])
+                ->assertCreated()
+                ->assertJsonPath('attempt.attempt_number', 1);
+
+            app(ShipmentLegService::class)->resolveRetry($leg->fresh(), 'Customer requested another pickup.');
+            $riderProfileId = $leg->assignments()->latest('id')->value('rider_profile_id');
+            $secondAssignment = $leg->assignments()->create([
+                'assignment_type' => 'internal_rider',
+                'rider_profile_id' => $riderProfileId,
+                'status' => 'accepted',
+                'assigned_at' => now(),
+                'accepted_at' => now(),
+            ]);
+            $leg->fresh()->update(['status' => 'assigned']);
+            $secondPayload = [
+                'attempt_type' => 'pickup',
+                'delivery_assignment_id' => $secondAssignment->id,
+                'idempotency_key' => $isWarranty
+                    ? '33333333-3333-4333-8333-333333333333'
+                    : '44444444-4444-4444-8444-444444444444',
+                'reason_code' => 'customer_unavailable',
+            ];
+
+            $this->actingAs($rider, 'user')
+                ->post("/api/logistics/legs/{$leg->id}/report-issue", [
+                    ...$secondPayload,
+                    'proof_file' => $this->fakeAttemptPhoto($isWarranty ? 'warranty-no-arrival.png' : 'repair-no-arrival.png'),
+                ], ['Accept' => 'application/json'])
+                ->assertUnprocessable()
+                ->assertJsonValidationErrors('arrival');
+
+            $leg->events()->create([
+                'shipment_id' => $leg->shipment_id,
+                'event_type' => 'pickup_arrived',
+                'visibility' => 'internal',
+                'metadata' => ['delivery_assignment_id' => $secondAssignment->id, 'result' => 'verified'],
+            ]);
+
+            $this->actingAs($rider, 'user')
+                ->post("/api/logistics/legs/{$leg->id}/report-issue", [
+                    ...$secondPayload,
+                    'proof_file' => $this->fakeAttemptPhoto($isWarranty ? 'warranty-second.png' : 'repair-second.png'),
+                ], ['Accept' => 'application/json'])
+                ->assertCreated()
+                ->assertJsonPath('attempt.attempt_number', 2);
+
+            $this->assertSame(2, $leg->attempts()->where('attempt_type', 'pickup')->count());
+            $this->assertSame(0, $leg->attempts()->where('attempt_type', 'delivery')->count());
+        }
     }
 
     public function test_failed_repair_pickup_requires_arrival_photo_idempotency_and_valid_context(): void
@@ -816,6 +889,7 @@ class LogisticsApiTest extends TestCase
                 'event_type' => 'pickup_arrived',
                 'visibility' => 'internal',
                 'message' => 'Rider arrived for pickup.',
+                'metadata' => ['delivery_assignment_id' => $leg->assignments()->value('id')],
             ]);
         }
 
