@@ -3,6 +3,7 @@
 namespace Tests\Feature\Logistics;
 
 use App\Models\Logistics\RiderProfile;
+use App\Models\Logistics\DeliveryEvent;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\ShopOwner;
@@ -92,11 +93,20 @@ class SingleDeliveryOfferTest extends TestCase
             ->assertJsonPath('assignment.status', 'rejected')
             ->assertJsonPath('leg.status', 'pending');
 
+        $this->actingAs($user, 'user')
+            ->postJson("/api/logistics/legs/{$rejectedLeg->id}/reject", [
+                'rejection_reason' => 'Schedule conflict',
+            ])
+            ->assertOk()
+            ->assertJsonPath('assignment.id', $rejectedAssignmentId)
+            ->assertJsonPath('assignment.status', 'rejected');
+
         $this->assertDatabaseHas('delivery_assignments', [
             'id' => $rejectedAssignmentId,
             'status' => 'rejected',
             'rejection_reason' => 'Schedule conflict',
         ]);
+        $this->assertSame(1, DeliveryEvent::where('event_type', 'leg_offer_rejected')->count());
         $this->assertSame('pending', $rejectedLeg->fresh()->status->value);
     }
 }

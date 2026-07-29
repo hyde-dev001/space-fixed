@@ -245,6 +245,18 @@ class BatchDispatchService
             throw ValidationException::withMessages(['rejection_reason' => 'Rejection reason is required.']);
         }
 
+        $current = $batch->fresh('legs.assignments');
+        $matchingRejection = $current->status === 'draft'
+            && $current->rejection_reason === $reason
+            && $current->legs->flatMap->assignments->contains(fn ($assignment) =>
+                $assignment->rider_profile_id === $rider->id
+                && $assignment->status === 'rejected'
+                && $assignment->rejection_reason === $reason
+            );
+        if ($matchingRejection) {
+            return $current;
+        }
+
         return $this->riderTransition($batch, $rider, 'offered', function ($locked) use ($rider, $reason) {
             $locked->legs()->each(fn ($leg) => $leg->assignments()->where('rider_profile_id', $rider->id)
                 ->where('status', 'assigned')->update(['status' => 'rejected', 'rejection_reason' => $reason, 'rejected_at' => now()]));

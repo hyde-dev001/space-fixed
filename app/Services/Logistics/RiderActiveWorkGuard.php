@@ -45,6 +45,53 @@ final class RiderActiveWorkGuard
         $this->reject($hasBatch || $hasStandalone);
     }
 
+    public function assertCanAdvanceLeg(RiderProfile $rider, ShipmentLeg $leg): void
+    {
+        RiderProfile::query()->whereKey($rider->id)->lockForUpdate()->firstOrFail();
+
+        $candidates = DeliveryBatch::query()
+            ->where('rider_profile_id', $rider->id)
+            ->where('status', 'in_progress')
+            ->get(['id', 'started_at'])
+            ->map(fn (DeliveryBatch $batch) => [
+                'key' => "batch:{$batch->id}",
+                'started_at' => $batch->started_at?->format('Y-m-d H:i:s.u') ?? '9999-12-31',
+                'kind' => 'batch',
+                'id' => $batch->id,
+            ])
+            ->concat(
+                $this->activeStandaloneQuery($rider)
+                    ->with('latestAssignment')
+                    ->get()
+                    ->map(fn (ShipmentLeg $activeLeg) => [
+                        'key' => "single:{$activeLeg->id}",
+                        'started_at' => (
+                            $activeLeg->out_for_delivery_at
+                            ?? $activeLeg->picked_up_at
+                            ?? $activeLeg->latestAssignment?->accepted_at
+                            ?? $activeLeg->latestAssignment?->assigned_at
+                        )?->format('Y-m-d H:i:s.u') ?? '9999-12-31',
+                        'kind' => 'single',
+                        'id' => $activeLeg->id,
+                    ])
+            )
+            ->sortBy(fn (array $item) => [$item['started_at'], $item['kind'], $item['id']])
+            ->values();
+
+        if ($candidates->isEmpty()) {
+            return;
+        }
+
+        $targetKey = $leg->delivery_batch_id
+            ? "batch:{$leg->delivery_batch_id}"
+            : "single:{$leg->id}";
+        if ($candidates->first()['key'] !== $targetKey) {
+            throw ValidationException::withMessages([
+                'active_work' => 'This is not your current delivery. Refresh My Deliveries and continue only the highlighted Current delivery.',
+            ]);
+        }
+    }
+
     private function activeStandaloneQuery(RiderProfile $rider)
     {
         return ShipmentLeg::query()

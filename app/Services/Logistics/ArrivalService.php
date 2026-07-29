@@ -22,7 +22,10 @@ class ArrivalService
         'other',
     ];
 
-    public function __construct(private DeliveryEventService $events) {}
+    public function __construct(
+        private DeliveryEventService $events,
+        private RiderActiveWorkGuard $activeWork,
+    ) {}
 
     public function record(ShipmentLeg $leg, User $actor, array $payload): DeliveryEvent
     {
@@ -52,6 +55,8 @@ class ArrivalService
             if ($existing = $this->eventForAssignment($leg, $eventType, $assignment)) {
                 return $existing;
             }
+
+            $this->activeWork->assertCanAdvanceLeg($assignment->riderProfile, $leg);
 
             if ($leg->delivery_batch_id) {
                 $batch = DeliveryBatch::query()->lockForUpdate()->find($leg->delivery_batch_id);

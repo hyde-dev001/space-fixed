@@ -3,23 +3,25 @@
 namespace App\Services\Logistics;
 
 use App\Models\Logistics\HandoffProof;
+use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\ShipmentLeg;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 
 class ProofService
 {
-    public function __construct(private DeliveryEventService $events)
-    {
-    }
+    public function __construct(
+        private DeliveryEventService $events,
+        private RiderActiveWorkGuard $activeWork,
+    ) {}
 
-    public function recordProof(ShipmentLeg $leg, array $payload): HandoffProof
+    public function recordProof(ShipmentLeg $leg, array $payload, ?RiderProfile $rider = null): HandoffProof
     {
-        $leg->refresh();
-
         $validator = Validator::make($payload, [
             'handoff_type' => ['required', 'in:pickup,delivery,receive'],
             'proof_type' => ['required', 'in:photo,signature,qr,staff_confirmation,customer_confirmation,courier_receipt,tracking_confirmation'],
+            'idempotency_key' => ['nullable', 'uuid'],
             'file_path' => ['nullable', 'string', 'max:500'],
             'confirmed_by_type' => ['nullable', 'string', 'max:255'],
             'confirmed_by_id' => ['nullable', 'integer'],
@@ -32,22 +34,37 @@ class ProofService
         }
 
         $data = $validator->validated();
-        $this->assertCanRecord($leg, $data['handoff_type']);
 
-        $proof = $leg->proofs()->create([
-            ...$data,
-            'recorded_at' => now(),
-        ]);
+        return DB::transaction(function () use ($leg, $data, $rider) {
+            $leg = ShipmentLeg::query()->with('shipment')->lockForUpdate()->findOrFail($leg->id);
+            if (filled($data['idempotency_key'] ?? null)) {
+                $existing = $leg->proofs()
+                    ->where('idempotency_key', $data['idempotency_key'])
+                    ->first();
+                if ($existing) {
+                    return $existing;
+                }
+            }
 
-        if ($data['handoff_type'] === 'delivery') {
-            $leg->update(['status' => 'awaiting_proof_approval']);
-            $this->events->record($leg->shipment, $leg, [
-                'event_type' => 'proof_required',
-                'message' => 'Delivery proof is awaiting approval.',
+            if ($rider) {
+                $this->activeWork->assertCanAdvanceLeg($rider, $leg);
+            }
+            $this->assertCanRecord($leg, $data['handoff_type']);
+            $proof = $leg->proofs()->create([
+                ...$data,
+                'recorded_at' => now(),
             ]);
-        }
 
-        return $proof;
+            if ($data['handoff_type'] === 'delivery') {
+                $leg->update(['status' => 'awaiting_proof_approval']);
+                $this->events->record($leg->shipment, $leg, [
+                    'event_type' => 'proof_required',
+                    'message' => 'Delivery proof is awaiting approval.',
+                ]);
+            }
+
+            return $proof;
+        });
     }
 
     public function hasRequiredPickupProof(ShipmentLeg $leg): bool

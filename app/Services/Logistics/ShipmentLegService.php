@@ -61,12 +61,12 @@ class ShipmentLegService
                 ->lockForUpdate()
                 ->findOrFail($leg->id);
 
-            if (! $leg->delivery_batch_id && $leg->status->value === 'picked_up') {
-                if ($rider && $leg->assignments()->where('rider_profile_id', $rider->id)->whereIn('status', ['assigned', 'accepted'])->exists()) {
-                    return $leg;
+            if ($leg->status->value === 'picked_up') {
+                if ($rider && ! $leg->assignments()->where('rider_profile_id', $rider->id)->whereIn('status', ['assigned', 'accepted'])->exists()) {
+                    throw ValidationException::withMessages(['rider' => 'This delivery is not assigned to this rider.']);
                 }
 
-                throw ValidationException::withMessages(['rider' => 'This delivery is not assigned to this rider.']);
+                return $leg;
             }
 
             $this->assertTransitionAllowed($leg, ['assigned', 'pickup_scheduled', 'delivery_attempted'], 'picked up');
@@ -94,6 +94,9 @@ class ShipmentLegService
                 }
                 $this->activeWork->assertCanStartStandalone($rider, $leg);
             }
+            if ($rider) {
+                $this->activeWork->assertCanAdvanceLeg($rider, $leg);
+            }
 
             return $this->transition($leg, 'picked_up', ['picked_up_at' => now()], 'picked_up', 'Shipment leg picked up.');
         });
@@ -111,6 +114,7 @@ class ShipmentLegService
             if ($leg->status->value === 'picked_up' && $proof->review_status === 'approved') {
                 return $leg;
             }
+            $this->activeWork->assertCanAdvanceLeg($rider, $leg);
             $proof->update(['review_status' => 'approved', 'reviewed_by_type' => RiderProfile::class, 'reviewed_by_id' => $rider->id, 'reviewed_at' => now()]);
 
             return $this->markPickedUp($leg, $rider);
@@ -142,6 +146,7 @@ class ShipmentLegService
             if ($leg->status->value === 'in_transit' && $leg->out_for_delivery_at) {
                 return $leg;
             }
+            $this->activeWork->assertCanAdvanceLeg($rider, $leg);
             if ($leg->status->value !== 'picked_up' || $leg->deliveryBatch?->status !== 'in_progress'
                 || ! $leg->assignments()->where('rider_profile_id', $rider->id)->where('status', 'accepted')->exists()) {
                 throw ValidationException::withMessages(['status' => 'This stop cannot start delivery.']);
@@ -151,33 +156,47 @@ class ShipmentLegService
         });
     }
 
-    public function markInTransit(ShipmentLeg $leg): ShipmentLeg
+    public function markInTransit(ShipmentLeg $leg, ?RiderProfile $rider = null): ShipmentLeg
     {
-        $this->assertTransitionAllowed($leg, ['picked_up'], 'in transit');
+        return DB::transaction(function () use ($leg, $rider) {
+            $leg = ShipmentLeg::query()->lockForUpdate()->findOrFail($leg->id);
+            if ($leg->status->value === 'in_transit') {
+                return $leg;
+            }
+            if ($rider) {
+                $this->activeWork->assertCanAdvanceLeg($rider, $leg);
+            }
+            $this->assertTransitionAllowed($leg, ['picked_up'], 'in transit');
 
-        return $this->transition($leg, 'in_transit', [], 'in_transit', 'Shipment leg is in transit.');
+            return $this->transition($leg, 'in_transit', [], 'in_transit', 'Shipment leg is in transit.');
+        });
     }
 
-    public function markDelivered(ShipmentLeg $leg): ShipmentLeg
+    public function markDelivered(ShipmentLeg $leg, ?RiderProfile $rider = null): ShipmentLeg
     {
-        $leg->loadMissing('shipment');
-        $this->assertTransitionAllowed(
-            $leg,
-            $leg->requires_delivery_proof ? ['awaiting_proof_approval'] : ['in_transit', 'delivery_attempted'],
-            'delivered'
-        );
+        return DB::transaction(function () use ($leg, $rider) {
+            $leg = ShipmentLeg::query()->with('shipment')->lockForUpdate()->findOrFail($leg->id);
+            if ($leg->status->value === 'delivered') {
+                return $leg;
+            }
+            if ($rider) {
+                $this->activeWork->assertCanAdvanceLeg($rider, $leg);
+            }
+            $this->assertTransitionAllowed(
+                $leg,
+                $leg->requires_delivery_proof ? ['awaiting_proof_approval'] : ['in_transit', 'delivery_attempted'],
+                'delivered'
+            );
 
-        if (! $this->proofs->hasRequiredDeliveryProof($leg)) {
-            throw ValidationException::withMessages(['proof' => 'Delivery proof is required before marking this leg delivered.']);
-        }
+            if (! $this->proofs->hasRequiredDeliveryProof($leg)) {
+                throw ValidationException::withMessages(['proof' => 'Delivery proof is required before marking this leg delivered.']);
+            }
 
-        $delivered = $this->transition($leg, 'delivered', ['delivered_at' => now()], 'delivered', 'Shipment leg delivered.');
-        $batch = $delivered->deliveryBatch;
-        if ($batch && ! $batch->legs()->where('status', '!=', 'delivered')->exists()) {
-            $batch->update(['status' => 'completed', 'completed_at' => now()]);
-        }
+            $delivered = $this->transition($leg, 'delivered', ['delivered_at' => now()], 'delivered', 'Shipment leg delivered.');
+            $this->reconcileBatchState($delivered->delivery_batch_id);
 
-        return $delivered;
+            return $delivered;
+        });
     }
 
     public function cancel(ShipmentLeg $leg, string $customerReason): ShipmentLeg
@@ -191,6 +210,7 @@ class ShipmentLegService
         return DB::transaction(function () use ($leg, $customerReason) {
             $leg->update(['status' => 'cancelled']);
             $this->syncShipmentStatus($leg);
+            $this->reconcileBatchState($leg->delivery_batch_id);
 
             $this->events->record($leg->shipment, $leg, [
                 'event_type' => 'delivery_cancelled',
@@ -294,6 +314,7 @@ class ShipmentLegService
             if ($return->status->value === 'delivered' && $proof->review_status === 'approved') {
                 return $return;
             }
+            $this->activeWork->assertCanAdvanceLeg($rider, $return);
             if (! in_array($proof->review_status, ['pending', 'rider_confirmed'], true)) {
                 throw ValidationException::withMessages(['proof' => 'This return handoff proof cannot be confirmed.']);
             }
@@ -446,6 +467,9 @@ class ShipmentLegService
             if (! $assignment || ! in_array($assignment->status, ['assigned', 'accepted'], true)) {
                 throw ValidationException::withMessages(['delivery_assignment_id' => 'An active delivery assignment is required.']);
             }
+            if (($payload['recorded_by_type'] ?? null) === \App\Models\User::class) {
+                $this->activeWork->assertCanAdvanceLeg($assignment->riderProfile, $leg);
+            }
             if ($isPickup) {
                 if ($leg->shipment->source_type !== 'repair_request'
                     || $leg->shipment->purpose !== 'repair_pickup') {
@@ -537,18 +561,12 @@ class ShipmentLegService
 
             $assignment->update(['status' => 'cancelled', 'cancelled_at' => now()]);
             if ($batch) {
-                $remainingStops = $batch->legs()->count();
-                $batchChanges = ['assigned_stop_count' => $remainingStops];
-                if ($batch->status === 'in_progress' && $remainingStops === 0) {
-                    $batchChanges += [
-                        'status' => 'cancelled',
-                        'cancelled_at' => now(),
-                        'cancellation_reason' => $isPickup
-                            ? 'All stops were removed after failed pickup attempts.'
-                            : 'All stops were removed after failed delivery attempts.',
-                    ];
-                }
-                $batch->update($batchChanges);
+                $this->reconcileBatchState(
+                    $batch->id,
+                    $isPickup
+                        ? 'All stops were removed after failed pickup attempts.'
+                        : 'All stops were removed after failed delivery attempts.',
+                );
             }
             $leg->shipment->update($terminalPickup
                 ? ['status' => 'cancelled', 'completed_at' => null, 'cancelled_at' => now()]
@@ -636,6 +654,10 @@ class ShipmentLegService
         $leg->loadMissing('shipment');
 
         return DB::transaction(function () use ($leg, $status, $extra, $eventType, $message) {
+            $leg = ShipmentLeg::query()->with('shipment')->lockForUpdate()->findOrFail($leg->id);
+            if ($leg->status->value === $status) {
+                return $leg;
+            }
             $leg->update(['status' => $status, ...$extra]);
             $this->syncShipmentStatus($leg);
 
@@ -647,6 +669,42 @@ class ShipmentLegService
 
             return $leg->fresh();
         });
+    }
+
+    private function reconcileBatchState(?int $batchId, string $emptyReason = 'All stops were removed.'): void
+    {
+        if (! $batchId) {
+            return;
+        }
+
+        $batch = DeliveryBatch::query()->lockForUpdate()->find($batchId);
+        if (! $batch || $batch->status !== 'in_progress') {
+            return;
+        }
+
+        $statuses = $batch->legs()->pluck('status')->map(fn ($status) => $status->value ?? $status);
+        $changes = ['assigned_stop_count' => $statuses->count()];
+
+        if ($statuses->isEmpty()) {
+            $changes += [
+                'status' => 'cancelled',
+                'completed_at' => null,
+                'cancelled_at' => now(),
+                'cancellation_reason' => $emptyReason,
+            ];
+        } elseif ($statuses->every(fn ($status) => in_array($status, ['delivered', 'cancelled'], true))) {
+            $completed = $statuses->contains('delivered');
+            $changes += $completed
+                ? ['status' => 'completed', 'completed_at' => now(), 'cancelled_at' => null]
+                : [
+                    'status' => 'cancelled',
+                    'completed_at' => null,
+                    'cancelled_at' => now(),
+                    'cancellation_reason' => 'All stops were cancelled.',
+                ];
+        }
+
+        $batch->update($changes);
     }
 
     private function assertTransitionAllowed(ShipmentLeg $leg, array $fromStatuses, string $target): void

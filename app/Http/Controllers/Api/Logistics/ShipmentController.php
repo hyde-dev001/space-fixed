@@ -16,6 +16,7 @@ use App\Services\Logistics\ArrivalService;
 use App\Services\Logistics\AssignmentService;
 use App\Services\Logistics\DeliveryEventService;
 use App\Services\Logistics\ProofService;
+use App\Services\Logistics\RiderActiveWorkGuard;
 use App\Services\Logistics\ShipmentLegService;
 use App\Services\RepairDeliveryService;
 use Illuminate\Http\JsonResponse;
@@ -27,6 +28,8 @@ use Illuminate\Validation\Rule;
 
 class ShipmentController extends Controller
 {
+    public function __construct(private RiderActiveWorkGuard $activeWork) {}
+
     public function index(): JsonResponse
     {
         $shop = $this->authorizedShop('view-logistics-shipments');
@@ -83,7 +86,7 @@ class ShipmentController extends Controller
         ])['rejection_reason'];
 
         return response()->json([
-            'assignment' => $assignments->respondToOffer($leg, $this->assignedRiderProfile($leg), false, $reason),
+            'assignment' => $assignments->respondToOffer($leg, $this->assignedRiderProfile($leg, true), false, $reason),
             'leg' => $leg->fresh(),
         ]);
     }
@@ -98,6 +101,16 @@ class ShipmentController extends Controller
         $this->abortUnlessTenant($leg->shipment->shop_owner_id, $shop);
 
         $payload = $request->validated();
+        if (filled($payload['idempotency_key'] ?? null)) {
+            $existing = $leg->proofs()->where('idempotency_key', $payload['idempotency_key'])->first();
+            if ($existing) {
+                return response()->json(['proof' => $existing]);
+            }
+        }
+        $rider = $this->riderProfileIfAssigned($leg);
+        if ($rider) {
+            $this->activeWork->assertCanAdvanceLeg($rider, $leg);
+        }
         $storedPath = $request->file('proof_file')
             ?->store("logistics-proof/{$leg->id}", 'local');
         if ($storedPath) {
@@ -105,9 +118,12 @@ class ShipmentController extends Controller
         }
 
         try {
-            return response()->json([
-                'proof' => $proofs->recordProof($leg, $payload),
-            ], 201);
+            $proof = $proofs->recordProof($leg, $payload, $rider);
+            if ($storedPath && $proof->file_path !== $storedPath) {
+                Storage::disk('local')->delete($storedPath);
+            }
+
+            return response()->json(['proof' => $proof], $proof->wasRecentlyCreated ? 201 : 200);
         } catch (\Throwable $exception) {
             if ($storedPath) {
                 Storage::disk('local')->delete($storedPath);
@@ -133,15 +149,13 @@ class ShipmentController extends Controller
         $rider = ! $leg->delivery_batch_id || ($user instanceof User && $this->userHasActiveAssignment($leg, $user))
             ? $this->assignedRiderProfile($leg)
             : null;
-
         return response()->json(['leg' => $legs->markPickedUp($leg, $rider)]);
     }
 
     public function inTransit(ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse
     {
         $this->authorizeLegUpdate($leg);
-
-        return response()->json(['leg' => $legs->markInTransit($leg)]);
+        return response()->json(['leg' => $legs->markInTransit($leg, $this->riderProfileIfAssigned($leg))]);
     }
 
     public function confirmPickup(ShipmentLeg $leg, HandoffProof $proof, ShipmentLegService $legs): JsonResponse
@@ -164,8 +178,7 @@ class ShipmentController extends Controller
     public function delivered(ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse
     {
         $this->authorizeLegUpdate($leg);
-
-        return response()->json(['leg' => $legs->markDelivered($leg)]);
+        return response()->json(['leg' => $legs->markDelivered($leg, $this->riderProfileIfAssigned($leg))]);
     }
 
     public function approveProof(HandoffProof $proof, ShipmentLegService $legs): JsonResponse
@@ -584,14 +597,29 @@ class ShipmentController extends Controller
             ->exists();
     }
 
-    private function assignedRiderProfile(ShipmentLeg $leg): RiderProfile
+    private function assignedRiderProfile(ShipmentLeg $leg, bool $includeRejected = false): RiderProfile
     {
         $user = Auth::guard('user')->user();
         abort_unless($user instanceof User, 403);
+        $statuses = $includeRejected ? ['assigned', 'accepted', 'rejected'] : ['assigned', 'accepted'];
         $profile = RiderProfile::query()->where('linked_type', User::class)->where('linked_id', $user->id)
-            ->whereHas('assignments', fn ($query) => $query->where('shipment_leg_id', $leg->id)->whereIn('status', ['assigned', 'accepted']))->first();
+            ->whereHas('assignments', fn ($query) => $query->where('shipment_leg_id', $leg->id)->whereIn('status', $statuses))->first();
         abort_unless($profile, 403);
 
         return $profile;
+    }
+
+    private function riderProfileIfAssigned(ShipmentLeg $leg): ?RiderProfile
+    {
+        if (Auth::guard('shop_owner')->check()) {
+            return null;
+        }
+
+        $user = Auth::guard('user')->user();
+        if ($user instanceof User && $this->userHasActiveAssignment($leg, $user)) {
+            return $this->assignedRiderProfile($leg);
+        }
+
+        return null;
     }
 }

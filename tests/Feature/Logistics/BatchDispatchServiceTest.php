@@ -397,6 +397,28 @@ class BatchDispatchServiceTest extends TestCase
         $service->cancel($started, 'Unsafe cancellation');
     }
 
+    public function test_repeating_batch_rejection_returns_the_original_response_without_duplicate_events(): void
+    {
+        [$shop, $legs, $service] = $this->draftFixture();
+        $rider = RiderProfile::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'active' => true,
+            'availability_status' => 'available',
+        ]);
+        $batch = $service->offer(
+            $service->createDraft($shop, '2026-07-15', 'morning', $legs->pluck('id')->all()),
+            $rider,
+            $shop,
+        );
+
+        $rejected = $service->reject($batch, $rider, 'Schedule conflict');
+        $replayed = $service->reject($rejected->fresh(), $rider, 'Schedule conflict');
+
+        $this->assertSame($rejected->id, $replayed->id);
+        $this->assertSame('draft', $replayed->status);
+        $this->assertSame(1, DeliveryEvent::where('event_type', 'batch_rejected')->count());
+    }
+
     public function test_rider_cannot_start_a_batch_while_a_standalone_delivery_is_active(): void
     {
         [$shop, $legs, $service] = $this->draftFixture();
