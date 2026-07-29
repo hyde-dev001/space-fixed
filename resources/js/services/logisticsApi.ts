@@ -8,6 +8,9 @@ export const logisticsApi = {
       assignment_type: 'internal_rider',
       rider_profile_id: riderProfileId,
     }),
+  acceptLeg: (legId: number) => axios.post(`/api/logistics/legs/${legId}/accept`),
+  rejectLeg: (legId: number, rejectionReason: string) =>
+    axios.post(`/api/logistics/legs/${legId}/reject`, { rejection_reason: rejectionReason }),
   recordProof: (legId: number, payload: Record<string, unknown>) =>
     axios.post(`/api/logistics/legs/${legId}/proof`, payload),
   batches: () => axios.get('/api/logistics/batches'),

@@ -66,6 +66,26 @@ class ShipmentController extends Controller
         ]);
     }
 
+    public function acceptOffer(ShipmentLeg $leg, AssignmentService $assignments): JsonResponse
+    {
+        return response()->json([
+            'assignment' => $assignments->respondToOffer($leg, $this->assignedRiderProfile($leg), true),
+            'leg' => $leg->fresh(),
+        ]);
+    }
+
+    public function rejectOffer(Request $request, ShipmentLeg $leg, AssignmentService $assignments): JsonResponse
+    {
+        $reason = $request->validate([
+            'rejection_reason' => ['required', 'string', 'max:1000'],
+        ])['rejection_reason'];
+
+        return response()->json([
+            'assignment' => $assignments->respondToOffer($leg, $this->assignedRiderProfile($leg), false, $reason),
+            'leg' => $leg->fresh(),
+        ]);
+    }
+
     public function proof(
         RecordHandoffProofRequest $request,
         ShipmentLeg $leg,

@@ -56,7 +56,7 @@ class RiderMyDeliveriesPageTest extends TestCase
             'scheduled_delivery_date' => '2026-07-30',
             'delivery_window' => 'morning',
         ]);
-        $this->assign($nextLeg, $this->rider);
+        $this->assign($nextLeg, $this->rider, 'accepted');
 
         $otherUser = User::factory()->create(['shop_owner_id' => $this->shop->id]);
         $otherRider = RiderProfile::factory()->create([
@@ -217,13 +217,13 @@ class RiderMyDeliveriesPageTest extends TestCase
             'scheduled_delivery_date' => '2026-07-30',
             'delivery_window' => 'morning',
         ]);
-        $this->assign($first, $this->rider, 'assigned', ['assigned_at' => '2026-07-29 08:00:00']);
+        $this->assign($first, $this->rider, 'accepted', ['assigned_at' => '2026-07-29 08:00:00']);
         [, $second] = $this->shipmentWithLeg('repair_pickup', [
             'status' => 'assigned',
             'scheduled_delivery_date' => '2026-07-30',
             'delivery_window' => 'afternoon',
         ]);
-        $this->assign($second, $this->rider, 'assigned', ['assigned_at' => '2026-07-29 09:00:00']);
+        $this->assign($second, $this->rider, 'accepted', ['assigned_at' => '2026-07-29 09:00:00']);
 
         $upcoming = $this->deliveryData();
         $all = $this->deliveryData('?tab=all');
@@ -237,8 +237,8 @@ class RiderMyDeliveriesPageTest extends TestCase
     {
         [, $leg] = $this->shipmentWithLeg('retail_delivery', ['status' => 'assigned']);
         $otherRider = RiderProfile::factory()->create(['shop_owner_id' => $this->shop->id]);
-        $this->assign($leg, $otherRider, 'assigned', ['assigned_at' => '2026-07-29 08:00:00']);
-        $assignment = $this->assign($leg, $this->rider, 'assigned', ['assigned_at' => '2026-07-29 09:00:00']);
+        $this->assign($leg, $otherRider, 'rejected', ['assigned_at' => '2026-07-29 08:00:00']);
+        $assignment = $this->assign($leg, $this->rider, 'accepted', ['assigned_at' => '2026-07-29 09:00:00']);
 
         $delivery = $this->deliveryData()['up_next']['deliveries'][0];
 

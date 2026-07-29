@@ -97,7 +97,7 @@ const scheduleText = (item: RiderDeliveryWorkItem) => {
   return window ? `${date} · ${window}` : date;
 };
 
-function StatusChip({ status }: { status: string }) {
+function StatusChip({ status, label }: { status: string; label?: string }) {
   const symbol = ['delivered', 'completed'].includes(status)
     ? '✓'
     : ['cancelled', 'declined', 'delivery_attempted'].includes(status)
@@ -107,7 +107,7 @@ function StatusChip({ status }: { status: string }) {
   return (
     <span className="inline-flex min-h-7 items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-100">
       <span aria-hidden="true">{symbol}</span>
-      {deliveryStatusLabel(status)}
+      {label ?? deliveryStatusLabel(status)}
     </span>
   );
 }
@@ -800,8 +800,10 @@ function OfferCard({
 }) {
   const [declining, setDeclining] = useState(false);
   const [reason, setReason] = useState('');
-  const acceptKey = `offer-accept:${item.id}`;
-  const declineKey = `offer-decline:${item.id}`;
+  const isBatch = item.kind === 'batch';
+  const offerLabel = isBatch ? 'batch' : 'delivery';
+  const acceptKey = `offer-accept:${item.key}`;
+  const declineKey = `offer-decline:${item.key}`;
 
   return (
     <article className="rounded-2xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30">
@@ -813,22 +815,24 @@ function OfferCard({
             {scheduleText(item)} · {deliveryCount(item)}
           </p>
         </div>
-        <StatusChip status={item.status} />
+        <StatusChip status={item.status} label={`New ${offerLabel} offer`} />
       </div>
       <div className="mt-4 grid grid-cols-2 gap-2">
         <button
           type="button"
           disabled={!online || pendingAction !== null}
           onClick={() =>
-            runAction(acceptKey, () => logisticsApi.acceptBatch(item.id), {
-              title: `Accept batch #${item.id}?`,
+            runAction(acceptKey, () => isBatch
+              ? logisticsApi.acceptBatch(item.id)
+              : logisticsApi.acceptLeg(item.id), {
+              title: `Accept ${offerLabel} #${item.id}?`,
               text: 'This assignment will be added to your delivery work.',
-              confirmButtonText: 'Accept batch',
+              confirmButtonText: `Accept ${offerLabel}`,
             })
           }
           className="min-h-11 rounded-xl bg-blue-600 px-4 text-sm font-bold text-white disabled:opacity-50"
         >
-          Accept batch
+          Accept {offerLabel}
         </button>
         <button
           type="button"
@@ -836,7 +840,7 @@ function OfferCard({
           onClick={() => setDeclining((current) => !current)}
           className="min-h-11 rounded-xl border border-amber-500 px-4 text-sm font-bold text-amber-900 disabled:opacity-50 dark:text-amber-100"
         >
-          Decline batch
+          Decline {offerLabel}
         </button>
       </div>
       {declining && (
@@ -855,7 +859,9 @@ function OfferCard({
             type="button"
             disabled={!online || !reason.trim() || pendingAction !== null}
             onClick={() =>
-              runAction(declineKey, () => logisticsApi.rejectBatch(item.id, reason.trim()))
+              runAction(declineKey, () => isBatch
+                ? logisticsApi.rejectBatch(item.id, reason.trim())
+                : logisticsApi.rejectLeg(item.id, reason.trim()))
             }
             className="min-h-11 w-full rounded-xl bg-amber-700 px-4 text-sm font-bold text-white disabled:opacity-50"
           >

@@ -448,6 +448,8 @@ Route::prefix('api/logistics')->middleware(['auth:user,shop_owner'])->group(func
     Route::get('/shipments', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'index']);
     Route::get('/shipments/{shipment}', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'show']);
     Route::post('/legs/{leg}/assign', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'assign']);
+    Route::post('/legs/{leg}/accept', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'acceptOffer']);
+    Route::post('/legs/{leg}/reject', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'rejectOffer']);
     Route::post('/legs/{leg}/proof', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'proof']);
     Route::post('/legs/{leg}/picked-up', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'pickedUp']);
     Route::post('/legs/{leg}/in-transit', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'inTransit']);
