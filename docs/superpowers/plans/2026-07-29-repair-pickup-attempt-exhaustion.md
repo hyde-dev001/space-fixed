@@ -170,7 +170,7 @@ private function requestExhaustedPickupRefund(RepairRequest $repair, int $actorI
     }
 
     $source = PosTransaction::query()->find((int) $repair->latest_pos_transaction_id);
-    $amount = $this->repairRefunds->computeRepairRefundableAmount((int) $repair->id);
+    $amount = $this->repairRefunds->computeRecordedRepairRefundableAmount((int) $repair->id);
     if (! $source || $amount <= 0) {
         return;
     }
@@ -185,6 +185,11 @@ private function requestExhaustedPickupRefund(RepairRequest $repair, int $actorI
 ```
 
 Call it after cancelling the locked repair, using `recorded_by_id` as the audit actor. The attempt idempotency return and row lock ensure replay does not create another refund.
+
+Add `RepairPosRefundService::computeRecordedRepairRefundableAmount()` to use
+the greater of recorded POS payments and `total_paid_amount`, minus succeeded
+refunds. Do not use the generic policy-derived calculator here because it can
+infer more money than the customer actually paid.
 
 In `RepairPosRefundService::shouldUseRepairWideLimit()`, include `pickup_attempts_exhausted` with `customer_cancelled_repair` so the request covers the repair-wide remaining paid amount:
 

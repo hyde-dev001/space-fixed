@@ -10,9 +10,11 @@ use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\Order;
 use App\Models\OrderRefund;
+use App\Models\PosTransaction;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Services\OrderRefundService;
+use App\Services\RepairPosRefundService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -46,6 +48,7 @@ class ShipmentLegService
         private ProofService $proofs,
         private DeliveryEventService $events,
         private OrderRefundService $refunds,
+        private RepairPosRefundService $repairRefunds,
         private RiderActiveWorkGuard $activeWork,
         private ArrivalService $arrivals,
     ) {}
@@ -497,11 +500,15 @@ class ShipmentLegService
                         : $payload['reason_code'],
                 ]);
                 if ($terminalPickup) {
-                    RepairRequest::query()
+                    $repair = RepairRequest::query()
                         ->whereKey($leg->shipment->source_id)
                         ->lockForUpdate()
-                        ->firstOrFail()
-                        ->update(['status' => 'cancelled']);
+                        ->firstOrFail();
+                    $repair->update(['status' => 'cancelled']);
+                    $this->requestExhaustedPickupRefund(
+                        $repair,
+                        (int) ($payload['recorded_by_id'] ?? 0),
+                    );
                 }
             } else {
                 $needsResolution = $attemptNumber >= $maxAttempts;
@@ -591,6 +598,29 @@ class ShipmentLegService
         }
 
         return $next->toDateString();
+    }
+
+    private function requestExhaustedPickupRefund(RepairRequest $repair, int $actorId): void
+    {
+        if ((bool) $repair->is_warranty_job
+            || (string) $repair->billing_mode === 'warranty_no_charge'
+            || (float) $repair->total_paid_amount <= 0
+            || ! $repair->latest_pos_transaction_id) {
+            return;
+        }
+
+        $source = PosTransaction::query()->find((int) $repair->latest_pos_transaction_id);
+        $amount = $this->repairRefunds->computeRecordedRepairRefundableAmount((int) $repair->id);
+        if (! $source || $amount <= 0) {
+            return;
+        }
+
+        $this->repairRefunds->requestRefund($source, [
+            'request_type' => 'full',
+            'requested_amount' => $amount,
+            'reason_code' => 'pickup_attempts_exhausted',
+            'reason_notes' => 'Auto-created after maximum repair pickup attempts were reached.',
+        ], $actorId);
     }
 
     private function isPaidOnlineOrder(Order $order): bool

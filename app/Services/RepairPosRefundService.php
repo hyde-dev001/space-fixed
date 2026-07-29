@@ -37,6 +37,22 @@ class RepairPosRefundService
         return max(0.0, round($paid - $refunded, 2));
     }
 
+    public function computeRecordedRepairRefundableAmount(int $repairId): float
+    {
+        $repair = RepairRequest::query()->find($repairId);
+        $paid = max(
+            (float) ($repair?->total_paid_amount ?? 0),
+            $this->sumRepairPosPaidAmount($repairId),
+        );
+        $refunded = (float) PosRefund::query()
+            ->where('module_type', 'repair')
+            ->where('module_reference_id', $repairId)
+            ->where('status', 'succeeded')
+            ->sum('approved_amount');
+
+        return max(0.0, round($paid - $refunded, 2));
+    }
+
     public function requestRefund(PosTransaction $source, array $payload, int $actorId): PosRefund
     {
         $requested = (float) $payload['requested_amount'];
@@ -1234,7 +1250,10 @@ class RepairPosRefundService
             return true;
         }
 
-        return $reasonCode === 'customer_cancelled_repair';
+        return in_array($reasonCode, [
+            'customer_cancelled_repair',
+            'pickup_attempts_exhausted',
+        ], true);
     }
 
     private function isIndividualShopOwner(int $shopOwnerId): bool
