@@ -18,8 +18,14 @@ const mocks = vi.hoisted(() => ({
     afternoon_start: '13:00:00',
     afternoon_end: '18:00:00',
     coverage_radius_km: '20.00',
+    arrival_radius_m: 100,
     daily_rider_capacity: 20,
     max_delivery_attempts: 2,
+  },
+  shopLocation: {
+    latitude: 14.599512 as number | null,
+    longitude: 120.984222 as number | null,
+    address: '123 Test Street',
   },
 }));
 
@@ -29,10 +35,20 @@ vi.mock('@/utils/workflowFeedback', () => ({
 }));
 vi.mock('@inertiajs/react', () => ({
   Head: () => null,
-  usePage: () => ({ props: { settings: mocks.settings } }),
+  usePage: () => ({ props: { settings: mocks.settings, shopLocation: mocks.shopLocation } }),
 }));
 vi.mock('@/layout/AppLayout_ERP', () => ({
   default: ({ children }: React.PropsWithChildren) => <>{children}</>,
+}));
+vi.mock('../DeliveryCoverageMap', () => ({
+  default: ({ latitude, longitude, radiusKm }: { latitude: number; longitude: number; radiusKm: number }) => (
+    <div
+      data-testid="delivery-coverage-map"
+      data-latitude={latitude}
+      data-longitude={longitude}
+      data-radius-km={radiusKm}
+    />
+  ),
 }));
 
 beforeEach(() => {
@@ -40,6 +56,8 @@ beforeEach(() => {
   mocks.success.mockReset();
   mocks.error.mockReset();
   mocks.confirm.mockReset().mockResolvedValue({ isConfirmed: true });
+  mocks.shopLocation.latitude = 14.599512;
+  mocks.shopLocation.longitude = 120.984222;
 });
 
 it('explains that rider capacity is measured in delivery stops', () => {
@@ -104,4 +122,30 @@ it('prevents adding a past blackout date', () => {
   fireEvent.change(screen.getByLabelText('Blackout date'), { target: { value: '2001-04-04' } });
 
   expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled();
+});
+
+it('shows the saved service area and arrival check radius', () => {
+  render(<LogisticsSettings />);
+
+  expect(screen.getByLabelText('Arrival check radius (metres)')).toHaveValue(100);
+  expect(screen.getByText("Used when riders tap I've arrived at pickup or customer locations.")).toBeInTheDocument();
+
+  const map = screen.getByTestId('delivery-coverage-map');
+  expect(map).toHaveAttribute('data-latitude', '14.599512');
+  expect(map).toHaveAttribute('data-longitude', '120.984222');
+  expect(map).toHaveAttribute('data-radius-km', '20');
+
+  fireEvent.change(screen.getByLabelText('Coverage radius (km)'), { target: { value: '12.5' } });
+  expect(map).toHaveAttribute('data-radius-km', '12.5');
+});
+
+it('links to Shop Settings when the saved shop pin is missing', () => {
+  mocks.shopLocation.latitude = null;
+  mocks.shopLocation.longitude = null;
+
+  render(<LogisticsSettings />);
+
+  expect(screen.queryByTestId('delivery-coverage-map')).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Set the shop location in Shop Settings' }))
+    .toHaveAttribute('href', '/shop-owner/settings');
 });

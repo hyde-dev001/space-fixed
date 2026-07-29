@@ -58,7 +58,10 @@ class LogisticsPageAccessTest extends TestCase
 
     public function test_settings_page_requires_configuration_permission(): void
     {
-        $shop = ShopOwner::factory()->create();
+        $shop = ShopOwner::factory()->create([
+            'shop_latitude' => 14.599512,
+            'shop_longitude' => 120.984222,
+        ]);
         $staff = User::factory()->create(['shop_owner_id' => $shop->id]);
 
         $this->actingAs($staff, 'user')->get('/erp/logistics/settings')->assertForbidden();
@@ -66,7 +69,11 @@ class LogisticsPageAccessTest extends TestCase
         $staff->givePermissionTo('configure-logistics-settings');
 
         $this->actingAs($staff->fresh(), 'user')->get('/erp/logistics/settings')
-            ->assertOk()->assertInertia(fn ($page) => $page->component('ERP/Logistics/Settings'));
+            ->assertOk()->assertInertia(fn ($page) => $page
+            ->component('ERP/Logistics/Settings')
+            ->where('shopLocation.latitude', (float) $shop->shop_latitude)
+            ->where('shopLocation.longitude', (float) $shop->shop_longitude)
+            ->where('shopLocation.address', $shop->business_address));
     }
 
     public function test_batches_page_requires_batch_management_permission(): void

@@ -3,12 +3,19 @@ import { Head, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import AppLayoutERP from '@/layout/AppLayout_ERP';
 import { workflowFeedback } from '@/utils/workflowFeedback';
+import DeliveryCoverageMap from './DeliveryCoverageMap';
 
 type Settings = {
   operating_days: number[]; cutoff_time: string; blackout_dates: string[];
   lead_time_days: number; morning_start: string; morning_end: string;
   afternoon_start: string; afternoon_end: string; coverage_radius_km: string | number;
-  daily_rider_capacity: number; max_delivery_attempts: number;
+  arrival_radius_m: number; daily_rider_capacity: number; max_delivery_attempts: number;
+};
+
+type ShopLocation = {
+  latitude: number | null;
+  longitude: number | null;
+  address: string | null;
 };
 
 const normalizeTimes = (settings: Settings): Settings => ({
@@ -24,7 +31,7 @@ const now = new Date();
 const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
 export default function LogisticsSettings() {
-  const initial = usePage<{ settings: Settings }>().props.settings;
+  const { settings: initial, shopLocation } = usePage<{ settings: Settings; shopLocation: ShopLocation }>().props;
   const [form, setForm] = useState<Settings>(() => normalizeTimes(initial));
   const [baseline, setBaseline] = useState<Settings>(() => normalizeTimes(initial));
   const [saving, setSaving] = useState(false);
@@ -66,13 +73,27 @@ export default function LogisticsSettings() {
         <label>Cutoff<input className="block w-full rounded border p-2" type="time" value={form.cutoff_time.slice(0, 5)} onChange={(e) => set('cutoff_time', e.target.value)} /></label>
         <label>Lead days<input className="block w-full rounded border p-2" type="number" min="0" value={form.lead_time_days} onChange={(e) => set('lead_time_days', Number(e.target.value))} /></label>
         {(['morning_start','morning_end','afternoon_start','afternoon_end'] as const).map((key) => <label key={key}>{key.replace('_', ' ')}<input className="block w-full rounded border p-2" type="time" value={form[key].slice(0, 5)} onChange={(e) => set(key, e.target.value)} /></label>)}
-        <label>Coverage radius (km)<input className="block w-full rounded border p-2" type="number" min="0.1" step="0.1" value={form.coverage_radius_km} onChange={(e) => set('coverage_radius_km', e.target.value)} /></label>
         <div>
           <label>Daily delivery stops per rider<input aria-describedby="daily-rider-capacity-help" className="block w-full rounded border p-2" type="number" min="1" value={form.daily_rider_capacity} onChange={(e) => set('daily_rider_capacity', Number(e.target.value))} /></label>
           <p id="daily-rider-capacity-help" className="text-sm text-gray-500">One delivery address counts as one stop, regardless of item quantity.</p>
         </div>
         <label>Maximum attempts<input className="block w-full rounded border p-2" type="number" min="1" value={form.max_delivery_attempts} onChange={(e) => set('max_delivery_attempts', Number(e.target.value))} /></label>
       </div>
+      <section className="space-y-4 rounded-xl border p-4">
+        <div>
+          <h2 className="font-semibold">Delivery service area</h2>
+          <p className="text-sm text-gray-500">Set how far delivery and pickup addresses may be from your saved shop pin.</p>
+        </div>
+        <label>Coverage radius (km)<input className="mt-1 block min-h-11 w-full rounded border p-2" type="number" min="0.1" step="0.1" value={form.coverage_radius_km} onChange={(e) => set('coverage_radius_km', e.target.value)} /></label>
+        <p className="text-sm text-gray-600">Addresses within {form.coverage_radius_km} km of the saved shop pin qualify.</p>
+        {shopLocation.latitude !== null && shopLocation.longitude !== null
+          ? <DeliveryCoverageMap latitude={shopLocation.latitude} longitude={shopLocation.longitude} radiusKm={Number(form.coverage_radius_km)} />
+          : <a className="inline-flex min-h-11 items-center font-medium text-blue-700 underline" href="/shop-owner/settings">Set the shop location in Shop Settings</a>}
+        <div>
+          <label>Arrival check radius (metres)<input aria-describedby="arrival-radius-help" className="mt-1 block min-h-11 w-full rounded border p-2" type="number" min="50" max="500" step="1" value={form.arrival_radius_m} onChange={(e) => set('arrival_radius_m', Number(e.target.value))} /></label>
+          <p id="arrival-radius-help" className="text-sm text-gray-500">Used when riders tap I've arrived at pickup or customer locations.</p>
+        </div>
+      </section>
       <fieldset>
         <legend className="font-semibold">Blackout dates</legend>
         <div className="flex gap-2">

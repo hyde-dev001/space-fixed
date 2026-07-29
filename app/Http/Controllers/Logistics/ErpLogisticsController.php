@@ -631,10 +631,17 @@ class ErpLogisticsController extends Controller
 
     public function settings(): Response
     {
-        $shopOwnerId = $this->authorizedShopOwnerId('configure-logistics-settings');
+        $shop = ShopOwner::query()->findOrFail(
+            $this->authorizedShopOwnerId('configure-logistics-settings')
+        );
 
         return Inertia::render('ERP/Logistics/Settings', [
-            'settings' => LogisticsSetting::firstOrCreate(['shop_owner_id' => $shopOwnerId]),
+            'settings' => LogisticsSetting::firstOrCreate(['shop_owner_id' => $shop->id]),
+            'shopLocation' => [
+                'latitude' => $shop->shop_latitude !== null ? (float) $shop->shop_latitude : null,
+                'longitude' => $shop->shop_longitude !== null ? (float) $shop->shop_longitude : null,
+                'address' => $shop->business_address,
+            ],
         ]);
     }
 
