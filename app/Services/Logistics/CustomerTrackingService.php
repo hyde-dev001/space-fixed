@@ -14,6 +14,8 @@ class CustomerTrackingService
         'recipient_unavailable' => 'Recipient unavailable',
         'wrong_or_incomplete_address' => 'Wrong or incomplete address',
         'recipient_refused' => 'Recipient refused',
+        'item_damaged' => 'Item damaged',
+        'unsafe_location' => 'Unsafe location',
         'vehicle_or_delivery_problem' => 'Vehicle or delivery problem',
         'other' => 'Other delivery issue',
     ];
@@ -46,6 +48,13 @@ class CustomerTrackingService
                 ->where('status', 'failed')
                 ->latest('attempted_at')
                 ->latest('id'),
+            'legs.proofs' => fn ($query) => $query
+                ->whereIn('handoff_type', ['delivery', 'receive'])
+                ->where('proof_type', 'photo')
+                ->where('review_status', 'approved')
+                ->orderByRaw("CASE WHEN handoff_type = 'delivery' THEN 0 ELSE 1 END")
+                ->orderByDesc('reviewed_at')
+                ->orderByDesc('id'),
             'events' => fn ($query) => $query->where('visibility', 'customer')->latest(),
         ]);
 
@@ -58,8 +67,13 @@ class CustomerTrackingService
             'created_at' => optional($shipment->created_at)->toISOString(),
             'legs' => $shipment->legs->map(function ($leg) use ($shipment) {
                 $attempt = $leg->attempts->first();
+                $proof = $leg->status->value === 'delivered'
+                    ? $leg->proofs->first()
+                    : null;
+                $proofAvailable = $proof?->file_path
+                    && Storage::disk('local')->exists($proof->file_path);
 
-                return [
+                $payload = [
                     'id' => $leg->id,
                     'sequence' => $leg->sequence,
                     'leg_type' => $leg->leg_type,
@@ -84,6 +98,22 @@ class CustomerTrackingService
                             : null,
                     ] : null,
                 ];
+
+                if ($proof) {
+                    $payload['delivery_proof'] = [
+                        'id' => $proof->id,
+                        'available' => $proofAvailable,
+                        'url' => $proofAvailable
+                            ? route('customer.tracking.delivery-proof', [$shipment, $proof])
+                            : null,
+                        'delivered_at' => optional($leg->delivered_at)->toISOString(),
+                        'location' => $this->snapshotLabel($leg->destination_snapshot),
+                        'tracking_number' => $leg->tracking_number ?: "SHP-{$shipment->id}",
+                        'status' => 'Delivered',
+                    ];
+                }
+
+                return $payload;
             })->values()->all(),
             'events' => $shipment->events->map(fn ($event) => [
                 'id' => $event->id,
@@ -98,6 +128,14 @@ class CustomerTrackingService
     private function safeSnapshot(?array $snapshot): ?array
     {
         return $snapshot ? collect($snapshot)->except(['phone', 'rider_name', 'rider_phone', 'internal_notes'])->all() : null;
+    }
+
+    private function snapshotLabel(?array $snapshot): string
+    {
+        return collect([
+            $snapshot['name'] ?? null,
+            $snapshot['address'] ?? null,
+        ])->filter()->implode(' - ') ?: 'Location unavailable';
     }
 
     private function repairSourceSummary(Shipment $shipment): ?array

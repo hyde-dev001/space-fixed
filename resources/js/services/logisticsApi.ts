@@ -24,6 +24,8 @@ export const logisticsApi = {
   rejectPickup: (legId: number, proofId: number, reason: string) => axios.post(`/api/logistics/legs/${legId}/pickup-proofs/${proofId}/reject`, { reason }),
   outForDelivery: (legId: number) => axios.post(`/api/logistics/legs/${legId}/out-for-delivery`),
   markInTransit: (legId: number) => axios.post(`/api/logistics/legs/${legId}/in-transit`),
+  arrive: (legId: number, payload: Record<string, unknown>) =>
+    axios.post(`/api/logistics/legs/${legId}/arrivals`, payload),
   reportIncident: (legId: number, payload: Record<string, unknown>) => axios.post(`/api/logistics/legs/${legId}/incidents`, payload),
   resolveIncident: (incidentId: number, payload: Record<string, unknown>) => axios.post(`/api/logistics/incidents/${incidentId}/resolve`, payload),
   createReturnToShop: (legId: number) => axios.post(`/api/logistics/legs/${legId}/return-to-shop`),

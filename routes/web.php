@@ -181,6 +181,9 @@ Route::get('/notifications/settings', function () {
 Route::get('/tracking/shipments/{shipment}', [\App\Http\Controllers\Logistics\CustomerTrackingController::class, 'show'])
     ->middleware('auth:user')
     ->name('tracking.shipments.show');
+Route::get('/tracking/shipments/{shipment}/proofs/{proof}', [\App\Http\Controllers\Logistics\CustomerTrackingController::class, 'deliveryProof'])
+    ->middleware('auth:user')
+    ->name('customer.tracking.delivery-proof');
 Route::get('/tracking/shipments/{shipment}/attempts/{attempt}/proof', [\App\Http\Controllers\Logistics\CustomerTrackingController::class, 'attemptProof'])
     ->middleware('auth:user')
     ->name('customer.tracking.attempt-proof');
@@ -452,9 +455,11 @@ Route::prefix('api/logistics')->middleware(['auth:user,shop_owner'])->group(func
     Route::post('/legs/{leg}/pickup-proofs/{proof}/reject', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'rejectPickup']);
     Route::post('/legs/{leg}/out-for-delivery', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'outForDelivery']);
     Route::post('/legs/{leg}/delivered', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'delivered']);
+    Route::get('/proofs/{proof}/file', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'proofFile']);
     Route::post('/proofs/{proof}/approve', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'approveProof']);
     Route::post('/proofs/{proof}/reject', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'rejectProof']);
     Route::post('/legs/{leg}/attempts', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'attempts']);
+    Route::post('/legs/{leg}/arrivals', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'arrival']);
     Route::post('/legs/{leg}/report-issue', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'reportIssue']);
     Route::post('/legs/{leg}/cancel', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'cancel']);
     Route::post('/legs/{leg}/resolve/retry', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'retryResolution']);

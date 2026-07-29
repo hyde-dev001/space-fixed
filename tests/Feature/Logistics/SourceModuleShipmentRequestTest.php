@@ -2,12 +2,12 @@
 
 namespace Tests\Feature\Logistics;
 
-use App\Models\Order;
-use App\Models\OrderRefund;
 use App\Models\Logistics\DeliveryEvent;
 use App\Models\Logistics\LogisticsSetting;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
+use App\Models\Order;
+use App\Models\OrderRefund;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\User;
@@ -128,11 +128,27 @@ class SourceModuleShipmentRequestTest extends TestCase
 
     public function test_approved_refund_return_creates_inbound_shipment(): void
     {
-        $shop = ShopOwner::factory()->create();
+        $shop = ShopOwner::factory()->create([
+            'shop_latitude' => 14.3011,
+            'shop_longitude' => 120.9522,
+        ]);
         $customer = User::factory()->create();
+        $address = UserAddress::create([
+            'user_id' => $customer->id,
+            'name' => 'Customer',
+            'phone' => '09171234567',
+            'region' => 'CALABARZON',
+            'province' => 'Cavite',
+            'city' => 'Dasmariñas',
+            'barangay' => 'Salawag',
+            'address_line' => '22 Return Street',
+            'latitude' => 14.3122,
+            'longitude' => 120.9611,
+        ]);
         $order = Order::factory()->create([
             'shop_owner_id' => $shop->id,
             'customer_id' => $customer->id,
+            'address_id' => $address->id,
         ]);
         $refund = OrderRefund::factory()->create([
             'order_id' => $order->id,
@@ -151,6 +167,16 @@ class SourceModuleShipmentRequestTest extends TestCase
         $this->assertDatabaseHas('shipment_legs', [
             'leg_type' => 'inbound',
         ]);
+        $leg = Shipment::query()
+            ->where('source_type', 'order_refund')
+            ->where('source_id', $refund->id)
+            ->firstOrFail()
+            ->legs()
+            ->firstOrFail();
+        $this->assertSame(14.3122, $leg->origin_snapshot['latitude']);
+        $this->assertSame(120.9611, $leg->origin_snapshot['longitude']);
+        $this->assertSame(14.3011, $leg->destination_snapshot['latitude']);
+        $this->assertSame(120.9522, $leg->destination_snapshot['longitude']);
     }
 
     public function test_staff_can_arrange_a_shop_owned_return_pickup(): void
@@ -264,6 +290,17 @@ class SourceModuleShipmentRequestTest extends TestCase
         $this->assertDatabaseHas('shipment_legs', [
             'leg_type' => 'inbound',
         ]);
+        $leg = Shipment::query()
+            ->where('source_type', 'repair_request')
+            ->where('source_id', $repair->id)
+            ->where('purpose', 'repair_pickup')
+            ->firstOrFail()
+            ->legs()
+            ->firstOrFail();
+        $this->assertSame(14.6, $leg->origin_snapshot['latitude']);
+        $this->assertSame(120.98, $leg->origin_snapshot['longitude']);
+        $this->assertSame(14.5995, $leg->destination_snapshot['latitude']);
+        $this->assertSame(120.9842, $leg->destination_snapshot['longitude']);
     }
 
     public function test_repair_return_creates_outbound_shipment(): void
@@ -298,6 +335,17 @@ class SourceModuleShipmentRequestTest extends TestCase
         $this->assertDatabaseHas('shipment_legs', [
             'leg_type' => 'outbound',
         ]);
+        $leg = Shipment::query()
+            ->where('source_type', 'repair_request')
+            ->where('source_id', $repair->id)
+            ->where('purpose', 'repair_return')
+            ->firstOrFail()
+            ->legs()
+            ->firstOrFail();
+        $this->assertSame(14.5995, $leg->origin_snapshot['latitude']);
+        $this->assertSame(120.9842, $leg->origin_snapshot['longitude']);
+        $this->assertSame(14.6, $leg->destination_snapshot['latitude']);
+        $this->assertSame(120.98, $leg->destination_snapshot['longitude']);
     }
 
     public function test_shop_owned_retail_delivery_is_scheduled_from_saved_address_coordinates(): void
@@ -321,6 +369,8 @@ class SourceModuleShipmentRequestTest extends TestCase
         $leg = $shipment->legs->first();
 
         $this->assertSame('scheduled', $leg->schedule_status);
+        $this->assertSame(14.5995, $leg->origin_snapshot['latitude']);
+        $this->assertSame(120.9842, $leg->origin_snapshot['longitude']);
         $this->assertSame('Blue gate', $leg->destination_snapshot['delivery_instructions']);
         $this->assertSame(14.6, $leg->destination_snapshot['latitude']);
         $this->assertDatabaseHas('delivery_events', ['shipment_id' => $shipment->id, 'event_type' => 'delivery_estimated', 'visibility' => 'customer']);

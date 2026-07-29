@@ -2,9 +2,10 @@
 
 namespace Tests\Feature\Logistics;
 
-use App\Models\Logistics\DeliveryEvent;
-use App\Models\Logistics\DeliveryAttempt;
 use App\Models\Logistics\DeliveryAssignment;
+use App\Models\Logistics\DeliveryAttempt;
+use App\Models\Logistics\DeliveryEvent;
+use App\Models\Logistics\HandoffProof;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
@@ -184,6 +185,8 @@ class CustomerTrackingTest extends TestCase
             'recipient_unavailable' => 'Recipient unavailable',
             'wrong_or_incomplete_address' => 'Wrong or incomplete address',
             'recipient_refused' => 'Recipient refused',
+            'item_damaged' => 'Item damaged',
+            'unsafe_location' => 'Unsafe location',
             'vehicle_or_delivery_problem' => 'Vehicle or delivery problem',
             'other' => 'Other delivery issue',
             'legacy_reason' => 'Delivery could not be completed',
@@ -235,6 +238,219 @@ class CustomerTrackingTest extends TestCase
         $this->assertNull($payload['legs'][0]['latest_failed_attempt']);
         $this->assertSame($latest->id, $payload['legs'][1]['latest_failed_attempt']['id']);
         $this->assertNotSame($older->id, $payload['legs'][1]['latest_failed_attempt']['id']);
+    }
+
+    public function test_customer_payload_selects_only_the_preferred_approved_delivery_proof(): void
+    {
+        Storage::fake('local');
+        $shipment = Shipment::factory()->create();
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id,
+            'sequence' => 1,
+            'status' => 'delivered',
+            'delivered_at' => '2026-07-15 19:13:54',
+            'destination_snapshot' => [
+                'name' => 'Miguel Dela Rosa',
+                'address' => 'Dasmariñas, Cavite',
+                'phone' => '09050000000',
+            ],
+            'tracking_number' => null,
+        ]);
+        HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'handoff_type' => 'delivery',
+            'proof_type' => 'photo',
+            'review_status' => 'approved',
+            'reviewed_at' => '2026-07-15 18:00:00',
+            'file_path' => 'logistics-proof/old.jpg',
+        ]);
+        HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'handoff_type' => 'delivery',
+            'proof_type' => 'photo',
+            'review_status' => 'approved',
+            'reviewed_at' => '2026-07-15 19:00:00',
+            'file_path' => 'logistics-proof/tie-low.jpg',
+        ]);
+        $selected = HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'handoff_type' => 'delivery',
+            'proof_type' => 'photo',
+            'review_status' => 'approved',
+            'reviewed_at' => '2026-07-15 19:00:00',
+            'file_path' => 'logistics-proof/selected.jpg',
+        ]);
+        HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'handoff_type' => 'receive',
+            'proof_type' => 'photo',
+            'review_status' => 'approved',
+            'reviewed_at' => '2026-07-15 20:00:00',
+            'file_path' => 'logistics-proof/newer-receive.jpg',
+        ]);
+        foreach ([
+            ['pickup', 'photo', 'approved'],
+            ['delivery', 'photo', 'pending'],
+            ['delivery', 'photo', 'rejected'],
+            ['delivery', 'signature', 'approved'],
+        ] as [$handoff, $type, $review]) {
+            HandoffProof::factory()->create([
+                'shipment_leg_id' => $leg->id,
+                'handoff_type' => $handoff,
+                'proof_type' => $type,
+                'review_status' => $review,
+                'reviewed_at' => '2026-07-15 21:00:00',
+            ]);
+        }
+        Storage::disk('local')->put($selected->file_path, 'private-proof');
+
+        $nonDelivered = ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id,
+            'sequence' => 2,
+            'status' => 'in_transit',
+        ]);
+        HandoffProof::factory()->create([
+            'shipment_leg_id' => $nonDelivered->id,
+            'handoff_type' => 'delivery',
+            'proof_type' => 'photo',
+            'review_status' => 'approved',
+            'file_path' => 'logistics-proof/not-delivered.jpg',
+        ]);
+        $missingLeg = ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id,
+            'sequence' => 3,
+            'status' => 'delivered',
+            'destination_snapshot' => null,
+        ]);
+        $missing = HandoffProof::factory()->create([
+            'shipment_leg_id' => $missingLeg->id,
+            'handoff_type' => 'delivery',
+            'proof_type' => 'photo',
+            'review_status' => 'approved',
+            'file_path' => 'logistics-proof/missing.jpg',
+        ]);
+
+        $legs = collect(app(CustomerTrackingService::class)->payload($shipment)['legs']);
+        $proof = $legs->firstWhere('id', $leg->id)['delivery_proof'];
+
+        $this->assertSame(
+            ['id', 'available', 'url', 'delivered_at', 'location', 'tracking_number', 'status'],
+            array_keys($proof)
+        );
+        $this->assertSame($selected->id, $proof['id']);
+        $this->assertTrue($proof['available']);
+        $this->assertSame(
+            route('customer.tracking.delivery-proof', [$shipment, $selected]),
+            $proof['url']
+        );
+        $this->assertSame('Miguel Dela Rosa - Dasmariñas, Cavite', $proof['location']);
+        $this->assertSame("SHP-{$shipment->id}", $proof['tracking_number']);
+        $this->assertSame('Delivered', $proof['status']);
+        $this->assertArrayNotHasKey('delivery_proof', $legs->firstWhere('id', $nonDelivered->id));
+        $this->assertSame([
+            'id' => $missing->id,
+            'available' => false,
+            'url' => null,
+            'delivered_at' => null,
+            'location' => 'Location unavailable',
+            'tracking_number' => "SHP-{$shipment->id}",
+            'status' => 'Delivered',
+        ], $legs->firstWhere('id', $missingLeg->id)['delivery_proof']);
+    }
+
+    public function test_only_owner_can_receive_sanitized_approved_delivery_proof(): void
+    {
+        if (! extension_loaded('gd')) {
+            $this->markTestSkipped('The GD extension is required to verify proof sanitization.');
+        }
+
+        Storage::fake('local');
+        Storage::fake('public');
+        $customer = User::factory()->create();
+        $other = User::factory()->create();
+        $order = Order::factory()->create(['customer_id' => $customer->id]);
+        $shipment = Shipment::factory()->create([
+            'shop_owner_id' => $order->shop_owner_id,
+            'source_type' => 'order',
+            'source_id' => $order->id,
+        ]);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id,
+            'status' => 'delivered',
+        ]);
+        $path = "logistics-proof/{$leg->id}/proof.jpg";
+        $original = $this->jpegWithSentinel();
+        Storage::disk('local')->put($path, $original);
+        Storage::disk('public')->put($path, 'PUBLIC-DUPLICATE-MUST-NOT-BE-READ');
+        $proof = HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'handoff_type' => 'delivery',
+            'proof_type' => 'photo',
+            'review_status' => 'approved',
+            'file_path' => $path,
+        ]);
+        $url = "/tracking/shipments/{$shipment->id}/proofs/{$proof->id}";
+
+        $this->get($url)->assertRedirect();
+        $this->actingAs($other, 'user')->get($url)->assertForbidden();
+
+        $otherShipment = Shipment::factory()->create([
+            'shop_owner_id' => $order->shop_owner_id,
+            'source_type' => 'order',
+            'source_id' => $order->id,
+            'purpose' => 'retail_return',
+        ]);
+        $this->actingAs($customer, 'user')
+            ->get("/tracking/shipments/{$otherShipment->id}/proofs/{$proof->id}")
+            ->assertForbidden();
+
+        $response = $this->actingAs($customer, 'user')->get($url)
+            ->assertOk()
+            ->assertHeader('Content-Type', 'image/jpeg')
+            ->assertHeader('Content-Disposition', "inline; filename=\"delivery-proof-{$proof->id}.jpeg\"")
+            ->assertHeader('Cache-Control', 'no-store, private')
+            ->assertHeader('X-Content-Type-Options', 'nosniff');
+        $this->assertStringNotContainsString('GPS-SENTINEL', $response->getContent());
+        $this->assertStringNotContainsString('PUBLIC-DUPLICATE', $response->getContent());
+        $this->assertSame($original, Storage::disk('local')->get($path));
+
+        $this->actingAs($customer, 'user')->get("{$url}?download=1")
+            ->assertOk()
+            ->assertHeader('Content-Disposition', "attachment; filename=\"delivery-proof-{$proof->id}.jpeg\"");
+
+        foreach ([
+            ['handoff_type' => 'pickup', 'proof_type' => 'photo', 'review_status' => 'approved'],
+            ['handoff_type' => 'delivery', 'proof_type' => 'photo', 'review_status' => 'pending'],
+            ['handoff_type' => 'delivery', 'proof_type' => 'photo', 'review_status' => 'rejected'],
+            ['handoff_type' => 'delivery', 'proof_type' => 'signature', 'review_status' => 'approved'],
+        ] as $attributes) {
+            $ineligible = HandoffProof::factory()->create([
+                'shipment_leg_id' => $leg->id,
+                'file_path' => $path,
+                ...$attributes,
+            ]);
+            $this->actingAs($customer, 'user')
+                ->get("/tracking/shipments/{$shipment->id}/proofs/{$ineligible->id}")
+                ->assertNotFound();
+        }
+
+        $activeLeg = ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id,
+            'status' => 'in_transit',
+        ]);
+        $activeProof = HandoffProof::factory()->create([
+            'shipment_leg_id' => $activeLeg->id,
+            'handoff_type' => 'delivery',
+            'proof_type' => 'photo',
+            'review_status' => 'approved',
+            'file_path' => $path,
+        ]);
+        $this->actingAs($customer, 'user')
+            ->get("/tracking/shipments/{$shipment->id}/proofs/{$activeProof->id}")
+            ->assertNotFound();
+
+        Storage::disk('local')->delete($path);
+        $this->actingAs($customer, 'user')->get($url)->assertNotFound();
     }
 
     public function test_only_the_owning_customer_can_view_failed_attempt_proof(): void
@@ -318,5 +534,17 @@ class CustomerTrackingTest extends TestCase
             'status' => 'delivered', 'scheduled_delivery_date' => null, 'delivery_window' => 'afternoon',
         ]);
         $assertPayload($this->actingAs($customer, 'user')->get('/my-orders'), false, null, 'afternoon');
+    }
+
+    private function jpegWithSentinel(): string
+    {
+        $image = imagecreatetruecolor(2, 2);
+        imagefill($image, 0, 0, imagecolorallocate($image, 40, 120, 200));
+        ob_start();
+        imagejpeg($image, null, 90);
+        $bytes = ob_get_clean();
+        imagedestroy($image);
+
+        return $bytes.'GPS-SENTINEL';
     }
 }

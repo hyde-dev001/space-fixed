@@ -13,6 +13,8 @@ use App\Models\User;
 use App\Services\Logistics\ProofService;
 use App\Services\Logistics\ShipmentLegService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
@@ -124,11 +126,15 @@ class ReturnToShopTest extends TestCase
             'status' => 'accepted',
         ]);
 
-        $proofId = $this->actingAs($rider, 'user')->postJson("/api/logistics/legs/{$return->id}/proof", [
+        Storage::fake('local');
+        $proofId = $this->actingAs($rider, 'user')->post("/api/logistics/legs/{$return->id}/proof", [
             'handoff_type' => 'receive',
             'proof_type' => 'photo',
-            'file_path' => 'return.jpg',
-        ])->assertCreated()->json('proof.id');
+            'proof_file' => UploadedFile::fake()->createWithContent(
+                'return.png',
+                base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=')
+            ),
+        ], ['Accept' => 'application/json'])->assertCreated()->json('proof.id');
         $this->postJson("/api/logistics/legs/{$return->id}/return-proofs/{$proofId}/handoff")->assertOk();
 
         $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);

@@ -73,6 +73,50 @@ it('expands shipment details accessibly without mutation permission', () => {
   expect(screen.getByRole('region', { name: 'Shipment 1 details' })).toBeInTheDocument();
 });
 
+it('shows dispatcher pickup and customer arrival checks with reasons', () => {
+  setDispatcherLeg({
+    ...defaultProps().shipments.data[0].legs[0],
+    arrivals: {
+      pickup: {
+        result: 'verified', distance_m: 18.2, radius_m: 100, accuracy_m: 12,
+        recorded_at: '2026-07-15T02:30:00Z',
+      },
+      dropoff: {
+        result: 'outside_geofence', distance_m: 154.6, radius_m: 100, accuracy_m: 15,
+        exception_reason: 'pin_incorrect', exception_notes: 'Customer met rider at the gate.',
+        recorded_at: '2026-07-15T03:45:00Z',
+      },
+    },
+  });
+  render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+
+  expect(screen.getByText('Pickup arrival')).toBeInTheDocument();
+  expect(screen.getByText('Verified arrival')).toBeInTheDocument();
+  expect(screen.getByText('18 m from pickup')).toBeInTheDocument();
+  expect(screen.getByText('Customer arrival')).toBeInTheDocument();
+  expect(screen.getByText('Outside geofence')).toBeInTheDocument();
+  expect(screen.getByText('Pin incorrect')).toBeInTheDocument();
+  expect(screen.getByText('Customer met rider at the gate.')).toBeInTheDocument();
+});
+
+it('distinguishes low GPS accuracy from unavailable location', () => {
+  setDispatcherLeg({
+    ...defaultProps().shipments.data[0].legs[0],
+    arrivals: {
+      pickup: { result: 'low_accuracy', exception_reason: 'access_restriction', recorded_at: '2026-07-15T02:30:00Z' },
+      dropoff: { result: 'location_unavailable', exception_reason: 'safety_concern', recorded_at: '2026-07-15T03:45:00Z' },
+    },
+  });
+  render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+
+  expect(screen.getByText('Low GPS accuracy')).toBeInTheDocument();
+  expect(screen.getByText('Access restriction')).toBeInTheDocument();
+  expect(screen.getByText('Location unavailable')).toBeInTheDocument();
+  expect(screen.getByText('Safety concern')).toBeInTheDocument();
+});
+
 it('submits server-side search and resets pagination', () => {
   render(<Shipments />);
   fireEvent.change(screen.getByLabelText('Search shipments'), { target: { value: 'Air Max' } });
@@ -253,6 +297,8 @@ it('lets dispatcher reject pending delivery proof with a reason', async () => {
 
   render(<Shipments />);
   fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  expect(screen.getByRole('link', { name: 'Open uploaded delivery proof' }))
+    .toHaveAttribute('href', '/api/logistics/proofs/17/file');
   fireEvent.click(screen.getByRole('button', { name: 'Reject proof' }));
 
   await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
@@ -269,6 +315,45 @@ it('shows subject for refund without reassignment at maximum attempts', () => {
   expect(screen.getByText('Failed attempt - 2/2')).toBeInTheDocument();
   expect(screen.getByText('Subject for refund')).toBeInTheDocument();
   expect(screen.queryByLabelText('Choose rider for outbound leg')).not.toBeInTheDocument();
+});
+
+it('shows the dispatcher resolution selected for a delivery', () => {
+  setDispatcherLeg({
+    id: 2,
+    leg_type: 'outbound',
+    status: 'pending',
+    resolution_type: 'retry',
+    resolution_reason: 'Customer requested tomorrow morning.',
+    assignments: [],
+    proofs: [],
+    attempts: [],
+  });
+  render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+
+  expect(screen.getByText(
+    'Dispatcher scheduled another attempt: Customer requested tomorrow morning.',
+  )).toBeInTheDocument();
+});
+
+it('keeps the legacy rider issue form aligned with the evidence matrix', () => {
+  render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: "Couldn't deliver" }));
+
+  for (const option of ['Item damaged', 'Unsafe location']) {
+    expect(screen.getByRole('option', { name: option })).toBeInTheDocument();
+  }
+
+  const reason = screen.getByLabelText('Issue reason');
+  const photo = screen.getByLabelText('Issue photo');
+  const notes = screen.getByPlaceholderText('Optional note');
+  fireEvent.change(reason, { target: { value: 'item_damaged' } });
+  expect(photo).toBeRequired();
+  expect(notes).not.toBeRequired();
+  fireEvent.change(reason, { target: { value: 'unsafe_location' } });
+  expect(photo).not.toBeRequired();
+  expect(notes).toBeRequired();
 });
 
 it('shows one delivery outcome workflow at a time and clears hidden state', () => {

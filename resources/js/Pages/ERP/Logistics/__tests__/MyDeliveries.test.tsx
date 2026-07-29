@@ -36,6 +36,8 @@ const mocks = vi.hoisted(() => ({
   confirmPickup: vi.fn(() => Promise.resolve()),
   outForDelivery: vi.fn(() => Promise.resolve()),
   markInTransit: vi.fn(() => Promise.resolve()),
+  arrive: vi.fn(() => Promise.resolve()),
+  getCurrentPosition: vi.fn(),
 }));
 
 vi.mock('@inertiajs/react', () => ({
@@ -58,6 +60,7 @@ vi.mock('@/services/logisticsApi', () => ({ logisticsApi: {
   confirmPickup: mocks.confirmPickup,
   outForDelivery: mocks.outForDelivery,
   markInTransit: mocks.markInTransit,
+  arrive: mocks.arrive,
 } }));
 
 const leg = (
@@ -81,6 +84,18 @@ const leg = (
   proofs: [],
   assignments: [],
   attempts: [],
+});
+
+const arrived = (type: 'pickup' | 'dropoff', result = 'verified') => ({
+  [type]: {
+    id: 90,
+    arrival_type: type,
+    result,
+    distance_m: 18,
+    radius_m: 100,
+    accuracy_m: 12,
+    recorded_at: '2026-07-29T02:30:00.000Z',
+  },
 });
 
 const workItem = (
@@ -122,6 +137,14 @@ beforeEach(() => {
     filters: { tab: 'upcoming', business: 'all', window: 'all', search: '' },
   };
   vi.clearAllMocks();
+  mocks.getCurrentPosition.mockImplementation((success: PositionCallback) => success({
+    coords: { latitude: 14.3, longitude: 120.95, accuracy: 15 },
+    timestamp: Date.parse('2026-07-29T02:30:00.000Z'),
+  } as GeolocationPosition));
+  Object.defineProperty(navigator, 'geolocation', {
+    configurable: true,
+    value: { getCurrentPosition: mocks.getCurrentPosition },
+  });
 });
 
 describe('MyDeliveries task-first hierarchy', () => {
@@ -236,8 +259,8 @@ describe('MyDeliveries task-first hierarchy', () => {
 
 describe('MyDeliveries rider interactions', () => {
   it('clears the selected proof when a batch advances to its next delivery', async () => {
-    const first = leg(5, 1, 'in_transit');
-    const second = leg(6, 2, 'in_transit');
+    const first = { ...leg(5, 1, 'in_transit'), arrivals: arrived('dropoff') };
+    const second = { ...leg(6, 2, 'in_transit'), arrivals: arrived('dropoff') };
     mocks.props.deliveryData.current = workItem('batch', 'in_progress', [first, second]);
     const view = render(<MyDeliveries />);
     const proof = new File(['first proof'], 'first-proof.jpg', { type: 'image/jpeg' });
@@ -267,7 +290,10 @@ describe('MyDeliveries rider interactions', () => {
     mocks.confirm.mockImplementationOnce(() => new Promise((resolve) => {
       confirmPickup = resolve;
     }));
-    mocks.props.deliveryData.up_next = workItem('single', 'assigned', [leg(9, null)], {
+    mocks.props.deliveryData.up_next = workItem('single', 'assigned', [{
+      ...leg(9, null),
+      arrivals: arrived('pickup'),
+    }], {
       group: 'upcoming',
     });
     render(<MyDeliveries />);
@@ -332,6 +358,7 @@ describe('MyDeliveries rider interactions', () => {
   it('confirms standalone pickup with proof when present and without proof when absent', async () => {
     const withProof = {
       ...leg(9, null, 'assigned'),
+      arrivals: arrived('pickup'),
       proofs: [{ id: 44, handoff_type: 'pickup', proof_type: 'photo' }],
     };
     mocks.props.deliveryData.up_next = workItem('single', 'assigned', [withProof], {
@@ -343,7 +370,10 @@ describe('MyDeliveries rider interactions', () => {
     await waitFor(() => expect(mocks.confirmPickup).toHaveBeenCalledWith(9, 44));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Confirm pickup' })).toBeEnabled());
 
-    mocks.props.deliveryData.up_next = workItem('single', 'assigned', [leg(10, null, 'assigned')], {
+    mocks.props.deliveryData.up_next = workItem('single', 'assigned', [{
+      ...leg(10, null, 'assigned'),
+      arrivals: arrived('pickup'),
+    }], {
       key: 'single:10',
       id: 10,
       group: 'upcoming',
@@ -374,6 +404,7 @@ describe('MyDeliveries rider interactions', () => {
   it('submits delivery proof and an existing issue payload', async () => {
     const delivery = {
       ...leg(5, 1, 'in_transit'),
+      arrivals: arrived('dropoff'),
       assignments: [{ id: 55, status: 'accepted' }],
     };
     mocks.props.deliveryData.current = workItem('single', 'in_transit', [delivery]);
@@ -404,6 +435,69 @@ describe('MyDeliveries rider interactions', () => {
       expect.objectContaining({ headers: { 'Content-Type': 'multipart/form-data' } }),
     ));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Submit issue' })).toBeEnabled());
+  });
+
+  it('uses reason-specific issue evidence and allows unsafe reporting without a photo', async () => {
+    mocks.props.deliveryData.current = workItem('single', 'in_transit', [{
+      ...leg(15, null, 'in_transit'),
+      arrivals: arrived('dropoff'),
+      assignments: [{ id: 155, status: 'accepted' }],
+    }]);
+    render(<MyDeliveries />);
+    fireEvent.click(screen.getByRole('button', { name: 'Report issue' }));
+
+    for (const option of [
+      'Recipient unavailable',
+      'Wrong or incomplete address',
+      'Recipient refused',
+      'Item damaged',
+      'Unsafe location',
+      'Vehicle or delivery problem',
+      'Other',
+    ]) {
+      expect(screen.getByRole('option', { name: option })).toBeInTheDocument();
+    }
+
+    const reason = screen.getByLabelText('Issue reason');
+    const photo = screen.getByLabelText('Issue photo');
+    const notes = screen.getByLabelText('Issue notes');
+    fireEvent.change(reason, { target: { value: 'recipient_unavailable' } });
+    expect(photo).toBeRequired();
+    expect(notes).not.toBeRequired();
+
+    fireEvent.change(reason, { target: { value: 'unsafe_location' } });
+    expect(photo).not.toBeRequired();
+    expect(notes).toBeRequired();
+    fireEvent.change(notes, { target: { value: 'Unsafe road conditions.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit issue' }));
+
+    await waitFor(() => expect(mocks.post).toHaveBeenCalled());
+    const body = mocks.post.mock.calls[0][1] as FormData;
+    expect(body.get('reason_code')).toBe('unsafe_location');
+    expect(body.get('notes')).toBe('Unsafe road conditions.');
+    expect(body.has('proof_file')).toBe(false);
+  });
+
+  it('shows dispatcher resolution instructions in standalone and batch delivery contexts', () => {
+    mocks.props.deliveryData.current = workItem('single', 'assigned', [{
+      ...leg(16, null, 'assigned'),
+      resolution_type: 'retry',
+      resolution_reason: 'Customer requested tomorrow morning.',
+    }]);
+    const view = render(<MyDeliveries />);
+    expect(screen.getByText(
+      'Dispatcher scheduled another attempt: Customer requested tomorrow morning.',
+    )).toBeInTheDocument();
+
+    mocks.props.deliveryData.current = workItem('batch', 'in_progress', [{
+      ...leg(17, 1, 'assigned'),
+      resolution_type: 'return_required',
+      resolution_reason: 'Customer cancelled.',
+    }]);
+    view.rerender(<MyDeliveries />);
+    expect(screen.getByText('Return item to shop: Customer cancelled.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'View all 1 deliveries' }));
+    expect(screen.getAllByText('Return item to shop: Customer cancelled.')).toHaveLength(2);
   });
 
   it('shows no state-changing action while waiting for proof approval', () => {
@@ -499,5 +593,110 @@ describe('MyDeliveries rider interactions', () => {
     expect(screen.getByText(/Offline/)).toBeVisible();
     expect(screen.getByText('Customer 11')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Start delivery' })).toBeDisabled();
+  });
+
+  it("records a fresh high-accuracy pickup arrival without confirmation", async () => {
+    mocks.props.deliveryData.up_next = workItem('single', 'assigned', [leg(9, null)], {
+      group: 'upcoming',
+    });
+    render(<MyDeliveries />);
+
+    fireEvent.click(screen.getByRole('button', { name: "I've arrived" }));
+    fireEvent.click(screen.getByRole('button', { name: "I've arrived" }));
+
+    await waitFor(() => expect(mocks.arrive).toHaveBeenCalledTimes(1));
+    expect(mocks.confirm).not.toHaveBeenCalled();
+    expect(mocks.getCurrentPosition).toHaveBeenCalledWith(
+      expect.any(Function),
+      expect.any(Function),
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 },
+    );
+    expect(mocks.arrive).toHaveBeenCalledWith(9, {
+      arrival_type: 'pickup',
+      latitude: 14.3,
+      longitude: 120.95,
+      accuracy_m: 15,
+      captured_at: '2026-07-29T02:30:00.000Z',
+    });
+  });
+
+  it('gates pickup confirmation and delivery proof behind the matching arrival', () => {
+    mocks.props.deliveryData.up_next = workItem('single', 'assigned', [leg(9, null)], {
+      group: 'upcoming',
+    });
+    mocks.props.deliveryData.current = workItem('single', 'in_transit', [
+      leg(10, null, 'in_transit'),
+    ]);
+    const view = render(<MyDeliveries />);
+
+    expect(screen.getAllByRole('button', { name: "I've arrived" })).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: 'Confirm pickup' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Delivery proof')).not.toBeInTheDocument();
+
+    mocks.props.deliveryData.current = workItem('single', 'in_transit', [{
+      ...leg(10, null, 'in_transit'),
+      arrivals: arrived('dropoff'),
+    }]);
+    mocks.props.deliveryData.up_next = workItem('single', 'assigned', [{
+      ...leg(9, null),
+      arrivals: arrived('pickup'),
+    }], { group: 'upcoming' });
+    view.rerender(<MyDeliveries />);
+
+    expect(screen.getByRole('button', { name: 'Confirm pickup' })).toBeVisible();
+    expect(screen.getByLabelText('Delivery proof')).toBeVisible();
+    expect(screen.getAllByText(/Verified arrival/)).not.toHaveLength(0);
+  });
+
+  it('asks for a rider reason after a geofence exception and requires notes for Other', async () => {
+    mocks.arrive.mockRejectedValueOnce({
+      response: { status: 422, data: { errors: { exception_reason: ['Reason required.'] } } },
+    });
+    mocks.props.deliveryData.current = workItem('single', 'in_transit', [
+      leg(10, null, 'in_transit'),
+    ]);
+    render(<MyDeliveries />);
+
+    fireEvent.click(screen.getByRole('button', { name: "I've arrived" }));
+    await waitFor(() => expect(screen.getByLabelText('Arrival reason')).toBeVisible());
+
+    fireEvent.change(screen.getByLabelText('Arrival reason'), { target: { value: 'other' } });
+    expect(screen.getByRole('button', { name: 'Continue with reason' })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Arrival notes'), { target: { value: 'Customer met at gate' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue with reason' }));
+
+    await waitFor(() => expect(mocks.arrive).toHaveBeenLastCalledWith(10, expect.objectContaining({
+      arrival_type: 'dropoff',
+      latitude: 14.3,
+      exception_reason: 'other',
+      exception_notes: 'Customer met at gate',
+    })));
+    expect(mocks.reload).toHaveBeenLastCalledWith(expect.objectContaining({ only: ['deliveryData'] }));
+  });
+
+  it('allows a reason after browser location fails without claiming arrival was saved', async () => {
+    mocks.getCurrentPosition.mockImplementationOnce((_success, error: PositionErrorCallback) => {
+      error({ code: 1, message: 'Permission denied' } as GeolocationPositionError);
+    });
+    mocks.props.deliveryData.up_next = workItem('single', 'assigned', [leg(12, null)], {
+      group: 'upcoming',
+    });
+    render(<MyDeliveries />);
+
+    fireEvent.click(screen.getByRole('button', { name: "I've arrived" }));
+
+    await waitFor(() => expect(screen.getByLabelText('Arrival reason')).toBeVisible());
+    expect(mocks.arrive).not.toHaveBeenCalled();
+  });
+
+  it('disables arrival while offline and tells the rider what to do', () => {
+    mocks.props.deliveryData.current = workItem('single', 'in_transit', [
+      leg(10, null, 'in_transit'),
+    ]);
+    render(<MyDeliveries />);
+    fireEvent(window, new Event('offline'));
+
+    expect(screen.getByRole('button', { name: "I've arrived" })).toBeDisabled();
+    expect(screen.getByText('Retry after reconnect')).toBeVisible();
   });
 });

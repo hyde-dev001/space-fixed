@@ -11,6 +11,7 @@ use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Services\Logistics\ArrivalService;
 use App\Services\Logistics\AssignmentService;
 use App\Services\Logistics\DeliveryEventService;
 use App\Services\Logistics\ProofService;
@@ -20,6 +21,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 
 class ShipmentController extends Controller
 {
@@ -74,13 +76,32 @@ class ShipmentController extends Controller
         $this->abortUnlessTenant($leg->shipment->shop_owner_id, $shop);
 
         $payload = $request->validated();
-        if ($request->hasFile('proof_file')) {
-            $payload['file_path'] = $request->file('proof_file')->store('logistics-proof/'.$leg->id, 'public');
+        $storedPath = $request->file('proof_file')
+            ?->store("logistics-proof/{$leg->id}", 'local');
+        if ($storedPath) {
+            $payload['file_path'] = $storedPath;
         }
 
-        return response()->json([
-            'proof' => $proofs->recordProof($leg, $payload),
-        ], 201);
+        try {
+            return response()->json([
+                'proof' => $proofs->recordProof($leg, $payload),
+            ], 201);
+        } catch (\Throwable $exception) {
+            if ($storedPath) {
+                Storage::disk('local')->delete($storedPath);
+            }
+            throw $exception;
+        }
+    }
+
+    public function proofFile(HandoffProof $proof)
+    {
+        $shop = $this->authorizedShop('assign-logistics-deliveries');
+        $proof->loadMissing('leg.shipment');
+        $this->abortUnlessTenant((int) $proof->leg->shipment->shop_owner_id, $shop);
+        abort_unless($proof->file_path && Storage::disk('local')->exists($proof->file_path), 404);
+
+        return Storage::disk('local')->response($proof->file_path);
     }
 
     public function pickedUp(ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse
@@ -208,6 +229,36 @@ class ShipmentController extends Controller
         ], 201);
     }
 
+    public function arrival(Request $request, ShipmentLeg $leg, ArrivalService $arrivals): JsonResponse
+    {
+        $actor = $this->authorizeAttemptActor($leg);
+        abort_unless($this->userHasActiveAssignment($leg, $actor), 403);
+        $payload = $request->validate([
+            'arrival_type' => ['required', 'in:pickup,dropoff'],
+            'latitude' => ['nullable', 'numeric', 'between:-90,90'],
+            'longitude' => ['nullable', 'numeric', 'between:-180,180'],
+            'accuracy_m' => ['nullable', 'numeric', 'between:0,5000'],
+            'captured_at' => ['nullable', 'date'],
+            'exception_reason' => ['nullable', 'in:gps_inaccurate,pin_incorrect,alternate_meeting_point,access_restriction,safety_concern,other'],
+            'exception_notes' => ['nullable', 'string', 'max:1000'],
+        ]);
+        $event = $arrivals->record($leg, $actor, $payload);
+
+        return response()->json([
+            'arrival' => [
+                'id' => $event->id,
+                'arrival_type' => $event->event_type === 'pickup_arrived' ? 'pickup' : 'dropoff',
+                'result' => data_get($event->metadata, 'result'),
+                'distance_m' => data_get($event->metadata, 'distance_m'),
+                'radius_m' => data_get($event->metadata, 'radius_m'),
+                'accuracy_m' => data_get($event->metadata, 'accuracy_m'),
+                'exception_reason' => data_get($event->metadata, 'exception_reason'),
+                'exception_notes' => data_get($event->metadata, 'exception_notes'),
+                'recorded_at' => $event->created_at?->toISOString(),
+            ],
+        ], $event->wasRecentlyCreated ? 201 : 200);
+    }
+
     public function reportIssue(Request $request, ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse
     {
         $actor = $this->authorizeAttemptActor($leg);
@@ -219,12 +270,27 @@ class ShipmentController extends Controller
         }
         $payload = $request->validate([
             'delivery_assignment_id' => ['required', 'integer'],
-            'reason_code' => ['required', 'in:recipient_unavailable,wrong_or_incomplete_address,recipient_refused,vehicle_or_delivery_problem,other'],
-            'notes' => ['nullable', 'string'],
-            'proof_file' => ['required', 'image', 'max:10240'],
+            'reason_code' => ['required', Rule::in([
+                ...ShipmentLegService::PHOTO_REQUIRED_REASONS,
+                ...ShipmentLegService::NOTES_REQUIRED_REASONS,
+            ])],
+            'notes' => [
+                Rule::requiredIf(fn () => in_array($request->input('reason_code'), ShipmentLegService::NOTES_REQUIRED_REASONS, true)),
+                'nullable',
+                'string',
+                'max:1000',
+            ],
+            'proof_file' => [
+                Rule::requiredIf(fn () => in_array($request->input('reason_code'), ShipmentLegService::PHOTO_REQUIRED_REASONS, true)),
+                'nullable',
+                'image',
+                'max:10240',
+            ],
         ]);
+        $storedPath = null;
         if ($request->hasFile('proof_file')) {
-            $payload['file_path'] = $request->file('proof_file')->store('logistics-attempt/'.$leg->id, 'public');
+            $storedPath = $request->file('proof_file')->store('logistics-attempt/'.$leg->id, 'public');
+            $payload['file_path'] = $storedPath;
         }
 
         try {
@@ -234,11 +300,13 @@ class ShipmentController extends Controller
                 'recorded_by_type' => $actor::class,
                 'recorded_by_id' => $actor->id,
             ]);
-            if ($attempt->file_path !== $payload['file_path']) {
-                Storage::disk('public')->delete($payload['file_path']);
+            if ($storedPath && $attempt->file_path !== $storedPath) {
+                Storage::disk('public')->delete($storedPath);
             }
         } catch (\Throwable $exception) {
-            Storage::disk('public')->delete($payload['file_path']);
+            if ($storedPath) {
+                Storage::disk('public')->delete($storedPath);
+            }
             throw $exception;
         }
 
@@ -263,6 +331,8 @@ class ShipmentController extends Controller
             'recipient_unavailable' => 'Recipient was unavailable',
             'wrong_or_incomplete_address' => 'Address could not be completed',
             'recipient_refused' => 'Recipient refused the delivery',
+            'item_damaged' => 'The item was damaged',
+            'unsafe_location' => 'The delivery location was unsafe',
             'vehicle_or_delivery_problem' => 'A delivery problem prevented completion',
             'other' => 'Delivery could not be completed',
         ][$attempt->reason_code] ?? 'Delivery could not be completed';

@@ -35,6 +35,7 @@ class LogisticsSettingController extends Controller
             'afternoon_start' => ['required', 'date_format:H:i', 'after:morning_end'],
             'afternoon_end' => ['required', 'date_format:H:i', 'after:afternoon_start'],
             'coverage_radius_km' => ['required', 'numeric', 'gt:0'],
+            'arrival_radius_m' => ['required', 'integer', 'between:50,500'],
             'daily_rider_capacity' => ['required', 'integer', 'min:1'],
             'max_delivery_attempts' => ['required', 'integer', 'min:1'],
         ]);
@@ -43,6 +44,7 @@ class LogisticsSettingController extends Controller
             ShopOwner::query()->whereKey($shop->id)->lockForUpdate()->firstOrFail();
             $settings = LogisticsSetting::firstOrCreate(['shop_owner_id' => $shop->id]);
             $settings->update($data);
+
             return $settings->fresh();
         });
 

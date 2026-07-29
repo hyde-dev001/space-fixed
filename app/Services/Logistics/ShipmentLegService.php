@@ -17,6 +17,19 @@ use Illuminate\Validation\ValidationException;
 
 class ShipmentLegService
 {
+    public const PHOTO_REQUIRED_REASONS = [
+        'recipient_unavailable',
+        'wrong_or_incomplete_address',
+        'recipient_refused',
+        'item_damaged',
+    ];
+
+    public const NOTES_REQUIRED_REASONS = [
+        'unsafe_location',
+        'vehicle_or_delivery_problem',
+        'other',
+    ];
+
     public function __construct(
         private ProofService $proofs,
         private DeliveryEventService $events,
@@ -324,6 +337,14 @@ class ShipmentLegService
         if (empty($payload['reason_code'])) {
             throw ValidationException::withMessages(['reason_code' => 'Attempt reason is required.']);
         }
+        if (in_array($payload['reason_code'], self::PHOTO_REQUIRED_REASONS, true)
+            && empty($payload['file_path'])) {
+            throw ValidationException::withMessages(['proof_file' => ['A photo is required for this reason.']]);
+        }
+        if (in_array($payload['reason_code'], self::NOTES_REQUIRED_REASONS, true)
+            && blank($payload['notes'] ?? null)) {
+            throw ValidationException::withMessages(['notes' => ['Add a short note for this reason.']]);
+        }
 
         $batchId = $leg->delivery_batch_id;
 
@@ -377,9 +398,6 @@ class ShipmentLegService
                 throw ValidationException::withMessages(['leg' => 'Return-to-shop legs use the return handoff workflow.']);
             }
             $this->assertTransitionAllowed($leg, $allowAssigned ? ['assigned', 'picked_up', 'in_transit', 'delivery_attempted'] : ['in_transit', 'delivery_attempted'], 'delivery attempted');
-            if ($leg->delivery_batch_id && empty($payload['file_path'])) {
-                throw ValidationException::withMessages(['proof' => 'A failed-attempt photo is required.']);
-            }
             if (! $assignment) {
                 $assignment = $leg->assignments()->whereIn('status', ['assigned', 'accepted'])->lockForUpdate()->first();
             }

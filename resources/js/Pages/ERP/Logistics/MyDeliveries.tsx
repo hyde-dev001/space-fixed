@@ -12,11 +12,13 @@ import { Head, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import {
+  arrivalStatusText,
   completedProgress,
   deliveryContact,
   deliveryStatusLabel,
   nextActionableDelivery,
   orderedDeliveries,
+  riderResolutionInstruction,
 } from './riderDeliveryPresentation';
 
 type ActionConfirmation = Parameters<typeof workflowFeedback.confirm>[0];
@@ -24,7 +26,54 @@ type ActionRunner = (
   key: string,
   action: () => Promise<unknown>,
   confirmation?: ActionConfirmation,
+  onError?: (error: unknown) => boolean,
 ) => void;
+
+const arrivalReasons = [
+  ['gps_inaccurate', 'GPS location is inaccurate'],
+  ['pin_incorrect', 'Shop or customer pin is incorrect'],
+  ['alternate_meeting_point', 'Met at another location'],
+  ['access_restriction', 'Road or access restriction'],
+  ['safety_concern', 'Safety concern'],
+  ['other', 'Other'],
+] as const;
+
+const photoIssueReasons = new Set([
+  'recipient_unavailable',
+  'wrong_or_incomplete_address',
+  'recipient_refused',
+  'item_damaged',
+]);
+
+const noteIssueReasons = new Set([
+  'unsafe_location',
+  'vehicle_or_delivery_problem',
+  'other',
+]);
+
+const currentPosition = () => new Promise<GeolocationPosition>((resolve, reject) => {
+  if (!navigator.geolocation) {
+    reject(new Error('Location is unavailable on this device.'));
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(resolve, reject, {
+    enableHighAccuracy: true,
+    timeout: 10_000,
+    maximumAge: 0,
+  });
+});
+
+const needsArrivalReason = (error: unknown) => {
+  const response = (error as {
+    response?: { status?: number; data?: { errors?: Record<string, string[]> } };
+  })?.response;
+
+  return Boolean(
+    (response?.status === 422 && response.data?.errors?.exception_reason) ||
+    (typeof error === 'object' && error !== null && 'code' in error) ||
+    (error instanceof Error && error.message === 'Location is unavailable on this device.'),
+  );
+};
 
 const tabLabels: Record<RiderDeliveryTab, string> = {
   upcoming: 'Upcoming',
@@ -60,6 +109,20 @@ function StatusChip({ status }: { status: string }) {
       <span aria-hidden="true">{symbol}</span>
       {deliveryStatusLabel(status)}
     </span>
+  );
+}
+
+function ResolutionNotice({ delivery }: { delivery: TrackingShipmentLeg }) {
+  const instruction = riderResolutionInstruction(delivery);
+  if (!instruction) return null;
+
+  return (
+    <p
+      role="status"
+      className="mt-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100"
+    >
+      <span aria-hidden="true">!</span> {instruction}
+    </p>
   );
 }
 
@@ -134,6 +197,7 @@ function DeliverySequence({ item }: { item: RiderDeliveryWorkItem }) {
                 </p>
                 <StatusChip status={delivery.status} />
               </div>
+              <ResolutionNotice delivery={delivery} />
               <p className="mt-1 truncate text-sm text-slate-600 dark:text-slate-300">
                 {contact.name || 'Customer'} · {contact.address || 'Address unavailable'}
               </p>
@@ -167,6 +231,12 @@ function DeliveryActions({
   const [issueReason, setIssueReason] = useState('');
   const [issueNotes, setIssueNotes] = useState('');
   const [issueFile, setIssueFile] = useState<File | null>(null);
+  const [showArrivalReason, setShowArrivalReason] = useState(false);
+  const [arrivalReason, setArrivalReason] = useState('');
+  const [arrivalNotes, setArrivalNotes] = useState('');
+  const requiresIssuePhoto = photoIssueReasons.has(issueReason);
+  const requiresIssueNotes = noteIssueReasons.has(issueReason);
+  const arrivalEvidence = useRef<Record<string, unknown> | null>(null);
   const mutationDisabled = locked || !online || pendingAction !== null;
   const buttonClass =
     'min-h-11 w-full rounded-xl bg-blue-600 px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50';
@@ -197,35 +267,156 @@ function DeliveryActions({
     item.kind === 'batch'
       ? `stop ${delivery.stop_sequence ?? delivery.id} in batch #${item.id}`
       : `delivery #${delivery.id}`;
+  const arrivalPhase = ['assigned', 'pickup_scheduled'].includes(delivery.status)
+    ? 'pickup'
+    : delivery.status === 'in_transit'
+      ? 'dropoff'
+      : null;
+  const arrival = arrivalPhase ? delivery.arrivals?.[arrivalPhase] : undefined;
+  const arrivalKey = `arrival:${delivery.id}`;
+  const recordArrival = () => {
+    if (!arrivalPhase) return;
+    runAction(
+      arrivalKey,
+      async () => {
+        const position = await currentPosition();
+        const payload = {
+          arrival_type: arrivalPhase,
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy_m: position.coords.accuracy,
+          captured_at: new Date(position.timestamp).toISOString(),
+        };
+        arrivalEvidence.current = payload;
+
+        return logisticsApi.arrive(delivery.id, payload);
+      },
+      undefined,
+      (error) => {
+        if (!needsArrivalReason(error)) return false;
+        setShowArrivalReason(true);
+        return true;
+      },
+    );
+  };
+  const submitArrivalReason = () => {
+    if (!arrivalPhase || !arrivalReason || (arrivalReason === 'other' && !arrivalNotes.trim())) {
+      return;
+    }
+    runAction(arrivalKey, () => logisticsApi.arrive(delivery.id, {
+      ...(arrivalEvidence.current ?? {
+        arrival_type: arrivalPhase,
+        latitude: null,
+        longitude: null,
+        accuracy_m: null,
+        captured_at: null,
+      }),
+      exception_reason: arrivalReason,
+      exception_notes: arrivalNotes.trim() || null,
+    }));
+  };
+  const arrivalControl = arrivalPhase && !arrival ? (
+    <div className="space-y-3">
+      <button
+        type="button"
+        disabled={mutationDisabled || pendingAction === arrivalKey}
+        onClick={recordArrival}
+        className={buttonClass}
+      >
+        I've arrived
+      </button>
+      {!online && (
+        <p role="status" className="text-center text-sm font-semibold text-amber-700 dark:text-amber-300">
+          Retry after reconnect
+        </p>
+      )}
+      {showArrivalReason && (
+        <div className="space-y-3 rounded-xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/30">
+          <p className="text-sm text-amber-950 dark:text-amber-100">
+            Location could not be verified. Choose a reason to continue.
+          </p>
+          <label className="block text-sm font-semibold">
+            Arrival reason
+            <select
+              aria-label="Arrival reason"
+              value={arrivalReason}
+              onChange={(event) => setArrivalReason(event.target.value)}
+              className="mt-1 min-h-11 w-full rounded-xl border border-amber-300 bg-white px-3 dark:bg-slate-900"
+            >
+              <option value="">Choose a reason</option>
+              {arrivalReasons.map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-sm font-semibold">
+            Arrival notes {arrivalReason === 'other' ? '(required)' : '(optional)'}
+            <textarea
+              aria-label="Arrival notes"
+              value={arrivalNotes}
+              onChange={(event) => setArrivalNotes(event.target.value)}
+              className="mt-1 min-h-20 w-full rounded-xl border border-amber-300 bg-white p-3 dark:bg-slate-900"
+            />
+          </label>
+          <button
+            type="button"
+            disabled={
+              mutationDisabled ||
+              !arrivalReason ||
+              (arrivalReason === 'other' && !arrivalNotes.trim())
+            }
+            onClick={submitArrivalReason}
+            className={buttonClass}
+          >
+            Continue with reason
+          </button>
+        </div>
+      )}
+    </div>
+  ) : null;
+  const arrivalSummary = arrival ? (
+    <p
+      role="status"
+      aria-live="polite"
+      className="rounded-xl bg-slate-50 p-3 text-sm font-semibold text-slate-800 dark:bg-slate-800 dark:text-slate-100"
+    >
+      <span aria-hidden="true">{arrival.result === 'verified' ? '✓' : '!'}</span>{' '}
+      {arrivalStatusText(arrival)}
+    </p>
+  ) : null;
 
   if (['assigned', 'pickup_scheduled'].includes(delivery.status)) {
+    if (!arrival) return arrivalControl;
     const key = `pickup:${delivery.id}`;
     const pickupProof = delivery.proofs
       ?.filter(({ handoff_type }) => handoff_type === 'pickup')
       .at(-1);
 
     return (
-      <button
-        type="button"
-        disabled={mutationDisabled || pendingAction === key}
-        onClick={() =>
-          runAction(
-            key,
-            () =>
-              pickupProof
-                ? logisticsApi.confirmPickup(delivery.id, pickupProof.id)
-                : logisticsApi.markPickedUp(delivery.id),
-            {
-              title: `Confirm pickup for ${deliveryReference}?`,
-              text: 'This confirms that the parcel is now in your custody.',
-              confirmButtonText: 'Confirm pickup',
-            },
-          )
-        }
-        className={buttonClass}
-      >
-        Confirm pickup
-      </button>
+      <div className="space-y-3">
+        {arrivalSummary}
+        <button
+          type="button"
+          disabled={mutationDisabled || pendingAction === key}
+          onClick={() =>
+            runAction(
+              key,
+              () =>
+                pickupProof
+                  ? logisticsApi.confirmPickup(delivery.id, pickupProof.id)
+                  : logisticsApi.markPickedUp(delivery.id),
+              {
+                title: `Confirm pickup for ${deliveryReference}?`,
+                text: 'This confirms that the parcel is now in your custody.',
+                confirmButtonText: 'Confirm pickup',
+              },
+            )
+          }
+          className={buttonClass}
+        >
+          Confirm pickup
+        </button>
+      </div>
     );
   }
 
@@ -258,6 +449,7 @@ function DeliveryActions({
   }
 
   if (delivery.status !== 'in_transit') return null;
+  if (!arrival) return arrivalControl;
 
   const proofKey = `proof:${delivery.id}`;
   const issueKey = `issue:${delivery.id}`;
@@ -286,12 +478,17 @@ function DeliveryActions({
   };
 
   const submitIssue = () => {
-    if (!issueFile || !issueReason || !assignment) return;
+    if (
+      !issueReason ||
+      !assignment ||
+      (requiresIssuePhoto && !issueFile) ||
+      (requiresIssueNotes && !issueNotes.trim())
+    ) return;
     const form = new FormData();
     form.append('delivery_assignment_id', String(assignment.id));
     form.append('reason_code', issueReason);
     if (issueNotes.trim()) form.append('notes', issueNotes.trim());
-    form.append('proof_file', issueFile);
+    if (issueFile) form.append('proof_file', issueFile);
     runAction(
       issueKey,
       () =>
@@ -308,6 +505,7 @@ function DeliveryActions({
 
   return (
     <div className="space-y-3">
+      {arrivalSummary}
       {canRecordProof && (
         <div className="space-y-2 rounded-xl bg-slate-50 p-3 dark:bg-slate-800">
           <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
@@ -354,23 +552,27 @@ function DeliveryActions({
               <option value="recipient_unavailable">Recipient unavailable</option>
               <option value="wrong_or_incomplete_address">Wrong or incomplete address</option>
               <option value="recipient_refused">Recipient refused</option>
+              <option value="item_damaged">Item damaged</option>
+              <option value="unsafe_location">Unsafe location</option>
               <option value="vehicle_or_delivery_problem">Vehicle or delivery problem</option>
               <option value="other">Other</option>
             </select>
           </label>
           <label className="block text-sm font-semibold">
-            Notes
+            Notes {requiresIssueNotes ? '(required)' : '(optional)'}
             <textarea
               aria-label="Issue notes"
+              required={requiresIssueNotes}
               value={issueNotes}
               onChange={(event) => setIssueNotes(event.target.value)}
               className="mt-1 min-h-20 w-full rounded-xl border border-amber-300 bg-white p-3 dark:bg-slate-900"
             />
           </label>
           <label className="block text-sm font-semibold">
-            Issue photo
+            Issue photo {requiresIssuePhoto ? '(required)' : '(optional)'}
             <input
               type="file"
+              required={requiresIssuePhoto}
               accept="image/*"
               aria-label="Issue photo"
               onChange={(event) => setIssueFile(event.target.files?.[0] ?? null)}
@@ -383,7 +585,8 @@ function DeliveryActions({
               mutationDisabled ||
               !assignment ||
               !issueReason ||
-              !issueFile ||
+              (requiresIssuePhoto && !issueFile) ||
+              (requiresIssueNotes && !issueNotes.trim()) ||
               pendingAction === issueKey
             }
             onClick={submitIssue}
@@ -476,6 +679,7 @@ function CurrentDeliveryCard({
               <p className="mb-3 text-sm font-bold text-blue-700 dark:text-blue-300">
                 Current delivery · {actionable.stop_sequence ?? 1} of {item.deliveries.length}
               </p>
+              <ResolutionNotice delivery={actionable} />
               <DeliveryContact delivery={actionable} />
               <div className="mt-4">
                 <DeliveryActions
@@ -907,7 +1111,7 @@ export default function MyDeliveries() {
     };
   }, []);
 
-  const runAction: ActionRunner = (key, action, confirmation) => {
+  const runAction: ActionRunner = (key, action, confirmation, onError) => {
     if (!online || actionInFlight.current) return;
     actionInFlight.current = true;
     setPendingAction(key);
@@ -928,6 +1132,10 @@ export default function MyDeliveries() {
         await action();
         router.reload({ only: ['deliveryData'], onFinish: finish });
       } catch (error: any) {
+        if (onError?.(error)) {
+          finish();
+          return;
+        }
         const errors = error.response?.data?.errors;
         setActionError(
           error.response?.data?.message ??

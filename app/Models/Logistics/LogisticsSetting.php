@@ -11,7 +11,7 @@ class LogisticsSetting extends Model
     protected $fillable = [
         'shop_owner_id', 'operating_days', 'cutoff_time', 'blackout_dates',
         'lead_time_days', 'morning_start', 'morning_end', 'afternoon_start',
-        'afternoon_end', 'coverage_radius_km', 'daily_rider_capacity',
+        'afternoon_end', 'coverage_radius_km', 'arrival_radius_m', 'daily_rider_capacity',
         'max_delivery_attempts',
     ];
 
@@ -25,6 +25,7 @@ class LogisticsSetting extends Model
         'afternoon_start' => '13:00',
         'afternoon_end' => '18:00',
         'coverage_radius_km' => 20,
+        'arrival_radius_m' => 100,
         'daily_rider_capacity' => 20,
         'max_delivery_attempts' => 2,
     ];
@@ -34,6 +35,7 @@ class LogisticsSetting extends Model
         'blackout_dates' => 'array',
         'lead_time_days' => 'integer',
         'coverage_radius_km' => 'decimal:2',
+        'arrival_radius_m' => 'integer',
         'daily_rider_capacity' => 'integer',
         'max_delivery_attempts' => 'integer',
     ];

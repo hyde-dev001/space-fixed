@@ -3,6 +3,7 @@ import { usePage } from '@inertiajs/react';
 import { ArrowDown, ArrowUp, Flame, GripVertical, MapPin, Phone, Trash2 } from 'lucide-react';
 import { useDrag, useDrop } from 'react-dnd';
 import { logisticsModuleForSourceType, logisticsModuleLabel, logisticsSourceLabel, type TrackingShipmentLeg } from '@/types/logistics';
+import ArrivalSummary from './ArrivalSummary';
 import RetailOrderSummary from './RetailOrderSummary';
 
 const text = (value?: string | null) => value || 'Not provided';
@@ -59,6 +60,7 @@ export default function BatchStopRow({ leg, index, total, editable = false, busy
           {failedAttempt?.reason_code && <span>{label(failedAttempt.reason_code)}</span>}
           <span>{leg.scheduled_delivery_date ? formatDate(leg.scheduled_delivery_date) : 'Not scheduled'}{leg.delivery_window ? ` · ${label(leg.delivery_window)}` : ''} · {label(leg.status)}</span>
         </div>
+        <ArrivalSummary arrivals={leg.arrivals} />
         <div className="mt-3">
           <RetailOrderSummary summary={leg.shipment?.order_summary} instructions={destination?.delivery_instructions} />
         </div>

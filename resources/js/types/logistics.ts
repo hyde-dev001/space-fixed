@@ -62,6 +62,28 @@ export type DeliveryContactSnapshot = {
   longitude?: number | null;
 };
 
+export type DeliveryArrival = {
+  id: number;
+  arrival_type: 'pickup' | 'dropoff';
+  result: 'verified' | 'outside_geofence' | 'low_accuracy' | 'location_unavailable';
+  distance_m?: number | null;
+  radius_m: number;
+  accuracy_m?: number | null;
+  exception_reason?: string | null;
+  exception_notes?: string | null;
+  recorded_at: string;
+};
+
+export type CustomerDeliveryProof = {
+  id: number;
+  available: boolean;
+  url: string | null;
+  delivered_at?: string | null;
+  location: string;
+  tracking_number: string;
+  status: 'Delivered';
+};
+
 export type TrackingShipmentLeg = {
   id: number;
   delivery_batch_id?: number | null;
@@ -86,6 +108,8 @@ export type TrackingShipmentLeg = {
   schedule_status?: string | null;
   stop_sequence?: number | null;
   urgent_at?: string | null;
+  arrivals?: Partial<Record<'pickup' | 'dropoff', DeliveryArrival>>;
+  delivery_proof?: CustomerDeliveryProof | null;
   latest_failed_attempt?: {
     id: number;
     attempt_number?: number | null;
