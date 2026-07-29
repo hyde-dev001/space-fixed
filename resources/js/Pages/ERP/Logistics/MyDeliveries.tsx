@@ -51,6 +51,27 @@ const noteIssueReasons = new Set([
   'other',
 ]);
 
+const deliveryIssueReasons = [
+  ['recipient_unavailable', 'Recipient unavailable'],
+  ['wrong_or_incomplete_address', 'Wrong or incomplete address'],
+  ['recipient_refused', 'Recipient refused'],
+  ['item_damaged', 'Item damaged'],
+  ['unsafe_location', 'Unsafe location'],
+  ['vehicle_or_delivery_problem', 'Vehicle or delivery problem'],
+  ['other', 'Other'],
+] as const;
+
+const pickupIssueReasons = [
+  ['customer_unavailable', 'Customer unavailable / not home'],
+  ['customer_requested_reschedule', 'Customer requested reschedule'],
+  ['customer_refused_pickup', 'Customer refused pickup'],
+  ['item_not_ready', 'Item not ready or unavailable'],
+  ['wrong_address_or_pin', 'Wrong address or map pin'],
+  ['unsafe_or_inaccessible_location', 'Unsafe or inaccessible location'],
+  ['vehicle_or_rider_problem', 'Vehicle or rider problem'],
+  ['other', 'Other'],
+] as const;
+
 const currentPosition = () => new Promise<GeolocationPosition>((resolve, reject) => {
   if (!navigator.geolocation) {
     reject(new Error('Location is unavailable on this device.'));
@@ -234,12 +255,16 @@ function DeliveryActions({
   const [showArrivalReason, setShowArrivalReason] = useState(false);
   const [arrivalReason, setArrivalReason] = useState('');
   const [arrivalNotes, setArrivalNotes] = useState('');
-  const requiresIssuePhoto = photoIssueReasons.has(issueReason);
-  const requiresIssueNotes = noteIssueReasons.has(issueReason);
   const arrivalEvidence = useRef<Record<string, unknown> | null>(null);
+  const issueKeys = useRef<Record<string, string>>({});
+  const issuePanelRef = useRef<HTMLDivElement>(null);
   const mutationDisabled = locked || !online || pendingAction !== null;
   const buttonClass =
     'min-h-11 w-full rounded-xl bg-blue-600 px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50';
+
+  useEffect(() => {
+    if (showIssue) issuePanelRef.current?.focus();
+  }, [showIssue]);
 
   if (item.kind === 'batch' && item.status === 'accepted') {
     const key = `batch-start:${item.id}`;
@@ -263,10 +288,117 @@ function DeliveryActions({
   }
 
   if (!delivery) return null;
+  const isRepairPickup = delivery.shipment?.purpose === 'repair_pickup'
+    && ['assigned', 'pickup_scheduled'].includes(delivery.status);
+  const requiresIssuePhoto = isRepairPickup || photoIssueReasons.has(issueReason);
+  const requiresIssueNotes = isRepairPickup
+    ? issueReason === 'other'
+    : noteIssueReasons.has(issueReason);
+  const assignment = delivery.assignments?.find(({ status }) =>
+    ['assigned', 'accepted'].includes(status),
+  );
+  const issueKey = `${isRepairPickup ? 'pickup-issue' : 'issue'}:${delivery.id}`;
+  const issueRequestKey = `${isRepairPickup ? 'pickup' : 'delivery'}:${delivery.id}`;
+  const issueOptions = isRepairPickup ? pickupIssueReasons : deliveryIssueReasons;
   const deliveryReference =
     item.kind === 'batch'
       ? `stop ${delivery.stop_sequence ?? delivery.id} in batch #${item.id}`
       : `delivery #${delivery.id}`;
+  const submitIssue = () => {
+    if (
+      !issueReason ||
+      !assignment ||
+      (requiresIssuePhoto && !issueFile) ||
+      (requiresIssueNotes && !issueNotes.trim())
+    ) return;
+    const form = new FormData();
+    const idempotencyKey = issueKeys.current[issueRequestKey]
+      ?? (issueKeys.current[issueRequestKey] = crypto.randomUUID());
+    form.append('attempt_type', isRepairPickup ? 'pickup' : 'delivery');
+    form.append('delivery_assignment_id', String(assignment.id));
+    form.append('idempotency_key', idempotencyKey);
+    form.append('reason_code', issueReason);
+    if (issueNotes.trim()) form.append('notes', issueNotes.trim());
+    if (issueFile) form.append('proof_file', issueFile);
+    runAction(
+      issueKey,
+      () => logisticsApi.reportIssue(delivery.id, form),
+      {
+        title: isRepairPickup
+          ? `Submit failed pickup for ${deliveryReference}?`
+          : `Submit issue for ${deliveryReference}?`,
+        text: isRepairPickup
+          ? 'The dispatcher will choose whether to reschedule or cancel this pickup.'
+          : 'This records a failed delivery attempt for dispatcher review.',
+        confirmButtonText: isRepairPickup ? 'Submit failed pickup' : 'Submit issue',
+      },
+    );
+  };
+  const issuePanel = showIssue ? (
+    <div
+      ref={issuePanelRef}
+      tabIndex={-1}
+      aria-label={isRepairPickup ? 'Failed pickup details' : 'Delivery issue details'}
+      className="space-y-3 rounded-xl border border-amber-300 bg-amber-50 p-3 outline-none focus:ring-2 focus:ring-amber-500 dark:border-amber-800 dark:bg-amber-950/30"
+    >
+      <label className="block text-sm font-semibold">
+        {isRepairPickup ? 'Failed pickup reason' : 'Issue reason'}
+        <select
+          aria-label={isRepairPickup ? 'Failed pickup reason' : 'Issue reason'}
+          value={issueReason}
+          onChange={(event) => setIssueReason(event.target.value)}
+          className="mt-1 min-h-11 w-full rounded-xl border border-amber-300 bg-white px-3 dark:bg-slate-900"
+        >
+          <option value="">Choose a reason</option>
+          {issueOptions.map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
+      </label>
+      <label className="block text-sm font-semibold">
+        {isRepairPickup ? 'Failed pickup notes' : 'Notes'} {requiresIssueNotes ? '(required)' : '(optional)'}
+        <textarea
+          aria-label={isRepairPickup ? 'Failed pickup notes' : 'Issue notes'}
+          required={requiresIssueNotes}
+          value={issueNotes}
+          onChange={(event) => setIssueNotes(event.target.value)}
+          className="mt-1 min-h-20 w-full rounded-xl border border-amber-300 bg-white p-3 dark:bg-slate-900"
+        />
+      </label>
+      <label className="block text-sm font-semibold">
+        {isRepairPickup ? 'Failed pickup photo (required)' : `Issue photo ${requiresIssuePhoto ? '(required)' : '(optional)'}`}
+        <input
+          type="file"
+          required={requiresIssuePhoto}
+          accept="image/*"
+          capture={isRepairPickup ? 'environment' : undefined}
+          aria-label={isRepairPickup ? 'Failed pickup photo' : 'Issue photo'}
+          onChange={(event) => setIssueFile(event.target.files?.[0] ?? null)}
+          className="mt-2 block w-full text-sm"
+        />
+      </label>
+      {!online && (
+        <p role="status" className="text-center text-sm font-semibold text-amber-700 dark:text-amber-300">
+          Retry after reconnect
+        </p>
+      )}
+      <button
+        type="button"
+        disabled={
+          mutationDisabled ||
+          !assignment ||
+          !issueReason ||
+          (requiresIssuePhoto && !issueFile) ||
+          (requiresIssueNotes && !issueNotes.trim()) ||
+          pendingAction === issueKey
+        }
+        onClick={submitIssue}
+        className={buttonClass}
+      >
+        {isRepairPickup ? 'Submit failed pickup' : 'Submit issue'}
+      </button>
+    </div>
+  ) : null;
   const arrivalPhase = ['assigned', 'pickup_scheduled'].includes(delivery.status)
     ? 'pickup'
     : delivery.status === 'in_transit'
@@ -416,6 +548,19 @@ function DeliveryActions({
         >
           Confirm pickup
         </button>
+        {isRepairPickup && (
+          <>
+            <button
+              type="button"
+              disabled={mutationDisabled}
+              onClick={() => setShowIssue((current) => !current)}
+              className="min-h-11 w-full rounded-xl border border-amber-500 px-4 text-sm font-bold text-amber-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-amber-200"
+            >
+              Failed pickup
+            </button>
+            {issuePanel}
+          </>
+        )}
       </div>
     );
   }
@@ -452,10 +597,6 @@ function DeliveryActions({
   if (!arrival) return arrivalControl;
 
   const proofKey = `proof:${delivery.id}`;
-  const issueKey = `issue:${delivery.id}`;
-  const assignment = delivery.assignments?.find(({ status }) =>
-    ['assigned', 'accepted'].includes(status),
-  );
 
   const submitProof = () => {
     if (!proofFile) return;
@@ -473,32 +614,6 @@ function DeliveryActions({
         title: `Submit proof for ${deliveryReference}?`,
         text: `${proofFile.name} will be attached to this delivery.`,
         confirmButtonText: 'Submit proof',
-      },
-    );
-  };
-
-  const submitIssue = () => {
-    if (
-      !issueReason ||
-      !assignment ||
-      (requiresIssuePhoto && !issueFile) ||
-      (requiresIssueNotes && !issueNotes.trim())
-    ) return;
-    const form = new FormData();
-    form.append('delivery_assignment_id', String(assignment.id));
-    form.append('reason_code', issueReason);
-    if (issueNotes.trim()) form.append('notes', issueNotes.trim());
-    if (issueFile) form.append('proof_file', issueFile);
-    runAction(
-      issueKey,
-      () =>
-        axios.post(`/api/logistics/legs/${delivery.id}/report-issue`, form, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        }),
-      {
-        title: `Submit issue for ${deliveryReference}?`,
-        text: 'This records a failed delivery attempt for dispatcher review.',
-        confirmButtonText: 'Submit issue',
       },
     );
   };
@@ -538,64 +653,7 @@ function DeliveryActions({
         Report issue
       </button>
 
-      {showIssue && (
-        <div className="space-y-3 rounded-xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/30">
-          <label className="block text-sm font-semibold">
-            Issue reason
-            <select
-              aria-label="Issue reason"
-              value={issueReason}
-              onChange={(event) => setIssueReason(event.target.value)}
-              className="mt-1 min-h-11 w-full rounded-xl border border-amber-300 bg-white px-3 dark:bg-slate-900"
-            >
-              <option value="">Choose a reason</option>
-              <option value="recipient_unavailable">Recipient unavailable</option>
-              <option value="wrong_or_incomplete_address">Wrong or incomplete address</option>
-              <option value="recipient_refused">Recipient refused</option>
-              <option value="item_damaged">Item damaged</option>
-              <option value="unsafe_location">Unsafe location</option>
-              <option value="vehicle_or_delivery_problem">Vehicle or delivery problem</option>
-              <option value="other">Other</option>
-            </select>
-          </label>
-          <label className="block text-sm font-semibold">
-            Notes {requiresIssueNotes ? '(required)' : '(optional)'}
-            <textarea
-              aria-label="Issue notes"
-              required={requiresIssueNotes}
-              value={issueNotes}
-              onChange={(event) => setIssueNotes(event.target.value)}
-              className="mt-1 min-h-20 w-full rounded-xl border border-amber-300 bg-white p-3 dark:bg-slate-900"
-            />
-          </label>
-          <label className="block text-sm font-semibold">
-            Issue photo {requiresIssuePhoto ? '(required)' : '(optional)'}
-            <input
-              type="file"
-              required={requiresIssuePhoto}
-              accept="image/*"
-              aria-label="Issue photo"
-              onChange={(event) => setIssueFile(event.target.files?.[0] ?? null)}
-              className="mt-2 block w-full text-sm"
-            />
-          </label>
-          <button
-            type="button"
-            disabled={
-              mutationDisabled ||
-              !assignment ||
-              !issueReason ||
-              (requiresIssuePhoto && !issueFile) ||
-              (requiresIssueNotes && !issueNotes.trim()) ||
-              pendingAction === issueKey
-            }
-            onClick={submitIssue}
-            className={buttonClass}
-          >
-            Submit issue
-          </button>
-        </div>
-      )}
+      {issuePanel}
     </div>
   );
 }
