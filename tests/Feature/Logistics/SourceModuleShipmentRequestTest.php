@@ -50,6 +50,27 @@ class SourceModuleShipmentRequestTest extends TestCase
         ]);
     }
 
+    public function test_shop_owner_cannot_move_delivered_order_back_to_processing(): void
+    {
+        $shop = ShopOwner::factory()->create([
+            'business_type' => 'retail',
+            'registration_type' => 'individual',
+            'status' => 'approved',
+        ]);
+        $order = Order::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'status' => 'delivered',
+        ]);
+
+        $this->actingAs($shop, 'shop_owner')
+            ->patchJson("/api/shop-owner/orders/{$order->id}/status", [
+                'status' => 'processing',
+            ])
+            ->assertStatus(409);
+
+        $this->assertSame('delivered', $order->fresh()->status->value);
+    }
+
     public function test_staff_marking_order_shipped_requests_outbound_shipment(): void
     {
         $shop = ShopOwner::factory()->create([

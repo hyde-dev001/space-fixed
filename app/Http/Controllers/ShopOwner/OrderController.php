@@ -368,6 +368,16 @@ class OrderController extends Controller
             return response()->json(['error' => 'Order not found'], 404);
         }
 
+        if ($order->status->isFinal() && $order->status->value !== (string) $request->status) {
+            $currentStatus = ucfirst($order->status->value);
+            $requestedStatus = ucfirst((string) $request->status);
+
+            return response()->json([
+                'success' => false,
+                'message' => "The order is already {$currentStatus} and cannot be moved back to {$requestedStatus}.",
+            ], 409);
+        }
+
         // Update order status and shipping info
         $order->status = $request->status;
         

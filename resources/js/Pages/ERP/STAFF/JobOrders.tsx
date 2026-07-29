@@ -592,6 +592,7 @@ export default function JobOrdersPage() {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
   const paginatedOrders = filteredOrders.slice(startIndex, endIndex);
+  const processableOrders = paginatedOrders.filter((order) => order.status === "pending");
 
   // Calculate statistics
   const stats = useMemo(() => {
@@ -626,7 +627,7 @@ export default function JobOrdersPage() {
 
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.checked) {
-      setSelectedOrders(paginatedOrders.map((order) => order.id));
+      setSelectedOrders(processableOrders.map((order) => order.id));
     } else {
       setSelectedOrders([]);
     }
@@ -650,29 +651,52 @@ export default function JobOrdersPage() {
     });
     if (!result.isConfirmed) return;
     try {
+      const orderIds = selectedOrders.filter((id) =>
+        orders.some((order) => order.id === id && order.status === "pending")
+      );
+      if (orderIds.length === 0) {
+        setSelectedOrders([]);
+        return;
+      }
+
       const csrfResponse = await fetch('/api/csrf-token', {
         credentials: 'include',
         headers: { 'Accept': 'application/json' },
       });
       const csrfData = await csrfResponse.json();
       const csrfToken = csrfData.csrf_token;
-      await Promise.all(
-        selectedOrders.map(id =>
+      const responses = await Promise.all(
+        orderIds.map(id =>
           fetch(`/api/staff/orders/${id}/status`, {
             method: 'PATCH',
             credentials: 'include',
-            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken },
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'X-CSRF-TOKEN': csrfToken,
+            },
             body: JSON.stringify({ status: 'processing' }),
           })
         )
       );
+      const failedResponse = responses.find((response) => !response.ok);
+      if (failedResponse) {
+        const errorData = await failedResponse.json().catch(() => null);
+        throw new Error(errorData?.message || 'Some orders could not be updated. Please try again.');
+      }
+
       setOrders(prev =>
-        prev.map(o => selectedOrders.includes(o.id) ? { ...o, status: 'processing' as any } : o)
+        prev.map(o => orderIds.includes(o.id) ? { ...o, status: 'processing' as any } : o)
       );
       setSelectedOrders([]);
-      Swal.fire('Done', `${selectedOrders.length} order(s) marked as Processing.`, 'success');
-    } catch {
-      Swal.fire('Error', 'Some orders could not be updated. Please try again.', 'error');
+      Swal.fire('Done', `${orderIds.length} order(s) marked as Processing.`, 'success');
+    } catch (error) {
+      await refreshOrders();
+      Swal.fire(
+        'Error',
+        error instanceof Error ? error.message : 'Some orders could not be updated. Please try again.',
+        'error',
+      );
     }
   };
 
@@ -1937,11 +1961,12 @@ export default function JobOrdersPage() {
                       title="Select all orders on this page"
                       aria-label="Select all orders on this page"
                       checked={
-                        paginatedOrders.length > 0 &&
-                        selectedOrders.length === paginatedOrders.length
+                        processableOrders.length > 0 &&
+                        processableOrders.every((order) => selectedOrders.includes(order.id))
                       }
                       onChange={handleSelectAll}
-                      className="rounded border-gray-300 dark:border-gray-700 text-blue-600 focus:ring-blue-500"
+                      disabled={processableOrders.length === 0}
+                      className="rounded border-gray-300 dark:border-gray-700 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
                     />
                   </th>
                   <th className="box-border px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
@@ -1987,7 +2012,8 @@ export default function JobOrdersPage() {
                           aria-label={`Select order ${order.order_number}`}
                           checked={selectedOrders.includes(order.id)}
                           onChange={() => handleSelectOrder(order.id)}
-                          className="rounded border-gray-300 dark:border-gray-700 text-blue-600 focus:ring-blue-500"
+                          disabled={order.status !== "pending"}
+                          className="rounded border-gray-300 dark:border-gray-700 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
                         />
                       </td>
                       <td className="box-border px-4 py-4 align-top">
