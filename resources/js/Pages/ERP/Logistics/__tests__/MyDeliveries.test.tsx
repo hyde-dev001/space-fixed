@@ -40,6 +40,8 @@ const mocks = vi.hoisted(() => ({
   markInTransit: vi.fn(() => Promise.resolve()),
   arrive: vi.fn(() => Promise.resolve()),
   reportIssue: vi.fn(() => Promise.resolve()),
+  recordProof: vi.fn(() => Promise.resolve({ data: { proof: { id: 17 } } })),
+  confirmReturnHandoff: vi.fn(() => Promise.resolve()),
   getCurrentPosition: vi.fn(),
 }));
 
@@ -67,6 +69,8 @@ vi.mock('@/services/logisticsApi', () => ({ logisticsApi: {
   markInTransit: mocks.markInTransit,
   arrive: mocks.arrive,
   reportIssue: mocks.reportIssue,
+  recordProof: mocks.recordProof,
+  confirmReturnHandoff: mocks.confirmReturnHandoff,
 } }));
 
 const leg = (
@@ -216,6 +220,38 @@ describe('MyDeliveries task-first hierarchy', () => {
     expect(within(region).getByText('Batch #12')).toBeVisible();
     expect(region).toHaveTextContent('2 deliveries');
     expect(within(region).getByRole('button', { name: 'View details' })).toBeVisible();
+  });
+
+  it('shows and submits the return-to-shop handoff after the final failed attempt', async () => {
+    const returnLeg = {
+      ...leg(4, null, 'in_transit', 'SoleSpace shop'),
+      leg_type: 'return_to_shop',
+      assignments: [{ id: 13, status: 'accepted' }],
+      shipment: {
+        id: 103,
+        source_type: 'repair_request',
+        source_id: 203,
+        purpose: 'repair_pickup',
+      },
+    };
+    mocks.props.deliveryData.current = workItem('single', 'in_transit', [returnLeg], {
+      business_label: 'Repair pickup',
+      business_types: ['repair'],
+    });
+
+    render(<MyDeliveries />);
+
+    expect(screen.getByText('Return to shop')).toBeVisible();
+    expect(screen.queryByLabelText('Delivery proof')).not.toBeInTheDocument();
+    const photo = new File(['return'], 'return.jpg', { type: 'image/jpeg' });
+    fireEvent.change(screen.getByLabelText('Return handoff photo'), {
+      target: { files: [photo] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm return handoff' }));
+
+    await waitFor(() => expect(mocks.confirmReturnHandoff).toHaveBeenCalledWith(4, 17));
+    expect(mocks.recordProof).toHaveBeenCalledWith(4, expect.any(FormData));
+    expect((mocks.recordProof.mock.calls[0][1] as FormData).get('handoff_type')).toBe('receive');
   });
 
   it('shows semantic lower-list tabs and business filter', () => {
