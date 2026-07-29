@@ -4,6 +4,7 @@ import axios from 'axios';
 import { CalendarDays, ChevronDown, MapPin, Search, UserRound } from 'lucide-react';
 import Swal from 'sweetalert2';
 import AppLayoutERP from '@/layout/AppLayout_ERP';
+import ArrivalSummary from './components/ArrivalSummary';
 import RetailOrderSummary from './components/RetailOrderSummary';
 import {
   logisticsModuleForSourceType,
@@ -480,6 +481,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                     <p><strong>Schedule:</strong> {formatDate(leg.scheduled_delivery_date)}{leg.delivery_window ? ` · ${label(leg.delivery_window)}` : ''}</p>
                                     {leg.stop_sequence && <p><strong>Stop:</strong> {leg.stop_sequence}</p>}
                                   </div>
+                                  {!riderMode && <ArrivalSummary arrivals={leg.arrivals} />}
                                   {!riderMode && latestAttempt?.status === 'failed' && <div className="mt-2 space-y-1 text-xs text-gray-600 dark:text-gray-300"><span className="inline-flex rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">Failed attempt - {failedAttemptCount}/{maxDeliveryAttempts}</span>{attemptsMaxed && <p className="font-semibold text-red-600">Subject for refund</p>}{latestAttempt.reason_code && <p>{label(latestAttempt.reason_code)}</p>}{latestAttempt.notes && <p>Internal note: {latestAttempt.notes}</p>}{latestAttempt.file_path && <a href={`/storage/${latestAttempt.file_path}`} target="_blank" rel="noreferrer" className="inline-block font-semibold text-blue-600 hover:underline">View failed-attempt photo</a>}</div>}
                                 </div>
                                 <div className="flex min-w-0 flex-col gap-3">

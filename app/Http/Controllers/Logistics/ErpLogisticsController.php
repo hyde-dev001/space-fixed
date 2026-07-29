@@ -63,12 +63,18 @@ class ErpLogisticsController extends Controller
         return Inertia::render('ERP/Logistics/Shipments', [
             'shipments' => tap(Shipment::query()
                 ->with(['legs' => function ($query) use ($user, $isDispatcher) {
-                    $query->with(['assignments.riderProfile', 'proofs', 'attempts' => fn ($attempts) => $attempts
-                        ->where('attempt_type', 'delivery')
-                        ->where('status', 'failed')
-                        ->latest('attempted_at')
-                        ->latest('id')
-                        ->limit(1)]);
+                    $query->with([
+                        'assignments.riderProfile',
+                        'proofs',
+                        'events' => fn ($events) => $events
+                            ->whereIn('event_type', ['pickup_arrived', 'dropoff_arrived']),
+                        'attempts' => fn ($attempts) => $attempts
+                            ->where('attempt_type', 'delivery')
+                            ->where('status', 'failed')
+                            ->latest('attempted_at')
+                            ->latest('id')
+                            ->limit(1),
+                    ]);
                     $query->withCount(['attempts as failed_attempt_count' => fn ($attempts) => $attempts
                         ->where('attempt_type', 'delivery')->where('status', 'failed')]);
 
@@ -113,10 +119,11 @@ class ErpLogisticsController extends Controller
                 })
                 ->latest()
                 ->paginate(10)
-                ->withQueryString(), fn ($shipments) => $this->attachShipmentSummaries(
-                    $shipments->getCollection(),
-                    $shopOwnerId,
-                )),
+                ->withQueryString(), function ($shipments) use ($shopOwnerId): void {
+                    $this->attachShipmentSummaries($shipments->getCollection(), $shopOwnerId);
+                    $shipments->getCollection()->flatMap->legs
+                        ->each(fn (ShipmentLeg $leg) => $this->attachArrivalPayload($leg));
+                }),
             'filters' => [
                 'status' => $status,
                 'purpose' => $purpose,
@@ -502,7 +509,20 @@ class ErpLogisticsController extends Controller
         unset($payload['events']);
         $payload['status'] = $leg->status->value;
         $payload['failed_attempt_count'] = $leg->attempts->count();
-        $payload['arrivals'] = $leg->events
+        $payload['arrivals'] = $this->arrivalPayload($leg);
+
+        return $payload;
+    }
+
+    private function attachArrivalPayload(ShipmentLeg $leg): void
+    {
+        $leg->setAttribute('arrivals', $this->arrivalPayload($leg));
+        $leg->unsetRelation('events');
+    }
+
+    private function arrivalPayload(ShipmentLeg $leg): array
+    {
+        return $leg->events
             ->keyBy(fn ($event) => $event->event_type === 'pickup_arrived' ? 'pickup' : 'dropoff')
             ->map(fn ($event) => [
                 'id' => $event->id,
@@ -516,8 +536,6 @@ class ErpLogisticsController extends Controller
                 'recorded_at' => $event->created_at?->toISOString(),
             ])
             ->all();
-
-        return $payload;
     }
 
     private function businessTypes(iterable $purposes): array
@@ -681,7 +699,13 @@ class ErpLogisticsController extends Controller
         $filterLegModule = fn ($query) => $query
             ->when($module !== 'all', fn ($shipments) => $shipments
                 ->whereIn('source_type', Shipment::sourceTypesForModule($module)));
-        $batches = DeliveryBatch::with(['riderProfile', 'legs.shipment', 'legs.attempts' => $attemptRelations['attempts']])
+        $batches = DeliveryBatch::with([
+            'riderProfile',
+            'legs.shipment',
+            'legs.events' => fn ($events) => $events
+                ->whereIn('event_type', ['pickup_arrived', 'dropoff_arrived']),
+            'legs.attempts' => $attemptRelations['attempts'],
+        ])
             ->where('shop_owner_id', $shopOwnerId)
             ->when($module !== 'all', fn ($query) => $this->filterBatchesByModule($query, $module))
             ->when($deliveryDate, fn ($query) => $query->whereDate('delivery_date', $deliveryDate))
@@ -695,6 +719,7 @@ class ErpLogisticsController extends Controller
                 $batch->setAttribute('module', $modules->count() === 1 && $modules->first()
                     ? $modules->first()
                     : 'mixed');
+                $batch->legs->each(fn (ShipmentLeg $leg) => $this->attachArrivalPayload($leg));
             });
         $pool = ShipmentLeg::with(['shipment', ...$attemptRelations])
             ->withCount(['attempts as failed_attempt_count' => fn ($attempts) => $attempts->where('attempt_type', 'delivery')->where('status', 'failed')])

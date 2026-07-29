@@ -366,6 +366,102 @@ class LogisticsPageAccessTest extends TestCase
         $this->assertStringNotContainsString('121.234567', $serialized);
     }
 
+    public function test_dispatcher_pages_receive_the_same_safe_arrival_summaries_without_coordinates(): void
+    {
+        $shop = ShopOwner::factory()->create();
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        Permission::findOrCreate('assign-logistics-deliveries', 'user');
+        Permission::findOrCreate('manage-logistics-batches', 'user');
+        $dispatcher->givePermissionTo(['assign-logistics-deliveries', 'manage-logistics-batches']);
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $batch = DeliveryBatch::factory()->create(['shop_owner_id' => $shop->id]);
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id,
+            'delivery_batch_id' => $batch->id,
+        ]);
+        $pickup = $leg->events()->create([
+            'shipment_id' => $shipment->id,
+            'event_type' => 'pickup_arrived',
+            'visibility' => 'internal',
+            'metadata' => [
+                'result' => 'verified',
+                'distance_m' => 18.2,
+                'radius_m' => 100,
+                'accuracy_m' => 12,
+                'latitude' => 14.654321,
+                'longitude' => 121.123456,
+            ],
+        ]);
+        $leg->events()->create([
+            'shipment_id' => $shipment->id,
+            'event_type' => 'dropoff_arrived',
+            'visibility' => 'internal',
+            'metadata' => [
+                'result' => 'outside_geofence',
+                'distance_m' => 154.6,
+                'radius_m' => 100,
+                'accuracy_m' => 15,
+                'latitude' => 14.765432,
+                'longitude' => 121.234567,
+                'exception_reason' => 'pin_incorrect',
+                'exception_notes' => 'Customer met rider at the gate.',
+            ],
+        ]);
+        $otherShop = ShopOwner::factory()->create();
+        $otherBatch = DeliveryBatch::factory()->create(['shop_owner_id' => $otherShop->id]);
+        $otherShipment = Shipment::factory()->create(['shop_owner_id' => $otherShop->id]);
+        $otherLeg = ShipmentLeg::factory()->create([
+            'shipment_id' => $otherShipment->id,
+            'delivery_batch_id' => $otherBatch->id,
+        ]);
+        $otherLeg->events()->create([
+            'shipment_id' => $otherShipment->id,
+            'event_type' => 'dropoff_arrived',
+            'visibility' => 'internal',
+            'metadata' => [
+                'result' => 'verified',
+                'distance_m' => 9,
+                'radius_m' => 100,
+                'accuracy_m' => 8,
+                'latitude' => 15.111111,
+                'longitude' => 122.222222,
+            ],
+        ]);
+        $this->assertTrue($dispatcher->fresh()->can('assign-logistics-deliveries'));
+
+        $shipmentProps = $this->actingAs($dispatcher->fresh(), 'user')
+            ->get('/erp/logistics/shipments')
+            ->assertOk()
+            ->viewData('page')['props'];
+        $shipmentLeg = collect($shipmentProps['shipments']['data'])
+            ->firstWhere('id', $shipment->id)['legs'][0];
+
+        $batchProps = $this->actingAs($dispatcher->fresh(), 'user')
+            ->get('/erp/logistics/batches')
+            ->assertOk()
+            ->viewData('page')['props'];
+        $batchLeg = collect($batchProps['batches'])
+            ->firstWhere('id', $batch->id)['legs'][0];
+
+        foreach ([$shipmentLeg, $batchLeg] as $payload) {
+            $this->assertSame('verified', $payload['arrivals']['pickup']['result']);
+            $this->assertSame(18.2, $payload['arrivals']['pickup']['distance_m']);
+            $this->assertSame($pickup->created_at->toISOString(), $payload['arrivals']['pickup']['recorded_at']);
+            $this->assertSame('outside_geofence', $payload['arrivals']['dropoff']['result']);
+            $this->assertSame('pin_incorrect', $payload['arrivals']['dropoff']['exception_reason']);
+            $this->assertSame('Customer met rider at the gate.', $payload['arrivals']['dropoff']['exception_notes']);
+            $this->assertArrayNotHasKey('events', $payload);
+        }
+
+        $this->assertNotContains($otherShipment->id, collect($shipmentProps['shipments']['data'])->pluck('id'));
+        $this->assertNotContains($otherBatch->id, collect($batchProps['batches'])->pluck('id'));
+        $serialized = json_encode([$shipmentProps, $batchProps]);
+        $this->assertStringNotContainsString('14.654321', $serialized);
+        $this->assertStringNotContainsString('121.234567', $serialized);
+        $this->assertStringNotContainsString('15.111111', $serialized);
+    }
+
     public function test_offered_batch_stays_out_of_delivery_table_until_rider_accepts(): void
     {
         $this->seed(RolesAndPermissionsSeeder::class);

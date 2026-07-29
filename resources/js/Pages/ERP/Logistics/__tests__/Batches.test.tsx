@@ -400,6 +400,30 @@ it('identifies the products and quantity in a live route stop', () => {
   expect(within(stop).getByText('Delivery instructions')).toBeInTheDocument();
 });
 
+it('shows the same arrival checks inside a batch stop', () => {
+  openDraft([{
+    ...scheduledLeg,
+    stop_sequence: 1,
+    arrivals: {
+      pickup: {
+        result: 'verified', distance_m: 18.2, radius_m: 100, accuracy_m: 12,
+        recorded_at: '2026-07-15T02:30:00Z',
+      },
+      dropoff: {
+        result: 'outside_geofence', distance_m: 154.6, radius_m: 100, accuracy_m: 15,
+        exception_reason: 'pin_incorrect', recorded_at: '2026-07-15T03:45:00Z',
+      },
+    },
+  }]);
+
+  const stop = screen.getByRole('article', { name: 'Stop 1: Ben Cruz' });
+  expect(within(stop).getByText('Pickup arrival')).toBeInTheDocument();
+  expect(within(stop).getByText('Verified arrival')).toBeInTheDocument();
+  expect(within(stop).getByText('Customer arrival')).toBeInTheDocument();
+  expect(within(stop).getByText('Outside geofence')).toBeInTheDocument();
+  expect(within(stop).getByText('Pin incorrect')).toBeInTheDocument();
+});
+
 it('persists one ordered id list when a saved draft stop moves', async () => {
   openDraft();
   fireEvent.click(screen.getByRole('button', { name: 'Move stop 2 up' }));
