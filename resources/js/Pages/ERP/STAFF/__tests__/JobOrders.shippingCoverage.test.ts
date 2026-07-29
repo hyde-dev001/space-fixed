@@ -71,6 +71,24 @@ afterEach(() => {
 });
 
 describe('staff order shipping coverage integration', () => {
+  it('hides receive activation for shipped shop-owned orders but keeps it for third-party orders', async () => {
+    const shopOwnedOrder = { ...makeOrder(31), status: 'shipped', carrier_company: 'Shop-owned logistics' };
+    const thirdPartyOrder = { ...makeOrder(32), status: 'shipped', carrier_company: 'J&T' };
+    mockPage.props.initialOrders = [shopOwnedOrder, thirdPartyOrder];
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse(200, [shopOwnedOrder, thirdPartyOrder]))));
+
+    render(React.createElement(JobOrdersPage));
+    fireEvent.click(await screen.findByRole('button', { name: 'Shipped (2)' }));
+    const viewButtons = await screen.findAllByTitle('View order details');
+
+    fireEvent.click(viewButtons[0]);
+    expect(screen.queryByRole('button', { name: 'Activate Receive' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Close'));
+
+    fireEvent.click(viewButtons[1]);
+    expect(screen.getByRole('button', { name: 'Activate Receive' })).toBeInTheDocument();
+  });
+
   it('uses the shared paid shop-owned delivery revenue rule', () => {
     expect(source).toContain('calculateRetailRevenue({');
     expect(source).toContain('Products + paid shop-owned delivery, excl. VAT');
@@ -168,5 +186,40 @@ describe('staff order shipping coverage integration', () => {
 
   it('disables cancellation while shipping confirmation is pending', () => {
     expect(source).toMatch(/onClick=\{closeShippingModal\}\s+disabled=\{isConfirmingShipping\}[\s\S]{0,300}disabled:cursor-not-allowed[\s\S]{0,100}>\s*Cancel/);
+  });
+});
+
+describe('staff delivered order refresh', () => {
+  it('shows completed backend orders in the Delivered tab', async () => {
+    const completedOrder = { ...makeOrder(19), status: 'completed' };
+    mockPage.props.initialOrders = [completedOrder];
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse(200, [completedOrder]))));
+
+    render(React.createElement(JobOrdersPage));
+
+    expect(await screen.findByRole('button', { name: 'Delivered (1)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Shipped (0)' })).toBeInTheDocument();
+  });
+
+  it('refreshes a shipped order when the browser window regains focus', async () => {
+    const shippedOrder = { ...makeOrder(19), status: 'shipped' };
+    const completedOrder = { ...shippedOrder, status: 'completed' };
+    mockPage.props.initialOrders = [shippedOrder];
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(200, [shippedOrder]))
+      .mockResolvedValueOnce(jsonResponse(200, [completedOrder]));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(React.createElement(JobOrdersPage));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('button', { name: 'Shipped (1)' })).toBeInTheDocument();
+
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('button', { name: 'Delivered (1)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Shipped (0)' })).toBeInTheDocument();
   });
 });
