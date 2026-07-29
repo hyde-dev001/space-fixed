@@ -3,6 +3,7 @@ import {
   completedProgress,
   deliveryContact,
   deliveryStatusLabel,
+  arrivalStatusText,
   matchesBusiness,
   nextActionableDelivery,
 } from '../riderDeliveryPresentation';
@@ -47,5 +48,17 @@ describe('rider delivery presentation rules', () => {
 
   it('formats system statuses as rider-friendly text', () => {
     expect(deliveryStatusLabel('awaiting_proof_approval')).toBe('Waiting for proof approval');
+  });
+
+  it('formats verified and exception arrivals without relying on color', () => {
+    expect(arrivalStatusText({
+      result: 'verified',
+      distance_m: 18,
+      recorded_at: '2026-07-29T02:30:00.000Z',
+    } as any)).toMatch(/Verified arrival · 18 m/);
+    expect(arrivalStatusText({
+      result: 'outside_geofence',
+      recorded_at: '2026-07-29T02:30:00.000Z',
+    } as any)).toBe('Outside service point · rider reason recorded');
   });
 });

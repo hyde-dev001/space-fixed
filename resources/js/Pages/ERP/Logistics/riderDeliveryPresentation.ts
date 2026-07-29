@@ -1,9 +1,28 @@
 import type {
+  DeliveryArrival,
   RiderDeliveryBusiness,
   RiderDeliveryIssue,
   RiderDeliveryWorkItem,
   TrackingShipmentLeg,
 } from '@/types/logistics';
+
+export const arrivalStatusText = (arrival: DeliveryArrival) => {
+  if (arrival.result === 'verified') {
+    const distance = arrival.distance_m == null ? '' : ` · ${Math.round(arrival.distance_m)} m`;
+    const time = new Date(arrival.recorded_at).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+    return `Verified arrival${distance} · ${time}`;
+  }
+
+  return {
+    outside_geofence: 'Outside service point · rider reason recorded',
+    low_accuracy: 'Low GPS accuracy · rider reason recorded',
+    location_unavailable: 'Location unavailable · rider reason recorded',
+  }[arrival.result];
+};
 
 const actionableStatuses = new Set([
   'assigned',

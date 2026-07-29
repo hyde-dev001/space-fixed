@@ -290,6 +290,82 @@ class LogisticsPageAccessTest extends TestCase
         $this->assertNotSame("single:{$otherLeg->id}", $deliveryData['up_next']['key']);
     }
 
+    public function test_logistics_rider_receives_safe_pickup_and_dropoff_arrival_summaries(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        $shop = ShopOwner::factory()->create();
+        $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $rider->assignRole('Logistics Rider');
+        $profile = RiderProfile::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'linked_type' => User::class,
+            'linked_id' => $rider->id,
+        ]);
+
+        $pickupLeg = ShipmentLeg::factory()->create([
+            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id,
+            'status' => 'assigned',
+        ]);
+        DeliveryAssignment::factory()->create([
+            'shipment_leg_id' => $pickupLeg->id,
+            'rider_profile_id' => $profile->id,
+        ]);
+        $pickupEvent = $pickupLeg->events()->create([
+            'shipment_id' => $pickupLeg->shipment_id,
+            'event_type' => 'pickup_arrived',
+            'visibility' => 'internal',
+            'metadata' => [
+                'result' => 'verified',
+                'distance_m' => 18.2,
+                'radius_m' => 100,
+                'accuracy_m' => 12,
+                'latitude' => 14.654321,
+                'longitude' => 121.123456,
+            ],
+        ]);
+
+        $dropoffLeg = ShipmentLeg::factory()->create([
+            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id,
+            'status' => 'in_transit',
+        ]);
+        DeliveryAssignment::factory()->create([
+            'shipment_leg_id' => $dropoffLeg->id,
+            'rider_profile_id' => $profile->id,
+        ]);
+        $dropoffEvent = $dropoffLeg->events()->create([
+            'shipment_id' => $dropoffLeg->shipment_id,
+            'event_type' => 'dropoff_arrived',
+            'visibility' => 'internal',
+            'metadata' => [
+                'result' => 'outside_geofence',
+                'distance_m' => 154.6,
+                'radius_m' => 100,
+                'accuracy_m' => 15,
+                'latitude' => 14.765432,
+                'longitude' => 121.234567,
+                'exception_reason' => 'alternate_meeting_point',
+            ],
+        ]);
+
+        $props = $this->actingAs($rider->fresh(), 'user')
+            ->get('/erp/logistics/deliveries')
+            ->assertOk()
+            ->viewData('page')['props'];
+
+        $pickup = $props['deliveryData']['up_next']['deliveries'][0];
+        $dropoff = $props['deliveryData']['current']['deliveries'][0];
+        $this->assertSame('verified', $pickup['arrivals']['pickup']['result']);
+        $this->assertSame(18.2, $pickup['arrivals']['pickup']['distance_m']);
+        $this->assertSame($pickupEvent->created_at->toISOString(), $pickup['arrivals']['pickup']['recorded_at']);
+        $this->assertSame('outside_geofence', $dropoff['arrivals']['dropoff']['result']);
+        $this->assertSame($dropoffEvent->created_at->toISOString(), $dropoff['arrivals']['dropoff']['recorded_at']);
+        $this->assertArrayNotHasKey('events', $pickup);
+        $this->assertArrayNotHasKey('events', $dropoff);
+        $serialized = json_encode($props);
+        $this->assertStringNotContainsString('14.654321', $serialized);
+        $this->assertStringNotContainsString('121.234567', $serialized);
+    }
+
     public function test_offered_batch_stays_out_of_delivery_table_until_rider_accepts(): void
     {
         $this->seed(RolesAndPermissionsSeeder::class);

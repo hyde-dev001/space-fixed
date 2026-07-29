@@ -181,6 +181,9 @@ class ErpLogisticsController extends Controller
             ->with([
                 'legs.shipment',
                 'legs.proofs',
+                'legs.events' => fn ($query) => $query
+                    ->whereIn('event_type', ['pickup_arrived', 'dropoff_arrived'])
+                    ->oldest('id'),
                 'legs.assignments' => fn ($query) => $query->where('rider_profile_id', $rider->id),
                 'legs.attempts' => fn ($query) => $query
                     ->where('attempt_type', 'delivery')
@@ -201,6 +204,9 @@ class ErpLogisticsController extends Controller
             ->with([
                 'shipment',
                 'proofs',
+                'events' => fn ($query) => $query
+                    ->whereIn('event_type', ['pickup_arrived', 'dropoff_arrived'])
+                    ->oldest('id'),
                 'assignments' => fn ($query) => $query->where('rider_profile_id', $rider->id),
                 'latestAssignment.riderProfile',
                 'attempts' => fn ($query) => $query
@@ -493,8 +499,23 @@ class ErpLogisticsController extends Controller
     private function deliveryPayload(ShipmentLeg $leg): array
     {
         $payload = $leg->toArray();
+        unset($payload['events']);
         $payload['status'] = $leg->status->value;
         $payload['failed_attempt_count'] = $leg->attempts->count();
+        $payload['arrivals'] = $leg->events
+            ->keyBy(fn ($event) => $event->event_type === 'pickup_arrived' ? 'pickup' : 'dropoff')
+            ->map(fn ($event) => [
+                'id' => $event->id,
+                'arrival_type' => $event->event_type === 'pickup_arrived' ? 'pickup' : 'dropoff',
+                'result' => data_get($event->metadata, 'result'),
+                'distance_m' => data_get($event->metadata, 'distance_m'),
+                'radius_m' => data_get($event->metadata, 'radius_m'),
+                'accuracy_m' => data_get($event->metadata, 'accuracy_m'),
+                'exception_reason' => data_get($event->metadata, 'exception_reason'),
+                'exception_notes' => data_get($event->metadata, 'exception_notes'),
+                'recorded_at' => $event->created_at?->toISOString(),
+            ])
+            ->all();
 
         return $payload;
     }
