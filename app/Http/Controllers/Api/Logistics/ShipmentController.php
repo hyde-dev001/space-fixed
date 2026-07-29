@@ -11,6 +11,7 @@ use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Services\Logistics\ArrivalService;
 use App\Services\Logistics\AssignmentService;
 use App\Services\Logistics\DeliveryEventService;
 use App\Services\Logistics\ProofService;
@@ -206,6 +207,36 @@ class ShipmentController extends Controller
         return response()->json([
             'attempt' => $legs->recordFailedAttempt($leg, $payload),
         ], 201);
+    }
+
+    public function arrival(Request $request, ShipmentLeg $leg, ArrivalService $arrivals): JsonResponse
+    {
+        $actor = $this->authorizeAttemptActor($leg);
+        abort_unless($this->userHasActiveAssignment($leg, $actor), 403);
+        $payload = $request->validate([
+            'arrival_type' => ['required', 'in:pickup,dropoff'],
+            'latitude' => ['nullable', 'numeric', 'between:-90,90'],
+            'longitude' => ['nullable', 'numeric', 'between:-180,180'],
+            'accuracy_m' => ['nullable', 'numeric', 'between:0,5000'],
+            'captured_at' => ['nullable', 'date'],
+            'exception_reason' => ['nullable', 'in:gps_inaccurate,pin_incorrect,alternate_meeting_point,access_restriction,safety_concern,other'],
+            'exception_notes' => ['nullable', 'string', 'max:1000'],
+        ]);
+        $event = $arrivals->record($leg, $actor, $payload);
+
+        return response()->json([
+            'arrival' => [
+                'id' => $event->id,
+                'arrival_type' => $event->event_type === 'pickup_arrived' ? 'pickup' : 'dropoff',
+                'result' => data_get($event->metadata, 'result'),
+                'distance_m' => data_get($event->metadata, 'distance_m'),
+                'radius_m' => data_get($event->metadata, 'radius_m'),
+                'accuracy_m' => data_get($event->metadata, 'accuracy_m'),
+                'exception_reason' => data_get($event->metadata, 'exception_reason'),
+                'exception_notes' => data_get($event->metadata, 'exception_notes'),
+                'recorded_at' => $event->created_at?->toISOString(),
+            ],
+        ], $event->wasRecentlyCreated ? 201 : 200);
     }
 
     public function reportIssue(Request $request, ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse
