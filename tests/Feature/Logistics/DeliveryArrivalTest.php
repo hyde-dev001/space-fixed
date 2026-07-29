@@ -79,6 +79,7 @@ class DeliveryArrivalTest extends TestCase
         $cases = [
             'outside_geofence' => ['latitude' => 15],
             'low_accuracy' => ['accuracy_m' => 150],
+            'unusable_accuracy' => ['accuracy_m' => 50000],
             'missing_gps' => ['latitude' => null, 'longitude' => null],
             'stale_gps' => ['captured_at' => now()->subMinutes(6)->toISOString()],
             'future_gps' => ['captured_at' => now()->addMinutes(2)->toISOString()],
@@ -106,7 +107,7 @@ class DeliveryArrivalTest extends TestCase
 
             $this->assertSame(1, $leg->events()->count(), $name);
             $this->assertSame(
-                in_array($name, ['missing_gps', 'stale_gps', 'future_gps', 'missing_target'], true)
+                in_array($name, ['unusable_accuracy', 'missing_gps', 'stale_gps', 'future_gps', 'missing_target'], true)
                     ? 'location_unavailable'
                     : $name,
                 $leg->events()->sole()->metadata['result'],
@@ -187,7 +188,7 @@ class DeliveryArrivalTest extends TestCase
                 'arrival_type' => 'warehouse',
                 'latitude' => 91,
                 'longitude' => -181,
-                'accuracy_m' => 5001,
+                'accuracy_m' => -1,
                 'captured_at' => 'not-a-date',
                 'exception_reason' => 'made_up',
             ])
