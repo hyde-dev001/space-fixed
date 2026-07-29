@@ -93,6 +93,7 @@ export type TrackingShipmentLeg = {
   resolution_type?: string | null;
   resolution_reason?: string | null;
   failed_attempt_count?: number;
+  failed_pickup_count?: number;
   max_delivery_attempts?: number;
   origin_snapshot?: (DeliveryContactSnapshot & Record<string, unknown>) | null;
   destination_snapshot?: (DeliveryContactSnapshot & Record<string, unknown>) | null;
@@ -112,6 +113,7 @@ export type TrackingShipmentLeg = {
   delivery_proof?: CustomerDeliveryProof | null;
   latest_failed_attempt?: {
     id: number;
+    attempt_type?: 'pickup' | 'delivery';
     attempt_number?: number | null;
     delivery_assignment_id?: number | null;
     delivery_batch_id?: number | null;
@@ -141,6 +143,8 @@ export type TrackingShipmentLeg = {
   }>;
   attempts?: Array<{
     id: number;
+    attempt_type?: 'pickup' | 'delivery';
+    attempt_number?: number | null;
     status?: string;
     reason_code?: string | null;
     notes?: string | null;

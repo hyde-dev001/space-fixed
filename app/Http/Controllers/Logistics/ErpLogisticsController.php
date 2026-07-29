@@ -53,7 +53,7 @@ class ErpLogisticsController extends Controller
             'search' => ['nullable', 'string', 'max:100'],
         ])['search'] ?? ''));
         [$module, $availableModules] = $this->logisticsModuleFilter($shop, (string) $request->query('module', 'all'));
-        $status = in_array($request->query('status'), ['all', 'incomplete', 'requested', 'active', 'completed', 'cancelled', 'awaiting_proof_approval', 'failed_attempts'], true)
+        $status = in_array($request->query('status'), ['all', 'incomplete', 'requested', 'active', 'completed', 'cancelled', 'awaiting_proof_approval', 'failed_attempts', 'failed_pickups'], true)
             ? $request->query('status') : 'all';
         $purpose = $request->query('purpose', 'all');
         $deliveryWindow = in_array($request->query('window'), ['morning', 'afternoon'], true)
@@ -69,7 +69,6 @@ class ErpLogisticsController extends Controller
                         'events' => fn ($events) => $events
                             ->whereIn('event_type', ['pickup_arrived', 'dropoff_arrived']),
                         'attempts' => fn ($attempts) => $attempts
-                            ->where('attempt_type', 'delivery')
                             ->where('status', 'failed')
                             ->latest('attempted_at')
                             ->latest('id')
@@ -77,6 +76,8 @@ class ErpLogisticsController extends Controller
                     ]);
                     $query->withCount(['attempts as failed_attempt_count' => fn ($attempts) => $attempts
                         ->where('attempt_type', 'delivery')->where('status', 'failed')]);
+                    $query->withCount(['attempts as failed_pickup_count' => fn ($attempts) => $attempts
+                        ->where('attempt_type', 'pickup')->where('status', 'failed')]);
 
                     if (! $isDispatcher) {
                         $query->whereHas('assignments', function ($assignments) use ($user) {
@@ -105,6 +106,13 @@ class ErpLogisticsController extends Controller
                 ->when($status === 'failed_attempts', fn ($query) => $query
                     ->whereHas('legs.attempts', fn ($attempts) => $attempts
                         ->where('attempt_type', 'delivery')->where('status', 'failed')))
+                ->when($status === 'failed_pickups', fn ($query) => $query
+                    ->where('purpose', 'repair_pickup')
+                    ->whereHas('legs', fn ($legs) => $legs
+                        ->where('status', 'needs_resolution')
+                        ->where('resolution_type', 'pickup_failed')
+                        ->whereHas('attempts', fn ($attempts) => $attempts
+                            ->where('attempt_type', 'pickup')->where('status', 'failed'))))
                 ->when($purpose !== 'all', function ($query) use ($purpose) {
                     $query->where('purpose', $purpose);
                 })

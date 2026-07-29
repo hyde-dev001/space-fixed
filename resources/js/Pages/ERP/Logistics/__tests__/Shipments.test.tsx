@@ -283,6 +283,89 @@ it('shows failed-attempt filter and retryable reassignment controls', () => {
   expect(screen.getByLabelText('Choose rider for outbound leg')).toBeInTheDocument();
 });
 
+it('lets dispatchers review and resolve failed repair pickups', async () => {
+  setDispatcherLeg({
+    id: 91,
+    leg_type: 'inbound',
+    status: 'needs_resolution',
+    resolution_type: 'pickup_failed',
+    assignments: [],
+    proofs: [],
+    failed_attempt_count: 0,
+    failed_pickup_count: 1,
+    arrivals: {
+      pickup: {
+        result: 'verified',
+        distance_m: 18,
+        radius_m: 100,
+        accuracy_m: 12,
+        recorded_at: '2026-07-29T09:55:00Z',
+      },
+    },
+    attempts: [{
+      id: 91,
+      attempt_type: 'pickup',
+      status: 'failed',
+      attempt_number: 1,
+      reason_code: 'customer_unavailable',
+      file_path: 'logistics-attempt/91/door.jpg',
+      attempted_at: '2026-07-29T10:00:00Z',
+    }],
+  });
+  mocks.props.shipments.data[0].purpose = 'repair_pickup';
+  mocks.props.shipments.data[0].source_type = 'repair_request';
+  (Swal.fire as any)
+    .mockResolvedValueOnce({ isConfirmed: true, value: 'Customer confirmed Monday.' })
+    .mockResolvedValueOnce({})
+    .mockResolvedValueOnce({ isConfirmed: true, value: 'Customer cancelled.' });
+
+  render(<Shipments />);
+  expect(screen.getByRole('option', { name: 'Failed pickups' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+
+  expect(screen.getAllByText('Failed pickup · Needs action')).toHaveLength(2);
+  expect(screen.queryByText(/1\/2/)).not.toBeInTheDocument();
+  expect(screen.queryByText('Subject for refund')).not.toBeInTheDocument();
+  expect(screen.getByText('Customer Unavailable')).toBeInTheDocument();
+  expect(screen.getByText('Pickup arrival')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'View failed-pickup photo' }))
+    .toHaveAttribute('href', '/storage/logistics-attempt/91/door.jpg');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Reschedule Pickup' }));
+  await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
+    '/api/logistics/legs/91/resolve/retry',
+    { reason: 'Customer confirmed Monday.' },
+    undefined,
+  ));
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel Pickup' }));
+  await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
+    '/api/logistics/legs/91/cancel',
+    { reason: 'Customer cancelled.' },
+    undefined,
+  ));
+});
+
+it('hides failed pickup actions without dispatcher assignment permission', () => {
+  setDispatcherLeg({
+    id: 91,
+    leg_type: 'inbound',
+    status: 'needs_resolution',
+    resolution_type: 'pickup_failed',
+    failed_pickup_count: 1,
+    assignments: [],
+    proofs: [],
+    attempts: [{ id: 91, attempt_type: 'pickup', status: 'failed' }],
+  });
+  mocks.props.shipments.data[0].purpose = 'repair_pickup';
+  mocks.props.shipments.data[0].source_type = 'repair_request';
+  mocks.props.canAssign = false;
+
+  render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  expect(screen.queryByRole('button', { name: 'Reschedule Pickup' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Cancel Pickup' })).not.toBeInTheDocument();
+});
+
 it('lets dispatcher reject pending delivery proof with a reason', async () => {
   setDispatcherLeg({
     id: 2,
