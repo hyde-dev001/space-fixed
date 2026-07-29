@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\PosTransaction;
 use App\Models\PosPaymentLine;
 use App\Models\RepairRequest;
+use App\Models\RepairWarrantyClaim;
 use App\Models\ShopOwner;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -94,5 +95,45 @@ class RepairOnlineRefundAuthorizationTest extends TestCase
         $this->actingAs($customer, 'user')
             ->getJson('/api/repairer/refunds')
             ->assertForbidden();
+    }
+
+    #[Test]
+    public function customer_refund_is_blocked_for_pending_and_approved_warranty_claims(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $customer = User::factory()->create();
+        $repair = RepairRequest::create([
+            'request_id' => 'REP-TDD-WARRANTY-RFD-001',
+            'customer_name' => $customer->name,
+            'email' => $customer->email,
+            'phone' => '09170000123',
+            'shoe_type' => 'Sneakers',
+            'description' => 'Active warranty refund lock test',
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'images' => json_encode([]),
+            'total' => 500,
+            'final_total' => 500,
+            'status' => 'picked_up',
+        ]);
+        $claim = RepairWarrantyClaim::create([
+            'claim_no' => 'WAR-TDD-RFD-001',
+            'original_repair_request_id' => $repair->id,
+            'customer_user_id' => $customer->id,
+            'shop_owner_id' => $shopOwner->id,
+            'status' => RepairWarrantyClaim::STATUS_PENDING_REPAIRER,
+            'reason_code' => 'issue_returned',
+            'same_issue_confirmation' => true,
+            'evidence_media' => ['repair-warranty-claims/proof.jpg'],
+        ]);
+
+        foreach ([RepairWarrantyClaim::STATUS_PENDING_REPAIRER, RepairWarrantyClaim::STATUS_APPROVED] as $status) {
+            $claim->update(['status' => $status]);
+
+            $this->actingAs($customer, 'user')
+                ->postJson("/api/customer/repairs/{$repair->id}/refunds")
+                ->assertUnprocessable()
+                ->assertJsonPath('message', 'Refund cannot be requested while a warranty claim is active for this repair.');
+        }
     }
 }
