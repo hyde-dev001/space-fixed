@@ -76,13 +76,32 @@ class ShipmentController extends Controller
         $this->abortUnlessTenant($leg->shipment->shop_owner_id, $shop);
 
         $payload = $request->validated();
-        if ($request->hasFile('proof_file')) {
-            $payload['file_path'] = $request->file('proof_file')->store('logistics-proof/'.$leg->id, 'public');
+        $storedPath = $request->file('proof_file')
+            ?->store("logistics-proof/{$leg->id}", 'local');
+        if ($storedPath) {
+            $payload['file_path'] = $storedPath;
         }
 
-        return response()->json([
-            'proof' => $proofs->recordProof($leg, $payload),
-        ], 201);
+        try {
+            return response()->json([
+                'proof' => $proofs->recordProof($leg, $payload),
+            ], 201);
+        } catch (\Throwable $exception) {
+            if ($storedPath) {
+                Storage::disk('local')->delete($storedPath);
+            }
+            throw $exception;
+        }
+    }
+
+    public function proofFile(HandoffProof $proof)
+    {
+        $shop = $this->authorizedShop('assign-logistics-deliveries');
+        $proof->loadMissing('leg.shipment');
+        $this->abortUnlessTenant((int) $proof->leg->shipment->shop_owner_id, $shop);
+        abort_unless($proof->file_path && Storage::disk('local')->exists($proof->file_path), 404);
+
+        return Storage::disk('local')->response($proof->file_path);
     }
 
     public function pickedUp(ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse

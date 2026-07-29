@@ -297,6 +297,8 @@ it('lets dispatcher reject pending delivery proof with a reason', async () => {
 
   render(<Shipments />);
   fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  expect(screen.getByRole('link', { name: 'Open uploaded delivery proof' }))
+    .toHaveAttribute('href', '/api/logistics/proofs/17/file');
   fireEvent.click(screen.getByRole('button', { name: 'Reject proof' }));
 
   await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
