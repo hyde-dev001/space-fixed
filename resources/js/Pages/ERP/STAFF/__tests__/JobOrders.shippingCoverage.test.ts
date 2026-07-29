@@ -71,6 +71,24 @@ afterEach(() => {
 });
 
 describe('staff order shipping coverage integration', () => {
+  it('hides receive activation for shipped shop-owned orders but keeps it for third-party orders', async () => {
+    const shopOwnedOrder = { ...makeOrder(31), status: 'shipped', carrier_company: 'Shop-owned logistics' };
+    const thirdPartyOrder = { ...makeOrder(32), status: 'shipped', carrier_company: 'J&T' };
+    mockPage.props.initialOrders = [shopOwnedOrder, thirdPartyOrder];
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse(200, [shopOwnedOrder, thirdPartyOrder]))));
+
+    render(React.createElement(JobOrdersPage));
+    fireEvent.click(await screen.findByRole('button', { name: 'Shipped (2)' }));
+    const viewButtons = await screen.findAllByTitle('View order details');
+
+    fireEvent.click(viewButtons[0]);
+    expect(screen.queryByRole('button', { name: 'Activate Receive' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Close'));
+
+    fireEvent.click(viewButtons[1]);
+    expect(screen.getByRole('button', { name: 'Activate Receive' })).toBeInTheDocument();
+  });
+
   it('uses the shared paid shop-owned delivery revenue rule', () => {
     expect(source).toContain('calculateRetailRevenue({');
     expect(source).toContain('Products + paid shop-owned delivery, excl. VAT');

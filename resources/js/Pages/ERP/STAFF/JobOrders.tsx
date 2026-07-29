@@ -2622,7 +2622,7 @@ export default function JobOrdersPage() {
                     Arrange Return Pickup
                   </button>
                 )}
-                {viewOrder.status === "shipped" && !canConfirmReturnReceived(viewOrder) && (
+                {viewOrder.status === "shipped" && viewOrder.carrierCompany !== SHOP_OWNED_LOGISTICS && !canConfirmReturnReceived(viewOrder) && (
                   <button
                     onClick={() => handleActivatePickup(viewOrder.id)}
                     disabled={isActivatingReceive || Boolean(viewOrder.pickup_enabled)}
