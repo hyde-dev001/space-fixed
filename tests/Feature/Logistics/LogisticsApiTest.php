@@ -4,6 +4,7 @@ namespace Tests\Feature\Logistics;
 
 use App\Models\Logistics\DeliveryEvent;
 use App\Models\Logistics\HandoffProof;
+use App\Models\Logistics\LogisticsSetting;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
@@ -473,6 +474,78 @@ class LogisticsApiTest extends TestCase
             $this->assertSame(2, $leg->attempts()->where('attempt_type', 'pickup')->count());
             $this->assertSame(0, $leg->attempts()->where('attempt_type', 'delivery')->count());
         }
+    }
+
+    public function test_final_repair_pickup_attempt_is_terminal_and_blocks_stale_actions(): void
+    {
+        Storage::fake('public');
+        Permission::findOrCreate('update-logistics-status', 'user');
+        [$shop, $leg, $rider] = $this->assignedRepairPickupLeg();
+        LogisticsSetting::updateOrCreate(
+            ['shop_owner_id' => $shop->id],
+            ['max_delivery_attempts' => 2],
+        );
+        $repair = RepairRequest::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'status' => 'pending',
+        ]);
+        $leg->shipment->update(['source_id' => $repair->id]);
+        $rider->givePermissionTo('update-logistics-status');
+
+        $this->actingAs($rider, 'user')
+            ->post("/api/logistics/legs/{$leg->id}/report-issue", [
+                ...$this->failedPickupPayload($leg),
+                'idempotency_key' => '55555555-5555-4555-8555-555555555555',
+                'proof_file' => $this->fakeAttemptPhoto('terminal-first.png'),
+            ], ['Accept' => 'application/json'])
+            ->assertCreated()
+            ->assertJsonPath('attempt.attempt_number', 1);
+
+        app(ShipmentLegService::class)->resolveRetry($leg->fresh(), 'Customer requested another pickup.');
+        $riderProfileId = $leg->assignments()->latest('id')->value('rider_profile_id');
+        $secondAssignment = $leg->assignments()->create([
+            'assignment_type' => 'internal_rider',
+            'rider_profile_id' => $riderProfileId,
+            'status' => 'accepted',
+            'assigned_at' => now(),
+            'accepted_at' => now(),
+        ]);
+        $leg->fresh()->update(['status' => 'assigned']);
+        $leg->events()->create([
+            'shipment_id' => $leg->shipment_id,
+            'event_type' => 'pickup_arrived',
+            'visibility' => 'internal',
+            'metadata' => ['delivery_assignment_id' => $secondAssignment->id, 'result' => 'verified'],
+        ]);
+
+        $this->actingAs($rider, 'user')
+            ->post("/api/logistics/legs/{$leg->id}/report-issue", [
+                'attempt_type' => 'pickup',
+                'delivery_assignment_id' => $secondAssignment->id,
+                'idempotency_key' => '66666666-6666-4666-8666-666666666666',
+                'reason_code' => 'customer_unavailable',
+                'proof_file' => $this->fakeAttemptPhoto('terminal-second.png'),
+            ], ['Accept' => 'application/json'])
+            ->assertCreated()
+            ->assertJsonPath('attempt.attempt_number', 2);
+
+        $this->assertSame('cancelled', $leg->fresh()->status->value);
+        $this->assertSame('pickup_attempts_exhausted', $leg->fresh()->resolution_type);
+        $this->assertSame('cancelled', $leg->shipment->fresh()->status->value);
+        $this->assertSame('cancelled', (string) $repair->fresh()->status);
+        $this->assertSame(2, $leg->attempts()->where('attempt_type', 'pickup')->count());
+        $this->assertSame(0, $leg->attempts()->where('attempt_type', 'delivery')->count());
+        $this->assertFalse(ShipmentLeg::query()->where('return_for_leg_id', $leg->id)->exists());
+
+        $this->actingAs($shop, 'shop_owner')
+            ->postJson("/api/logistics/legs/{$leg->id}/resolve/retry", ['reason' => 'Retry stale page.'])
+            ->assertUnprocessable();
+        $this->actingAs($shop, 'shop_owner')
+            ->postJson("/api/logistics/legs/{$leg->id}/assign", [
+                'assignment_type' => 'internal_rider',
+                'rider_profile_id' => $riderProfileId,
+            ])
+            ->assertUnprocessable();
     }
 
     public function test_failed_repair_pickup_requires_arrival_photo_idempotency_and_valid_context(): void

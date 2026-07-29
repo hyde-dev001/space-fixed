@@ -10,6 +10,7 @@ use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\Order;
 use App\Models\OrderRefund;
+use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Services\OrderRefundService;
 use Illuminate\Support\Facades\DB;
@@ -466,6 +467,8 @@ class ShipmentLegService
                 );
             }
             $attemptNumber = $leg->attempts()->where('attempt_type', $attemptType)->count() + 1;
+            $maxAttempts = $leg->shipment->shopOwner->logisticsSetting?->max_delivery_attempts ?? 2;
+            $terminalPickup = $isPickup && $attemptNumber >= $maxAttempts;
             $attempt = $leg->attempts()->create([
                 'delivery_assignment_id' => $assignment->id,
                 'delivery_batch_id' => $batchId,
@@ -484,16 +487,24 @@ class ShipmentLegService
 
             if ($isPickup) {
                 $leg->update([
-                    'status' => 'needs_resolution',
+                    'status' => $terminalPickup ? 'cancelled' : 'needs_resolution',
                     'failed_at' => now(),
                     'delivery_batch_id' => null,
                     'stop_sequence' => null,
-                    'resolution_type' => 'pickup_failed',
-                    'resolution_reason' => $payload['reason_code'],
+                    'resolution_type' => $terminalPickup ? 'pickup_attempts_exhausted' : 'pickup_failed',
+                    'resolution_reason' => $terminalPickup
+                        ? 'Maximum pickup attempts reached.'
+                        : $payload['reason_code'],
                 ]);
+                if ($terminalPickup) {
+                    RepairRequest::query()
+                        ->whereKey($leg->shipment->source_id)
+                        ->lockForUpdate()
+                        ->firstOrFail()
+                        ->update(['status' => 'cancelled']);
+                }
             } else {
-                $max = $leg->shipment->shopOwner->logisticsSetting?->max_delivery_attempts ?? 2;
-                $needsResolution = $attemptNumber >= $max;
+                $needsResolution = $attemptNumber >= $maxAttempts;
                 $leg->update([
                     'status' => $needsResolution ? 'needs_resolution' : 'pending',
                     'failed_at' => now(),
@@ -532,7 +543,9 @@ class ShipmentLegService
                 }
                 $batch->update($batchChanges);
             }
-            $leg->shipment->update(['status' => 'active']);
+            $leg->shipment->update($terminalPickup
+                ? ['status' => 'cancelled', 'completed_at' => null, 'cancelled_at' => now()]
+                : ['status' => 'active']);
             if ($isPickup) {
                 $this->events->record($leg->shipment, $leg, [
                     'event_type' => 'pickup_attempt_failed',
@@ -546,6 +559,13 @@ class ShipmentLegService
                     'message' => 'The pickup could not be completed.',
                     'metadata' => ['reason_code' => $payload['reason_code']],
                 ]);
+                if ($terminalPickup) {
+                    $this->events->record($leg->shipment, $leg, [
+                        'event_type' => 'pickup_cancelled',
+                        'visibility' => 'customer',
+                        'message' => 'Maximum pickup attempts reached. The repair request was cancelled.',
+                    ]);
+                }
             } else {
                 $this->events->record($leg->shipment, $leg, [
                     'event_type' => 'delivery_attempt_failed',
