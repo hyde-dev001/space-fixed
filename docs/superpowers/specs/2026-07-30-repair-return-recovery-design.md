@@ -75,11 +75,12 @@ The customer may update the saved return address before payment. Coverage and th
 After a matching re-delivery payment is settled:
 
 - Lock the confirmed return plan.
-- Append a fresh customer-delivery leg to the existing repair-return shipment history.
+- Reopen the same cancelled `repair_return` shipment as `requested`.
+- Append a fresh customer-delivery leg with the next sequence number to that shipment.
 - Make that new leg available for dispatcher assignment.
 - Clear the active recovery state.
 
-Repeated action requests for the same recovery key return the existing requirement and do not create duplicate charges or shipment legs.
+There remains exactly one `repair_return` shipment per repair request. Its cancelled legs remain immutable history; re-delivery never creates a second shipment record. Repeated action requests for the same recovery key return the existing requirement and do not create duplicate charges or shipment legs.
 
 ### Set for shop pickup
 
