@@ -15,9 +15,9 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Services\Logistics\ShipmentLegService;
 use App\Services\OrderRefundService;
 use App\Services\PaymongoRefundService;
-use App\Services\Logistics\ShipmentLegService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
@@ -137,6 +137,7 @@ class FailedDeliveryRefundWorkflowTest extends TestCase
             app(ShipmentLegService::class)->recordFailedAttempt($leg, [
                 'delivery_assignment_id' => $assignment->id,
                 'reason_code' => 'recipient_unavailable',
+                'file_path' => 'failed-delivery-evidence.jpg',
             ]);
 
             $this->assertSame($expectedRefunds, OrderRefund::where('order_id', $order->id)->count(), $paymentMethod);
@@ -290,7 +291,7 @@ class FailedDeliveryRefundWorkflowTest extends TestCase
         $product = Product::create([
             'shop_owner_id' => $shop->id,
             'name' => 'Failed delivery shoe',
-            'slug' => 'failed-delivery-shoe-' . $customer->id,
+            'slug' => 'failed-delivery-shoe-'.$customer->id,
             'price' => 500,
             'stock_quantity' => 10,
             'is_active' => true,
@@ -309,7 +310,7 @@ class FailedDeliveryRefundWorkflowTest extends TestCase
             'shipping_fee' => 100,
             'payment_method' => 'paymongo_card',
             'payment_status' => 'paid',
-            'paymongo_payment_id' => 'pay_failed_delivery_' . $customer->id,
+            'paymongo_payment_id' => 'pay_failed_delivery_'.$customer->id,
         ]);
         $items = collect([
             OrderItem::create($this->item($order, $product, $variant, 'First item')),
@@ -375,6 +376,7 @@ class FailedDeliveryRefundWorkflowTest extends TestCase
         app(ShipmentLegService::class)->recordFailedAttempt($leg->fresh(), [
             'delivery_assignment_id' => $assignment->id,
             'reason_code' => 'recipient_unavailable',
+            'file_path' => 'failed-delivery-evidence.jpg',
         ]);
 
         return [
