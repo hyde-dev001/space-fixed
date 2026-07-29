@@ -9,6 +9,7 @@ use App\Models\Logistics\HandoffProof;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
+use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\Logistics\ArrivalService;
@@ -16,6 +17,7 @@ use App\Services\Logistics\AssignmentService;
 use App\Services\Logistics\DeliveryEventService;
 use App\Services\Logistics\ProofService;
 use App\Services\Logistics\ShipmentLegService;
+use App\Services\RepairDeliveryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -288,20 +290,38 @@ class ShipmentController extends Controller
         } else {
             abort_unless($this->userHasActiveAssignment($leg, $actor), 403);
         }
+        $attemptType = $request->validate([
+            'attempt_type' => ['nullable', 'in:pickup,delivery'],
+        ])['attempt_type'] ?? 'delivery';
+        $isPickup = $attemptType === 'pickup';
         $payload = $request->validate([
+            'attempt_type' => ['nullable', 'in:pickup,delivery'],
             'delivery_assignment_id' => ['required', 'integer'],
-            'reason_code' => ['required', Rule::in([
-                ...ShipmentLegService::PHOTO_REQUIRED_REASONS,
-                ...ShipmentLegService::NOTES_REQUIRED_REASONS,
-            ])],
+            'idempotency_key' => [
+                Rule::requiredIf($isPickup),
+                'nullable',
+                'uuid',
+            ],
+            'reason_code' => [
+                'required',
+                Rule::in($isPickup
+                    ? ShipmentLegService::PICKUP_REASONS
+                    : [
+                        ...ShipmentLegService::PHOTO_REQUIRED_REASONS,
+                        ...ShipmentLegService::NOTES_REQUIRED_REASONS,
+                    ]),
+            ],
             'notes' => [
-                Rule::requiredIf(fn () => in_array($request->input('reason_code'), ShipmentLegService::NOTES_REQUIRED_REASONS, true)),
+                Rule::requiredIf($isPickup
+                    ? $request->input('reason_code') === 'other'
+                    : in_array($request->input('reason_code'), ShipmentLegService::NOTES_REQUIRED_REASONS, true)),
                 'nullable',
                 'string',
                 'max:1000',
             ],
             'proof_file' => [
-                Rule::requiredIf(fn () => in_array($request->input('reason_code'), ShipmentLegService::PHOTO_REQUIRED_REASONS, true)),
+                Rule::requiredIf($isPickup
+                    || in_array($request->input('reason_code'), ShipmentLegService::PHOTO_REQUIRED_REASONS, true)),
                 'nullable',
                 'image',
                 'max:10240',
@@ -316,10 +336,10 @@ class ShipmentController extends Controller
         try {
             $attempt = $legs->recordFailedAttempt($leg, [
                 ...$payload,
-                'attempt_type' => 'delivery',
+                'attempt_type' => $attemptType,
                 'recorded_by_type' => $actor::class,
                 'recorded_by_id' => $actor->id,
-            ]);
+            ], $isPickup);
             if ($storedPath && $attempt->file_path !== $storedPath) {
                 Storage::disk('public')->delete($storedPath);
             }
@@ -333,11 +353,45 @@ class ShipmentController extends Controller
         return response()->json(['attempt' => $attempt], 201);
     }
 
-    public function cancel(ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse
+    public function cancel(
+        Request $request,
+        ShipmentLeg $leg,
+        ShipmentLegService $legs,
+        RepairDeliveryService $repairDeliveries,
+    ): JsonResponse
     {
         $shop = $this->authorizedShop('assign-logistics-deliveries');
         $leg->loadMissing('shipment');
         $this->abortUnlessTenant($leg->shipment->shop_owner_id, $shop);
+
+        if ($leg->shipment->source_type === 'repair_request'
+            && $leg->shipment->purpose === 'repair_pickup'
+            && $leg->resolution_type === 'pickup_failed') {
+            $reason = $request->validate([
+                'reason' => ['required', 'string', 'max:500'],
+            ])['reason'];
+            $repair = RepairRequest::query()
+                ->whereKey($leg->shipment->source_id)
+                ->where('shop_owner_id', $shop->id)
+                ->firstOrFail();
+            $target = $repairDeliveries->intakeHandoff($repair, true)['cancellation_target'];
+            abort_unless(filled($target['plan_token'] ?? null), 422);
+            $result = $repairDeliveries->cancelPaidDeliveryLeg(
+                $repair,
+                'intake',
+                $reason,
+                (int) (Auth::guard('user')->id() ?? Auth::guard('shop_owner')->id()),
+                $leg->id,
+                $target['plan_token'],
+                requireFailedPickup: true,
+            );
+
+            return response()->json([
+                'leg' => $leg->fresh(),
+                'message' => 'Pickup cancelled.',
+                'reconciliation' => $result['reconciliation'],
+            ]);
+        }
 
         $attempt = $leg->attempts()
             ->where('attempt_type', 'delivery')

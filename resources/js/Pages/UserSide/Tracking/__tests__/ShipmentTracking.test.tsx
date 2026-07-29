@@ -89,6 +89,7 @@ describe('ShipmentTracking', () => {
   it('shows an unresolved failed attempt reason, time, and proof', () => {
     shipment.legs[0].latest_failed_attempt = {
       id: 9,
+      attempt_type: 'delivery',
       reason: 'Recipient unavailable',
       attempted_at: '2026-07-17T10:30:00+08:00',
       proof_url: '/tracking/shipments/1/attempts/9/proof',
@@ -99,6 +100,46 @@ describe('ShipmentTracking', () => {
     expect(screen.getByText('Delivery Attempt Failed')).toBeInTheDocument();
     expect(screen.getByText('Recipient unavailable')).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Failed delivery attempt proof' })).toHaveAttribute('src', '/tracking/shipments/1/attempts/9/proof');
+  });
+
+  it('shows failed pickup language and proof with a missing-photo fallback', () => {
+    shipment.purpose = 'repair_pickup';
+    shipment.source_type = 'repair_request';
+    shipment.legs[0].status = 'needs_resolution';
+    shipment.legs[0].latest_failed_attempt = {
+      id: 9,
+      attempt_type: 'pickup',
+      reason: 'Customer unavailable / not home',
+      attempted_at: '2026-07-29T10:30:00+08:00',
+      proof_url: '/tracking/shipments/1/attempts/9/proof',
+    };
+
+    render(<ShipmentTracking />);
+
+    expect(screen.getByText('Pickup attempt unsuccessful')).toBeInTheDocument();
+    expect(screen.getByText('Customer unavailable / not home')).toBeInTheDocument();
+    const proof = screen.getByAltText('Failed pickup proof');
+    expect(proof).toHaveAttribute('src', '/tracking/shipments/1/attempts/9/proof');
+    fireEvent.error(proof);
+    expect(screen.getByText('Attempt photo unavailable')).toBeInTheDocument();
+  });
+
+  it('keeps resolved pickup failures in history', () => {
+    shipment.purpose = 'repair_pickup';
+    shipment.source_type = 'repair_request';
+    shipment.legs[0].status = 'delivered';
+    shipment.legs[0].latest_failed_attempt = {
+      id: 9,
+      attempt_type: 'pickup',
+      reason: 'Customer requested reschedule',
+      attempted_at: '2026-07-29T10:30:00+08:00',
+      proof_url: null,
+    };
+
+    render(<ShipmentTracking />);
+
+    expect(screen.getByText('Previous pickup attempt')).toBeInTheDocument();
+    expect(screen.getByText('Attempt photo unavailable')).toBeInTheDocument();
   });
 
   it('keeps other-leg failures historical and falls back when proof cannot load', () => {

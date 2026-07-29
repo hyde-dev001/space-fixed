@@ -17,8 +17,11 @@ use App\Services\RepairDeliveryService;
 use App\Services\NotificationService;
 use App\Services\ShippingEstimateService;
 use App\Services\Logistics\DeliveryScheduleService;
+use App\Services\Logistics\DeliveryEventService;
+use App\Services\Logistics\ShipmentLegService;
 use App\Services\Logistics\SourceShipmentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
@@ -115,6 +118,97 @@ class RepairDeliveryReconciliationTest extends TestCase
                 "/api/repairer/repairs/{$lateRepair->id}/cancel-delivery-leg",
                 $this->cancellationPayload($lateRepair->fresh(), 'intake', 'Too late.'),
             )->assertUnprocessable();
+            $this->assertNull($lateRepair->fresh()->logistics_payment_reconciliation);
+        }
+    }
+
+    public function test_dispatcher_can_cancel_a_failed_repair_pickup_once(): void
+    {
+        [$repair, , $dispatcher] = $this->paidIntakeRepair();
+        Permission::findOrCreate('assign-logistics-deliveries', 'user');
+        $dispatcher->givePermissionTo('assign-logistics-deliveries');
+        $shipment = app(RepairDeliveryService::class)->tryCreateIntakeShipment($repair->fresh());
+        $leg = $shipment->legs->first();
+        $leg->update([
+            'status' => 'needs_resolution',
+            'resolution_type' => 'pickup_failed',
+            'resolution_reason' => 'customer_unavailable',
+        ]);
+
+        $endpoint = "/api/logistics/legs/{$leg->id}/cancel";
+        $this->actingAs($dispatcher, 'user')
+            ->postJson($endpoint, ['reason' => 'Customer cancelled the pickup.'])
+            ->assertOk();
+
+        $this->assertSame('cancelled', $leg->fresh()->status->value);
+        $this->assertSame('cancelled', $shipment->fresh()->status->value);
+        $this->assertCount(1, data_get($repair->fresh()->logistics_payment_reconciliation, 'entries', []));
+        $this->assertDatabaseHas('delivery_events', [
+            'shipment_leg_id' => $leg->id,
+            'event_type' => 'pickup_cancelled',
+            'visibility' => 'customer',
+            'message' => 'The scheduled pickup was cancelled.',
+        ]);
+
+        $this->actingAs($dispatcher, 'user')
+            ->postJson($endpoint, ['reason' => 'Customer cancelled the pickup.'])
+            ->assertOk();
+        $this->assertCount(1, data_get($repair->fresh()->logistics_payment_reconciliation, 'entries', []));
+        $this->assertSame(1, $leg->events()->where('event_type', 'pickup_cancelled')->count());
+    }
+
+    public function test_failed_pickup_cancellation_rejects_stale_retry_and_post_custody_states(): void
+    {
+        [$repair, , $dispatcher] = $this->paidIntakeRepair();
+        Permission::findOrCreate('assign-logistics-deliveries', 'user');
+        $dispatcher->givePermissionTo('assign-logistics-deliveries');
+        $shipment = app(RepairDeliveryService::class)->tryCreateIntakeShipment($repair->fresh());
+        $leg = $shipment->legs->first();
+        $leg->update([
+            'status' => 'needs_resolution',
+            'resolution_type' => 'pickup_failed',
+            'resolution_reason' => 'customer_requested_reschedule',
+        ]);
+        $target = app(RepairDeliveryService::class)
+            ->intakeHandoff($repair->fresh(), true)['cancellation_target'];
+        app(ShipmentLegService::class)->resolveRetry($leg->fresh(), 'Retry approved.');
+        $shipmentStatus = $shipment->fresh()->status->value;
+
+        try {
+            app(RepairDeliveryService::class)->cancelPaidDeliveryLeg(
+                $repair->fresh(),
+                'intake',
+                'Stale cancellation.',
+                $dispatcher->id,
+                $target['shipment_leg_id'],
+                $target['plan_token'],
+                requireFailedPickup: true,
+            );
+            $this->fail('A retry must win over a stale failed-pickup cancellation.');
+        } catch (ValidationException) {
+            $this->assertSame('pending', $leg->fresh()->status->value);
+            $this->assertSame($shipmentStatus, $shipment->fresh()->status->value);
+            $this->assertNull($repair->fresh()->logistics_payment_reconciliation);
+            $this->assertFalse($leg->events()->where('event_type', 'pickup_cancelled')->exists());
+        }
+
+        foreach ([
+            ['status' => 'picked_up', 'picked_up_at' => now()],
+            ['status' => 'in_transit', 'picked_up_at' => null],
+            ['status' => 'needs_resolution', 'picked_up_at' => now()],
+        ] as $state) {
+            [$lateRepair, , $lateDispatcher] = $this->paidIntakeRepair();
+            $lateDispatcher->givePermissionTo('assign-logistics-deliveries');
+            $lateShipment = app(RepairDeliveryService::class)->tryCreateIntakeShipment($lateRepair->fresh());
+            $lateLeg = $lateShipment->legs->first();
+            $lateLeg->update([
+                ...$state,
+                'resolution_type' => 'pickup_failed',
+            ]);
+
+            $this->actingAs($lateDispatcher, 'user')
+                ->postJson("/api/logistics/legs/{$lateLeg->id}/cancel", ['reason' => 'Too late.'])
+                ->assertUnprocessable();
             $this->assertNull($lateRepair->fresh()->logistics_payment_reconciliation);
         }
     }
@@ -332,6 +426,7 @@ class RepairDeliveryReconciliationTest extends TestCase
             app(ShippingEstimateService::class),
             $sourceShipments,
             app(NotificationService::class),
+            app(DeliveryEventService::class),
         );
 
         try {

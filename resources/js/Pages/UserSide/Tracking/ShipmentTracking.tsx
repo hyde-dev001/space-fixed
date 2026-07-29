@@ -234,6 +234,7 @@ export default function ShipmentTracking() {
 
         {shipment.legs.filter((leg) => leg.latest_failed_attempt).map((leg) => {
           const attempt = leg.latest_failed_attempt!;
+          const isPickupFailure = attempt.attempt_type === 'pickup';
           const isActiveFailure = leg.id === currentLeg?.id
             && !['awaiting_proof_approval', 'delivered'].includes(leg.status);
           const proofUnavailable = !attempt.proof_url || failedProofIds.includes(attempt.id);
@@ -244,7 +245,9 @@ export default function ShipmentTracking() {
               className={`mb-6 rounded-lg border p-5 ${isActiveFailure ? 'border-amber-300 bg-amber-50' : 'border-gray-200 bg-white'}`}
             >
               <p className={`font-semibold ${isActiveFailure ? 'text-amber-900' : 'text-gray-900'}`}>
-                {isActiveFailure ? 'Delivery Attempt Failed' : 'Previous delivery attempt'}
+                {isActiveFailure
+                  ? (isPickupFailure ? 'Pickup attempt unsuccessful' : 'Delivery Attempt Failed')
+                  : (isPickupFailure ? 'Previous pickup attempt' : 'Previous delivery attempt')}
               </p>
               <p className="mt-1 text-sm text-gray-700">{attempt.reason}</p>
               <p className="mt-1 text-xs text-gray-500">{formatDate(attempt.attempted_at)}</p>
@@ -254,7 +257,7 @@ export default function ShipmentTracking() {
                 <a href={attempt.proof_url!} target="_blank" rel="noreferrer" className="mt-3 inline-block">
                   <img
                     src={attempt.proof_url!}
-                    alt="Failed delivery attempt proof"
+                    alt={isPickupFailure ? 'Failed pickup proof' : 'Failed delivery attempt proof'}
                     className="max-h-64 rounded-lg border border-gray-200 object-cover"
                     onError={() => setFailedProofIds((ids) => ids.includes(attempt.id) ? ids : [...ids, attempt.id])}
                   />

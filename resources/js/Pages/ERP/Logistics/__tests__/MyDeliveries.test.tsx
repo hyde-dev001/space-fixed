@@ -39,6 +39,7 @@ const mocks = vi.hoisted(() => ({
   outForDelivery: vi.fn(() => Promise.resolve()),
   markInTransit: vi.fn(() => Promise.resolve()),
   arrive: vi.fn(() => Promise.resolve()),
+  reportIssue: vi.fn(() => Promise.resolve()),
   getCurrentPosition: vi.fn(),
 }));
 
@@ -65,6 +66,7 @@ vi.mock('@/services/logisticsApi', () => ({ logisticsApi: {
   outForDelivery: mocks.outForDelivery,
   markInTransit: mocks.markInTransit,
   arrive: mocks.arrive,
+  reportIssue: mocks.reportIssue,
 } }));
 
 const leg = (
@@ -408,6 +410,181 @@ describe('MyDeliveries rider interactions', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Confirm pickup' })).toBeEnabled());
   });
 
+  it('shows Failed pickup only after arrival for a repair pickup', () => {
+    const repairPickup = {
+      ...leg(20, null, 'assigned'),
+      shipment: {
+        id: 120,
+        source_type: 'repair_request',
+        source_id: 220,
+        purpose: 'repair_pickup',
+      },
+      assignments: [{ id: 220, status: 'accepted' }],
+    };
+    mocks.props.deliveryData.up_next = workItem('single', 'assigned', [{
+      ...repairPickup,
+      arrivals: arrived('pickup'),
+    }], { group: 'upcoming', business_types: ['repair'], business_label: 'Repair pickup' });
+    const view = render(<MyDeliveries />);
+
+    expect(screen.getByRole('button', { name: 'Confirm pickup' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Failed pickup' })).toBeEnabled();
+
+    mocks.props.deliveryData.up_next = workItem('single', 'assigned', [repairPickup], {
+      group: 'upcoming',
+      business_types: ['repair'],
+      business_label: 'Repair pickup',
+    });
+    view.rerender(<MyDeliveries />);
+    expect(screen.queryByRole('button', { name: 'Failed pickup' })).not.toBeInTheDocument();
+
+    mocks.props.deliveryData.up_next = workItem('single', 'assigned', [{
+      ...leg(21, null, 'assigned'),
+      arrivals: arrived('pickup'),
+      assignments: [{ id: 221, status: 'accepted' }],
+    }], { group: 'upcoming' });
+    view.rerender(<MyDeliveries />);
+    expect(screen.queryByRole('button', { name: 'Failed pickup' })).not.toBeInTheDocument();
+  });
+
+  it('requires a photo for every failed pickup reason and notes only for Other', () => {
+    mocks.props.deliveryData.up_next = workItem('single', 'assigned', [{
+      ...leg(20, null, 'assigned'),
+      shipment: {
+        id: 120,
+        source_type: 'repair_request',
+        source_id: 220,
+        purpose: 'repair_pickup',
+      },
+      arrivals: arrived('pickup'),
+      assignments: [{ id: 220, status: 'accepted' }],
+    }], { group: 'upcoming', business_types: ['repair'], business_label: 'Repair pickup' });
+    render(<MyDeliveries />);
+    fireEvent.click(screen.getByRole('button', { name: 'Failed pickup' }));
+
+    for (const option of [
+      'Customer unavailable / not home',
+      'Customer requested reschedule',
+      'Customer refused pickup',
+      'Item not ready or unavailable',
+      'Wrong address or map pin',
+      'Unsafe or inaccessible location',
+      'Vehicle or rider problem',
+      'Other',
+    ]) {
+      expect(screen.getByRole('option', { name: option })).toBeInTheDocument();
+    }
+
+    const photo = screen.getByLabelText('Failed pickup photo');
+    expect(photo).toHaveAttribute('accept', 'image/*');
+    expect(photo).toHaveAttribute('capture', 'environment');
+    fireEvent.change(screen.getByLabelText('Failed pickup reason'), {
+      target: { value: 'customer_unavailable' },
+    });
+    expect(screen.getByRole('button', { name: 'Submit failed pickup' })).toBeDisabled();
+    fireEvent.change(photo, {
+      target: { files: [new File(['door'], 'door.jpg', { type: 'image/jpeg' })] },
+    });
+    expect(screen.getByRole('button', { name: 'Submit failed pickup' })).toBeEnabled();
+
+    fireEvent.change(screen.getByLabelText('Failed pickup reason'), {
+      target: { value: 'other' },
+    });
+    expect(screen.getByRole('button', { name: 'Submit failed pickup' })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Failed pickup notes'), {
+      target: { value: 'Customer asked the rider to return tomorrow.' },
+    });
+    expect(screen.getByRole('button', { name: 'Submit failed pickup' })).toBeEnabled();
+  });
+
+  it('submits one stable failed pickup payload and reloads the next batch stop', async () => {
+    const uuid = '18ca84c2-c693-4b05-a946-e51be590371e';
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue(uuid);
+    let finishReport: () => void = () => undefined;
+    mocks.reportIssue.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      finishReport = resolve;
+    }));
+    const failedStop = {
+      ...leg(20, 1, 'assigned', 'First pickup'),
+      shipment: {
+        id: 120,
+        source_type: 'repair_request',
+        source_id: 220,
+        purpose: 'repair_pickup',
+      },
+      arrivals: arrived('pickup'),
+      assignments: [{ id: 220, status: 'accepted' }],
+    };
+    const nextStop = {
+      ...leg(21, 2, 'assigned', 'Next pickup'),
+      shipment: {
+        id: 121,
+        source_type: 'repair_request',
+        source_id: 221,
+        purpose: 'repair_pickup',
+      },
+    };
+    mocks.props.deliveryData.current = workItem('batch', 'in_progress', [failedStop, nextStop], {
+      business_types: ['repair'],
+      business_label: 'Repair pickup',
+    });
+    const view = render(<MyDeliveries />);
+    fireEvent.click(screen.getByRole('button', { name: 'Failed pickup' }));
+    fireEvent.change(screen.getByLabelText('Failed pickup reason'), {
+      target: { value: 'customer_unavailable' },
+    });
+    const photo = new File(['door'], 'door.jpg', { type: 'image/jpeg' });
+    fireEvent.change(screen.getByLabelText('Failed pickup photo'), { target: { files: [photo] } });
+    const submit = screen.getByRole('button', { name: 'Submit failed pickup' });
+    fireEvent.click(submit);
+    fireEvent.click(submit);
+
+    await waitFor(() => expect(mocks.reportIssue).toHaveBeenCalledOnce());
+    const [legId, form] = mocks.reportIssue.mock.calls[0];
+    expect(legId).toBe(20);
+    expect(form.get('attempt_type')).toBe('pickup');
+    expect(form.get('reason_code')).toBe('customer_unavailable');
+    expect(form.get('proof_file')).toBe(photo);
+    expect(form.get('idempotency_key')).toBe(uuid);
+
+    mocks.props.deliveryData.current = workItem('batch', 'in_progress', [nextStop], {
+      business_types: ['repair'],
+      business_label: 'Repair pickup',
+    });
+    finishReport();
+    await waitFor(() => expect(mocks.reload).toHaveBeenCalled());
+    view.rerender(<MyDeliveries />);
+    expect(screen.getByText('Next pickup')).toBeVisible();
+  });
+
+  it('keeps failed pickup details visible and disables submission while offline', () => {
+    mocks.props.deliveryData.up_next = workItem('single', 'assigned', [{
+      ...leg(20, null, 'assigned'),
+      shipment: {
+        id: 120,
+        source_type: 'repair_request',
+        source_id: 220,
+        purpose: 'repair_pickup',
+      },
+      arrivals: arrived('pickup'),
+      assignments: [{ id: 220, status: 'accepted' }],
+    }], { group: 'upcoming', business_types: ['repair'], business_label: 'Repair pickup' });
+    render(<MyDeliveries />);
+    fireEvent.click(screen.getByRole('button', { name: 'Failed pickup' }));
+    fireEvent.change(screen.getByLabelText('Failed pickup reason'), {
+      target: { value: 'customer_unavailable' },
+    });
+    fireEvent.change(screen.getByLabelText('Failed pickup photo'), {
+      target: { files: [new File(['door'], 'door.jpg', { type: 'image/jpeg' })] },
+    });
+
+    fireEvent(window, new Event('offline'));
+
+    expect(screen.getByLabelText('Failed pickup reason')).toHaveValue('customer_unavailable');
+    expect(screen.getByRole('button', { name: 'Submit failed pickup' })).toBeDisabled();
+    expect(screen.getByText('Retry after reconnect')).toBeVisible();
+  });
+
   it('starts batch and standalone delivery with their existing endpoints', async () => {
     mocks.props.deliveryData.current = workItem('batch', 'in_progress', [leg(2, 1, 'picked_up')]);
     const view = render(<MyDeliveries />);
@@ -452,11 +629,7 @@ describe('MyDeliveries rider interactions', () => {
     fireEvent.change(screen.getByLabelText('Issue photo'), { target: { files: [proof] } });
     fireEvent.click(screen.getByRole('button', { name: 'Submit issue' }));
 
-    await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
-      '/api/logistics/legs/5/report-issue',
-      expect.any(FormData),
-      expect.objectContaining({ headers: { 'Content-Type': 'multipart/form-data' } }),
-    ));
+    await waitFor(() => expect(mocks.reportIssue).toHaveBeenCalledWith(5, expect.any(FormData)));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Submit issue' })).toBeEnabled());
   });
 
@@ -494,8 +667,8 @@ describe('MyDeliveries rider interactions', () => {
     fireEvent.change(notes, { target: { value: 'Unsafe road conditions.' } });
     fireEvent.click(screen.getByRole('button', { name: 'Submit issue' }));
 
-    await waitFor(() => expect(mocks.post).toHaveBeenCalled());
-    const body = mocks.post.mock.calls[0][1] as FormData;
+    await waitFor(() => expect(mocks.reportIssue).toHaveBeenCalled());
+    const body = mocks.reportIssue.mock.calls[0][1] as FormData;
     expect(body.get('reason_code')).toBe('unsafe_location');
     expect(body.get('notes')).toBe('Unsafe road conditions.');
     expect(body.has('proof_file')).toBe(false);

@@ -637,7 +637,24 @@ class LogisticsPageAccessTest extends TestCase
         $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id]);
         $leg->attempts()->create(['attempt_type' => 'delivery', 'status' => 'failed', 'reason_code' => 'old', 'attempted_at' => '2026-07-14 10:00:00']);
         $latest = $leg->attempts()->create(['attempt_type' => 'delivery', 'status' => 'failed', 'reason_code' => 'latest', 'attempted_at' => '2026-07-14 11:00:00']);
-        $leg->attempts()->create(['attempt_type' => 'pickup', 'status' => 'failed', 'reason_code' => 'pickup', 'attempted_at' => '2026-07-14 12:00:00']);
+        $pickupShipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'repair_request',
+            'purpose' => 'repair_pickup',
+        ]);
+        $pickupLeg = ShipmentLeg::factory()->create([
+            'shipment_id' => $pickupShipment->id,
+            'status' => 'needs_resolution',
+            'resolution_type' => 'pickup_failed',
+        ]);
+        $pickupAttempt = $pickupLeg->attempts()->create([
+            'attempt_type' => 'pickup',
+            'status' => 'failed',
+            'attempt_number' => 1,
+            'reason_code' => 'customer_unavailable',
+            'file_path' => 'logistics-attempt/pickup.jpg',
+            'attempted_at' => '2026-07-29 10:00:00',
+        ]);
         $clean = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
         ShipmentLeg::factory()->create(['shipment_id' => $clean->id]);
 
@@ -650,10 +667,20 @@ class LogisticsPageAccessTest extends TestCase
         $this->assertSame([$latest->id], $attempts->pluck('id')->all());
         $this->assertSame(2, $shipmentPayload['legs'][0]['failed_attempt_count']);
         $this->assertSame(3, $response->viewData('page')['props']['maxDeliveryAttempts']);
+        $this->assertTrue($response->viewData('page')['props']['canAssign']);
+        $pickupPayload = collect($response->viewData('page')['props']['shipments']['data'])
+            ->firstWhere('id', $pickupShipment->id);
+        $this->assertSame($pickupAttempt->id, $pickupPayload['legs'][0]['attempts'][0]['id']);
+        $this->assertSame(0, $pickupPayload['legs'][0]['failed_attempt_count']);
+        $this->assertSame(1, $pickupPayload['legs'][0]['failed_pickup_count']);
 
         $filtered = $this->actingAs($dispatcher->fresh(), 'user')
             ->get('/erp/logistics/shipments?status=failed_attempts')->assertOk();
         $this->assertSame([$shipment->id], collect($filtered->viewData('page')['props']['shipments']['data'])->pluck('id')->all());
+
+        $failedPickups = $this->actingAs($dispatcher->fresh(), 'user')
+            ->get('/erp/logistics/shipments?status=failed_pickups')->assertOk();
+        $this->assertSame([$pickupShipment->id], collect($failedPickups->viewData('page')['props']['shipments']['data'])->pluck('id')->all());
     }
 
     public function test_dispatcher_can_filter_shipments_by_status_and_purpose(): void

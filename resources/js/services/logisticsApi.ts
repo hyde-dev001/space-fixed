@@ -29,6 +29,10 @@ export const logisticsApi = {
   markInTransit: (legId: number) => axios.post(`/api/logistics/legs/${legId}/in-transit`),
   arrive: (legId: number, payload: Record<string, unknown>) =>
     axios.post(`/api/logistics/legs/${legId}/arrivals`, payload),
+  reportIssue: (legId: number, form: FormData) =>
+    axios.post(`/api/logistics/legs/${legId}/report-issue`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
   reportIncident: (legId: number, payload: Record<string, unknown>) => axios.post(`/api/logistics/legs/${legId}/incidents`, payload),
   resolveIncident: (incidentId: number, payload: Record<string, unknown>) => axios.post(`/api/logistics/incidents/${incidentId}/resolve`, payload),
   createReturnToShop: (legId: number) => axios.post(`/api/logistics/legs/${legId}/return-to-shop`),

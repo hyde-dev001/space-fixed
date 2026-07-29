@@ -370,6 +370,134 @@ class LogisticsApiTest extends TestCase
         $this->assertCount(1, Storage::disk('public')->allFiles());
     }
 
+    public function test_assigned_rider_can_report_a_failed_repair_pickup_once(): void
+    {
+        Storage::fake('public');
+        Permission::findOrCreate('update-logistics-status', 'user');
+        [, $leg, $rider] = $this->assignedRepairPickupLeg();
+        $rider->givePermissionTo('update-logistics-status');
+        $payload = [
+            'attempt_type' => 'pickup',
+            'delivery_assignment_id' => $leg->assignments()->value('id'),
+            'idempotency_key' => '66270d9f-a25b-4130-8494-9e757d92c798',
+            'reason_code' => 'customer_unavailable',
+            'proof_file' => $this->fakeAttemptPhoto(),
+        ];
+
+        $first = $this->actingAs($rider, 'user')
+            ->post("/api/logistics/legs/{$leg->id}/report-issue", $payload, [
+                'Accept' => 'application/json',
+            ])
+            ->assertCreated();
+        $replay = $this->actingAs($rider, 'user')
+            ->post("/api/logistics/legs/{$leg->id}/report-issue", [
+                ...$payload,
+                'proof_file' => $this->fakeAttemptPhoto('duplicate.png'),
+            ], ['Accept' => 'application/json'])
+            ->assertCreated();
+
+        $this->assertSame($first->json('attempt.id'), $replay->json('attempt.id'));
+        $this->assertSame(1, $leg->attempts()->where('attempt_type', 'pickup')->count());
+        $this->assertSame('needs_resolution', $leg->fresh()->status->value);
+        $this->assertCount(1, Storage::disk('public')->allFiles());
+    }
+
+    public function test_failed_repair_pickup_requires_arrival_photo_idempotency_and_valid_context(): void
+    {
+        Storage::fake('public');
+        Permission::findOrCreate('update-logistics-status', 'user');
+
+        foreach ([
+            'arrival' => [$this->assignedRepairPickupLeg(arrived: false), 'arrival'],
+            'picked_up' => [$this->assignedRepairPickupLeg(status: 'picked_up'), 'status'],
+        ] as [$fixture, $error]) {
+            [, $leg, $rider] = $fixture;
+            $rider->givePermissionTo('update-logistics-status');
+            $this->actingAs($rider, 'user')
+                ->post("/api/logistics/legs/{$leg->id}/report-issue", [
+                    ...$this->failedPickupPayload($leg),
+                    'proof_file' => $this->fakeAttemptPhoto("{$error}.png"),
+                ], ['Accept' => 'application/json'])
+                ->assertUnprocessable()
+                ->assertJsonValidationErrors($error);
+        }
+
+        [, $nonRepairLeg, $nonRepairRider] = $this->assignedRiderLeg('assigned');
+        $nonRepairRider->givePermissionTo('update-logistics-status');
+        $nonRepairLeg->events()->create([
+            'shipment_id' => $nonRepairLeg->shipment_id,
+            'event_type' => 'pickup_arrived',
+            'visibility' => 'internal',
+        ]);
+        $this->actingAs($nonRepairRider, 'user')
+            ->post("/api/logistics/legs/{$nonRepairLeg->id}/report-issue", [
+                ...$this->failedPickupPayload($nonRepairLeg),
+                'proof_file' => $this->fakeAttemptPhoto('non-repair.png'),
+            ], ['Accept' => 'application/json'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('attempt_type');
+
+        foreach ([
+            [['proof_file' => null], 'proof_file'],
+            [['idempotency_key' => null, 'proof_file' => $this->fakeAttemptPhoto('no-key.png')], 'idempotency_key'],
+            [['reason_code' => 'unsupported', 'proof_file' => $this->fakeAttemptPhoto('unknown.png')], 'reason_code'],
+            [['reason_code' => 'other', 'proof_file' => $this->fakeAttemptPhoto('other.png')], 'notes'],
+        ] as [$overrides, $error]) {
+            [, $leg, $rider] = $this->assignedRepairPickupLeg();
+            $rider->givePermissionTo('update-logistics-status');
+            $this->actingAs($rider, 'user')
+                ->post("/api/logistics/legs/{$leg->id}/report-issue", [
+                    ...$this->failedPickupPayload($leg),
+                    ...$overrides,
+                ], ['Accept' => 'application/json'])
+                ->assertUnprocessable()
+                ->assertJsonValidationErrors($error);
+        }
+    }
+
+    public function test_failed_repair_pickup_accepts_each_approved_reason(): void
+    {
+        Storage::fake('public');
+        Permission::findOrCreate('update-logistics-status', 'user');
+        $reasons = [
+            'customer_unavailable',
+            'customer_requested_reschedule',
+            'customer_refused_pickup',
+            'item_not_ready',
+            'wrong_address_or_pin',
+            'unsafe_or_inaccessible_location',
+            'vehicle_or_rider_problem',
+            'other',
+        ];
+
+        foreach ($reasons as $index => $reason) {
+            [, $leg, $rider] = $this->assignedRepairPickupLeg();
+            $rider->givePermissionTo('update-logistics-status');
+            $this->actingAs($rider, 'user')
+                ->post("/api/logistics/legs/{$leg->id}/report-issue", [
+                    ...$this->failedPickupPayload($leg),
+                    'idempotency_key' => sprintf('00000000-0000-4000-8000-%012d', $index + 1),
+                    'reason_code' => $reason,
+                    'notes' => $reason === 'other' ? 'The rider added context.' : null,
+                    'proof_file' => $this->fakeAttemptPhoto("{$reason}.png"),
+                ], ['Accept' => 'application/json'])
+                ->assertCreated()
+                ->assertJsonPath('attempt.reason_code', $reason);
+        }
+    }
+
+    public function test_other_rider_cannot_report_a_failed_repair_pickup(): void
+    {
+        Permission::findOrCreate('update-logistics-status', 'user');
+        [$shop, $leg] = $this->assignedRepairPickupLeg();
+        $otherRider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $otherRider->givePermissionTo('update-logistics-status');
+
+        $this->actingAs($otherRider, 'user')
+            ->postJson("/api/logistics/legs/{$leg->id}/report-issue", $this->failedPickupPayload($leg))
+            ->assertForbidden();
+    }
+
     public function test_report_issue_rejects_missing_or_unlisted_reason_codes(): void
     {
         Permission::findOrCreate('update-logistics-status', 'user');
@@ -671,6 +799,37 @@ class LogisticsApiTest extends TestCase
         $leg->assignments()->create(['assignment_type' => 'internal_rider', 'rider_profile_id' => $profile->id, 'status' => 'assigned', 'assigned_at' => now()]);
 
         return [$shop, $leg, $rider];
+    }
+
+    private function assignedRepairPickupLeg(bool $arrived = true, string $status = 'assigned'): array
+    {
+        [$shop, $leg, $rider] = $this->assignedRiderLeg($status);
+        $leg->shipment->update([
+            'source_type' => 'repair_request',
+            'purpose' => 'repair_pickup',
+            'status' => 'active',
+        ]);
+        $leg->update(['leg_type' => 'inbound']);
+        if ($arrived) {
+            $leg->events()->create([
+                'shipment_id' => $leg->shipment_id,
+                'event_type' => 'pickup_arrived',
+                'visibility' => 'internal',
+                'message' => 'Rider arrived for pickup.',
+            ]);
+        }
+
+        return [$shop, $leg, $rider];
+    }
+
+    private function failedPickupPayload(ShipmentLeg $leg): array
+    {
+        return [
+            'attempt_type' => 'pickup',
+            'delivery_assignment_id' => $leg->assignments()->value('id'),
+            'idempotency_key' => 'd7150307-c025-4618-af04-57d12c6463e3',
+            'reason_code' => 'customer_unavailable',
+        ];
     }
 
     private function fakeAttemptPhoto(string $name = 'attempt.png'): UploadedFile

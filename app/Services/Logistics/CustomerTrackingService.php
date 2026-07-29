@@ -17,6 +17,13 @@ class CustomerTrackingService
         'item_damaged' => 'Item damaged',
         'unsafe_location' => 'Unsafe location',
         'vehicle_or_delivery_problem' => 'Vehicle or delivery problem',
+        'customer_unavailable' => 'Customer unavailable / not home',
+        'customer_requested_reschedule' => 'Customer requested reschedule',
+        'customer_refused_pickup' => 'Customer refused pickup',
+        'item_not_ready' => 'Item not ready or unavailable',
+        'wrong_address_or_pin' => 'Wrong address or map pin',
+        'unsafe_or_inaccessible_location' => 'Unsafe or inaccessible location',
+        'vehicle_or_rider_problem' => 'Vehicle or rider problem',
         'other' => 'Other delivery issue',
     ];
 
@@ -44,7 +51,7 @@ class CustomerTrackingService
         $shipment->load([
             'legs' => fn ($query) => $query->orderBy('sequence')->orderBy('id'),
             'legs.attempts' => fn ($query) => $query
-                ->where('attempt_type', 'delivery')
+                ->whereIn('attempt_type', ['pickup', 'delivery'])
                 ->where('status', 'failed')
                 ->latest('attempted_at')
                 ->latest('id'),
@@ -91,7 +98,11 @@ class CustomerTrackingService
                     'schedule_status' => $leg->schedule_status,
                     'latest_failed_attempt' => $attempt ? [
                         'id' => $attempt->id,
-                        'reason' => self::ATTEMPT_REASON_LABELS[$attempt->reason_code] ?? 'Delivery could not be completed',
+                        'attempt_type' => $attempt->attempt_type,
+                        'reason' => $attempt->attempt_type === 'pickup' && $attempt->reason_code === 'other'
+                            ? 'Other'
+                            : (self::ATTEMPT_REASON_LABELS[$attempt->reason_code]
+                                ?? ($attempt->attempt_type === 'pickup' ? 'Pickup could not be completed' : 'Delivery could not be completed')),
                         'attempted_at' => optional($attempt->attempted_at)->toISOString(),
                         'proof_url' => $attempt->file_path && Storage::disk('public')->exists($attempt->file_path)
                             ? route('customer.tracking.attempt-proof', [$shipment, $attempt])

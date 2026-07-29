@@ -32,6 +32,7 @@ const statusOptions = [
   ['active', 'Active'],
   ['awaiting_proof_approval', 'Awaiting Proof Approval'],
   ['failed_attempts', 'Failed attempts'],
+  ['failed_pickups', 'Failed pickups'],
   ['completed', 'Completed'],
   ['cancelled', 'Cancelled'],
 ];
@@ -88,6 +89,10 @@ function contact(leg?: TrackingShipmentLeg) {
 const formatDate = (value?: string | null) => value
   ? new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(`${value.slice(0, 10)}T00:00:00Z`))
   : 'Not scheduled';
+
+const formatDateTime = (value?: string | null) => value
+  ? new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
+  : null;
 
 const shortAddress = (value: string, max = 72) =>
   value.length > max ? `${value.slice(0, max - 1).trimEnd()}…` : value;
@@ -183,6 +188,25 @@ export default function Shipments({ children }: React.PropsWithChildren) {
       cancelButtonText: 'Back',
     });
     if (result.isConfirmed) await act(`/api/logistics/proofs/${proofId}/reject`, { rejection_reason: result.value.trim() });
+  };
+
+  const resolveFailedPickup = async (legId: number, action: 'retry' | 'cancel') => {
+    const result = await Swal.fire({
+      title: action === 'retry' ? 'Reschedule pickup?' : 'Cancel pickup?',
+      input: 'textarea',
+      inputLabel: action === 'retry' ? 'Dispatcher note' : 'Cancellation reason',
+      inputValidator: (value) => value.trim() ? undefined : 'Enter a reason.',
+      showCancelButton: true,
+      confirmButtonText: action === 'retry' ? 'Reschedule Pickup' : 'Cancel Pickup',
+    });
+    if (!result.isConfirmed) return;
+    const reason = String(result.value ?? '').trim();
+    if (!reason) return;
+
+    await act(
+      `/api/logistics/legs/${legId}/${action === 'retry' ? 'resolve/retry' : 'cancel'}`,
+      { reason },
+    );
   };
 
   const submitProof = (legId: number) => {
@@ -404,6 +428,10 @@ export default function Shipments({ children }: React.PropsWithChildren) {
               .filter((assignment) => ['assigned', 'accepted'].includes(assignment.status));
             const rider = activeAssignments[0]?.rider_profile?.name ?? 'Unassigned';
             const urgent = legs.some((leg) => Boolean(leg.urgent_at));
+            const failedPickup = legs.some((leg) => shipment.purpose === 'repair_pickup'
+              && leg.status === 'needs_resolution'
+              && leg.resolution_type === 'pickup_failed'
+              && leg.attempts?.[0]?.attempt_type === 'pickup');
             const failed = legs.some((leg) => leg.attempts?.[0]?.status === 'failed');
             const awaitingProof = legs.some((leg) => leg.status === 'awaiting_proof_approval');
             const overdue = legs.some((leg) => Boolean(leg.scheduled_delivery_date)
@@ -444,7 +472,9 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                   <div className="flex flex-wrap gap-2">
                     {urgent && <span className="rounded-full bg-red-100 px-2 py-1 text-xs font-semibold text-red-700">Urgent</span>}
                     {overdue && <span className="rounded-full bg-orange-100 px-2 py-1 text-xs font-semibold text-orange-700">Overdue</span>}
-                    {failed && <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">Failed attempt</span>}
+                    {failedPickup
+                      ? <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">Failed pickup · Needs action</span>
+                      : failed && <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">Failed attempt</span>}
                     {awaitingProof && <span className="rounded-full bg-purple-100 px-2 py-1 text-xs font-semibold text-purple-700">Awaiting proof</span>}
                   </div>
                 </div>
@@ -473,8 +503,12 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                             const recipient = contact(leg);
                             const activeAssignment = leg.assignments?.find((assignment) => ['assigned', 'accepted'].includes(assignment.status));
                             const latestAttempt = leg.attempts?.[0];
+                            const isFailedPickup = shipment.purpose === 'repair_pickup'
+                              && leg.status === 'needs_resolution'
+                              && leg.resolution_type === 'pickup_failed'
+                              && latestAttempt?.attempt_type === 'pickup';
                             const failedAttemptCount = leg.failed_attempt_count ?? latestAttempt?.attempt_number ?? 0;
-                            const attemptsMaxed = failedAttemptCount >= maxDeliveryAttempts;
+                            const attemptsMaxed = !isFailedPickup && failedAttemptCount >= maxDeliveryAttempts;
                             const canAssignLeg = leg.status === 'pending' && !activeAssignment && !attemptsMaxed;
                             const isReturnToShop = leg.leg_type === 'return_to_shop';
                             const returnProof = leg.proofs?.find((proof) => proof.handoff_type === 'receive');
@@ -512,10 +546,31 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                       <span aria-hidden="true">!</span> {resolutionInstruction}
                                     </p>
                                   )}
-                                  {!riderMode && latestAttempt?.status === 'failed' && <div className="mt-2 space-y-1 text-xs text-gray-600 dark:text-gray-300"><span className="inline-flex rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">Failed attempt - {failedAttemptCount}/{maxDeliveryAttempts}</span>{attemptsMaxed && <p className="font-semibold text-red-600">Subject for refund</p>}{latestAttempt.reason_code && <p>{label(latestAttempt.reason_code)}</p>}{latestAttempt.notes && <p>Internal note: {latestAttempt.notes}</p>}{latestAttempt.file_path && <a href={`/storage/${latestAttempt.file_path}`} target="_blank" rel="noreferrer" className="inline-block font-semibold text-blue-600 hover:underline">View failed-attempt photo</a>}</div>}
+                                  {!riderMode && latestAttempt?.status === 'failed' && (
+                                    isFailedPickup
+                                      ? <div className="mt-2 space-y-1 text-xs text-gray-600 dark:text-gray-300">
+                                          <span className="inline-flex rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">Failed pickup · Needs action</span>
+                                          {latestAttempt.reason_code && <p>{label(latestAttempt.reason_code)}</p>}
+                                          {formatDateTime(latestAttempt.attempted_at) && <p>Reported {formatDateTime(latestAttempt.attempted_at)}</p>}
+                                          {latestAttempt.file_path && <a href={`/storage/${latestAttempt.file_path}`} target="_blank" rel="noreferrer" className="inline-block font-semibold text-blue-600 hover:underline">View failed-pickup photo</a>}
+                                        </div>
+                                      : <div className="mt-2 space-y-1 text-xs text-gray-600 dark:text-gray-300">
+                                          <span className="inline-flex rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">Failed attempt - {failedAttemptCount}/{maxDeliveryAttempts}</span>
+                                          {attemptsMaxed && <p className="font-semibold text-red-600">Subject for refund</p>}
+                                          {latestAttempt.reason_code && <p>{label(latestAttempt.reason_code)}</p>}
+                                          {latestAttempt.notes && <p>Internal note: {latestAttempt.notes}</p>}
+                                          {latestAttempt.file_path && <a href={`/storage/${latestAttempt.file_path}`} target="_blank" rel="noreferrer" className="inline-block font-semibold text-blue-600 hover:underline">View failed-attempt photo</a>}
+                                        </div>
+                                  )}
                                 </div>
                                 <div className="flex min-w-0 flex-col gap-3">
                                   <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Assignment and progress</h3>
+                                  {canAssign && !riderMode && isFailedPickup && (
+                                    <div className="grid gap-2 sm:grid-cols-2">
+                                      <button type="button" onClick={() => void resolveFailedPickup(leg.id, 'retry')} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">Reschedule Pickup</button>
+                                      <button type="button" onClick={() => void resolveFailedPickup(leg.id, 'cancel')} className="rounded-lg border border-red-600 px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50">Cancel Pickup</button>
+                                    </div>
+                                  )}
                                   {canUpdateStatus && leg.status === 'assigned' && <button type="button" onClick={() => void act(`/api/logistics/legs/${leg.id}/picked-up`)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">Picked up</button>}
                                   {canUpdateStatus && leg.status === 'picked_up' && <button type="button" onClick={() => void act(`/api/logistics/legs/${leg.id}/in-transit`)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">In transit</button>}
                                   {showOutcomeChoice && <div role="group" aria-label="Choose delivery outcome" className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-900/40"><p className="mb-2 text-sm font-semibold text-gray-900 dark:text-white">What happened with this delivery?</p><div className="grid gap-2 sm:grid-cols-2"><button type="button" onClick={() => chooseDeliveryOutcome(leg.id, 'proof')} className={`rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${deliveryOutcome === 'proof' ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-300 bg-white text-gray-700 hover:border-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200'}`}>Delivered successfully</button><button type="button" onClick={() => chooseDeliveryOutcome(leg.id, 'issue')} className={`rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${deliveryOutcome === 'issue' ? 'border-amber-600 bg-amber-600 text-white' : 'border-gray-300 bg-white text-gray-700 hover:border-amber-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200'}`}>Couldn't deliver</button></div></div>}
