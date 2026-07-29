@@ -12,6 +12,7 @@ use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\RepairRequest;
 use App\Models\RepairReview;
+use App\Models\RepairWarrantyClaim;
 use App\Models\RepairPackage;
 use App\Models\RepairPaymentSession;
 use App\Models\RepairService;
@@ -1190,6 +1191,21 @@ class RepairRequestController extends Controller
         $anchorRepairId = ((bool) ($repair->is_warranty_job ?? false) && (int) ($repair->parent_repair_request_id ?? 0) > 0)
             ? (int) $repair->parent_repair_request_id
             : (int) $repair->id;
+
+        $latestWarrantyClaimStatus = RepairWarrantyClaim::query()
+            ->where('original_repair_request_id', $anchorRepairId)
+            ->latest('id')
+            ->value('status');
+
+        if (in_array($latestWarrantyClaimStatus, [
+            RepairWarrantyClaim::STATUS_PENDING_REPAIRER,
+            RepairWarrantyClaim::STATUS_APPROVED,
+        ], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Refund cannot be requested while a warranty claim is active for this repair.',
+            ], 422);
+        }
 
         $relatedRepairIds = RepairRequest::query()
             ->where('user_id', (int) $user->id)

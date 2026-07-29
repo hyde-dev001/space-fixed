@@ -1640,6 +1640,11 @@ const MyRepairs: React.FC = () => {
     return latestRefundByRepairId[getRefundAnchorRepairId(order)];
   };
 
+  const hasActiveWarrantyClaim = (order: RepairOrder): boolean => {
+    const status = latestWarrantyClaimByRepairId[getRefundAnchorRepairId(order)]?.status;
+    return ['pending_repairer', 'approved'].includes(String(status || '').toLowerCase());
+  };
+
   const hasReviewForOrder = (order: RepairOrder): boolean => {
     if (Boolean(order.has_review)) {
       return true;
@@ -2809,6 +2814,16 @@ const MyRepairs: React.FC = () => {
     const targetOrder = orders.find((entry) => entry.id === refundOrderId);
     if (!targetOrder) {
       Swal.fire({ icon: 'error', title: 'Repair Not Found', text: 'Unable to locate the selected repair request.', confirmButtonColor: '#000000' });
+      return;
+    }
+
+    if (hasActiveWarrantyClaim(targetOrder)) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Refund Not Allowed',
+        text: 'Refund cannot be requested while a warranty claim is active for this repair.',
+        confirmButtonColor: '#000000',
+      });
       return;
     }
 
@@ -4479,13 +4494,15 @@ const MyRepairs: React.FC = () => {
                               setRefundNote('');
                               setShowRefundModal(true);
                             }}
-                            disabled={hasReviewForOrder(order) || isRefundFlowLocked(getLatestRefundForOrder(order)?.status) || isRefundInProgress(getLatestRefundForOrder(order)?.status)}
+                            disabled={hasActiveWarrantyClaim(order) || hasReviewForOrder(order) || isRefundFlowLocked(getLatestRefundForOrder(order)?.status) || isRefundInProgress(getLatestRefundForOrder(order)?.status)}
                             title={hasReviewForOrder(order)
                               ? 'Refund is not allowed after a review has been submitted.'
-                              : isRefundFlowLocked(getLatestRefundForOrder(order)?.status)
-                                ? 'Refund is already filed or completed for this repair.'
-                                : undefined}
-                            className={`${actionButtonBaseClass} ${(hasReviewForOrder(order) || isRefundFlowLocked(getLatestRefundForOrder(order)?.status) || isRefundInProgress(getLatestRefundForOrder(order)?.status)) ? actionButtonDisabledClass : actionButtonSecondaryClass}`}
+                              : hasActiveWarrantyClaim(order)
+                                ? 'Refund is unavailable while a warranty claim is active.'
+                                : isRefundFlowLocked(getLatestRefundForOrder(order)?.status)
+                                  ? 'Refund is already filed or completed for this repair.'
+                                  : undefined}
+                            className={`${actionButtonBaseClass} ${(hasActiveWarrantyClaim(order) || hasReviewForOrder(order) || isRefundFlowLocked(getLatestRefundForOrder(order)?.status) || isRefundInProgress(getLatestRefundForOrder(order)?.status)) ? actionButtonDisabledClass : actionButtonSecondaryClass}`}
                           >
                             REFUND
                           </button>
