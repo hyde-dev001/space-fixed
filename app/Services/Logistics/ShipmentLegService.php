@@ -30,6 +30,17 @@ class ShipmentLegService
         'other',
     ];
 
+    public const PICKUP_REASONS = [
+        'customer_unavailable',
+        'customer_requested_reschedule',
+        'customer_refused_pickup',
+        'item_not_ready',
+        'wrong_address_or_pin',
+        'unsafe_or_inaccessible_location',
+        'vehicle_or_rider_problem',
+        'other',
+    ];
+
     public function __construct(
         private ProofService $proofs,
         private DeliveryEventService $events,
@@ -334,21 +345,35 @@ class ShipmentLegService
 
     public function recordFailedAttempt(ShipmentLeg $leg, array $payload, bool $allowAssigned = false): DeliveryAttempt
     {
+        $attemptType = (string) ($payload['attempt_type'] ?? 'delivery');
+        $isPickup = $attemptType === 'pickup';
+        if (! in_array($attemptType, ['pickup', 'delivery'], true)) {
+            throw ValidationException::withMessages(['attempt_type' => 'Choose a valid attempt type.']);
+        }
         if (empty($payload['reason_code'])) {
             throw ValidationException::withMessages(['reason_code' => 'Attempt reason is required.']);
         }
-        if (in_array($payload['reason_code'], self::PHOTO_REQUIRED_REASONS, true)
-            && empty($payload['file_path'])) {
-            throw ValidationException::withMessages(['proof_file' => ['A photo is required for this reason.']]);
+        if ($isPickup && ! in_array($payload['reason_code'], self::PICKUP_REASONS, true)) {
+            throw ValidationException::withMessages(['reason_code' => 'Choose a valid failed pickup reason.']);
         }
-        if (in_array($payload['reason_code'], self::NOTES_REQUIRED_REASONS, true)
+        if (($isPickup || in_array($payload['reason_code'], self::PHOTO_REQUIRED_REASONS, true))
+            && empty($payload['file_path'])) {
+            throw ValidationException::withMessages([
+                'proof_file' => [$isPickup ? 'A failed pickup photo is required.' : 'A photo is required for this reason.'],
+            ]);
+        }
+        if (($isPickup
+                ? $payload['reason_code'] === 'other'
+                : in_array($payload['reason_code'], self::NOTES_REQUIRED_REASONS, true))
             && blank($payload['notes'] ?? null)) {
-            throw ValidationException::withMessages(['notes' => ['Add a short note for this reason.']]);
+            throw ValidationException::withMessages([
+                'notes' => [$isPickup ? 'Add a short note for Other.' : 'Add a short note for this reason.'],
+            ]);
         }
 
         $batchId = $leg->delivery_batch_id;
 
-        return DB::transaction(function () use ($leg, $payload, $allowAssigned, $batchId) {
+        return DB::transaction(function () use ($leg, $payload, $allowAssigned, $batchId, $attemptType, $isPickup) {
             $idempotencyKey = trim((string) ($payload['idempotency_key'] ?? ''));
             $assignmentId = (int) ($payload['delivery_assignment_id'] ?? 0);
             $assignment = $assignmentId > 0
@@ -379,7 +404,7 @@ class ShipmentLegService
             if ($assignment) {
                 $existing = DeliveryAttempt::query()
                     ->where('shipment_leg_id', $leg->id)
-                    ->where('attempt_type', $payload['attempt_type'] ?? 'delivery')
+                    ->where('attempt_type', $attemptType)
                     ->where('delivery_assignment_id', $assignment->id)
                     ->first();
                 if ($existing) {
@@ -397,7 +422,29 @@ class ShipmentLegService
             if ($leg->leg_type === 'return_to_shop') {
                 throw ValidationException::withMessages(['leg' => 'Return-to-shop legs use the return handoff workflow.']);
             }
-            $this->assertTransitionAllowed($leg, $allowAssigned ? ['assigned', 'picked_up', 'in_transit', 'delivery_attempted'] : ['in_transit', 'delivery_attempted'], 'delivery attempted');
+            if ($isPickup) {
+                if ($leg->shipment->source_type !== 'repair_request'
+                    || $leg->shipment->purpose !== 'repair_pickup') {
+                    throw ValidationException::withMessages([
+                        'attempt_type' => 'Failed pickup is available only for repair pickups.',
+                    ]);
+                }
+                $this->assertTransitionAllowed($leg, ['assigned', 'pickup_scheduled'], 'reported as a failed pickup');
+                if ($leg->picked_up_at) {
+                    throw ValidationException::withMessages(['status' => 'This pickup was already confirmed.']);
+                }
+                if (! $leg->events()->where('event_type', 'pickup_arrived')->exists()) {
+                    throw ValidationException::withMessages([
+                        'arrival' => 'Record your pickup arrival before reporting a failed pickup.',
+                    ]);
+                }
+            } else {
+                $this->assertTransitionAllowed(
+                    $leg,
+                    $allowAssigned ? ['assigned', 'picked_up', 'in_transit', 'delivery_attempted'] : ['in_transit', 'delivery_attempted'],
+                    'delivery attempted',
+                );
+            }
             if (! $assignment) {
                 $assignment = $leg->assignments()->whereIn('status', ['assigned', 'accepted'])->lockForUpdate()->first();
             }
@@ -405,12 +452,12 @@ class ShipmentLegService
                 throw ValidationException::withMessages(['delivery_assignment_id' => 'An active delivery assignment is required.']);
             }
 
-            $attemptNumber = $leg->attempts()->where('attempt_type', $payload['attempt_type'] ?? 'delivery')->count() + 1;
+            $attemptNumber = $leg->attempts()->where('attempt_type', $attemptType)->count() + 1;
             $attempt = $leg->attempts()->create([
                 'delivery_assignment_id' => $assignment->id,
                 'delivery_batch_id' => $batchId,
                 'idempotency_key' => $idempotencyKey !== '' ? $idempotencyKey : null,
-                'attempt_type' => $payload['attempt_type'] ?? 'delivery',
+                'attempt_type' => $attemptType,
                 'status' => 'failed',
                 'attempt_number' => $attemptNumber,
                 'reason_code' => $payload['reason_code'],
@@ -422,33 +469,44 @@ class ShipmentLegService
                 'recorded_by_id' => $payload['recorded_by_id'] ?? null,
             ]);
 
-            $max = $leg->shipment->shopOwner->logisticsSetting?->max_delivery_attempts ?? 2;
-            $needsResolution = $attemptNumber >= $max;
-            $settings = $leg->shipment->shopOwner->logisticsSetting;
-            $next = now(config('app.shop_timezone', 'Asia/Manila'))->addDay();
-            while (! in_array($next->dayOfWeekIso, $settings?->operating_days ?? [1, 2, 3, 4, 5, 6], true)
-                || in_array($next->toDateString(), $settings?->blackout_dates ?? [], true)) {
-                $next->addDay();
-            }
-            $nextDate = $next->toDateString();
-            $leg->update([
-                'status' => $needsResolution ? 'needs_resolution' : 'pending',
-                'failed_at' => now(),
-                'attempt_number' => $attemptNumber + 1,
-                'scheduled_delivery_date' => $needsResolution ? $leg->scheduled_delivery_date : $nextDate,
-                'delivery_batch_id' => null,
-                'stop_sequence' => null,
-                'resolution_type' => $needsResolution ? 'return_required' : null,
-                'resolution_reason' => $needsResolution ? 'Maximum delivery attempts reached.' : null,
-            ]);
+            if ($isPickup) {
+                $leg->update([
+                    'status' => 'needs_resolution',
+                    'failed_at' => now(),
+                    'delivery_batch_id' => null,
+                    'stop_sequence' => null,
+                    'resolution_type' => 'pickup_failed',
+                    'resolution_reason' => $payload['reason_code'],
+                ]);
+            } else {
+                $max = $leg->shipment->shopOwner->logisticsSetting?->max_delivery_attempts ?? 2;
+                $needsResolution = $attemptNumber >= $max;
+                $settings = $leg->shipment->shopOwner->logisticsSetting;
+                $next = now(config('app.shop_timezone', 'Asia/Manila'))->addDay();
+                while (! in_array($next->dayOfWeekIso, $settings?->operating_days ?? [1, 2, 3, 4, 5, 6], true)
+                    || in_array($next->toDateString(), $settings?->blackout_dates ?? [], true)) {
+                    $next->addDay();
+                }
+                $nextDate = $next->toDateString();
+                $leg->update([
+                    'status' => $needsResolution ? 'needs_resolution' : 'pending',
+                    'failed_at' => now(),
+                    'attempt_number' => $attemptNumber + 1,
+                    'scheduled_delivery_date' => $needsResolution ? $leg->scheduled_delivery_date : $nextDate,
+                    'delivery_batch_id' => null,
+                    'stop_sequence' => null,
+                    'resolution_type' => $needsResolution ? 'return_required' : null,
+                    'resolution_reason' => $needsResolution ? 'Maximum delivery attempts reached.' : null,
+                ]);
 
-            if ($needsResolution) {
-                $this->createReturnToShop($leg->fresh());
+                if ($needsResolution) {
+                    $this->createReturnToShop($leg->fresh());
 
-                if ($leg->shipment->source_type === 'order' && $leg->shipment->purpose === 'retail_delivery') {
-                    $order = Order::query()->find($leg->shipment->source_id);
-                    if ($order && $this->isPaidOnlineOrder($order)) {
-                        $this->refunds->reserveFailedDeliveryRefund($order, $leg);
+                    if ($leg->shipment->source_type === 'order' && $leg->shipment->purpose === 'retail_delivery') {
+                        $order = Order::query()->find($leg->shipment->source_id);
+                        if ($order && $this->isPaidOnlineOrder($order)) {
+                            $this->refunds->reserveFailedDeliveryRefund($order, $leg);
+                        }
                     }
                 }
             }
@@ -461,18 +519,35 @@ class ShipmentLegService
                     $batchChanges += [
                         'status' => 'cancelled',
                         'cancelled_at' => now(),
-                        'cancellation_reason' => 'All stops were removed after failed delivery attempts.',
+                        'cancellation_reason' => $isPickup
+                            ? 'All stops were removed after failed pickup attempts.'
+                            : 'All stops were removed after failed delivery attempts.',
                     ];
                 }
                 $batch->update($batchChanges);
             }
             $leg->shipment->update(['status' => 'active']);
-            $this->events->record($leg->shipment, $leg, [
-                'event_type' => 'delivery_attempt_failed',
-                'visibility' => 'customer',
-                'message' => 'Delivery attempt failed.',
-                'metadata' => ['reason_code' => $payload['reason_code']],
-            ]);
+            if ($isPickup) {
+                $this->events->record($leg->shipment, $leg, [
+                    'event_type' => 'pickup_attempt_failed',
+                    'visibility' => 'internal',
+                    'message' => 'Rider reported a failed pickup.',
+                    'metadata' => ['reason_code' => $payload['reason_code']],
+                ]);
+                $this->events->record($leg->shipment, $leg, [
+                    'event_type' => 'pickup_attempt_failed',
+                    'visibility' => 'customer',
+                    'message' => 'The pickup could not be completed.',
+                    'metadata' => ['reason_code' => $payload['reason_code']],
+                ]);
+            } else {
+                $this->events->record($leg->shipment, $leg, [
+                    'event_type' => 'delivery_attempt_failed',
+                    'visibility' => 'customer',
+                    'message' => 'Delivery attempt failed.',
+                    'metadata' => ['reason_code' => $payload['reason_code']],
+                ]);
+            }
 
             return $attempt;
         });

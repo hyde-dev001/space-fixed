@@ -288,20 +288,38 @@ class ShipmentController extends Controller
         } else {
             abort_unless($this->userHasActiveAssignment($leg, $actor), 403);
         }
+        $attemptType = $request->validate([
+            'attempt_type' => ['nullable', 'in:pickup,delivery'],
+        ])['attempt_type'] ?? 'delivery';
+        $isPickup = $attemptType === 'pickup';
         $payload = $request->validate([
+            'attempt_type' => ['nullable', 'in:pickup,delivery'],
             'delivery_assignment_id' => ['required', 'integer'],
-            'reason_code' => ['required', Rule::in([
-                ...ShipmentLegService::PHOTO_REQUIRED_REASONS,
-                ...ShipmentLegService::NOTES_REQUIRED_REASONS,
-            ])],
+            'idempotency_key' => [
+                Rule::requiredIf($isPickup),
+                'nullable',
+                'uuid',
+            ],
+            'reason_code' => [
+                'required',
+                Rule::in($isPickup
+                    ? ShipmentLegService::PICKUP_REASONS
+                    : [
+                        ...ShipmentLegService::PHOTO_REQUIRED_REASONS,
+                        ...ShipmentLegService::NOTES_REQUIRED_REASONS,
+                    ]),
+            ],
             'notes' => [
-                Rule::requiredIf(fn () => in_array($request->input('reason_code'), ShipmentLegService::NOTES_REQUIRED_REASONS, true)),
+                Rule::requiredIf($isPickup
+                    ? $request->input('reason_code') === 'other'
+                    : in_array($request->input('reason_code'), ShipmentLegService::NOTES_REQUIRED_REASONS, true)),
                 'nullable',
                 'string',
                 'max:1000',
             ],
             'proof_file' => [
-                Rule::requiredIf(fn () => in_array($request->input('reason_code'), ShipmentLegService::PHOTO_REQUIRED_REASONS, true)),
+                Rule::requiredIf($isPickup
+                    || in_array($request->input('reason_code'), ShipmentLegService::PHOTO_REQUIRED_REASONS, true)),
                 'nullable',
                 'image',
                 'max:10240',
@@ -316,10 +334,10 @@ class ShipmentController extends Controller
         try {
             $attempt = $legs->recordFailedAttempt($leg, [
                 ...$payload,
-                'attempt_type' => 'delivery',
+                'attempt_type' => $attemptType,
                 'recorded_by_type' => $actor::class,
                 'recorded_by_id' => $actor->id,
-            ]);
+            ], $isPickup);
             if ($storedPath && $attempt->file_path !== $storedPath) {
                 Storage::disk('public')->delete($storedPath);
             }

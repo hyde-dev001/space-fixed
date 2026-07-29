@@ -257,6 +257,76 @@ class ShipmentLegServiceTest extends TestCase
         $this->assertSame('in_transit', $refund->fresh()->return_status);
     }
 
+    public function test_failed_repair_pickup_waits_for_dispatcher_without_return_or_refund(): void
+    {
+        [$leg, $assignment] = $this->assignedRepairPickup();
+
+        $attempt = app(ShipmentLegService::class)->recordFailedAttempt($leg, [
+            'attempt_type' => 'pickup',
+            'delivery_assignment_id' => $assignment->id,
+            'idempotency_key' => '3aa7c6c2-0459-48be-ab0a-32090fe414cd',
+            'reason_code' => 'customer_unavailable',
+            'file_path' => "logistics-attempt/{$leg->id}/door.jpg",
+        ], true);
+
+        $this->assertSame('pickup', $attempt->attempt_type);
+        $this->assertSame(1, $attempt->attempt_number);
+        $this->assertSame('needs_resolution', $leg->fresh()->status->value);
+        $this->assertSame('pickup_failed', $leg->fresh()->resolution_type);
+        $this->assertNull($leg->fresh()->delivery_batch_id);
+        $this->assertSame('cancelled', $assignment->fresh()->status);
+        $this->assertFalse($leg->returnLeg()->exists());
+        $this->assertDatabaseMissing('delivery_events', [
+            'shipment_leg_id' => $leg->id,
+            'event_type' => 'delivery_attempt_failed',
+        ]);
+        foreach (['customer', 'internal'] as $visibility) {
+            $this->assertDatabaseHas('delivery_events', [
+                'shipment_leg_id' => $leg->id,
+                'event_type' => 'pickup_attempt_failed',
+                'visibility' => $visibility,
+            ]);
+        }
+    }
+
+    public function test_failed_repair_pickup_detaches_only_its_batch_stop_and_replays_once(): void
+    {
+        $shop = ShopOwner::factory()->create();
+        $batch = DeliveryBatch::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'status' => 'in_progress',
+            'capacity' => 2,
+            'assigned_stop_count' => 2,
+        ]);
+        [$leg, $assignment] = $this->assignedRepairPickup($batch);
+        $remainingLeg = ShipmentLeg::factory()->create([
+            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id,
+            'status' => 'assigned',
+            'delivery_batch_id' => $batch->id,
+            'stop_sequence' => 2,
+        ]);
+        $payload = [
+            'attempt_type' => 'pickup',
+            'delivery_assignment_id' => $assignment->id,
+            'idempotency_key' => 'dd7036c6-5462-48ba-9810-f9104d4b4827',
+            'reason_code' => 'customer_unavailable',
+            'file_path' => "logistics-attempt/{$leg->id}/door.jpg",
+        ];
+
+        $first = app(ShipmentLegService::class)->recordFailedAttempt($leg, $payload, true);
+        $replay = app(ShipmentLegService::class)->recordFailedAttempt($leg, $payload, true);
+
+        $this->assertSame($first->id, $replay->id);
+        $this->assertNull($leg->fresh()->delivery_batch_id);
+        $this->assertSame($batch->id, $remainingLeg->fresh()->delivery_batch_id);
+        $this->assertSame(1, $batch->fresh()->assigned_stop_count);
+        $this->assertSame('in_progress', $batch->fresh()->status);
+        $this->assertSame(2, DeliveryEvent::query()
+            ->where('shipment_leg_id', $leg->id)
+            ->where('event_type', 'pickup_attempt_failed')
+            ->count());
+    }
+
     public function test_delivery_attempted_leg_can_be_cancelled_and_records_internal_and_customer_events(): void
     {
         $leg = ShipmentLeg::factory()->create(['status' => 'delivery_attempted']);
@@ -349,5 +419,39 @@ class ShipmentLegServiceTest extends TestCase
         ]);
 
         return $leg;
+    }
+
+    private function assignedRepairPickup(?DeliveryBatch $batch = null): array
+    {
+        $shop = $batch
+            ? ShopOwner::query()->findOrFail($batch->shop_owner_id)
+            : ShopOwner::factory()->create();
+        $shipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'repair_request',
+            'source_id' => ((int) Shipment::query()->max('source_id')) + 1,
+            'purpose' => 'repair_pickup',
+            'status' => 'active',
+        ]);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id,
+            'leg_type' => 'inbound',
+            'status' => 'assigned',
+            'delivery_batch_id' => $batch?->id,
+            'stop_sequence' => $batch ? 1 : null,
+            'requires_pickup_proof' => false,
+        ]);
+        $assignment = DeliveryAssignment::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'status' => 'accepted',
+        ]);
+        $leg->events()->create([
+            'shipment_id' => $shipment->id,
+            'event_type' => 'pickup_arrived',
+            'visibility' => 'internal',
+            'message' => 'Rider arrived for pickup.',
+        ]);
+
+        return [$leg, $assignment];
     }
 }
