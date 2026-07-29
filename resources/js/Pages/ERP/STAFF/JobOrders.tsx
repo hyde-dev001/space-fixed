@@ -487,7 +487,7 @@ export default function JobOrdersPage() {
       grand_total: grandTotal,
       paymentStatus: order.payment_status || 'pending',
       paymentMethod: order.payment_method || '',
-      status: order.status as any,
+      status: (order.status === 'completed' ? 'delivered' : order.status) as Order['status'],
       cancellation_reason: order.cancellation_reason || null,
       cancellation_note: order.cancellation_note || null,
       cancellation_other_reason_note: order.cancellation_other_reason_note || null,
@@ -536,6 +536,11 @@ export default function JobOrdersPage() {
 
   useEffect(() => {
     void refreshOrders();
+
+    const refreshOnFocus = () => void refreshOrders();
+    window.addEventListener('focus', refreshOnFocus);
+
+    return () => window.removeEventListener('focus', refreshOnFocus);
   }, []);
 
   const getShippingMessage = () => {

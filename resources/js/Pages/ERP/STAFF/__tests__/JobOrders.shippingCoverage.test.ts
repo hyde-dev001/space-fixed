@@ -170,3 +170,38 @@ describe('staff order shipping coverage integration', () => {
     expect(source).toMatch(/onClick=\{closeShippingModal\}\s+disabled=\{isConfirmingShipping\}[\s\S]{0,300}disabled:cursor-not-allowed[\s\S]{0,100}>\s*Cancel/);
   });
 });
+
+describe('staff delivered order refresh', () => {
+  it('shows completed backend orders in the Delivered tab', async () => {
+    const completedOrder = { ...makeOrder(19), status: 'completed' };
+    mockPage.props.initialOrders = [completedOrder];
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse(200, [completedOrder]))));
+
+    render(React.createElement(JobOrdersPage));
+
+    expect(await screen.findByRole('button', { name: 'Delivered (1)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Shipped (0)' })).toBeInTheDocument();
+  });
+
+  it('refreshes a shipped order when the browser window regains focus', async () => {
+    const shippedOrder = { ...makeOrder(19), status: 'shipped' };
+    const completedOrder = { ...shippedOrder, status: 'completed' };
+    mockPage.props.initialOrders = [shippedOrder];
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(200, [shippedOrder]))
+      .mockResolvedValueOnce(jsonResponse(200, [completedOrder]));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(React.createElement(JobOrdersPage));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('button', { name: 'Shipped (1)' })).toBeInTheDocument();
+
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('button', { name: 'Delivered (1)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Shipped (0)' })).toBeInTheDocument();
+  });
+});
