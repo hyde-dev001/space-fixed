@@ -237,7 +237,7 @@ class ShipmentController extends Controller
             'arrival_type' => ['required', 'in:pickup,dropoff'],
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],
             'longitude' => ['nullable', 'numeric', 'between:-180,180'],
-            'accuracy_m' => ['nullable', 'numeric', 'between:0,5000'],
+            'accuracy_m' => ['nullable', 'numeric', 'min:0'],
             'captured_at' => ['nullable', 'date'],
             'exception_reason' => ['nullable', 'in:gps_inaccurate,pin_incorrect,alternate_meeting_point,access_restriction,safety_concern,other'],
             'exception_notes' => ['nullable', 'string', 'max:1000'],

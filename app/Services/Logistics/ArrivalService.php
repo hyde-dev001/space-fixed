@@ -102,6 +102,10 @@ class ArrivalService
             return $this->check('location_unavailable', null, $radius);
         }
 
+        if ((float) $payload['accuracy_m'] > 5000) {
+            return $this->check('location_unavailable', null, $radius);
+        }
+
         if ((float) $payload['accuracy_m'] > $radius) {
             return $this->check('low_accuracy', null, $radius);
         }
