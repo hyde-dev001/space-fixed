@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Head, Link, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
-import type { TrackingShipment } from '@/types/logistics';
+import type { CustomerDeliveryProof, TrackingShipment } from '@/types/logistics';
 
 const titleCase = (value: string) =>
   value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -24,9 +24,127 @@ const snapshotText = (snapshot?: Record<string, unknown> | null) => {
   return [snapshot.name, snapshot.address].filter(Boolean).join(' - ') || '-';
 };
 
+function DeliveryProofDialog({
+  proof,
+  onClose,
+}: {
+  proof: CustomerDeliveryProof;
+  onClose: () => void;
+}) {
+  const closeButton = useRef<HTMLButtonElement>(null);
+  const [zoom, setZoom] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    closeButton.current?.focus();
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', closeOnEscape);
+
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [onClose]);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="delivery-proof-title"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 sm:p-6"
+    >
+      <div className="flex h-full w-full flex-col overflow-hidden bg-white shadow-2xl sm:h-auto sm:max-h-[90vh] sm:max-w-5xl sm:rounded-2xl">
+        <button
+          ref={closeButton}
+          type="button"
+          aria-label="Close proof viewer"
+          onClick={onClose}
+          className="m-3 min-h-11 min-w-11 self-end rounded-lg border border-gray-300 px-3 text-xl font-bold"
+        >
+          <span aria-hidden="true">×</span>
+        </button>
+
+        <div className="grid min-h-0 flex-1 gap-4 overflow-auto px-4 pb-5 md:grid-cols-[minmax(0,1fr)_20rem] sm:px-6">
+          <section className="min-w-0">
+            <h2 id="delivery-proof-title" className="text-xl font-bold text-gray-950">Proof of delivery</h2>
+            <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Proof zoom">
+              {[1, 1.5, 2].map((level) => (
+                <button
+                  key={level}
+                  type="button"
+                  aria-label={`Zoom to ${level * 100}%`}
+                  aria-pressed={zoom === level}
+                  disabled={failed}
+                  onClick={() => setZoom(level)}
+                  className="min-h-11 rounded-lg border border-gray-300 px-4 text-sm font-semibold disabled:opacity-50"
+                >
+                  {level * 100}%
+                </button>
+              ))}
+            </div>
+
+            <div className="relative mt-3 grid min-h-72 place-items-center overflow-auto rounded-xl bg-gray-950 p-4" aria-live="polite">
+              {failed ? (
+                <p className="font-semibold text-white">Proof unavailable</p>
+              ) : (
+                <>
+                  {loading && <p className="absolute font-semibold text-white">Loading proof...</p>}
+                  <img
+                    src={proof.url!}
+                    alt={`Proof of delivery for ${proof.tracking_number}`}
+                    onLoad={() => setLoading(false)}
+                    onError={() => {
+                      setLoading(false);
+                      setFailed(true);
+                    }}
+                    className="max-h-[65vh] max-w-full object-contain transition-transform"
+                    style={{ transform: `scale(${zoom})`, transformOrigin: 'center' }}
+                  />
+                </>
+              )}
+            </div>
+          </section>
+
+          <aside className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+            <p className="inline-flex rounded-full border border-green-300 bg-green-50 px-3 py-1 text-sm font-bold text-green-900">
+              ✓ {proof.status}
+            </p>
+            <dl className="mt-4 space-y-4">
+              <div>
+                <dt className="text-xs font-semibold uppercase text-gray-500">Delivered</dt>
+                <dd className="mt-1 text-sm font-medium text-gray-900">{formatDate(proof.delivered_at)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-semibold uppercase text-gray-500">Delivery location</dt>
+                <dd className="mt-1 text-sm font-medium text-gray-900">{proof.location}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-semibold uppercase text-gray-500">Tracking number</dt>
+                <dd className="mt-1 text-sm font-medium text-gray-900">{proof.tracking_number}</dd>
+              </div>
+            </dl>
+            {!failed && (
+              <a
+                href={`${proof.url}?download=1`}
+                download
+                className="mt-5 inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-gray-950 px-4 text-sm font-bold text-white"
+                aria-label="Download proof of delivery"
+              >
+                Download proof
+              </a>
+            )}
+          </aside>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ShipmentTracking() {
   const { shipment } = usePage<{ shipment: TrackingShipment }>().props;
   const [failedProofIds, setFailedProofIds] = useState<number[]>([]);
+  const [selectedProof, setSelectedProof] = useState<CustomerDeliveryProof | null>(null);
+  const proofOpener = useRef<HTMLButtonElement | null>(null);
   const currentLeg = shipment.legs[shipment.legs.length - 1];
   const isReturn = shipment.purpose === 'refund_return';
   const isRepair = shipment.source_type === 'repair_request';
@@ -35,6 +153,10 @@ export default function ShipmentTracking() {
   const trackingNumber = isReturn ? `RET-${shipment.id}` : (currentLeg?.tracking_number || `SHP-${shipment.id}`);
   const trackingUrl = isReturn ? internalTrackingUrl : currentLeg?.tracking_url;
   const awaitingConfirmation = currentLeg?.status === 'awaiting_proof_approval';
+  const closeProof = () => {
+    setSelectedProof(null);
+    queueMicrotask(() => proofOpener.current?.focus());
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -148,7 +270,7 @@ export default function ShipmentTracking() {
           </div>
           <div className="divide-y divide-gray-100">
             {shipment.legs.map((leg) => (
-              <div key={leg.id} className="grid gap-4 px-5 py-4 md:grid-cols-[120px_1fr_1fr_120px]">
+              <div key={leg.id} className="grid gap-4 px-5 py-4 md:grid-cols-[120px_1fr_1fr_160px]">
                 <div className="text-sm font-semibold text-gray-900">{titleCase(leg.leg_type)}</div>
                 <div>
                   <p className="text-xs uppercase text-gray-500">From</p>
@@ -158,7 +280,25 @@ export default function ShipmentTracking() {
                   <p className="text-xs uppercase text-gray-500">To</p>
                   <p className="text-sm text-gray-900">{snapshotText(leg.destination_snapshot)}</p>
                 </div>
-                <div className="text-sm font-semibold text-gray-800">{customerStatus(leg.status)}</div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-800">{customerStatus(leg.status)}</p>
+                  {leg.delivery_proof?.available && leg.delivery_proof.url ? (
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        proofOpener.current = event.currentTarget;
+                        setSelectedProof(leg.delivery_proof!);
+                      }}
+                      className="mt-2 min-h-11 rounded-lg border border-gray-900 px-3 text-sm font-bold text-gray-950"
+                    >
+                      View proof of delivery
+                    </button>
+                  ) : leg.delivery_proof ? (
+                    <span role="status" className="mt-2 block text-sm font-semibold text-gray-500">
+                      Proof unavailable
+                    </span>
+                  ) : null}
+                </div>
               </div>
             ))}
           </div>
@@ -191,6 +331,8 @@ export default function ShipmentTracking() {
           </Link>
         </div>
       </main>
+
+      {selectedProof && <DeliveryProofDialog proof={selectedProof} onClose={closeProof} />}
     </div>
   );
 }

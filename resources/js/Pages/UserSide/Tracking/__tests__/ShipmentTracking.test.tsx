@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ShipmentTracking from '../ShipmentTracking';
 
@@ -116,5 +116,102 @@ describe('ShipmentTracking', () => {
     expect(screen.getAllByText('Previous delivery attempt').length).toBe(2);
     fireEvent.error(screen.getByRole('img', { name: 'Failed delivery attempt proof' }));
     expect(screen.getAllByText('Attempt photo unavailable').length).toBe(2);
+  });
+
+  it('opens an accessible proof viewer with delivery details, zoom, download, and focus return', async () => {
+    shipment.legs[0] = {
+      ...shipment.legs[0],
+      status: 'delivered',
+      delivered_at: '2026-07-15T11:13:54.000Z',
+      destination_snapshot: { name: 'Miguel Dela Rosa', address: 'Dasmariñas, Cavite' },
+      latest_failed_attempt: {
+        id: 9,
+        reason: 'Recipient unavailable',
+        attempted_at: '2026-07-14T10:30:00.000Z',
+        proof_url: '/tracking/shipments/1/attempts/9/proof',
+      },
+      delivery_proof: {
+        id: 17,
+        available: true,
+        url: '/tracking/shipments/1/proofs/17',
+        delivered_at: '2026-07-15T11:13:54.000Z',
+        location: 'Miguel Dela Rosa - Dasmariñas, Cavite',
+        tracking_number: 'SHP-1',
+        status: 'Delivered',
+      },
+    };
+
+    render(<ShipmentTracking />);
+
+    expect(screen.getByText('Previous delivery attempt')).toBeInTheDocument();
+    const opener = screen.getByRole('button', { name: 'View proof of delivery' });
+    expect(opener).toHaveClass('min-h-11');
+    opener.focus();
+    fireEvent.click(opener);
+
+    const dialog = screen.getByRole('dialog', { name: 'Proof of delivery' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    const close = screen.getByRole('button', { name: 'Close proof viewer' });
+    expect(close).toHaveClass('min-h-11', 'min-w-11');
+    expect(close).toHaveFocus();
+    const image = screen.getByRole('img', { name: 'Proof of delivery for SHP-1' });
+    expect(image).toHaveAttribute('src', '/tracking/shipments/1/proofs/17');
+    expect(image).toHaveStyle({ transform: 'scale(1)' });
+    expect(screen.getByText(new Date('2026-07-15T11:13:54.000Z').toLocaleString())).toBeInTheDocument();
+    expect(screen.getAllByText('Miguel Dela Rosa - Dasmariñas, Cavite').length).toBeGreaterThan(1);
+    expect(screen.getAllByText('SHP-1').length).toBeGreaterThan(1);
+    expect(screen.getAllByText('Delivered').length).toBeGreaterThan(0);
+
+    const download = screen.getByRole('link', { name: 'Download proof of delivery' });
+    expect(download).toHaveAttribute('href', '/tracking/shipments/1/proofs/17?download=1');
+    expect(download).toHaveClass('min-h-11');
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom to 150%' }));
+    expect(image).toHaveStyle({ transform: 'scale(1.5)' });
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom to 200%' }));
+    expect(image).toHaveStyle({ transform: 'scale(2)' });
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom to 100%' }));
+    expect(image).toHaveStyle({ transform: 'scale(1)' });
+
+    fireEvent.error(image);
+    expect(screen.getByText('Proof unavailable')).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: 'Proof of delivery for SHP-1' })).not.toBeInTheDocument();
+
+    fireEvent.click(close);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await waitFor(() => expect(opener).toHaveFocus());
+
+    fireEvent.click(opener);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await waitFor(() => expect(opener).toHaveFocus());
+  });
+
+  it('shows an unavailable message without a broken proof image', () => {
+    shipment.legs[0] = {
+      ...shipment.legs[0],
+      status: 'delivered',
+      delivery_proof: {
+        id: 18,
+        available: false,
+        url: null,
+        delivered_at: '2026-07-15T11:13:54.000Z',
+        location: 'Dasmariñas, Cavite',
+        tracking_number: 'SHP-1',
+        status: 'Delivered',
+      },
+    };
+
+    render(<ShipmentTracking />);
+
+    expect(screen.getByText('Proof unavailable')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'View proof of delivery' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: /Proof of delivery for/ })).not.toBeInTheDocument();
+  });
+
+  it('does not show delivery proof controls when the payload has no eligible proof', () => {
+    render(<ShipmentTracking />);
+
+    expect(screen.queryByRole('button', { name: 'View proof of delivery' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Proof unavailable')).not.toBeInTheDocument();
   });
 });

@@ -74,6 +74,16 @@ export type DeliveryArrival = {
   recorded_at: string;
 };
 
+export type CustomerDeliveryProof = {
+  id: number;
+  available: boolean;
+  url: string | null;
+  delivered_at?: string | null;
+  location: string;
+  tracking_number: string;
+  status: 'Delivered';
+};
+
 export type TrackingShipmentLeg = {
   id: number;
   delivery_batch_id?: number | null;
@@ -99,6 +109,7 @@ export type TrackingShipmentLeg = {
   stop_sequence?: number | null;
   urgent_at?: string | null;
   arrivals?: Partial<Record<'pickup' | 'dropoff', DeliveryArrival>>;
+  delivery_proof?: CustomerDeliveryProof | null;
   latest_failed_attempt?: {
     id: number;
     attempt_number?: number | null;
