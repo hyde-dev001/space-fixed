@@ -187,6 +187,61 @@ describe('staff order shipping coverage integration', () => {
   it('disables cancellation while shipping confirmation is pending', () => {
     expect(source).toMatch(/onClick=\{closeShippingModal\}\s+disabled=\{isConfirmingShipping\}[\s\S]{0,300}disabled:cursor-not-allowed[\s\S]{0,100}>\s*Cancel/);
   });
+
+  it('only selects pending orders for bulk processing', async () => {
+    mockPage.props.initialOrders = [
+      { ...makeOrder(1), status: 'pending' },
+      { ...makeOrder(2), status: 'delivered' },
+    ];
+    vi.stubGlobal('fetch', vi.fn((input: string) => {
+      if (input === '/api/staff/orders') {
+        return Promise.resolve(jsonResponse(200, mockPage.props.initialOrders));
+      }
+      throw new Error(`Unexpected fetch: ${input}`);
+    }));
+
+    render(React.createElement(JobOrdersPage));
+    fireEvent.click(await screen.findByRole('button', { name: 'All Orders (2)' }));
+
+    const pendingCheckbox = screen.getByRole('checkbox', { name: 'Select order ORDER-1' });
+    const deliveredCheckbox = screen.getByRole('checkbox', { name: 'Select order ORDER-2' });
+    expect(pendingCheckbox).toBeEnabled();
+    expect(deliveredCheckbox).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select all orders on this page' }));
+
+    await waitFor(() => expect(screen.getByText('1 order selected')).toBeInTheDocument());
+    expect(pendingCheckbox).toBeChecked();
+    expect(deliveredCheckbox).not.toBeChecked();
+  });
+
+  it('keeps an order pending when bulk processing is rejected', async () => {
+    mockPage.props.initialOrders = [{ ...makeOrder(1), status: 'pending' }];
+    const fetchMock = vi.fn((input: string, init?: RequestInit) => {
+      if (input === '/api/csrf-token') return Promise.resolve(jsonResponse(200, { csrf_token: 'token' }));
+      if (init?.method === 'PATCH') {
+        return Promise.resolve(jsonResponse(409, {
+          message: 'The order status changed. Refresh and try again.',
+        }));
+      }
+      if (input === '/api/staff/orders') {
+        return Promise.resolve(jsonResponse(200, mockPage.props.initialOrders));
+      }
+      throw new Error(`Unexpected fetch: ${input}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(React.createElement(JobOrdersPage));
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Select order ORDER-1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mark as Processing' }));
+
+    await waitFor(() => expect(mockSwalFire).toHaveBeenCalledWith(
+      'Error',
+      'The order status changed. Refresh and try again.',
+      'error',
+    ));
+    expect(screen.getByRole('button', { name: 'Pending (1)' })).toBeInTheDocument();
+  });
 });
 
 describe('staff delivered order refresh', () => {

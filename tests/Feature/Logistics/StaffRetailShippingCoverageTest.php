@@ -118,6 +118,23 @@ class StaffRetailShippingCoverageTest extends TestCase
         ]);
     }
 
+    public function test_delivered_order_cannot_be_moved_back_to_processing(): void
+    {
+        $this->order->update(['status' => 'delivered']);
+
+        $this->actingAs($this->staff, 'user')
+            ->patchJson("/api/staff/orders/{$this->order->id}/status", [
+                'status' => 'processing',
+            ])
+            ->assertStatus(409)
+            ->assertJsonPath(
+                'message',
+                'The order is already Delivered and cannot be moved back to Processing.',
+            );
+
+        $this->assertSame('delivered', $this->order->fresh()->status->value);
+    }
+
     public function test_normalized_shop_owned_carrier_is_persisted_canonically_and_auto_completes(): void
     {
         $this->actingAs($this->staff, 'user')

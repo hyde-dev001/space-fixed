@@ -417,6 +417,16 @@ class StaffOrderController extends Controller
             return response()->json(['error' => 'Order not found'], 404);
         }
 
+        if ($order->status->isFinal() && $order->status->value !== $validated['status']) {
+            $currentStatus = ucfirst($order->status->value);
+            $requestedStatus = ucfirst($validated['status']);
+
+            return response()->json([
+                'success' => false,
+                'message' => "The order is already {$currentStatus} and cannot be moved back to {$requestedStatus}.",
+            ], 409);
+        }
+
         $carrierCompany = $validated['carrier_company'] ?? $order->carrier_company;
         $isShopOwned = strtolower(trim((string) $carrierCompany)) === 'shop-owned logistics';
         if ($isShopOwned) {
