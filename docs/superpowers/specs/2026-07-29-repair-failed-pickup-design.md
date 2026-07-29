@@ -21,15 +21,23 @@ affected stop from the rider's active work, and wait for a dispatcher decision.
 - Notes are optional except for `other`, where a short note is required.
 - The active assignment ends and the failed stop leaves its batch.
 - Other stops in the batch remain active so the rider can continue.
-- The leg becomes `needs_resolution`; it is not immediately reassigned.
-- The dispatcher chooses either Reschedule Pickup or Cancel Pickup.
+- Before the configured maximum pickup attempts is reached, the leg becomes
+  `needs_resolution`; it is not immediately reassigned.
+- Before the maximum is reached, the dispatcher chooses either Reschedule
+  Pickup or Cancel Pickup.
 - Reschedule Pickup returns the leg to the assignment pool for the next
-  operating day.
+  operating day only while an attempt remains.
+- The final allowed failed pickup is terminal: cancel the leg, shipment, and
+  repair request, then create one full refund request for the repair's remaining
+  paid amount.
+- A terminal no-charge warranty pickup is cancelled without creating a refund.
 - Cancel Pickup uses the existing repair cancellation and compensation rules.
 - The customer sees a safe reason label, date/time, and photo proof. Internal
   notes are hidden.
-- A failed pickup never counts toward delivery attempts and never triggers
-  return-to-shop or failed-delivery refund logic.
+- Pickup attempts remain separate from delivery attempts but use the configured
+  `max_delivery_attempts` value as their own retry limit.
+- A failed pickup never increments delivery-attempt counters or creates a
+  return-to-shop leg.
 
 ## Reasons
 
@@ -56,7 +64,8 @@ Reuse the existing `DeliveryAttempt` model and proof storage:
 
 - `attempt_type = pickup`
 - `status = failed`
-- `attempt_number` counts only prior pickup attempts on the leg
+- `attempt_number` equals prior failed pickup attempts on the leg plus the
+  current failed attempt
 - `reason_code`, `notes`, `file_path`, assignment, batch, actor, and timestamp
   use the existing fields
 
@@ -70,19 +79,28 @@ The pickup-specific failed-attempt branch must:
 4. Recheck that a pickup-arrival event exists.
 5. Reject the action when pickup has already been confirmed.
 6. Store the `pickup` attempt with the submitted idempotency key.
-7. Set the leg to `needs_resolution`, set `failed_at`, and mark the resolution
-   as a failed pickup.
-8. Cancel the active assignment and detach the leg from its batch.
-9. Keep the shipment active while it awaits dispatcher action.
-10. Record customer-visible and internal delivery events.
+7. Set the new attempt number to prior failed `pickup` attempts plus one. The
+   attempt is terminal when that number is greater than or equal to the shop's
+   configured maximum.
+8. Before the maximum, set the leg to `needs_resolution`, set `failed_at`, and
+   mark the resolution as a failed pickup.
+9. At the maximum, cancel the leg and shipment, cancel the repair request, and
+   create one full refund request for the remaining paid repair amount through
+   the existing repair refund workflow. No-charge warranty pickups skip refund
+   creation.
+10. Cancel the active assignment and detach the leg from its batch.
+11. Keep the shipment active only while it awaits dispatcher action; terminal
+    pickups remain cancelled.
+12. Record customer-visible and internal delivery events.
 
 If the batch still has stops, its existing progress continues. If no stops
 remain, use the existing all-stops-removed batch closing rule with a failed
 pickup reason.
 
 The generic failed-delivery branch remains unchanged. Pickup attempts do not
-increment its counters, consume `max_delivery_attempts`, create a return leg,
-or reserve a refund.
+increment its counters, create a return leg, or use the retail order refund
+service. They use the same configured maximum solely as a pickup retry limit
+and use the existing repair refund service for paid repairs.
 
 ## Rider Experience
 
@@ -119,7 +137,7 @@ workspace. A failed pickup card displays:
 - attempt date/time;
 - arrival verification result;
 - photo proof;
-- Reschedule Pickup and Cancel Pickup actions.
+- Reschedule Pickup and Cancel Pickup actions while pickup attempts remain.
 
 **Reschedule Pickup** requires confirmation and a dispatcher note, then:
 
@@ -128,13 +146,22 @@ workspace. A failed pickup card displays:
 - records a customer-visible reschedule event;
 - leaves the leg unassigned for normal dispatcher assignment.
 
+Reschedule Pickup is unavailable when the pickup-attempt limit has been
+reached. The server rejects stale retry or assignment requests even if an old
+dispatcher page still shows an action.
+
+After the final attempt, the card shows **Pickup cancelled · Refund requested**
+for paid repairs or **Pickup cancelled** for no-charge warranty work. The
+existing repair refund approval and payout workflow handles the actual money
+movement; the final pickup action does not call a payment gateway directly.
+
 Existing schedule controls can adjust the date or window afterward. No new
 date-picker workflow is introduced.
 
 **Cancel Pickup** requires a cancellation reason and uses the existing repair
-delivery cancellation/compensation service. Its pre-custody guard may accept a
-failed pickup in `needs_resolution`, but post-pickup cancellation protections
-must remain unchanged.
+delivery cancellation/compensation service. Its pre-custody guard must accept a
+non-terminal failed pickup in `needs_resolution`, while post-pickup
+cancellation protections remain unchanged.
 
 ## Customer Experience
 
@@ -151,6 +178,10 @@ After dispatcher action, the timeline adds either:
 - **Pickup rescheduled**, including the new schedule; or
 - **Pickup cancelled**, using the existing customer-safe compensation and
   cancellation messaging.
+
+After the final allowed failure, the timeline states that pickup was cancelled
+and, for paid repairs, that a full refund was requested. Existing repair refund
+status messaging communicates approval and payout progress.
 
 ## API and Validation
 
@@ -188,13 +219,15 @@ when the reason was operational or safety-related.
 ## Error Handling
 
 - A duplicate request returns the original attempt without another event,
-  assignment cancellation, or batch mutation.
+  assignment cancellation, batch mutation, repair cancellation, or refund.
 - A stale page receives a validation message and reloads current delivery data.
 - An upload or network failure keeps the rider form visible for retry.
 - A dispatcher race between reschedule and cancel resolves through row locking;
   the losing request returns the current state without partial mutation.
-- A failed pickup cannot be marked picked up until it is rescheduled and
-  assigned again.
+- A retry or assignment request after the configured maximum is rejected by the
+  backend even when submitted from a stale page.
+- A non-terminal failed pickup cannot be marked picked up until it is
+  rescheduled and assigned again. A terminal failed pickup cannot be reopened.
 
 ## Accessibility
 
@@ -218,7 +251,14 @@ Backend coverage:
 - required reason, image, and Other notes validation;
 - idempotent duplicate submission;
 - pickup attempt counts remain separate from delivery attempts;
-- no return leg or failed-delivery refund is created;
+- a non-final pickup remains reschedulable;
+- the final pickup cancels the leg, shipment, and repair request;
+- the final paid pickup creates one full repair refund request for the remaining
+  paid amount;
+- duplicate final submissions do not duplicate refunds;
+- a final no-charge warranty pickup creates no refund;
+- stale retry and rider assignment requests are rejected after the limit;
+- no return leg or retail failed-delivery refund is created;
 - dispatcher reschedule and cancellation/compensation;
 - authorized customer proof access and sanitized tracking payload.
 

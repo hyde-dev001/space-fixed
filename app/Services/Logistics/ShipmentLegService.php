@@ -10,8 +10,11 @@ use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\Order;
 use App\Models\OrderRefund;
+use App\Models\PosTransaction;
+use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Services\OrderRefundService;
+use App\Services\RepairPosRefundService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -45,6 +48,7 @@ class ShipmentLegService
         private ProofService $proofs,
         private DeliveryEventService $events,
         private OrderRefundService $refunds,
+        private RepairPosRefundService $repairRefunds,
         private RiderActiveWorkGuard $activeWork,
         private ArrivalService $arrivals,
     ) {}
@@ -466,6 +470,8 @@ class ShipmentLegService
                 );
             }
             $attemptNumber = $leg->attempts()->where('attempt_type', $attemptType)->count() + 1;
+            $maxAttempts = $leg->shipment->shopOwner->logisticsSetting?->max_delivery_attempts ?? 2;
+            $terminalPickup = $isPickup && $attemptNumber >= $maxAttempts;
             $attempt = $leg->attempts()->create([
                 'delivery_assignment_id' => $assignment->id,
                 'delivery_batch_id' => $batchId,
@@ -484,16 +490,28 @@ class ShipmentLegService
 
             if ($isPickup) {
                 $leg->update([
-                    'status' => 'needs_resolution',
+                    'status' => $terminalPickup ? 'cancelled' : 'needs_resolution',
                     'failed_at' => now(),
                     'delivery_batch_id' => null,
                     'stop_sequence' => null,
-                    'resolution_type' => 'pickup_failed',
-                    'resolution_reason' => $payload['reason_code'],
+                    'resolution_type' => $terminalPickup ? 'pickup_attempts_exhausted' : 'pickup_failed',
+                    'resolution_reason' => $terminalPickup
+                        ? 'Maximum pickup attempts reached.'
+                        : $payload['reason_code'],
                 ]);
+                if ($terminalPickup) {
+                    $repair = RepairRequest::query()
+                        ->whereKey($leg->shipment->source_id)
+                        ->lockForUpdate()
+                        ->firstOrFail();
+                    $repair->update(['status' => 'cancelled']);
+                    $this->requestExhaustedPickupRefund(
+                        $repair,
+                        (int) ($payload['recorded_by_id'] ?? 0),
+                    );
+                }
             } else {
-                $max = $leg->shipment->shopOwner->logisticsSetting?->max_delivery_attempts ?? 2;
-                $needsResolution = $attemptNumber >= $max;
+                $needsResolution = $attemptNumber >= $maxAttempts;
                 $leg->update([
                     'status' => $needsResolution ? 'needs_resolution' : 'pending',
                     'failed_at' => now(),
@@ -532,7 +550,9 @@ class ShipmentLegService
                 }
                 $batch->update($batchChanges);
             }
-            $leg->shipment->update(['status' => 'active']);
+            $leg->shipment->update($terminalPickup
+                ? ['status' => 'cancelled', 'completed_at' => null, 'cancelled_at' => now()]
+                : ['status' => 'active']);
             if ($isPickup) {
                 $this->events->record($leg->shipment, $leg, [
                     'event_type' => 'pickup_attempt_failed',
@@ -546,6 +566,13 @@ class ShipmentLegService
                     'message' => 'The pickup could not be completed.',
                     'metadata' => ['reason_code' => $payload['reason_code']],
                 ]);
+                if ($terminalPickup) {
+                    $this->events->record($leg->shipment, $leg, [
+                        'event_type' => 'pickup_cancelled',
+                        'visibility' => 'customer',
+                        'message' => 'Maximum pickup attempts reached. The repair request was cancelled.',
+                    ]);
+                }
             } else {
                 $this->events->record($leg->shipment, $leg, [
                     'event_type' => 'delivery_attempt_failed',
@@ -571,6 +598,29 @@ class ShipmentLegService
         }
 
         return $next->toDateString();
+    }
+
+    private function requestExhaustedPickupRefund(RepairRequest $repair, int $actorId): void
+    {
+        if ((bool) $repair->is_warranty_job
+            || (string) $repair->billing_mode === 'warranty_no_charge'
+            || (float) $repair->total_paid_amount <= 0
+            || ! $repair->latest_pos_transaction_id) {
+            return;
+        }
+
+        $source = PosTransaction::query()->find((int) $repair->latest_pos_transaction_id);
+        $amount = $this->repairRefunds->computeRecordedRepairRefundableAmount((int) $repair->id);
+        if (! $source || $amount <= 0) {
+            return;
+        }
+
+        $this->repairRefunds->requestRefund($source, [
+            'request_type' => 'full',
+            'requested_amount' => $amount,
+            'reason_code' => 'pickup_attempts_exhausted',
+            'reason_notes' => 'Auto-created after maximum repair pickup attempts were reached.',
+        ], $actorId);
     }
 
     private function isPaidOnlineOrder(Order $order): bool
