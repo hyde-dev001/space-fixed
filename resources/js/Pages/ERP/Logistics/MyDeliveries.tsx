@@ -288,6 +288,7 @@ function DeliveryActions({
   }
 
   if (!delivery) return null;
+  const isReturnToShop = delivery.leg_type === 'return_to_shop';
   const isRepairPickup = delivery.shipment?.purpose === 'repair_pickup'
     && ['assigned', 'pickup_scheduled'].includes(delivery.status);
   const requiresIssuePhoto = isRepairPickup || photoIssueReasons.has(issueReason);
@@ -567,6 +568,7 @@ function DeliveryActions({
 
   if (delivery.status === 'picked_up') {
     const key = `delivery-start:${delivery.id}`;
+    const actionLabel = isReturnToShop ? 'Start return to shop' : 'Start delivery';
 
     return (
       <button
@@ -580,16 +582,86 @@ function DeliveryActions({
                 ? logisticsApi.outForDelivery(delivery.id)
                 : logisticsApi.markInTransit(delivery.id),
             {
-              title: `Start ${deliveryReference}?`,
-              text: 'This marks the parcel as on the way to its destination.',
-              confirmButtonText: 'Start delivery',
+              title: `${actionLabel} for ${deliveryReference}?`,
+              text: isReturnToShop
+                ? 'This marks the parcel as on the way back to the shop.'
+                : 'This marks the parcel as on the way to its destination.',
+              confirmButtonText: actionLabel,
             },
           )
         }
         className={buttonClass}
       >
-        Start delivery
+        {actionLabel}
       </button>
+    );
+  }
+
+  if (isReturnToShop && delivery.status === 'in_transit') {
+    const returnProof = delivery.proofs
+      ?.filter(({ handoff_type }) => handoff_type === 'receive')
+      .at(-1);
+    if (returnProof?.review_status === 'rider_confirmed') {
+      return (
+        <p role="status" className="rounded-xl bg-amber-50 p-3 text-sm font-semibold text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+          Return handed to shop · waiting for staff confirmation
+        </p>
+      );
+    }
+
+    const key = `return-handoff:${delivery.id}`;
+    const submitReturnHandoff = () => {
+      if (!proofFile && !returnProof) return;
+      runAction(
+        key,
+        async () => {
+          let proofId = returnProof?.id;
+          if (!proofId) {
+            const form = new FormData();
+            form.append('handoff_type', 'receive');
+            form.append('proof_type', 'photo');
+            form.append('proof_file', proofFile!);
+            proofId = (await logisticsApi.recordProof(delivery.id, form)).data.proof.id;
+          }
+
+          return logisticsApi.confirmReturnHandoff(delivery.id, proofId);
+        },
+        {
+          title: `Confirm return handoff for ${deliveryReference}?`,
+          text: returnProof
+            ? 'Confirm that the parcel was handed to shop staff.'
+            : `${proofFile?.name} will be attached to the shop handoff.`,
+          confirmButtonText: 'Confirm return handoff',
+        },
+      );
+    };
+
+    return (
+      <div className="space-y-3 rounded-xl bg-blue-50 p-3 dark:bg-blue-950/30">
+        <div>
+          <p className="text-sm font-semibold text-blue-950 dark:text-blue-100">Return handoff</p>
+          <p className="text-xs text-blue-700 dark:text-blue-300">
+            At the shop, upload a clear photo of the parcel handoff. Staff will confirm receipt.
+          </p>
+        </div>
+        {!returnProof && (
+          <input
+            type="file"
+            accept="image/*"
+            aria-label="Return handoff photo"
+            onChange={(event) => setProofFile(event.target.files?.[0] ?? null)}
+            className="block w-full text-sm"
+          />
+        )}
+        <button
+          type="button"
+          disabled={mutationDisabled || (!proofFile && !returnProof) || pendingAction === key}
+          onClick={submitReturnHandoff}
+          className={buttonClass}
+        >
+          Confirm return handoff
+        </button>
+      </div>
     );
   }
 
@@ -693,6 +765,7 @@ function CurrentDeliveryCard({
 
   const progress = completedProgress(item.deliveries);
   const actionable = nextActionableDelivery(item.deliveries);
+  const isReturnToShop = actionable?.leg_type === 'return_to_shop';
 
   return (
     <section aria-labelledby="current-delivery-heading">
@@ -706,9 +779,11 @@ function CurrentDeliveryCard({
               <p className="text-xs font-bold uppercase tracking-wide text-blue-700 dark:text-blue-300">
                 {item.business_label}
               </p>
-              <h3 className="mt-1 text-xl font-extrabold text-slate-950 dark:text-white">{itemTitle(item)}</h3>
+              <h3 className="mt-1 text-xl font-extrabold text-slate-950 dark:text-white">
+                {isReturnToShop ? `Return to shop #${actionable.id}` : itemTitle(item)}
+              </h3>
             </div>
-            <StatusChip status={item.status} />
+            <StatusChip status={item.status} label={isReturnToShop ? 'Return to shop' : undefined} />
           </div>
 
           <div>
