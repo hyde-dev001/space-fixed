@@ -14,6 +14,8 @@ class CustomerTrackingService
         'recipient_unavailable' => 'Recipient unavailable',
         'wrong_or_incomplete_address' => 'Wrong or incomplete address',
         'recipient_refused' => 'Recipient refused',
+        'item_damaged' => 'Item damaged',
+        'unsafe_location' => 'Unsafe location',
         'vehicle_or_delivery_problem' => 'Vehicle or delivery problem',
         'other' => 'Other delivery issue',
     ];

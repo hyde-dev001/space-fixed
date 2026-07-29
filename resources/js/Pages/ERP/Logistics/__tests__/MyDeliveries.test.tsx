@@ -437,6 +437,69 @@ describe('MyDeliveries rider interactions', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Submit issue' })).toBeEnabled());
   });
 
+  it('uses reason-specific issue evidence and allows unsafe reporting without a photo', async () => {
+    mocks.props.deliveryData.current = workItem('single', 'in_transit', [{
+      ...leg(15, null, 'in_transit'),
+      arrivals: arrived('dropoff'),
+      assignments: [{ id: 155, status: 'accepted' }],
+    }]);
+    render(<MyDeliveries />);
+    fireEvent.click(screen.getByRole('button', { name: 'Report issue' }));
+
+    for (const option of [
+      'Recipient unavailable',
+      'Wrong or incomplete address',
+      'Recipient refused',
+      'Item damaged',
+      'Unsafe location',
+      'Vehicle or delivery problem',
+      'Other',
+    ]) {
+      expect(screen.getByRole('option', { name: option })).toBeInTheDocument();
+    }
+
+    const reason = screen.getByLabelText('Issue reason');
+    const photo = screen.getByLabelText('Issue photo');
+    const notes = screen.getByLabelText('Issue notes');
+    fireEvent.change(reason, { target: { value: 'recipient_unavailable' } });
+    expect(photo).toBeRequired();
+    expect(notes).not.toBeRequired();
+
+    fireEvent.change(reason, { target: { value: 'unsafe_location' } });
+    expect(photo).not.toBeRequired();
+    expect(notes).toBeRequired();
+    fireEvent.change(notes, { target: { value: 'Unsafe road conditions.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit issue' }));
+
+    await waitFor(() => expect(mocks.post).toHaveBeenCalled());
+    const body = mocks.post.mock.calls[0][1] as FormData;
+    expect(body.get('reason_code')).toBe('unsafe_location');
+    expect(body.get('notes')).toBe('Unsafe road conditions.');
+    expect(body.has('proof_file')).toBe(false);
+  });
+
+  it('shows dispatcher resolution instructions in standalone and batch delivery contexts', () => {
+    mocks.props.deliveryData.current = workItem('single', 'assigned', [{
+      ...leg(16, null, 'assigned'),
+      resolution_type: 'retry',
+      resolution_reason: 'Customer requested tomorrow morning.',
+    }]);
+    const view = render(<MyDeliveries />);
+    expect(screen.getByText(
+      'Dispatcher scheduled another attempt: Customer requested tomorrow morning.',
+    )).toBeInTheDocument();
+
+    mocks.props.deliveryData.current = workItem('batch', 'in_progress', [{
+      ...leg(17, 1, 'assigned'),
+      resolution_type: 'return_required',
+      resolution_reason: 'Customer cancelled.',
+    }]);
+    view.rerender(<MyDeliveries />);
+    expect(screen.getByText('Return item to shop: Customer cancelled.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'View all 1 deliveries' }));
+    expect(screen.getAllByText('Return item to shop: Customer cancelled.')).toHaveLength(2);
+  });
+
   it('shows no state-changing action while waiting for proof approval', () => {
     mocks.props.deliveryData.current = workItem('single', 'awaiting_proof_approval', [
       leg(6, null, 'awaiting_proof_approval'),

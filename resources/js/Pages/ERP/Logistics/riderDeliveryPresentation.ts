@@ -53,6 +53,16 @@ export const completedProgress = (deliveries: TrackingShipmentLeg[]) => {
 export const nextActionableDelivery = (deliveries: TrackingShipmentLeg[]) =>
   orderedDeliveries(deliveries).find(({ status }) => actionableStatuses.has(status));
 
+export const riderResolutionInstruction = (delivery: TrackingShipmentLeg) => {
+  if (delivery.resolution_type === 'retry') {
+    return `Dispatcher scheduled another attempt${delivery.resolution_reason ? `: ${delivery.resolution_reason}` : ''}`;
+  }
+  if (delivery.resolution_type === 'return_required') {
+    return `Return item to shop${delivery.resolution_reason ? `: ${delivery.resolution_reason}` : ''}`;
+  }
+  return null;
+};
+
 export const matchesBusiness = (
   item: Pick<RiderDeliveryWorkItem | RiderDeliveryIssue, 'business_types'>,
   business: RiderDeliveryBusiness,

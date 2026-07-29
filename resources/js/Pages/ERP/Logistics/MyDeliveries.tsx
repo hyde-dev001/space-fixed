@@ -18,6 +18,7 @@ import {
   deliveryStatusLabel,
   nextActionableDelivery,
   orderedDeliveries,
+  riderResolutionInstruction,
 } from './riderDeliveryPresentation';
 
 type ActionConfirmation = Parameters<typeof workflowFeedback.confirm>[0];
@@ -36,6 +37,19 @@ const arrivalReasons = [
   ['safety_concern', 'Safety concern'],
   ['other', 'Other'],
 ] as const;
+
+const photoIssueReasons = new Set([
+  'recipient_unavailable',
+  'wrong_or_incomplete_address',
+  'recipient_refused',
+  'item_damaged',
+]);
+
+const noteIssueReasons = new Set([
+  'unsafe_location',
+  'vehicle_or_delivery_problem',
+  'other',
+]);
 
 const currentPosition = () => new Promise<GeolocationPosition>((resolve, reject) => {
   if (!navigator.geolocation) {
@@ -95,6 +109,20 @@ function StatusChip({ status }: { status: string }) {
       <span aria-hidden="true">{symbol}</span>
       {deliveryStatusLabel(status)}
     </span>
+  );
+}
+
+function ResolutionNotice({ delivery }: { delivery: TrackingShipmentLeg }) {
+  const instruction = riderResolutionInstruction(delivery);
+  if (!instruction) return null;
+
+  return (
+    <p
+      role="status"
+      className="mt-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100"
+    >
+      <span aria-hidden="true">!</span> {instruction}
+    </p>
   );
 }
 
@@ -169,6 +197,7 @@ function DeliverySequence({ item }: { item: RiderDeliveryWorkItem }) {
                 </p>
                 <StatusChip status={delivery.status} />
               </div>
+              <ResolutionNotice delivery={delivery} />
               <p className="mt-1 truncate text-sm text-slate-600 dark:text-slate-300">
                 {contact.name || 'Customer'} · {contact.address || 'Address unavailable'}
               </p>
@@ -205,6 +234,8 @@ function DeliveryActions({
   const [showArrivalReason, setShowArrivalReason] = useState(false);
   const [arrivalReason, setArrivalReason] = useState('');
   const [arrivalNotes, setArrivalNotes] = useState('');
+  const requiresIssuePhoto = photoIssueReasons.has(issueReason);
+  const requiresIssueNotes = noteIssueReasons.has(issueReason);
   const arrivalEvidence = useRef<Record<string, unknown> | null>(null);
   const mutationDisabled = locked || !online || pendingAction !== null;
   const buttonClass =
@@ -447,12 +478,17 @@ function DeliveryActions({
   };
 
   const submitIssue = () => {
-    if (!issueFile || !issueReason || !assignment) return;
+    if (
+      !issueReason ||
+      !assignment ||
+      (requiresIssuePhoto && !issueFile) ||
+      (requiresIssueNotes && !issueNotes.trim())
+    ) return;
     const form = new FormData();
     form.append('delivery_assignment_id', String(assignment.id));
     form.append('reason_code', issueReason);
     if (issueNotes.trim()) form.append('notes', issueNotes.trim());
-    form.append('proof_file', issueFile);
+    if (issueFile) form.append('proof_file', issueFile);
     runAction(
       issueKey,
       () =>
@@ -516,23 +552,27 @@ function DeliveryActions({
               <option value="recipient_unavailable">Recipient unavailable</option>
               <option value="wrong_or_incomplete_address">Wrong or incomplete address</option>
               <option value="recipient_refused">Recipient refused</option>
+              <option value="item_damaged">Item damaged</option>
+              <option value="unsafe_location">Unsafe location</option>
               <option value="vehicle_or_delivery_problem">Vehicle or delivery problem</option>
               <option value="other">Other</option>
             </select>
           </label>
           <label className="block text-sm font-semibold">
-            Notes
+            Notes {requiresIssueNotes ? '(required)' : '(optional)'}
             <textarea
               aria-label="Issue notes"
+              required={requiresIssueNotes}
               value={issueNotes}
               onChange={(event) => setIssueNotes(event.target.value)}
               className="mt-1 min-h-20 w-full rounded-xl border border-amber-300 bg-white p-3 dark:bg-slate-900"
             />
           </label>
           <label className="block text-sm font-semibold">
-            Issue photo
+            Issue photo {requiresIssuePhoto ? '(required)' : '(optional)'}
             <input
               type="file"
+              required={requiresIssuePhoto}
               accept="image/*"
               aria-label="Issue photo"
               onChange={(event) => setIssueFile(event.target.files?.[0] ?? null)}
@@ -545,7 +585,8 @@ function DeliveryActions({
               mutationDisabled ||
               !assignment ||
               !issueReason ||
-              !issueFile ||
+              (requiresIssuePhoto && !issueFile) ||
+              (requiresIssueNotes && !issueNotes.trim()) ||
               pendingAction === issueKey
             }
             onClick={submitIssue}
@@ -638,6 +679,7 @@ function CurrentDeliveryCard({
               <p className="mb-3 text-sm font-bold text-blue-700 dark:text-blue-300">
                 Current delivery · {actionable.stop_sequence ?? 1} of {item.deliveries.length}
               </p>
+              <ResolutionNotice delivery={actionable} />
               <DeliveryContact delivery={actionable} />
               <div className="mt-4">
                 <DeliveryActions

@@ -6,6 +6,7 @@ import Swal from 'sweetalert2';
 import AppLayoutERP from '@/layout/AppLayout_ERP';
 import ArrivalSummary from './components/ArrivalSummary';
 import RetailOrderSummary from './components/RetailOrderSummary';
+import { riderResolutionInstruction } from './riderDeliveryPresentation';
 import {
   logisticsModuleForSourceType,
   logisticsModuleLabel,
@@ -45,6 +46,19 @@ const riderStatusOptions = [
   ['delivered', 'Delivered'],
   ['cancelled', 'Cancelled'],
 ];
+
+const photoIssueReasons = new Set([
+  'recipient_unavailable',
+  'wrong_or_incomplete_address',
+  'recipient_refused',
+  'item_damaged',
+]);
+
+const noteIssueReasons = new Set([
+  'unsafe_location',
+  'vehicle_or_delivery_problem',
+  'other',
+]);
 
 const purposeOptions: Array<[string, string, 'all' | LogisticsModule]> = [
   ['all', 'All Types', 'all'],
@@ -273,13 +287,18 @@ export default function Shipments({ children }: React.PropsWithChildren) {
     const form = issueForms[legId] ?? { reason_code: '', notes: '' };
     if (!form.reason_code) return setActionError('Choose an issue reason first.');
     const file = issueProofFiles[legId];
-    if (!file) return setActionError('Upload a photo showing the delivery attempt.');
+    if (photoIssueReasons.has(form.reason_code) && !file) {
+      return setActionError('Upload a photo showing the delivery attempt.');
+    }
+    if (noteIssueReasons.has(form.reason_code) && !form.notes.trim()) {
+      return setActionError('Add a note explaining the delivery issue.');
+    }
     const data = new FormData();
     if (!assignmentId) return setActionError('The active rider assignment could not be verified. Refresh and try again.');
     data.append('delivery_assignment_id', String(assignmentId));
     data.append('reason_code', form.reason_code);
-    if (form.notes) data.append('notes', form.notes);
-    data.append('proof_file', file);
+    if (form.notes.trim()) data.append('notes', form.notes.trim());
+    if (file) data.append('proof_file', file);
     void act(`/api/logistics/legs/${legId}/report-issue`, data, true);
   };
 
@@ -463,6 +482,9 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                             const canScheduleLeg = canAssign && !riderMode && !leg.scheduled_delivery_date && leg.delivery_batch_id == null && ['pending', 'assigned'].includes(leg.status);
                             const schedule = deliverySchedules[leg.id] ?? { date: '', window: 'morning' };
                             const issueForm = issueForms[leg.id] ?? { reason_code: '', notes: '' };
+                            const requiresIssuePhoto = photoIssueReasons.has(issueForm.reason_code);
+                            const requiresIssueNotes = noteIssueReasons.has(issueForm.reason_code);
+                            const resolutionInstruction = riderResolutionInstruction(leg);
                             const canSubmitProof = canRecordProof && !isReturnToShop && leg.status === 'in_transit';
                             const canSubmitReturnHandoff = riderMode && canRecordProof && isReturnToShop && leg.status === 'in_transit' && !returnProof;
                             const showOutcomeChoice = canSubmitProof && canReportIssue;
@@ -482,6 +504,14 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                     {leg.stop_sequence && <p><strong>Stop:</strong> {leg.stop_sequence}</p>}
                                   </div>
                                   {!riderMode && <ArrivalSummary arrivals={leg.arrivals} />}
+                                  {resolutionInstruction && (
+                                    <p
+                                      role="status"
+                                      className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100"
+                                    >
+                                      <span aria-hidden="true">!</span> {resolutionInstruction}
+                                    </p>
+                                  )}
                                   {!riderMode && latestAttempt?.status === 'failed' && <div className="mt-2 space-y-1 text-xs text-gray-600 dark:text-gray-300"><span className="inline-flex rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">Failed attempt - {failedAttemptCount}/{maxDeliveryAttempts}</span>{attemptsMaxed && <p className="font-semibold text-red-600">Subject for refund</p>}{latestAttempt.reason_code && <p>{label(latestAttempt.reason_code)}</p>}{latestAttempt.notes && <p>Internal note: {latestAttempt.notes}</p>}{latestAttempt.file_path && <a href={`/storage/${latestAttempt.file_path}`} target="_blank" rel="noreferrer" className="inline-block font-semibold text-blue-600 hover:underline">View failed-attempt photo</a>}</div>}
                                 </div>
                                 <div className="flex min-w-0 flex-col gap-3">
@@ -500,7 +530,66 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                       {isReturnToShop && proof.handoff_type === 'receive' && proof.review_status === 'rider_confirmed' && <button type="button" onClick={() => void confirmAct(`/api/logistics/legs/${leg.id}/return-proofs/${proof.id}/receipt`, 'Confirm return received?', 'Confirm the physical parcel handoff. Item inspection continues in the refund workflow.')} className="rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white">Confirm return received</button>}
                                     </div>
                                   ))}
-                                  {canReportIssue && (!showOutcomeChoice || deliveryOutcome === 'issue') && <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30"><div><p className="text-sm font-semibold text-amber-950 dark:text-amber-100">Failed delivery attempt</p><p className="text-xs text-amber-700 dark:text-amber-300">Choose a reason and upload a photo showing you reached the delivery location.</p></div><label className="block text-xs font-semibold text-gray-700 dark:text-gray-200">Reason<select value={issueForm.reason_code} onChange={(event) => setIssueForms({ ...issueForms, [leg.id]: { ...issueForm, reason_code: event.target.value } })} className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" aria-label="Issue reason"><option value="">Choose a reason</option><option value="recipient_unavailable">Recipient unavailable</option><option value="wrong_or_incomplete_address">Wrong or incomplete address</option><option value="recipient_refused">Recipient refused</option><option value="vehicle_or_delivery_problem">Vehicle or delivery problem</option><option value="other">Other</option></select></label><label className="block text-xs font-semibold text-gray-700 dark:text-gray-200">Attempt photo <span className="text-red-600">(required)</span><input type="file" required accept="image/jpeg,image/png,image/webp" aria-label="Issue photo" onChange={(event) => setIssueProofFiles({ ...issueProofFiles, [leg.id]: event.target.files?.[0] ?? null })} className="mt-1 block w-full text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-2 file:font-semibold file:text-amber-700 dark:text-gray-200 dark:file:bg-gray-800 dark:file:text-amber-300" /></label><label className="block text-xs font-semibold text-gray-700 dark:text-gray-200">Note <span className="font-normal text-gray-500">(optional)</span><textarea value={issueForm.notes} onChange={(event) => setIssueForms({ ...issueForms, [leg.id]: { ...issueForm, notes: event.target.value } })} placeholder="Optional note" rows={3} className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" /></label><button type="button" disabled={!issueForm.reason_code || !issueProofFiles[leg.id]} onClick={() => reportIssue(leg.id, activeAssignment?.id)} className="w-full rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50">{leg.status === 'delivery_attempted' ? 'Request cancellation' : 'Report issue'}</button></div>}
+                                  {canReportIssue && (!showOutcomeChoice || deliveryOutcome === 'issue') && (
+                                    <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30">
+                                      <div>
+                                        <p className="text-sm font-semibold text-amber-950 dark:text-amber-100">Failed delivery attempt</p>
+                                        <p className="text-xs text-amber-700 dark:text-amber-300">Choose a reason and add the evidence requested below.</p>
+                                      </div>
+                                      <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200">
+                                        Reason
+                                        <select
+                                          value={issueForm.reason_code}
+                                          onChange={(event) => setIssueForms({ ...issueForms, [leg.id]: { ...issueForm, reason_code: event.target.value } })}
+                                          className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                                          aria-label="Issue reason"
+                                        >
+                                          <option value="">Choose a reason</option>
+                                          <option value="recipient_unavailable">Recipient unavailable</option>
+                                          <option value="wrong_or_incomplete_address">Wrong or incomplete address</option>
+                                          <option value="recipient_refused">Recipient refused</option>
+                                          <option value="item_damaged">Item damaged</option>
+                                          <option value="unsafe_location">Unsafe location</option>
+                                          <option value="vehicle_or_delivery_problem">Vehicle or delivery problem</option>
+                                          <option value="other">Other</option>
+                                        </select>
+                                      </label>
+                                      <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200">
+                                        Attempt photo <span className={requiresIssuePhoto ? 'text-red-600' : 'font-normal text-gray-500'}>({requiresIssuePhoto ? 'required' : 'optional'})</span>
+                                        <input
+                                          type="file"
+                                          required={requiresIssuePhoto}
+                                          accept="image/jpeg,image/png,image/webp"
+                                          aria-label="Issue photo"
+                                          onChange={(event) => setIssueProofFiles({ ...issueProofFiles, [leg.id]: event.target.files?.[0] ?? null })}
+                                          className="mt-1 block w-full text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-2 file:font-semibold file:text-amber-700 dark:text-gray-200 dark:file:bg-gray-800 dark:file:text-amber-300"
+                                        />
+                                      </label>
+                                      <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200">
+                                        Note <span className={requiresIssueNotes ? 'text-red-600' : 'font-normal text-gray-500'}>({requiresIssueNotes ? 'required' : 'optional'})</span>
+                                        <textarea
+                                          required={requiresIssueNotes}
+                                          value={issueForm.notes}
+                                          onChange={(event) => setIssueForms({ ...issueForms, [leg.id]: { ...issueForm, notes: event.target.value } })}
+                                          placeholder="Optional note"
+                                          rows={3}
+                                          className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                                        />
+                                      </label>
+                                      <button
+                                        type="button"
+                                        disabled={
+                                          !issueForm.reason_code ||
+                                          (requiresIssuePhoto && !issueProofFiles[leg.id]) ||
+                                          (requiresIssueNotes && !issueForm.notes.trim())
+                                        }
+                                        onClick={() => reportIssue(leg.id, activeAssignment?.id)}
+                                        className="w-full rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                      >
+                                        {leg.status === 'delivery_attempted' ? 'Request cancellation' : 'Report issue'}
+                                      </button>
+                                    </div>
+                                  )}
                                   {!riderMode && leg.status === 'delivery_attempted' && <button type="button" onClick={() => void confirmAct(`/api/logistics/legs/${leg.id}/cancel`, 'Cancel delivery?', 'This is the final cancellation action.')} className="rounded-lg border border-red-600 px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50">Cancel delivery</button>}
                                 </div>
                                 {canScheduleLeg && (

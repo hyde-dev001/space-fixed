@@ -21,6 +21,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 
 class ShipmentController extends Controller
 {
@@ -250,12 +251,27 @@ class ShipmentController extends Controller
         }
         $payload = $request->validate([
             'delivery_assignment_id' => ['required', 'integer'],
-            'reason_code' => ['required', 'in:recipient_unavailable,wrong_or_incomplete_address,recipient_refused,vehicle_or_delivery_problem,other'],
-            'notes' => ['nullable', 'string'],
-            'proof_file' => ['required', 'image', 'max:10240'],
+            'reason_code' => ['required', Rule::in([
+                ...ShipmentLegService::PHOTO_REQUIRED_REASONS,
+                ...ShipmentLegService::NOTES_REQUIRED_REASONS,
+            ])],
+            'notes' => [
+                Rule::requiredIf(fn () => in_array($request->input('reason_code'), ShipmentLegService::NOTES_REQUIRED_REASONS, true)),
+                'nullable',
+                'string',
+                'max:1000',
+            ],
+            'proof_file' => [
+                Rule::requiredIf(fn () => in_array($request->input('reason_code'), ShipmentLegService::PHOTO_REQUIRED_REASONS, true)),
+                'nullable',
+                'image',
+                'max:10240',
+            ],
         ]);
+        $storedPath = null;
         if ($request->hasFile('proof_file')) {
-            $payload['file_path'] = $request->file('proof_file')->store('logistics-attempt/'.$leg->id, 'public');
+            $storedPath = $request->file('proof_file')->store('logistics-attempt/'.$leg->id, 'public');
+            $payload['file_path'] = $storedPath;
         }
 
         try {
@@ -265,11 +281,13 @@ class ShipmentController extends Controller
                 'recorded_by_type' => $actor::class,
                 'recorded_by_id' => $actor->id,
             ]);
-            if ($attempt->file_path !== $payload['file_path']) {
-                Storage::disk('public')->delete($payload['file_path']);
+            if ($storedPath && $attempt->file_path !== $storedPath) {
+                Storage::disk('public')->delete($storedPath);
             }
         } catch (\Throwable $exception) {
-            Storage::disk('public')->delete($payload['file_path']);
+            if ($storedPath) {
+                Storage::disk('public')->delete($storedPath);
+            }
             throw $exception;
         }
 
@@ -294,6 +312,8 @@ class ShipmentController extends Controller
             'recipient_unavailable' => 'Recipient was unavailable',
             'wrong_or_incomplete_address' => 'Address could not be completed',
             'recipient_refused' => 'Recipient refused the delivery',
+            'item_damaged' => 'The item was damaged',
+            'unsafe_location' => 'The delivery location was unsafe',
             'vehicle_or_delivery_problem' => 'A delivery problem prevented completion',
             'other' => 'Delivery could not be completed',
         ][$attempt->reason_code] ?? 'Delivery could not be completed';

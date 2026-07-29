@@ -315,6 +315,45 @@ it('shows subject for refund without reassignment at maximum attempts', () => {
   expect(screen.queryByLabelText('Choose rider for outbound leg')).not.toBeInTheDocument();
 });
 
+it('shows the dispatcher resolution selected for a delivery', () => {
+  setDispatcherLeg({
+    id: 2,
+    leg_type: 'outbound',
+    status: 'pending',
+    resolution_type: 'retry',
+    resolution_reason: 'Customer requested tomorrow morning.',
+    assignments: [],
+    proofs: [],
+    attempts: [],
+  });
+  render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+
+  expect(screen.getByText(
+    'Dispatcher scheduled another attempt: Customer requested tomorrow morning.',
+  )).toBeInTheDocument();
+});
+
+it('keeps the legacy rider issue form aligned with the evidence matrix', () => {
+  render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: "Couldn't deliver" }));
+
+  for (const option of ['Item damaged', 'Unsafe location']) {
+    expect(screen.getByRole('option', { name: option })).toBeInTheDocument();
+  }
+
+  const reason = screen.getByLabelText('Issue reason');
+  const photo = screen.getByLabelText('Issue photo');
+  const notes = screen.getByPlaceholderText('Optional note');
+  fireEvent.change(reason, { target: { value: 'item_damaged' } });
+  expect(photo).toBeRequired();
+  expect(notes).not.toBeRequired();
+  fireEvent.change(reason, { target: { value: 'unsafe_location' } });
+  expect(photo).not.toBeRequired();
+  expect(notes).toBeRequired();
+});
+
 it('shows one delivery outcome workflow at a time and clears hidden state', () => {
   render(<Shipments />);
   fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));

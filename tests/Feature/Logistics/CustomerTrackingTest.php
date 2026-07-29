@@ -2,9 +2,9 @@
 
 namespace Tests\Feature\Logistics;
 
-use App\Models\Logistics\DeliveryEvent;
-use App\Models\Logistics\DeliveryAttempt;
 use App\Models\Logistics\DeliveryAssignment;
+use App\Models\Logistics\DeliveryAttempt;
+use App\Models\Logistics\DeliveryEvent;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
@@ -184,6 +184,8 @@ class CustomerTrackingTest extends TestCase
             'recipient_unavailable' => 'Recipient unavailable',
             'wrong_or_incomplete_address' => 'Wrong or incomplete address',
             'recipient_refused' => 'Recipient refused',
+            'item_damaged' => 'Item damaged',
+            'unsafe_location' => 'Unsafe location',
             'vehicle_or_delivery_problem' => 'Vehicle or delivery problem',
             'other' => 'Other delivery issue',
             'legacy_reason' => 'Delivery could not be completed',
