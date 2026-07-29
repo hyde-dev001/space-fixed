@@ -368,7 +368,7 @@ class LogisticsPageAccessTest extends TestCase
 
     public function test_dispatcher_pages_receive_the_same_safe_arrival_summaries_without_coordinates(): void
     {
-        $shop = ShopOwner::factory()->create();
+        $shop = ShopOwner::factory()->create(['business_type' => 'both']);
         $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
         Permission::findOrCreate('assign-logistics-deliveries', 'user');
         Permission::findOrCreate('manage-logistics-batches', 'user');
