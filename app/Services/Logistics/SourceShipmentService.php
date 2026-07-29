@@ -16,9 +16,7 @@ class SourceShipmentService
         private ShipmentRequestService $shipments,
         private DeliveryScheduleService $schedules,
         private DeliveryEventService $events,
-    )
-    {
-    }
+    ) {}
 
     public function ensureRetailOrderShipment(Order $order): Shipment
     {
@@ -41,29 +39,35 @@ class SourceShipmentService
                 : [];
 
             $shipment = $this->shipments->requestShipment([
-            'shop_owner_id' => (int) $order->shop_owner_id,
-            'source_type' => 'order',
-            'source_id' => (int) $order->id,
-            'purpose' => 'retail_delivery',
-            'legs' => [[
-                'leg_type' => 'outbound',
-                'origin_snapshot' => [
-                    'type' => 'shop',
-                    'name' => (string) ($order->shopOwner?->business_name ?? 'Shop'),
-                    'address' => (string) ($order->shopOwner?->business_address ?? ''),
-                ],
-                'destination_snapshot' => [
-                    'type' => 'customer',
-                    'name' => (string) ($order->customer_name ?? 'Customer'),
-                    'phone' => (string) ($order->customer_phone ?? ''),
-                    'address' => (string) ($order->full_shipping_address ?? $order->customer_address ?? ''),
-                    'latitude' => $address?->latitude !== null ? (float) $address->latitude : null,
-                    'longitude' => $address?->longitude !== null ? (float) $address->longitude : null,
-                    'delivery_instructions' => $address?->delivery_instructions,
-                ],
-                ...$schedule,
-                'estimated_at' => $schedule ? now() : null,
-            ]],
+                'shop_owner_id' => (int) $order->shop_owner_id,
+                'source_type' => 'order',
+                'source_id' => (int) $order->id,
+                'purpose' => 'retail_delivery',
+                'legs' => [[
+                    'leg_type' => 'outbound',
+                    'origin_snapshot' => [
+                        'type' => 'shop',
+                        'name' => (string) ($order->shopOwner?->business_name ?? 'Shop'),
+                        'address' => (string) ($order->shopOwner?->business_address ?? ''),
+                        'latitude' => $order->shopOwner?->shop_latitude !== null
+                            ? (float) $order->shopOwner->shop_latitude
+                            : null,
+                        'longitude' => $order->shopOwner?->shop_longitude !== null
+                            ? (float) $order->shopOwner->shop_longitude
+                            : null,
+                    ],
+                    'destination_snapshot' => [
+                        'type' => 'customer',
+                        'name' => (string) ($order->customer_name ?? 'Customer'),
+                        'phone' => (string) ($order->customer_phone ?? ''),
+                        'address' => (string) ($order->full_shipping_address ?? $order->customer_address ?? ''),
+                        'latitude' => $address?->latitude !== null ? (float) $address->latitude : null,
+                        'longitude' => $address?->longitude !== null ? (float) $address->longitude : null,
+                        'delivery_instructions' => $address?->delivery_instructions,
+                    ],
+                    ...$schedule,
+                    'estimated_at' => $schedule ? now() : null,
+                ]],
             ]);
 
             $leg = $shipment->legs->first();
@@ -92,8 +96,9 @@ class SourceShipmentService
             return $existing;
         }
 
-        $refund->loadMissing('order.shopOwner', 'customer');
+        $refund->loadMissing('order.shopOwner', 'order.address', 'customer');
         $order = $refund->order;
+        $address = $order?->address;
 
         return $this->shipments->requestShipment([
             'shop_owner_id' => (int) $refund->shop_owner_id,
@@ -107,11 +112,19 @@ class SourceShipmentService
                     'name' => (string) ($refund->customer?->name ?? $order?->customer_name ?? 'Customer'),
                     'phone' => (string) ($order?->customer_phone ?? ''),
                     'address' => (string) ($order?->full_shipping_address ?? $order?->customer_address ?? ''),
+                    'latitude' => $address?->latitude !== null ? (float) $address->latitude : null,
+                    'longitude' => $address?->longitude !== null ? (float) $address->longitude : null,
                 ],
                 'destination_snapshot' => [
                     'type' => 'shop',
                     'name' => (string) ($order?->shopOwner?->business_name ?? 'Shop'),
                     'address' => (string) ($order?->shopOwner?->business_address ?? ''),
+                    'latitude' => $order?->shopOwner?->shop_latitude !== null
+                        ? (float) $order->shopOwner->shop_latitude
+                        : null,
+                    'longitude' => $order?->shopOwner?->shop_longitude !== null
+                        ? (float) $order->shopOwner->shop_longitude
+                        : null,
                 ],
             ]],
         ]);
