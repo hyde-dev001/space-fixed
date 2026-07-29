@@ -20,6 +20,9 @@ This leaves a delivered order in the Shipped tab until refresh, then hides the
 - Returning focus to an already-open ERP tab refreshes its orders so a
   shop-owned delivery no longer remains visually stuck at Shipped.
 - The Delivered state does not show the `Activate Receive` action.
+- A shop-owned order never shows `Activate Receive`, even while a stale record
+  is still displayed as Shipped. The action remains available for shipped
+  third-party deliveries.
 
 ## Design
 
@@ -35,6 +38,10 @@ Reuse the existing `refreshOrders` request and attach it to the native window
 `focus` event. Remove the listener when the component unmounts. Do not add
 polling, WebSockets, dependencies, or a database migration.
 
+Reuse the mapped `carrierCompany` field and the existing
+`SHOP_OWNED_LOGISTICS` constant in the modal action guard. Do not change the
+third-party receive flow or add a separate logistics flag.
+
 ## Data Flow
 
 1. Logistics marks the final shipment leg `delivered`.
@@ -43,8 +50,8 @@ polling, WebSockets, dependencies, or a database migration.
 3. ERP Staff Job Orders fetches `/api/staff/orders`.
 4. Its API mapper converts `completed` to the existing `delivered` display
    state.
-5. Existing Delivered filters, counts, badge styling, and action guards work
-   without further changes.
+5. Existing Delivered filters, counts, and badge styling work without further
+   changes. The modal action guard also excludes shop-owned logistics.
 6. When the user returns to the ERP browser tab, the focus listener invokes
    the existing refresh request and replaces stale order state.
 
@@ -60,6 +67,9 @@ error; it does not clear valid order data.
   `delivered`.
 - Add a component-level regression check proving a window focus refresh
   replaces an initially shipped order with the completed/delivered response.
+- Add a component-level regression proving `Activate Receive` is hidden for a
+  shipped shop-owned order while remaining available to shipped third-party
+  deliveries.
 - Run the existing Staff Job Orders frontend tests and the logistics shipment
   service tests.
 - Run the production frontend build before preparing the Hostinger deployment.
