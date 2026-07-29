@@ -345,6 +345,35 @@ it('lets dispatchers review and resolve failed repair pickups', async () => {
   ));
 });
 
+it('shows the pickup retry count without using the delivery-attempt limit', () => {
+  setDispatcherLeg({
+    id: 91,
+    leg_type: 'inbound',
+    status: 'assigned',
+    resolution_type: 'retry',
+    assignments: [{ id: 92, status: 'assigned', rider_profile: { name: 'Rider Nine' } }],
+    proofs: [],
+    failed_attempt_count: 0,
+    failed_pickup_count: 1,
+    attempts: [{
+      id: 91,
+      attempt_type: 'pickup',
+      status: 'failed',
+      attempt_number: 1,
+      reason_code: 'customer_unavailable',
+    }],
+  });
+  mocks.props.shipments.data[0].purpose = 'repair_pickup';
+  mocks.props.shipments.data[0].source_type = 'repair_request';
+
+  render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+
+  expect(screen.getAllByText('Pickup rescheduled')).toHaveLength(2);
+  expect(screen.getByText('Failed pickup · 1 attempt')).toBeInTheDocument();
+  expect(screen.queryByText('Failed attempt - 0/2')).not.toBeInTheDocument();
+});
+
 it('hides failed pickup actions without dispatcher assignment permission', () => {
   setDispatcherLeg({
     id: 91,

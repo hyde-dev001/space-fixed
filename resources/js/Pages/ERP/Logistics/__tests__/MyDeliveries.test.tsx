@@ -593,6 +593,48 @@ describe('MyDeliveries rider interactions', () => {
     expect(screen.getByText('Next pickup')).toBeVisible();
   });
 
+  it('uses a new failed pickup key after the delivery is reassigned', async () => {
+    const firstUuid = '18ca84c2-c693-4b05-a946-e51be590371e';
+    const secondUuid = '75a7e9f2-ef48-47b5-9490-c9d33fb4ce7e';
+    vi.spyOn(crypto, 'randomUUID')
+      .mockReturnValueOnce(firstUuid)
+      .mockReturnValueOnce(secondUuid);
+    const pickup = {
+      ...leg(20, null, 'assigned', 'Retry pickup'),
+      shipment: {
+        id: 120,
+        source_type: 'repair_request',
+        source_id: 220,
+        purpose: 'repair_pickup',
+      },
+      arrivals: arrived('pickup'),
+      assignments: [{ id: 220, status: 'accepted' }],
+    };
+    mocks.props.deliveryData.up_next = workItem('single', 'assigned', [pickup], {
+      group: 'upcoming',
+      business_types: ['repair'],
+      business_label: 'Repair pickup',
+    });
+    const view = render(<MyDeliveries />);
+    fireEvent.click(screen.getByRole('button', { name: 'Failed pickup' }));
+    fireEvent.change(screen.getByLabelText('Failed pickup reason'), {
+      target: { value: 'customer_unavailable' },
+    });
+    fireEvent.change(screen.getByLabelText('Failed pickup photo'), {
+      target: { files: [new File(['door'], 'door.jpg', { type: 'image/jpeg' })] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit failed pickup' }));
+    await waitFor(() => expect(mocks.reportIssue).toHaveBeenCalledTimes(1));
+
+    pickup.assignments = [{ id: 221, status: 'accepted' }];
+    view.rerender(<MyDeliveries />);
+    fireEvent.click(screen.getByRole('button', { name: 'Submit failed pickup' }));
+    await waitFor(() => expect(mocks.reportIssue).toHaveBeenCalledTimes(2));
+
+    expect((mocks.reportIssue.mock.calls[0][1] as FormData).get('idempotency_key')).toBe(firstUuid);
+    expect((mocks.reportIssue.mock.calls[1][1] as FormData).get('idempotency_key')).toBe(secondUuid);
+  });
+
   it('keeps failed pickup details visible and disables submission while offline', () => {
     mocks.props.deliveryData.up_next = workItem('single', 'assigned', [{
       ...leg(20, null, 'assigned'),

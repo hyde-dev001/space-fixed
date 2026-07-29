@@ -2,6 +2,7 @@
 
 namespace App\Services\Logistics;
 
+use App\Models\Logistics\DeliveryAssignment;
 use App\Models\Logistics\DeliveryBatch;
 use App\Models\Logistics\DeliveryEvent;
 use App\Models\Logistics\ShipmentLeg;
@@ -33,8 +34,22 @@ class ArrivalService
             $eventType = $payload['arrival_type'] === 'pickup'
                 ? 'pickup_arrived'
                 : 'dropoff_arrived';
+            $assignment = $leg->assignments()
+                ->whereIn('status', ['assigned', 'accepted'])
+                ->whereHas('riderProfile', fn ($query) => $query
+                    ->where('linked_type', User::class)
+                    ->where('linked_id', $actor->id))
+                ->latest('id')
+                ->lockForUpdate()
+                ->first();
 
-            if ($existing = $leg->events()->where('event_type', $eventType)->first()) {
+            if (! $assignment) {
+                throw ValidationException::withMessages([
+                    'assignment' => ['This delivery is no longer assigned to you. Refresh and try again.'],
+                ]);
+            }
+
+            if ($existing = $this->eventForAssignment($leg, $eventType, $assignment)) {
                 return $existing;
             }
 
@@ -75,10 +90,40 @@ class ArrivalService
                     'longitude' => $payload['longitude'] ?? null,
                     'exception_reason' => $payload['exception_reason'] ?? null,
                     'exception_notes' => $payload['exception_notes'] ?? null,
+                    'delivery_assignment_id' => $assignment->id,
                 ],
                 'created_by_type' => User::class,
                 'created_by_id' => $actor->id,
             ]);
+        });
+    }
+
+    public function eventForAssignment(
+        ShipmentLeg $leg,
+        string $eventType,
+        ?DeliveryAssignment $assignment,
+    ): ?DeliveryEvent {
+        $events = $leg->relationLoaded('events')
+            ? $leg->events->where('event_type', $eventType)
+            : $leg->events()->where('event_type', $eventType)->get();
+
+        if (! $assignment) {
+            return $events->sortByDesc('id')->first();
+        }
+
+        $assignmentStartedAt = $assignment->accepted_at
+            ?? $assignment->assigned_at
+            ?? $assignment->created_at;
+
+        return $events->sortByDesc('id')->first(function (DeliveryEvent $event) use ($assignment, $assignmentStartedAt) {
+            $eventAssignmentId = data_get($event->metadata, 'delivery_assignment_id');
+            if ($eventAssignmentId !== null) {
+                return (int) $eventAssignmentId === (int) $assignment->id;
+            }
+
+            return $assignmentStartedAt
+                && $event->created_at
+                && $event->created_at->greaterThanOrEqualTo($assignmentStartedAt);
         });
     }
 

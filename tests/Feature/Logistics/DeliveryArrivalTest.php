@@ -74,6 +74,34 @@ class DeliveryArrivalTest extends TestCase
         $this->assertSame('in_transit', $leg->fresh()->status->value);
     }
 
+    public function test_reassigned_pickup_records_a_fresh_arrival_for_the_new_assignment(): void
+    {
+        [$leg, $rider] = $this->fixture('assigned');
+        $firstAssignment = $leg->assignments()->sole();
+
+        $first = $this->actingAs($rider, 'user')
+            ->postJson("/api/logistics/legs/{$leg->id}/arrivals", $this->arrivalPayload())
+            ->assertCreated();
+
+        $firstAssignment->update(['status' => 'cancelled', 'cancelled_at' => now()]);
+        $secondAssignment = DeliveryAssignment::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'rider_profile_id' => $firstAssignment->rider_profile_id,
+            'status' => 'accepted',
+        ]);
+
+        $second = $this->actingAs($rider, 'user')
+            ->postJson("/api/logistics/legs/{$leg->id}/arrivals", $this->arrivalPayload())
+            ->assertCreated();
+
+        $this->assertNotSame($first->json('arrival.id'), $second->json('arrival.id'));
+        $this->assertSame(2, $leg->events()->where('event_type', 'pickup_arrived')->count());
+        $this->assertSame(
+            $secondAssignment->id,
+            $leg->events()->latest('id')->value('metadata')['delivery_assignment_id'],
+        );
+    }
+
     public function test_location_exceptions_require_and_record_an_allowed_reason(): void
     {
         $cases = [
