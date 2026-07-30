@@ -279,6 +279,10 @@ interface RefundRequest {
 	customerName: string;
 	orderTotal?: string;
 	refundAmount: string;
+	refundAmountValue?: number;
+	canAdjustRefundAmount?: boolean;
+	refundAmountWithoutShipping?: number;
+	shippingFee?: number;
 	refundMethod: string;
 	requestedBy: string;
 	requestDate: string;
@@ -843,6 +847,22 @@ export default function RefundApproval() {
 		setSelectedRequest(null);
 		setActiveImage(null);
 
+		const needsShippingDecision = request.refundType !== "repair" && request.canAdjustRefundAmount === true;
+		const fullRefundAmount = Number(request.refundAmountValue || 0);
+		const productsOnlyAmount = Number(request.refundAmountWithoutShipping || 0);
+		const shippingFee = Number(request.shippingFee || 0);
+		const shippingDecisionHtml = needsShippingDecision
+			? `
+				<label for="retail-refund-scope" style="display:block;margin:1rem 0 0.35rem;font-weight:600;">
+					Refund scope
+				</label>
+				<select id="retail-refund-scope" class="swal2-select" style="display:block;width:100%;margin:0;">
+					<option value="">Choose refund scope</option>
+					<option value="${productsOnlyAmount}">Products only - retain PHP ${shippingFee.toFixed(2)} shipping</option>
+					<option value="${fullRefundAmount}">Full refund - include PHP ${shippingFee.toFixed(2)} shipping</option>
+				</select>
+			`
+			: "";
 		const result = await Swal.fire({
 			title: (request as any).approvalStage === "finance_final" ? "Finalize Refund Approval?" : "Approve Refund?",
 			html: `
@@ -855,6 +875,7 @@ export default function RefundApproval() {
 					<p style="margin-bottom: 0.5rem;"><strong>Reason:</strong> ${request.reason}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Action:</strong> Finance authorization only</p>
 					<p style="margin-bottom: 0;color:#92400e;"><strong>No payout yet.</strong> Money can be released only after Staff receives and inspects every returned item.</p>
+					${shippingDecisionHtml}
 				</div>
 			`,
 			icon: "question",
@@ -863,9 +884,23 @@ export default function RefundApproval() {
 			cancelButtonColor: "#6b7280",
 			confirmButtonText: "Approve",
 			cancelButtonText: "Cancel",
+			preConfirm: needsShippingDecision
+				? () => {
+					const scope = (document.getElementById("retail-refund-scope") as HTMLSelectElement | null)?.value;
+					if (!scope) {
+						Swal.showValidationMessage("Choose products only or full refund.");
+						return false;
+					}
+
+					return { approvedAmount: Number(scope) };
+				}
+				: undefined,
 		});
 
 		if (result.isConfirmed) {
+			const approvedAmount = needsShippingDecision
+				? (result.value as { approvedAmount: number }).approvedAmount
+				: undefined;
 			setIsActionProcessing(true);
 			try {
 				const response = await fetch(`${getFinanceActionBase(request)}/${request.id}/approve`, {
@@ -877,7 +912,7 @@ export default function RefundApproval() {
 						"X-CSRF-TOKEN":
 							document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "",
 					},
-					body: JSON.stringify({}),
+					body: JSON.stringify(approvedAmount === undefined ? {} : { approved_amount: approvedAmount }),
 				});
 
 				const data = await response.json();

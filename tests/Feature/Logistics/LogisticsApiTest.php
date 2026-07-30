@@ -13,6 +13,7 @@ use App\Models\Notification;
 use App\Models\Order;
 use App\Models\PosRefund;
 use App\Models\PosTransaction;
+use App\Models\RepairPaymentSession;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\User;
@@ -637,7 +638,114 @@ class LogisticsApiTest extends TestCase
             ->assertUnprocessable();
     }
 
-    public function test_final_paid_repair_pickup_requests_one_full_refund(): void
+    public function test_final_paid_repair_pickup_refund_obeys_failure_responsibility(): void
+    {
+        Storage::fake('public');
+        Permission::findOrCreate('update-logistics-status', 'user');
+        $cases = [
+            'customer_unavailable' => ['partial', 400.00, 'pickup fee of PHP 100.00 was retained'],
+            'vehicle_or_rider_problem' => ['full', 500.00, 'includes the paid pickup fee of PHP 100.00'],
+            'other' => ['full', 500.00, 'Finance must decide whether the paid pickup fee of PHP 100.00 is refundable'],
+        ];
+
+        foreach ($cases as $reason => [$requestType, $requestedAmount, $noteFragment]) {
+            [$shop, $leg, $rider] = $this->assignedRepairPickupLeg();
+            LogisticsSetting::updateOrCreate(
+                ['shop_owner_id' => $shop->id],
+                ['max_delivery_attempts' => 1],
+            );
+            $customer = User::factory()->create();
+            $repair = RepairRequest::factory()->create([
+                'shop_owner_id' => $shop->id,
+                'user_id' => $customer->id,
+                'status' => 'pending',
+                'payment_policy' => 'deposit_50',
+                'payment_status' => 'paid',
+                'total' => 1000,
+                'final_total' => 1000,
+                'total_paid_amount' => 500,
+                'intake_delivery_method' => 'shop_pickup',
+                'intake_delivery_fee' => 100,
+                'intake_logistics_locked_at' => now(),
+                'is_warranty_job' => false,
+            ]);
+            $earlierSource = PosTransaction::create([
+                'transaction_no' => "POS-PICKUP-FIRST-{$repair->id}",
+                'shop_owner_id' => $shop->id,
+                'module_type' => 'repair',
+                'module_reference_id' => $repair->id,
+                'customer_type' => 'registered',
+                'customer_id' => $customer->id,
+                'due_type' => 'deposit',
+                'subtotal' => 300,
+                'tax_amount' => 0,
+                'discount_amount' => 0,
+                'total_amount' => 300,
+                'paid_amount' => 300,
+                'status' => 'paid',
+                'paid_at' => now()->subMinute(),
+                'metadata' => ['phase' => 'initial', 'leg' => 'intake', 'service_amount' => 300, 'delivery_amount' => 0],
+            ]);
+            $latestSource = PosTransaction::create([
+                'transaction_no' => "POS-PICKUP-LATEST-{$repair->id}",
+                'shop_owner_id' => $shop->id,
+                'module_type' => 'repair',
+                'module_reference_id' => $repair->id,
+                'customer_type' => 'registered',
+                'customer_id' => $customer->id,
+                'due_type' => 'deposit',
+                'subtotal' => 200,
+                'tax_amount' => 0,
+                'discount_amount' => 0,
+                'total_amount' => 200,
+                'paid_amount' => 200,
+                'status' => 'paid',
+                'paid_at' => now(),
+                'metadata' => ['phase' => 'initial', 'leg' => 'intake', 'service_amount' => 100, 'delivery_amount' => 100],
+            ]);
+            $this->assertNotSame($earlierSource->id, $latestSource->id);
+            $repair->update(['latest_pos_transaction_id' => $latestSource->id]);
+            $leg->shipment->update(['source_id' => $repair->id]);
+            $rider->givePermissionTo('update-logistics-status');
+            $payload = [
+                ...$this->failedPickupPayload($leg),
+                'idempotency_key' => match ($reason) {
+                    'customer_unavailable' => '77777777-7777-4777-8777-777777777777',
+                    'vehicle_or_rider_problem' => '88888888-8888-4888-8888-888888888888',
+                    default => '99999999-9999-4999-8999-999999999999',
+                },
+                'reason_code' => $reason,
+                'notes' => $reason === 'other' ? 'Cause requires Finance review.' : null,
+                'proof_file' => $this->fakeAttemptPhoto("paid-terminal-{$reason}.png"),
+            ];
+
+            $first = $this->actingAs($rider, 'user')
+                ->post("/api/logistics/legs/{$leg->id}/report-issue", $payload, [
+                    'Accept' => 'application/json',
+                ])
+                ->assertCreated();
+            $replay = $this->actingAs($rider, 'user')
+                ->post("/api/logistics/legs/{$leg->id}/report-issue", [
+                    ...$payload,
+                    'proof_file' => $this->fakeAttemptPhoto("paid-terminal-replay-{$reason}.png"),
+                ], ['Accept' => 'application/json'])
+                ->assertCreated();
+
+            $this->assertSame($first->json('attempt.id'), $replay->json('attempt.id'));
+            $refund = PosRefund::query()
+                ->where('module_type', 'repair')
+                ->where('module_reference_id', $repair->id)
+                ->where('reason_code', 'pickup_attempts_exhausted')
+                ->sole();
+            $this->assertSame($latestSource->id, $refund->source_transaction_id);
+            $this->assertSame('requested', $refund->status);
+            $this->assertSame($requestType, $refund->request_type);
+            $this->assertSame($requestedAmount, (float) $refund->requested_amount);
+            $this->assertStringContainsString($noteFragment, (string) $refund->reason_notes);
+        }
+    }
+
+    public function test_final_online_repair_pickup_backfills_a_refund_source_and_retains_customer_caused_pickup_fee(): void
     {
         Storage::fake('public');
         Permission::findOrCreate('update-logistics-status', 'user');
@@ -656,77 +764,56 @@ class LogisticsApiTest extends TestCase
             'total' => 1000,
             'final_total' => 1000,
             'total_paid_amount' => 500,
+            'intake_delivery_method' => 'shop_pickup',
+            'intake_delivery_fee' => 100,
+            'intake_logistics_locked_at' => now(),
+            'paymongo_payment_id' => 'pay_pickup_refund_online',
+            'paymongo_payment_ids' => ['pay_pickup_refund_online'],
+            'latest_pos_transaction_id' => null,
             'is_warranty_job' => false,
         ]);
-        $earlierSource = PosTransaction::create([
-            'transaction_no' => "POS-PICKUP-FIRST-{$repair->id}",
-            'shop_owner_id' => $shop->id,
-            'module_type' => 'repair',
-            'module_reference_id' => $repair->id,
-            'customer_type' => 'registered',
-            'customer_id' => $customer->id,
-            'due_type' => 'deposit',
-            'subtotal' => 300,
-            'tax_amount' => 0,
-            'discount_amount' => 0,
-            'total_amount' => 300,
-            'paid_amount' => 300,
+        RepairPaymentSession::create([
+            'repair_request_id' => $repair->id,
+            'provider' => 'paymongo',
+            'provider_link_id' => "link-pickup-refund-{$repair->id}",
+            'phase' => 'initial',
             'status' => 'paid',
-            'paid_at' => now()->subMinute(),
+            'delivery_method' => 'shop_pickup',
+            'service_amount' => 400,
+            'delivery_amount' => 100,
         ]);
-        $latestSource = PosTransaction::create([
-            'transaction_no' => "POS-PICKUP-LATEST-{$repair->id}",
-            'shop_owner_id' => $shop->id,
-            'module_type' => 'repair',
-            'module_reference_id' => $repair->id,
-            'customer_type' => 'registered',
-            'customer_id' => $customer->id,
-            'due_type' => 'deposit',
-            'subtotal' => 200,
-            'tax_amount' => 0,
-            'discount_amount' => 0,
-            'total_amount' => 200,
-            'paid_amount' => 200,
-            'status' => 'paid',
-            'paid_at' => now(),
-        ]);
-        $this->assertNotSame($earlierSource->id, $latestSource->id);
-        $repair->update(['latest_pos_transaction_id' => $latestSource->id]);
         $leg->shipment->update(['source_id' => $repair->id]);
         $rider->givePermissionTo('update-logistics-status');
-        $payload = [
-            ...$this->failedPickupPayload($leg),
-            'idempotency_key' => '77777777-7777-4777-8777-777777777777',
-            'proof_file' => $this->fakeAttemptPhoto('paid-terminal.png'),
-        ];
 
-        $first = $this->actingAs($rider, 'user')
-            ->post("/api/logistics/legs/{$leg->id}/report-issue", $payload, [
-                'Accept' => 'application/json',
-            ])
-            ->assertCreated();
-        $replay = $this->actingAs($rider, 'user')
+        $this->actingAs($rider, 'user')
             ->post("/api/logistics/legs/{$leg->id}/report-issue", [
-                ...$payload,
-                'proof_file' => $this->fakeAttemptPhoto('paid-terminal-replay.png'),
+                ...$this->failedPickupPayload($leg),
+                'idempotency_key' => 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+                'proof_file' => $this->fakeAttemptPhoto('online-paid-terminal.png'),
             ], ['Accept' => 'application/json'])
             ->assertCreated();
 
-        $this->assertSame($first->json('attempt.id'), $replay->json('attempt.id'));
+        $source = PosTransaction::query()
+            ->where('module_type', 'repair')
+            ->where('module_reference_id', $repair->id)
+            ->sole();
+        $this->assertSame($source->id, $repair->fresh()->latest_pos_transaction_id);
+        $this->assertDatabaseHas('pos_payment_lines', [
+            'pos_transaction_id' => $source->id,
+            'tender_type' => 'paymongo_wallet',
+            'provider_reference' => 'pay_pickup_refund_online',
+            'amount' => 500,
+            'status' => 'paid',
+        ]);
         $this->assertDatabaseHas('pos_refunds', [
-            'source_transaction_id' => $latestSource->id,
+            'source_transaction_id' => $source->id,
             'module_type' => 'repair',
             'module_reference_id' => $repair->id,
             'status' => 'requested',
-            'request_type' => 'full',
-            'requested_amount' => 500,
+            'request_type' => 'partial',
+            'requested_amount' => 400,
             'reason_code' => 'pickup_attempts_exhausted',
         ]);
-        $this->assertSame(1, PosRefund::query()
-            ->where('module_type', 'repair')
-            ->where('module_reference_id', $repair->id)
-            ->where('reason_code', 'pickup_attempts_exhausted')
-            ->count());
     }
 
     public function test_final_warranty_pickup_cancels_without_refund(): void

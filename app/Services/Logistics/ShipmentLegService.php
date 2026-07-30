@@ -10,7 +10,6 @@ use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\Order;
 use App\Models\OrderRefund;
-use App\Models\PosTransaction;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Services\OrderRefundService;
@@ -43,6 +42,18 @@ class ShipmentLegService
         'unsafe_or_inaccessible_location',
         'vehicle_or_rider_problem',
         'other',
+    ];
+
+    private const CUSTOMER_CAUSED_PICKUP_REASONS = [
+        'customer_unavailable',
+        'customer_requested_reschedule',
+        'customer_refused_pickup',
+        'item_not_ready',
+        'wrong_address_or_pin',
+    ];
+
+    private const OPERATIONS_CAUSED_PICKUP_REASONS = [
+        'vehicle_or_rider_problem',
     ];
 
     public function __construct(
@@ -569,6 +580,7 @@ class ShipmentLegService
                     $this->requestExhaustedPickupRefund(
                         $repair,
                         (int) ($payload['recorded_by_id'] ?? 0),
+                        (string) $payload['reason_code'],
                     );
                 }
             } else {
@@ -590,7 +602,11 @@ class ShipmentLegService
                     if ($leg->shipment->source_type === 'order' && $leg->shipment->purpose === 'retail_delivery') {
                         $order = Order::query()->find($leg->shipment->source_id);
                         if ($order && $this->isPaidOnlineOrder($order)) {
-                            $this->refunds->reserveFailedDeliveryRefund($order, $leg);
+                            $this->refunds->reserveFailedDeliveryRefund(
+                                $order,
+                                $leg,
+                                (string) $payload['reason_code'],
+                            );
                         }
                     }
                 }
@@ -655,26 +671,44 @@ class ShipmentLegService
         return $next->toDateString();
     }
 
-    private function requestExhaustedPickupRefund(RepairRequest $repair, int $actorId): void
+    private function requestExhaustedPickupRefund(RepairRequest $repair, int $actorId, string $failureReason): void
     {
         if ((bool) $repair->is_warranty_job
             || (string) $repair->billing_mode === 'warranty_no_charge'
-            || (float) $repair->total_paid_amount <= 0
-            || ! $repair->latest_pos_transaction_id) {
+            || (float) $repair->total_paid_amount <= 0) {
             return;
         }
 
-        $source = PosTransaction::query()->find((int) $repair->latest_pos_transaction_id);
-        $amount = $this->repairRefunds->computeRecordedRepairRefundableAmount((int) $repair->id);
-        if (! $source || $amount <= 0) {
+        $source = $this->repairRefunds->resolveRecordedRefundSource($repair, $actorId);
+        $fullBalance = $this->repairRefunds->computeRecordedRepairRefundableAmount((int) $repair->id);
+        if (! $source || $fullBalance <= 0) {
             return;
         }
+
+        $pickupFee = min(
+            $fullBalance,
+            $this->repairRefunds->computeRecordedPaidIntakeDeliveryAmount((int) $repair->id),
+        );
+        $customerCaused = in_array($failureReason, self::CUSTOMER_CAUSED_PICKUP_REASONS, true);
+        $operationsCaused = in_array($failureReason, self::OPERATIONS_CAUSED_PICKUP_REASONS, true);
+        $amount = $customerCaused ? max(0.0, round($fullBalance - $pickupFee, 2)) : $fullBalance;
+        if ($amount <= 0) {
+            return;
+        }
+
+        $feeLabel = number_format($pickupFee, 2, '.', ',');
+        $repairOnlyLabel = number_format(max(0.0, $fullBalance - $pickupFee), 2, '.', ',');
+        $notes = match (true) {
+            $customerCaused => "Auto-created after maximum repair pickup attempts were reached. The failure was customer-caused ({$failureReason}); the paid pickup fee of PHP {$feeLabel} was retained.",
+            $operationsCaused => "Auto-created after maximum repair pickup attempts were reached. The failure was operations-caused ({$failureReason}); this refund includes the paid pickup fee of PHP {$feeLabel}.",
+            default => "Auto-created after maximum repair pickup attempts were reached. Finance must decide whether the paid pickup fee of PHP {$feeLabel} is refundable for {$failureReason}. The full remaining balance was requested; approve PHP {$repairOnlyLabel} to retain the fee.",
+        };
 
         $this->repairRefunds->requestRefund($source, [
-            'request_type' => 'full',
+            'request_type' => $amount < $fullBalance ? 'partial' : 'full',
             'requested_amount' => $amount,
             'reason_code' => 'pickup_attempts_exhausted',
-            'reason_notes' => 'Auto-created after maximum repair pickup attempts were reached.',
+            'reason_notes' => $notes,
         ], $actorId);
     }
 

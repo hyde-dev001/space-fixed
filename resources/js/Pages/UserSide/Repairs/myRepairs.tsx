@@ -147,6 +147,8 @@ type RepairOrder = {
     code: string;
     label: string;
     state: 'awaiting_arrangement' | 'awaiting_payment' | 'shop_pickup' | 'ready_for_dispatch';
+    scheduled_delivery_date?: string | null;
+    delivery_window?: 'morning' | 'afternoon' | null;
   } | null;
   redelivery_payment_due?: boolean;
   same_as_intake_address?: boolean;
@@ -683,6 +685,112 @@ const SponsoredIntakeReplanCard: React.FC<{
         {saving ? 'Saving...' : 'Save intake plan'}
       </button>
     </section>
+  );
+};
+
+const CustomerReturnRecoveryActions: React.FC<{
+  order: RepairOrder;
+  onRefresh: () => Promise<unknown>;
+}> = ({ order, onRefresh }) => {
+  const [deliveryDate, setDeliveryDate] = useState('');
+  const [deliveryWindow, setDeliveryWindow] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const tomorrowDate = new Date();
+  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+  const tomorrow = [
+    tomorrowDate.getFullYear(),
+    String(tomorrowDate.getMonth() + 1).padStart(2, '0'),
+    String(tomorrowDate.getDate()).padStart(2, '0'),
+  ].join('-');
+
+  const chooseRecovery = async (action: 'schedule_redelivery' | 'shop_pickup') => {
+    if (action === 'schedule_redelivery' && (!deliveryDate || !deliveryWindow)) {
+      setError('Choose a delivery date and time window.');
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const response = await axios.post(
+        `/api/customer/repairs/${order.id}/return-recovery`,
+        action === 'schedule_redelivery'
+          ? {
+              action,
+              scheduled_delivery_date: deliveryDate,
+              delivery_window: deliveryWindow,
+            }
+          : { action },
+      );
+      setSuccess(response.data?.message || 'Return arrangement saved.');
+      await onRefresh();
+    } catch (reason) {
+      setError(getRequestErrorMessage(reason, 'Unable to save your return arrangement.'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="mt-4 space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="text-sm font-semibold text-gray-800">
+          Re-delivery date
+          <input
+            type="date"
+            min={tomorrow}
+            value={deliveryDate}
+            onChange={(event) => setDeliveryDate(event.target.value)}
+            className="mt-1 min-h-12 w-full rounded-xl border border-gray-300 bg-white px-3 text-base text-gray-900"
+          />
+        </label>
+        <label className="text-sm font-semibold text-gray-800">
+          Delivery window
+          <select
+            value={deliveryWindow}
+            onChange={(event) => setDeliveryWindow(event.target.value)}
+            className="mt-1 min-h-12 w-full rounded-xl border border-gray-300 bg-white px-3 text-base text-gray-900"
+          >
+            <option value="">Choose a time</option>
+            <option value="morning">Morning</option>
+            <option value="afternoon">Afternoon</option>
+          </select>
+        </label>
+      </div>
+
+      {error && (
+        <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </p>
+      )}
+      {success && (
+        <p role="status" className="rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+          {success}
+        </p>
+      )}
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <button
+          type="button"
+          onClick={() => chooseRecovery('schedule_redelivery')}
+          disabled={saving || !deliveryDate || !deliveryWindow}
+          className="min-h-12 rounded-xl bg-[#16233b] px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+        >
+          {saving ? 'Saving...' : 'Schedule re-delivery'}
+        </button>
+        <button
+          type="button"
+          onClick={() => chooseRecovery('shop_pickup')}
+          disabled={saving}
+          className="min-h-12 rounded-xl border border-[#16233b] bg-white px-4 py-3 text-sm font-semibold text-[#16233b] disabled:cursor-not-allowed disabled:border-gray-300 disabled:text-gray-400"
+        >
+          Pick up at shop
+        </button>
+      </div>
+    </div>
   );
 };
 
@@ -4190,13 +4298,19 @@ const MyRepairs: React.FC = () => {
                         </h4>
                         <p className="mt-2 text-sm text-gray-700">
                           {order.return_recovery.state === 'awaiting_arrangement'
-                            ? 'Your repaired shoes are safely at the shop. The shop will contact you to arrange re-delivery or shop pickup.'
+                            ? 'Your repaired shoes are safely at the shop. Choose re-delivery or free shop pickup.'
                             : order.return_recovery.state === 'awaiting_payment'
                               ? 'Confirm your return address, then pay the new delivery fee.'
                               : order.return_recovery.state === 'shop_pickup'
                                 ? 'Shop pickup is free. Wait for the shop to record the handoff before confirming receipt.'
                                 : 'Re-delivery payment received. Waiting for rider assignment.'}
                         </p>
+                        {order.return_recovery.state === 'awaiting_arrangement' && (
+                          <CustomerReturnRecoveryActions
+                            order={order}
+                            onRefresh={() => fetchRepairs({ silent: true })}
+                          />
+                        )}
                         {order.return_recovery.state === 'shop_pickup' && (
                           <div className="mt-3 rounded-xl border border-amber-200 bg-white p-3 text-sm text-gray-700">
                             <p className="font-semibold text-black">{order.shop_name}</p>

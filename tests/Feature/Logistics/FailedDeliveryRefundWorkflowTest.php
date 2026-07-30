@@ -20,6 +20,7 @@ use App\Services\OrderRefundService;
 use App\Services\PaymongoRefundService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
+use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 class FailedDeliveryRefundWorkflowTest extends TestCase
@@ -57,6 +58,26 @@ class FailedDeliveryRefundWorkflowTest extends TestCase
         $this->assertSame(2, $second['refund']->fresh('items')->items->count());
     }
 
+    public function test_failed_delivery_refund_obeys_failure_responsibility(): void
+    {
+        $cases = [
+            'recipient_unavailable' => [1000.0, 'shipping fee of PHP 100.00 was retained'],
+            'vehicle_or_delivery_problem' => [1100.0, 'includes the paid shipping fee of PHP 100.00'],
+            'other' => [1100.0, 'Finance must decide whether the paid shipping fee of PHP 100.00 is refundable'],
+        ];
+
+        foreach ($cases as $reason => [$expectedAmount, $noteFragment]) {
+            [$order, $leg] = $this->paidOrderWithOutboundLeg();
+            $result = app(OrderRefundService::class)->reserveFailedDeliveryRefund($order, $leg, $reason);
+            $refund = $result['refund']->fresh();
+
+            $this->assertSame('reserved', $result['result']);
+            $this->assertSame($expectedAmount, round((float) $refund->amount, 2));
+            $this->assertSame('pending', $refund->finance_status);
+            $this->assertStringContainsString($noteFragment, (string) $refund->reason_note);
+        }
+    }
+
     public function test_succeeded_refund_is_subtracted_from_failed_delivery_reservation(): void
     {
         [$order, $leg] = $this->paidOrderWithOutboundLeg();
@@ -69,6 +90,74 @@ class FailedDeliveryRefundWorkflowTest extends TestCase
         $this->assertLessThanOrEqual(1100.0, (float) OrderRefund::where('order_id', $order->id)
             ->whereIn('status', ['requested', 'pending_approval', 'processing', 'succeeded'])
             ->sum('amount'));
+    }
+
+    public function test_customer_caused_failed_delivery_subtracts_prior_refunds_and_shipping_once(): void
+    {
+        [$order, $leg] = $this->paidOrderWithOutboundLeg();
+        $this->refund($order, 'succeeded', 200, 'prior-customer-failure-success');
+
+        $result = app(OrderRefundService::class)
+            ->reserveFailedDeliveryRefund($order, $leg, 'recipient_unavailable');
+
+        $this->assertSame('reserved', $result['result']);
+        $this->assertSame(800.0, round((float) $result['refund']->amount, 2));
+        $this->assertSame(1000.0, round((float) OrderRefund::where('order_id', $order->id)->sum('amount'), 2));
+    }
+
+    public function test_ambiguous_failed_delivery_requires_one_of_two_finance_shipping_decisions(): void
+    {
+        [$order, $leg] = $this->paidOrderWithOutboundLeg();
+        $refund = app(OrderRefundService::class)
+            ->reserveFailedDeliveryRefund($order, $leg, 'other')['refund'];
+        $refund->update(['return_status' => 'received']);
+        $service = app(OrderRefundService::class);
+
+        $missing = $service->approveRequestedRefund($refund->fresh(), 'finance');
+        $invalid = $service->approveRequestedRefund(
+            $refund->fresh(),
+            'finance',
+            approvedAmount: 1050,
+        );
+        $approved = $service->approveRequestedRefund(
+            $refund->fresh(),
+            'finance',
+            approvedAmount: 1000,
+        );
+
+        $this->assertSame('invalid_state', $missing['result']);
+        $this->assertSame('invalid_state', $invalid['result']);
+        $this->assertSame('approved', $approved['result']);
+        $this->assertSame(1000.0, round((float) $approved['refund']->amount, 2));
+        $this->assertSame('approved', $approved['refund']->finance_status);
+    }
+
+    public function test_finance_queue_keeps_both_ambiguous_shipping_choices_after_inspection(): void
+    {
+        [$order, $leg] = $this->paidOrderWithOutboundLeg();
+        $refund = app(OrderRefundService::class)
+            ->reserveFailedDeliveryRefund($order, $leg, 'other')['refund'];
+        $refund->update(['return_status' => 'received']);
+        $refund->items()->update([
+            'line_amount' => 500,
+            'inspection_disposition' => 'resellable',
+        ]);
+
+        Permission::findOrCreate('access-refund-approval', 'user');
+        $finance = User::factory()->create([
+            'shop_owner_id' => $order->shop_owner_id,
+            'role' => 'Finance',
+            'status' => 'active',
+        ]);
+        $finance->givePermissionTo('access-refund-approval');
+
+        $this->actingAs($finance, 'user')
+            ->getJson('/api/finance/refunds?status=pending')
+            ->assertOk()
+            ->assertJsonPath('data.0.refundAmountValue', 1100)
+            ->assertJsonPath('data.0.refundAmountWithoutShipping', 1000)
+            ->assertJsonPath('data.0.shippingFee', 100)
+            ->assertJsonPath('data.0.canAdjustRefundAmount', true);
     }
 
     public function test_every_active_refund_status_blocks_competing_failed_delivery_reservation(): void
@@ -141,6 +230,11 @@ class FailedDeliveryRefundWorkflowTest extends TestCase
             ]);
 
             $this->assertSame($expectedRefunds, OrderRefund::where('order_id', $order->id)->count(), $paymentMethod);
+            if ($expectedRefunds === 1) {
+                $refund = OrderRefund::where('order_id', $order->id)->sole();
+                $this->assertSame(1000.0, round((float) $refund->amount, 2));
+                $this->assertStringContainsString('shipping fee of PHP 100.00 was retained', (string) $refund->reason_note);
+            }
             $this->assertSame('needs_resolution', $leg->fresh()->status->value);
         }
     }

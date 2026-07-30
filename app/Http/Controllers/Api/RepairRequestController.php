@@ -3,40 +3,41 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
-use App\Models\RepairRequest;
-use App\Models\RepairReview;
-use App\Models\RepairWarrantyClaim;
+use App\Models\Finance\Invoice;
+use App\Models\Finance\InvoiceItem;
+use App\Models\Logistics\Shipment;
+use App\Models\PosPaymentLine;
+use App\Models\PosTransaction;
 use App\Models\RepairPackage;
 use App\Models\RepairPaymentSession;
+use App\Models\RepairRequest;
+use App\Models\RepairReview;
 use App\Models\RepairService;
+use App\Models\RepairWarrantyClaim;
 use App\Models\ShopOwner;
 use App\Models\ShopPolicyVersion;
 use App\Models\User;
-use App\Models\Logistics\Shipment;
-use App\Models\Finance\Invoice;
-use App\Models\Finance\InvoiceItem;
-use App\Models\PosPaymentLine;
-use App\Models\PosTransaction;
-use App\Support\Tax\VatInclusiveCalculator;
 use App\Services\NotificationService;
 use App\Services\PaymentSettlementService;
+use App\Services\PolicyAcceptanceService;
+use App\Services\RepairDeliveryService;
 use App\Services\RepairPosPaymentService;
 use App\Services\RepairPosReceiptService;
 use App\Services\RepairPosRefundService;
-use App\Services\RepairDeliveryService;
 use App\Services\ShopOwnerApprovalPolicyService;
-use App\Services\PolicyAcceptanceService;
+use App\Support\Tax\VatInclusiveCalculator;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 
 class RepairRequestController extends Controller
 {
     private const REPAIR_VAT_RATE_PERCENT = 12.0;
+
     private const PAYMENT_RETURN_TOKEN_TTL_SECONDS = 86400;
 
     public function __construct(
@@ -47,9 +48,8 @@ class RepairRequestController extends Controller
         Request $request,
         PolicyAcceptanceService $policyAcceptanceService,
         RepairDeliveryService $repairDeliveryService,
-    )
-    {
-        if (!Auth::guard('user')->check()) {
+    ) {
+        if (! Auth::guard('user')->check()) {
             return response()->json([
                 'success' => false,
                 'message' => 'Please log in to submit a repair request.',
@@ -97,7 +97,7 @@ class RepairRequestController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 422);
         }
 
@@ -240,7 +240,7 @@ class RepairRequestController extends Controller
 
         try {
             // Generate unique request ID
-            $requestId = 'REP-' . date('Ymd') . str_pad(RepairRequest::whereDate('created_at', today())->count() + 1, 3, '0', STR_PAD_LEFT);
+            $requestId = 'REP-'.date('Ymd').str_pad(RepairRequest::whereDate('created_at', today())->count() + 1, 3, '0', STR_PAD_LEFT);
 
             // Handle image uploads
             $imagePaths = [];
@@ -269,7 +269,7 @@ class RepairRequestController extends Controller
                     ->with('services:id,name,category,price,duration,status,shop_owner_id')
                     ->find($request->repair_package_id);
 
-                if (!$selectedPackage) {
+                if (! $selectedPackage) {
                     return response()->json([
                         'success' => false,
                         'message' => 'Selected package was not found.',
@@ -324,7 +324,7 @@ class RepairRequestController extends Controller
 
                 if ($requestedAddOnIds->isNotEmpty()) {
                     $invalidIncludedIds = $requestedAddOnIds->intersect($includedServiceIds)->values()->all();
-                    if (!empty($invalidIncludedIds)) {
+                    if (! empty($invalidIncludedIds)) {
                         return response()->json([
                             'success' => false,
                             'message' => 'Included package services cannot be submitted as add-ons.',
@@ -391,7 +391,7 @@ class RepairRequestController extends Controller
 
                 $requestTotal = (float) $standardServices->sum(fn ($service) => (float) $service->price);
             }
-            
+
             // Get shop owner for high value check
             $isHighValue = $shopOwner && $requestTotal >= $shopOwner->high_value_threshold;
             $requiresOwnerApprovalByPolicy = $shopOwner
@@ -418,7 +418,7 @@ class RepairRequestController extends Controller
                 $providedVersionId = (int) ($request->input('accepted_shop_policy_version_id') ?? 0);
                 $policyAccepted = filter_var($request->input('policy_accepted'), FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) === true;
 
-                if (!$policyAccepted || $providedVersionId !== (int) $activePolicyVersion->id) {
+                if (! $policyAccepted || $providedVersionId !== (int) $activePolicyVersion->id) {
                     return response()->json([
                         'success' => false,
                         'message' => 'You must accept the latest shop terms before submitting this repair request.',
@@ -429,7 +429,7 @@ class RepairRequestController extends Controller
                     ], 422);
                 }
             }
-            
+
             // Create request and acceptance evidence atomically.
             $repairRequest = DB::transaction(function () use (
                 $request,
@@ -478,8 +478,8 @@ class RepairRequestController extends Controller
                     'package_price' => $packageTotal,
                     'add_ons_total' => $addOnsTotal,
                     'final_total' => $requestTotal,
-                    'included_services_snapshot' => !empty($includedServicesSnapshot) ? $includedServicesSnapshot : null,
-                    'add_on_services_snapshot' => !empty($addOnServicesSnapshot) ? $addOnServicesSnapshot : null,
+                    'included_services_snapshot' => ! empty($includedServicesSnapshot) ? $includedServicesSnapshot : null,
+                    'add_on_services_snapshot' => ! empty($addOnServicesSnapshot) ? $addOnServicesSnapshot : null,
                     'pricing_breakdown' => [
                         'mode' => $selectedPackage ? 'package' : 'services',
                         'package_id' => $selectedPackage?->id,
@@ -517,7 +517,7 @@ class RepairRequestController extends Controller
                     'payment_enabled_at' => $autoEnableOnlinePayment ? now() : null,
                 ]);
 
-                if (!empty($serviceIds)) {
+                if (! empty($serviceIds)) {
                     $repairRequest->services()->attach($serviceIds);
                 }
 
@@ -590,12 +590,12 @@ class RepairRequestController extends Controller
                     'status' => $repairRequest->fresh()->status,
                     'assigned_repairer_id' => $repairRequest->fresh()->assigned_repairer_id,
                     'repair_package_id' => $repairRequest->fresh()->repair_package_id,
-                ]
+                ],
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to submit repair request: ' . $e->getMessage()
+                'message' => 'Failed to submit repair request: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -617,12 +617,12 @@ class RepairRequestController extends Controller
         // Search
         if ($request->has('search')) {
             $search = $request->search;
-            $query->where(function($q) use ($search) {
+            $query->where(function ($q) use ($search) {
                 $q->where('request_id', 'like', "%{$search}%")
-                  ->orWhere('customer_name', 'like', "%{$search}%")
-                  ->orWhere('email', 'like', "%{$search}%")
-                  ->orWhere('phone', 'like', "%{$search}%")
-                  ->orWhere('shoe_type', 'like', "%{$search}%");
+                    ->orWhere('customer_name', 'like', "%{$search}%")
+                    ->orWhere('email', 'like', "%{$search}%")
+                    ->orWhere('phone', 'like', "%{$search}%")
+                    ->orWhere('shoe_type', 'like', "%{$search}%");
             });
         }
 
@@ -633,29 +633,30 @@ class RepairRequestController extends Controller
             'data' => $repairRequests->map(function ($request) {
                 // Images are already cast as array, so handle both formats
                 $images = is_array($request->images) ? $request->images : (is_string($request->images) ? json_decode($request->images, true) : []);
+
                 return [
                     'id' => $request->request_id,
                     'customer' => $request->customer_name,
                     'email' => $request->email,
                     'phone' => $request->phone,
-                    'item' => $request->shoe_type . ($request->brand ? " ({$request->brand})" : ''),
+                    'item' => $request->shoe_type.($request->brand ? " ({$request->brand})" : ''),
                     'service' => $request->services->pluck('name')->join(', '),
-                    'total' => '₱' . number_format($request->total, 0),
+                    'total' => '₱'.number_format($request->total, 0),
                     'status' => $request->status,
                     'createdAt' => $request->created_at->format('Y-m-d h:i A'),
                     'startedAt' => $request->started_at ? $request->started_at->format('Y-m-d h:i A') : null,
                     'completedAt' => $request->completed_at ? $request->completed_at->format('Y-m-d h:i A') : null,
                     'notes' => $request->description,
-                    'imageUrl' => !empty($images) ? Storage::url($images[0]) : null,
+                    'imageUrl' => ! empty($images) ? Storage::url($images[0]) : null,
                     'repairDetails' => $request->services->pluck('description')->toArray(),
                 ];
-            })
+            }),
         ]);
     }
 
     private function reconcilePendingRepairPaymentWithGateway($repair, PaymentSettlementService $settlementService): bool
     {
-        if (!$repair instanceof RepairRequest) {
+        if (! $repair instanceof RepairRequest) {
             return false;
         }
 
@@ -665,7 +666,7 @@ class RepairRequestController extends Controller
             return false;
         }
 
-        if (!$settlementService->isRepairPaymentDueNow($repair, $normalizedPolicy)) {
+        if (! $settlementService->isRepairPaymentDueNow($repair, $normalizedPolicy)) {
             return false;
         }
 
@@ -677,7 +678,7 @@ class RepairRequestController extends Controller
         if (
             $normalizedPolicy === 'deposit_50'
             && $currentPaymentStatus === 'paid'
-            && !$this->isRepairRemainingBalancePhase($repair)
+            && ! $this->isRepairRemainingBalancePhase($repair)
         ) {
             return false;
         }
@@ -694,7 +695,7 @@ class RepairRequestController extends Controller
 
         try {
             $response = \Illuminate\Support\Facades\Http::withHeaders([
-                'Authorization' => 'Basic ' . base64_encode($apiKey . ':'),
+                'Authorization' => 'Basic '.base64_encode($apiKey.':'),
             ])->get("https://api.paymongo.com/v1/checkout_sessions/{$checkoutSessionId}");
 
             if ($response->failed()) {
@@ -756,26 +757,26 @@ class RepairRequestController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 422);
         }
 
         try {
             $repairRequest = RepairRequest::where('request_id', $requestId)->firstOrFail();
-            
+
             // Store old status before update
             $oldStatus = $repairRequest->status;
-            
+
             $repairRequest->status = $request->status;
-            
-            if ($request->status === 'in-progress' && !$repairRequest->started_at) {
+
+            if ($request->status === 'in-progress' && ! $repairRequest->started_at) {
                 $repairRequest->started_at = now();
             }
-            
-            if ($request->status === 'ready-for-pickup' && !$repairRequest->completed_at) {
+
+            if ($request->status === 'ready-for-pickup' && ! $repairRequest->completed_at) {
                 $repairRequest->completed_at = now();
             }
-            
+
             $repairRequest->save();
 
             // Log the status change with business context
@@ -802,8 +803,8 @@ class RepairRequestController extends Controller
                     $notificationService = app(NotificationService::class);
                     $repairData = [
                         'order_number' => $repairRequest->request_id,
-                        'repair_id'    => $repairRequest->id,
-                        'status'       => $request->status,
+                        'repair_id' => $repairRequest->id,
+                        'status' => $request->status,
                     ];
                     if ($request->status === 'in-progress') {
                         $notificationService->notifyRepairInProgress($repairRequest->user_id, $repairData);
@@ -813,18 +814,18 @@ class RepairRequestController extends Controller
                         $notificationService->notifyRepairCompleted($repairRequest->user_id, $repairData);
                     }
                 } catch (\Exception $e) {
-                    \Log::warning('Could not notify customer of repair status change: ' . $e->getMessage());
+                    \Log::warning('Could not notify customer of repair status change: '.$e->getMessage());
                 }
             }
 
             return response()->json([
                 'success' => true,
-                'message' => 'Status updated successfully'
+                'message' => 'Status updated successfully',
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to update status: ' . $e->getMessage()
+                'message' => 'Failed to update status: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -835,11 +836,11 @@ class RepairRequestController extends Controller
     public function myRepairs(Request $request)
     {
         $user = Auth::guard('user')->user();
-        
-        if (!$user) {
+
+        if (! $user) {
             return response()->json([
                 'success' => false,
-                'message' => 'Unauthenticated'
+                'message' => 'Unauthenticated',
             ], 401);
         }
 
@@ -855,15 +856,15 @@ class RepairRequestController extends Controller
             ->update(['status' => 'pending']);
 
         $query = RepairRequest::with([
-                'services',
-                'shopOwner',
-                'repairer',
+            'services',
+            'shopOwner',
+            'repairer',
             'parentRepairRequest:id,total_paid_amount',
-                'materialUsages.inventoryItem:id,price',
-                'latestPosTransaction:id,metadata',
-                'posTransactions:id,module_reference_id,module_type,paid_amount,status',
-                'posTransactions.paymentLines:id,pos_transaction_id,tender_type,provider_reference,amount,status',
-            ])
+            'materialUsages.inventoryItem:id,price',
+            'latestPosTransaction:id,metadata',
+            'posTransactions:id,module_reference_id,module_type,paid_amount,status',
+            'posTransactions.paymentLines:id,pos_transaction_id,tender_type,provider_reference,amount,status',
+        ])
             ->withSum([
                 'posTransactions as pos_paid_amount_ledger' => function ($builder) {
                     $builder->whereIn('status', ['paid', 'partially_refunded', 'refunded']);
@@ -930,7 +931,7 @@ class RepairRequestController extends Controller
         }
 
         $reviewedRepairIds = [];
-        if (!empty($allRelevantRepairIds)) {
+        if (! empty($allRelevantRepairIds)) {
             $reviewedRepairIds = RepairReview::query()
                 ->whereIn('repair_request_id', $allRelevantRepairIds)
                 ->pluck('repair_request_id')
@@ -1009,7 +1010,7 @@ class RepairRequestController extends Controller
                     'shop_owner_id' => $repair->shop_owner_id,
                     'shop_name' => $repair->shopOwner ? $repair->shopOwner->business_name : 'Unknown Shop',
                     'shop_address' => $repair->shopOwner ? $repair->shopOwner->business_address : '',
-                    'image' => !empty($images) ? Storage::url($images[0]) : null,
+                    'image' => ! empty($images) ? Storage::url($images[0]) : null,
                     'delivery_method' => $repair->delivery_method,
                     'pickup_address' => $repair->pickup_address,
                     'intake_delivery_method' => $repair->intake_delivery_method ?? ($repair->delivery_method === 'walk_in' ? 'walk_in' : 'customer_delivery'),
@@ -1071,7 +1072,7 @@ class RepairRequestController extends Controller
                     'add_on_services_snapshot' => $repair->add_on_services_snapshot,
                     'pricing_breakdown' => $pricingSnapshot['pricing_breakdown'],
                 ];
-            })
+            }),
         ]);
     }
 
@@ -1081,11 +1082,11 @@ class RepairRequestController extends Controller
     public function show(Request $request, $id)
     {
         $user = Auth::guard('user')->user();
-        
-        if (!$user) {
+
+        if (! $user) {
             return response()->json([
                 'success' => false,
-                'message' => 'Unauthenticated'
+                'message' => 'Unauthenticated',
             ], 401);
         }
 
@@ -1094,17 +1095,17 @@ class RepairRequestController extends Controller
             ->forCustomer($user->id)
             ->first();
 
-        if (!$repair) {
+        if (! $repair) {
             return response()->json([
                 'success' => false,
-                'message' => 'Repair request not found'
+                'message' => 'Repair request not found',
             ], 404);
         }
 
         // Images are already cast as array, so handle both formats
         $images = is_array($repair->images) ? $repair->images : (is_string($repair->images) ? json_decode($repair->images, true) : []);
         $pricingSnapshot = $this->calculateRepairPricingSnapshot($repair);
-        
+
         return response()->json([
             'success' => true,
             'data' => [
@@ -1142,10 +1143,10 @@ class RepairRequestController extends Controller
                 'estimated_delivery_date' => $repair->estimated_delivery_date,
                 'shipped_at' => $repair->shipped_at,
                 'created_at' => $repair->created_at,
-                'images' => array_map(function($path) {
+                'images' => array_map(function ($path) {
                     return Storage::url($path);
                 }, $images ?: []),
-                'services' => $repair->services->map(function($service) {
+                'services' => $repair->services->map(function ($service) {
                     return [
                         'id' => $service->id,
                         'name' => $service->name,
@@ -1172,14 +1173,14 @@ class RepairRequestController extends Controller
                     'name' => $repair->repairer->name,
                 ] : null,
                 'conversation_id' => $repair->conversation_id,
-            ]
+            ],
         ]);
     }
 
     public function requestRefundFromMyRepair(Request $request, int $id, RepairPosRefundService $refundService)
     {
         $user = Auth::guard('user')->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'success' => false,
                 'message' => 'Unauthenticated',
@@ -1191,7 +1192,7 @@ class RepairRequestController extends Controller
             ->forCustomer($user->id)
             ->first();
 
-        if (!$repair) {
+        if (! $repair) {
             return response()->json([
                 'success' => false,
                 'message' => 'Repair request not found',
@@ -1276,7 +1277,7 @@ class RepairRequestController extends Controller
             $maxVideoBytes = 256 * 1024 * 1024;
 
             foreach (($request->file('media') ?? []) as $index => $mediaFile) {
-                if (!$mediaFile) {
+                if (! $mediaFile) {
                     continue;
                 }
 
@@ -1295,7 +1296,7 @@ class RepairRequestController extends Controller
                     ]);
                 }
 
-                $path = $mediaFile->store('refund-evidence/repair-' . $repair->id, 'public');
+                $path = $mediaFile->store('refund-evidence/repair-'.$repair->id, 'public');
                 $uploadedEvidence[] = [
                     'type' => $isVideo ? 'video' : 'photo',
                     'url' => Storage::url($path),
@@ -1303,7 +1304,7 @@ class RepairRequestController extends Controller
             }
         }
 
-        $evidenceSnapshot = !empty($uploadedEvidence)
+        $evidenceSnapshot = ! empty($uploadedEvidence)
             ? $uploadedEvidence
             : (is_array($validated['evidence'] ?? null) ? $validated['evidence'] : []);
 
@@ -1342,7 +1343,7 @@ class RepairRequestController extends Controller
             ->orderByDesc('id')
             ->first();
 
-        if (!$sourceTransaction) {
+        if (! $sourceTransaction) {
             $sourceTransaction = $this->backfillPureOnlineRepairSourceTransaction(
                 repair: $repair,
                 actorUserId: (int) $user->id,
@@ -1352,7 +1353,7 @@ class RepairRequestController extends Controller
             );
         }
 
-        if (!$sourceTransaction) {
+        if (! $sourceTransaction) {
             return response()->json([
                 'success' => false,
                 'message' => 'No paid transaction record found for this repair request.',
@@ -1386,7 +1387,7 @@ class RepairRequestController extends Controller
                 ]);
             }
 
-            if (!$resolvedCustomerPayoutConsent) {
+            if (! $resolvedCustomerPayoutConsent) {
                 throw \Illuminate\Validation\ValidationException::withMessages([
                     'customer_payout_consent' => ['Please confirm payout destination details for walk-in payment refunds.'],
                 ]);
@@ -1394,7 +1395,7 @@ class RepairRequestController extends Controller
         } elseif ($paymentType === 'mixed') {
             $allowedMixedChannels = ['gcash', 'card', 'bank_transfer'];
 
-            if (!in_array((string) ($resolvedPreferredReturnChannel ?? ''), $allowedMixedChannels, true)) {
+            if (! in_array((string) ($resolvedPreferredReturnChannel ?? ''), $allowedMixedChannels, true)) {
                 throw \Illuminate\Validation\ValidationException::withMessages([
                     'preferred_return_channel' => ['Choose a payout channel (GCash, Card, or Bank Transfer) for the POS-paid portion of mixed refunds.'],
                 ]);
@@ -1412,7 +1413,7 @@ class RepairRequestController extends Controller
                 ]);
             }
 
-            if (!$resolvedCustomerPayoutConsent) {
+            if (! $resolvedCustomerPayoutConsent) {
                 throw \Illuminate\Validation\ValidationException::withMessages([
                     'customer_payout_consent' => ['Please confirm payout destination details for the POS-paid portion of mixed refunds.'],
                 ]);
@@ -1503,11 +1504,11 @@ class RepairRequestController extends Controller
     public function cancel(Request $request, $id, RepairPosRefundService $refundService)
     {
         $user = Auth::guard('user')->user();
-        
-        if (!$user) {
+
+        if (! $user) {
             return response()->json([
                 'success' => false,
-                'message' => 'Unauthenticated'
+                'message' => 'Unauthenticated',
             ], 401);
         }
 
@@ -1515,10 +1516,10 @@ class RepairRequestController extends Controller
             ->forCustomer($user->id)
             ->first();
 
-        if (!$repair) {
+        if (! $repair) {
             return response()->json([
                 'success' => false,
-                'message' => 'Repair request not found'
+                'message' => 'Repair request not found',
             ], 404);
         }
 
@@ -1526,7 +1527,7 @@ class RepairRequestController extends Controller
         if (in_array($repair->status, ['completed', 'picked_up', 'cancelled'])) {
             return response()->json([
                 'success' => false,
-                'message' => 'Cannot cancel repair in current status'
+                'message' => 'Cannot cancel repair in current status',
             ], 400);
         }
 
@@ -1535,12 +1536,12 @@ class RepairRequestController extends Controller
                 'status' => 'cancelled',
             ]);
 
-            if ((float) $repair->total_paid_amount <= 0 || !$repair->latest_pos_transaction_id) {
+            if ((float) $repair->total_paid_amount <= 0) {
                 return;
             }
 
-            $sourceTransaction = PosTransaction::query()->find((int) $repair->latest_pos_transaction_id);
-            if (!$sourceTransaction) {
+            $sourceTransaction = $refundService->resolveRecordedRefundSource($repair, (int) $user->id);
+            if (! $sourceTransaction) {
                 return;
             }
 
@@ -1559,7 +1560,7 @@ class RepairRequestController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Repair request cancelled successfully'
+            'message' => 'Repair request cancelled successfully',
         ]);
     }
 
@@ -1573,7 +1574,7 @@ class RepairRequestController extends Controller
     {
         $user = Auth::guard('user')->user();
 
-        if (!$user) {
+        if (! $user) {
             return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
         }
 
@@ -1581,11 +1582,11 @@ class RepairRequestController extends Controller
             ->forCustomer($user->id)
             ->first();
 
-        if (!$repair) {
+        if (! $repair) {
             return response()->json(['success' => false, 'message' => 'Repair request not found'], 404);
         }
 
-        if (!in_array($repair->status, ['repairer_accepted', 'pending'])) {
+        if (! in_array($repair->status, ['repairer_accepted', 'pending'])) {
             return response()->json([
                 'success' => false,
                 'message' => 'You can only set a schedule before the repair is in progress.',
@@ -1608,7 +1609,7 @@ class RepairRequestController extends Controller
                     userId: $repair->assigned_repairer_id,
                     type: \App\Enums\NotificationType::REPAIR_ASSIGNED_TO_ME,
                     title: 'Customer Set Drop-off Date',
-                    message: "Customer set drop-off date for repair {$repair->request_id} on " . \Carbon\Carbon::parse($validated['preferred_date'])->format('M d, Y'),
+                    message: "Customer set drop-off date for repair {$repair->request_id} on ".\Carbon\Carbon::parse($validated['preferred_date'])->format('M d, Y'),
                     data: [
                         'repair_id' => $repair->id,
                         'repair_request_id' => $repair->id,
@@ -1621,7 +1622,7 @@ class RepairRequestController extends Controller
                     requiresAction: false
                 );
             } catch (\Exception $e) {
-                \Log::warning('Could not notify repairer of schedule: ' . $e->getMessage());
+                \Log::warning('Could not notify repairer of schedule: '.$e->getMessage());
             }
         }
 
@@ -1989,6 +1990,39 @@ class RepairRequestController extends Controller
         ]);
     }
 
+    public function resolveReturnRecovery(Request $request, $id, RepairDeliveryService $repairDeliveryService)
+    {
+        $user = Auth::guard('user')->user();
+        abort_unless($user, 401);
+
+        $validated = $request->validate([
+            'action' => ['required', 'in:schedule_redelivery,shop_pickup'],
+            'scheduled_delivery_date' => ['nullable', 'required_if:action,schedule_redelivery', 'date', 'after:today'],
+            'delivery_window' => ['nullable', 'required_if:action,schedule_redelivery', 'in:morning,afternoon'],
+        ]);
+        $repair = RepairRequest::query()
+            ->whereKey($id)
+            ->forCustomer($user->id)
+            ->firstOrFail();
+        $result = $repairDeliveryService->resolveReturnRecovery(
+            $repair,
+            (string) $validated['action'],
+            User::class,
+            (int) $user->id,
+            $validated['scheduled_delivery_date'] ?? null,
+            $validated['delivery_window'] ?? null,
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => $validated['action'] === 'schedule_redelivery'
+                ? 'Re-delivery scheduled. Confirm your address and pay the new delivery fee.'
+                : 'Your repaired shoes are ready for free shop pickup.',
+            'recovery' => $result['recovery'],
+            'repair' => $result['repair'],
+        ]);
+    }
+
     public function updateExternalTracking(Request $request, $id)
     {
         $user = Auth::guard('user')->user();
@@ -2120,12 +2154,12 @@ class RepairRequestController extends Controller
             'data' => $repair,
         ]);
     }
-    
+
     public function updateServices(Request $request, int $id)
     {
         $user = Auth::guard('user')->user();
 
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'success' => false,
                 'message' => 'Unauthenticated',
@@ -2146,7 +2180,7 @@ class RepairRequestController extends Controller
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            if ($repair->status !== 'repairer_accepted' || !$repair->conversation_id) {
+            if ($repair->status !== 'repairer_accepted' || ! $repair->conversation_id) {
                 abort(409, 'Services can only be modified after repairer acceptance and before confirmation.');
             }
 
@@ -2169,7 +2203,7 @@ class RepairRequestController extends Controller
                 abort(409, 'Paid repairs can no longer be modified.');
             }
 
-            if ($repair->repair_package_id && !($validated['remove_package'] ?? false)) {
+            if ($repair->repair_package_id && ! ($validated['remove_package'] ?? false)) {
                 throw \Illuminate\Validation\ValidationException::withMessages([
                     'remove_package' => ['Remove the package before choosing individual services.'],
                 ]);
@@ -2256,9 +2290,9 @@ class RepairRequestController extends Controller
                 'sender_type' => 'system',
                 'sender_id' => $user->id,
                 'content' => "Services updated by customer.\n\n"
-                    . "Added: {$added}\n"
-                    . "Removed: {$removed}\n"
-                    . 'New total: PHP ' . number_format($total, 2),
+                    ."Added: {$added}\n"
+                    ."Removed: {$removed}\n"
+                    .'New total: PHP '.number_format($total, 2),
             ]);
             Conversation::whereKey($repair->conversation_id)
                 ->update(['last_message_at' => $message->created_at]);
@@ -2280,11 +2314,11 @@ class RepairRequestController extends Controller
     {
         try {
             $user = Auth::guard('user')->user();
-            
-            if (!$user) {
+
+            if (! $user) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Unauthenticated'
+                    'message' => 'Unauthenticated',
                 ], 401);
             }
 
@@ -2299,6 +2333,7 @@ class RepairRequestController extends Controller
             // Walk-in repairs are auto-confirmed when repairer accepts, so this shouldn't be needed
             if ($repair->delivery_method === 'walk_in') {
                 DB::rollBack();
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Walk-in repairs are automatically confirmed. No action needed.',
@@ -2309,11 +2344,11 @@ class RepairRequestController extends Controller
             // Always confirm to pending status (owner approval only applies to rejections, not payment workflow)
             $repair->update([
                 'status' => 'pending',
-                'customer_confirmed_at' => now()
+                'customer_confirmed_at' => now(),
             ]);
 
             DB::commit();
-            
+
             return response()->json([
                 'success' => true,
                 'message' => 'Repair confirmed. Proceed to payment.',
@@ -2321,20 +2356,22 @@ class RepairRequestController extends Controller
             ]);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             DB::rollBack();
+
             return response()->json([
                 'success' => false,
-                'message' => 'Repair request not found or not in correct status'
+                'message' => 'Repair request not found or not in correct status',
             ], 404);
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Error confirming repair: ' . $e->getMessage(), [
+            \Log::error('Error confirming repair: '.$e->getMessage(), [
                 'user_id' => auth()->id(),
                 'repair_id' => $id,
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
+
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to confirm repair: ' . $e->getMessage()
+                'message' => 'Failed to confirm repair: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -2346,11 +2383,11 @@ class RepairRequestController extends Controller
     {
         try {
             $user = Auth::guard('user')->user();
-            
-            if (!$user) {
+
+            if (! $user) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Unauthenticated'
+                    'message' => 'Unauthenticated',
                 ], 401);
             }
 
@@ -2359,14 +2396,14 @@ class RepairRequestController extends Controller
                 ->firstOrFail();
 
             $validator = Validator::make($request->all(), [
-                'paymongo_link_id' => 'required|string'
+                'paymongo_link_id' => 'required|string',
             ]);
 
             if ($validator->fails()) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Validation failed',
-                    'errors' => $validator->errors()
+                    'errors' => $validator->errors(),
                 ], 422);
             }
 
@@ -2392,21 +2429,21 @@ class RepairRequestController extends Controller
             if ($this->isRepairPaymentSettled($repair, $policy)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Repair is already fully paid'
+                    'message' => 'Repair is already fully paid',
                 ], 409);
             }
 
-            if (!$repair->payment_enabled) {
+            if (! $repair->payment_enabled) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Payment is not enabled for this repair request yet.'
+                    'message' => 'Payment is not enabled for this repair request yet.',
                 ], 409);
             }
 
-            if (!$this->isRepairPaymentDueNow($repair, $policy)) {
+            if (! $this->isRepairPaymentDueNow($repair, $policy)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'This repair has no payable phase right now.'
+                    'message' => 'This repair has no payable phase right now.',
                 ], 409);
             }
 
@@ -2423,30 +2460,31 @@ class RepairRequestController extends Controller
             ]);
 
             \Log::info('Payment link updated for repair', [
-                'repair_id'        => $repair->id,
+                'repair_id' => $repair->id,
                 'paymongo_link_id' => $request->paymongo_link_id,
             ]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Payment link updated successfully',
-                'data' => $repair
+                'data' => $repair,
             ]);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Repair request not found'
+                'message' => 'Repair request not found',
             ], 404);
         } catch (\Exception $e) {
-            \Log::error('Error updating payment link: ' . $e->getMessage(), [
+            \Log::error('Error updating payment link: '.$e->getMessage(), [
                 'user_id' => auth()->id(),
                 'repair_id' => $id,
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
+
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to update payment link: ' . $e->getMessage()
+                'message' => 'Failed to update payment link: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -2459,10 +2497,10 @@ class RepairRequestController extends Controller
         try {
             $user = Auth::guard('user')->user();
 
-            if (!$user) {
+            if (! $user) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Unauthenticated'
+                    'message' => 'Unauthenticated',
                 ], 401);
             }
 
@@ -2471,10 +2509,10 @@ class RepairRequestController extends Controller
                 ->forCustomer($user->id)
                 ->first();
 
-            if (!$repair) {
+            if (! $repair) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Repair request not found'
+                    'message' => 'Repair request not found',
                 ], 404);
             }
 
@@ -2483,28 +2521,28 @@ class RepairRequestController extends Controller
             if ($this->isRepairPaymentSettled($repair, $policy)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Repair is already fully paid'
+                    'message' => 'Repair is already fully paid',
                 ], 409);
             }
 
             if ((string) $repair->status === 'cancelled') {
                 return response()->json([
                     'success' => false,
-                    'message' => 'This repair request is cancelled and cannot be paid.'
+                    'message' => 'This repair request is cancelled and cannot be paid.',
                 ], 409);
             }
 
-            if (!$repair->payment_enabled) {
+            if (! $repair->payment_enabled) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Payment is not enabled for this repair request yet.'
+                    'message' => 'Payment is not enabled for this repair request yet.',
                 ], 409);
             }
 
-            if (!$this->isRepairPaymentDueNow($repair, $policy)) {
+            if (! $this->isRepairPaymentDueNow($repair, $policy)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'This repair has no payable phase right now.'
+                    'message' => 'This repair has no payable phase right now.',
                 ], 409);
             }
 
@@ -2566,16 +2604,16 @@ class RepairRequestController extends Controller
                 ], 503);
             }
 
-            $description = 'SoleSpace Repair #' . ($repair->request_id ?: $repair->id) . ' (' . $phase . ')';
+            $description = 'SoleSpace Repair #'.($repair->request_id ?: $repair->id).' ('.$phase.')';
             $returnTimestamp = now()->timestamp;
             $returnSignature = $this->buildPaymentReturnSignature('repair', (int) $repair->id, $returnTimestamp);
-            $successUrl = url('/my-repairs') . '?' . http_build_query([
+            $successUrl = url('/my-repairs').'?'.http_build_query([
                 'paymongo_success' => 1,
                 'pending_repair_id' => $repair->id,
                 'return_ts' => $returnTimestamp,
                 'return_sig' => $returnSignature,
             ]);
-            $failedUrl = url('/my-repairs') . '?' . http_build_query([
+            $failedUrl = url('/my-repairs').'?'.http_build_query([
                 'paymongo_failed' => 1,
                 'pending_repair_id' => $repair->id,
                 'return_ts' => $returnTimestamp,
@@ -2586,7 +2624,7 @@ class RepairRequestController extends Controller
 
             $paymentResponse = \Illuminate\Support\Facades\Http::withHeaders([
                 'Content-Type' => 'application/json',
-                'Authorization' => 'Basic ' . base64_encode($apiKey . ':'),
+                'Authorization' => 'Basic '.base64_encode($apiKey.':'),
             ])->post('https://api.paymongo.com/v1/checkout_sessions', [
                 'data' => [
                     'attributes' => [
@@ -2637,7 +2675,7 @@ class RepairRequestController extends Controller
             $checkoutUrl = $responseData['data']['attributes']['checkout_url'] ?? null;
             $linkId = $responseData['data']['id'] ?? null;
 
-            if (!$checkoutUrl || !$linkId) {
+            if (! $checkoutUrl || ! $linkId) {
                 \Log::error('Repair retry payment session missing checkout data', [
                     'repair_id' => $repair->id,
                     'response' => $responseData,
@@ -2800,15 +2838,15 @@ class RepairRequestController extends Controller
             }
 
             // Base query builder shared across strategies
-            $baseQuery = fn() => User::where('shop_owner_id', $repairRequest->shop_owner_id)
-                ->whereHas('employee', function($query) {
+            $baseQuery = fn () => User::where('shop_owner_id', $repairRequest->shop_owner_id)
+                ->whereHas('employee', function ($query) {
                     $query->where('status', 'active');
                 })
-                ->whereHas('roles', function($query) {
+                ->whereHas('roles', function ($query) {
                     $query->where('name', 'Repairer');
                 })
                 ->where('status', 'active')
-                ->withCount(['assignedRepairs as active_repairs_count' => function($query) use ($activeStatuses) {
+                ->withCount(['assignedRepairs as active_repairs_count' => function ($query) use ($activeStatuses) {
                     $query->whereIn('status', $activeStatuses);
                 }]);
 
@@ -2825,25 +2863,25 @@ class RepairRequestController extends Controller
             }
 
             // STRATEGY 2: Normal least-busy pick under capacity (preferred date either not set, or no one blocked it)
-            if (!$repairer) {
+            if (! $repairer) {
                 $repairer = $baseQuery()
                     ->having('active_repairs_count', '<', $shopWorkloadLimit)
                     ->orderBy('active_repairs_count', 'asc')  // Assign to least busy first
                     ->orderBy('id', 'asc')  // Tie-breaker: earliest hired repairer
                     ->first();
             }
-            
+
             if ($repairer) {
                 $repairRequest->update([
                     'assigned_repairer_id' => $repairer->id,
                     'status' => 'assigned_to_repairer',
-                    'assigned_at' => now()
+                    'assigned_at' => now(),
                 ]);
-                
+
                 // Log successful assignment with workload info
                 $workloadCount = $repairer->active_repairs_count ?? 0;
                 \Log::info("✅ Repair {$repairRequest->request_id} auto-assigned to {$repairer->name} (ID: {$repairer->id}) - Current workload: {$workloadCount} active repairs");
-                
+
                 // Send notification to repairer about new assignment (ERP staff)
                 $notificationService = app(NotificationService::class);
                 $notificationService->sendToUser(
@@ -2868,18 +2906,18 @@ class RepairRequestController extends Controller
                     priority: $repairRequest->is_high_value ? 'high' : 'medium',
                     requiresAction: true
                 );
-                
+
             } else {
                 // No repairer available - handle assignment failure
                 $this->handleAssignmentFailure($repairRequest);
             }
-            
+
         } catch (\Exception $e) {
-            \Log::error("❌ Failed to auto-assign repair {$repairRequest->request_id}: " . $e->getMessage());
+            \Log::error("❌ Failed to auto-assign repair {$repairRequest->request_id}: ".$e->getMessage());
             $this->handleAssignmentFailure($repairRequest);
         }
     }
-    
+
     /**
      * Handle assignment failure - notify manager and update status
      */
@@ -2888,19 +2926,19 @@ class RepairRequestController extends Controller
         try {
             // Update repair status to indicate assignment failed
             $repairRequest->update([
-                'status' => 'assignment_failed'
+                'status' => 'assignment_failed',
             ]);
-            
+
             \Log::warning("⚠️ No available repairer found for repair {$repairRequest->request_id} in shop {$repairRequest->shop_owner_id}");
-            
+
             // Find and notify manager or shop owner
             $manager = User::where('shop_owner_id', $repairRequest->shop_owner_id)
-                ->whereHas('roles', function($query) {
+                ->whereHas('roles', function ($query) {
                     $query->where('name', 'Manager');
                 })
                 ->where('status', 'active')
                 ->first();
-            
+
             if ($manager) {
                 \Log::info("📧 Notifying manager {$manager->name} (ID: {$manager->id}) about failed assignment for repair {$repairRequest->request_id}");
                 // TODO: Send notification to manager
@@ -2908,11 +2946,11 @@ class RepairRequestController extends Controller
             } else {
                 \Log::warning("⚠️ No manager found to notify for shop {$repairRequest->shop_owner_id}");
             }
-            
+
             // Repair stays in 'assignment_failed' status - manual assignment required
-            
+
         } catch (\Exception $e) {
-            \Log::error("Failed to handle assignment failure for repair {$repairRequest->request_id}: " . $e->getMessage());
+            \Log::error("Failed to handle assignment failure for repair {$repairRequest->request_id}: ".$e->getMessage());
         }
     }
 
@@ -2922,11 +2960,11 @@ class RepairRequestController extends Controller
     public function simulatePayment(Request $request, $id)
     {
         $user = Auth::guard('user')->user();
-        
-        if (!$user) {
+
+        if (! $user) {
             return response()->json([
                 'success' => false,
-                'message' => 'Unauthenticated'
+                'message' => 'Unauthenticated',
             ], 401);
         }
 
@@ -2934,20 +2972,20 @@ class RepairRequestController extends Controller
             ->forCustomer($user->id)
             ->first();
 
-        if (!$repair) {
+        if (! $repair) {
             return response()->json([
                 'success' => false,
-                'message' => 'Repair request not found'
+                'message' => 'Repair request not found',
             ], 404);
         }
 
         // Apply payment based on the shop's policy for this repair
-        $this->applyPaymentCompletion($repair, 'TEST_PAYMENT_' . time());
+        $this->applyPaymentCompletion($repair, 'TEST_PAYMENT_'.time());
 
         return response()->json([
             'success' => true,
             'message' => 'Payment simulated successfully',
-            'data' => $repair->fresh(['services', 'shopOwner', 'repairer'])
+            'data' => $repair->fresh(['services', 'shopOwner', 'repairer']),
         ]);
     }
 
@@ -3008,11 +3046,11 @@ class RepairRequestController extends Controller
 
         $phase = (string) ($settlement['phase'] ?? '');
         if ($phase === 'full_upfront') {
-            \Log::info('Full-upfront payment applied for repair: ' . $repair->request_id);
+            \Log::info('Full-upfront payment applied for repair: '.$repair->request_id);
         } elseif ($phase === 'deposit_50') {
-            \Log::info('Deposit (50%) payment applied for repair: ' . $repair->request_id);
+            \Log::info('Deposit (50%) payment applied for repair: '.$repair->request_id);
         } elseif ($phase === 'remaining_balance') {
-            \Log::info('Remaining-balance (50%) payment applied for repair: ' . $repair->request_id);
+            \Log::info('Remaining-balance (50%) payment applied for repair: '.$repair->request_id);
         }
     }
 
@@ -3028,7 +3066,7 @@ class RepairRequestController extends Controller
         $user = Auth::guard('user')->user();
         $hasValidPublicReturnSignature = $this->hasValidPublicPaymentReturnSignature($request, 'repair', (int) $id);
 
-        if (!$user && !$hasValidPublicReturnSignature) {
+        if (! $user && ! $hasValidPublicReturnSignature) {
             return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
         }
 
@@ -3040,7 +3078,7 @@ class RepairRequestController extends Controller
 
         $repair = $repairQuery->first();
 
-        if (!$repair) {
+        if (! $repair) {
             return response()->json(['success' => false, 'message' => 'Repair request not found'], 404);
         }
 
@@ -3061,17 +3099,17 @@ class RepairRequestController extends Controller
 
         if ($isFullyPaid) {
             return response()->json([
-                'success'          => true,
+                'success' => true,
                 'payment_verified' => true,
-                'already_paid'     => true,
-                'data'             => $repair->fresh(['services', 'shopOwner', 'repairer']),
+                'already_paid' => true,
+                'data' => $repair->fresh(['services', 'shopOwner', 'repairer']),
             ]);
         }
 
         if (
             $normalizedPolicy === 'deposit_50'
             && (string) $repair->payment_status === 'paid'
-            && !$this->isRepairRemainingBalancePhase($repair)
+            && ! $this->isRepairRemainingBalancePhase($repair)
         ) {
             return response()->json([
                 'success' => true,
@@ -3085,7 +3123,7 @@ class RepairRequestController extends Controller
 
         $isExpired = $settlementService->isRepairExpired($repair, $normalizedPolicy);
 
-        if (!$settlementService->isRepairPaymentDueNow($repair, $normalizedPolicy)) {
+        if (! $settlementService->isRepairPaymentDueNow($repair, $normalizedPolicy)) {
             return response()->json([
                 'success' => false,
                 'payment_verified' => false,
@@ -3093,78 +3131,79 @@ class RepairRequestController extends Controller
             ], 409);
         }
 
-        if (!$repair->paymongo_link_id) {
+        if (! $repair->paymongo_link_id) {
             return response()->json([
-                'success'          => false,
+                'success' => false,
                 'payment_verified' => false,
-                'message'          => 'No payment link found for this repair',
+                'message' => 'No payment link found for this repair',
             ], 404);
         }
 
         // Use the shop's own PayMongo key (same key that created the checkout session)
         $apiKey = $repair->shopOwner?->paymongo_secret_key;
 
-        if (!$apiKey) {
+        if (! $apiKey) {
             return response()->json([
-                'success'          => false,
+                'success' => false,
                 'payment_verified' => false,
-                'message'          => 'Payment gateway not configured for this shop.',
+                'message' => 'Payment gateway not configured for this shop.',
             ], 503);
         }
 
         $response = \Illuminate\Support\Facades\Http::withHeaders([
-            'Authorization' => 'Basic ' . base64_encode($apiKey . ':'),
+            'Authorization' => 'Basic '.base64_encode($apiKey.':'),
         ])->get("https://api.paymongo.com/v1/checkout_sessions/{$repair->paymongo_link_id}");
 
         \Log::info('PayMongo session check', [
-            'repair_id'  => $repair->id,
+            'repair_id' => $repair->id,
             'session_id' => $repair->paymongo_link_id,
             'http_status' => $response->status(),
-            'raw_body'   => $response->json(),
+            'raw_body' => $response->json(),
         ]);
 
         if ($response->failed()) {
             \Log::error('PayMongo session status check failed', [
-                'repair_id'  => $repair->id,
+                'repair_id' => $repair->id,
                 'session_id' => $repair->paymongo_link_id,
-                'status'     => $response->status(),
-                'body'       => $response->json(),
+                'status' => $response->status(),
+                'body' => $response->json(),
             ]);
+
             return response()->json([
-                'success'          => false,
+                'success' => false,
                 'payment_verified' => false,
-                'message'          => 'Could not reach PayMongo to verify payment',
+                'message' => 'Could not reach PayMongo to verify payment',
             ], 502);
         }
 
-        $data          = $response->json();
+        $data = $response->json();
         $paymentStatus = $data['data']['attributes']['payment_status'] ?? null;
         // Also check nested payments array for paid status
-        $payments      = $data['data']['attributes']['payments'] ?? [];
-        $firstPayment  = $payments[0] ?? null;
+        $payments = $data['data']['attributes']['payments'] ?? [];
+        $firstPayment = $payments[0] ?? null;
         $firstPaymentStatus = $firstPayment['data']['attributes']['status'] ?? ($firstPayment['attributes']['status'] ?? null);
-        $paymentId     = $firstPayment['data']['id'] ?? ($firstPayment['id'] ?? $data['data']['id'] ?? null);
+        $paymentId = $firstPayment['data']['id'] ?? ($firstPayment['id'] ?? $data['data']['id'] ?? null);
 
         \Log::info('PayMongo payment_status extracted', [
-            'repair_id'         => $repair->id,
-            'payment_status'    => $paymentStatus,
-            'first_payment_id'  => $paymentId,
-            'first_pay_status'  => $firstPaymentStatus,
-            'payments_count'    => count($payments),
+            'repair_id' => $repair->id,
+            'payment_status' => $paymentStatus,
+            'first_payment_id' => $paymentId,
+            'first_pay_status' => $firstPaymentStatus,
+            'payments_count' => count($payments),
         ]);
 
         // Accept 'paid' on the session OR a paid individual payment in the payments array
         $isVerified = ($paymentStatus === 'paid') || ($firstPaymentStatus === 'paid');
 
-        if (!$isVerified) {
+        if (! $isVerified) {
             if ($isExpired) {
                 $settlementService->recordRepairPaymentFailure($repair, 'paymongo_session_expired');
 
                 return response()->json([
-                    'success'          => false,
+                    'success' => false,
                     'payment_verified' => false,
-                    'expired'          => true,
-                    'message'          => 'Payment session expired. Please create a new payment session.',
+                    'expired' => true,
+                    'message' => 'Payment session expired. Please create a new payment session.',
                 ], 410);
             }
 
@@ -3187,10 +3226,10 @@ class RepairRequestController extends Controller
             }
 
             return response()->json([
-                'success'          => false,
+                'success' => false,
                 'payment_verified' => false,
-                'payment_status'   => $paymentStatus,
-                'message'          => 'Payment has not been completed yet',
+                'payment_status' => $paymentStatus,
+                'message' => 'Payment has not been completed yet',
             ]);
         }
 
@@ -3224,17 +3263,17 @@ class RepairRequestController extends Controller
             ], 409);
         }
 
-        \Log::info('Payment verified via PayMongo API for repair: ' . $repair->request_id, [
-            'policy'     => $normalizedPolicy,
-            'link_id'    => $repair->paymongo_link_id,
+        \Log::info('Payment verified via PayMongo API for repair: '.$repair->request_id, [
+            'policy' => $normalizedPolicy,
+            'link_id' => $repair->paymongo_link_id,
             'payment_id' => $paymentId,
-            'result'     => $settlementResult,
+            'result' => $settlementResult,
         ]);
 
         return response()->json([
-            'success'          => true,
+            'success' => true,
             'payment_verified' => true,
-            'data'             => $repair->fresh(['services', 'shopOwner', 'repairer']),
+            'data' => $repair->fresh(['services', 'shopOwner', 'repairer']),
         ]);
     }
 
@@ -3266,6 +3305,7 @@ class RepairRequestController extends Controller
         }
 
         $expected = $this->buildPaymentReturnSignature($scope, $resourceId, $timestamp);
+
         return hash_equals($expected, $signature);
     }
 
@@ -3278,7 +3318,7 @@ class RepairRequestController extends Controller
     {
         $shopOwner = ShopOwner::find($shopOwnerId);
 
-        if (!$shopOwner) {
+        if (! $shopOwner) {
             return response()->json(['success' => false, 'message' => 'Shop not found'], 404);
         }
 
@@ -3315,12 +3355,12 @@ class RepairRequestController extends Controller
         }
 
         return response()->json([
-            'success'      => true,
+            'success' => true,
             'active_count' => $activeCount,
-            'limit'        => $limit,
+            'limit' => $limit,
             'repairer_count' => $repairerCount,
             'limit_per_repairer' => $perRepairerLimit,
-            'is_full'      => $activeCount >= $limit,
+            'is_full' => $activeCount >= $limit,
         ]);
     }
 
@@ -3456,7 +3496,7 @@ class RepairRequestController extends Controller
                     return false;
                 }
 
-                if (!in_array((string) ($line->tender_type ?? ''), $gatewayTenderTypes, true)) {
+                if (! in_array((string) ($line->tender_type ?? ''), $gatewayTenderTypes, true)) {
                     return false;
                 }
 
@@ -3521,7 +3561,7 @@ class RepairRequestController extends Controller
         }
 
         $paymongoPaymentId = trim((string) ($repair->paymongo_payment_id ?? ''));
-        if (!$this->looksLikeGatewayProviderReference($paymongoPaymentId)) {
+        if (! $this->looksLikeGatewayProviderReference($paymongoPaymentId)) {
             return null;
         }
 
@@ -3547,7 +3587,7 @@ class RepairRequestController extends Controller
 
         return DB::transaction(function () use ($repair, $actorUserId, $paidAmount, $taxBreakdown, $paymongoPaymentId, $isCardLikeReference) {
             $transaction = PosTransaction::create([
-                'transaction_no' => 'POS-BKF-' . now()->format('YmdHis') . '-' . str_pad((string) random_int(1, 9999), 4, '0', STR_PAD_LEFT),
+                'transaction_no' => 'POS-BKF-'.now()->format('YmdHis').'-'.str_pad((string) random_int(1, 9999), 4, '0', STR_PAD_LEFT),
                 'shop_owner_id' => (int) $repair->shop_owner_id,
                 'module_type' => 'repair',
                 'module_reference_id' => (int) $repair->id,
@@ -3579,7 +3619,7 @@ class RepairRequestController extends Controller
 
             app(RepairPosReceiptService::class)->issue($transaction->fresh('paymentLines'));
 
-            if (!$repair->latest_pos_transaction_id) {
+            if (! $repair->latest_pos_transaction_id) {
                 $repair->update(['latest_pos_transaction_id' => $transaction->id]);
             }
 
@@ -3610,7 +3650,7 @@ class RepairRequestController extends Controller
     private function generateRepairInvoiceReference(): string
     {
         do {
-            $reference = 'RINV-' . now()->format('Ymd') . '-' . strtoupper(substr(uniqid('', true), -4));
+            $reference = 'RINV-'.now()->format('Ymd').'-'.strtoupper(substr(uniqid('', true), -4));
         } while (Invoice::where('reference', $reference)->exists());
 
         return $reference;
@@ -3618,7 +3658,7 @@ class RepairRequestController extends Controller
 
     private function autoGenerateInvoiceForPickedUpRepair(RepairRequest $repair): ?Invoice
     {
-        if (!$repair->shop_owner_id) {
+        if (! $repair->shop_owner_id) {
             return null;
         }
 
@@ -3658,7 +3698,7 @@ class RepairRequestController extends Controller
             'payment_date' => $isSettled ? ($repair->payment_completed_at ?? now()) : null,
             'payment_method' => 'repair_service',
             'job_reference' => (string) $repair->request_id,
-            'notes' => 'Auto-generated from Repair Request #' . $repair->request_id,
+            'notes' => 'Auto-generated from Repair Request #'.$repair->request_id,
             'meta' => [
                 'source' => 'repair_request',
                 'repair_request_id' => $repair->id,
@@ -3674,9 +3714,9 @@ class RepairRequestController extends Controller
         ]);
 
         $serviceSummary = $repair->services->pluck('name')->filter()->values()->implode(', ');
-        $description = 'Repair Service #' . $repair->request_id;
+        $description = 'Repair Service #'.$repair->request_id;
         if ($serviceSummary !== '') {
-            $description .= ' - ' . $serviceSummary;
+            $description .= ' - '.$serviceSummary;
         }
 
         InvoiceItem::create([
@@ -3728,12 +3768,13 @@ class RepairRequestController extends Controller
 
         $materialsTotal = round((float) $repair->materialUsages->sum(function ($usage) {
             $unitPrice = (float) ($usage->inventoryItem->price ?? 0);
+
             return ((int) $usage->quantity_used) * $unitPrice;
         }), 2);
 
         $packagePrice = round((float) ($repair->package_price ?? 0), 2);
         $addOnsTotal = round((float) ($repair->add_ons_total ?? 0), 2);
-        $baseTotal = !is_null($repair->repair_package_id)
+        $baseTotal = ! is_null($repair->repair_package_id)
             ? round($packagePrice + $addOnsTotal, 2)
             : round((float) ($repair->total ?? 0), 2);
         // Keep customer-facing final total anchored to the billable base amount.

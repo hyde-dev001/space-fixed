@@ -7,11 +7,12 @@ use App\Models\Notification;
 use App\Models\PosPaymentLine;
 use App\Models\PosRefund;
 use App\Models\PosTransaction;
+use App\Models\RepairPaymentSession;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Services\ShopOwnerApprovalPolicyService;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -51,6 +52,122 @@ class RepairPosRefundService
             ->sum('approved_amount');
 
         return max(0.0, round($paid - $refunded, 2));
+    }
+
+    public function computeRecordedPaidIntakeDeliveryAmount(int $repairId): float
+    {
+        $repair = RepairRequest::query()->find($repairId);
+        if (! $repair) {
+            return 0.0;
+        }
+
+        $posAmount = (float) PosTransaction::query()
+            ->where('module_type', 'repair')
+            ->where('module_reference_id', $repairId)
+            ->whereIn('status', ['paid', 'partially_refunded', 'refunded'])
+            ->get()
+            ->sum(function (PosTransaction $transaction): float {
+                $metadata = is_array($transaction->metadata) ? $transaction->metadata : [];
+                $leg = $metadata['leg'] ?? null;
+                if ($leg !== 'intake' && ! ($leg === null && ($metadata['phase'] ?? null) === 'initial')) {
+                    return 0.0;
+                }
+
+                return (float) ($metadata['delivery_amount'] ?? 0);
+            });
+        $onlineAmount = (float) RepairPaymentSession::query()
+            ->where('repair_request_id', $repairId)
+            ->where('phase', 'initial')
+            ->where('status', 'paid')
+            ->sum('delivery_amount');
+        $recorded = max($posAmount, $onlineAmount);
+
+        if ($recorded <= 0
+            && (string) $repair->intake_delivery_method === 'shop_pickup'
+            && $repair->intake_logistics_locked_at
+            && (float) $repair->total_paid_amount >= (float) $repair->intake_delivery_fee) {
+            $recorded = (float) $repair->intake_delivery_fee;
+        }
+
+        $paid = max((float) $repair->total_paid_amount, $this->sumRepairPosPaidAmount($repairId));
+
+        return max(0.0, round(min($recorded, $paid), 2));
+    }
+
+    public function resolveRecordedRefundSource(RepairRequest $repair, int $actorId): ?PosTransaction
+    {
+        $source = PosTransaction::query()
+            ->where('module_type', 'repair')
+            ->where('module_reference_id', $repair->id)
+            ->whereIn('status', ['paid', 'partially_refunded', 'refunded'])
+            ->latest('paid_at')
+            ->latest('id')
+            ->first();
+        if ($source) {
+            return $source;
+        }
+
+        $paymentReference = collect(is_array($repair->paymongo_payment_ids) ? $repair->paymongo_payment_ids : [])
+            ->push((string) ($repair->paymongo_payment_id ?? ''))
+            ->map(fn ($reference) => trim((string) $reference))
+            ->first(fn (string $reference): bool => $this->looksLikeGatewayProviderReference($reference));
+        $paidAmount = round((float) $repair->total_paid_amount, 2);
+        if (! $paymentReference || $paidAmount <= 0) {
+            return null;
+        }
+
+        return DB::transaction(function () use ($repair, $actorId, $paymentReference, $paidAmount): PosTransaction {
+            $lockedRepair = RepairRequest::query()->lockForUpdate()->findOrFail($repair->id);
+            $existing = PosTransaction::query()
+                ->where('module_type', 'repair')
+                ->where('module_reference_id', $repair->id)
+                ->whereIn('status', ['paid', 'partially_refunded', 'refunded'])
+                ->latest('paid_at')
+                ->latest('id')
+                ->first();
+            if ($existing) {
+                return $existing;
+            }
+
+            $pickupFee = $this->computeRecordedPaidIntakeDeliveryAmount((int) $repair->id);
+            $transaction = PosTransaction::create([
+                'transaction_no' => 'POS-BKF-RFD-' . now()->format('YmdHis') . '-' . strtoupper(Str::random(4)),
+                'shop_owner_id' => (int) $repair->shop_owner_id,
+                'module_type' => 'repair',
+                'module_reference_id' => (int) $repair->id,
+                'customer_type' => 'registered',
+                'customer_id' => (int) $repair->user_id,
+                'due_type' => 'full',
+                'subtotal' => $paidAmount,
+                'tax_amount' => 0,
+                'discount_amount' => 0,
+                'total_amount' => $paidAmount,
+                'paid_amount' => $paidAmount,
+                'status' => 'paid',
+                'paid_at' => now(),
+                'created_by' => $actorId > 0 ? $actorId : null,
+                'metadata' => [
+                    'source' => 'repair_refund_online_backfill',
+                    'phase' => 'initial',
+                    'leg' => 'intake',
+                    'service_amount' => max(0.0, round($paidAmount - $pickupFee, 2)),
+                    'delivery_amount' => $pickupFee,
+                ],
+            ]);
+            PosPaymentLine::create([
+                'pos_transaction_id' => $transaction->id,
+                'tender_type' => str_starts_with(strtolower($paymentReference), 'pmc_')
+                    ? 'paymongo_card'
+                    : 'paymongo_wallet',
+                'provider_reference' => $paymentReference,
+                'amount' => $paidAmount,
+                'status' => 'paid',
+                'paid_at' => now(),
+            ]);
+            $lockedRepair->update(['latest_pos_transaction_id' => $transaction->id]);
+
+            return $transaction;
+        });
     }
 
     public function requestRefund(PosTransaction $source, array $payload, int $actorId): PosRefund
