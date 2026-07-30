@@ -93,6 +93,7 @@ class RefundApprovalController extends Controller
 
         $validated = $request->validate([
             'approval_note' => 'nullable|string|max:1000',
+            'approved_amount' => 'nullable|numeric|min:0.01',
         ]);
 
         $result = $this->orderRefundService->approveRequestedRefund(
@@ -100,6 +101,7 @@ class RefundApprovalController extends Controller
             stage: 'finance',
             processedBy: (int) $user->id,
             approvalNote: $validated['approval_note'] ?? null,
+            approvedAmount: isset($validated['approved_amount']) ? (float) $validated['approved_amount'] : null,
         );
 
         if (in_array((string) ($result['result'] ?? ''), ['failed', 'invalid_state', 'already_approved', 'already_refunded'], true)) {
@@ -361,9 +363,15 @@ class RefundApprovalController extends Controller
             $lineBasedAmount = round((float) $refund->items->sum(fn ($line) => (float) ($line->line_amount ?? 0)), 2);
         }
 
-        $effectiveAmount = $lineBasedAmount > 0
+        $isExhaustedDeliveryRefund = (string) ($refund->reason_code ?? '') === 'delivery_attempts_exhausted';
+        $effectiveAmount = !$isExhaustedDeliveryRefund && $lineBasedAmount > 0
             ? $lineBasedAmount
             : round((float) ($refund->amount ?? 0), 2);
+        $shippingFee = round(min(max(0, (float) ($order->shipping_fee ?? 0)), $effectiveAmount), 2);
+        $canAdjustRefundAmount = $isExhaustedDeliveryRefund
+            && $financeStatus === 'pending'
+            && $shippingFee > 0
+            && str_contains($cleanReasonNote, OrderRefundService::FINANCE_SHIPPING_DECISION_MARKER);
 
         $requiresOwnerApproval = $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForRefund(
             (int) ($refund->shop_owner_id ?? 0),
@@ -398,6 +406,10 @@ class RefundApprovalController extends Controller
             'customerName' => (string) ($refund->customer?->name ?? 'Unknown Customer'),
             'orderTotal' => '₱' . number_format($orderTotal, 2),
             'refundAmount' => '₱' . number_format($effectiveAmount, 2),
+            'refundAmountValue' => $effectiveAmount,
+            'canAdjustRefundAmount' => $canAdjustRefundAmount,
+            'refundAmountWithoutShipping' => round(max(0, $effectiveAmount - $shippingFee), 2),
+            'shippingFee' => $shippingFee,
             'refundMethod' => $this->humanizeRefundMethod($refund->requested_refund_method),
             'requestedBy' => (string) ($refund->customer?->name ?? 'Customer'),
             'requestDate' => optional($refund->requested_at)->format('Y-m-d') ?? optional($refund->created_at)->format('Y-m-d'),

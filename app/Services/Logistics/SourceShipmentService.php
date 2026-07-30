@@ -254,9 +254,9 @@ class SourceShipmentService
         });
     }
 
-    public function ensureRepairReturnShipment(RepairRequest $repair): Shipment
+    public function ensureRepairReturnShipment(RepairRequest $repair, ?array $requestedSchedule = null): Shipment
     {
-        return DB::transaction(function () use ($repair): Shipment {
+        return DB::transaction(function () use ($repair, $requestedSchedule): Shipment {
             $lockedRepair = RepairRequest::query()
                 ->with('shopOwner')
                 ->whereKey($repair->id)
@@ -294,6 +294,15 @@ class SourceShipmentService
                 isset($snapshot['latitude']) ? (float) $snapshot['latitude'] : null,
                 isset($snapshot['longitude']) ? (float) $snapshot['longitude'] : null,
             );
+            if (! empty($requestedSchedule['scheduled_delivery_date'])
+                && in_array($requestedSchedule['delivery_window'] ?? null, ['morning', 'afternoon'], true)) {
+                $schedule = [
+                    ...$schedule,
+                    'scheduled_delivery_date' => $requestedSchedule['scheduled_delivery_date'],
+                    'delivery_window' => $requestedSchedule['delivery_window'],
+                    'schedule_status' => 'scheduled',
+                ];
+            }
             $legData = [
                 'leg_type' => 'outbound',
                 'origin_snapshot' => [

@@ -2,15 +2,15 @@
 
 namespace App\Services;
 
+use App\Models\Logistics\DeliveryBatch;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
-use App\Models\Logistics\DeliveryBatch;
 use App\Models\RepairPaymentSession;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\UserAddress;
-use App\Services\Logistics\DeliveryScheduleService;
 use App\Services\Logistics\DeliveryEventService;
+use App\Services\Logistics\DeliveryScheduleService;
 use App\Services\Logistics\SourceShipmentService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -24,8 +24,7 @@ final class RepairDeliveryService
         private SourceShipmentService $sourceShipments,
         private NotificationService $notifications,
         private DeliveryEventService $events,
-    ) {
-    }
+    ) {}
 
     public function snapshot(UserAddress $address, string $method): array
     {
@@ -235,7 +234,9 @@ final class RepairDeliveryService
             $sponsoredWarranty = $this->isSponsoredWarranty($lockedRepair);
             $reconciliationStatus = data_get($lockedRepair->logistics_payment_reconciliation, 'status');
             $recovery = $existing ? $this->returnRecoveryState($lockedRepair) : null;
-            $paidRecovery = $existing && $this->activeRedeliveryRequirement($lockedRepair, 'paid');
+            $paidRecovery = $existing
+                ? $this->activeRedeliveryRequirement($lockedRepair, 'paid')
+                : null;
             if (($recovery && ! $paidRecovery)
                 || (! $paidRecovery
                 && ! $sponsoredWarranty
@@ -271,7 +272,15 @@ final class RepairDeliveryService
                 return null;
             }
 
-            $shipment = $this->sourceShipments->ensureRepairReturnShipment($lockedRepair);
+            $shipment = $this->sourceShipments->ensureRepairReturnShipment(
+                $lockedRepair,
+                $paidRecovery
+                    ? [
+                        'scheduled_delivery_date' => $paidRecovery['scheduled_delivery_date'] ?? null,
+                        'delivery_window' => $paidRecovery['delivery_window'] ?? null,
+                    ]
+                    : null,
+            );
             $lockedRepair->update([
                 'status' => 'shipped',
                 'shipped_at' => $lockedRepair->shipped_at ?? now(),
@@ -618,6 +627,8 @@ final class RepairDeliveryService
         string $action,
         string $actorType,
         int $actorId,
+        ?string $scheduledDeliveryDate = null,
+        ?string $deliveryWindow = null,
     ): array {
         if (! in_array($action, ['schedule_redelivery', 'shop_pickup'], true)) {
             throw ValidationException::withMessages([
@@ -625,7 +636,14 @@ final class RepairDeliveryService
             ]);
         }
 
-        $result = DB::transaction(function () use ($repair, $action, $actorType, $actorId): array {
+        $result = DB::transaction(function () use (
+            $repair,
+            $action,
+            $actorType,
+            $actorId,
+            $scheduledDeliveryDate,
+            $deliveryWindow,
+        ): array {
             $locked = RepairRequest::query()->whereKey($repair->id)->lockForUpdate()->firstOrFail();
             $recovery = $this->returnRecoveryState($locked);
             if (! $recovery) {
@@ -668,6 +686,8 @@ final class RepairDeliveryService
                     'recovery_key' => $key,
                     'selected_by_type' => $actorType,
                     'selected_by_id' => $actorId,
+                    'scheduled_delivery_date' => $scheduledDeliveryDate,
+                    'delivery_window' => $deliveryWindow,
                     'created_at' => $entry['created_at'] ?? now()->toISOString(),
                     'updated_at' => now()->toISOString(),
                 ];
@@ -726,6 +746,8 @@ final class RepairDeliveryService
                     'recovery_key' => $key,
                     'selected_by_type' => $actorType,
                     'selected_by_id' => $actorId,
+                    'scheduled_delivery_date' => null,
+                    'delivery_window' => null,
                     'created_at' => $entry['created_at'] ?? now()->toISOString(),
                     'updated_at' => now()->toISOString(),
                 ];
@@ -791,8 +813,7 @@ final class RepairDeliveryService
         $entries = collect(data_get($current, 'entries', []))
             ->filter(fn ($entry): bool => is_array($entry))
             ->values();
-        $index = $entries->search(fn (array $entry): bool =>
-            (string) ($entry['type'] ?? '') === 'return_recovery'
+        $index = $entries->search(fn (array $entry): bool => (string) ($entry['type'] ?? '') === 'return_recovery'
             && (string) ($entry['action'] ?? '') === 'collect_redelivery_fee'
             && (string) ($entry['status'] ?? '') === 'awaiting_payment'
             && (string) ($entry['recovery_key'] ?? '') === $recoveryKey
@@ -880,6 +901,8 @@ final class RepairDeliveryService
             'label' => 'Returned to shop—awaiting customer arrangement',
             'state' => $state,
             'key' => $key,
+            'scheduled_delivery_date' => $entry['scheduled_delivery_date'] ?? null,
+            'delivery_window' => $entry['delivery_window'] ?? null,
             'can_schedule_redelivery' => $state === 'awaiting_arrangement',
             'can_set_shop_pickup' => (string) ($entry['status'] ?? '') !== 'paid',
         ];

@@ -104,6 +104,59 @@ class RepairReturnRecoveryTest extends TestCase
         $this->assertSame(1, $this->recoveryNotificationCount($repair, 'awaiting_payment'));
     }
 
+    public function test_customer_chooses_a_scheduled_redelivery_for_their_returned_repair(): void
+    {
+        [$repair, $shop, , , $return, $proof] = $this->returnedRepairFixture();
+        $customer = User::findOrFail($repair->user_id);
+        $deliveryDate = now()->addDays(2)->toDateString();
+        app(ShipmentLegService::class)->confirmReturnReceipt($return, $proof, $shop);
+
+        $endpoint = "/api/customer/repairs/{$repair->id}/return-recovery";
+        $this->actingAs($customer, 'user')
+            ->postJson($endpoint, ['action' => 'schedule_redelivery'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['scheduled_delivery_date', 'delivery_window']);
+
+        $this->actingAs($customer, 'user')
+            ->postJson($endpoint, [
+                'action' => 'schedule_redelivery',
+                'scheduled_delivery_date' => $deliveryDate,
+                'delivery_window' => 'afternoon',
+            ])
+            ->assertOk()
+            ->assertJsonPath('recovery.state', 'awaiting_payment');
+
+        $entry = collect(data_get($repair->fresh()->logistics_payment_reconciliation, 'entries', []))
+            ->firstWhere('recovery_key', "return-to-shop:{$return->id}");
+        $this->assertSame(User::class, $entry['selected_by_type']);
+        $this->assertSame($customer->id, $entry['selected_by_id']);
+        $this->assertSame($deliveryDate, $entry['scheduled_delivery_date']);
+        $this->assertSame('afternoon', $entry['delivery_window']);
+
+        $outsider = User::factory()->create();
+        $this->actingAs($outsider, 'user')
+            ->postJson($endpoint, ['action' => 'shop_pickup'])
+            ->assertNotFound();
+    }
+
+    public function test_customer_can_choose_free_shop_pickup_for_their_returned_repair(): void
+    {
+        [$repair, $shop, , , $return, $proof] = $this->returnedRepairFixture();
+        $customer = User::findOrFail($repair->user_id);
+        app(ShipmentLegService::class)->confirmReturnReceipt($return, $proof, $shop);
+
+        $this->actingAs($customer, 'user')
+            ->postJson("/api/customer/repairs/{$repair->id}/return-recovery", [
+                'action' => 'shop_pickup',
+            ])
+            ->assertOk()
+            ->assertJsonPath('recovery.state', 'shop_pickup');
+
+        $repair->refresh();
+        $this->assertSame('walk_in', $repair->return_delivery_method);
+        $this->assertSame(0.0, (float) $repair->return_delivery_fee);
+    }
+
     public function test_shop_pickup_invalidates_unpaid_redelivery_but_rejects_a_paid_one(): void
     {
         [$repair, $shop, , , $return, $proof] = $this->returnedRepairFixture();
@@ -178,13 +231,20 @@ class RepairReturnRecoveryTest extends TestCase
     public function test_redelivery_payment_charges_only_the_new_fee_and_reopens_the_same_shipment(): void
     {
         [$repair, $shop, $shipment, $original, $return, $proof] = $this->returnedRepairFixture();
+        $deliveryDate = now()->addDays(2)->toDateString();
         app(ShipmentLegService::class)->confirmReturnReceipt($return, $proof, $shop);
         app(RepairDeliveryService::class)->resolveReturnRecovery(
             $repair->fresh(),
             'schedule_redelivery',
             ShopOwner::class,
             $shop->id,
+            $deliveryDate,
+            'afternoon',
         );
+        $scheduledEntry = collect(data_get($repair->fresh()->logistics_payment_reconciliation, 'entries', []))
+            ->firstWhere('recovery_key', "return-to-shop:{$return->id}");
+        $this->assertSame($deliveryDate, $scheduledEntry['scheduled_delivery_date']);
+        $this->assertSame('afternoon', $scheduledEntry['delivery_window']);
         $fee = $this->confirmCoveredRedeliveryPlan($repair->fresh(), $shop);
 
         $payments = app(PaymentSettlementService::class);
@@ -248,6 +308,8 @@ class RepairReturnRecoveryTest extends TestCase
         $newLeg = $shipment->fresh()->legs()->where('sequence', 3)->firstOrFail();
         $this->assertSame(3, $newLeg->sequence);
         $this->assertSame('pending', $newLeg->status->value);
+        $this->assertSame($deliveryDate, $newLeg->scheduled_delivery_date?->toDateString());
+        $this->assertSame('afternoon', $newLeg->delivery_window);
         $this->assertSame('returned', $original->fresh()->resolution_type);
         $this->assertSame('delivered', $return->fresh()->status->value);
         $entry = collect(data_get($settled->logistics_payment_reconciliation, 'entries', []))

@@ -15,8 +15,21 @@ use Illuminate\Support\Str;
 
 class OrderRefundService
 {
+    public const FINANCE_SHIPPING_DECISION_MARKER = 'Finance must decide whether the paid shipping fee';
+
     /** @var array<string, bool>|null */
     private ?array $orderRefundColumns = null;
+
+    private const CUSTOMER_CAUSED_DELIVERY_REASONS = [
+        'recipient_unavailable',
+        'wrong_or_incomplete_address',
+        'recipient_refused',
+    ];
+
+    private const OPERATIONS_CAUSED_DELIVERY_REASONS = [
+        'item_damaged',
+        'vehicle_or_delivery_problem',
+    ];
 
     public function __construct(
         private readonly PaymongoRefundService $paymongoRefundService,
@@ -26,9 +39,27 @@ class OrderRefundService
     ) {
     }
 
-    public function reserveFailedDeliveryRefund(Order $order, ShipmentLeg $outboundLeg): array
+    public function reserveFailedDeliveryRefund(
+        Order $order,
+        ShipmentLeg $outboundLeg,
+        ?string $failureReason = null,
+    ): array
     {
         $order->loadMissing('items');
+        $customerCaused = in_array($failureReason, self::CUSTOMER_CAUSED_DELIVERY_REASONS, true);
+        $operationsCaused = in_array($failureReason, self::OPERATIONS_CAUSED_DELIVERY_REASONS, true);
+        $shippingFee = round(min(
+            max(0, (float) $order->shipping_fee),
+            $this->resolveOrderCapturedAmount($order),
+        ), 2);
+        $feeLabel = number_format($shippingFee, 2, '.', ',');
+        $reasonLabel = $failureReason ?: 'legacy_or_unknown';
+        $reasonNote = match (true) {
+            $customerCaused => "System-confirmed delivery attempts exhausted. The failure was customer-caused ({$reasonLabel}); the paid shipping fee of PHP {$feeLabel} was retained. Shop Owner approval was bypassed for this workflow.",
+            $operationsCaused => "System-confirmed delivery attempts exhausted. The failure was operations-caused ({$reasonLabel}); this refund includes the paid shipping fee of PHP {$feeLabel}. Shop Owner approval was bypassed for this workflow.",
+            $shippingFee > 0 => 'System-confirmed delivery attempts exhausted. ' . self::FINANCE_SHIPPING_DECISION_MARKER . " of PHP {$feeLabel} is refundable for {$reasonLabel}. The full remaining balance was requested. Shop Owner approval was bypassed for this workflow.",
+            default => "System-confirmed delivery attempts exhausted for {$reasonLabel}. No paid shipping fee needs a separate Finance decision. Shop Owner approval was bypassed for this workflow.",
+        };
         $lines = $order->items->map(fn ($item) => [
             'order_item_id' => (int) $item->id,
             'product_id' => (int) $item->product_id,
@@ -58,7 +89,8 @@ class OrderRefundService
             'currency' => 'PHP',
             'requested_refund_method' => 'original_payment_method',
             'reason_code' => 'delivery_attempts_exhausted',
-            'reason_note' => 'System-confirmed delivery attempts exhausted. Shop Owner approval was bypassed for this workflow.',
+            'reason_note' => $reasonNote,
+            'exclude_shipping_fee' => $customerCaused,
             'idempotency_key' => "delivery-attempts-exhausted:{$order->id}:{$outboundLeg->id}",
             'requested_at' => now(),
         ], $lines);
@@ -68,6 +100,8 @@ class OrderRefundService
     {
         return DB::transaction(function () use ($order, $payload, $lines, $capturedAmount) {
             $lockedOrder = Order::query()->with('items')->lockForUpdate()->findOrFail($order->id);
+            $excludeShippingFee = (bool) ($payload['exclude_shipping_fee'] ?? false);
+            unset($payload['exclude_shipping_fee']);
             $idempotencyKey = trim((string) ($payload['idempotency_key'] ?? ''));
 
             $sameReservation = $idempotencyKey !== ''
@@ -107,9 +141,12 @@ class OrderRefundService
                 ->lockForUpdate()
                 ->sum('amount');
             $availableAmount = round(max(0, $capturedTotal - $succeededAmount), 2);
+            $excludedShippingFee = $excludeShippingFee
+                ? min(max(0, (float) $lockedOrder->shipping_fee), $availableAmount)
+                : 0;
             $requestedAmount = array_key_exists('amount', $payload)
                 ? round((float) $payload['amount'], 2)
-                : $availableAmount;
+                : round(max(0, $availableAmount - $excludedShippingFee), 2);
 
             if ($requestedAmount <= 0 || $requestedAmount > $availableAmount) {
                 return [
@@ -329,6 +366,7 @@ class OrderRefundService
         string $stage = 'finance',
         ?int $processedBy = null,
         ?string $approvalNote = null,
+        ?float $approvedAmount = null,
     ): array
     {
         $refund->loadMissing('order.shopOwner');
@@ -343,6 +381,8 @@ class OrderRefundService
         }
 
         $isExhaustedDeliveryRefund = (string) ($refund->reason_code ?? '') === 'delivery_attempts_exhausted';
+        $financeShippingDecisionRequired = $isExhaustedDeliveryRefund
+            && str_contains((string) ($refund->reason_note ?? ''), self::FINANCE_SHIPPING_DECISION_MARKER);
         if ($isExhaustedDeliveryRefund && strtolower(trim($stage)) === 'finance'
             && (string) ($refund->return_status ?? '') !== 'received') {
             return [
@@ -410,8 +450,43 @@ class OrderRefundService
         $previousFinanceStatus = (string) ($refund->finance_status ?? 'pending');
         $previousShopOwnerStatus = (string) ($refund->shop_owner_status ?? 'pending');
 
+        if ($stageNormalized === 'finance' && $financeShippingDecisionRequired) {
+            $fullAmount = round((float) ($refund->amount ?? 0), 2);
+            $shippingFee = round(min(max(0, (float) ($order->shipping_fee ?? 0)), $fullAmount), 2);
+            $productsOnlyAmount = round(max(0, $fullAmount - $shippingFee), 2);
+
+            if ($approvedAmount === null) {
+                return [
+                    'result' => 'invalid_state',
+                    'message' => 'Choose whether this refund includes the paid shipping fee.',
+                    'refund' => $refund,
+                ];
+            }
+
+            $approvedAmount = round($approvedAmount, 2);
+            if (!in_array($approvedAmount, [$productsOnlyAmount, $fullAmount], true)) {
+                return [
+                    'result' => 'invalid_state',
+                    'message' => 'Refund amount must be either products only or the full amount including shipping.',
+                    'refund' => $refund,
+                ];
+            }
+
+            $payload['amount'] = $approvedAmount;
+            $payload['reason_note'] = trim((string) ($refund->reason_note ?? '') . "\n\nFinance shipping decision: "
+                . ($approvedAmount === $fullAmount
+                    ? "included PHP {$shippingFee} shipping fee."
+                    : "retained PHP {$shippingFee} shipping fee."));
+        } elseif ($approvedAmount !== null) {
+            return [
+                'result' => 'invalid_state',
+                'message' => 'Refund amount cannot be changed for this request.',
+                'refund' => $refund,
+            ];
+        }
+
         if ($approvalNote) {
-            $payload['reason_note'] = trim((string) ($refund->reason_note ? $refund->reason_note . "\n\n" : '') . 'Approval note: ' . $approvalNote);
+            $payload['reason_note'] = trim((string) (($payload['reason_note'] ?? $refund->reason_note) ? ($payload['reason_note'] ?? $refund->reason_note) . "\n\n" : '') . 'Approval note: ' . $approvalNote);
         }
 
         if ($stageNormalized === 'staff') {

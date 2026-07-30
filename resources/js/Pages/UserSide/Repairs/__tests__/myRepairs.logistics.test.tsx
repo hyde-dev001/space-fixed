@@ -503,7 +503,7 @@ describe("MyRepairs return logistics", () => {
     expect(screen.getByRole("button", { name: "Use saved return address" })).toBeDisabled();
   });
 
-  it("shows the returned-to-shop recovery state without premature return actions", async () => {
+  it("lets the customer schedule re-delivery from the returned-to-shop state", async () => {
     mocks.repair = repair({
       payment_status: "completed",
       return_recovery: {
@@ -519,12 +519,49 @@ describe("MyRepairs return logistics", () => {
     expect(screen.getByRole("heading", {
       name: "Returned to shop—awaiting customer arrangement",
     })).toBeInTheDocument();
-    expect(screen.getByText(/repaired shoes are safely at the shop/i)).toBeInTheDocument();
+    expect(screen.getByText(/choose re-delivery or free shop pickup/i)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Re-delivery date"), {
+      target: { value: "2026-08-02" },
+    });
+    fireEvent.change(screen.getByLabelText("Delivery window"), {
+      target: { value: "afternoon" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Schedule re-delivery" }));
+
+    await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
+      "/api/customer/repairs/77/return-recovery",
+      {
+        action: "schedule_redelivery",
+        scheduled_delivery_date: "2026-08-02",
+        delivery_window: "afternoon",
+      },
+    ));
     expect(screen.queryByRole("heading", { name: "Return delivery plan" })).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Return delivery tracking" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Pay new delivery fee" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Awaiting handoff" })).not.toBeInTheDocument();
     expect(mocks.get).not.toHaveBeenCalledWith("/tracking/shipments/22", expect.anything());
+  });
+
+  it("lets the customer choose free shop pickup from the returned-to-shop state", async () => {
+    mocks.repair = repair({
+      payment_status: "completed",
+      return_recovery: {
+        code: "returned_to_shop_awaiting_arrangement",
+        label: "Returned to shop—awaiting customer arrangement",
+        state: "awaiting_arrangement",
+      },
+      redelivery_payment_due: false,
+    });
+
+    await renderReadyRepair();
+
+    fireEvent.click(screen.getByRole("button", { name: "Pick up at shop" }));
+
+    await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
+      "/api/customer/repairs/77/return-recovery",
+      { action: "shop_pickup" },
+    ));
   });
 
   it("shows only the new delivery fee payment after redelivery is scheduled", async () => {
