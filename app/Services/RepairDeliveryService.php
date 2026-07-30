@@ -527,6 +527,12 @@ final class RepairDeliveryService
 
     public function returnHandoff(RepairRequest $repair, bool $paymentSatisfied): array
     {
+        $recovery = $this->returnRecoveryState($repair);
+        $visible = ! (
+            (string) $repair->status === 'cancelled'
+            && $repair->received_at === null
+            && ! $this->hasApprovedProof($repair, 'repair_pickup')
+        );
         $method = match ((string) ($repair->return_delivery_method ?: 'customer_pickup')) {
             'pickup' => 'customer_pickup',
             default => (string) ($repair->return_delivery_method ?: 'customer_pickup'),
@@ -571,6 +577,8 @@ final class RepairDeliveryService
         }
 
         return [
+            'visible' => $visible,
+            'recovery' => $visible ? $recovery : null,
             'method' => $method,
             'can_release' => $canRelease,
             'can_confirm_receipt' => (bool) $repair->pickup_enabled
@@ -597,6 +605,70 @@ final class RepairDeliveryService
                 'occurred_at' => optional($event->created_at)->toISOString(),
                 'created_at' => optional($event->created_at)->toISOString(),
             ])->values()->all(),
+        ];
+    }
+
+    private function returnRecoveryState(RepairRequest $repair): ?array
+    {
+        if ((bool) $repair->pickup_enabled || (string) $repair->status === 'picked_up') {
+            return null;
+        }
+
+        $shipment = $repair->relationLoaded('logisticsShipments')
+            ? $repair->logisticsShipments->firstWhere('purpose', 'repair_return')
+            : Shipment::query()
+                ->with('legs.proofs')
+                ->where('source_type', 'repair_request')
+                ->where('source_id', $repair->id)
+                ->where('purpose', 'repair_return')
+                ->first();
+        if (! $shipment) {
+            return null;
+        }
+
+        $return = $shipment->legs
+            ->where('leg_type', 'return_to_shop')
+            ->filter(fn ($leg): bool => $leg->status->value === 'delivered')
+            ->sortByDesc('sequence')
+            ->first();
+        if (! $return || ! $return->proofs->contains(
+            fn ($proof): bool => $proof->handoff_type === 'receive'
+                && $proof->review_status === 'approved'
+        )) {
+            return null;
+        }
+
+        $original = $shipment->legs->firstWhere('id', $return->return_for_leg_id);
+        $newerOutbound = $shipment->legs->contains(
+            fn ($leg): bool => $leg->leg_type === 'outbound'
+                && (int) $leg->sequence > (int) $return->sequence
+                && $leg->status->value !== 'cancelled'
+        );
+        if (! $original
+            || $original->status->value !== 'cancelled'
+            || $original->resolution_type !== 'returned'
+            || $newerOutbound) {
+            return null;
+        }
+
+        $key = "return-to-shop:{$return->id}";
+        $entry = collect(data_get($repair->logistics_payment_reconciliation, 'entries', []))
+            ->filter(fn ($item): bool => is_array($item))
+            ->first(fn (array $item): bool => (string) ($item['type'] ?? '') === 'return_recovery'
+                && (string) ($item['recovery_key'] ?? '') === $key);
+        $state = match ((string) ($entry['status'] ?? '')) {
+            'awaiting_payment' => 'awaiting_payment',
+            'shop_pickup_selected' => 'shop_pickup',
+            default => 'awaiting_arrangement',
+        };
+
+        return [
+            'code' => 'returned_to_shop_awaiting_arrangement',
+            'label' => 'Returned to shop—awaiting customer arrangement',
+            'state' => $state,
+            'key' => $key,
+            'can_schedule_redelivery' => $state === 'awaiting_arrangement',
+            'can_set_shop_pickup' => (string) ($entry['status'] ?? '') !== 'paid',
         ];
     }
 

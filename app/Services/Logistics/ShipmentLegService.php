@@ -338,6 +338,7 @@ class ShipmentLegService
             $original = ShipmentLeg::query()->lockForUpdate()->findOrFail($return->return_for_leg_id);
             if ($return->status->value === 'delivered' && $proof->review_status === 'approved') {
                 $this->completeFailedDeliveryRefundReturn($return, $original);
+                $this->completeRepairReturnRecovery($return);
 
                 return $return->fresh();
             }
@@ -349,10 +350,39 @@ class ShipmentLegService
             $original->update(['status' => 'cancelled', 'resolution_type' => 'returned']);
             $this->completeFailedDeliveryRefundReturn($return, $original);
             $return->shipment->update(['status' => 'cancelled', 'cancelled_at' => now()]);
+            $this->completeRepairReturnRecovery($return);
             $this->events->record($return->shipment, $return, ['event_type' => 'return_received', 'visibility' => 'customer', 'message' => 'The returned parcel was received by the shop.']);
 
             return $return->fresh();
         });
+    }
+
+    private function completeRepairReturnRecovery(ShipmentLeg $return): void
+    {
+        if ($return->shipment->source_type !== 'repair_request'
+            || $return->shipment->purpose !== 'repair_return') {
+            return;
+        }
+
+        $repair = RepairRequest::query()
+            ->whereKey($return->shipment->source_id)
+            ->lockForUpdate()
+            ->first();
+
+        if (! $repair || (string) $repair->status !== 'shipped') {
+            return;
+        }
+
+        $repair->update([
+            'status' => 'ready_for_pickup',
+            'shipped_at' => null,
+            'pickup_enabled' => false,
+            'pickup_enabled_at' => null,
+            'pickup_enabled_by' => null,
+            'return_logistics_locked_at' => null,
+            'return_address_confirmed_at' => null,
+            'return_address_confirmed_version' => null,
+        ]);
     }
 
     private function completeFailedDeliveryRefundReturn(ShipmentLeg $return, ShipmentLeg $original): void
