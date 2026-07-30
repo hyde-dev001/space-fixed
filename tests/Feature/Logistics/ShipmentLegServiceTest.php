@@ -109,6 +109,28 @@ class ShipmentLegServiceTest extends TestCase
         $this->assertSame('delivered', $leg->fresh()->status->value);
     }
 
+    public function test_repeating_delivered_transition_returns_the_leg_without_duplicate_events(): void
+    {
+        $leg = ShipmentLeg::factory()->create([
+            'status' => 'awaiting_proof_approval',
+            'requires_delivery_proof' => true,
+        ]);
+        HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'handoff_type' => 'delivery',
+            'proof_type' => 'photo',
+            'review_status' => 'approved',
+        ]);
+        $service = app(ShipmentLegService::class);
+
+        $delivered = $service->markDelivered($leg);
+        $replayed = $service->markDelivered($delivered->fresh());
+
+        $this->assertSame($delivered->id, $replayed->id);
+        $this->assertSame('delivered', $replayed->status->value);
+        $this->assertSame(1, DeliveryEvent::where('event_type', 'delivered')->count());
+    }
+
     public function test_leg_cannot_skip_pickup_before_in_transit(): void
     {
         $leg = ShipmentLeg::factory()->create(['status' => 'assigned']);

@@ -502,6 +502,77 @@ describe("MyRepairs return logistics", () => {
     expect(screen.getByRole("radio", { name: /Shop rider delivery/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Use saved return address" })).toBeDisabled();
   });
+
+  it("shows the returned-to-shop recovery state without premature return actions", async () => {
+    mocks.repair = repair({
+      payment_status: "completed",
+      return_recovery: {
+        code: "returned_to_shop_awaiting_arrangement",
+        label: "Returned to shop—awaiting customer arrangement",
+        state: "awaiting_arrangement",
+      },
+      redelivery_payment_due: false,
+    });
+
+    await renderReadyRepair();
+
+    expect(screen.getByRole("heading", {
+      name: "Returned to shop—awaiting customer arrangement",
+    })).toBeInTheDocument();
+    expect(screen.getByText(/repaired shoes are safely at the shop/i)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Return delivery plan" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Return delivery tracking" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pay new delivery fee" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Awaiting handoff" })).not.toBeInTheDocument();
+    expect(mocks.get).not.toHaveBeenCalledWith("/tracking/shipments/22", expect.anything());
+  });
+
+  it("shows only the new delivery fee payment after redelivery is scheduled", async () => {
+    mocks.repair = repair({
+      payment_status: "completed",
+      payment_enabled: true,
+      return_recovery: {
+        code: "returned_to_shop_awaiting_arrangement",
+        label: "Returned to shop—awaiting customer arrangement",
+        state: "awaiting_payment",
+      },
+      redelivery_payment_due: true,
+    });
+
+    await renderReadyRepair();
+
+    const recovery = screen.getByRole("region", { name: "Repair return recovery" });
+    expect(within(recovery).getByText(/confirm your return address, then pay the new delivery fee/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Return delivery plan" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pay new delivery fee" })).toBeEnabled();
+    expect(screen.queryByRole("region", { name: "Return delivery tracking" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Awaiting handoff" })).not.toBeInTheDocument();
+  });
+
+  it("shows free shop pickup recovery without delivery payment", async () => {
+    mocks.repair = repair({
+      payment_status: "completed",
+      return_delivery_method: "walk_in",
+      return_delivery_fee: 0,
+      return_logistics_quote: null,
+      return_recovery: {
+        code: "returned_to_shop_awaiting_arrangement",
+        label: "Returned to shop—awaiting customer arrangement",
+        state: "shop_pickup",
+      },
+      redelivery_payment_due: false,
+    });
+
+    await renderReadyRepair();
+
+    expect(screen.getByRole("heading", { name: "Ready for pickup at shop" })).toBeInTheDocument();
+    const recovery = screen.getByRole("region", { name: "Repair return recovery" });
+    expect(within(recovery).getByText("SoleSpace Makati")).toBeInTheDocument();
+    expect(within(recovery).getByText("9 Repair Avenue")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Return delivery plan" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pay new delivery fee" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Awaiting handoff" })).toBeDisabled();
+  });
 });
 
 describe("MyRepairs warranty logistics", () => {

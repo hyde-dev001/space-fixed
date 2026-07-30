@@ -301,6 +301,8 @@ describe('MyDeliveries task-first hierarchy', () => {
 
 describe('MyDeliveries rider interactions', () => {
   it('clears the selected proof when a batch advances to its next delivery', async () => {
+    const uuid = '2a24f0bd-c8e6-4b34-b36c-f40c6ca14252';
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue(uuid);
     const first = { ...leg(5, 1, 'in_transit'), arrivals: arrived('dropoff') };
     const second = { ...leg(6, 2, 'in_transit'), arrivals: arrived('dropoff') };
     mocks.props.deliveryData.current = workItem('batch', 'in_progress', [first, second]);
@@ -314,6 +316,7 @@ describe('MyDeliveries rider interactions', () => {
       expect.any(FormData),
       expect.any(Object),
     ));
+    expect((mocks.post.mock.calls[0][1] as FormData).get('idempotency_key')).toBe(uuid);
 
     mocks.post.mockClear();
     mocks.props.deliveryData.current = workItem('batch', 'in_progress', [
@@ -788,7 +791,7 @@ describe('MyDeliveries rider interactions', () => {
     expect(screen.queryByRole('button', { name: 'Report issue' })).not.toBeInTheDocument();
   });
 
-  it('locks delivery mutations during an active conflict but leaves contact links available', () => {
+  it('keeps the canonical delivery actionable and explains that conflicting work is blocked', () => {
     mocks.props.deliveryData.current = workItem('single', 'picked_up', [leg(7, null, 'picked_up')]);
     mocks.props.deliveryData.has_active_conflict = true;
     mocks.props.deliveryData.active_conflicts = [
@@ -797,9 +800,46 @@ describe('MyDeliveries rider interactions', () => {
 
     render(<MyDeliveries />);
 
-    expect(screen.getByRole('button', { name: 'Start delivery' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Start delivery' })).toBeEnabled();
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Continue only the Current delivery shown below.',
+    );
     expect(screen.getByRole('link', { name: 'Call' })).toBeVisible();
     expect(screen.getByRole('link', { name: 'Directions' })).toBeVisible();
+  });
+
+  it('lets the rider refresh delivery data without reloading unrelated page props', () => {
+    render(<MyDeliveries />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh deliveries' }));
+
+    expect(mocks.reload).toHaveBeenCalledWith(expect.objectContaining({
+      only: ['deliveryData'],
+      onFinish: expect.any(Function),
+    }));
+  });
+
+  it('refreshes delivery data and explains recovery after a stale action response', async () => {
+    mocks.markInTransit.mockRejectedValueOnce({
+      response: {
+        status: 409,
+        data: { message: 'This delivery changed while you were working.' },
+      },
+    });
+    mocks.props.deliveryData.current = workItem('single', 'picked_up', [
+      leg(7, null, 'picked_up'),
+    ]);
+    render(<MyDeliveries />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start delivery' }));
+
+    await waitFor(() => expect(mocks.reload).toHaveBeenCalledWith(expect.objectContaining({
+      only: ['deliveryData'],
+      onFinish: expect.any(Function),
+    })));
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'This delivery changed while you were working. Delivery list refreshed.',
+    );
   });
 
   it('updates lower-list filters, clears them, and preserves filter state for pagination', () => {

@@ -74,6 +74,40 @@ class DeliveryArrivalTest extends TestCase
         $this->assertSame('in_transit', $leg->fresh()->status->value);
     }
 
+    public function test_only_the_canonical_active_batch_can_record_arrival_when_legacy_work_conflicts(): void
+    {
+        [$currentLeg, $rider, $shop] = $this->fixture('in_transit');
+        $currentBatch = $currentLeg->deliveryBatch;
+        $currentBatch->update(['started_at' => now()->subMinutes(10)]);
+        $profile = $currentBatch->riderProfile;
+        $laterBatch = DeliveryBatch::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'rider_profile_id' => $profile->id,
+            'status' => 'in_progress',
+            'started_at' => now(),
+        ]);
+        $laterLeg = ShipmentLeg::factory()->create([
+            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id,
+            'delivery_batch_id' => $laterBatch->id,
+            'status' => 'in_transit',
+            'destination_snapshot' => ['type' => 'customer', 'latitude' => 14.301, 'longitude' => 120.951],
+        ]);
+        DeliveryAssignment::factory()->create([
+            'shipment_leg_id' => $laterLeg->id,
+            'rider_profile_id' => $profile->id,
+            'status' => 'accepted',
+        ]);
+
+        $this->actingAs($rider, 'user')
+            ->postJson("/api/logistics/legs/{$laterLeg->id}/arrivals", $this->arrivalPayload('dropoff'))
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('active_work');
+
+        $this->actingAs($rider, 'user')
+            ->postJson("/api/logistics/legs/{$currentLeg->id}/arrivals", $this->arrivalPayload('dropoff'))
+            ->assertCreated();
+    }
+
     public function test_reassigned_pickup_records_a_fresh_arrival_for_the_new_assignment(): void
     {
         [$leg, $rider] = $this->fixture('assigned');

@@ -257,6 +257,7 @@ function DeliveryActions({
   const [arrivalNotes, setArrivalNotes] = useState('');
   const arrivalEvidence = useRef<Record<string, unknown> | null>(null);
   const issueKeys = useRef<Record<string, string>>({});
+  const proofKeys = useRef<Record<string, string>>({});
   const issuePanelRef = useRef<HTMLDivElement>(null);
   const mutationDisabled = locked || !online || pendingAction !== null;
   const buttonClass =
@@ -298,6 +299,15 @@ function DeliveryActions({
   const assignment = delivery.assignments?.find(({ status }) =>
     ['assigned', 'accepted'].includes(status),
   );
+  const rejectedProofId = delivery.proofs
+    .filter(({ review_status }) => review_status === 'rejected')
+    .at(-1)?.id ?? 'initial';
+  const proofIdempotencyKey = (handoffType: string) => {
+    const requestKey = `${handoffType}:${delivery.id}:${assignment?.id ?? 'none'}:${rejectedProofId}`;
+
+    return proofKeys.current[requestKey]
+      ?? (proofKeys.current[requestKey] = crypto.randomUUID());
+  };
   const issueKey = `${isRepairPickup ? 'pickup-issue' : 'issue'}:${delivery.id}`;
   const issueRequestKey = `${isRepairPickup ? 'pickup' : 'delivery'}:${delivery.id}:${assignment?.id ?? 'none'}`;
   const issueOptions = isRepairPickup ? pickupIssueReasons : deliveryIssueReasons;
@@ -621,6 +631,7 @@ function DeliveryActions({
             form.append('handoff_type', 'receive');
             form.append('proof_type', 'photo');
             form.append('proof_file', proofFile!);
+            form.append('idempotency_key', proofIdempotencyKey('receive'));
             proofId = (await logisticsApi.recordProof(delivery.id, form)).data.proof.id;
           }
 
@@ -676,6 +687,7 @@ function DeliveryActions({
     form.append('handoff_type', 'delivery');
     form.append('proof_type', 'photo');
     form.append('proof_file', proofFile);
+    form.append('idempotency_key', proofIdempotencyKey('delivery'));
     runAction(
       proofKey,
       () =>
@@ -1234,7 +1246,7 @@ export default function MyDeliveries() {
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const actionInFlight = useRef(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [lastSynced] = useState(() =>
+  const [lastSynced, setLastSynced] = useState(() =>
     new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
   );
 
@@ -1250,37 +1262,61 @@ export default function MyDeliveries() {
     };
   }, []);
 
+  const finishAction = () => {
+    actionInFlight.current = false;
+    setPendingAction(null);
+  };
+  const reloadDeliveryData = (onFinish: () => void = finishAction) => {
+    router.reload({
+      only: ['deliveryData'],
+      onFinish: () => {
+        setLastSynced(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+        onFinish();
+      },
+    });
+  };
+  const refreshDeliveries = () => {
+    if (!online || actionInFlight.current) return;
+    actionInFlight.current = true;
+    setPendingAction('refresh');
+    setActionError(null);
+    reloadDeliveryData();
+  };
+
   const runAction: ActionRunner = (key, action, confirmation, onError) => {
     if (!online || actionInFlight.current) return;
     actionInFlight.current = true;
     setPendingAction(key);
     setActionError(null);
 
-    const finish = () => {
-      actionInFlight.current = false;
-      setPendingAction(null);
-    };
-
     void (async () => {
       try {
         if (confirmation && !(await workflowFeedback.confirm(confirmation)).isConfirmed) {
-          finish();
+          finishAction();
           return;
         }
 
         await action();
-        router.reload({ only: ['deliveryData'], onFinish: finish });
+        reloadDeliveryData();
       } catch (error: any) {
         if (onError?.(error)) {
-          finish();
+          finishAction();
           return;
         }
         const errors = error.response?.data?.errors;
-        setActionError(
-          error.response?.data?.message ??
-            (errors ? Object.values(errors).flat().join(' ') : 'Unable to update this delivery.'),
-        );
-        finish();
+        const message = errors
+          ? Object.values(errors).flat().join(' ')
+          : error.response?.data?.message ?? 'Unable to update this delivery.';
+        const stale = error.response?.status === 409
+          || (error.response?.status === 422
+            && /stale|changed|no longer|not your current|refresh my deliveries/i.test(message));
+        if (stale) {
+          setActionError(`${message} Delivery list refreshed.`);
+          reloadDeliveryData();
+          return;
+        }
+        setActionError(message);
+        finishAction();
       }
     })();
   };
@@ -1305,21 +1341,32 @@ export default function MyDeliveries() {
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             See what needs your attention now.
           </p>
-          <p
-            role="status"
-            aria-live="polite"
-            className={`mt-2 text-xs font-semibold ${
-              online ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300'
-            }`}
-          >
-            <span aria-hidden="true">{online ? '●' : '!'}</span>{' '}
-            {online ? 'Online' : 'Offline'} · Last sync {lastSynced}
-          </p>
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+            <p
+              role="status"
+              aria-live="polite"
+              className={`text-xs font-semibold ${
+                online ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300'
+              }`}
+            >
+              <span aria-hidden="true">{online ? '●' : '!'}</span>{' '}
+              {online ? 'Online' : 'Offline'} · Last sync {lastSynced}
+            </p>
+            <button
+              type="button"
+              disabled={!online || pendingAction !== null}
+              onClick={refreshDeliveries}
+              className="min-h-11 rounded-xl border border-slate-300 px-3 text-xs font-bold text-slate-700 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200"
+            >
+              Refresh deliveries
+            </button>
+          </div>
         </header>
 
         {deliveryData.has_active_conflict && (
           <div role="alert" className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100">
-            <strong>More than one active delivery was found.</strong> Contact dispatch before continuing either assignment.
+            <strong>More than one active delivery was found.</strong>{' '}
+            Continue only the Current delivery shown below. Conflicting assignments are blocked until dispatch resolves them.
           </div>
         )}
 
@@ -1327,7 +1374,7 @@ export default function MyDeliveries() {
           item={deliveryData.current}
           showSequence={showSequence}
           onToggleSequence={() => setShowSequence((current) => !current)}
-          locked={deliveryData.has_active_conflict}
+          locked={false}
           online={online}
           pendingAction={pendingAction}
           canRecordProof={canRecordProof}

@@ -143,6 +143,12 @@ type RepairOrder = {
   return_logistics_locked_at?: string | null;
   return_address_confirmed_at?: string | null;
   return_address_confirmed_version?: string | null;
+  return_recovery?: {
+    code: string;
+    label: string;
+    state: 'awaiting_arrangement' | 'awaiting_payment' | 'shop_pickup' | 'ready_for_dispatch';
+  } | null;
+  redelivery_payment_due?: boolean;
   same_as_intake_address?: boolean;
   pickup_address?: string | {
     address_line?: string;
@@ -729,7 +735,9 @@ const ReturnDeliveryPlanCard: React.FC<{
       ? Number(coverage?.fee ?? 0)
       : 0
     : acceptedFee;
-  const remainingServiceAmount = Math.max(0, getOrderGrandTotal(order) - servicePaidAmount);
+  const remainingServiceAmount = order.redelivery_payment_due
+    ? 0
+    : Math.max(0, getOrderGrandTotal(order) - servicePaidAmount);
   const finalAmount = remainingServiceAmount + displayedFee;
 
   useEffect(() => {
@@ -861,7 +869,9 @@ const ReturnDeliveryPlanCard: React.FC<{
         <div>
           <h4 className="text-lg font-bold text-black">Return delivery plan</h4>
           <p className="mt-1 text-sm text-gray-600">
-            Review the exact return address and method before final payment and dispatch.
+            {order.redelivery_payment_due
+              ? 'Confirm your return address, then pay the new delivery fee.'
+              : 'Review the exact return address and method before final payment and dispatch.'}
           </p>
         </div>
         {locked && (
@@ -4168,14 +4178,44 @@ const MyRepairs: React.FC = () => {
                         />
                       )}
 
-                    {(['completed', 'ready_for_pickup', 'shipped'] as RepairStatus[]).includes(order.status) && (
+                    {order.return_recovery && (
+                      <section
+                        aria-label="Repair return recovery"
+                        className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:p-6"
+                      >
+                        <h4 className="text-lg font-bold text-black">
+                          {order.return_recovery.state === 'shop_pickup'
+                            ? 'Ready for pickup at shop'
+                            : order.return_recovery.label}
+                        </h4>
+                        <p className="mt-2 text-sm text-gray-700">
+                          {order.return_recovery.state === 'awaiting_arrangement'
+                            ? 'Your repaired shoes are safely at the shop. The shop will contact you to arrange re-delivery or shop pickup.'
+                            : order.return_recovery.state === 'awaiting_payment'
+                              ? 'Confirm your return address, then pay the new delivery fee.'
+                              : order.return_recovery.state === 'shop_pickup'
+                                ? 'Shop pickup is free. Wait for the shop to record the handoff before confirming receipt.'
+                                : 'Re-delivery payment received. Waiting for rider assignment.'}
+                        </p>
+                        {order.return_recovery.state === 'shop_pickup' && (
+                          <div className="mt-3 rounded-xl border border-amber-200 bg-white p-3 text-sm text-gray-700">
+                            <p className="font-semibold text-black">{order.shop_name}</p>
+                            <p className="mt-1">{order.shop_address}</p>
+                          </div>
+                        )}
+                      </section>
+                    )}
+
+                    {(['completed', 'ready_for_pickup', 'shipped'] as RepairStatus[]).includes(order.status)
+                      && (!order.return_recovery || order.return_recovery.state === 'awaiting_payment') && (
                       <ReturnDeliveryPlanCard
                         order={order}
                         onRefresh={() => fetchRepairs({ silent: true })}
                       />
                     )}
 
-                    {(['completed', 'ready_for_pickup', 'shipped'] as RepairStatus[]).includes(order.status) && (
+                    {(['completed', 'ready_for_pickup', 'shipped'] as RepairStatus[]).includes(order.status)
+                      && !order.return_recovery && (
                       <CustomerExternalTrackingCard
                         order={order}
                         leg="return"
@@ -4183,7 +4223,11 @@ const MyRepairs: React.FC = () => {
                       />
                     )}
 
-                    <RepairLogisticsTracking shipments={order.logistics_shipments} />
+                    <RepairLogisticsTracking
+                      shipments={order.return_recovery
+                        ? order.logistics_shipments?.filter((shipment) => shipment.purpose !== 'repair_return')
+                        : order.logistics_shipments}
+                    />
 
                     {(() => {
                       const latestRefund = getLatestRefundForOrder(order);
@@ -4425,7 +4469,20 @@ const MyRepairs: React.FC = () => {
                       {(order.status === 'ready_for_pickup' || order.status === 'shipped') && (
                         <>
                           {/* For deposit_50 only — full_upfront is already paid */}
-                          {!isWarrantyNoChargeOrder(order) && order.status === 'ready_for_pickup' && isOnlineReturnFlow(order) && (order.payment_policy ?? 'deposit_50') !== 'full_upfront' && order.payment_status !== 'completed' && (
+                          {order.redelivery_payment_due && (
+                            <button
+                              onClick={() => handlePayNow(order.id)}
+                              disabled={!order.payment_enabled || processingPayment}
+                              className={`${actionButtonBaseClass} ${
+                                order.payment_enabled && !processingPayment
+                                  ? actionButtonPrimaryClass
+                                  : actionButtonDisabledClass
+                              }`}
+                            >
+                              {processingPayment ? 'PROCESSING...' : 'Pay new delivery fee'}
+                            </button>
+                          )}
+                          {!order.redelivery_payment_due && !isWarrantyNoChargeOrder(order) && order.status === 'ready_for_pickup' && isOnlineReturnFlow(order) && (order.payment_policy ?? 'deposit_50') !== 'full_upfront' && order.payment_status !== 'completed' && (
                             <button
                               onClick={() => handlePayNow(order.id)}
                               disabled={!order.payment_enabled || processingPayment}
@@ -4438,7 +4495,7 @@ const MyRepairs: React.FC = () => {
                               {processingPayment ? 'PROCESSING...' : 'PAY NOW'}
                             </button>
                           )}
-                          {(() => {
+                          {(!order.return_recovery || order.return_recovery.state === 'shop_pickup') && (() => {
                             const canConfirmReceive = Boolean(
                               order.pickup_enabled && order.return_logistics_locked_at,
                             );

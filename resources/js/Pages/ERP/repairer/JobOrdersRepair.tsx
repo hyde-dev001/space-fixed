@@ -33,6 +33,7 @@ type IntakeHandoff = {
 };
 
 type ReturnHandoff = {
+  visible?: boolean;
   method?: "walk_in" | "customer_pickup" | "shop_delivery";
   can_release?: boolean;
   can_confirm_receipt?: boolean;
@@ -47,6 +48,13 @@ type ReturnHandoff = {
     tracking_url?: string | null;
   } | null;
   events?: IntakeHandoffEvent[];
+  recovery?: {
+    code: "returned_to_shop_awaiting_arrangement";
+    label: string;
+    state: "awaiting_arrangement" | "awaiting_payment" | "shop_pickup" | "ready_for_dispatch";
+    can_schedule_redelivery: boolean;
+    can_set_shop_pickup: boolean;
+  } | null;
 };
 
 type RepairOrder = {
@@ -601,6 +609,7 @@ export default function JobOrdersRepair() {
   const [orders, setOrders] = useState<RepairOrder[]>(useStaticData ? staticOrders : []);
   const [repairerRefundQueue, setRepairerRefundQueue] = useState<RepairRefundQueueItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [recoveryActionOrderId, setRecoveryActionOrderId] = useState<number | null>(null);
   const isOrdersRequestInFlightRef = useRef(false);
   const [isShippingModalOpen, setIsShippingModalOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null);
@@ -1991,6 +2000,47 @@ export default function JobOrdersRepair() {
     }
   };
 
+  const handleReturnRecovery = async (
+    targetOrder: RepairOrder,
+    action: "schedule_redelivery" | "shop_pickup",
+  ) => {
+    const label = action === "schedule_redelivery" ? "Schedule re-delivery" : "Set for shop pickup";
+    const result = await Swal.fire({
+      title: `${label}?`,
+      text: action === "schedule_redelivery"
+        ? "The customer will confirm the address and pay a new delivery fee."
+        : "The repaired shoes will stay at the shop for customer pickup.",
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: label,
+      cancelButtonText: "Cancel",
+      confirmButtonColor: "#2563eb",
+    });
+    if (!result.isConfirmed) return;
+
+    setRecoveryActionOrderId(targetOrder.database_id);
+    try {
+      await axios.post(`/api/repairer/repairs/${targetOrder.database_id}/return-recovery`, { action });
+      await fetchOrders();
+      await Swal.fire({
+        title: "Return arrangement updated",
+        text: action === "schedule_redelivery"
+          ? "The customer can now confirm the address and pay the new delivery fee."
+          : "The repaired shoes are now set for shop pickup.",
+        icon: "success",
+        confirmButtonColor: "#2563eb",
+      });
+    } catch (error: any) {
+      await Swal.fire({
+        title: "Error",
+        text: error.response?.data?.message || "Failed to update the return arrangement.",
+        icon: "error",
+      });
+    } finally {
+      setRecoveryActionOrderId(null);
+    }
+  };
+
   const handleActivatePayment = async (orderId: string) => {
     const targetOrder =
       (viewOrder && String(viewOrder.database_id) === orderId ? viewOrder : null)
@@ -3077,6 +3127,8 @@ export default function JobOrdersRepair() {
                             </button>
                           )}
                           {order.returnHandoff
+                            && order.returnHandoff.visible !== false
+                            && !order.returnHandoff.recovery
                             && ["ready-for-pickup", "shipped"].includes(order.status) && (
                             <button
                               onClick={() => handleActivatePickup(order)}
@@ -3409,11 +3461,59 @@ export default function JobOrdersRepair() {
                   </div>
                 )}
 
-                {viewOrder.returnHandoff && (
+                {viewOrder.returnHandoff && viewOrder.returnHandoff.visible !== false && (
                   <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
-                      Return handoff
+                      {viewOrder.returnHandoff.recovery ? "Return recovery" : "Return handoff"}
                     </p>
+                    {viewOrder.returnHandoff.recovery ? (
+                      <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm dark:border-amber-700 dark:bg-amber-900/20">
+                        <p className="font-semibold text-gray-900 dark:text-white">
+                          {viewOrder.returnHandoff.recovery.label}
+                        </p>
+                        <p className="mt-1 text-gray-700 dark:text-gray-300">
+                          {viewOrder.returnHandoff.recovery.state === "awaiting_payment"
+                            ? "Waiting for the customer to confirm the address and pay the new delivery fee."
+                            : viewOrder.returnHandoff.recovery.state === "shop_pickup"
+                              ? "Keep the repaired shoes at the shop until the customer collects them."
+                              : viewOrder.returnHandoff.recovery.state === "ready_for_dispatch"
+                                ? "The re-delivery fee is paid. The Dispatcher can assign the new delivery."
+                                : "Choose how the customer will receive the repaired shoes."}
+                        </p>
+                        {viewOrder.returnHandoff.recovery.state === "awaiting_arrangement" && (
+                          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                            <button
+                              type="button"
+                              onClick={() => handleReturnRecovery(viewOrder, "schedule_redelivery")}
+                              disabled={recoveryActionOrderId === viewOrder.database_id
+                                || !viewOrder.returnHandoff?.recovery?.can_schedule_redelivery}
+                              className="min-h-11 rounded-md bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              Schedule re-delivery
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleReturnRecovery(viewOrder, "shop_pickup")}
+                              disabled={recoveryActionOrderId === viewOrder.database_id
+                                || !viewOrder.returnHandoff?.recovery?.can_set_shop_pickup}
+                              className="min-h-11 rounded-md border border-blue-600 px-4 py-2 font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60 dark:text-blue-300 dark:hover:bg-blue-900/30"
+                            >
+                              Set for shop pickup
+                            </button>
+                          </div>
+                        )}
+                        {viewOrder.returnHandoff.recovery.state === "shop_pickup" && (
+                          <button
+                            type="button"
+                            onClick={() => handleActivatePickup(viewOrder)}
+                            disabled={!viewOrder.returnHandoff.can_release}
+                            className="mt-4 min-h-11 w-full rounded-md bg-purple-600 px-4 py-2 font-semibold text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-600"
+                          >
+                            {viewOrder.returnHandoff.action_label || "Release to customer"}
+                          </button>
+                        )}
+                      </div>
+                    ) : (
                     <div className="rounded-lg border border-purple-200 bg-purple-50 p-4 text-sm dark:border-purple-800 dark:bg-purple-900/20">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
@@ -3502,6 +3602,7 @@ export default function JobOrdersRepair() {
                         </dl>
                       )}
                     </div>
+                    )}
                   </div>
                 )}
 

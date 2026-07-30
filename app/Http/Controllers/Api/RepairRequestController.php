@@ -878,8 +878,10 @@ class RepairRequestController extends Controller
 
         $repairRequests = $query->orderBy('created_at', 'desc')->get();
 
+        $settlementService = app(PaymentSettlementService::class);
+        $repairDeliveryService = app(RepairDeliveryService::class);
+
         if ($request->boolean('reconcile_payments')) {
-            $settlementService = app(PaymentSettlementService::class);
             $hasReconciledChanges = false;
 
             foreach ($repairRequests as $repair) {
@@ -940,7 +942,7 @@ class RepairRequestController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $repairRequests->map(function (RepairRequest $repair) use ($childrenByParent, $reviewedLookup, $logisticsShipmentLookup) {
+            'data' => $repairRequests->map(function (RepairRequest $repair) use ($childrenByParent, $reviewedLookup, $logisticsShipmentLookup, $settlementService, $repairDeliveryService) {
                 // Images are already cast as array, so no need to json_decode
                 $images = is_array($repair->images) ? $repair->images : (is_string($repair->images) ? json_decode($repair->images, true) : []);
                 $pricingSnapshot = $this->calculateRepairPricingSnapshot($repair);
@@ -959,6 +961,11 @@ class RepairRequestController extends Controller
                     ? round(max($resolvedPaidAmount, $parentStoredPaidAmount), 2)
                     : $resolvedPaidAmount;
                 $refundPaymentProfile = $this->resolveRefundPaymentProfile($repair, $resolvedPaidAmount);
+                $returnHandoff = $repairDeliveryService->returnHandoff(
+                    $repair,
+                    $settlementService->isRepairSettled($repair),
+                );
+                $returnRecovery = $returnHandoff['recovery'] ?? null;
 
                 $anchorRepairId = ((bool) ($repair->is_warranty_job ?? false) && (int) ($repair->parent_repair_request_id ?? 0) > 0)
                     ? (int) $repair->parent_repair_request_id
@@ -1018,6 +1025,9 @@ class RepairRequestController extends Controller
                     'same_as_intake_address' => (bool) $repair->same_as_intake_address,
                     'return_address_confirmed_at' => $repair->return_address_confirmed_at?->toISOString(),
                     'return_address_confirmed_version' => $repair->return_address_confirmed_version,
+                    'return_recovery' => $returnRecovery,
+                    'redelivery_payment_due' => ($returnRecovery['state'] ?? null) === 'awaiting_payment'
+                        && $settlementService->isRepairPaymentDueNow($repair),
                     'conversation_id' => $repair->conversation_id,
                     'payment_status' => $repair->payment_status ?? 'pending',
                     'payment_completed_at' => $repair->payment_completed_at ? $repair->payment_completed_at->toISOString() : null,
@@ -1876,7 +1886,7 @@ class RepairRequestController extends Controller
             if ($returnChanged) {
                 RepairPaymentSession::query()
                     ->where('repair_request_id', $repair->id)
-                    ->where('phase', 'final')
+                    ->whereIn('phase', ['final', 'redelivery'])
                     ->where('status', 'pending')
                     ->get()
                     ->each(function (RepairPaymentSession $session) use ($returnSnapshot, $returnMethod, $returnFee): void {
@@ -1932,7 +1942,7 @@ class RepairRequestController extends Controller
             if ($repair->return_logistics_locked_at !== null) {
                 $paidSession = RepairPaymentSession::query()
                     ->where('repair_request_id', $repair->id)
-                    ->where('phase', 'final')
+                    ->whereIn('phase', ['final', 'redelivery'])
                     ->where('status', 'paid')
                     ->latest('id')
                     ->first();
@@ -2499,9 +2509,11 @@ class RepairRequestController extends Controller
             }
 
             $phaseBreakdown = $settlementService->repairPaymentBreakdown($repair);
-            $phase = $phaseBreakdown['phase'] === 'final'
-                ? 'final payment'
-                : ($policy === 'full_upfront' ? 'full payment' : 'down payment');
+            $phase = match ($phaseBreakdown['phase']) {
+                'final' => 'final payment',
+                'redelivery' => 're-delivery fee',
+                default => $policy === 'full_upfront' ? 'full payment' : 'down payment',
+            };
 
             $taxMode = $settlementService->repairTaxMode($repair);
             if ($taxMode === 'vat_inclusive') {
@@ -2654,6 +2666,7 @@ class RepairRequestController extends Controller
                 $currentTaxMode = $settlementService->repairTaxMode($lockedRepair);
                 $paymentPlanChanged = (string) $currentBreakdown['phase'] !== (string) $phaseBreakdown['phase']
                     || (string) $currentBreakdown['policy'] !== (string) $phaseBreakdown['policy']
+                    || (string) ($currentBreakdown['recovery_key'] ?? '') !== (string) ($phaseBreakdown['recovery_key'] ?? '')
                     || (string) ($currentBreakdown['snapshot_version'] ?? '') !== (string) ($phaseBreakdown['snapshot_version'] ?? '')
                     || (string) $currentBreakdown['delivery_method'] !== (string) $phaseBreakdown['delivery_method']
                     || round((float) $currentBreakdown['service_amount'], 2) !== round((float) $phaseBreakdown['service_amount'], 2)
@@ -2691,6 +2704,9 @@ class RepairRequestController extends Controller
                         'payment_phase' => $currentBreakdown['phase'],
                         'service_base_amount' => $currentBreakdown['service_amount'],
                         'tax_mode' => $currentTaxMode,
+                        ...($currentBreakdown['recovery_key'] ? [
+                            'recovery_key' => $currentBreakdown['recovery_key'],
+                        ] : []),
                     ],
                 ]);
 
@@ -2701,7 +2717,9 @@ class RepairRequestController extends Controller
                     'payment_failed_at' => null,
                     'payment_failure_reason' => null,
                     'payment_expired_at' => null,
-                    'payment_status' => $this->nextRepairPaymentStatusForRetry($lockedRepair, $policy),
+                    'payment_status' => $currentBreakdown['phase'] === 'redelivery'
+                        ? $lockedRepair->payment_status
+                        : $this->nextRepairPaymentStatusForRetry($lockedRepair, $policy),
                 ]);
             });
 

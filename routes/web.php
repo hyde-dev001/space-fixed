@@ -1423,6 +1423,7 @@ Route::middleware(['auth:user', 'check.user.business.type:repair,both'])->prefix
     Route::post('{id}/mark-ready', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'markReadyForPickup']);
     Route::post('{id}/ship', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'shipRepair']);
     Route::post('{id}/activate-pickup', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'activatePickup']);
+    Route::post('{id}/return-recovery', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'resolveReturnRecovery']);
     Route::post('{id}/cancel-delivery-leg', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'cancelDeliveryLeg']);
 
     // Repair material usage tracking

@@ -86,6 +86,12 @@ class AssignmentService
                 ->lockForUpdate()
                 ->first();
 
+            if (! $accepted
+                && $assignment?->status === 'rejected'
+                && $assignment->rejection_reason === $reason) {
+                return $assignment;
+            }
+
             if (! $assignment || ($assignment->status !== 'assigned' && ! ($accepted && $assignment->status === 'accepted'))) {
                 throw ValidationException::withMessages(['shipment_leg_id' => 'This delivery offer is no longer available.']);
             }

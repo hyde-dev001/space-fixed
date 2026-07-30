@@ -12,6 +12,7 @@ class HandoffProof extends Model
 
     protected $fillable = [
         'shipment_leg_id',
+        'idempotency_key',
         'handoff_type',
         'proof_type',
         'file_path',

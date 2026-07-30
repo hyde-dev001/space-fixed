@@ -4,6 +4,7 @@ namespace Tests\Feature\Logistics;
 
 use App\Models\Logistics\DeliveryAssignment;
 use App\Models\Logistics\DeliveryBatch;
+use App\Models\Logistics\DeliveryEvent;
 use App\Models\Logistics\HandoffProof;
 use App\Models\Logistics\LogisticsSetting;
 use App\Models\Logistics\RiderProfile;
@@ -46,6 +47,19 @@ class DeliveryExecutionTest extends TestCase
 
         $this->expectException(ValidationException::class);
         app(ShipmentLegService::class)->markPickedUp($blockedLeg->fresh());
+    }
+
+    public function test_repeating_proof_free_batched_pickup_is_idempotent(): void
+    {
+        [$leg, $rider] = $this->fixture();
+        $leg->update(['requires_pickup_proof' => false]);
+        $service = app(ShipmentLegService::class);
+
+        $pickedUp = $service->markPickedUp($leg->fresh(), $rider);
+        $replayed = $service->markPickedUp($pickedUp->fresh(), $rider);
+
+        $this->assertSame($pickedUp->id, $replayed->id);
+        $this->assertSame(1, DeliveryEvent::where('event_type', 'picked_up')->count());
     }
 
     public function test_failed_attempt_evidence_matrix_is_enforced_by_the_service(): void
@@ -213,6 +227,49 @@ class DeliveryExecutionTest extends TestCase
         app(ShipmentLegService::class)->markDelivered($leg->fresh());
 
         $this->assertSame('completed', $leg->deliveryBatch->fresh()->status);
+    }
+
+    public function test_cancelling_the_last_open_stop_completes_a_batch_with_a_delivered_stop(): void
+    {
+        [$deliveredLeg, , $shop] = $this->fixture();
+        $batch = $deliveredLeg->deliveryBatch;
+        $deliveredLeg->update(['status' => 'delivered', 'delivered_at' => now()]);
+        $cancelledLeg = ShipmentLeg::factory()->create([
+            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id,
+            'delivery_batch_id' => $batch->id,
+            'status' => 'needs_resolution',
+        ]);
+
+        app(ShipmentLegService::class)->cancel($cancelledLeg, 'Customer cancelled');
+
+        $this->assertSame('completed', $batch->fresh()->status);
+        $this->assertNotNull($batch->fresh()->completed_at);
+    }
+
+    public function test_detaching_the_last_failed_stop_completes_a_batch_with_a_delivered_stop(): void
+    {
+        [$deliveredLeg, $rider, $shop] = $this->fixture();
+        $batch = $deliveredLeg->deliveryBatch;
+        $deliveredLeg->update(['status' => 'delivered', 'delivered_at' => now()]);
+        $failedLeg = ShipmentLeg::factory()->create([
+            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id,
+            'delivery_batch_id' => $batch->id,
+            'status' => 'in_transit',
+        ]);
+        DeliveryAssignment::factory()->create([
+            'shipment_leg_id' => $failedLeg->id,
+            'rider_profile_id' => $rider->id,
+            'status' => 'accepted',
+        ]);
+
+        app(ShipmentLegService::class)->recordFailedAttempt($failedLeg, [
+            'reason_code' => 'recipient_unavailable',
+            'file_path' => 'failed.jpg',
+        ], true);
+
+        $this->assertNull($failedLeg->fresh()->delivery_batch_id);
+        $this->assertSame('completed', $batch->fresh()->status);
+        $this->assertNotNull($batch->fresh()->completed_at);
     }
 
     public function test_needs_resolution_can_retry_or_stage_return(): void
