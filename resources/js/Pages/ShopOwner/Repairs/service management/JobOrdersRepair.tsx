@@ -483,7 +483,6 @@ export default function JobOrdersRepair() {
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
   const [orders, setOrders] = useState<RepairOrder[]>(useStaticData ? staticOrders : []);
   const [isLoading, setIsLoading] = useState(true);
-  const [recoveryActionOrderId, setRecoveryActionOrderId] = useState<number | null>(null);
   const [isShippingModalOpen, setIsShippingModalOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null);
   const [carrierCompany, setCarrierCompany] = useState("");
@@ -1781,47 +1780,6 @@ export default function JobOrdersRepair() {
         text: error.response?.data?.message || 'Failed to record the return handoff.',
         icon: 'error',
       });
-    }
-  };
-
-  const handleReturnRecovery = async (
-    targetOrder: RepairOrder,
-    action: "schedule_redelivery" | "shop_pickup",
-  ) => {
-    const label = action === "schedule_redelivery" ? "Schedule re-delivery" : "Set for shop pickup";
-    const result = await Swal.fire({
-      title: `${label}?`,
-      text: action === "schedule_redelivery"
-        ? "The customer will confirm the address and pay a new delivery fee."
-        : "The repaired shoes will stay at the shop for customer pickup.",
-      icon: "question",
-      showCancelButton: true,
-      confirmButtonText: label,
-      cancelButtonText: "Cancel",
-      confirmButtonColor: "#2563eb",
-    });
-    if (!result.isConfirmed) return;
-
-    setRecoveryActionOrderId(targetOrder.database_id);
-    try {
-      await axios.post(`/api/shop-owner/repairs/${targetOrder.database_id}/return-recovery`, { action });
-      await fetchOrders();
-      await Swal.fire({
-        title: "Return arrangement updated",
-        text: action === "schedule_redelivery"
-          ? "The customer can now confirm the address and pay the new delivery fee."
-          : "The repaired shoes are now set for shop pickup.",
-        icon: "success",
-        confirmButtonColor: "#2563eb",
-      });
-    } catch (error: any) {
-      await Swal.fire({
-        title: "Error",
-        text: error.response?.data?.message || "Failed to update the return arrangement.",
-        icon: "error",
-      });
-    } finally {
-      setRecoveryActionOrderId(null);
     }
   };
 
@@ -3197,30 +3155,8 @@ export default function JobOrdersRepair() {
                               ? "Keep the repaired shoes at the shop until the customer collects them."
                               : viewOrder.returnHandoff.recovery.state === "ready_for_dispatch"
                                 ? "The re-delivery fee is paid. The Dispatcher can assign the new delivery."
-                                : "Choose how the customer will receive the repaired shoes."}
+                                : "Customer must choose re-delivery or shop pickup in My Repairs."}
                         </p>
-                        {viewOrder.returnHandoff.recovery.state === "awaiting_arrangement" && (
-                          <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                            <button
-                              type="button"
-                              onClick={() => handleReturnRecovery(viewOrder, "schedule_redelivery")}
-                              disabled={recoveryActionOrderId === viewOrder.database_id
-                                || !viewOrder.returnHandoff?.recovery?.can_schedule_redelivery}
-                              className="min-h-11 rounded-md bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                              Schedule re-delivery
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleReturnRecovery(viewOrder, "shop_pickup")}
-                              disabled={recoveryActionOrderId === viewOrder.database_id
-                                || !viewOrder.returnHandoff?.recovery?.can_set_shop_pickup}
-                              className="min-h-11 rounded-md border border-blue-600 px-4 py-2 font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60 dark:text-blue-300 dark:hover:bg-blue-900/30"
-                            >
-                              Set for shop pickup
-                            </button>
-                          </div>
-                        )}
                         {viewOrder.returnHandoff.recovery.state === "shop_pickup" && (
                           <button
                             type="button"

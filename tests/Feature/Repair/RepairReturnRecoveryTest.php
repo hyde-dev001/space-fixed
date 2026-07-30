@@ -73,7 +73,7 @@ class RepairReturnRecoveryTest extends TestCase
         $this->assertTrue(app(RepairDeliveryService::class)->returnHandoff($received, true)['visible']);
     }
 
-    public function test_repairer_schedules_one_redelivery_requirement_without_creating_a_leg(): void
+    public function test_staff_return_recovery_routes_are_unavailable(): void
     {
         [$repair, $shop, $shipment, , $return, $proof] = $this->returnedRepairFixture();
         $repairer = User::factory()->create([
@@ -84,24 +84,44 @@ class RepairReturnRecoveryTest extends TestCase
         $repair->update(['assigned_repairer_id' => $repairer->id]);
         app(ShipmentLegService::class)->confirmReturnReceipt($return, $proof, $shop);
 
-        $endpoint = "/api/repairer/repairs/{$repair->id}/return-recovery";
         $this->actingAs($repairer, 'user')
-            ->postJson($endpoint, ['action' => 'schedule_redelivery'])
-            ->assertOk()
-            ->assertJsonPath('recovery.state', 'awaiting_payment');
-        $this->actingAs($repairer, 'user')
-            ->postJson($endpoint, ['action' => 'schedule_redelivery'])
-            ->assertOk()
-            ->assertJsonPath('recovery.key', "return-to-shop:{$return->id}");
+            ->postJson("/api/repairer/repairs/{$repair->id}/return-recovery", [
+                'action' => 'schedule_redelivery',
+            ])
+            ->assertNotFound();
+        $this->actingAs($shop, 'shop_owner')
+            ->postJson("/api/shop-owner/repairs/{$repair->id}/return-recovery", [
+                'action' => 'shop_pickup',
+            ])
+            ->assertNotFound();
 
         $entries = collect(data_get($repair->fresh()->logistics_payment_reconciliation, 'entries', []))
             ->where('type', 'return_recovery')
             ->where('recovery_key', "return-to-shop:{$return->id}");
-        $this->assertCount(1, $entries);
-        $this->assertSame('awaiting_payment', $entries->first()['status']);
+        $this->assertCount(0, $entries);
         $this->assertSame(2, $shipment->fresh()->legs()->count());
         $this->assertSame(1, $this->recoveryNotificationCount($repair, 'awaiting_arrangement'));
-        $this->assertSame(1, $this->recoveryNotificationCount($repair, 'awaiting_payment'));
+        $this->assertSame(0, $this->recoveryNotificationCount($repair, 'awaiting_payment'));
+    }
+
+    public function test_return_recovery_service_rejects_non_customer_actor(): void
+    {
+        [$repair, $shop, , , $return, $proof] = $this->returnedRepairFixture();
+        app(ShipmentLegService::class)->confirmReturnReceipt($return, $proof, $shop);
+
+        try {
+            app(RepairDeliveryService::class)->resolveReturnRecovery(
+                $repair->fresh(),
+                'shop_pickup',
+                ShopOwner::class,
+                $shop->id,
+            );
+            $this->fail('Shop staff selected the customer return arrangement.');
+        } catch (\Illuminate\Validation\ValidationException $exception) {
+            $this->assertArrayHasKey('actor', $exception->errors());
+        }
+
+        $this->assertSame('shop_delivery', $repair->fresh()->return_delivery_method);
     }
 
     public function test_customer_chooses_a_scheduled_redelivery_for_their_returned_repair(): void
@@ -160,11 +180,16 @@ class RepairReturnRecoveryTest extends TestCase
     public function test_shop_pickup_invalidates_unpaid_redelivery_but_rejects_a_paid_one(): void
     {
         [$repair, $shop, , , $return, $proof] = $this->returnedRepairFixture();
+        $customer = User::findOrFail($repair->user_id);
         app(ShipmentLegService::class)->confirmReturnReceipt($return, $proof, $shop);
 
-        $endpoint = "/api/shop-owner/repairs/{$repair->id}/return-recovery";
-        $this->actingAs($shop, 'shop_owner')
-            ->postJson($endpoint, ['action' => 'schedule_redelivery'])
+        $endpoint = "/api/customer/repairs/{$repair->id}/return-recovery";
+        $this->actingAs($customer, 'user')
+            ->postJson($endpoint, [
+                'action' => 'schedule_redelivery',
+                'scheduled_delivery_date' => now()->addDays(2)->toDateString(),
+                'delivery_window' => 'morning',
+            ])
             ->assertOk();
 
         $pending = RepairPaymentSession::create([
@@ -178,7 +203,7 @@ class RepairReturnRecoveryTest extends TestCase
             'quote' => ['recovery_key' => "return-to-shop:{$return->id}"],
         ]);
 
-        $this->actingAs($shop, 'shop_owner')
+        $this->actingAs($customer, 'user')
             ->postJson($endpoint, ['action' => 'shop_pickup'])
             ->assertOk()
             ->assertJsonPath('recovery.state', 'shop_pickup');
@@ -191,6 +216,7 @@ class RepairReturnRecoveryTest extends TestCase
         $this->assertSame(1, $this->recoveryNotificationCount($repair, 'shop_pickup'));
 
         [$paidRepair, $paidShop, , , $paidReturn, $paidProof] = $this->returnedRepairFixture();
+        $paidCustomer = User::findOrFail($paidRepair->user_id);
         app(ShipmentLegService::class)->confirmReturnReceipt($paidReturn, $paidProof, $paidShop);
         RepairPaymentSession::create([
             'repair_request_id' => $paidRepair->id,
@@ -203,14 +229,14 @@ class RepairReturnRecoveryTest extends TestCase
             'quote' => ['recovery_key' => "return-to-shop:{$paidReturn->id}"],
         ]);
 
-        $this->actingAs($paidShop, 'shop_owner')
-            ->postJson("/api/shop-owner/repairs/{$paidRepair->id}/return-recovery", [
+        $this->actingAs($paidCustomer, 'user')
+            ->postJson("/api/customer/repairs/{$paidRepair->id}/return-recovery", [
                 'action' => 'shop_pickup',
             ])
             ->assertUnprocessable();
     }
 
-    public function test_recovery_action_rejects_cross_shop_repairer(): void
+    public function test_recovery_action_is_not_exposed_to_cross_shop_repairer(): void
     {
         [$repair, $shop, , , $return, $proof] = $this->returnedRepairFixture();
         app(ShipmentLegService::class)->confirmReturnReceipt($return, $proof, $shop);
@@ -225,7 +251,7 @@ class RepairReturnRecoveryTest extends TestCase
             ->postJson("/api/repairer/repairs/{$repair->id}/return-recovery", [
                 'action' => 'schedule_redelivery',
             ])
-            ->assertForbidden();
+            ->assertNotFound();
     }
 
     public function test_redelivery_payment_charges_only_the_new_fee_and_reopens_the_same_shipment(): void
@@ -236,8 +262,8 @@ class RepairReturnRecoveryTest extends TestCase
         app(RepairDeliveryService::class)->resolveReturnRecovery(
             $repair->fresh(),
             'schedule_redelivery',
-            ShopOwner::class,
-            $shop->id,
+            User::class,
+            (int) $repair->user_id,
             $deliveryDate,
             'afternoon',
         );
@@ -325,8 +351,8 @@ class RepairReturnRecoveryTest extends TestCase
         app(RepairDeliveryService::class)->resolveReturnRecovery(
             $repair->fresh(),
             'schedule_redelivery',
-            ShopOwner::class,
-            $shop->id,
+            User::class,
+            (int) $repair->user_id,
         );
         $this->confirmCoveredRedeliveryPlan($repair->fresh(), $shop);
         $payments = app(PaymentSettlementService::class);
@@ -376,8 +402,8 @@ class RepairReturnRecoveryTest extends TestCase
         app(RepairDeliveryService::class)->resolveReturnRecovery(
             $repair->fresh(),
             'schedule_redelivery',
-            ShopOwner::class,
-            $shop->id,
+            User::class,
+            (int) $repair->user_id,
         );
         $fee = $this->confirmCoveredRedeliveryPlan($repair->fresh(), $shop);
 
@@ -413,8 +439,8 @@ class RepairReturnRecoveryTest extends TestCase
         app(RepairDeliveryService::class)->resolveReturnRecovery(
             $repair->fresh(),
             'schedule_redelivery',
-            ShopOwner::class,
-            $shop->id,
+            User::class,
+            (int) $repair->user_id,
         );
 
         $this->actingAs($customer, 'user')

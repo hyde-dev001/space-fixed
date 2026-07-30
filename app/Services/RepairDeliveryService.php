@@ -8,6 +8,7 @@ use App\Models\Logistics\ShipmentLeg;
 use App\Models\RepairPaymentSession;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
+use App\Models\User;
 use App\Models\UserAddress;
 use App\Services\Logistics\DeliveryEventService;
 use App\Services\Logistics\DeliveryScheduleService;
@@ -645,6 +646,12 @@ final class RepairDeliveryService
             $deliveryWindow,
         ): array {
             $locked = RepairRequest::query()->whereKey($repair->id)->lockForUpdate()->firstOrFail();
+            if ($actorType !== User::class || $actorId !== (int) $locked->user_id) {
+                throw ValidationException::withMessages([
+                    'actor' => ['Only the customer can choose the return arrangement.'],
+                ]);
+            }
+
             $recovery = $this->returnRecoveryState($locked);
             if (! $recovery) {
                 throw ValidationException::withMessages([

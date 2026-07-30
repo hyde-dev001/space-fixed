@@ -2407,48 +2407,6 @@ class RepairWorkflowController extends Controller
     /**
      * Activate pickup confirmation for customer (Shop Owner or Repairer)
      */
-    public function resolveReturnRecovery(Request $request, $id)
-    {
-        $validated = $request->validate([
-            'action' => ['required', 'in:schedule_redelivery,shop_pickup'],
-        ]);
-        $shopOwnerContext = $this->isShopOwnerRouteContext($request);
-        $shopOwner = $shopOwnerContext ? Auth::guard('shop_owner')->user() : null;
-        $user = $shopOwnerContext ? null : Auth::guard('user')->user();
-        abort_unless($shopOwner || $user, 401);
-
-        $repair = RepairRequest::query()->findOrFail($id);
-        if ($shopOwner) {
-            abort_unless((int) $repair->shop_owner_id === (int) $shopOwner->id, 403);
-        } else {
-            abort_unless(
-                (int) $repair->shop_owner_id === (int) $user->shop_owner_id
-                && (int) $repair->assigned_repairer_id === (int) $user->id
-                && $this->userCanConfirmRepairIntake($user),
-                403,
-            );
-        }
-
-        $result = $this->repairDeliveryService->resolveReturnRecovery(
-            $repair,
-            (string) $validated['action'],
-            $shopOwner ? $shopOwner::class : $user::class,
-            (int) ($shopOwner?->id ?? $user->id),
-        );
-
-        return response()->json([
-            'success' => true,
-            'message' => $validated['action'] === 'schedule_redelivery'
-                ? 'Customer can now confirm and pay for re-delivery.'
-                : 'Repair is ready for shop pickup.',
-            'recovery' => $result['recovery'],
-            'repair' => $result['repair'],
-        ]);
-    }
-
-    /**
-     * Activate pickup confirmation for customer (Shop Owner or Repairer)
-     */
     public function activatePickup(Request $request, $id)
     {
         $shopOwnerContext = $this->isShopOwnerRouteContext($request);

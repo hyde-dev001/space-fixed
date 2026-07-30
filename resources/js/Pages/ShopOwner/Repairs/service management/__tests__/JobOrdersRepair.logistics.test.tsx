@@ -262,7 +262,7 @@ describe("ShopOwner JobOrdersRepair intake logistics", () => {
     ));
   });
 
-  it("shows only the two return-recovery choices and sets shop pickup", async () => {
+  it("tells staff that the customer owns the return-recovery choice", async () => {
     mocks.repair = repair("customer_delivery", false, {
       status: "ready_for_pickup",
       intake_handoff: null,
@@ -288,19 +288,14 @@ describe("ShopOwner JobOrdersRepair intake logistics", () => {
     fireEvent.click(screen.getByTitle("View details"));
 
     expect(await screen.findByText("Returned to shop—awaiting customer arrangement")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Schedule re-delivery" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Set for shop pickup" })).toBeEnabled();
+    expect(screen.getByText("Customer must choose re-delivery or shop pickup in My Repairs.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Schedule re-delivery" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Set for shop pickup" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Confirm delivered handoff" })).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Set for shop pickup" }));
-
-    await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
+    expect(mocks.post).not.toHaveBeenCalledWith(
       "/api/shop-owner/repairs/77/return-recovery",
-      { action: "shop_pickup" },
-    ));
-    await waitFor(() => {
-      expect(mocks.get.mock.calls.filter(([url]) => url === "/api/shop-owner/repairs")).toHaveLength(2);
-    });
+      expect.anything(),
+    );
   });
 
   it("hides a premature return handoff from the repair details", async () => {
