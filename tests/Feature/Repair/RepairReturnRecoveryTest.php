@@ -336,6 +336,32 @@ class RepairReturnRecoveryTest extends TestCase
         $this->assertSame(3, $shipment->fresh()->legs()->count());
     }
 
+    public function test_customer_payload_exposes_return_recovery_and_redelivery_payment_due(): void
+    {
+        [$repair, $shop, , , $return, $proof] = $this->returnedRepairFixture();
+        $customer = User::findOrFail($repair->user_id);
+        app(ShipmentLegService::class)->confirmReturnReceipt($return, $proof, $shop);
+
+        $this->actingAs($customer, 'user')
+            ->getJson('/api/customer/repairs')
+            ->assertOk()
+            ->assertJsonPath('data.0.return_recovery.state', 'awaiting_arrangement')
+            ->assertJsonPath('data.0.redelivery_payment_due', false);
+
+        app(RepairDeliveryService::class)->resolveReturnRecovery(
+            $repair->fresh(),
+            'schedule_redelivery',
+            ShopOwner::class,
+            $shop->id,
+        );
+
+        $this->actingAs($customer, 'user')
+            ->getJson('/api/customer/repairs')
+            ->assertOk()
+            ->assertJsonPath('data.0.return_recovery.state', 'awaiting_payment')
+            ->assertJsonPath('data.0.redelivery_payment_due', true);
+    }
+
     private function returnedRepairFixture(): array
     {
         $shop = ShopOwner::factory()->create(['business_type' => 'repair']);

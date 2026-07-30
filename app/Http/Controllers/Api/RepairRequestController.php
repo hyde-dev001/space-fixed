@@ -878,8 +878,10 @@ class RepairRequestController extends Controller
 
         $repairRequests = $query->orderBy('created_at', 'desc')->get();
 
+        $settlementService = app(PaymentSettlementService::class);
+        $repairDeliveryService = app(RepairDeliveryService::class);
+
         if ($request->boolean('reconcile_payments')) {
-            $settlementService = app(PaymentSettlementService::class);
             $hasReconciledChanges = false;
 
             foreach ($repairRequests as $repair) {
@@ -940,7 +942,7 @@ class RepairRequestController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $repairRequests->map(function (RepairRequest $repair) use ($childrenByParent, $reviewedLookup, $logisticsShipmentLookup) {
+            'data' => $repairRequests->map(function (RepairRequest $repair) use ($childrenByParent, $reviewedLookup, $logisticsShipmentLookup, $settlementService, $repairDeliveryService) {
                 // Images are already cast as array, so no need to json_decode
                 $images = is_array($repair->images) ? $repair->images : (is_string($repair->images) ? json_decode($repair->images, true) : []);
                 $pricingSnapshot = $this->calculateRepairPricingSnapshot($repair);
@@ -959,6 +961,11 @@ class RepairRequestController extends Controller
                     ? round(max($resolvedPaidAmount, $parentStoredPaidAmount), 2)
                     : $resolvedPaidAmount;
                 $refundPaymentProfile = $this->resolveRefundPaymentProfile($repair, $resolvedPaidAmount);
+                $returnHandoff = $repairDeliveryService->returnHandoff(
+                    $repair,
+                    $settlementService->isRepairSettled($repair),
+                );
+                $returnRecovery = $returnHandoff['recovery'] ?? null;
 
                 $anchorRepairId = ((bool) ($repair->is_warranty_job ?? false) && (int) ($repair->parent_repair_request_id ?? 0) > 0)
                     ? (int) $repair->parent_repair_request_id
@@ -1018,6 +1025,9 @@ class RepairRequestController extends Controller
                     'same_as_intake_address' => (bool) $repair->same_as_intake_address,
                     'return_address_confirmed_at' => $repair->return_address_confirmed_at?->toISOString(),
                     'return_address_confirmed_version' => $repair->return_address_confirmed_version,
+                    'return_recovery' => $returnRecovery,
+                    'redelivery_payment_due' => ($returnRecovery['state'] ?? null) === 'awaiting_payment'
+                        && $settlementService->isRepairPaymentDueNow($repair),
                     'conversation_id' => $repair->conversation_id,
                     'payment_status' => $repair->payment_status ?? 'pending',
                     'payment_completed_at' => $repair->payment_completed_at ? $repair->payment_completed_at->toISOString() : null,
