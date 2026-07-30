@@ -110,12 +110,6 @@ class ShipmentController extends Controller
         if ($rider) {
             $this->activeWork->assertCanAdvanceLeg($rider, $leg);
         }
-        if (filled($payload['idempotency_key'] ?? null)) {
-            $existing = $leg->proofs()->where('idempotency_key', $payload['idempotency_key'])->first();
-            if ($existing) {
-                return response()->json(['proof' => $existing]);
-            }
-        }
         $storedPath = $request->file('proof_file')
             ?->store("logistics-proof/{$leg->id}", 'local');
         if ($storedPath) {
