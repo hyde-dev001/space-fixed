@@ -107,7 +107,12 @@ class ShipmentController extends Controller
                 return response()->json(['proof' => $existing]);
             }
         }
-        $rider = $this->riderProfileIfAssigned($leg);
+        $user = Auth::guard('user')->user();
+        $backOffice = $user && ($user->can('assign-logistics-deliveries') || $user->can('approve-proof-of-delivery'));
+        $rider = $backOffice ? null : $this->riderProfileIfAssigned($leg);
+        if ($user && ! $backOffice && ! $rider) {
+            abort(403);
+        }
         if ($rider) {
             $this->activeWork->assertCanAdvanceLeg($rider, $leg);
         }

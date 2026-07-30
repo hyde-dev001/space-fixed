@@ -47,6 +47,14 @@ class ProofService
             }
 
             if ($rider) {
+                if (! $leg->assignments()
+                    ->where('rider_profile_id', $rider->id)
+                    ->whereIn('status', ['assigned', 'accepted'])
+                    ->exists()) {
+                    throw ValidationException::withMessages([
+                        'assignment' => 'This delivery is no longer assigned to this rider.',
+                    ]);
+                }
                 $this->activeWork->assertCanAdvanceLeg($rider, $leg);
             }
             $this->assertCanRecord($leg, $data['handoff_type']);
