@@ -1876,7 +1876,7 @@ class RepairRequestController extends Controller
             if ($returnChanged) {
                 RepairPaymentSession::query()
                     ->where('repair_request_id', $repair->id)
-                    ->where('phase', 'final')
+                    ->whereIn('phase', ['final', 'redelivery'])
                     ->where('status', 'pending')
                     ->get()
                     ->each(function (RepairPaymentSession $session) use ($returnSnapshot, $returnMethod, $returnFee): void {
@@ -1932,7 +1932,7 @@ class RepairRequestController extends Controller
             if ($repair->return_logistics_locked_at !== null) {
                 $paidSession = RepairPaymentSession::query()
                     ->where('repair_request_id', $repair->id)
-                    ->where('phase', 'final')
+                    ->whereIn('phase', ['final', 'redelivery'])
                     ->where('status', 'paid')
                     ->latest('id')
                     ->first();
@@ -2499,9 +2499,11 @@ class RepairRequestController extends Controller
             }
 
             $phaseBreakdown = $settlementService->repairPaymentBreakdown($repair);
-            $phase = $phaseBreakdown['phase'] === 'final'
-                ? 'final payment'
-                : ($policy === 'full_upfront' ? 'full payment' : 'down payment');
+            $phase = match ($phaseBreakdown['phase']) {
+                'final' => 'final payment',
+                'redelivery' => 're-delivery fee',
+                default => $policy === 'full_upfront' ? 'full payment' : 'down payment',
+            };
 
             $taxMode = $settlementService->repairTaxMode($repair);
             if ($taxMode === 'vat_inclusive') {
@@ -2654,6 +2656,7 @@ class RepairRequestController extends Controller
                 $currentTaxMode = $settlementService->repairTaxMode($lockedRepair);
                 $paymentPlanChanged = (string) $currentBreakdown['phase'] !== (string) $phaseBreakdown['phase']
                     || (string) $currentBreakdown['policy'] !== (string) $phaseBreakdown['policy']
+                    || (string) ($currentBreakdown['recovery_key'] ?? '') !== (string) ($phaseBreakdown['recovery_key'] ?? '')
                     || (string) ($currentBreakdown['snapshot_version'] ?? '') !== (string) ($phaseBreakdown['snapshot_version'] ?? '')
                     || (string) $currentBreakdown['delivery_method'] !== (string) $phaseBreakdown['delivery_method']
                     || round((float) $currentBreakdown['service_amount'], 2) !== round((float) $phaseBreakdown['service_amount'], 2)
@@ -2691,6 +2694,9 @@ class RepairRequestController extends Controller
                         'payment_phase' => $currentBreakdown['phase'],
                         'service_base_amount' => $currentBreakdown['service_amount'],
                         'tax_mode' => $currentTaxMode,
+                        ...($currentBreakdown['recovery_key'] ? [
+                            'recovery_key' => $currentBreakdown['recovery_key'],
+                        ] : []),
                     ],
                 ]);
 
@@ -2701,7 +2707,9 @@ class RepairRequestController extends Controller
                     'payment_failed_at' => null,
                     'payment_failure_reason' => null,
                     'payment_expired_at' => null,
-                    'payment_status' => $this->nextRepairPaymentStatusForRetry($lockedRepair, $policy),
+                    'payment_status' => $currentBreakdown['phase'] === 'redelivery'
+                        ? $lockedRepair->payment_status
+                        : $this->nextRepairPaymentStatusForRetry($lockedRepair, $policy),
                 ]);
             });
 

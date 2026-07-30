@@ -3,6 +3,7 @@
 namespace Tests\Feature\Repair;
 
 use App\Models\Logistics\HandoffProof;
+use App\Models\Logistics\LogisticsSetting;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\Notification;
@@ -10,7 +11,9 @@ use App\Models\RepairPaymentSession;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Models\UserAddress;
 use App\Services\Logistics\ShipmentLegService;
+use App\Services\PaymentSettlementService;
 use App\Services\RepairDeliveryService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -172,6 +175,167 @@ class RepairReturnRecoveryTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_redelivery_payment_charges_only_the_new_fee_and_reopens_the_same_shipment(): void
+    {
+        [$repair, $shop, $shipment, $original, $return, $proof] = $this->returnedRepairFixture();
+        app(ShipmentLegService::class)->confirmReturnReceipt($return, $proof, $shop);
+        app(RepairDeliveryService::class)->resolveReturnRecovery(
+            $repair->fresh(),
+            'schedule_redelivery',
+            ShopOwner::class,
+            $shop->id,
+        );
+        $fee = $this->confirmCoveredRedeliveryPlan($repair->fresh(), $shop);
+
+        $payments = app(PaymentSettlementService::class);
+        $breakdown = $payments->repairPaymentBreakdown($repair->fresh());
+
+        $this->assertSame('redelivery', $breakdown['phase']);
+        $this->assertSame('redelivery', $breakdown['due_type']);
+        $this->assertSame(0.0, $breakdown['service_amount']);
+        $this->assertSame($fee, $breakdown['delivery_amount']);
+
+        RepairPaymentSession::create([
+            'repair_request_id' => $repair->id,
+            'provider' => 'paymongo',
+            'provider_link_id' => 'cs_old_final',
+            'phase' => 'final',
+            'status' => 'paid',
+            'service_amount' => 500,
+            'delivery_amount' => 100,
+        ]);
+        $session = RepairPaymentSession::create([
+            'repair_request_id' => $repair->id,
+            'provider' => 'paymongo',
+            'provider_link_id' => 'cs_redelivery',
+            'phase' => 'redelivery',
+            'status' => 'pending',
+            'snapshot_version' => $breakdown['snapshot_version'],
+            'delivery_method' => $breakdown['delivery_method'],
+            'service_amount' => 0,
+            'delivery_amount' => $breakdown['delivery_amount'],
+            'quote' => [
+                ...$breakdown['quote'],
+                'payment_policy' => $breakdown['policy'],
+                'payment_phase' => 'redelivery',
+                'service_base_amount' => 0,
+                'tax_mode' => $payments->repairTaxMode($repair),
+                'recovery_key' => $breakdown['recovery_key'],
+            ],
+        ]);
+        $beforePaid = (float) $repair->fresh()->total_paid_amount;
+        $result = $payments->settleRepairPaid(
+            $repair->fresh(),
+            'pay_redelivery_1',
+            false,
+            $session,
+        );
+        $settled = $result['model'];
+        $replay = $payments->settleRepairPaid(
+            $repair->fresh(),
+            'pay_redelivery_1',
+            false,
+            $session->fresh(),
+        );
+
+        $this->assertSame('settled', $result['result']);
+        $this->assertSame('already_settled', $replay['result']);
+        $this->assertSame('completed', $settled->payment_status);
+        $this->assertSame($beforePaid + $fee, (float) $settled->total_paid_amount);
+        $this->assertSame('paid', $session->fresh()->status);
+        $this->assertSame('requested', $shipment->fresh()->status->value);
+        $this->assertSame(3, $shipment->fresh()->legs()->count());
+        $newLeg = $shipment->fresh()->legs()->where('sequence', 3)->firstOrFail();
+        $this->assertSame(3, $newLeg->sequence);
+        $this->assertSame('pending', $newLeg->status->value);
+        $this->assertSame('returned', $original->fresh()->resolution_type);
+        $this->assertSame('delivered', $return->fresh()->status->value);
+        $entry = collect(data_get($settled->logistics_payment_reconciliation, 'entries', []))
+            ->firstWhere('recovery_key', "return-to-shop:{$return->id}");
+        $this->assertSame('paid', $entry['status']);
+        $this->assertSame(1, $this->recoveryNotificationCount($settled, 'ready_for_dispatch'));
+    }
+
+    public function test_stale_redelivery_session_reconciles_without_dispatch(): void
+    {
+        [$repair, $shop, $shipment, , $return, $proof] = $this->returnedRepairFixture();
+        app(ShipmentLegService::class)->confirmReturnReceipt($return, $proof, $shop);
+        app(RepairDeliveryService::class)->resolveReturnRecovery(
+            $repair->fresh(),
+            'schedule_redelivery',
+            ShopOwner::class,
+            $shop->id,
+        );
+        $this->confirmCoveredRedeliveryPlan($repair->fresh(), $shop);
+        $payments = app(PaymentSettlementService::class);
+        $breakdown = $payments->repairPaymentBreakdown($repair->fresh());
+        $session = RepairPaymentSession::create([
+            'repair_request_id' => $repair->id,
+            'provider' => 'paymongo',
+            'provider_link_id' => 'cs_stale_redelivery',
+            'phase' => 'redelivery',
+            'status' => 'pending',
+            'snapshot_version' => $breakdown['snapshot_version'],
+            'delivery_method' => $breakdown['delivery_method'],
+            'service_amount' => 0,
+            'delivery_amount' => $breakdown['delivery_amount'],
+            'quote' => [
+                ...$breakdown['quote'],
+                'payment_policy' => $breakdown['policy'],
+                'service_base_amount' => 0,
+                'tax_mode' => $payments->repairTaxMode($repair),
+                'recovery_key' => 'return-to-shop:stale',
+            ],
+        ]);
+
+        $result = $payments->settleRepairPaid(
+            $repair->fresh(),
+            'pay_stale_redelivery',
+            false,
+            $session,
+        );
+
+        $this->assertSame('reconciliation', $result['result']);
+        $this->assertSame('reconciliation', $session->fresh()->status);
+        $this->assertSame('cancelled', $shipment->fresh()->status->value);
+        $this->assertSame(2, $shipment->fresh()->legs()->count());
+        $this->assertSame('completed', $repair->fresh()->payment_status);
+    }
+
+    public function test_warranty_redelivery_still_charges_the_new_delivery_fee(): void
+    {
+        [$repair, $shop, $shipment, , $return, $proof] = $this->returnedRepairFixture();
+        $repair->update([
+            'is_warranty_job' => true,
+            'billing_mode' => 'warranty_no_charge',
+            'total_paid_amount' => 0,
+        ]);
+        app(ShipmentLegService::class)->confirmReturnReceipt($return, $proof, $shop);
+        app(RepairDeliveryService::class)->resolveReturnRecovery(
+            $repair->fresh(),
+            'schedule_redelivery',
+            ShopOwner::class,
+            $shop->id,
+        );
+        $fee = $this->confirmCoveredRedeliveryPlan($repair->fresh(), $shop);
+
+        $breakdown = app(PaymentSettlementService::class)->repairPaymentBreakdown($repair->fresh());
+
+        $this->assertSame('redelivery', $breakdown['phase']);
+        $this->assertSame(0.0, $breakdown['service_amount']);
+        $this->assertSame($fee, $breakdown['delivery_amount']);
+
+        $settled = app(PaymentSettlementService::class)->settleRepairPhasePaid(
+            $repair->fresh(),
+            $breakdown,
+            'pay_warranty_redelivery',
+        );
+
+        $this->assertSame($fee, (float) $settled->total_paid_amount);
+        $this->assertSame('requested', $shipment->fresh()->status->value);
+        $this->assertSame(3, $shipment->fresh()->legs()->count());
+    }
+
     private function returnedRepairFixture(): array
     {
         $shop = ShopOwner::factory()->create(['business_type' => 'repair']);
@@ -229,5 +393,45 @@ class RepairReturnRecoveryTest extends TestCase
             ->get()
             ->filter(fn (Notification $notification): bool => data_get($notification->data, 'recovery_state') === $state)
             ->count();
+    }
+
+    private function confirmCoveredRedeliveryPlan(RepairRequest $repair, ShopOwner $shop): float
+    {
+        $shop->update([
+            'shop_latitude' => 14.5995,
+            'shop_longitude' => 120.9842,
+        ]);
+        LogisticsSetting::create([
+            'shop_owner_id' => $shop->id,
+            'coverage_radius_km' => 12,
+            'lead_time_days' => 0,
+        ]);
+        $address = UserAddress::create([
+            'user_id' => $repair->user_id,
+            'name' => $repair->customer_name,
+            'phone' => $repair->phone,
+            'region' => 'NCR',
+            'province' => 'Metro Manila',
+            'city' => 'Manila',
+            'barangay' => 'Ermita',
+            'address_line' => '1 Test Street',
+            'postal_code' => '1000',
+            'latitude' => 14.6,
+            'longitude' => 120.98,
+        ]);
+        $delivery = app(RepairDeliveryService::class);
+        $snapshot = $delivery->snapshot($address, 'shop_delivery');
+        $quote = $delivery->quote($shop->fresh(), $address);
+        $quote['address_version'] = $snapshot['version'];
+        $quote['method'] = 'shop_delivery';
+        $repair->update([
+            'return_address' => $snapshot,
+            'return_delivery_fee' => $quote['fee'],
+            'return_logistics_quote' => $quote,
+            'return_address_confirmed_at' => now(),
+            'return_address_confirmed_version' => $snapshot['version'],
+        ]);
+
+        return (float) $quote['fee'];
     }
 }

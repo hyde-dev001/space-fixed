@@ -234,14 +234,18 @@ final class RepairDeliveryService
 
             $sponsoredWarranty = $this->isSponsoredWarranty($lockedRepair);
             $reconciliationStatus = data_get($lockedRepair->logistics_payment_reconciliation, 'status');
-            if (! $sponsoredWarranty
+            $recovery = $existing ? $this->returnRecoveryState($lockedRepair) : null;
+            $paidRecovery = $existing && $this->activeRedeliveryRequirement($lockedRepair, 'paid');
+            if (($recovery && ! $paidRecovery)
+                || (! $paidRecovery
+                && ! $sponsoredWarranty
                 && ($reconciliationStatus === 'pending'
-                    || ! $this->hasFreshReturnPaymentAfterCompensation($lockedRepair))) {
+                    || ! $this->hasFreshReturnPaymentAfterCompensation($lockedRepair)))) {
                 return null;
             }
             if ($existing) {
                 $cancelledAt = $existing->cancelled_at ?? $existing->updated_at;
-                if ((! $sponsoredWarranty && $reconciliationStatus !== 'resolved')
+                if ((! $paidRecovery && ! $sponsoredWarranty && $reconciliationStatus !== 'resolved')
                     || $cancelledAt === null
                     || ! $lockedRepair->return_logistics_locked_at->greaterThan($cancelledAt)) {
                     return null;
@@ -768,6 +772,54 @@ final class RepairDeliveryService
         return $result;
     }
 
+    public function activeRedeliveryRequirement(RepairRequest $repair, string $status = 'awaiting_payment'): ?array
+    {
+        return collect(data_get($repair->logistics_payment_reconciliation, 'entries', []))
+            ->filter(fn ($entry): bool => is_array($entry)
+                && (string) ($entry['type'] ?? '') === 'return_recovery'
+                && (string) ($entry['action'] ?? '') === 'collect_redelivery_fee'
+                && (string) ($entry['status'] ?? '') === $status)
+            ->sortByDesc('updated_at')
+            ->first();
+    }
+
+    public function markRedeliveryPaid(RepairRequest $repair, string $recoveryKey): RepairRequest
+    {
+        $current = is_array($repair->logistics_payment_reconciliation)
+            ? $repair->logistics_payment_reconciliation
+            : [];
+        $entries = collect(data_get($current, 'entries', []))
+            ->filter(fn ($entry): bool => is_array($entry))
+            ->values();
+        $index = $entries->search(fn (array $entry): bool =>
+            (string) ($entry['type'] ?? '') === 'return_recovery'
+            && (string) ($entry['action'] ?? '') === 'collect_redelivery_fee'
+            && (string) ($entry['status'] ?? '') === 'awaiting_payment'
+            && (string) ($entry['recovery_key'] ?? '') === $recoveryKey
+        );
+        if ($index === false) {
+            throw ValidationException::withMessages([
+                'payment' => ['This re-delivery request is no longer awaiting payment.'],
+            ]);
+        }
+
+        $entries->put($index, [
+            ...$entries->get($index),
+            'status' => 'paid',
+            'paid_at' => now()->toISOString(),
+            'updated_at' => now()->toISOString(),
+        ]);
+        $repair->update([
+            'logistics_payment_reconciliation' => [
+                ...$current,
+                'status' => 'resolved',
+                'entries' => $entries->all(),
+            ],
+        ]);
+
+        return $repair->fresh();
+    }
+
     private function returnRecoveryState(RepairRequest $repair): ?array
     {
         if ((bool) $repair->pickup_enabled || (string) $repair->status === 'picked_up') {
@@ -819,6 +871,7 @@ final class RepairDeliveryService
         $state = match ((string) ($entry['status'] ?? '')) {
             'awaiting_payment' => 'awaiting_payment',
             'shop_pickup_selected' => 'shop_pickup',
+            'paid' => 'ready_for_dispatch',
             default => 'awaiting_arrangement',
         };
 
