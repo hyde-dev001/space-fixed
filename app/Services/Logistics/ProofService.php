@@ -14,6 +14,7 @@ class ProofService
     public function __construct(
         private DeliveryEventService $events,
         private RiderActiveWorkGuard $activeWork,
+        private ArrivalService $arrivals,
     ) {}
 
     public function recordProof(ShipmentLeg $leg, array $payload, ?RiderProfile $rider = null): HandoffProof
@@ -37,6 +38,27 @@ class ProofService
 
         return DB::transaction(function () use ($leg, $data, $rider) {
             $leg = ShipmentLeg::query()->with('shipment')->lockForUpdate()->findOrFail($leg->id);
+            $assignment = null;
+            if ($rider) {
+                $assignment = $leg->assignments()
+                    ->where('rider_profile_id', $rider->id)
+                    ->whereIn('status', ['assigned', 'accepted'])
+                    ->latest('id')
+                    ->lockForUpdate()
+                    ->first();
+                if (! $assignment) {
+                    throw ValidationException::withMessages([
+                        'assignment' => 'This delivery is no longer assigned to this rider.',
+                    ]);
+                }
+                $this->activeWork->assertCanAdvanceLeg($rider, $leg);
+                if ($data['handoff_type'] === 'delivery'
+                    && ! $this->arrivals->eventForAssignment($leg, 'dropoff_arrived', $assignment)) {
+                    throw ValidationException::withMessages([
+                        'arrival' => 'Record your arrival at the customer location before submitting delivery proof.',
+                    ]);
+                }
+            }
             if (filled($data['idempotency_key'] ?? null)) {
                 $existing = $leg->proofs()
                     ->where('idempotency_key', $data['idempotency_key'])
@@ -46,17 +68,6 @@ class ProofService
                 }
             }
 
-            if ($rider) {
-                if (! $leg->assignments()
-                    ->where('rider_profile_id', $rider->id)
-                    ->whereIn('status', ['assigned', 'accepted'])
-                    ->exists()) {
-                    throw ValidationException::withMessages([
-                        'assignment' => 'This delivery is no longer assigned to this rider.',
-                    ]);
-                }
-                $this->activeWork->assertCanAdvanceLeg($rider, $leg);
-            }
             $this->assertCanRecord($leg, $data['handoff_type']);
             $proof = $leg->proofs()->create([
                 ...$data,

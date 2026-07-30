@@ -109,6 +109,22 @@ class ShipmentLegService
             }
             if ($rider) {
                 $this->activeWork->assertCanAdvanceLeg($rider, $leg);
+                $assignment = $leg->assignments()
+                    ->where('rider_profile_id', $rider->id)
+                    ->whereIn('status', ['assigned', 'accepted'])
+                    ->latest('id')
+                    ->lockForUpdate()
+                    ->first();
+                if (! $assignment) {
+                    throw ValidationException::withMessages([
+                        'rider' => 'This delivery is no longer assigned to this rider.',
+                    ]);
+                }
+                if (! $this->arrivals->eventForAssignment($leg, 'pickup_arrived', $assignment)) {
+                    throw ValidationException::withMessages([
+                        'arrival' => 'Record your pickup arrival before confirming pickup.',
+                    ]);
+                }
             }
 
             return $this->transition($leg, 'picked_up', ['picked_up_at' => now()], 'picked_up', 'Shipment leg picked up.');
