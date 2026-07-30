@@ -261,4 +261,61 @@ describe("ShopOwner JobOrdersRepair intake logistics", () => {
       "/api/shop-owner/repairs/77/activate-pickup",
     ));
   });
+
+  it("shows only the two return-recovery choices and sets shop pickup", async () => {
+    mocks.repair = repair("customer_delivery", false, {
+      status: "ready_for_pickup",
+      intake_handoff: null,
+      return_delivery_method: "shop_delivery",
+      return_handoff: {
+        visible: true,
+        method: "shop_delivery",
+        can_release: false,
+        action_label: "Confirm delivered handoff",
+        recovery: {
+          code: "returned_to_shop_awaiting_arrangement",
+          label: "Returned to shop—awaiting customer arrangement",
+          state: "awaiting_arrangement",
+          can_schedule_redelivery: true,
+          can_set_shop_pickup: true,
+        },
+      },
+    });
+
+    render(<JobOrdersRepair />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Ready for Pickup \(1\)$/ }));
+    await screen.findByText("Rina Santos");
+    fireEvent.click(screen.getByTitle("View details"));
+
+    expect(await screen.findByText("Returned to shop—awaiting customer arrangement")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Schedule re-delivery" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Set for shop pickup" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Confirm delivered handoff" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Set for shop pickup" }));
+
+    await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
+      "/api/shop-owner/repairs/77/return-recovery",
+      { action: "shop_pickup" },
+    ));
+    await waitFor(() => {
+      expect(mocks.get.mock.calls.filter(([url]) => url === "/api/shop-owner/repairs")).toHaveLength(2);
+    });
+  });
+
+  it("hides a premature return handoff from the repair details", async () => {
+    mocks.repair = repair("shop_pickup", false, {
+      return_handoff: {
+        visible: false,
+        method: "shop_delivery",
+        action_label: "Confirm delivered handoff",
+      },
+    });
+
+    render(<JobOrdersRepair />);
+    await openDetails();
+
+    expect(screen.queryByText("Return handoff")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Confirm delivered handoff" })).not.toBeInTheDocument();
+  });
 });
