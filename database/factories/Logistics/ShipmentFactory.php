@@ -15,7 +15,7 @@ class ShipmentFactory extends Factory
         return [
             'shop_owner_id' => ShopOwner::factory(),
             'source_type' => 'manual',
-            'source_id' => $this->faker->numberBetween(1, 1000),
+            'source_id' => $this->faker->unique()->numberBetween(1, 1000),
             'purpose' => 'retail_delivery',
             'status' => 'requested',
         ];
