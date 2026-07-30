@@ -14,6 +14,7 @@ use App\Models\PosTransaction;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Services\OrderRefundService;
+use App\Services\NotificationService;
 use App\Services\RepairPosRefundService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -51,6 +52,7 @@ class ShipmentLegService
         private RepairPosRefundService $repairRefunds,
         private RiderActiveWorkGuard $activeWork,
         private ArrivalService $arrivals,
+        private NotificationService $notifications,
     ) {}
 
     public function markPickedUp(ShipmentLeg $leg, ?RiderProfile $rider = null): ShipmentLeg
@@ -383,6 +385,11 @@ class ShipmentLegService
             'return_address_confirmed_at' => null,
             'return_address_confirmed_version' => null,
         ]);
+        $this->notifications->notifyRepairReturnRecovery(
+            $repair->fresh(),
+            'awaiting_arrangement',
+            "return-to-shop:{$return->id}",
+        );
     }
 
     private function completeFailedDeliveryRefundReturn(ShipmentLeg $return, ShipmentLeg $original): void

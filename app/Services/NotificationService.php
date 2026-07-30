@@ -460,6 +460,66 @@ class NotificationService
         );
     }
 
+    public function notifyRepairReturnRecovery(
+        RepairRequest $repair,
+        string $state,
+        string $recoveryKey,
+    ): ?Notification {
+        if ((int) $repair->user_id <= 0) {
+            return null;
+        }
+
+        $groupKey = "repair-return-recovery-{$state}-{$repair->id}-".substr(sha1($recoveryKey), 0, 12);
+        $existing = Notification::query()
+            ->where('user_id', $repair->user_id)
+            ->where('group_key', $groupKey)
+            ->first();
+        if ($existing) {
+            return $existing;
+        }
+
+        [$title, $message, $requiresAction] = match ($state) {
+            'awaiting_payment' => [
+                'Choose and Pay for Re-delivery',
+                'Your repaired shoes are at the shop. Confirm your address and pay the new delivery fee to schedule re-delivery.',
+                true,
+            ],
+            'shop_pickup' => [
+                'Ready for Shop Pickup',
+                'Your repaired shoes are ready for collection at the shop.',
+                true,
+            ],
+            'ready_for_dispatch' => [
+                'Re-delivery Payment Received',
+                'Your new delivery fee was received. The shop can now assign your repaired shoes for delivery.',
+                false,
+            ],
+            default => [
+                'Repaired Shoes Returned to Shop',
+                'Your repaired shoes are safely back at the shop and are awaiting a new delivery or pickup arrangement.',
+                false,
+            ],
+        };
+
+        return $this->sendToUser(
+            userId: (int) $repair->user_id,
+            type: NotificationType::REPAIR_STATUS_UPDATE,
+            title: $title,
+            message: $message,
+            data: [
+                'repair_id' => (int) $repair->id,
+                'request_id' => (string) $repair->request_id,
+                'recovery_state' => $state,
+                'recovery_key' => $recoveryKey,
+            ],
+            actionUrl: '/my-repairs',
+            shopId: (int) $repair->shop_owner_id,
+            priority: $requiresAction ? 'high' : 'medium',
+            groupKey: $groupKey,
+            requiresAction: $requiresAction,
+        );
+    }
+
     public function notifyRepairDeliveryReconciliation(
         RepairRequest $repair,
         string $phase,

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\Logistics\DeliveryBatch;
+use App\Models\RepairPaymentSession;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\UserAddress;
@@ -606,6 +607,165 @@ final class RepairDeliveryService
                 'created_at' => optional($event->created_at)->toISOString(),
             ])->values()->all(),
         ];
+    }
+
+    public function resolveReturnRecovery(
+        RepairRequest $repair,
+        string $action,
+        string $actorType,
+        int $actorId,
+    ): array {
+        if (! in_array($action, ['schedule_redelivery', 'shop_pickup'], true)) {
+            throw ValidationException::withMessages([
+                'action' => ['Choose re-delivery or shop pickup.'],
+            ]);
+        }
+
+        $result = DB::transaction(function () use ($repair, $action, $actorType, $actorId): array {
+            $locked = RepairRequest::query()->whereKey($repair->id)->lockForUpdate()->firstOrFail();
+            $recovery = $this->returnRecoveryState($locked);
+            if (! $recovery) {
+                throw ValidationException::withMessages([
+                    'status' => ['This repair is not awaiting a return arrangement.'],
+                ]);
+            }
+
+            $key = (string) $recovery['key'];
+            $current = is_array($locked->logistics_payment_reconciliation)
+                ? $locked->logistics_payment_reconciliation
+                : [];
+            if ((string) data_get($current, 'status') === 'pending') {
+                throw ValidationException::withMessages([
+                    'payment' => ['Resolve the current payment reconciliation before changing the return plan.'],
+                ]);
+            }
+            $entries = collect(data_get($current, 'entries', []))
+                ->filter(fn ($entry): bool => is_array($entry))
+                ->values();
+            $entryIndex = $entries->search(
+                fn (array $entry): bool => (string) ($entry['type'] ?? '') === 'return_recovery'
+                    && (string) ($entry['recovery_key'] ?? '') === $key
+            );
+            $entry = $entryIndex === false ? null : $entries->get($entryIndex);
+
+            if ($action === 'schedule_redelivery') {
+                if ((string) ($entry['status'] ?? '') === 'shop_pickup_selected') {
+                    throw ValidationException::withMessages([
+                        'status' => ['This repair is already set for shop pickup.'],
+                    ]);
+                }
+
+                $updatedEntry = [
+                    ...($entry ?? []),
+                    'type' => 'return_recovery',
+                    'phase' => 'return',
+                    'action' => 'collect_redelivery_fee',
+                    'status' => 'awaiting_payment',
+                    'recovery_key' => $key,
+                    'selected_by_type' => $actorType,
+                    'selected_by_id' => $actorId,
+                    'created_at' => $entry['created_at'] ?? now()->toISOString(),
+                    'updated_at' => now()->toISOString(),
+                ];
+                if ($entryIndex === false) {
+                    $entries->push($updatedEntry);
+                } else {
+                    $entries->put($entryIndex, $updatedEntry);
+                }
+
+                $locked->update([
+                    'status' => 'ready_for_pickup',
+                    'return_delivery_method' => 'shop_delivery',
+                    'return_logistics_locked_at' => null,
+                    'return_address_confirmed_at' => null,
+                    'return_address_confirmed_version' => null,
+                    'payment_enabled' => true,
+                    'logistics_payment_reconciliation' => [
+                        ...$current,
+                        'status' => 'resolved',
+                        'entries' => $entries->values()->all(),
+                    ],
+                ]);
+            } else {
+                $paid = RepairPaymentSession::query()
+                    ->where('repair_request_id', $locked->id)
+                    ->where('phase', 'redelivery')
+                    ->where('status', 'paid')
+                    ->get()
+                    ->contains(fn (RepairPaymentSession $session): bool => (string) data_get(
+                        $session->quote,
+                        'recovery_key',
+                    ) === $key);
+                if ($paid) {
+                    throw ValidationException::withMessages([
+                        'payment' => ['This re-delivery fee is already paid and cannot be switched to shop pickup.'],
+                    ]);
+                }
+
+                RepairPaymentSession::query()
+                    ->where('repair_request_id', $locked->id)
+                    ->where('phase', 'redelivery')
+                    ->where('status', 'pending')
+                    ->get()
+                    ->filter(fn (RepairPaymentSession $session): bool => (string) data_get(
+                        $session->quote,
+                        'recovery_key',
+                    ) === $key)
+                    ->each->update(['status' => 'invalidated', 'invalidated_at' => now()]);
+
+                $updatedEntry = [
+                    ...($entry ?? []),
+                    'type' => 'return_recovery',
+                    'phase' => 'return',
+                    'action' => 'shop_pickup',
+                    'status' => 'shop_pickup_selected',
+                    'recovery_key' => $key,
+                    'selected_by_type' => $actorType,
+                    'selected_by_id' => $actorId,
+                    'created_at' => $entry['created_at'] ?? now()->toISOString(),
+                    'updated_at' => now()->toISOString(),
+                ];
+                if ($entryIndex === false) {
+                    $entries->push($updatedEntry);
+                } else {
+                    $entries->put($entryIndex, $updatedEntry);
+                }
+
+                $locked->update([
+                    'status' => 'ready_for_pickup',
+                    'return_delivery_method' => 'walk_in',
+                    'return_delivery_fee' => 0,
+                    'return_logistics_quote' => null,
+                    'return_logistics_locked_at' => null,
+                    'return_address_confirmed_at' => null,
+                    'return_address_confirmed_version' => null,
+                    'logistics_payment_reconciliation' => [
+                        ...$current,
+                        'status' => 'resolved',
+                        'entries' => $entries->values()->all(),
+                    ],
+                ]);
+            }
+
+            $updated = $locked->fresh();
+
+            return [
+                'repair' => $updated,
+                'recovery' => $this->returnRecoveryState($updated),
+                'notification_state' => $action === 'schedule_redelivery'
+                    ? 'awaiting_payment'
+                    : 'shop_pickup',
+                'recovery_key' => $key,
+            ];
+        }, 3);
+
+        $this->notifications->notifyRepairReturnRecovery(
+            $result['repair'],
+            $result['notification_state'],
+            $result['recovery_key'],
+        );
+
+        return $result;
     }
 
     private function returnRecoveryState(RepairRequest $repair): ?array
