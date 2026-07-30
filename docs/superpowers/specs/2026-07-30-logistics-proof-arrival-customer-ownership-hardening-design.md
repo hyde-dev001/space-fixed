@@ -15,7 +15,7 @@ The existing shipment controller remains the API boundary. A user-authenticated 
 - the user has the leg's current active rider assignment; or
 - the user has the explicit back-office `assign-logistics-deliveries` or `approve-proof-of-delivery` capability.
 
-The general `record-logistics-proof` capability alone is not a back-office bypass because riders also hold it. Shop owners retain their existing operational proof access. For rider submissions, the shared proof service rechecks the active assignment after locking the leg and before recording proof, so reassignment cannot race a controller authorization check.
+The general `record-logistics-proof` capability alone is not a back-office bypass because riders also hold it. Shop owners retain their existing operational proof access. Explicit back-office capability takes precedence when a dispatcher or proof approver also has a rider profile, so that operational submission does not accidentally inherit rider-arrival requirements. For rider submissions, the shared proof service rechecks the active assignment after locking the leg and before recording proof, so reassignment cannot race a controller authorization check.
 
 Pickup-proof confirmation and rejection must bind all records to the same workflow: the proof must belong to the route leg, use the `pickup` handoff type, and be `pending` before its review status changes. Replaying an already approved confirmation on an already picked-up leg remains idempotent. Rejected proofs cannot be approved later, and already reviewed proofs cannot be rejected again. This prevents independently route-bound `{leg}` and `{proof}` records from being combined.
 
