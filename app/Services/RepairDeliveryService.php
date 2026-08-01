@@ -184,6 +184,46 @@ final class RepairDeliveryService
             ->first();
     }
 
+    public function markPickupRecoveryPaid(RepairRequest $repair, string $recoveryKey, string $planKey): RepairRequest
+    {
+        $current = is_array($repair->logistics_payment_reconciliation)
+            ? $repair->logistics_payment_reconciliation
+            : [];
+        $entries = collect(data_get($current, 'entries', []))
+            ->filter(fn ($entry): bool => is_array($entry))
+            ->values();
+        $index = $entries->search(fn (array $entry): bool =>
+            (string) ($entry['type'] ?? '') === 'pickup_recovery'
+            && (string) ($entry['status'] ?? '') === 'awaiting_payment'
+            && (string) ($entry['recovery_key'] ?? '') === $recoveryKey
+            && (string) ($entry['plan_key'] ?? '') === $planKey
+        );
+        if ($index === false) {
+            throw ValidationException::withMessages([
+                'payment' => ['This pickup request is no longer awaiting payment.'],
+            ]);
+        }
+
+        $entries->put($index, [
+            ...$entries->get($index),
+            'status' => 'paid',
+            'paid_at' => now()->toISOString(),
+            'updated_at' => now()->toISOString(),
+        ]);
+        $repair->update([
+            'status' => 'repairer_accepted',
+            'payment_enabled' => false,
+            'payment_enabled_at' => null,
+            'logistics_payment_reconciliation' => [
+                ...$current,
+                'status' => 'resolved',
+                'entries' => $entries->all(),
+            ],
+        ]);
+
+        return $repair->fresh();
+    }
+
     public function resolvePickupRecovery(
         RepairRequest $repair,
         string $method,
@@ -297,7 +337,7 @@ final class RepairDeliveryService
             $entries->put($index, $updatedEntry);
             $shipment = Shipment::query()->find((int) ($entry['shipment_id'] ?? 0));
             $lockAt = now();
-            if ($shipment?->cancelled_at && ! $lockAt->greaterThan($shipment->cancelled_at)) {
+            if ($shipment?->cancelled_at && $lockAt->timestamp <= $shipment->cancelled_at->timestamp) {
                 $lockAt = $shipment->cancelled_at->copy()->addSecond();
             }
             $updates = [
@@ -394,6 +434,51 @@ final class RepairDeliveryService
                 }
 
                 return null;
+            }
+
+            if ($existing) {
+                $recovery = $this->activePickupRecovery($lockedRepair, 'paid');
+                $address = is_array($lockedRepair->intake_address) ? $lockedRepair->intake_address : [];
+                $leg = $existing->legs()->create([
+                    'sequence' => ((int) $existing->legs()->max('sequence')) + 1,
+                    'leg_type' => 'inbound',
+                    'status' => 'pending',
+                    'origin_snapshot' => [
+                        'type' => 'customer',
+                        'name' => (string) ($lockedRepair->customer_name ?? 'Customer'),
+                        'phone' => (string) ($lockedRepair->phone ?? ''),
+                        'address' => collect([
+                            $address['address_line'] ?? null,
+                            $address['barangay'] ?? null,
+                            $address['city'] ?? null,
+                            $address['province'] ?? $address['region'] ?? null,
+                            $address['postal_code'] ?? null,
+                        ])->filter()->implode(', '),
+                        'latitude' => $address['latitude'] ?? null,
+                        'longitude' => $address['longitude'] ?? null,
+                        'delivery_instructions' => $address['delivery_instructions'] ?? null,
+                    ],
+                    'destination_snapshot' => $existing->legs()->first()?->destination_snapshot,
+                    'requires_pickup_proof' => false,
+                    'requires_delivery_proof' => true,
+                    'scheduled_delivery_date' => $recovery['scheduled_delivery_date'] ?? null,
+                    'delivery_window' => $recovery['delivery_window'] ?? null,
+                    'schedule_status' => 'scheduled',
+                    'distance_km' => data_get($recovery, 'quote.distance_km'),
+                    'estimated_at' => now(),
+                ]);
+                $existing->update([
+                    'status' => 'requested',
+                    'cancelled_at' => null,
+                    'completed_at' => null,
+                ]);
+                $this->events->record($existing, $leg, [
+                    'event_type' => 'shipment_pickup_retry_requested',
+                    'visibility' => 'customer',
+                    'message' => 'Your new pickup has been scheduled.',
+                ]);
+
+                return $existing->fresh(['legs', 'events']);
             }
 
             return $this->sourceShipments->ensureRepairInboundShipment($lockedRepair);

@@ -13,7 +13,9 @@ use App\Models\ShopOwner;
 use App\Models\User;
 use App\Models\UserAddress;
 use App\Services\Logistics\ShipmentLegService;
+use App\Services\PaymentSettlementService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class RepairWarrantyLogisticsRecoveryTest extends TestCase
@@ -170,6 +172,116 @@ class RepairWarrantyLogisticsRecoveryTest extends TestCase
             ->assertJsonValidationErrors('address_id');
     }
 
+    public function test_paid_pickup_retry_reopens_the_same_shipment_once(): void
+    {
+        config()->set('services.paymongo.webhook_secret', '');
+        [$repair, $customer, $address, $shipment, $failedLeg] = $this->terminalPickupRecovery();
+        $plan = [
+            'method' => 'shop_pickup',
+            'address_id' => $address->id,
+            'delivery_date' => now()->addDay()->toDateString(),
+            'delivery_window' => 'morning',
+        ];
+        $this->actingAs($customer, 'user')
+            ->postJson("/api/customer/repairs/{$repair->id}/pickup-recovery", $plan)
+            ->assertOk();
+
+        $repair->refresh();
+        $breakdown = app(PaymentSettlementService::class)->repairPaymentBreakdown($repair);
+        $this->assertSame('pickup_retry', $breakdown['phase']);
+        $this->assertSame(0.0, (float) $breakdown['service_amount']);
+        $this->assertSame((float) $repair->intake_delivery_fee, (float) $breakdown['delivery_amount']);
+
+        Http::fake([
+            'https://api.paymongo.com/v1/checkout_sessions' => Http::response([
+                'data' => [
+                    'id' => 'cs_warranty_pickup_retry',
+                    'attributes' => ['checkout_url' => 'https://checkout.test/warranty-pickup-retry'],
+                ],
+            ]),
+        ]);
+        $this->actingAs($customer, 'user')
+            ->postJson("/api/customer/repairs/{$repair->id}/retry-payment-session")
+            ->assertOk()
+            ->assertJsonPath('checkout_url', 'https://checkout.test/warranty-pickup-retry')
+            ->assertJsonPath('total_amount', (int) $repair->intake_delivery_fee);
+        $session = RepairPaymentSession::query()
+            ->where('provider_link_id', 'cs_warranty_pickup_retry')
+            ->firstOrFail();
+        $this->assertSame('pickup_retry', $session->phase);
+        $this->assertSame(0.0, (float) $session->service_amount);
+
+        $payload = $this->paidWebhookPayload('cs_warranty_pickup_retry', 'pay_warranty_pickup_retry');
+        $this->postJson('/api/webhooks/paymongo', $payload)->assertOk();
+        $this->postJson('/api/webhooks/paymongo', $payload)->assertOk();
+
+        $repair->refresh();
+        $shipment->refresh();
+        $this->assertSame('paid', $session->fresh()->status);
+        $this->assertSame('repairer_accepted', $repair->status);
+        $this->assertNotNull($repair->intake_logistics_locked_at);
+        $this->assertSame(2, $shipment->legs()->count());
+        $this->assertSame(1, $failedLeg->attempts()->count());
+        $this->assertSame(0, $shipment->legs->sortByDesc('sequence')->first()->attempts()->count());
+        $this->assertSame(1, Notification::query()
+            ->where('user_id', $customer->id)
+            ->where('group_key', 'like', "repair-pickup-recovery-ready_for_dispatch-{$repair->id}-%")
+            ->count());
+    }
+
+    public function test_changed_pickup_address_reconciles_paid_session_without_reopening_shipment(): void
+    {
+        config()->set('services.paymongo.webhook_secret', '');
+        [$repair, $customer, $address, $shipment] = $this->terminalPickupRecovery();
+        $this->actingAs($customer, 'user')
+            ->postJson("/api/customer/repairs/{$repair->id}/pickup-recovery", [
+                'method' => 'shop_pickup',
+                'address_id' => $address->id,
+                'delivery_date' => now()->addDay()->toDateString(),
+                'delivery_window' => 'morning',
+            ])->assertOk();
+        Http::fake([
+            'https://api.paymongo.com/v1/checkout_sessions' => Http::response([
+                'data' => [
+                    'id' => 'cs_stale_warranty_pickup_retry',
+                    'attributes' => ['checkout_url' => 'https://checkout.test/stale-warranty-pickup-retry'],
+                ],
+            ]),
+        ]);
+        $this->actingAs($customer, 'user')
+            ->postJson("/api/customer/repairs/{$repair->id}/retry-payment-session")
+            ->assertOk();
+        $address->update(['address_line' => 'Changed after checkout']);
+
+        $this->postJson('/api/webhooks/paymongo', $this->paidWebhookPayload(
+            'cs_stale_warranty_pickup_retry',
+            'pay_stale_warranty_pickup_retry',
+        ))->assertOk();
+
+        $this->assertSame('reconciliation', RepairPaymentSession::query()
+            ->where('provider_link_id', 'cs_stale_warranty_pickup_retry')->value('status'));
+        $this->assertSame(1, $shipment->legs()->count());
+        $this->assertSame('cancelled', $repair->fresh()->status);
+    }
+
+    public function test_unrelated_cancelled_repair_still_cannot_start_checkout(): void
+    {
+        $customer = User::factory()->create();
+        $shop = ShopOwner::factory()->create(['paymongo_secret_key' => 'sk_test_cancelled_repair']);
+        $repair = RepairRequest::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'user_id' => $customer->id,
+            'status' => 'cancelled',
+            'payment_enabled' => true,
+            'payment_status' => 'pending',
+        ]);
+
+        $this->actingAs($customer, 'user')
+            ->postJson("/api/customer/repairs/{$repair->id}/retry-payment-session")
+            ->assertStatus(409)
+            ->assertJsonPath('message', 'This repair request is cancelled and cannot be paid.');
+    }
+
     private function terminalPickupRecovery(): array
     {
         $customer = User::factory()->create();
@@ -177,6 +289,7 @@ class RepairWarrantyLogisticsRecoveryTest extends TestCase
             'registration_type' => 'company',
             'shop_latitude' => 14.5995,
             'shop_longitude' => 120.9842,
+            'paymongo_secret_key' => 'sk_test_warranty_pickup_recovery',
         ]);
         LogisticsSetting::create([
             'shop_owner_id' => $shop->id,
@@ -254,5 +367,20 @@ class RepairWarrantyLogisticsRecoveryTest extends TestCase
             'longitude' => 120.9800,
             'delivery_instructions' => 'Blue gate',
         ], $overrides));
+    }
+
+    private function paidWebhookPayload(string $linkId, string $paymentId): array
+    {
+        return [
+            'data' => [
+                'attributes' => [
+                    'type' => 'link.payment.paid',
+                    'data' => [
+                        'id' => $paymentId,
+                        'attributes' => ['payment_link_id' => $linkId],
+                    ],
+                ],
+            ],
+        ];
     }
 }

@@ -2552,6 +2552,8 @@ class RepairRequestController extends Controller
             }
 
             $policy = $this->normalizeRepairPaymentPolicy($repair->payment_policy ?? 'deposit_50');
+            $pickupRetry = app(RepairDeliveryService::class)
+                ->activePickupRecovery($repair, 'awaiting_payment');
 
             if ($this->isRepairPaymentSettled($repair, $policy)) {
                 return response()->json([
@@ -2560,7 +2562,7 @@ class RepairRequestController extends Controller
                 ], 409);
             }
 
-            if ((string) $repair->status === 'cancelled') {
+            if ((string) $repair->status === 'cancelled' && ! $pickupRetry) {
                 return response()->json([
                     'success' => false,
                     'message' => 'This repair request is cancelled and cannot be paid.',
@@ -2585,6 +2587,7 @@ class RepairRequestController extends Controller
             $phase = match ($phaseBreakdown['phase']) {
                 'final' => 'final payment',
                 'redelivery' => 're-delivery fee',
+                'pickup_retry' => 'new pickup fee',
                 default => $policy === 'full_upfront' ? 'full payment' : 'down payment',
             };
 
@@ -2740,6 +2743,7 @@ class RepairRequestController extends Controller
                 $paymentPlanChanged = (string) $currentBreakdown['phase'] !== (string) $phaseBreakdown['phase']
                     || (string) $currentBreakdown['policy'] !== (string) $phaseBreakdown['policy']
                     || (string) ($currentBreakdown['recovery_key'] ?? '') !== (string) ($phaseBreakdown['recovery_key'] ?? '')
+                    || (string) ($currentBreakdown['plan_key'] ?? '') !== (string) ($phaseBreakdown['plan_key'] ?? '')
                     || (string) ($currentBreakdown['snapshot_version'] ?? '') !== (string) ($phaseBreakdown['snapshot_version'] ?? '')
                     || (string) $currentBreakdown['delivery_method'] !== (string) $phaseBreakdown['delivery_method']
                     || round((float) $currentBreakdown['service_amount'], 2) !== round((float) $phaseBreakdown['service_amount'], 2)
@@ -2780,6 +2784,9 @@ class RepairRequestController extends Controller
                         ...($currentBreakdown['recovery_key'] ? [
                             'recovery_key' => $currentBreakdown['recovery_key'],
                         ] : []),
+                        ...($currentBreakdown['plan_key'] ? [
+                            'plan_key' => $currentBreakdown['plan_key'],
+                        ] : []),
                     ],
                 ]);
 
@@ -2790,7 +2797,7 @@ class RepairRequestController extends Controller
                     'payment_failed_at' => null,
                     'payment_failure_reason' => null,
                     'payment_expired_at' => null,
-                    'payment_status' => $currentBreakdown['phase'] === 'redelivery'
+                    'payment_status' => in_array($currentBreakdown['phase'], ['redelivery', 'pickup_retry'], true)
                         ? $lockedRepair->payment_status
                         : $this->nextRepairPaymentStatusForRetry($lockedRepair, $policy),
                 ]);
