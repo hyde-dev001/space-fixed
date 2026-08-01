@@ -8,7 +8,6 @@ use App\Services\OrderRefundService;
 use App\Services\ShopOwnerApprovalPolicyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Schema;
 
 class RefundApprovalController extends Controller
 {
@@ -358,15 +357,9 @@ class RefundApprovalController extends Controller
             $reasonDetails = trim($reasonDetails . ($reasonDetails !== '' ? "\n\n" : '') . 'Other reason note: ' . $otherReasonNote);
         }
 
-        $lineBasedAmount = 0.0;
-        if (Schema::hasTable('order_refund_items')) {
-            $lineBasedAmount = round((float) $refund->items->sum(fn ($line) => (float) ($line->line_amount ?? 0)), 2);
-        }
-
         $isExhaustedDeliveryRefund = (string) ($refund->reason_code ?? '') === 'delivery_attempts_exhausted';
-        $effectiveAmount = !$isExhaustedDeliveryRefund && $lineBasedAmount > 0
-            ? $lineBasedAmount
-            : round((float) ($refund->amount ?? 0), 2);
+        $effectiveAmount = $this->orderRefundService->resolvePayoutAmount($refund, $order);
+        $rawAmount = round((float) ($refund->amount ?? 0), 2);
         $shippingFee = round(min(max(0, (float) ($order->shipping_fee ?? 0)), $effectiveAmount), 2);
         $canAdjustRefundAmount = $isExhaustedDeliveryRefund
             && $financeStatus === 'pending'
@@ -407,8 +400,12 @@ class RefundApprovalController extends Controller
             'orderTotal' => '₱' . number_format($orderTotal, 2),
             'refundAmount' => '₱' . number_format($effectiveAmount, 2),
             'refundAmountValue' => $effectiveAmount,
+            'payoutAmount' => '₱' . number_format($effectiveAmount, 2),
+            'payoutAmountValue' => $effectiveAmount,
             'canAdjustRefundAmount' => $canAdjustRefundAmount,
-            'refundAmountWithoutShipping' => round(max(0, $effectiveAmount - $shippingFee), 2),
+            'refundAmountWithoutShipping' => $isExhaustedDeliveryRefund
+                ? round(max(0, $rawAmount - min(max(0, (float) ($order->shipping_fee ?? 0)), $rawAmount)), 2)
+                : $effectiveAmount,
             'shippingFee' => $shippingFee,
             'refundMethod' => $this->humanizeRefundMethod($refund->requested_refund_method),
             'requestedBy' => (string) ($refund->customer?->name ?? 'Customer'),

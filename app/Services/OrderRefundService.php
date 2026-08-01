@@ -1230,6 +1230,32 @@ class OrderRefundService
         return $this->executeGatewayRefund($refund, $order, $processedBy, $executionNote);
     }
 
+    public function resolvePayoutAmount(OrderRefund $refund, ?Order $order = null): float
+    {
+        $amount = round(max(0, (float) ($refund->amount ?? 0)), 2);
+        if ((string) ($refund->reason_code ?? '') === 'delivery_attempts_exhausted') {
+            return $amount;
+        }
+
+        $lineAmount = $this->resolveLineBasedRefundAmount($refund);
+        if ($lineAmount > 0) {
+            return $lineAmount;
+        }
+
+        $order ??= $refund->relationLoaded('order') ? $refund->order : $refund->order()->first();
+        $shipping = round(max(0, (float) ($order?->shipping_fee ?? 0)), 2);
+        if ($amount > 0) {
+            return round(max(0, $amount - min($shipping, $amount)), 2);
+        }
+
+        return round(max(
+            0,
+            (float) ($order?->total_amount ?? 0) + max(0, (float) ($order?->vat_amount ?? 0)),
+            (float) ($order?->total_amount ?? 0),
+            max(0, (float) ($order?->total ?? 0) - $shipping),
+        ), 2);
+    }
+
     private function executeGatewayRefund(OrderRefund $refund, Order $order, ?int $processedBy = null, ?string $executionNote = null): array
     {
         $secretKey = (string) ($order->shopOwner?->paymongo_secret_key ?? '');
@@ -1264,17 +1290,9 @@ class OrderRefundService
             ];
         }
 
-        $amount = $this->resolveLineBasedRefundAmount($refund);
+        $amount = $this->resolvePayoutAmount($refund, $order);
         if ($amount > 0 && round((float) ($refund->amount ?? 0), 2) !== $amount) {
             $refund->update(['amount' => $amount]);
-        }
-
-        if ($amount <= 0) {
-            $amount = (float) ($refund->amount ?? 0);
-        }
-
-        if ($amount <= 0) {
-            $amount = $this->resolveRefundAmount($order, $secretKey);
         }
 
         if ($amount <= 0) {

@@ -160,6 +160,30 @@ class FailedDeliveryRefundWorkflowTest extends TestCase
             ->assertJsonPath('data.0.canAdjustRefundAmount', true);
     }
 
+    public function test_exhausted_delivery_execution_keeps_finance_approved_shipping_inclusive_amount(): void
+    {
+        [$order, $leg] = $this->paidOrderWithOutboundLeg();
+        $refund = app(OrderRefundService::class)
+            ->reserveFailedDeliveryRefund($order, $leg, 'vehicle_or_delivery_problem')['refund'];
+        $refund->update([
+            'status' => 'approved',
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'received',
+        ]);
+
+        $gateway = $this->mock(PaymongoRefundService::class);
+        $gateway->shouldReceive('createRefund')
+            ->once()
+            ->withArgs(fn ($key, $paymentId, $amount) => $amount === 110000)
+            ->andReturn(['success' => true, 'status' => 'succeeded', 'refund_id' => 'refund-exhausted']);
+
+        $result = app(OrderRefundService::class)->executeApprovedRefund($refund->fresh());
+
+        $this->assertSame('refunded', $result['result']);
+        $this->assertSame(1100.0, round((float) $refund->fresh()->amount, 2));
+    }
+
     public function test_every_active_refund_status_blocks_competing_failed_delivery_reservation(): void
     {
         foreach (['requested', 'pending_approval', 'processing'] as $status) {
