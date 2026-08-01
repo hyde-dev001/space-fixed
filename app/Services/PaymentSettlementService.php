@@ -51,9 +51,6 @@ class PaymentSettlementService
             || strtolower((string) ($repair->billing_mode ?? '')) === 'warranty_no_charge';
         if ($shopSponsoredWarranty) {
             $serviceTotal = $serviceAmount = 0.0;
-            if ($phase !== 'redelivery') {
-                $deliveryAmount = 0.0;
-            }
         }
         $redelivery = $phase === 'redelivery'
             ? $this->repairDeliveryService->activeRedeliveryRequirement($repair)

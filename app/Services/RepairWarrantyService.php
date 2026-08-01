@@ -257,7 +257,11 @@ class RepairWarrantyService
             $deliveryPlan = $this->warrantyDeliveryPlan($original, $intakeMethod, $preferredReceive);
             $intakeFee = (float) $deliveryPlan['intake']['fee'];
             $returnFee = (float) $deliveryPlan['return']['fee'];
-            $logisticsLockedAt = now();
+            $needsIntakePayment = $intakeMethod === 'shop_pickup' && $intakeFee > 0;
+            $hasLaterReturnPayment = $preferredReceive === 'shop_delivery' && $returnFee > 0;
+            $initialPaymentStatus = $needsIntakePayment
+                ? 'pending'
+                : ($hasLaterReturnPayment ? 'paid' : 'completed');
 
             $status = ($handlerSource === 'business_employee' && $handlerUserId)
                 ? 'assigned_to_repairer'
@@ -295,12 +299,12 @@ class RepairWarrantyService
                 'included_services_snapshot' => $original->included_services_snapshot,
                 'add_on_services_snapshot' => $original->add_on_services_snapshot,
                 'pricing_breakdown' => $pricingBreakdown,
-                'payment_status' => 'completed',
-                'payment_enabled' => false,
-                'payment_enabled_at' => null,
+                'payment_status' => $initialPaymentStatus,
+                'payment_enabled' => $needsIntakePayment,
+                'payment_enabled_at' => $needsIntakePayment ? now() : null,
                 'payment_policy' => $original->payment_policy,
                 'payment_policy_snapshot' => $original->payment_policy_snapshot ?: $original->payment_policy,
-                'payment_status_derived' => 'completed',
+                'payment_status_derived' => $initialPaymentStatus,
                 'total_paid_amount' => 0,
                 'total_refunded_amount' => 0,
                 'manual_pos_queue_enabled' => false,
@@ -319,16 +323,14 @@ class RepairWarrantyService
                 'pickup_address' => $deliveryPlan['intake']['snapshot'],
                 'intake_delivery_fee' => $intakeFee,
                 'intake_logistics_quote' => $deliveryPlan['intake']['quote'],
-                'intake_logistics_locked_at' => $logisticsLockedAt,
+                'intake_logistics_locked_at' => null,
                 'return_delivery_method' => $preferredReceive,
                 'return_address' => $deliveryPlan['return']['snapshot'],
                 'return_delivery_fee' => $returnFee,
                 'return_logistics_quote' => $deliveryPlan['return']['quote'],
-                'return_logistics_locked_at' => $logisticsLockedAt,
-                'return_address_confirmed_at' => $preferredReceive === 'shop_delivery' ? $logisticsLockedAt : null,
-                'return_address_confirmed_version' => $preferredReceive === 'shop_delivery'
-                    ? data_get($deliveryPlan, 'return.snapshot.version')
-                    : null,
+                'return_logistics_locked_at' => null,
+                'return_address_confirmed_at' => null,
+                'return_address_confirmed_version' => null,
                 'same_as_intake_address' => $deliveryPlan['same_address'],
                 'is_high_value' => false,
                 'requires_owner_approval' => false,
