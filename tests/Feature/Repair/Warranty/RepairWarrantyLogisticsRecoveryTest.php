@@ -41,6 +41,11 @@ class RepairWarrantyLogisticsRecoveryTest extends TestCase
     public function test_customer_can_stage_and_change_an_unpaid_shop_pickup_without_duplicate_recovery(): void
     {
         [$repair, $customer, $address, $shipment] = $this->terminalPickupRecovery();
+        $this->actingAs($customer, 'user')
+            ->getJson('/api/customer/repairs')
+            ->assertOk()
+            ->assertJsonPath('data.0.pickup_recovery.state', 'awaiting_arrangement')
+            ->assertJsonPath('data.0.pickup_retry_payment_due', false);
         $firstPlan = [
             'method' => 'shop_pickup',
             'address_id' => $address->id,
@@ -91,6 +96,11 @@ class RepairWarrantyLogisticsRecoveryTest extends TestCase
             ->assertJsonPath('recovery.status', 'awaiting_payment');
 
         $this->assertSame('invalidated', $session->fresh()->status);
+        $this->actingAs($customer, 'user')
+            ->getJson('/api/customer/repairs')
+            ->assertOk()
+            ->assertJsonPath('data.0.pickup_recovery.state', 'awaiting_payment')
+            ->assertJsonPath('data.0.pickup_retry_payment_due', true);
     }
 
     public function test_walk_in_reopens_same_warranty_job_for_free_and_is_idempotent(): void

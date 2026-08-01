@@ -510,6 +510,7 @@ describe("MyRepairs return logistics", () => {
         code: "returned_to_shop_awaiting_arrangement",
         label: "Returned to shop—awaiting customer arrangement",
         state: "awaiting_arrangement",
+        shop: { name: "SoleSpace Makati", address: "9 Repair Avenue" },
       },
       redelivery_payment_due: false,
     });
@@ -538,7 +539,7 @@ describe("MyRepairs return logistics", () => {
     ));
     expect(screen.queryByRole("heading", { name: "Return delivery plan" })).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Return delivery tracking" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Pay new delivery fee" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pay new shipping fee" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Awaiting handoff" })).not.toBeInTheDocument();
     expect(mocks.get).not.toHaveBeenCalledWith("/tracking/shipments/22", expect.anything());
   });
@@ -550,18 +551,43 @@ describe("MyRepairs return logistics", () => {
         code: "returned_to_shop_awaiting_arrangement",
         label: "Returned to shop—awaiting customer arrangement",
         state: "awaiting_arrangement",
+        shop: { name: "SoleSpace Makati", address: "9 Repair Avenue" },
       },
       redelivery_payment_due: false,
     });
 
     await renderReadyRepair();
 
-    fireEvent.click(screen.getByRole("button", { name: "Pick up at shop" }));
+    const recovery = screen.getByRole("region", { name: "Repair return recovery" });
+    expect(within(recovery).getByText("SoleSpace Makati")).toBeInTheDocument();
+    expect(within(recovery).getByText("9 Repair Avenue")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Set for shop pickup" }));
 
     await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
       "/api/customer/repairs/77/return-recovery",
       { action: "shop_pickup" },
     ));
+  });
+
+  it("shows return transit as informational with no recovery actions", async () => {
+    mocks.repair = repair({
+      payment_status: "completed",
+      return_recovery: {
+        code: "returning_to_shop",
+        label: "Returning to shop",
+        state: "returning_to_shop",
+        message: "Returning to shop—rescheduling unlocks after shop receipt.",
+        actions_available: false,
+      },
+      redelivery_payment_due: false,
+    });
+
+    await renderReadyRepair();
+
+    const recovery = screen.getByRole("region", { name: "Repair return recovery" });
+    expect(within(recovery).getByText("Returning to shop—rescheduling unlocks after shop receipt.")).toBeInTheDocument();
+    expect(within(recovery).queryByRole("button", { name: "Schedule re-delivery" })).not.toBeInTheDocument();
+    expect(within(recovery).queryByRole("button", { name: "Set for shop pickup" })).not.toBeInTheDocument();
   });
 
   it("shows only the new delivery fee payment after redelivery is scheduled", async () => {
@@ -581,7 +607,7 @@ describe("MyRepairs return logistics", () => {
     const recovery = screen.getByRole("region", { name: "Repair return recovery" });
     expect(within(recovery).getByText(/confirm your return address, then pay the new delivery fee/i)).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Return delivery plan" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Pay new delivery fee" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Pay new shipping fee" })).toBeEnabled();
     expect(screen.queryByRole("region", { name: "Return delivery tracking" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Awaiting handoff" })).not.toBeInTheDocument();
   });
@@ -596,6 +622,7 @@ describe("MyRepairs return logistics", () => {
         code: "returned_to_shop_awaiting_arrangement",
         label: "Returned to shop—awaiting customer arrangement",
         state: "shop_pickup",
+        shop: { name: "Recovery Shop", address: "44 Customer Care Road" },
       },
       redelivery_payment_due: false,
     });
@@ -604,10 +631,10 @@ describe("MyRepairs return logistics", () => {
 
     expect(screen.getByRole("heading", { name: "Ready for pickup at shop" })).toBeInTheDocument();
     const recovery = screen.getByRole("region", { name: "Repair return recovery" });
-    expect(within(recovery).getByText("SoleSpace Makati")).toBeInTheDocument();
-    expect(within(recovery).getByText("9 Repair Avenue")).toBeInTheDocument();
+    expect(within(recovery).getByText("Recovery Shop")).toBeInTheDocument();
+    expect(within(recovery).getByText("44 Customer Care Road")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Return delivery plan" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Pay new delivery fee" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pay new shipping fee" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Awaiting handoff" })).toBeDisabled();
   });
 });
@@ -622,31 +649,8 @@ describe("MyRepairs warranty logistics", () => {
       marker: "warranty_no_charge billing mode",
       warranty: { is_warranty_job: false, billing_mode: "warranty_no_charge" },
     },
-  ])("forged payment payload with $marker", ({ warranty }) => {
-    it.each(["repairer_accepted", "pending", "ready_for_pickup"])(
-      "hides payment status and actions while %s",
-      async (status) => {
-        mocks.repair = repair({
-          ...warranty,
-          status,
-          payment_status: "pending",
-          payment_enabled: true,
-          conversation_id: 15,
-          logistics_shipments: [],
-        });
-
-        render(<MyRepairs />);
-        const tabName = status === "ready_for_pickup" ? /Ready for Pickup/i : /Pending/i;
-        const tabs = await screen.findAllByRole("button", { name: tabName });
-        fireEvent.click(tabs[0]);
-        await screen.findAllByText("Scuffed sneakers");
-
-        expect(screen.queryAllByText("PAY NOW")).toHaveLength(0);
-        expect(screen.queryByRole("button", { name: "PAY NOW" })).not.toBeInTheDocument();
-      },
-    );
-
-    it("explains that warranty service and shop-owned shipping are covered", async () => {
+  ])("warranty fee presentation with $marker", ({ warranty }) => {
+    it("keeps the repair free while exposing the pickup shipping fee", async () => {
       mocks.repair = repair({
         ...warranty,
         status: "repairer_accepted",
@@ -660,9 +664,26 @@ describe("MyRepairs warranty logistics", () => {
       const pendingTabs = await screen.findAllByRole("button", { name: /Pending/i });
       fireEvent.click(pendingTabs[0]);
 
-      expect(await screen.findByText(
-        "Warranty service and shop-owned shipping are covered by the shop.",
-      )).toBeInTheDocument();
+      expect(await screen.findByText("Warranty repair: Free")).toBeInTheDocument();
+      expect(screen.getByText("Pickup shipping fee")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Pay pickup shipping fee" })).toBeEnabled();
+      expect(screen.queryByText(/shop-owned shipping are covered/i)).not.toBeInTheDocument();
+    });
+
+    it("shows the return shipping fee when the repaired shoes are ready", async () => {
+      mocks.repair = repair({
+        ...warranty,
+        status: "ready_for_pickup",
+        payment_status: "paid",
+        payment_enabled: true,
+        return_logistics_locked_at: null,
+      });
+
+      await renderReadyRepair();
+
+      expect(screen.getByText("Warranty repair: Free")).toBeInTheDocument();
+      expect(screen.getByText("Return shipping fee")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Pay return shipping fee" })).toBeEnabled();
     });
 
     it("keeps sponsored customer-delivery tracking editable until staff receipt", async () => {
@@ -794,13 +815,14 @@ describe("MyRepairs warranty logistics", () => {
 
   it("keeps customer-arranged and walk-in intake available outside shop coverage", async () => {
     mocks.repair = repair({
-      status: "repairer_accepted",
+      status: "cancelled",
       is_warranty_job: true,
       billing_mode: "warranty_no_charge",
       payment_status: "completed",
       payment_enabled: false,
       intake_delivery_method: "customer_delivery",
       intake_logistics_locked_at: null,
+      pickup_recovery: { state: "awaiting_arrangement", status: "awaiting_arrangement" },
     });
     mocks.fetch.mockResolvedValue({
       ok: true,
@@ -814,8 +836,8 @@ describe("MyRepairs warranty logistics", () => {
     });
 
     render(<MyRepairs />);
-    const pendingTabs = await screen.findAllByRole("button", { name: /Pending/i });
-    fireEvent.click(pendingTabs[0]);
+    const cancelledTabs = await screen.findAllByRole("button", { name: /Cancelled/i });
+    fireEvent.click(cancelledTabs[0]);
 
     expect(await screen.findByText("Outside shop rider coverage.")).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: /Shop rider pickup/i })).toBeDisabled();
@@ -824,69 +846,106 @@ describe("MyRepairs warranty logistics", () => {
     expect(walkIn).toBeEnabled();
     fireEvent.click(walkIn);
     fireEvent.click(screen.getByRole("button", { name: "Save intake plan" }));
-    await waitFor(() => expect(mocks.patch).toHaveBeenCalledWith(
-      "/api/customer/repairs/77/delivery-method",
-      { intake_delivery_method: "walk_in" },
+    await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
+      "/api/customer/repairs/77/pickup-recovery",
+      { method: "walk_in" },
     ));
 
-    mocks.patch.mockClear();
+    mocks.post.mockClear();
     const customerDelivery = screen.getByRole("radio", { name: /Customer-arranged delivery/i });
     await waitFor(() => expect(customerDelivery).toBeEnabled());
     fireEvent.click(customerDelivery);
     fireEvent.click(screen.getByRole("button", { name: "Use saved pickup address" }));
     fireEvent.click(screen.getByRole("button", { name: "Save intake plan" }));
-    await waitFor(() => expect(mocks.patch).toHaveBeenCalledWith(
-      "/api/customer/repairs/77/delivery-method",
+    await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
+      "/api/customer/repairs/77/pickup-recovery",
       {
-        intake_delivery_method: "customer_delivery",
-        intake_address_id: 42,
+        method: "customer_delivery",
+        address_id: 42,
       },
     ));
   });
 
   it("lets the customer rebook a cancelled sponsored intake pickup", async () => {
     mocks.repair = repair({
-      status: "repairer_accepted",
+      status: "cancelled",
       is_warranty_job: true,
       billing_mode: "warranty_no_charge",
       payment_status: "completed",
       payment_enabled: false,
       intake_logistics_locked_at: null,
+      pickup_recovery: { state: "awaiting_arrangement", status: "awaiting_arrangement" },
       logistics_shipments: [{ id: 11, purpose: "repair_pickup", status: "cancelled" }],
     });
-    mocks.patch.mockResolvedValueOnce({
+    mocks.post.mockResolvedValueOnce({
       data: {
         success: true,
-        message: "Delivery plan updated.",
-        intake_delivery_method: "shop_pickup",
-        intake_address: { address_id: 42, version: "intake-v2" },
-        intake_delivery_fee: 90,
-        intake_logistics_quote: { available: true, fee: 90, method: "shop_pickup" },
+        message: "Pickup plan saved.",
       },
     });
 
     render(<MyRepairs />);
-    const pendingTabs = await screen.findAllByRole("button", { name: /Pending/i });
-    fireEvent.click(pendingTabs[0]);
+    const cancelledTabs = await screen.findAllByRole("button", { name: /Cancelled/i });
+    fireEvent.click(cancelledTabs[0]);
 
-    expect(await screen.findByRole("heading", { name: "Rebook sponsored pickup" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Pickup failed—action required" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Use saved pickup address" }));
     await waitFor(() => expect(mocks.fetch).toHaveBeenCalledWith(
       "/api/repair/shops/9/delivery-quote?address_id=42",
       expect.objectContaining({ credentials: "include" }),
     ));
     const rebookButton = await screen.findByRole("button", { name: "Save intake plan" });
+    fireEvent.change(screen.getByLabelText("Pickup date"), { target: { value: "2026-08-03" } });
+    fireEvent.change(screen.getByLabelText("Pickup window"), { target: { value: "morning" } });
     await waitFor(() => expect(rebookButton).toBeEnabled());
+    const refreshCallsBefore = mocks.get.mock.calls.filter(([url]) => url === "/api/customer/repairs").length;
     fireEvent.click(rebookButton);
 
-    await waitFor(() => expect(mocks.patch).toHaveBeenCalledWith(
-      "/api/customer/repairs/77/delivery-method",
+    await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
+      "/api/customer/repairs/77/pickup-recovery",
       {
-        intake_delivery_method: "shop_pickup",
-        intake_address_id: 42,
+        method: "shop_pickup",
+        address_id: 42,
+        delivery_date: "2026-08-03",
+        delivery_window: "morning",
       },
     ));
-    expect(await screen.findByRole("status")).toHaveTextContent("Delivery plan updated.");
+    expect(await screen.findByRole("status")).toHaveTextContent("Pickup plan saved.");
+    await waitFor(() => expect(
+      mocks.get.mock.calls.filter(([url]) => url === "/api/customer/repairs").length,
+    ).toBeGreaterThan(refreshCallsBefore));
+  });
+
+  it("shows the scheduled pickup details and payment action", async () => {
+    mocks.repair = repair({
+      status: "cancelled",
+      is_warranty_job: true,
+      billing_mode: "warranty_no_charge",
+      payment_status: "completed",
+      payment_enabled: true,
+      intake_delivery_method: "shop_pickup",
+      intake_delivery_fee: 90,
+      intake_logistics_locked_at: null,
+      pickup_retry_payment_due: true,
+      pickup_recovery: {
+        state: "awaiting_payment",
+        status: "awaiting_payment",
+        action: "shop_pickup",
+        scheduled_delivery_date: "2026-08-03",
+        delivery_window: "morning",
+      },
+    });
+
+    render(<MyRepairs />);
+    const cancelledTabs = await screen.findAllByRole("button", { name: /Cancelled/i });
+    fireEvent.click(cancelledTabs[0]);
+
+    const recovery = await screen.findByRole("region", { name: "Warranty pickup recovery" });
+    expect(within(recovery).getByText("Aug 3, 2026 · Morning")).toBeInTheDocument();
+    expect(within(recovery).getByText("5 Intake Street, Bel-Air, Makati, Metro Manila, 1209")).toBeInTheDocument();
+    expect(within(recovery).getByText("Pickup shipping fee")).toBeInTheDocument();
+    expect(within(recovery).getByText("₱90")).toBeInTheDocument();
+    expect(within(recovery).getByRole("button", { name: "Pay pickup shipping fee" })).toBeEnabled();
   });
 
   it("reuses the pinned repair address and exposes shop-owned and third-party choices", async () => {

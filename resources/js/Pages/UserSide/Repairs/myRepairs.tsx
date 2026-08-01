@@ -143,10 +143,21 @@ type RepairOrder = {
   return_logistics_locked_at?: string | null;
   return_address_confirmed_at?: string | null;
   return_address_confirmed_version?: string | null;
+  pickup_recovery?: {
+    state: 'awaiting_arrangement' | 'awaiting_payment' | 'resolved' | 'ready_for_dispatch';
+    status?: string;
+    action?: IntakeDeliveryMethod;
+    scheduled_delivery_date?: string | null;
+    delivery_window?: 'morning' | 'afternoon' | null;
+  } | null;
+  pickup_retry_payment_due?: boolean;
   return_recovery?: {
     code: string;
     label: string;
-    state: 'awaiting_arrangement' | 'awaiting_payment' | 'shop_pickup' | 'ready_for_dispatch';
+    state: 'returning_to_shop' | 'awaiting_arrangement' | 'awaiting_payment' | 'shop_pickup' | 'ready_for_dispatch';
+    message?: string | null;
+    actions_available?: boolean;
+    shop?: { name?: string | null; address?: string | null } | null;
     scheduled_delivery_date?: string | null;
     delivery_window?: 'morning' | 'afternoon' | null;
   } | null;
@@ -483,7 +494,8 @@ const getRequestErrorMessage = (error: unknown, fallback: string): string => {
 const SponsoredIntakeReplanCard: React.FC<{
   order: RepairOrder;
   onRefresh: () => Promise<unknown>;
-}> = ({ order, onRefresh }) => {
+  onPay: () => void;
+}> = ({ order, onRefresh, onPay }) => {
   const currentAddressId = order.intake_address?.address_id
     ? Number(order.intake_address.address_id)
     : null;
@@ -492,6 +504,8 @@ const SponsoredIntakeReplanCard: React.FC<{
   const [coverage, setCoverage] = useState<DeliveryQuote | null>(null);
   const [coverageLoading, setCoverageLoading] = useState(false);
   const [coverageError, setCoverageError] = useState<string | null>(null);
+  const [deliveryDate, setDeliveryDate] = useState('');
+  const [deliveryWindow, setDeliveryWindow] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -499,7 +513,7 @@ const SponsoredIntakeReplanCard: React.FC<{
   const shopId = order.shop_owner_id ?? order.shop_id;
   const addressRequired = method !== 'walk_in';
   const shopPickupUnavailable = method === 'shop_pickup'
-    && (coverageLoading || !coverage?.available);
+    && (coverageLoading || !coverage?.available || !deliveryDate || !deliveryWindow);
 
   useEffect(() => {
     if (!shopId || !effectiveAddressId) {
@@ -563,9 +577,13 @@ const SponsoredIntakeReplanCard: React.FC<{
     setSuccess(null);
 
     try {
-      const response = await axios.patch(`/api/customer/repairs/${order.id}/delivery-method`, {
-        intake_delivery_method: method,
-        ...(addressRequired ? { intake_address_id: effectiveAddressId } : {}),
+      const response = await axios.post(`/api/customer/repairs/${order.id}/pickup-recovery`, {
+        method,
+        ...(addressRequired ? { address_id: effectiveAddressId } : {}),
+        ...(method === 'shop_pickup' ? {
+          delivery_date: deliveryDate,
+          delivery_window: deliveryWindow,
+        } : {}),
       });
       setSuccess(response.data?.message || 'Intake plan updated.');
       await onRefresh();
@@ -576,9 +594,48 @@ const SponsoredIntakeReplanCard: React.FC<{
     }
   };
 
+  if (order.pickup_recovery?.state === 'awaiting_payment') {
+    const scheduledDate = order.pickup_recovery.scheduled_delivery_date
+      ? new Date(`${order.pickup_recovery.scheduled_delivery_date}T00:00:00`).toLocaleDateString('en-US', {
+          month: 'short', day: 'numeric', year: 'numeric',
+        })
+      : 'Schedule pending';
+    const scheduledWindow = order.pickup_recovery.delivery_window
+      ? order.pickup_recovery.delivery_window[0].toUpperCase() + order.pickup_recovery.delivery_window.slice(1)
+      : 'Window pending';
+
+    return (
+      <section aria-label="Warranty pickup recovery" className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:p-6">
+        <h4 className="text-lg font-bold text-black">Pickup scheduled—payment required</h4>
+        <p className="mt-2 text-sm font-semibold text-gray-800">{scheduledDate} · {scheduledWindow}</p>
+        <p className="mt-1 text-sm text-gray-700">{formatRepairAddress(order.intake_address)}</p>
+        <div className="mt-4 flex items-center justify-between gap-4 rounded-xl border border-amber-200 bg-white p-3 text-sm">
+          <span className="font-semibold text-gray-700">Pickup shipping fee</span>
+          <span className="font-bold text-black">{formatCurrency(order.intake_delivery_fee)}</span>
+        </div>
+        <button
+          type="button"
+          onClick={onPay}
+          disabled={!order.pickup_retry_payment_due || !order.payment_enabled}
+          className="mt-4 min-h-12 w-full rounded-xl bg-[#16233b] px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300 sm:w-auto"
+        >
+          Pay pickup shipping fee
+        </button>
+      </section>
+    );
+  }
+
+  if (order.pickup_recovery?.state === 'resolved' || order.pickup_recovery?.state === 'ready_for_dispatch') {
+    return (
+      <section aria-label="Warranty pickup recovery" className="mt-6 rounded-2xl border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+        Pickup arrangement confirmed. Watch this page for the next rider update.
+      </section>
+    );
+  }
+
   return (
-    <section className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:p-6">
-      <h4 className="text-lg font-bold text-black">Rebook sponsored pickup</h4>
+    <section aria-label="Warranty pickup recovery" className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:p-6">
+      <h4 className="text-lg font-bold text-black">Pickup failed—action required</h4>
       <p className="mt-1 text-sm text-gray-600">
         Choose how to get the shoes back to the shop.
       </p>
@@ -635,7 +692,7 @@ const SponsoredIntakeReplanCard: React.FC<{
           />
           <span>
             <span className="block font-semibold">Shop rider pickup</span>
-            <span className="text-xs text-gray-500">The shop covers pickup from a supported address.</span>
+            <span className="text-xs text-gray-500">Schedule and pay for a new pickup from a supported address.</span>
           </span>
         </label>
       </fieldset>
@@ -652,11 +709,37 @@ const SponsoredIntakeReplanCard: React.FC<{
         </div>
       )}
 
+      {method === 'shop_pickup' && (
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <label className="text-sm font-semibold text-gray-800">
+            Pickup date
+            <input
+              type="date"
+              value={deliveryDate}
+              onChange={(event) => setDeliveryDate(event.target.value)}
+              className="mt-1 min-h-12 w-full rounded-xl border border-gray-300 bg-white px-3 text-base text-gray-900"
+            />
+          </label>
+          <label className="text-sm font-semibold text-gray-800">
+            Pickup window
+            <select
+              value={deliveryWindow}
+              onChange={(event) => setDeliveryWindow(event.target.value)}
+              className="mt-1 min-h-12 w-full rounded-xl border border-gray-300 bg-white px-3 text-base text-gray-900"
+            >
+              <option value="">Choose a time</option>
+              <option value="morning">Morning</option>
+              <option value="afternoon">Afternoon</option>
+            </select>
+          </label>
+        </div>
+      )}
+
       <div className="mt-4 rounded-xl border border-gray-200 bg-white p-3 text-sm">
         {coverageLoading ? (
           <p className="font-semibold text-gray-600">Checking coverage...</p>
         ) : coverage?.available ? (
-          <p className="font-semibold text-green-700">Within coverage · Rider fee covered by shop</p>
+          <p className="font-semibold text-green-700">Within coverage · Pickup fee {formatCurrency(coverage.fee)}</p>
         ) : (
           <p className="font-semibold text-amber-700">
             {coverage?.reason || 'Shop rider coverage is not available for this address.'}
@@ -736,6 +819,12 @@ const CustomerReturnRecoveryActions: React.FC<{
 
   return (
     <div className="mt-4 space-y-4">
+      {(order.return_recovery?.shop?.name || order.return_recovery?.shop?.address) && (
+        <div className="rounded-xl border border-amber-200 bg-white p-3 text-sm text-gray-700">
+          <p className="font-semibold text-black">{order.return_recovery.shop.name}</p>
+          <p className="mt-1">{order.return_recovery.shop.address}</p>
+        </div>
+      )}
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="text-sm font-semibold text-gray-800">
           Re-delivery date
@@ -787,7 +876,7 @@ const CustomerReturnRecoveryActions: React.FC<{
           disabled={saving}
           className="min-h-12 rounded-xl border border-[#16233b] bg-white px-4 py-3 text-sm font-semibold text-[#16233b] disabled:cursor-not-allowed disabled:border-gray-300 disabled:text-gray-400"
         >
-          Pick up at shop
+          Set for shop pickup
         </button>
       </div>
     </div>
@@ -4278,11 +4367,11 @@ const MyRepairs: React.FC = () => {
                       onRefresh={() => fetchRepairs({ silent: true })}
                     />
 
-                    {isWarrantyNoChargeOrder(order)
-                      && !order.intake_logistics_locked_at && (
+                    {order.pickup_recovery && (
                         <SponsoredIntakeReplanCard
                           order={order}
                           onRefresh={() => fetchRepairs({ silent: true })}
+                          onPay={() => handlePayNow(order.id)}
                         />
                       )}
 
@@ -4297,15 +4386,17 @@ const MyRepairs: React.FC = () => {
                             : order.return_recovery.label}
                         </h4>
                         <p className="mt-2 text-sm text-gray-700">
-                          {order.return_recovery.state === 'awaiting_arrangement'
-                            ? 'Your repaired shoes are safely at the shop. Choose re-delivery or free shop pickup.'
-                            : order.return_recovery.state === 'awaiting_payment'
-                              ? 'Confirm your return address, then pay the new delivery fee.'
-                              : order.return_recovery.state === 'shop_pickup'
-                                ? 'Shop pickup is free. Wait for the shop to record the handoff before confirming receipt.'
-                                : 'Re-delivery payment received. Waiting for rider assignment.'}
+                          {order.return_recovery.message
+                            || (order.return_recovery.state === 'awaiting_arrangement'
+                              ? 'Your repaired shoes are safely at the shop. Choose re-delivery or free shop pickup.'
+                              : order.return_recovery.state === 'awaiting_payment'
+                                ? 'Confirm your return address, then pay the new delivery fee.'
+                                : order.return_recovery.state === 'shop_pickup'
+                                  ? 'Shop pickup is free. Wait for the shop to record the handoff before confirming receipt.'
+                                  : 'Re-delivery payment received. Waiting for rider assignment.')}
                         </p>
-                        {order.return_recovery.state === 'awaiting_arrangement' && (
+                        {order.return_recovery.state === 'awaiting_arrangement'
+                          && order.return_recovery.actions_available !== false && (
                           <CustomerReturnRecoveryActions
                             order={order}
                             onRefresh={() => fetchRepairs({ silent: true })}
@@ -4313,8 +4404,8 @@ const MyRepairs: React.FC = () => {
                         )}
                         {order.return_recovery.state === 'shop_pickup' && (
                           <div className="mt-3 rounded-xl border border-amber-200 bg-white p-3 text-sm text-gray-700">
-                            <p className="font-semibold text-black">{order.shop_name}</p>
-                            <p className="mt-1">{order.shop_address}</p>
+                            <p className="font-semibold text-black">{order.return_recovery.shop?.name || order.shop_name}</p>
+                            <p className="mt-1">{order.return_recovery.shop?.address || order.shop_address}</p>
                           </div>
                         )}
                       </section>
@@ -4443,7 +4534,21 @@ const MyRepairs: React.FC = () => {
                         </div>
                         <div className="text-right">
                           {isWarrantyNoChargeOrder(order) ? (
-                            <p className="mb-2 text-xs text-amber-700">Warranty service and shop-owned shipping are covered by the shop.</p>
+                            <div className="mb-2 space-y-1 text-xs text-gray-600">
+                              <p className="font-semibold text-emerald-700">Warranty repair: Free</p>
+                              {Number(order.intake_delivery_fee || 0) > 0 && (
+                                <div className="flex items-center justify-end gap-3">
+                                  <span>Pickup shipping fee</span>
+                                  <span className="text-gray-800">{formatCurrency(order.intake_delivery_fee)}</span>
+                                </div>
+                              )}
+                              {Number(order.return_delivery_fee || 0) > 0 && (
+                                <div className="flex items-center justify-end gap-3">
+                                  <span>{order.redelivery_payment_due ? 'New shipping fee' : 'Return shipping fee'}</span>
+                                  <span className="text-gray-800">{formatCurrency(order.return_delivery_fee)}</span>
+                                </div>
+                              )}
+                            </div>
                           ) : (
                             <div className="space-y-1 mb-2 text-xs text-gray-500">
                               <div className="flex items-center justify-end gap-3">
@@ -4511,7 +4616,7 @@ const MyRepairs: React.FC = () => {
                         )}
                       {order.status === 'repairer_accepted' && order.conversation_id && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (
                         <>
-                          {!isWarrantyNoChargeOrder(order) && isOnlineIntakeFlow(order) && order.payment_enabled && (
+                          {isOnlineIntakeFlow(order) && order.payment_enabled && (
                             <button
                               onClick={() => handlePayNow(order.id)}
                               disabled={!order.payment_enabled || processingPayment}
@@ -4521,7 +4626,7 @@ const MyRepairs: React.FC = () => {
                                   : actionButtonDisabledClass
                               }`}
                             >
-                              {processingPayment ? 'PROCESSING...' : 'PAY NOW'}
+                              {processingPayment ? 'PROCESSING...' : (isWarrantyNoChargeOrder(order) ? 'Pay pickup shipping fee' : 'PAY NOW')}
                             </button>
                           )}
                           <button
@@ -4553,7 +4658,7 @@ const MyRepairs: React.FC = () => {
                       
                       {order.status === 'pending' && order.payment_status !== 'paid' && order.payment_status !== 'completed' && (
                         <>
-                          {!isWarrantyNoChargeOrder(order) && isOnlineIntakeFlow(order) && order.payment_enabled && (
+                          {isOnlineIntakeFlow(order) && order.payment_enabled && (
                             <button
                               onClick={() => handlePayNow(order.id)}
                               disabled={!order.payment_enabled || processingPayment}
@@ -4563,7 +4668,7 @@ const MyRepairs: React.FC = () => {
                                   : actionButtonDisabledClass
                               }`}
                             >
-                              {processingPayment ? 'PROCESSING...' : 'PAY NOW'}
+                              {processingPayment ? 'PROCESSING...' : (isWarrantyNoChargeOrder(order) ? 'Pay pickup shipping fee' : 'PAY NOW')}
                             </button>
                           )}
                           <button
@@ -4593,10 +4698,10 @@ const MyRepairs: React.FC = () => {
                                   : actionButtonDisabledClass
                               }`}
                             >
-                              {processingPayment ? 'PROCESSING...' : 'Pay new delivery fee'}
+                              {processingPayment ? 'PROCESSING...' : 'Pay new shipping fee'}
                             </button>
                           )}
-                          {!order.redelivery_payment_due && !isWarrantyNoChargeOrder(order) && order.status === 'ready_for_pickup' && isOnlineReturnFlow(order) && (order.payment_policy ?? 'deposit_50') !== 'full_upfront' && order.payment_status !== 'completed' && (
+                          {!order.redelivery_payment_due && order.status === 'ready_for_pickup' && isOnlineReturnFlow(order) && (order.payment_policy ?? 'deposit_50') !== 'full_upfront' && order.payment_status !== 'completed' && (
                             <button
                               onClick={() => handlePayNow(order.id)}
                               disabled={!order.payment_enabled || processingPayment}
@@ -4606,7 +4711,7 @@ const MyRepairs: React.FC = () => {
                                   : actionButtonDisabledClass
                               }`}
                             >
-                              {processingPayment ? 'PROCESSING...' : 'PAY NOW'}
+                              {processingPayment ? 'PROCESSING...' : (isWarrantyNoChargeOrder(order) ? 'Pay return shipping fee' : 'PAY NOW')}
                             </button>
                           )}
                           {(!order.return_recovery || order.return_recovery.state === 'shop_pickup') && (() => {

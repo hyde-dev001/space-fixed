@@ -967,6 +967,15 @@ class RepairRequestController extends Controller
                     $settlementService->isRepairSettled($repair),
                 );
                 $returnRecovery = $returnHandoff['recovery'] ?? null;
+                $pickupRecovery = $repairDeliveryService->activePickupRecovery($repair);
+                if ($pickupRecovery) {
+                    $pickupRecovery['state'] = match ((string) ($pickupRecovery['status'] ?? '')) {
+                        'awaiting_payment' => 'awaiting_payment',
+                        'paid' => 'ready_for_dispatch',
+                        'resolved' => 'resolved',
+                        default => 'awaiting_arrangement',
+                    };
+                }
 
                 $anchorRepairId = ((bool) ($repair->is_warranty_job ?? false) && (int) ($repair->parent_repair_request_id ?? 0) > 0)
                     ? (int) $repair->parent_repair_request_id
@@ -1026,6 +1035,9 @@ class RepairRequestController extends Controller
                     'same_as_intake_address' => (bool) $repair->same_as_intake_address,
                     'return_address_confirmed_at' => $repair->return_address_confirmed_at?->toISOString(),
                     'return_address_confirmed_version' => $repair->return_address_confirmed_version,
+                    'pickup_recovery' => $pickupRecovery,
+                    'pickup_retry_payment_due' => ($pickupRecovery['state'] ?? null) === 'awaiting_payment'
+                        && $settlementService->isRepairPaymentDueNow($repair),
                     'return_recovery' => $returnRecovery,
                     'redelivery_payment_due' => ($returnRecovery['state'] ?? null) === 'awaiting_payment'
                         && $settlementService->isRepairPaymentDueNow($repair),
