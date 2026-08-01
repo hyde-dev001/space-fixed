@@ -280,6 +280,8 @@ interface RefundRequest {
 	orderTotal?: string;
 	refundAmount: string;
 	refundAmountValue?: number;
+	payoutAmount?: string;
+	payoutAmountValue?: number;
 	canAdjustRefundAmount?: boolean;
 	refundAmountWithoutShipping?: number;
 	shippingFee?: number;
@@ -496,6 +498,11 @@ const resolveExecutionChannel = (request: RefundRequest): RepairExecutionChannel
 };
 
 const resolveFixedExecutionAmount = (request: RefundRequest): number => {
+	const payoutAmount = Number(request.payoutAmountValue);
+	if (Number.isFinite(payoutAmount) && payoutAmount > 0) {
+		return Math.round(payoutAmount * 100) / 100;
+	}
+
 	const fromExecution = Number(request.financeExecution?.execution_amount);
 	if (Number.isFinite(fromExecution) && fromExecution > 0) {
 		return Math.round(fromExecution * 100) / 100;
@@ -503,6 +510,17 @@ const resolveFixedExecutionAmount = (request: RefundRequest): number => {
 
 	const parsed = parseCurrencyToNumber(request.refundAmount);
 	return Math.round(parsed * 100) / 100;
+};
+
+const getPayoutAmountDisplay = (request: RefundRequest): string => {
+	if (String(request.payoutAmount || "").trim() !== "") {
+		return String(request.payoutAmount);
+	}
+
+	const amount = resolveFixedExecutionAmount(request);
+	return amount > 0
+		? `₱${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+		: request.refundAmount;
 };
 
 const shouldShowRepairRefundInFinanceQueue = (request: RefundRequest): boolean => {
@@ -869,7 +887,7 @@ export default function RefundApproval() {
 				<div style="text-align: left; margin-top: 1rem;">
 					<p style="margin-bottom: 0.5rem;"><strong>Order:</strong> ${request.orderNumber}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Customer:</strong> ${request.customerName}</p>
-					<p style="margin-bottom: 0.5rem;"><strong>Amount:</strong> ${request.refundAmount}</p>
+					<p style="margin-bottom: 0.5rem;"><strong>Amount:</strong> ${getPayoutAmountDisplay(request)}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Method:</strong> ${request.refundMethod}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Requested by:</strong> ${request.requestedBy}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Reason:</strong> ${request.reason}</p>
@@ -969,7 +987,7 @@ export default function RefundApproval() {
 			html: `
 				<div style="text-align: left; margin-bottom: 1rem;">
 					<p style="margin-bottom: 0.5rem;"><strong>Order:</strong> ${request.orderNumber}</p>
-					<p style="margin-bottom: 0.5rem;"><strong>Amount:</strong> ${request.refundAmount}</p>
+					<p style="margin-bottom: 0.5rem;"><strong>Amount:</strong> ${getPayoutAmountDisplay(request)}</p>
 				</div>
 			`,
 			input: "textarea",
@@ -1211,7 +1229,7 @@ export default function RefundApproval() {
 				<div style="text-align: left; margin-top: 1rem;">
 					<p style="margin-bottom: 0.5rem;"><strong>Order:</strong> ${request.orderNumber}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Customer:</strong> ${request.customerName}</p>
-					<p style="margin-bottom: 0.5rem;"><strong>Amount:</strong> ${request.refundAmount}</p>
+					<p style="margin-bottom: 0.5rem;"><strong>Amount:</strong> ${getPayoutAmountDisplay(request)}</p>
 					<p style="margin-bottom: 0.5rem;"><strong>Method:</strong> ${request.refundMethod}</p>
 				</div>
 			`,
@@ -1455,7 +1473,7 @@ export default function RefundApproval() {
 											<p className="font-medium text-gray-900 dark:text-white">{request.orderNumber}</p>
 										</td>
 										<td className="py-4 text-gray-700 dark:text-gray-300">{request.customerName}</td>
-										<td className="py-4 text-gray-700 dark:text-gray-300">{request.refundAmount}</td>
+										<td className="py-4 text-gray-700 dark:text-gray-300">{getPayoutAmountDisplay(request)}</td>
 										<td className="py-4 text-gray-700 dark:text-gray-300">{request.refundMethod}</td>
 										<td className="py-4 text-gray-700 dark:text-gray-300">{request.requestedBy}</td>
 										<td className="py-4">
@@ -1603,7 +1621,7 @@ export default function RefundApproval() {
 									<div>
 										<p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Refund Amount</p>
 										<div className="border border-gray-200 dark:border-gray-800 rounded-lg p-4 text-sm font-semibold text-gray-900 dark:text-gray-100 bg-gray-50 dark:bg-gray-800/40">
-											{selectedRequest.refundAmount}
+											{getPayoutAmountDisplay(selectedRequest)}
 										</div>
 									</div>
 									<div>
