@@ -1149,7 +1149,17 @@ class LogisticsApiTest extends TestCase
 
         $this->assertSame('cancelled', $leg->fresh()->status->value);
         $this->assertSame('cancelled', $leg->shipment->fresh()->status->value);
-        $this->assertSame('cancelled', (string) $repair->fresh()->status);
+        $repair->refresh();
+        $this->assertSame('cancelled', (string) $repair->status);
+        $recovery = collect(data_get($repair->logistics_payment_reconciliation, 'entries', []))
+            ->firstWhere('type', 'pickup_recovery');
+        $this->assertSame('awaiting_arrangement', data_get($recovery, 'status'));
+        $this->assertSame($leg->shipment_id, data_get($recovery, 'shipment_id'));
+        $this->assertSame($leg->id, data_get($recovery, 'failed_leg_id'));
+        $this->assertSame(1, $leg->attempts()->where('attempt_type', 'pickup')->count());
+        $proofPath = (string) $leg->attempts()->value('file_path');
+        $this->assertNotSame('', $proofPath);
+        Storage::disk('public')->assertExists($proofPath);
         $this->assertFalse(PosRefund::query()
             ->where('module_type', 'repair')
             ->where('module_reference_id', $repair->id)

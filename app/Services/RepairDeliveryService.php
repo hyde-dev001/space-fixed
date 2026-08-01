@@ -133,6 +133,248 @@ final class RepairDeliveryService
         ];
     }
 
+    public function recordPickupRecovery(RepairRequest $repair, int $shipmentId, int $failedLegId): ?array
+    {
+        if (! $this->isSponsoredWarranty($repair)) {
+            return null;
+        }
+
+        $reconciliation = is_array($repair->logistics_payment_reconciliation)
+            ? $repair->logistics_payment_reconciliation
+            : [];
+        $entries = collect(data_get($reconciliation, 'entries', []))
+            ->filter(fn ($entry): bool => is_array($entry))
+            ->values();
+        $existing = $entries->first(fn (array $entry): bool => (string) ($entry['type'] ?? '') === 'pickup_recovery'
+            && (int) ($entry['shipment_id'] ?? 0) === $shipmentId
+            && (int) ($entry['failed_leg_id'] ?? 0) === $failedLegId
+        );
+        if ($existing) {
+            return $existing;
+        }
+
+        $entry = [
+            'type' => 'pickup_recovery',
+            'status' => 'awaiting_arrangement',
+            'shipment_id' => $shipmentId,
+            'failed_leg_id' => $failedLegId,
+            'created_at' => now()->toISOString(),
+        ];
+        $entries->push($entry);
+        $repair->update([
+            'logistics_payment_reconciliation' => [
+                ...$reconciliation,
+                'status' => (string) data_get($reconciliation, 'status', 'resolved'),
+                'entries' => $entries->all(),
+            ],
+        ]);
+
+        return $entry;
+    }
+
+    public function activePickupRecovery(RepairRequest $repair, ?string $status = null): ?array
+    {
+        return collect(data_get($repair->logistics_payment_reconciliation, 'entries', []))
+            ->filter(fn ($entry): bool => is_array($entry)
+                && (string) ($entry['type'] ?? '') === 'pickup_recovery'
+                && ($status === null || (string) ($entry['status'] ?? '') === $status))
+            ->sortByDesc('updated_at')
+            ->sortByDesc('created_at')
+            ->first();
+    }
+
+    public function markPickupRecoveryPaid(RepairRequest $repair, string $recoveryKey, string $planKey): RepairRequest
+    {
+        $current = is_array($repair->logistics_payment_reconciliation)
+            ? $repair->logistics_payment_reconciliation
+            : [];
+        $entries = collect(data_get($current, 'entries', []))
+            ->filter(fn ($entry): bool => is_array($entry))
+            ->values();
+        $index = $entries->search(fn (array $entry): bool => (string) ($entry['type'] ?? '') === 'pickup_recovery'
+            && (string) ($entry['status'] ?? '') === 'awaiting_payment'
+            && (string) ($entry['recovery_key'] ?? '') === $recoveryKey
+            && (string) ($entry['plan_key'] ?? '') === $planKey
+        );
+        if ($index === false) {
+            throw ValidationException::withMessages([
+                'payment' => ['This pickup request is no longer awaiting payment.'],
+            ]);
+        }
+
+        $entries->put($index, [
+            ...$entries->get($index),
+            'status' => 'paid',
+            'paid_at' => now()->toISOString(),
+            'updated_at' => now()->toISOString(),
+        ]);
+        $repair->update([
+            'status' => 'repairer_accepted',
+            'payment_enabled' => false,
+            'payment_enabled_at' => null,
+            'logistics_payment_reconciliation' => [
+                ...$current,
+                'status' => 'resolved',
+                'entries' => $entries->all(),
+            ],
+        ]);
+
+        return $repair->fresh();
+    }
+
+    public function resolvePickupRecovery(
+        RepairRequest $repair,
+        string $method,
+        string $actorType,
+        int $actorId,
+        ?int $addressId = null,
+        ?string $deliveryDate = null,
+        ?string $deliveryWindow = null,
+    ): array {
+        if (! in_array($method, ['shop_pickup', 'walk_in', 'customer_delivery'], true)) {
+            throw ValidationException::withMessages(['method' => ['Choose shop pickup, walk-in, or your own courier.']]);
+        }
+
+        $result = DB::transaction(function () use (
+            $repair,
+            $method,
+            $actorType,
+            $actorId,
+            $addressId,
+            $deliveryDate,
+            $deliveryWindow,
+        ): array {
+            $locked = RepairRequest::query()
+                ->with('shopOwner')
+                ->whereKey($repair->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            if ($actorType !== User::class || $actorId !== (int) $locked->user_id) {
+                throw ValidationException::withMessages(['actor' => ['Only the customer can choose the pickup arrangement.']]);
+            }
+            if (! $this->isSponsoredWarranty($locked)) {
+                throw ValidationException::withMessages(['status' => ['Pickup recovery is available only for warranty repairs.']]);
+            }
+
+            $reconciliation = is_array($locked->logistics_payment_reconciliation)
+                ? $locked->logistics_payment_reconciliation
+                : [];
+            $entries = collect(data_get($reconciliation, 'entries', []))
+                ->filter(fn ($entry): bool => is_array($entry))
+                ->values();
+            $index = $entries->search(fn (array $entry): bool => (string) ($entry['type'] ?? '') === 'pickup_recovery'
+            );
+            if ($index === false) {
+                throw ValidationException::withMessages(['status' => ['This repair is not awaiting a pickup arrangement.']]);
+            }
+            $entry = $entries->get($index);
+            $address = null;
+            $snapshot = null;
+            $quote = null;
+            $fee = 0.0;
+            if ($method !== 'walk_in') {
+                $address = UserAddress::query()
+                    ->whereKey($addressId)
+                    ->where('user_id', $actorId)
+                    ->first();
+                if (! $address) {
+                    throw ValidationException::withMessages(['address_id' => ['Choose one of your saved addresses.']]);
+                }
+                $snapshot = $this->snapshot($address, $method);
+            }
+            if ($method === 'shop_pickup') {
+                $quote = $this->quote($locked->shopOwner, $address);
+                if (! ($quote['available'] ?? false)) {
+                    throw ValidationException::withMessages(['address_id' => [
+                        ($quote['reason'] ?? null) === 'outside_coverage'
+                            ? 'This address is outside shop pickup coverage.'
+                            : 'Shop pickup is not available for this address.',
+                    ]]);
+                }
+                $fee = round((float) ($quote['fee'] ?? 0), 2);
+            }
+
+            $recoveryKey = (string) ($entry['recovery_key'] ?? "pickup-recovery:{$entry['failed_leg_id']}");
+            $planKey = hash('sha256', json_encode([
+                'method' => $method,
+                'address_version' => data_get($snapshot, 'version'),
+                'delivery_date' => $method === 'shop_pickup' ? $deliveryDate : null,
+                'delivery_window' => $method === 'shop_pickup' ? $deliveryWindow : null,
+                'fee' => $fee,
+            ], JSON_UNESCAPED_SLASHES));
+            $currentStatus = (string) ($entry['status'] ?? 'awaiting_arrangement');
+            if ((string) ($entry['plan_key'] ?? '') === $planKey) {
+                return ['repair' => $locked, 'recovery' => $entry, 'notify' => false];
+            }
+            if (in_array($currentStatus, ['resolved', 'paid'], true)) {
+                abort(409, 'This pickup recovery plan is already final.');
+            }
+
+            RepairPaymentSession::query()
+                ->where('repair_request_id', $locked->id)
+                ->where('phase', 'pickup_retry')
+                ->where('status', 'pending')
+                ->update(['status' => 'invalidated', 'invalidated_at' => now()]);
+
+            $updatedEntry = [
+                ...$entry,
+                'status' => $method === 'shop_pickup' ? 'awaiting_payment' : 'resolved',
+                'action' => $method,
+                'recovery_key' => $recoveryKey,
+                'plan_key' => $planKey,
+                'address_version' => data_get($snapshot, 'version'),
+                'delivery_amount' => $fee,
+                'quote' => $quote,
+                'scheduled_delivery_date' => $method === 'shop_pickup' ? $deliveryDate : null,
+                'delivery_window' => $method === 'shop_pickup' ? $deliveryWindow : null,
+                'selected_by_type' => $actorType,
+                'selected_by_id' => $actorId,
+                'updated_at' => now()->toISOString(),
+            ];
+            $entries->put($index, $updatedEntry);
+            $shipment = Shipment::query()->find((int) ($entry['shipment_id'] ?? 0));
+            $lockAt = now();
+            if ($shipment?->cancelled_at && $lockAt->timestamp <= $shipment->cancelled_at->timestamp) {
+                $lockAt = $shipment->cancelled_at->copy()->addSecond();
+            }
+            $updates = [
+                'delivery_method' => $method === 'walk_in' ? 'walk_in' : 'pickup',
+                'intake_delivery_method' => $method,
+                'intake_address' => $snapshot,
+                'pickup_address' => $snapshot,
+                'intake_delivery_fee' => $fee,
+                'intake_logistics_quote' => $quote,
+                'intake_logistics_locked_at' => $method === 'shop_pickup' ? null : $lockAt,
+                'payment_enabled' => $method === 'shop_pickup',
+                'payment_enabled_at' => $method === 'shop_pickup' ? now() : null,
+                'paymongo_link_id' => null,
+                'status' => $method === 'shop_pickup' ? 'cancelled' : 'repairer_accepted',
+                'logistics_payment_reconciliation' => [
+                    ...$reconciliation,
+                    'status' => 'resolved',
+                    'entries' => $entries->all(),
+                ],
+            ];
+            $locked->update($updates);
+
+            return [
+                'repair' => $locked->fresh(),
+                'recovery' => $updatedEntry,
+                'notify' => true,
+            ];
+        }, 3);
+
+        if ($result['notify']) {
+            $this->notifications->notifyRepairPickupRecovery(
+                $result['repair'],
+                (string) $result['recovery']['status'],
+                (string) $result['recovery']['plan_key'],
+            );
+        }
+
+        return $result;
+    }
+
     public function tryCreateIntakeShipment(RepairRequest $repair): ?Shipment
     {
         $createdCompensation = null;
@@ -189,6 +431,51 @@ final class RepairDeliveryService
                 }
 
                 return null;
+            }
+
+            if ($existing) {
+                $recovery = $this->activePickupRecovery($lockedRepair, 'paid');
+                $address = is_array($lockedRepair->intake_address) ? $lockedRepair->intake_address : [];
+                $leg = $existing->legs()->create([
+                    'sequence' => ((int) $existing->legs()->max('sequence')) + 1,
+                    'leg_type' => 'inbound',
+                    'status' => 'pending',
+                    'origin_snapshot' => [
+                        'type' => 'customer',
+                        'name' => (string) ($lockedRepair->customer_name ?? 'Customer'),
+                        'phone' => (string) ($lockedRepair->phone ?? ''),
+                        'address' => collect([
+                            $address['address_line'] ?? null,
+                            $address['barangay'] ?? null,
+                            $address['city'] ?? null,
+                            $address['province'] ?? $address['region'] ?? null,
+                            $address['postal_code'] ?? null,
+                        ])->filter()->implode(', '),
+                        'latitude' => $address['latitude'] ?? null,
+                        'longitude' => $address['longitude'] ?? null,
+                        'delivery_instructions' => $address['delivery_instructions'] ?? null,
+                    ],
+                    'destination_snapshot' => $existing->legs()->first()?->destination_snapshot,
+                    'requires_pickup_proof' => false,
+                    'requires_delivery_proof' => true,
+                    'scheduled_delivery_date' => $recovery['scheduled_delivery_date'] ?? null,
+                    'delivery_window' => $recovery['delivery_window'] ?? null,
+                    'schedule_status' => 'scheduled',
+                    'distance_km' => data_get($recovery, 'quote.distance_km'),
+                    'estimated_at' => now(),
+                ]);
+                $existing->update([
+                    'status' => 'requested',
+                    'cancelled_at' => null,
+                    'completed_at' => null,
+                ]);
+                $this->events->record($existing, $leg, [
+                    'event_type' => 'shipment_pickup_retry_requested',
+                    'visibility' => 'customer',
+                    'message' => 'Your new pickup has been scheduled.',
+                ]);
+
+                return $existing->fresh(['legs', 'events']);
             }
 
             return $this->sourceShipments->ensureRepairInboundShipment($lockedRepair);
@@ -850,10 +1137,6 @@ final class RepairDeliveryService
 
     private function returnRecoveryState(RepairRequest $repair): ?array
     {
-        if ((bool) $repair->pickup_enabled || (string) $repair->status === 'picked_up') {
-            return null;
-        }
-
         $shipment = $repair->relationLoaded('logisticsShipments')
             ? $repair->logisticsShipments->firstWhere('purpose', 'repair_return')
             : Shipment::query()
@@ -865,16 +1148,40 @@ final class RepairDeliveryService
         if (! $shipment) {
             return null;
         }
+        $shipment->loadMissing('legs.proofs');
+        $repair->loadMissing('shopOwner');
 
+        $shop = [
+            'name' => (string) ($repair->shopOwner?->business_name ?? 'Shop'),
+            'address' => (string) ($repair->shopOwner?->business_address ?? ''),
+        ];
         $return = $shipment->legs
             ->where('leg_type', 'return_to_shop')
-            ->filter(fn ($leg): bool => $leg->status->value === 'delivered')
             ->sortByDesc('sequence')
             ->first();
-        if (! $return || ! $return->proofs->contains(
-            fn ($proof): bool => $proof->handoff_type === 'receive'
-                && $proof->review_status === 'approved'
-        )) {
+        $received = $return?->status?->value === 'delivered'
+            && $return->proofs->contains(
+                fn ($proof): bool => $proof->handoff_type === 'receive'
+                    && $proof->review_status === 'approved'
+            );
+        if ($return && ! $received) {
+            return [
+                'code' => 'returning_to_shop',
+                'label' => 'Returning to shop',
+                'state' => 'returning_to_shop',
+                'key' => "return-to-shop:{$return->id}",
+                'message' => 'Returning to shop—rescheduling unlocks after shop receipt.',
+                'actions_available' => false,
+                'can_schedule_redelivery' => false,
+                'can_set_shop_pickup' => false,
+                'shop' => $shop,
+            ];
+        }
+        if ((bool) $repair->pickup_enabled || (string) $repair->status === 'picked_up') {
+            return null;
+        }
+
+        if (! $return || ! $received) {
             return null;
         }
 
@@ -908,10 +1215,13 @@ final class RepairDeliveryService
             'label' => 'Returned to shop—awaiting customer arrangement',
             'state' => $state,
             'key' => $key,
+            'message' => null,
+            'actions_available' => true,
             'scheduled_delivery_date' => $entry['scheduled_delivery_date'] ?? null,
             'delivery_window' => $entry['delivery_window'] ?? null,
             'can_schedule_redelivery' => $state === 'awaiting_arrangement',
             'can_set_shop_pickup' => (string) ($entry['status'] ?? '') !== 'paid',
+            'shop' => $shop,
         ];
     }
 

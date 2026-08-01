@@ -7,7 +7,6 @@ use App\Models\RepairWarrantyClaim;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Models\UserAddress;
-use App\Services\NotificationService;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -17,8 +16,11 @@ use Illuminate\Validation\ValidationException;
 class RepairWarrantyService
 {
     private const DEFAULT_WARRANTY_DAYS = 30;
+
     private const MIN_WARRANTY_DAYS = 1;
+
     private const MAX_WARRANTY_DAYS = 90;
+
     private const MAX_EVIDENCE_IMAGES = 10;
 
     public function __construct(
@@ -41,7 +43,7 @@ class RepairWarrantyService
         }
 
         $shopOwner = $originalRepair->shopOwner ?: ShopOwner::query()->find($originalRepair->shop_owner_id);
-        if (!$shopOwner) {
+        if (! $shopOwner) {
             throw ValidationException::withMessages([
                 'repair' => ['Shop context could not be resolved for this repair request.'],
             ]);
@@ -60,14 +62,14 @@ class RepairWarrantyService
         }
 
         $eligibleStatuses = ['picked_up', 'received'];
-        if (!in_array((string) $originalRepair->status, $eligibleStatuses, true)) {
+        if (! in_array((string) $originalRepair->status, $eligibleStatuses, true)) {
             throw ValidationException::withMessages([
                 'repair' => ['Warranty claims can only be filed after pickup/receipt confirmation.'],
             ]);
         }
 
         $windowStart = $this->resolveWarrantyWindowStart($originalRepair);
-        if (!$windowStart) {
+        if (! $windowStart) {
             throw ValidationException::withMessages([
                 'repair' => ['Warranty start date is not available for this repair request.'],
             ]);
@@ -132,7 +134,7 @@ class RepairWarrantyService
     }
 
     /**
-     * @param UploadedFile[] $images
+     * @param  UploadedFile[]  $images
      */
     public function createCustomerClaim(RepairRequest $repair, User $customer, array $validated, array $images): RepairWarrantyClaim
     {
@@ -161,11 +163,11 @@ class RepairWarrantyService
     }
 
     /**
-     * @param UploadedFile[] $images
+     * @param  UploadedFile[]  $images
      */
     public function createPosWalkInClaim(RepairRequest $repair, array $validated, array $images, int $actorId): RepairWarrantyClaim
     {
-        if (!$this->isManualPosRepair($repair)) {
+        if (! $this->isManualPosRepair($repair)) {
             throw ValidationException::withMessages([
                 'repair' => ['POS walk-in warranty claims are only allowed for manual POS walk-in repairs.'],
             ]);
@@ -257,7 +259,11 @@ class RepairWarrantyService
             $deliveryPlan = $this->warrantyDeliveryPlan($original, $intakeMethod, $preferredReceive);
             $intakeFee = (float) $deliveryPlan['intake']['fee'];
             $returnFee = (float) $deliveryPlan['return']['fee'];
-            $logisticsLockedAt = now();
+            $needsIntakePayment = $intakeMethod === 'shop_pickup' && $intakeFee > 0;
+            $hasLaterReturnPayment = $preferredReceive === 'shop_delivery' && $returnFee > 0;
+            $initialPaymentStatus = $needsIntakePayment
+                ? 'pending'
+                : ($hasLaterReturnPayment ? 'paid' : 'completed');
 
             $status = ($handlerSource === 'business_employee' && $handlerUserId)
                 ? 'assigned_to_repairer'
@@ -295,12 +301,12 @@ class RepairWarrantyService
                 'included_services_snapshot' => $original->included_services_snapshot,
                 'add_on_services_snapshot' => $original->add_on_services_snapshot,
                 'pricing_breakdown' => $pricingBreakdown,
-                'payment_status' => 'completed',
-                'payment_enabled' => false,
-                'payment_enabled_at' => null,
+                'payment_status' => $initialPaymentStatus,
+                'payment_enabled' => $needsIntakePayment,
+                'payment_enabled_at' => $needsIntakePayment ? now() : null,
                 'payment_policy' => $original->payment_policy,
                 'payment_policy_snapshot' => $original->payment_policy_snapshot ?: $original->payment_policy,
-                'payment_status_derived' => 'completed',
+                'payment_status_derived' => $initialPaymentStatus,
                 'total_paid_amount' => 0,
                 'total_refunded_amount' => 0,
                 'manual_pos_queue_enabled' => false,
@@ -319,23 +325,21 @@ class RepairWarrantyService
                 'pickup_address' => $deliveryPlan['intake']['snapshot'],
                 'intake_delivery_fee' => $intakeFee,
                 'intake_logistics_quote' => $deliveryPlan['intake']['quote'],
-                'intake_logistics_locked_at' => $logisticsLockedAt,
+                'intake_logistics_locked_at' => null,
                 'return_delivery_method' => $preferredReceive,
                 'return_address' => $deliveryPlan['return']['snapshot'],
                 'return_delivery_fee' => $returnFee,
                 'return_logistics_quote' => $deliveryPlan['return']['quote'],
-                'return_logistics_locked_at' => $logisticsLockedAt,
-                'return_address_confirmed_at' => $preferredReceive === 'shop_delivery' ? $logisticsLockedAt : null,
-                'return_address_confirmed_version' => $preferredReceive === 'shop_delivery'
-                    ? data_get($deliveryPlan, 'return.snapshot.version')
-                    : null,
+                'return_logistics_locked_at' => null,
+                'return_address_confirmed_at' => null,
+                'return_address_confirmed_version' => null,
                 'same_as_intake_address' => $deliveryPlan['same_address'],
                 'is_high_value' => false,
                 'requires_owner_approval' => false,
             ]);
 
             $serviceIds = $original->services()->pluck('repair_services.id')->all();
-            if (!empty($serviceIds)) {
+            if (! empty($serviceIds)) {
                 $linked->services()->sync($serviceIds);
             }
 
@@ -503,7 +507,7 @@ class RepairWarrantyService
             ->whereNotNull('reviewed_at')
             ->get(['created_at', 'reviewed_at'])
             ->map(function (RepairWarrantyClaim $claim): float {
-                if (!$claim->created_at || !$claim->reviewed_at) {
+                if (! $claim->created_at || ! $claim->reviewed_at) {
                     return 0.0;
                 }
 
@@ -531,8 +535,8 @@ class RepairWarrantyService
     }
 
     /**
-     * @param UploadedFile[] $images
-     * @param array{warranty_started_at: Carbon, warranty_expires_at: Carbon, warranty_days: int} $window
+     * @param  UploadedFile[]  $images
+     * @param  array{warranty_started_at: Carbon, warranty_expires_at: Carbon, warranty_days: int}  $window
      */
     private function createClaimRecord(
         RepairRequest $repair,
@@ -555,7 +559,7 @@ class RepairWarrantyService
             ]);
         }
 
-        if (!(bool) ($validated['same_issue_confirmation'] ?? false)) {
+        if (! (bool) ($validated['same_issue_confirmation'] ?? false)) {
             throw ValidationException::withMessages([
                 'same_issue_confirmation' => ['Same issue confirmation is required for warranty claims.'],
             ]);
@@ -671,7 +675,7 @@ class RepairWarrantyService
     }
 
     /**
-     * @param UploadedFile[] $images
+     * @param  UploadedFile[]  $images
      * @return string[]
      */
     private function storeEvidenceMedia(array $images): array
@@ -679,7 +683,7 @@ class RepairWarrantyService
         $stored = [];
 
         foreach ($images as $image) {
-            if (!$image instanceof UploadedFile) {
+            if (! $image instanceof UploadedFile) {
                 continue;
             }
 
@@ -723,8 +727,7 @@ class RepairWarrantyService
         RepairRequest $repair,
         string $intakeMethod,
         string $returnMethod,
-    ): array
-    {
+    ): array {
         $intake = $this->warrantyDeliveryLeg($repair, 'intake', $intakeMethod);
         $return = $this->warrantyDeliveryLeg($repair, 'return', $returnMethod);
 
@@ -756,7 +759,7 @@ class RepairWarrantyService
                 ->first()
             : null;
 
-        if (!$address) {
+        if (! $address) {
             throw ValidationException::withMessages([
                 $field => ['Choose a pinned saved address on the original repair before selecting this delivery method.'],
             ]);
@@ -764,13 +767,13 @@ class RepairWarrantyService
 
         $snapshot = $this->repairDeliveryService->snapshot($address, $method);
         $shopOwned = $method === ($leg === 'intake' ? 'shop_pickup' : 'shop_delivery');
-        if (!$shopOwned) {
+        if (! $shopOwned) {
             return ['snapshot' => $snapshot, 'fee' => 0.0, 'quote' => null];
         }
 
         $shop = $repair->shopOwner ?: ShopOwner::query()->find($repair->shop_owner_id);
         $quote = $shop ? $this->repairDeliveryService->quote($shop, $address) : ['available' => false];
-        if (!($quote['available'] ?? false)) {
+        if (! ($quote['available'] ?? false)) {
             throw ValidationException::withMessages([
                 $field => [($quote['reason'] ?? null) === 'outside_coverage'
                     ? 'The selected address is outside the shop-owned delivery coverage. Choose walk-in or third-party delivery.'
@@ -808,7 +811,7 @@ class RepairWarrantyService
 
     private function resolveOwnerLinkedUserId(?ShopOwner $shopOwner): ?int
     {
-        if (!$shopOwner) {
+        if (! $shopOwner) {
             return null;
         }
 
@@ -879,7 +882,7 @@ class RepairWarrantyService
             ->withCount([
                 'assignedRepairs as active_repairs_count' => function ($query) use ($activeStatuses) {
                     $query->whereIn('status', $activeStatuses);
-                }
+                },
             ])
             ->orderBy('active_repairs_count')
             ->orderBy('id')
@@ -931,10 +934,10 @@ class RepairWarrantyService
             ->whereDate('created_at', now()->toDateString())
             ->count() + 1;
 
-        $requestId = 'REP-' . now()->format('Ymd') . str_pad((string) $counter, 3, '0', STR_PAD_LEFT);
+        $requestId = 'REP-'.now()->format('Ymd').str_pad((string) $counter, 3, '0', STR_PAD_LEFT);
         while (RepairRequest::query()->where('request_id', $requestId)->exists()) {
             $counter++;
-            $requestId = 'REP-' . now()->format('Ymd') . str_pad((string) $counter, 3, '0', STR_PAD_LEFT);
+            $requestId = 'REP-'.now()->format('Ymd').str_pad((string) $counter, 3, '0', STR_PAD_LEFT);
         }
 
         return $requestId;

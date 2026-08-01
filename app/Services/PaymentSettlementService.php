@@ -2,14 +2,15 @@
 
 namespace App\Services;
 
+use App\Enums\NotificationType;
 use App\Models\Finance\Invoice;
+use App\Models\Logistics\Shipment;
 use App\Models\Order;
-use App\Models\PosTransaction;
 use App\Models\PosRefund;
+use App\Models\PosTransaction;
 use App\Models\RepairPaymentSession;
 use App\Models\RepairRequest;
 use Illuminate\Support\Facades\DB;
-use App\Enums\NotificationType;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
@@ -19,8 +20,7 @@ class PaymentSettlementService
         private readonly NotificationService $notificationService,
         private readonly RepairDeliveryService $repairDeliveryService,
         private readonly RepairPosRefundService $repairRefundService,
-    ) {
-    }
+    ) {}
 
     public function repairPaymentBreakdown(RepairRequest $repair, ?string $dueType = null): array
     {
@@ -34,14 +34,14 @@ class PaymentSettlementService
         $phase = $this->resolveRepairPaymentPhase($repair, $policy, $dueType);
         $serviceTotal = $this->resolveRepairServiceTotal($repair, $policy, $phase);
         $serviceDeposit = $policy === 'deposit_50' ? round($serviceTotal * 0.5, 2) : $serviceTotal;
-        $serviceAmount = $phase === 'redelivery'
+        $serviceAmount = in_array($phase, ['redelivery', 'pickup_retry'], true)
             ? 0.0
             : ($phase === 'initial'
             ? $serviceDeposit
             : ($policy === 'deposit_50'
                 ? round(max(0, $serviceTotal - $this->resolveRepairInitialServiceAmount($repair)), 2)
                 : 0.0));
-        $leg = $phase === 'initial' ? 'intake' : 'return';
+        $leg = in_array($phase, ['initial', 'pickup_retry'], true) ? 'intake' : 'return';
         if ($this->hasResolvedDeliveryCompensation($repair, $leg)) {
             $serviceAmount = 0.0;
         }
@@ -51,12 +51,12 @@ class PaymentSettlementService
             || strtolower((string) ($repair->billing_mode ?? '')) === 'warranty_no_charge';
         if ($shopSponsoredWarranty) {
             $serviceTotal = $serviceAmount = 0.0;
-            if ($phase !== 'redelivery') {
-                $deliveryAmount = 0.0;
-            }
         }
         $redelivery = $phase === 'redelivery'
             ? $this->repairDeliveryService->activeRedeliveryRequirement($repair)
+            : null;
+        $pickupRetry = $phase === 'pickup_retry'
+            ? $this->repairDeliveryService->activePickupRecovery($repair, 'awaiting_payment')
             : null;
 
         return [
@@ -65,6 +65,7 @@ class PaymentSettlementService
             'due_type' => match ($phase) {
                 'initial' => $policy === 'deposit_50' ? 'deposit' : 'full',
                 'redelivery' => 'redelivery',
+                'pickup_retry' => 'pickup_retry',
                 default => 'balance',
             },
             'leg' => $leg,
@@ -75,7 +76,8 @@ class PaymentSettlementService
             'snapshot_version' => $delivery['snapshot_version'],
             'delivery_method' => $delivery['method'],
             'quote' => $delivery['quote'],
-            'recovery_key' => $redelivery['recovery_key'] ?? null,
+            'recovery_key' => $redelivery['recovery_key'] ?? $pickupRetry['recovery_key'] ?? null,
+            'plan_key' => $pickupRetry['plan_key'] ?? null,
         ];
     }
 
@@ -85,6 +87,55 @@ class PaymentSettlementService
         $policy = (string) $breakdown['policy'];
         $phaseAmount = round((float) $breakdown['total_amount'], 2);
         $totalPaidAmount = round((float) ($repair->total_paid_amount ?? 0) + $phaseAmount, 2);
+        if ($phase === 'pickup_retry') {
+            $recoveryKey = trim((string) ($breakdown['recovery_key'] ?? ''));
+            $planKey = trim((string) ($breakdown['plan_key'] ?? ''));
+            if ($recoveryKey === '' || $planKey === '') {
+                throw ValidationException::withMessages([
+                    'payment' => ['The pickup request is missing its recovery reference.'],
+                ]);
+            }
+            $paymentReferences = $this->appendRepairPaymentReference(
+                is_array($repair->paymongo_payment_ids) ? $repair->paymongo_payment_ids : null,
+                $paymentReference,
+            );
+            $shipment = Shipment::query()
+                ->where('source_type', 'repair_request')
+                ->where('source_id', $repair->id)
+                ->where('purpose', 'repair_pickup')
+                ->first();
+            $lockAt = now();
+            if ($shipment?->cancelled_at && $lockAt->timestamp <= $shipment->cancelled_at->timestamp) {
+                $lockAt = $shipment->cancelled_at->copy()->addSecond();
+            }
+            $updates = [
+                'payment_status' => in_array((string) $repair->payment_status, ['paid', 'completed'], true)
+                    ? $repair->payment_status
+                    : 'paid',
+                'payment_status_derived' => in_array((string) $repair->payment_status_derived, ['paid', 'completed'], true)
+                    ? $repair->payment_status_derived
+                    : 'paid',
+                'total_paid_amount' => $totalPaidAmount,
+                'payment_completed_at' => now(),
+                'payment_failed_at' => null,
+                'payment_failure_reason' => null,
+                'payment_expired_at' => null,
+                'intake_logistics_locked_at' => $lockAt,
+            ];
+            if ($paymentReference !== null && trim($paymentReference) !== '') {
+                $updates['paymongo_payment_id'] = $paymentReference;
+                $updates['paymongo_payment_ids'] = $paymentReferences ?: null;
+            }
+            $repair->update($updates);
+            $settledRepair = $this->repairDeliveryService->markPickupRecoveryPaid(
+                $repair->fresh(),
+                $recoveryKey,
+                $planKey,
+            );
+            $this->repairDeliveryService->tryCreateIntakeShipment($settledRepair);
+
+            return $settledRepair->fresh();
+        }
         if ($phase === 'redelivery') {
             $recoveryKey = trim((string) ($breakdown['recovery_key'] ?? ''));
             if ($recoveryKey === '') {
@@ -173,7 +224,7 @@ class PaymentSettlementService
             ];
         }
 
-        if (!$ignoreExpiry && $this->isOrderExpired($order)) {
+        if (! $ignoreExpiry && $this->isOrderExpired($order)) {
             return [
                 'result' => 'expired',
                 'model' => $order,
@@ -238,7 +289,7 @@ class PaymentSettlementService
             ];
         }
 
-        if (!$this->isRepairPaymentDueNow($repair, $policy)) {
+        if (! $this->isRepairPaymentDueNow($repair, $policy)) {
             return [
                 'result' => 'not_due',
                 'model' => $repair,
@@ -246,7 +297,7 @@ class PaymentSettlementService
             ];
         }
 
-        if (!$ignoreExpiry && $this->isRepairExpired($repair, $policy)) {
+        if (! $ignoreExpiry && $this->isRepairExpired($repair, $policy)) {
             return [
                 'result' => 'expired',
                 'model' => $repair,
@@ -261,7 +312,7 @@ class PaymentSettlementService
 
         $repair->update([
             'paymongo_payment_id' => $resolvedPaymentId !== '' ? $resolvedPaymentId : $repair->paymongo_payment_id,
-            'paymongo_payment_ids' => !empty($paymentReferenceHistory) ? $paymentReferenceHistory : null,
+            'paymongo_payment_ids' => ! empty($paymentReferenceHistory) ? $paymentReferenceHistory : null,
             'payment_completed_at' => now(),
             'payment_failed_at' => null,
             'payment_failure_reason' => null,
@@ -320,7 +371,7 @@ class PaymentSettlementService
 
     public function settleRepairPaidInShop(RepairRequest $repair, ?string $reference = null): array
     {
-        $paymentReference = $reference ?? ('in_shop_' . now()->format('YmdHis'));
+        $paymentReference = $reference ?? ('in_shop_'.now()->format('YmdHis'));
 
         return $this->settleRepairPaid($repair, $paymentReference, true);
     }
@@ -804,7 +855,7 @@ class PaymentSettlementService
                         'refund_id' => $payload['paymongo_refund_id'] ?? null,
                         'refunded_at' => now()->toDateTimeString(),
                     ],
-                    actionUrl: '/my-orders?tab=cancelled&highlightOrder=' . $order->id,
+                    actionUrl: '/my-orders?tab=cancelled&highlightOrder='.$order->id,
                 );
             }
         } catch (\Throwable $e) {
@@ -877,7 +928,7 @@ class PaymentSettlementService
     public function isRepairExpired(RepairRequest $repair, ?string $policy = null): bool
     {
         $resolvedPolicy = $policy ?? $this->normalizeRepairPaymentPolicy($repair->payment_policy ?? 'deposit_50');
-        if (!$this->isRepairPaymentDueNow($repair, $resolvedPolicy)) {
+        if (! $this->isRepairPaymentDueNow($repair, $resolvedPolicy)) {
             return false;
         }
 
@@ -891,6 +942,10 @@ class PaymentSettlementService
 
         if (data_get($repair->logistics_payment_reconciliation, 'status') === 'pending') {
             return false;
+        }
+
+        if ($this->repairDeliveryService->activePickupRecovery($repair, 'awaiting_payment')) {
+            return true;
         }
 
         if ($this->repairDeliveryService->activeRedeliveryRequirement($repair)) {
@@ -940,6 +995,10 @@ class PaymentSettlementService
             return false;
         }
 
+        if ($this->repairDeliveryService->activePickupRecovery($repair, 'awaiting_payment')) {
+            return false;
+        }
+
         if ($this->repairDeliveryService->activeRedeliveryRequirement($repair)) {
             return false;
         }
@@ -981,6 +1040,10 @@ class PaymentSettlementService
 
     public function isRepairPaymentPhaseSettled(RepairRequest $repair, string $phase): bool
     {
+        if ($phase === 'pickup_retry') {
+            return $this->repairDeliveryService->activePickupRecovery($repair, 'paid') !== null;
+        }
+
         if ($phase === 'redelivery') {
             $requirement = $this->repairDeliveryService->activeRedeliveryRequirement($repair)
                 ?? $this->repairDeliveryService->activeRedeliveryRequirement($repair, 'paid');
@@ -994,8 +1057,7 @@ class PaymentSettlementService
                 ->where('phase', 'redelivery')
                 ->whereIn('status', ['paid', 'reconciliation'])
                 ->get()
-                ->contains(fn (RepairPaymentSession $session): bool =>
-                    (string) data_get($session->quote, 'recovery_key') === $recoveryKey
+                ->contains(fn (RepairPaymentSession $session): bool => (string) data_get($session->quote, 'recovery_key') === $recoveryKey
                 );
         }
 
@@ -1042,13 +1104,14 @@ class PaymentSettlementService
         RepairPaymentSession $session,
         ?string $paymentId,
     ): array {
-        return DB::transaction(function () use ($repair, $session, $paymentId): array {
+        $result = DB::transaction(function () use ($repair, $session, $paymentId): array {
             $lockedRepair = RepairRequest::query()->lockForUpdate()->findOrFail($repair->id);
             $lockedSession = RepairPaymentSession::query()->lockForUpdate()->findOrFail($session->id);
             $policy = $this->normalizeRepairPaymentPolicy($lockedRepair->payment_policy_snapshot ?: $lockedRepair->payment_policy);
             $phaseLabel = match ($lockedSession->phase) {
                 'final' => 'remaining_balance',
                 'redelivery' => 'redelivery',
+                'pickup_retry' => 'pickup_retry',
                 default => $policy === 'full_upfront' ? 'full_upfront' : 'deposit_50',
             };
 
@@ -1088,6 +1151,7 @@ class PaymentSettlementService
                 $dueType = match ($lockedSession->phase) {
                     'final' => 'balance',
                     'redelivery' => 'redelivery',
+                    'pickup_retry' => 'pickup_retry',
                     default => $policy === 'deposit_50' ? 'deposit' : 'full',
                 };
                 $current = $this->repairPaymentBreakdown(
@@ -1117,9 +1181,11 @@ class PaymentSettlementService
                 : round((float) $lockedSession->service_amount, 2) === round((float) $current['service_amount'], 2);
             $paymentPlanMatches = $serviceMatches
                 && ($storedPolicy === null || (string) $storedPolicy === (string) $current['policy'])
-                && ($lockedSession->phase !== 'redelivery'
+                && (! in_array($lockedSession->phase, ['redelivery', 'pickup_retry'], true)
                     || ($storedRecoveryKey !== null
                         && (string) $storedRecoveryKey === (string) ($current['recovery_key'] ?? '')))
+                && ($lockedSession->phase !== 'pickup_retry'
+                    || (string) data_get($sessionQuote, 'plan_key', '') === (string) ($current['plan_key'] ?? ''))
                 && ($storedTaxMode === null || strtolower((string) $storedTaxMode) === $currentTaxMode);
 
             if (! $paymentPlanMatches) {
@@ -1142,8 +1208,21 @@ class PaymentSettlementService
                 'model' => $settledRepair,
                 'policy' => $policy,
                 'phase' => $phaseLabel,
+                'pickup_notification' => $lockedSession->phase === 'pickup_retry' ? [
+                    'plan_key' => (string) ($current['plan_key'] ?? ''),
+                ] : null,
             ];
         });
+
+        if (is_array($result['pickup_notification'] ?? null)) {
+            $this->notificationService->notifyRepairPickupRecovery(
+                $result['model'],
+                'ready_for_dispatch',
+                (string) $result['pickup_notification']['plan_key'],
+            );
+        }
+
+        return $result;
     }
 
     private function reconcileRepairPaymentSession(
@@ -1200,19 +1279,22 @@ class PaymentSettlementService
                 fn (array $item): float => (float) ($item['reconciliation_amount'] ?? 0)
             ), 2),
         ];
-        $isRedelivery = $session->phase === 'redelivery';
+        $isRecoveryFee = in_array($session->phase, ['redelivery', 'pickup_retry'], true);
 
-        $repair->update([
-            'payment_status' => ($serviceAlreadyApplied || $isRedelivery) ? $repair->payment_status : 'paid',
-            'payment_status_derived' => ($serviceAlreadyApplied || $isRedelivery) ? $repair->payment_status_derived : 'paid',
+        $updates = [
+            'payment_status' => ($serviceAlreadyApplied || $isRecoveryFee) ? $repair->payment_status : 'paid',
+            'payment_status_derived' => ($serviceAlreadyApplied || $isRecoveryFee) ? $repair->payment_status_derived : 'paid',
             'total_paid_amount' => round((float) ($repair->total_paid_amount ?? 0) + $serviceAmountApplied, 2),
             'paymongo_payment_id' => $paymentId ?: $repair->paymongo_payment_id,
             'paymongo_payment_ids' => $paymentReferences ?: null,
-            in_array($session->phase, ['final', 'redelivery'], true)
-                ? 'return_logistics_locked_at'
-                : 'intake_logistics_locked_at' => now(),
             'logistics_payment_reconciliation' => $reconciliation,
-        ]);
+        ];
+        if ($session->phase !== 'pickup_retry') {
+            $updates[in_array($session->phase, ['final', 'redelivery'], true)
+                ? 'return_logistics_locked_at'
+                : 'intake_logistics_locked_at'] = now();
+        }
+        $repair->update($updates);
         $session->update([
             'status' => 'reconciliation',
             'resolved_at' => now(),
@@ -1234,7 +1316,7 @@ class PaymentSettlementService
         RepairRequest $repair,
         RepairPaymentSession $session,
     ): bool {
-        if ($session->phase === 'redelivery') {
+        if (in_array($session->phase, ['redelivery', 'pickup_retry'], true)) {
             $recoveryKey = (string) data_get($session->quote, 'recovery_key', '');
 
             return $recoveryKey !== ''
@@ -1244,8 +1326,7 @@ class PaymentSettlementService
                     ->where('id', '!=', $session->id)
                     ->whereIn('status', ['paid', 'reconciliation'])
                     ->get()
-                    ->contains(fn (RepairPaymentSession $other): bool =>
-                        (string) data_get($other->quote, 'recovery_key') === $recoveryKey
+                    ->contains(fn (RepairPaymentSession $other): bool => (string) data_get($other->quote, 'recovery_key') === $recoveryKey
                     );
         }
 
@@ -1271,6 +1352,21 @@ class PaymentSettlementService
 
     private function resolveRepairPaymentPhase(RepairRequest $repair, string $policy, ?string $dueType): string
     {
+        if ($this->repairDeliveryService->activePickupRecovery($repair, 'awaiting_payment')) {
+            if ($dueType !== null && $dueType !== 'pickup_retry') {
+                throw ValidationException::withMessages([
+                    'due_type' => ['Only the new pickup fee is payable for this repair.'],
+                ]);
+            }
+
+            return 'pickup_retry';
+        }
+        if ($dueType === 'pickup_retry') {
+            throw ValidationException::withMessages([
+                'due_type' => ['This repair is no longer awaiting a pickup retry payment.'],
+            ]);
+        }
+
         if ($this->repairDeliveryService->activeRedeliveryRequirement($repair)) {
             if ($dueType !== null && $dueType !== 'redelivery') {
                 throw ValidationException::withMessages([
@@ -1406,11 +1502,11 @@ class PaymentSettlementService
             ->all();
 
         $candidate = trim((string) ($paymentReference ?? ''));
-        if ($candidate === '' || !$this->looksLikeGatewayPaymentReference($candidate)) {
+        if ($candidate === '' || ! $this->looksLikeGatewayPaymentReference($candidate)) {
             return $history;
         }
 
-        if (!in_array($candidate, $history, true)) {
+        if (! in_array($candidate, $history, true)) {
             $history[] = $candidate;
         }
 

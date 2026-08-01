@@ -3,6 +3,7 @@
 namespace Tests\Feature\Repair;
 
 use App\Models\Logistics\LogisticsSetting;
+use App\Models\Logistics\Shipment;
 use App\Models\PosTransaction;
 use App\Models\RepairPaymentSession;
 use App\Models\RepairRequest;
@@ -415,17 +416,17 @@ class RepairLogisticsPaymentTest extends TestCase
         $this->assertSame('failed', $repair->fresh()->payment_status);
     }
 
-    public function test_is_warranty_job_delivery_fee_cannot_be_collected_from_customer(): void
+    public function test_is_warranty_job_keeps_service_free_but_charges_each_shop_owned_leg(): void
     {
-        $this->assertWarrantyDeliveryFeeCannotBeCollected([
+        $this->assertWarrantyDeliveryFeeIsCollected([
             'is_warranty_job' => true,
             'billing_mode' => 'warranty',
         ], 'repair-warranty-job-delivery-fee-001');
     }
 
-    public function test_warranty_no_charge_billing_mode_delivery_fee_cannot_be_collected_from_customer(): void
+    public function test_warranty_no_charge_mode_keeps_service_free_but_charges_each_shop_owned_leg(): void
     {
-        $this->assertWarrantyDeliveryFeeCannotBeCollected([
+        $this->assertWarrantyDeliveryFeeIsCollected([
             'is_warranty_job' => false,
             'billing_mode' => 'warranty_no_charge',
         ], 'repair-warranty-mode-delivery-fee-001');
@@ -464,11 +465,20 @@ class RepairLogisticsPaymentTest extends TestCase
         $this->assertSame(0.0, (float) $repair->fresh()->total_paid_amount);
     }
 
-    private function assertWarrantyDeliveryFeeCannotBeCollected(array $markers, string $idempotencyKey): void
+    private function assertWarrantyDeliveryFeeIsCollected(array $markers, string $idempotencyKey): void
     {
         [$repair, $customer, $actor] = $this->coveredRepair('full_upfront', 0);
-        $repair->update($markers);
+        $repair->update([...$markers, 'status' => 'repairer_accepted']);
         $due = (float) $repair->intake_delivery_fee;
+        $settlement = app(PaymentSettlementService::class);
+
+        $initial = $settlement->repairPaymentBreakdown($repair->fresh(), 'full');
+        $this->assertSame('0.00', number_format((float) $initial['service_amount'], 2, '.', ''));
+        $this->assertSame(number_format($due, 2, '.', ''), number_format((float) $initial['delivery_amount'], 2, '.', ''));
+        $this->assertSame(number_format($due, 2, '.', ''), number_format((float) $initial['total_amount'], 2, '.', ''));
+        $this->assertNull($repair->fresh()->intake_logistics_locked_at);
+        $this->assertNull($repair->fresh()->return_logistics_locked_at);
+        $this->assertSame(0, Shipment::query()->where('source_type', 'repair_request')->where('source_id', $repair->id)->count());
 
         $response = $this->actingAs($actor, 'user')->postJson('/api/repair-pos/checkout', [
             'repair_request_id' => $repair->id,
@@ -479,22 +489,50 @@ class RepairLogisticsPaymentTest extends TestCase
             'payment_lines' => [['tender_type' => 'cash', 'amount' => $due]],
         ]);
 
-        $response->assertUnprocessable()
-            ->assertJsonValidationErrors('payment_lines');
-        $this->assertDatabaseMissing('pos_transactions', [
-            'module_type' => 'repair',
-            'module_reference_id' => $repair->id,
-        ]);
-
-        $breakdown = app(PaymentSettlementService::class)->repairPaymentBreakdown($repair->fresh(), 'full');
-        foreach (['service_total', 'service_amount', 'delivery_amount', 'total_amount'] as $amount) {
-            $this->assertSame('0.00', number_format((float) $breakdown[$amount], 2, '.', ''));
-        }
+        $response->assertOk()->assertJsonPath('success', true);
 
         $freshRepair = $repair->fresh();
-        $this->assertSame(0.0, (float) $freshRepair->total_paid_amount);
-        $this->assertSame(number_format($due, 2, '.', ''), number_format((float) $freshRepair->intake_delivery_fee, 2, '.', ''));
-        $this->assertSame(number_format($due, 2, '.', ''), number_format((float) data_get($freshRepair->intake_logistics_quote, 'fee'), 2, '.', ''));
+        $this->assertSame('paid', $freshRepair->payment_status);
+        $this->assertNotNull($freshRepair->intake_logistics_locked_at);
+        $this->assertNull($freshRepair->return_logistics_locked_at);
+        $this->assertSame(1, Shipment::query()->where('source_type', 'repair_request')->where('source_id', $repair->id)->where('purpose', 'repair_pickup')->count());
+        $this->assertSame(number_format($due, 2, '.', ''), number_format((float) $freshRepair->total_paid_amount, 2, '.', ''));
+
+        $freshRepair->update([
+            'status' => 'ready_for_pickup',
+            'return_address_confirmed_at' => now(),
+            'return_address_confirmed_version' => data_get($freshRepair->return_address, 'version'),
+        ]);
+        $final = $settlement->repairPaymentBreakdown($freshRepair->fresh(), 'balance');
+        $returnDue = (float) $freshRepair->return_delivery_fee;
+        $this->assertSame('0.00', number_format((float) $final['service_amount'], 2, '.', ''));
+        $this->assertSame(number_format($returnDue, 2, '.', ''), number_format((float) $final['delivery_amount'], 2, '.', ''));
+        $this->assertSame(number_format($returnDue, 2, '.', ''), number_format((float) $final['total_amount'], 2, '.', ''));
+        $this->assertSame(0, Shipment::query()->where('source_type', 'repair_request')->where('source_id', $repair->id)->where('purpose', 'repair_return')->count());
+
+        $finalPayload = [
+            'repair_request_id' => $repair->id,
+            'due_type' => 'balance',
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'idempotency_key' => $idempotencyKey.'-return',
+            'payment_lines' => [['tender_type' => 'cash', 'amount' => $returnDue]],
+        ];
+        $this->actingAs($actor, 'user')->postJson('/api/repair-pos/checkout', $finalPayload)
+            ->assertOk()
+            ->assertJsonPath('success', true);
+        $this->actingAs($actor, 'user')->postJson('/api/repair-pos/checkout', $finalPayload)
+            ->assertOk()
+            ->assertJsonPath('success', true);
+
+        $freshRepair = $repair->fresh();
+        $this->assertSame('completed', $freshRepair->payment_status);
+        $this->assertNotNull($freshRepair->return_logistics_locked_at);
+        $this->assertSame(1, Shipment::query()->where('source_type', 'repair_request')->where('source_id', $repair->id)->where('purpose', 'repair_return')->count());
+        $this->assertSame(
+            number_format($due + $returnDue, 2, '.', ''),
+            number_format((float) $freshRepair->total_paid_amount, 2, '.', ''),
+        );
     }
 
     public function test_late_online_callback_after_pos_phase_does_not_apply_service_twice(): void

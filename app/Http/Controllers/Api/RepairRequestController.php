@@ -967,6 +967,15 @@ class RepairRequestController extends Controller
                     $settlementService->isRepairSettled($repair),
                 );
                 $returnRecovery = $returnHandoff['recovery'] ?? null;
+                $pickupRecovery = $repairDeliveryService->activePickupRecovery($repair);
+                if ($pickupRecovery) {
+                    $pickupRecovery['state'] = match ((string) ($pickupRecovery['status'] ?? '')) {
+                        'awaiting_payment' => 'awaiting_payment',
+                        'paid' => 'ready_for_dispatch',
+                        'resolved' => 'resolved',
+                        default => 'awaiting_arrangement',
+                    };
+                }
 
                 $anchorRepairId = ((bool) ($repair->is_warranty_job ?? false) && (int) ($repair->parent_repair_request_id ?? 0) > 0)
                     ? (int) $repair->parent_repair_request_id
@@ -1026,6 +1035,9 @@ class RepairRequestController extends Controller
                     'same_as_intake_address' => (bool) $repair->same_as_intake_address,
                     'return_address_confirmed_at' => $repair->return_address_confirmed_at?->toISOString(),
                     'return_address_confirmed_version' => $repair->return_address_confirmed_version,
+                    'pickup_recovery' => $pickupRecovery,
+                    'pickup_retry_payment_due' => ($pickupRecovery['state'] ?? null) === 'awaiting_payment'
+                        && $settlementService->isRepairPaymentDueNow($repair),
                     'return_recovery' => $returnRecovery,
                     'redelivery_payment_due' => ($returnRecovery['state'] ?? null) === 'awaiting_payment'
                         && $settlementService->isRepairPaymentDueNow($repair),
@@ -2023,6 +2035,41 @@ class RepairRequestController extends Controller
         ]);
     }
 
+    public function resolvePickupRecovery(Request $request, $id, RepairDeliveryService $repairDeliveryService)
+    {
+        $user = Auth::guard('user')->user();
+        abort_unless($user, 401);
+
+        $repair = RepairRequest::query()
+            ->whereKey($id)
+            ->forCustomer($user->id)
+            ->firstOrFail();
+        $validated = $request->validate([
+            'method' => ['required', 'in:shop_pickup,walk_in,customer_delivery'],
+            'address_id' => ['nullable', 'required_if:method,shop_pickup,customer_delivery', 'integer'],
+            'delivery_date' => ['nullable', 'required_if:method,shop_pickup', 'date', 'after:today'],
+            'delivery_window' => ['nullable', 'required_if:method,shop_pickup', 'in:morning,afternoon'],
+        ]);
+        $result = $repairDeliveryService->resolvePickupRecovery(
+            $repair,
+            (string) $validated['method'],
+            User::class,
+            (int) $user->id,
+            isset($validated['address_id']) ? (int) $validated['address_id'] : null,
+            $validated['delivery_date'] ?? null,
+            $validated['delivery_window'] ?? null,
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => $validated['method'] === 'shop_pickup'
+                ? 'Pickup plan saved. Pay the new shipping fee before rider assignment.'
+                : 'Your warranty repair is reopened with the selected intake method.',
+            'recovery' => $result['recovery'],
+            'repair' => $result['repair'],
+        ]);
+    }
+
     public function updateExternalTracking(Request $request, $id)
     {
         $user = Auth::guard('user')->user();
@@ -2517,6 +2564,8 @@ class RepairRequestController extends Controller
             }
 
             $policy = $this->normalizeRepairPaymentPolicy($repair->payment_policy ?? 'deposit_50');
+            $pickupRetry = app(RepairDeliveryService::class)
+                ->activePickupRecovery($repair, 'awaiting_payment');
 
             if ($this->isRepairPaymentSettled($repair, $policy)) {
                 return response()->json([
@@ -2525,7 +2574,7 @@ class RepairRequestController extends Controller
                 ], 409);
             }
 
-            if ((string) $repair->status === 'cancelled') {
+            if ((string) $repair->status === 'cancelled' && ! $pickupRetry) {
                 return response()->json([
                     'success' => false,
                     'message' => 'This repair request is cancelled and cannot be paid.',
@@ -2550,6 +2599,7 @@ class RepairRequestController extends Controller
             $phase = match ($phaseBreakdown['phase']) {
                 'final' => 'final payment',
                 'redelivery' => 're-delivery fee',
+                'pickup_retry' => 'new pickup fee',
                 default => $policy === 'full_upfront' ? 'full payment' : 'down payment',
             };
 
@@ -2705,6 +2755,7 @@ class RepairRequestController extends Controller
                 $paymentPlanChanged = (string) $currentBreakdown['phase'] !== (string) $phaseBreakdown['phase']
                     || (string) $currentBreakdown['policy'] !== (string) $phaseBreakdown['policy']
                     || (string) ($currentBreakdown['recovery_key'] ?? '') !== (string) ($phaseBreakdown['recovery_key'] ?? '')
+                    || (string) ($currentBreakdown['plan_key'] ?? '') !== (string) ($phaseBreakdown['plan_key'] ?? '')
                     || (string) ($currentBreakdown['snapshot_version'] ?? '') !== (string) ($phaseBreakdown['snapshot_version'] ?? '')
                     || (string) $currentBreakdown['delivery_method'] !== (string) $phaseBreakdown['delivery_method']
                     || round((float) $currentBreakdown['service_amount'], 2) !== round((float) $phaseBreakdown['service_amount'], 2)
@@ -2745,6 +2796,9 @@ class RepairRequestController extends Controller
                         ...($currentBreakdown['recovery_key'] ? [
                             'recovery_key' => $currentBreakdown['recovery_key'],
                         ] : []),
+                        ...($currentBreakdown['plan_key'] ? [
+                            'plan_key' => $currentBreakdown['plan_key'],
+                        ] : []),
                     ],
                 ]);
 
@@ -2755,7 +2809,7 @@ class RepairRequestController extends Controller
                     'payment_failed_at' => null,
                     'payment_failure_reason' => null,
                     'payment_expired_at' => null,
-                    'payment_status' => $currentBreakdown['phase'] === 'redelivery'
+                    'payment_status' => in_array($currentBreakdown['phase'], ['redelivery', 'pickup_retry'], true)
                         ? $lockedRepair->payment_status
                         : $this->nextRepairPaymentStatusForRetry($lockedRepair, $policy),
                 ]);

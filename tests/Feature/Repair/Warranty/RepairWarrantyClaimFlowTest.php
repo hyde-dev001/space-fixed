@@ -9,6 +9,7 @@ use App\Models\RepairWarrantyClaim;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Models\UserAddress;
+use App\Services\PaymentSettlementService;
 use App\Services\RepairDeliveryService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -96,9 +97,9 @@ class RepairWarrantyClaimFlowTest extends TestCase
         $this->assertSame(0.0, (float) $repair->total_refunded_amount);
     }
 
-    public function test_approve_claim_preserves_shop_owned_quotes_as_shop_sponsored_delivery(): void
+    public function test_approve_claim_keeps_warranty_service_free_and_gates_each_shop_owned_leg_by_payment(): void
     {
-        [, , $address, $linked, $delivery] = $this->approveShopSponsoredWarranty();
+        [, , $address, $linked, $delivery] = $this->approveShopSponsoredWarranty(false);
 
         $this->assertSame('pickup', (string) $linked->delivery_method);
         $this->assertSame('shop_pickup', (string) $linked->intake_delivery_method);
@@ -117,18 +118,15 @@ class RepairWarrantyClaimFlowTest extends TestCase
         $this->assertGreaterThan(0, (float) $linked->return_delivery_fee);
         $this->assertTrue((bool) data_get($linked->intake_logistics_quote, 'available'));
         $this->assertTrue((bool) data_get($linked->return_logistics_quote, 'available'));
-        $this->assertFalse((bool) $linked->payment_enabled);
-        $this->assertNull($linked->payment_enabled_at);
-        $this->assertSame('completed', (string) $linked->payment_status);
-        $this->assertSame('completed', (string) $linked->payment_status_derived);
+        $this->assertTrue((bool) $linked->payment_enabled);
+        $this->assertNotNull($linked->payment_enabled_at);
+        $this->assertSame('pending', (string) $linked->payment_status);
+        $this->assertSame('pending', (string) $linked->payment_status_derived);
         $this->assertSame(0.0, (float) $linked->total_paid_amount);
         $this->assertSame(0.0, (float) $linked->final_total);
-        $this->assertNotNull($linked->intake_logistics_locked_at);
-        $this->assertNotNull($linked->return_logistics_locked_at);
-        $this->assertSame(
-            data_get($linked->return_address, 'version'),
-            (string) $linked->return_address_confirmed_version,
-        );
+        $this->assertNull($linked->intake_logistics_locked_at);
+        $this->assertNull($linked->return_logistics_locked_at);
+        $this->assertNull($linked->return_address_confirmed_version);
         $this->assertSame(
             0,
             Shipment::query()
@@ -138,7 +136,12 @@ class RepairWarrantyClaimFlowTest extends TestCase
         );
 
         $linked->update(['status' => 'repairer_accepted']);
-        $delivery->tryCreateIntakeShipment($linked->fresh());
+        $this->assertNull($delivery->tryCreateIntakeShipment($linked->fresh()));
+        $payments = app(PaymentSettlementService::class);
+        $initial = $payments->repairPaymentBreakdown($linked->fresh());
+        $this->assertSame(0.0, (float) $initial['service_amount']);
+        $this->assertSame((float) $linked->intake_delivery_fee, (float) $initial['delivery_amount']);
+        $payments->settleRepairPhasePaid($linked->fresh(), $initial, 'pay_warranty_initial');
         $delivery->tryCreateIntakeShipment($linked->fresh());
 
         $this->assertSame(1, Shipment::query()
@@ -147,8 +150,21 @@ class RepairWarrantyClaimFlowTest extends TestCase
             ->where('purpose', 'repair_pickup')
             ->count());
 
-        $linked->update(['status' => 'ready_for_pickup']);
-        $delivery->tryCreateReturnShipment($linked->fresh());
+        $linked->refresh();
+        $this->assertNotNull($linked->intake_logistics_locked_at);
+        $this->assertNull($linked->return_logistics_locked_at);
+        $this->assertSame('paid', (string) $linked->payment_status);
+
+        $linked->update([
+            'status' => 'ready_for_pickup',
+            'return_address_confirmed_at' => now(),
+            'return_address_confirmed_version' => data_get($linked->return_address, 'version'),
+        ]);
+        $this->assertNull($delivery->tryCreateReturnShipment($linked->fresh()));
+        $final = $payments->repairPaymentBreakdown($linked->fresh(), 'balance');
+        $this->assertSame(0.0, (float) $final['service_amount']);
+        $this->assertSame((float) $linked->return_delivery_fee, (float) $final['delivery_amount']);
+        $payments->settleRepairPhasePaid($linked->fresh(), $final, 'pay_warranty_return');
         $delivery->tryCreateReturnShipment($linked->fresh());
 
         $this->assertSame(1, Shipment::query()
@@ -778,7 +794,7 @@ class RepairWarrantyClaimFlowTest extends TestCase
     /**
      * @return array{0: LogisticsSetting, 1: User, 2: UserAddress, 3: RepairRequest, 4: RepairDeliveryService}
      */
-    private function approveShopSponsoredWarranty(): array
+    private function approveShopSponsoredWarranty(bool $paidLogisticsFixture = true): array
     {
         [$shop, $repairer, $repair, $claim] = $this->seedPendingClaimContext();
         $shop->update([
@@ -807,11 +823,26 @@ class RepairWarrantyClaimFlowTest extends TestCase
             ->assertOk()
             ->assertJsonPath('success', true);
 
+        $linked = RepairRequest::query()->findOrFail((int) $claim->fresh()->approved_repair_request_id);
+        if ($paidLogisticsFixture) {
+            $lockedAt = now();
+            $linked->forceFill([
+                'payment_status' => 'completed',
+                'payment_status_derived' => 'completed',
+                'payment_enabled' => false,
+                'payment_enabled_at' => null,
+                'intake_logistics_locked_at' => $lockedAt,
+                'return_logistics_locked_at' => $lockedAt,
+                'return_address_confirmed_at' => $lockedAt,
+                'return_address_confirmed_version' => data_get($linked->return_address, 'version'),
+            ])->save();
+        }
+
         return [
             $settings,
             $repairer,
             $address,
-            RepairRequest::query()->findOrFail((int) $claim->fresh()->approved_repair_request_id),
+            $linked->fresh(),
             $delivery,
         ];
     }

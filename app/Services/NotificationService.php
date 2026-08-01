@@ -520,6 +520,47 @@ class NotificationService
         );
     }
 
+    public function notifyRepairPickupRecovery(
+        RepairRequest $repair,
+        string $state,
+        string $planKey,
+    ): ?Notification {
+        if ((int) $repair->user_id <= 0) {
+            return null;
+        }
+
+        $groupKey = "repair-pickup-recovery-{$state}-{$repair->id}-".substr($planKey, 0, 12);
+        $existing = Notification::query()
+            ->where('user_id', $repair->user_id)
+            ->where('group_key', $groupKey)
+            ->first();
+        if ($existing) {
+            return $existing;
+        }
+
+        $awaitingPayment = $state === 'awaiting_payment';
+
+        return $this->sendToUser(
+            userId: (int) $repair->user_id,
+            type: NotificationType::REPAIR_STATUS_UPDATE,
+            title: $awaitingPayment ? 'Pay for the New Pickup' : 'Warranty Pickup Plan Updated',
+            message: $awaitingPayment
+                ? 'Confirm and pay the new shop pickup fee before a rider can be assigned.'
+                : 'Your warranty repair is reopened with your selected intake method.',
+            data: [
+                'repair_id' => (int) $repair->id,
+                'request_id' => (string) $repair->request_id,
+                'recovery_state' => $state,
+                'plan_key' => $planKey,
+            ],
+            actionUrl: '/my-repairs',
+            shopId: (int) $repair->shop_owner_id,
+            priority: $awaitingPayment ? 'high' : 'medium',
+            groupKey: $groupKey,
+            requiresAction: $awaitingPayment,
+        );
+    }
+
     public function notifyRepairDeliveryReconciliation(
         RepairRequest $repair,
         string $phase,

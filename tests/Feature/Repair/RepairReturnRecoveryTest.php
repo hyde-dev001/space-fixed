@@ -25,6 +25,21 @@ class RepairReturnRecoveryTest extends TestCase
     public function test_shop_receipt_enters_return_recovery_without_refund_and_replay_is_idempotent(): void
     {
         [$repair, $shop, $shipment, $original, $return, $proof] = $this->returnedRepairFixture();
+        $repair->update([
+            'is_warranty_job' => true,
+            'billing_mode' => 'warranty_no_charge',
+            'total_paid_amount' => 0,
+        ]);
+
+        $waiting = app(RepairDeliveryService::class)
+            ->returnHandoff($repair->fresh(), true)['recovery'];
+        $this->assertSame('returning_to_shop', $waiting['state']);
+        $this->assertFalse($waiting['actions_available']);
+        $this->assertSame('Returning to shop—rescheduling unlocks after shop receipt.', $waiting['message']);
+        $this->assertFalse(app(PaymentSettlementService::class)->isRepairPaymentDueNow(
+            $repair->fresh(),
+            'full_upfront',
+        ));
 
         $service = app(ShipmentLegService::class);
         $service->confirmReturnReceipt($return, $proof, $shop);
@@ -45,8 +60,12 @@ class RepairReturnRecoveryTest extends TestCase
 
         $this->assertSame('returned_to_shop_awaiting_arrangement', $recovery['code']);
         $this->assertSame('awaiting_arrangement', $recovery['state']);
+        $this->assertTrue($recovery['actions_available']);
         $this->assertSame("return-to-shop:{$return->id}", $recovery['key']);
+        $this->assertSame($shop->business_name, data_get($recovery, 'shop.name'));
+        $this->assertSame($shop->business_address, data_get($recovery, 'shop.address'));
         $this->assertDatabaseCount('shipment_legs', 2);
+        $this->assertDatabaseCount('order_refunds', 0);
     }
 
     public function test_return_handoff_is_hidden_only_when_cancelled_before_intake(): void
@@ -170,7 +189,9 @@ class RepairReturnRecoveryTest extends TestCase
                 'action' => 'shop_pickup',
             ])
             ->assertOk()
-            ->assertJsonPath('recovery.state', 'shop_pickup');
+            ->assertJsonPath('recovery.state', 'shop_pickup')
+            ->assertJsonPath('recovery.shop.name', $shop->business_name)
+            ->assertJsonPath('recovery.shop.address', $shop->business_address);
 
         $repair->refresh();
         $this->assertSame('walk_in', $repair->return_delivery_method);
