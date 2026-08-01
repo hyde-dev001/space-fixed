@@ -133,6 +133,46 @@ final class RepairDeliveryService
         ];
     }
 
+    public function recordPickupRecovery(RepairRequest $repair, int $shipmentId, int $failedLegId): ?array
+    {
+        if (! $this->isSponsoredWarranty($repair)) {
+            return null;
+        }
+
+        $reconciliation = is_array($repair->logistics_payment_reconciliation)
+            ? $repair->logistics_payment_reconciliation
+            : [];
+        $entries = collect(data_get($reconciliation, 'entries', []))
+            ->filter(fn ($entry): bool => is_array($entry))
+            ->values();
+        $existing = $entries->first(fn (array $entry): bool =>
+            (string) ($entry['type'] ?? '') === 'pickup_recovery'
+            && (int) ($entry['shipment_id'] ?? 0) === $shipmentId
+            && (int) ($entry['failed_leg_id'] ?? 0) === $failedLegId
+        );
+        if ($existing) {
+            return $existing;
+        }
+
+        $entry = [
+            'type' => 'pickup_recovery',
+            'status' => 'awaiting_arrangement',
+            'shipment_id' => $shipmentId,
+            'failed_leg_id' => $failedLegId,
+            'created_at' => now()->toISOString(),
+        ];
+        $entries->push($entry);
+        $repair->update([
+            'logistics_payment_reconciliation' => [
+                ...$reconciliation,
+                'status' => (string) data_get($reconciliation, 'status', 'resolved'),
+                'entries' => $entries->all(),
+            ],
+        ]);
+
+        return $entry;
+    }
+
     public function tryCreateIntakeShipment(RepairRequest $repair): ?Shipment
     {
         $createdCompensation = null;

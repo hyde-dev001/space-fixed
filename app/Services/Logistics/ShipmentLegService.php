@@ -14,6 +14,7 @@ use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Services\OrderRefundService;
 use App\Services\NotificationService;
+use App\Services\RepairDeliveryService;
 use App\Services\RepairPosRefundService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -64,6 +65,7 @@ class ShipmentLegService
         private RiderActiveWorkGuard $activeWork,
         private ArrivalService $arrivals,
         private NotificationService $notifications,
+        private RepairDeliveryService $repairDelivery,
     ) {}
 
     public function markPickedUp(ShipmentLeg $leg, ?RiderProfile $rider = null): ShipmentLeg
@@ -608,6 +610,11 @@ class ShipmentLegService
                         ->lockForUpdate()
                         ->firstOrFail();
                     $repair->update(['status' => 'cancelled']);
+                    $this->repairDelivery->recordPickupRecovery(
+                        $repair,
+                        (int) $leg->shipment_id,
+                        (int) $leg->id,
+                    );
                     $this->requestExhaustedPickupRefund(
                         $repair,
                         (int) ($payload['recorded_by_id'] ?? 0),
