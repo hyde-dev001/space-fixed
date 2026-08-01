@@ -15,12 +15,14 @@
 **Files:**
 - Modify: `app/Http/Controllers/Api/StaffOrderController.php`
 - Modify: `app/Http/Controllers/Api/RefundApprovalController.php`
+- Modify: `app/Services/OrderRefundService.php`
 - Test: `tests/Feature/StaffOrderRefundPayloadTest.php`
 - Test: `tests/Feature/Logistics/FailedDeliveryRefundWorkflowTest.php`
+- Test: `tests/Feature/OrderItemBasedPartialRefundFlowTest.php`
 
 - [ ] **Step 1: Write failing feature tests**
 
-Cover a normal returned-product refund with PHP 2,499 approved line totals and PHP 108 shipping. Assert Staff Orders and Finance return `payoutAmountValue: 2499.00`, retain `shippingFee: 108.00`, and return refund evidence. Cover `delivery_attempts_exhausted` with an approved shipping-inclusive payout and assert it remains unchanged.
+Cover a normal returned-product refund with PHP 2,499 approved line totals and PHP 108 shipping. Assert both `/api/staff/orders` and `/api/staff/orders/{id}` plus Finance return `payoutAmountValue: 2499.00`, retain `shippingFee: 108.00`, and return refund evidence. Cover a legacy normal return with no lines and assert the PayMongo execution request excludes shipping. Cover `delivery_attempts_exhausted` with an approved shipping-inclusive payout and assert both payload and execution remain unchanged.
 
 - [ ] **Step 2: Run RED**
 
@@ -28,21 +30,43 @@ Run `php artisan test tests/Feature/StaffOrderRefundPayloadTest.php tests/Featur
 
 - [ ] **Step 3: Implement canonical server fields**
 
-For ordinary returns calculate `round(sum(order_refund_items.line_amount), 2)` when lines exist; otherwise subtract original shipping from `refund.amount`. For `delivery_attempts_exhausted`, retain `refund.amount`. Add `payoutAmountValue`, formatted payout, excluded shipping, and evidence media to the Finance and Staff Order responses.
+Add one calculation method to the existing `OrderRefundService` and use it from `executeGatewayRefund()` and both controllers. For ordinary returns calculate `round(sum(order_refund_items.line_amount), 2)` when lines exist; otherwise subtract original shipping from `refund.amount`. For `delivery_attempts_exhausted`, retain `refund.amount`. Add `payoutAmountValue`, formatted payout, excluded shipping, and evidence media to the Finance and both Staff Order responses.
 
 - [ ] **Step 4: Add an authorized return-logistics summary**
 
-For the latest `order_refund`/`refund_return` shipment, serialize the `return_to_shop` leg's shipment ID, status, carrier/tracking data, and proof `{id, handoff_type, proof_type, file_url}`. Build `file_url` with `/api/logistics/proofs/{proof}/file`; never send a storage path.
+For the latest `order_refund`/`refund_return` shipment, serialize the `return_to_shop` leg's shipment ID, status, carrier/tracking data, and proof `{id, handoff_type, proof_type, file_url}`. Build `file_url` with `/api/logistics/proofs/{proof}/file`; never send a storage path. Add a narrowly scoped authorization rule in `ShipmentController::proofFile()` permitting a same-shop user with `access-staff-job-orders` only when the proof belongs to that refund-return shipment; retain dispatcher authorization for all other proofs.
 
 - [ ] **Step 5: Run GREEN**
 
-Run `php artisan test tests/Feature/StaffOrderRefundPayloadTest.php tests/Feature/Logistics/FailedDeliveryRefundWorkflowTest.php`. Expected: pass.
+Run `php artisan test tests/Feature/StaffOrderRefundPayloadTest.php tests/Feature/Logistics/FailedDeliveryRefundWorkflowTest.php tests/Feature/OrderItemBasedPartialRefundFlowTest.php`. Expected: pass.
 
 - [ ] **Step 6: Commit**
 
-Commit `fix: expose canonical retail refund payout` with the two controllers and two tests.
+Commit `fix: expose canonical retail refund payout` with the service, controllers, and tests.
 
-### Task 2: Job Order evidence, logistics, status, and stale action
+### Task 2: Tenant-scoped staff access to refund-return proofs
+
+**Files:**
+- Modify: `app/Http/Controllers/Api/Logistics/ShipmentController.php`
+- Test: `tests/Feature/Logistics/LogisticsApiTest.php`
+
+- [ ] **Step 1: Write failing authorization tests**
+
+Create a refund-return proof and assert same-shop staff with only `access-staff-job-orders` receives it, while a cross-shop staff user and same-shop staff accessing a non-refund-return proof receive 403.
+
+- [ ] **Step 2: Run RED**
+
+Run `php artisan test tests/Feature/Logistics/LogisticsApiTest.php`. Expected: the same-shop staff access assertion fails.
+
+- [ ] **Step 3: Add the narrow authorization branch**
+
+In the existing proof-file authorization path, permit staff only when proof -> leg -> shipment matches `order_refund`/`refund_return` and the shipment shop owner matches the user's shop. Leave all other proof authorization unchanged.
+
+- [ ] **Step 4: Run GREEN and commit**
+
+Run the Task 2 command and expect pass. Commit `fix: authorize staff refund return proofs` with controller and test.
+
+### Task 3: Job Order evidence, logistics, status, and stale action
 
 **Files:**
 - Modify: `resources/js/Pages/ERP/STAFF/JobOrders.tsx`
@@ -65,7 +89,7 @@ Extend the response types. Render conditional `Refund evidence` and `Return logi
 
 Run the Task 2 test command and expect pass. Commit `fix: show retail return evidence and payout status` with the Job Order component and tests.
 
-### Task 3: Align Finance review and Execute Payout
+### Task 4: Align Finance review and Execute Payout
 
 **Files:**
 - Modify: `resources/js/Pages/ERP/Finance/refundApproval.tsx`
@@ -88,14 +112,14 @@ Add canonical payout fields to `RefundRequest`, normalize them from the server, 
 
 Commit `fix: align finance refund payout display` with the Finance component and tests.
 
-### Task 4: Regression verification and build
+### Task 5: Regression verification and build
 
 **Files:**
 - Modify if generated: `public/build/manifest.json`, `public/build/assets/*`
 
 - [ ] **Step 1: Run backend regression tests**
 
-Run `php artisan test tests/Feature/StaffOrderRefundPayloadTest.php tests/Feature/Logistics/FailedDeliveryRefundWorkflowTest.php tests/Feature/OrderItemBasedPartialRefundFlowTest.php`. Expected: pass.
+Run `php artisan test tests/Feature/StaffOrderRefundPayloadTest.php tests/Feature/Logistics/LogisticsApiTest.php tests/Feature/Logistics/FailedDeliveryRefundWorkflowTest.php tests/Feature/OrderItemBasedPartialRefundFlowTest.php`. Expected: pass.
 
 - [ ] **Step 2: Run frontend regression tests**
 
