@@ -592,7 +592,7 @@ class LogisticsApiTest extends TestCase
         ]);
         $returnLeg = ShipmentLeg::factory()->create([
             'shipment_id' => $returnShipment->id,
-            'leg_type' => 'return_to_shop',
+            'leg_type' => 'inbound',
         ]);
         $returnProof = HandoffProof::factory()->create([
             'shipment_leg_id' => $returnLeg->id,

@@ -327,7 +327,7 @@ class StaffOrderController extends Controller
             ->latest('id')
             ->first();
         $returnLeg = $shipment?->legs
-            ->where('leg_type', 'return_to_shop')
+            ->whereIn('leg_type', ['inbound', 'return_to_shop'])
             ->sortByDesc('sequence')
             ->first();
 

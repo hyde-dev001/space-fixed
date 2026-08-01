@@ -3,8 +3,6 @@
 namespace Tests\Feature;
 
 use App\Models\Logistics\HandoffProof;
-use App\Models\Logistics\Shipment;
-use App\Models\Logistics\ShipmentLeg;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\OrderRefund;
@@ -12,6 +10,7 @@ use App\Models\OrderRefundItem;
 use App\Models\Product;
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Services\Logistics\SourceShipmentService;
 use App\Services\OrderRefundService;
 use App\Services\PaymongoRefundService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -58,16 +57,10 @@ class StaffOrderRefundPayloadTest extends TestCase
             'inventory_action' => 'pending',
         ]);
 
-        $shipment = Shipment::factory()->create([
-            'shop_owner_id' => $shop->id,
-            'source_type' => 'order_refund',
-            'source_id' => $refund->id,
-            'purpose' => 'refund_return',
-            'status' => 'completed',
-        ]);
-        $leg = ShipmentLeg::factory()->create([
-            'shipment_id' => $shipment->id,
-            'leg_type' => 'return_to_shop',
+        $shipment = app(SourceShipmentService::class)->ensureRefundReturnShipment($refund);
+        $shipment->update(['status' => 'completed']);
+        $leg = $shipment->legs()->firstOrFail();
+        $leg->update([
             'status' => 'delivered',
             'tracking_number' => 'RETURN-1001',
             'tracking_url' => 'https://example.test/returns/1001',
@@ -87,7 +80,7 @@ class StaffOrderRefundPayloadTest extends TestCase
             $this->assertSame(2499, $payload['payout_amount_value']);
             $this->assertSame(['/storage/refunds/customer-evidence.jpg'], $payload['evidence_media']);
             $this->assertSame($shipment->id, $payload['return_logistics']['shipment_id']);
-            $this->assertSame('return_to_shop', $payload['return_logistics']['leg_type']);
+            $this->assertSame('inbound', $payload['return_logistics']['leg_type']);
             $this->assertSame("/api/logistics/proofs/{$proof->id}/file", $payload['return_logistics']['proofs'][0]['file_url']);
             $this->assertArrayNotHasKey('file_path', $payload['return_logistics']['proofs'][0]);
         }
@@ -101,7 +94,7 @@ class StaffOrderRefundPayloadTest extends TestCase
 
     public function test_legacy_normal_refund_execution_excludes_original_shipping_fee(): void
     {
-        [, , , $order, $refund] = $this->refundFixture();
+        [, , $finance, $order, $refund] = $this->refundFixture();
         $gateway = $this->mock(PaymongoRefundService::class);
         $gateway->shouldReceive('createRefund')
             ->once()
@@ -113,6 +106,47 @@ class StaffOrderRefundPayloadTest extends TestCase
         $this->assertSame('refunded', $result['result']);
         $this->assertSame(2499.0, round((float) $refund->fresh()->amount, 2));
         $this->assertSame('refunded', $order->fresh()->payment_status);
+        $this->actingAs($finance, 'user')
+            ->getJson('/api/finance/refunds')
+            ->assertOk()
+            ->assertJsonPath('data.0.payoutAmountValue', 2499);
+    }
+
+    public function test_zero_amount_legacy_refund_fails_instead_of_refunding_the_order_total(): void
+    {
+        [, , , , $refund] = $this->refundFixture();
+        $refund->update(['amount' => 0]);
+        $gateway = $this->mock(PaymongoRefundService::class);
+        $gateway->shouldNotReceive('createRefund');
+
+        $result = app(OrderRefundService::class)->executeApprovedRefund($refund->fresh());
+
+        $this->assertSame('failed', $result['result']);
+        $this->assertSame(0.0, round((float) $refund->fresh()->amount, 2));
+        $this->assertSame('Refund amount is invalid.', $refund->fresh()->failure_reason);
+    }
+
+    public function test_same_day_partial_rejection_does_not_retry_with_shipping_inclusive_capture(): void
+    {
+        [, , $finance, , $refund] = $this->refundFixture();
+        $gateway = $this->mock(PaymongoRefundService::class);
+        $gateway->shouldReceive('createRefund')
+            ->once()
+            ->withArgs(fn ($key, $paymentId, $amount) => $amount === 249900)
+            ->andReturn([
+                'success' => false,
+                'message' => 'Cannot partially refund this payment on the same day.',
+            ]);
+        $gateway->shouldNotReceive('getPaymentAmountInCentavos');
+
+        $result = app(OrderRefundService::class)->executeApprovedRefund($refund->fresh());
+
+        $this->assertSame('failed', $result['result']);
+        $this->assertSame(2499.0, round((float) $refund->fresh()->amount, 2));
+        $this->actingAs($finance, 'user')
+            ->getJson('/api/finance/refunds')
+            ->assertOk()
+            ->assertJsonPath('data.0.payoutAmountValue', 2499);
     }
 
     private function refundFixture(): array

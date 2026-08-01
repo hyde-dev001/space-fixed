@@ -137,7 +137,7 @@ class ShipmentController extends Controller
         $shipment = $proof->leg->shipment;
         $isRefundReturn = $shipment->source_type === 'order_refund'
             && $shipment->purpose === 'refund_return'
-            && $proof->leg->leg_type === 'return_to_shop';
+            && in_array($proof->leg->leg_type, ['inbound', 'return_to_shop'], true);
         $user = Auth::guard('user')->user();
         $shop = $this->authorizedShop($isRefundReturn && $user?->can('access-staff-job-orders')
             ? 'access-staff-job-orders'
