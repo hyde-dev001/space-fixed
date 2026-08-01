@@ -278,3 +278,111 @@ describe('staff delivered order refresh', () => {
     expect(screen.getByRole('button', { name: 'Shipped (0)' })).toBeInTheDocument();
   });
 });
+
+describe('staff refund visibility', () => {
+  const makeRefundOrder = () => ({
+    ...makeOrder(41),
+    status: 'refund',
+    payment_status: 'refunded',
+    total_amount: 2231.25,
+    shipping_fee: 108,
+    vat_amount: 267.75,
+    grand_total: 2607,
+    latest_refund: {
+      id: 71,
+      status: 'succeeded',
+      reason_code: 'product_defective_or_damaged',
+      shop_owner_status: 'approved',
+      finance_status: 'approved',
+      return_status: 'received',
+      flow_type: 'request_approval',
+      payout_amount_value: 2499,
+      evidence_media: ['/storage/refunds/customer-evidence.jpg'],
+      items: [{
+        order_item_id: 41,
+        product_name: 'Product 41',
+        requested_qty: 1,
+        approved_qty: 1,
+        line_amount: 2499,
+      }],
+      return_logistics: {
+        shipment_id: 91,
+        shipment_status: 'completed',
+        leg_id: 92,
+        leg_type: 'return_to_shop',
+        leg_status: 'completed',
+        tracking_number: 'RETURN-91',
+        tracking_url: null,
+        proofs: [{
+          id: 93,
+          handoff_type: 'return',
+          proof_type: 'photo',
+          file_url: '/api/logistics/proofs/93/file',
+        }],
+      },
+    },
+  });
+
+  it('shows a shipping-excluded full payout as Refunded', async () => {
+    const order = makeRefundOrder();
+    mockPage.props.initialOrders = [order];
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse(200, [order]))));
+
+    render(React.createElement(JobOrdersPage));
+    fireEvent.click(await screen.findByRole('button', { name: 'Refund (1)' }));
+
+    expect(await screen.findByText('Refunded')).toBeInTheDocument();
+    expect(screen.queryByText('Partially Refunded')).not.toBeInTheDocument();
+  });
+
+  it('shows customer evidence and return logistics proof in order details', async () => {
+    const order = makeRefundOrder();
+    mockPage.props.initialOrders = [order];
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse(200, [order]))));
+
+    render(React.createElement(JobOrdersPage));
+    fireEvent.click(await screen.findByRole('button', { name: 'Refund (1)' }));
+    fireEvent.click((await screen.findAllByTitle('View order details'))[0]);
+
+    expect(screen.getByText('Refund Evidence')).toBeInTheDocument();
+    expect(screen.getByAltText('Refund evidence 1')).toHaveAttribute('src', '/storage/refunds/customer-evidence.jpg');
+    expect(screen.getByText('Return Logistics')).toBeInTheDocument();
+    expect(screen.getByText('RETURN-91')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'View return proof 1' })).toHaveAttribute('href', '/api/logistics/proofs/93/file');
+  });
+
+  it('closes stale order details after confirming a returned item', async () => {
+    const order = {
+      ...makeRefundOrder(),
+      payment_status: 'paid',
+      latest_refund: {
+        ...makeRefundOrder().latest_refund,
+        status: 'processing',
+        return_status: 'in_transit',
+      },
+    };
+    mockPage.props.initialOrders = [order];
+    let confirmed = false;
+    const fetchMock = vi.fn((input: string, init?: RequestInit) => {
+      if (input === '/api/csrf-token') return Promise.resolve(jsonResponse(200, { csrf_token: 'token' }));
+      if (input === '/api/staff/orders/41/confirm-return-received' && init?.method === 'POST') {
+        confirmed = true;
+        return Promise.resolve(jsonResponse(200, { message: 'Return received.' }));
+      }
+      if (input === '/api/staff/orders') return Promise.resolve(jsonResponse(200, confirmed ? [] : [order]));
+      throw new Error(`Unexpected fetch: ${input}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(React.createElement(JobOrdersPage));
+    fireEvent.click(await screen.findByRole('button', { name: 'Refund (1)' }));
+    fireEvent.click((await screen.findAllByTitle('View order details'))[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Return Received' }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      '/api/staff/orders/41/confirm-return-received',
+      expect.objectContaining({ method: 'POST' }),
+    ));
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Order Details' })).not.toBeInTheDocument());
+  });
+});
