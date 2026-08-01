@@ -26,7 +26,7 @@ Cover a normal returned-product refund with PHP 2,499 approved line totals and P
 
 - [ ] **Step 2: Run RED**
 
-Run `php artisan test tests/Feature/StaffOrderRefundPayloadTest.php tests/Feature/Logistics/FailedDeliveryRefundWorkflowTest.php`. Expected: fail because canonical fields/evidence are absent.
+Run `php artisan test tests/Feature/StaffOrderRefundPayloadTest.php tests/Feature/Logistics/FailedDeliveryRefundWorkflowTest.php tests/Feature/OrderItemBasedPartialRefundFlowTest.php`. Expected: fail because canonical fields/evidence are absent.
 
 - [ ] **Step 3: Implement canonical server fields**
 
@@ -34,7 +34,7 @@ Add one calculation method to the existing `OrderRefundService` and use it from 
 
 - [ ] **Step 4: Add an authorized return-logistics summary**
 
-For the latest `order_refund`/`refund_return` shipment, serialize the `return_to_shop` leg's shipment ID, status, carrier/tracking data, and proof `{id, handoff_type, proof_type, file_url}`. Build `file_url` with `/api/logistics/proofs/{proof}/file`; never send a storage path. Add a narrowly scoped authorization rule in `ShipmentController::proofFile()` permitting a same-shop user with `access-staff-job-orders` only when the proof belongs to that refund-return shipment; retain dispatcher authorization for all other proofs.
+For the latest `order_refund`/`refund_return` shipment, serialize the `return_to_shop` leg's shipment ID, status, carrier/tracking data, and proof `{id, handoff_type, proof_type, file_url}`. Build `file_url` with `/api/logistics/proofs/{proof}/file`; never send a storage path. The authorization required for these URLs is added in Task 2.
 
 - [ ] **Step 5: Run GREEN**
 
