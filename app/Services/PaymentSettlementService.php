@@ -2,15 +2,15 @@
 
 namespace App\Services;
 
+use App\Enums\NotificationType;
 use App\Models\Finance\Invoice;
-use App\Models\Order;
 use App\Models\Logistics\Shipment;
-use App\Models\PosTransaction;
+use App\Models\Order;
 use App\Models\PosRefund;
+use App\Models\PosTransaction;
 use App\Models\RepairPaymentSession;
 use App\Models\RepairRequest;
 use Illuminate\Support\Facades\DB;
-use App\Enums\NotificationType;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
@@ -20,8 +20,7 @@ class PaymentSettlementService
         private readonly NotificationService $notificationService,
         private readonly RepairDeliveryService $repairDeliveryService,
         private readonly RepairPosRefundService $repairRefundService,
-    ) {
-    }
+    ) {}
 
     public function repairPaymentBreakdown(RepairRequest $repair, ?string $dueType = null): array
     {
@@ -225,7 +224,7 @@ class PaymentSettlementService
             ];
         }
 
-        if (!$ignoreExpiry && $this->isOrderExpired($order)) {
+        if (! $ignoreExpiry && $this->isOrderExpired($order)) {
             return [
                 'result' => 'expired',
                 'model' => $order,
@@ -290,7 +289,7 @@ class PaymentSettlementService
             ];
         }
 
-        if (!$this->isRepairPaymentDueNow($repair, $policy)) {
+        if (! $this->isRepairPaymentDueNow($repair, $policy)) {
             return [
                 'result' => 'not_due',
                 'model' => $repair,
@@ -298,7 +297,7 @@ class PaymentSettlementService
             ];
         }
 
-        if (!$ignoreExpiry && $this->isRepairExpired($repair, $policy)) {
+        if (! $ignoreExpiry && $this->isRepairExpired($repair, $policy)) {
             return [
                 'result' => 'expired',
                 'model' => $repair,
@@ -313,7 +312,7 @@ class PaymentSettlementService
 
         $repair->update([
             'paymongo_payment_id' => $resolvedPaymentId !== '' ? $resolvedPaymentId : $repair->paymongo_payment_id,
-            'paymongo_payment_ids' => !empty($paymentReferenceHistory) ? $paymentReferenceHistory : null,
+            'paymongo_payment_ids' => ! empty($paymentReferenceHistory) ? $paymentReferenceHistory : null,
             'payment_completed_at' => now(),
             'payment_failed_at' => null,
             'payment_failure_reason' => null,
@@ -372,7 +371,7 @@ class PaymentSettlementService
 
     public function settleRepairPaidInShop(RepairRequest $repair, ?string $reference = null): array
     {
-        $paymentReference = $reference ?? ('in_shop_' . now()->format('YmdHis'));
+        $paymentReference = $reference ?? ('in_shop_'.now()->format('YmdHis'));
 
         return $this->settleRepairPaid($repair, $paymentReference, true);
     }
@@ -856,7 +855,7 @@ class PaymentSettlementService
                         'refund_id' => $payload['paymongo_refund_id'] ?? null,
                         'refunded_at' => now()->toDateTimeString(),
                     ],
-                    actionUrl: '/my-orders?tab=cancelled&highlightOrder=' . $order->id,
+                    actionUrl: '/my-orders?tab=cancelled&highlightOrder='.$order->id,
                 );
             }
         } catch (\Throwable $e) {
@@ -929,7 +928,7 @@ class PaymentSettlementService
     public function isRepairExpired(RepairRequest $repair, ?string $policy = null): bool
     {
         $resolvedPolicy = $policy ?? $this->normalizeRepairPaymentPolicy($repair->payment_policy ?? 'deposit_50');
-        if (!$this->isRepairPaymentDueNow($repair, $resolvedPolicy)) {
+        if (! $this->isRepairPaymentDueNow($repair, $resolvedPolicy)) {
             return false;
         }
 
@@ -1058,8 +1057,7 @@ class PaymentSettlementService
                 ->where('phase', 'redelivery')
                 ->whereIn('status', ['paid', 'reconciliation'])
                 ->get()
-                ->contains(fn (RepairPaymentSession $session): bool =>
-                    (string) data_get($session->quote, 'recovery_key') === $recoveryKey
+                ->contains(fn (RepairPaymentSession $session): bool => (string) data_get($session->quote, 'recovery_key') === $recoveryKey
                 );
         }
 
@@ -1328,8 +1326,7 @@ class PaymentSettlementService
                     ->where('id', '!=', $session->id)
                     ->whereIn('status', ['paid', 'reconciliation'])
                     ->get()
-                    ->contains(fn (RepairPaymentSession $other): bool =>
-                        (string) data_get($other->quote, 'recovery_key') === $recoveryKey
+                    ->contains(fn (RepairPaymentSession $other): bool => (string) data_get($other->quote, 'recovery_key') === $recoveryKey
                     );
         }
 
@@ -1505,11 +1502,11 @@ class PaymentSettlementService
             ->all();
 
         $candidate = trim((string) ($paymentReference ?? ''));
-        if ($candidate === '' || !$this->looksLikeGatewayPaymentReference($candidate)) {
+        if ($candidate === '' || ! $this->looksLikeGatewayPaymentReference($candidate)) {
             return $history;
         }
 
-        if (!in_array($candidate, $history, true)) {
+        if (! in_array($candidate, $history, true)) {
             $history[] = $candidate;
         }
 

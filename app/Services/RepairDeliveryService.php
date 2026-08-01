@@ -145,8 +145,7 @@ final class RepairDeliveryService
         $entries = collect(data_get($reconciliation, 'entries', []))
             ->filter(fn ($entry): bool => is_array($entry))
             ->values();
-        $existing = $entries->first(fn (array $entry): bool =>
-            (string) ($entry['type'] ?? '') === 'pickup_recovery'
+        $existing = $entries->first(fn (array $entry): bool => (string) ($entry['type'] ?? '') === 'pickup_recovery'
             && (int) ($entry['shipment_id'] ?? 0) === $shipmentId
             && (int) ($entry['failed_leg_id'] ?? 0) === $failedLegId
         );
@@ -192,8 +191,7 @@ final class RepairDeliveryService
         $entries = collect(data_get($current, 'entries', []))
             ->filter(fn ($entry): bool => is_array($entry))
             ->values();
-        $index = $entries->search(fn (array $entry): bool =>
-            (string) ($entry['type'] ?? '') === 'pickup_recovery'
+        $index = $entries->search(fn (array $entry): bool => (string) ($entry['type'] ?? '') === 'pickup_recovery'
             && (string) ($entry['status'] ?? '') === 'awaiting_payment'
             && (string) ($entry['recovery_key'] ?? '') === $recoveryKey
             && (string) ($entry['plan_key'] ?? '') === $planKey
@@ -264,8 +262,7 @@ final class RepairDeliveryService
             $entries = collect(data_get($reconciliation, 'entries', []))
                 ->filter(fn ($entry): bool => is_array($entry))
                 ->values();
-            $index = $entries->search(fn (array $entry): bool =>
-                (string) ($entry['type'] ?? '') === 'pickup_recovery'
+            $index = $entries->search(fn (array $entry): bool => (string) ($entry['type'] ?? '') === 'pickup_recovery'
             );
             if ($index === false) {
                 throw ValidationException::withMessages(['status' => ['This repair is not awaiting a pickup arrangement.']]);
