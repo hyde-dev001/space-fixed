@@ -1140,10 +1140,6 @@ final class RepairDeliveryService
 
     private function returnRecoveryState(RepairRequest $repair): ?array
     {
-        if ((bool) $repair->pickup_enabled || (string) $repair->status === 'picked_up') {
-            return null;
-        }
-
         $shipment = $repair->relationLoaded('logisticsShipments')
             ? $repair->logisticsShipments->firstWhere('purpose', 'repair_return')
             : Shipment::query()
@@ -1155,16 +1151,40 @@ final class RepairDeliveryService
         if (! $shipment) {
             return null;
         }
+        $shipment->loadMissing('legs.proofs');
+        $repair->loadMissing('shopOwner');
 
+        $shop = [
+            'name' => (string) ($repair->shopOwner?->business_name ?? 'Shop'),
+            'address' => (string) ($repair->shopOwner?->business_address ?? ''),
+        ];
         $return = $shipment->legs
             ->where('leg_type', 'return_to_shop')
-            ->filter(fn ($leg): bool => $leg->status->value === 'delivered')
             ->sortByDesc('sequence')
             ->first();
-        if (! $return || ! $return->proofs->contains(
-            fn ($proof): bool => $proof->handoff_type === 'receive'
-                && $proof->review_status === 'approved'
-        )) {
+        $received = $return?->status?->value === 'delivered'
+            && $return->proofs->contains(
+                fn ($proof): bool => $proof->handoff_type === 'receive'
+                    && $proof->review_status === 'approved'
+            );
+        if ($return && ! $received) {
+            return [
+                'code' => 'returning_to_shop',
+                'label' => 'Returning to shop',
+                'state' => 'returning_to_shop',
+                'key' => "return-to-shop:{$return->id}",
+                'message' => 'Returning to shop—rescheduling unlocks after shop receipt.',
+                'actions_available' => false,
+                'can_schedule_redelivery' => false,
+                'can_set_shop_pickup' => false,
+                'shop' => $shop,
+            ];
+        }
+        if ((bool) $repair->pickup_enabled || (string) $repair->status === 'picked_up') {
+            return null;
+        }
+
+        if (! $return || ! $received) {
             return null;
         }
 
@@ -1198,10 +1218,13 @@ final class RepairDeliveryService
             'label' => 'Returned to shop—awaiting customer arrangement',
             'state' => $state,
             'key' => $key,
+            'message' => null,
+            'actions_available' => true,
             'scheduled_delivery_date' => $entry['scheduled_delivery_date'] ?? null,
             'delivery_window' => $entry['delivery_window'] ?? null,
             'can_schedule_redelivery' => $state === 'awaiting_arrangement',
             'can_set_shop_pickup' => (string) ($entry['status'] ?? '') !== 'paid',
+            'shop' => $shop,
         ];
     }
 
