@@ -15,20 +15,20 @@ Make retail Job Orders and Finance show the same shipping-excluded payout for a 
 
 ### One canonical payout amount
 
-For normal product returns, the payout excludes the original shipping charge. The server will expose this as the refund's eligible payout amount; the Job Order status calculation and Finance detail panel will use it. Shipping remains visible as an original order charge, not part of the payout. The existing delivery-attempt-exhausted exception remains the only path that can include shipping when its finance decision permits it.
+For normal product returns, the canonical payout is `round(sum(order_refund_items.line_amount), 2)` when approved refund lines exist. If legacy data has no lines, it is `round(max(0, refund.amount - min(order.shipping_fee, refund.amount)), 2)`. It excludes the original shipping charge. The server will expose this as `payoutAmountValue`; Job Order status calculation and Finance detail panel will use it. Shipping remains visible as an original order charge, not part of the payout. For `delivery_attempts_exhausted`, the canonical payout remains `round(refund.amount, 2)` and can include shipping only when the existing finance shipping decision permits it. All comparisons use two-decimal currency rounding.
 
 ### Job Order details
 
 The existing modal gets two compact, conditional sections:
 
 - **Refund evidence**: thumbnails of customer-submitted refund evidence.
-- **Return logistics**: shipment ID, return leg status, carrier/tracking, and proof thumbnails from the completed return leg.
+- **Return logistics**: the `order_refund` / `refund_return` shipment ID, its `return_to_shop` leg status, carrier/tracking, and proof thumbnails from that leg.
 
-Nothing is shown when no return shipment or evidence exists. Proof links remain protected by existing logistics authorization rather than exposing storage paths directly.
+Nothing is shown when no return shipment or evidence exists. Each proof thumbnail uses the existing authorized `/api/logistics/proofs/{proof}/file` endpoint, and the payload includes only proof ID, display type, and that protected URL—not a storage path.
 
 ### Safe return receipt completion
 
-After a successful `Confirm Return Received`, refresh the order data and close the stale modal. The newly fetched list reflects the next state; the obsolete action cannot be clicked again. The server-side state validation remains the final replay protection.
+Disable the button while `Confirm Return Received` is submitting. After a successful response—whether its selected disposition is resellable or damaged—refresh the order data and close/clear the stale modal. The newly fetched list reflects the next state; the obsolete action cannot be clicked again. The server-side state validation remains the final replay protection.
 
 ### Accurate status language
 
@@ -42,9 +42,9 @@ The Finance refund detail and Execute Payout confirmation both render the same e
 
 ## Scope and tests
 
-- Extend the staff order response/type with refund evidence, payout metadata, and an authorized return-logistics summary.
+- Extend the staff order response/type with refund evidence, the canonical payout metadata, and an authorized return-logistics summary (`shipment_id`, return leg state/tracking, proof IDs and protected URLs).
 - Render the new Job Order detail sections and refresh/close after return receipt.
 - Correct retail status classification and Finance review amount rendering.
-- Add focused feature tests for the staff payload and payout rule plus UI tests for status, proof/logistics rendering, and finance amount display.
+- Add focused feature tests for the staff payload and payout rule plus UI tests for status, proof/logistics rendering, finance amount display, disabled-in-flight return receipt, and modal closure after a resellable confirmation.
 
 No separate returns workspace, new storage scheme, or new logistics workflow is required.
