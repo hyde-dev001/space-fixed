@@ -1331,6 +1331,7 @@ Route::middleware('auth:user')->prefix('api/customer/repairs')->group(function (
     Route::post('{id}/external-tracking', [\App\Http\Controllers\Api\RepairRequestController::class, 'updateExternalTracking']);
     Route::post('{id}/confirm-return-address', [\App\Http\Controllers\Api\RepairRequestController::class, 'confirmReturnAddress']);
     Route::post('{id}/return-recovery', [\App\Http\Controllers\Api\RepairRequestController::class, 'resolveReturnRecovery']);
+    Route::post('{id}/pickup-recovery', [\App\Http\Controllers\Api\RepairRequestController::class, 'resolvePickupRecovery']);
 });
 
 Route::middleware(['auth:user', 'check.user.business.type:repair,both'])->prefix('api/repairer/refunds')->group(function () {

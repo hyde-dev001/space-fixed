@@ -2023,6 +2023,41 @@ class RepairRequestController extends Controller
         ]);
     }
 
+    public function resolvePickupRecovery(Request $request, $id, RepairDeliveryService $repairDeliveryService)
+    {
+        $user = Auth::guard('user')->user();
+        abort_unless($user, 401);
+
+        $repair = RepairRequest::query()
+            ->whereKey($id)
+            ->forCustomer($user->id)
+            ->firstOrFail();
+        $validated = $request->validate([
+            'method' => ['required', 'in:shop_pickup,walk_in,customer_delivery'],
+            'address_id' => ['nullable', 'required_if:method,shop_pickup,customer_delivery', 'integer'],
+            'delivery_date' => ['nullable', 'required_if:method,shop_pickup', 'date', 'after:today'],
+            'delivery_window' => ['nullable', 'required_if:method,shop_pickup', 'in:morning,afternoon'],
+        ]);
+        $result = $repairDeliveryService->resolvePickupRecovery(
+            $repair,
+            (string) $validated['method'],
+            User::class,
+            (int) $user->id,
+            isset($validated['address_id']) ? (int) $validated['address_id'] : null,
+            $validated['delivery_date'] ?? null,
+            $validated['delivery_window'] ?? null,
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => $validated['method'] === 'shop_pickup'
+                ? 'Pickup plan saved. Pay the new shipping fee before rider assignment.'
+                : 'Your warranty repair is reopened with the selected intake method.',
+            'recovery' => $result['recovery'],
+            'repair' => $result['repair'],
+        ]);
+    }
+
     public function updateExternalTracking(Request $request, $id)
     {
         $user = Auth::guard('user')->user();
