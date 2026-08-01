@@ -45,6 +45,6 @@ The Finance refund detail and Execute Payout confirmation both render the same e
 - Extend the staff order response/type with refund evidence, the canonical payout metadata, and an authorized return-logistics summary (`shipment_id`, return leg state/tracking, proof IDs and protected URLs).
 - Render the new Job Order detail sections and refresh/close after return receipt.
 - Correct retail status classification and Finance review amount rendering.
-- Add focused feature tests for the staff payload and payout rule plus UI tests for status, proof/logistics rendering, finance amount display, disabled-in-flight return receipt, and modal closure after a resellable confirmation.
+- Add focused feature tests for the staff payload, the normal shipping-excluded payout rule, and the finance-approved `delivery_attempts_exhausted` shipping-inclusive exception. Add UI tests for status, proof/logistics rendering, finance amount display, disabled-in-flight return receipt, and modal closure after a resellable confirmation.
 
 No separate returns workspace, new storage scheme, or new logistics workflow is required.
