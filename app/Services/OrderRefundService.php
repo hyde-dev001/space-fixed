@@ -1230,6 +1230,30 @@ class OrderRefundService
         return $this->executeGatewayRefund($refund, $order, $processedBy, $executionNote);
     }
 
+    public function resolvePayoutAmount(OrderRefund $refund, ?Order $order = null): float
+    {
+        $amount = round(max(0, (float) ($refund->amount ?? 0)), 2);
+        if ((string) ($refund->reason_code ?? '') === 'delivery_attempts_exhausted') {
+            return $amount;
+        }
+        if ($refund->refund_executed_at) {
+            return $amount;
+        }
+
+        $lineAmount = $this->resolveLineBasedRefundAmount($refund);
+        if ($lineAmount > 0) {
+            return $lineAmount;
+        }
+
+        $order ??= $refund->relationLoaded('order') ? $refund->order : $refund->order()->first();
+        $shipping = round(max(0, (float) ($order?->shipping_fee ?? 0)), 2);
+        if ($amount > 0) {
+            return round(max(0, $amount - min($shipping, $amount)), 2);
+        }
+
+        return 0.0;
+    }
+
     private function executeGatewayRefund(OrderRefund $refund, Order $order, ?int $processedBy = null, ?string $executionNote = null): array
     {
         $secretKey = (string) ($order->shopOwner?->paymongo_secret_key ?? '');
@@ -1264,17 +1288,9 @@ class OrderRefundService
             ];
         }
 
-        $amount = $this->resolveLineBasedRefundAmount($refund);
+        $amount = $this->resolvePayoutAmount($refund, $order);
         if ($amount > 0 && round((float) ($refund->amount ?? 0), 2) !== $amount) {
             $refund->update(['amount' => $amount]);
-        }
-
-        if ($amount <= 0) {
-            $amount = (float) ($refund->amount ?? 0);
-        }
-
-        if ($amount <= 0) {
-            $amount = $this->resolveRefundAmount($order, $secretKey);
         }
 
         if ($amount <= 0) {
@@ -1334,34 +1350,6 @@ class OrderRefundService
             amountInCentavos: $amountInCentavos,
             reason: 'requested_by_customer',
         );
-
-        if (
-            !($gatewayResult['success'] ?? false)
-            && $this->shouldRetryWithCapturedAmount($gatewayResult, $amountInCentavos)
-        ) {
-            $capturedAmountInCentavos = $this->paymongoRefundService->getPaymentAmountInCentavos($secretKey, $paymentId);
-
-            if ($capturedAmountInCentavos !== null && $capturedAmountInCentavos > $amountInCentavos) {
-                Log::info('Retrying refund payout with captured amount due to PayMongo same-day partial restriction', [
-                    'refund_id' => (int) ($refund->id ?? 0),
-                    'order_id' => (int) ($order->id ?? 0),
-                    'requested_amount_in_centavos' => $amountInCentavos,
-                    'captured_amount_in_centavos' => $capturedAmountInCentavos,
-                ]);
-
-                $gatewayResult = $this->paymongoRefundService->createRefund(
-                    secretKey: $secretKey,
-                    paymentId: $paymentId,
-                    amountInCentavos: $capturedAmountInCentavos,
-                    reason: 'requested_by_customer',
-                );
-
-                if ($gatewayResult['success'] ?? false) {
-                    $amount = round($capturedAmountInCentavos / 100, 2);
-                    $refund->update(['amount' => $amount]);
-                }
-            }
-        }
 
         if (!($gatewayResult['success'] ?? false)) {
             $refund->update([

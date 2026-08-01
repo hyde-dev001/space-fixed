@@ -106,6 +106,23 @@ type Order = {
     rejected_at?: string | null;
     rejection_reason?: string | null;
     flow_type?: string;
+    payout_amount_value?: number;
+    evidence_media?: string[];
+    return_logistics?: {
+      shipment_id: number;
+      shipment_status: string;
+      leg_id: number;
+      leg_type: string;
+      leg_status: string;
+      tracking_number?: string | null;
+      tracking_url?: string | null;
+      proofs: Array<{
+        id: number;
+        handoff_type: string;
+        proof_type: string;
+        file_url: string;
+      }>;
+    } | null;
     items?: Array<{
       order_item_id: number;
       product_name: string;
@@ -448,6 +465,7 @@ export default function JobOrdersPage() {
   const [trackingNumber, setTrackingNumber] = useState("");
   const [trackingLink, setTrackingLink] = useState("");
   const [isConfirmingShipping, setIsConfirmingShipping] = useState(false);
+  const [isConfirmingReturn, setIsConfirmingReturn] = useState(false);
   const [isActivatingReceive, setIsActivatingReceive] = useState(false);
   const shippingRequestTokenRef = useRef(0);
   const activeShippingOrderIdRef = useRef<number | null>(null);
@@ -815,11 +833,12 @@ export default function JobOrdersPage() {
       const financeStatus = String(latestRefund.finance_status || '').toLowerCase();
       const returnStatus = String(latestRefund.return_status || '').toLowerCase();
       const onlineRefundedAmount = getOnlineSucceededRefundLineAmount(order);
+      const payoutAmount = parseAmount(latestRefund.payout_amount_value);
       const hasOnlineRefundSucceeded = refundStatus === 'succeeded' || paymentStatus === 'refunded';
 
       if (hasOnlineRefundSucceeded) {
-        if (onlineRefundedAmount > 0 && orderGrandTotal > 0) {
-          const isFullyRefunded = onlineRefundedAmount >= orderGrandTotal - 0.01;
+        if (onlineRefundedAmount > 0 && payoutAmount > 0) {
+          const isFullyRefunded = onlineRefundedAmount >= payoutAmount - 0.01;
           return {
             label: isFullyRefunded ? 'Refunded' : 'Partially Refunded',
             className: isFullyRefunded
@@ -1262,6 +1281,7 @@ export default function JobOrdersPage() {
   };
 
   const handleConfirmReturnReceived = async (order: Order) => {
+    if (isConfirmingReturn) return;
     const latestRefund = order.latest_refund;
     const isStaffArrangedReturn = String(latestRefund?.return_source || '').toLowerCase() === 'staff'
       || String(latestRefund?.return_status || '').toLowerCase() === 'pending_staff_pickup';
@@ -1392,6 +1412,7 @@ export default function JobOrdersPage() {
       ? result.value.line_dispositions
       : [];
 
+    setIsConfirmingReturn(true);
     try {
       const csrfResponse = await fetch('/api/csrf-token', {
         credentials: 'include',
@@ -1421,6 +1442,8 @@ export default function JobOrdersPage() {
       }
 
       await refreshOrders();
+      setIsViewModalOpen(false);
+      setViewOrder(null);
       await Swal.fire('Confirmed', data?.message || 'Returned item marked as received.', 'success');
     } catch (error) {
       await Swal.fire({
@@ -1429,6 +1452,8 @@ export default function JobOrdersPage() {
         icon: 'error',
         confirmButtonColor: '#2563eb',
       });
+    } finally {
+      setIsConfirmingReturn(false);
     }
   };
 
@@ -2594,6 +2619,55 @@ export default function JobOrdersPage() {
                     })()}
                   </div>
                 )}
+                {Array.isArray(viewOrder.latest_refund?.evidence_media) && viewOrder.latest_refund.evidence_media.length > 0 && (
+                  <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Refund Evidence</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {viewOrder.latest_refund.evidence_media.map((mediaUrl, index) => (
+                        <a key={`${mediaUrl}-${index}`} href={mediaUrl} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
+                          <img src={mediaUrl} alt={`Refund evidence ${index + 1}`} loading="lazy" className="h-28 w-full object-cover" />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {viewOrder.latest_refund?.return_logistics && (
+                  <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Return Logistics</p>
+                    <div className="bg-gray-50 dark:bg-gray-900/30 rounded-lg p-4 space-y-3 text-sm text-gray-700 dark:text-gray-300">
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="text-gray-600 dark:text-gray-400">Shipment status</span>
+                        <span className="font-medium capitalize">{viewOrder.latest_refund.return_logistics.shipment_status.replaceAll('_', ' ')}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="text-gray-600 dark:text-gray-400">Return leg</span>
+                        <span className="font-medium capitalize">{viewOrder.latest_refund.return_logistics.leg_status.replaceAll('_', ' ')}</span>
+                      </div>
+                      {viewOrder.latest_refund.return_logistics.tracking_number && (
+                        <div className="flex items-center justify-between gap-4">
+                          <span className="text-gray-600 dark:text-gray-400">Tracking #</span>
+                          <span className="font-medium">{viewOrder.latest_refund.return_logistics.tracking_number}</span>
+                        </div>
+                      )}
+                      {viewOrder.latest_refund.return_logistics.proofs.length > 0 && (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-1">
+                          {viewOrder.latest_refund.return_logistics.proofs.map((proof, index) => (
+                            <a
+                              key={proof.id}
+                              href={proof.file_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              aria-label={`View return proof ${index + 1}`}
+                              className="block overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700"
+                            >
+                              <img src={proof.file_url} alt={`Return proof ${index + 1}`} loading="lazy" className="h-28 w-full object-cover" />
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {(viewOrder.trackingNumber || viewOrder.trackingLink || viewOrder.eta) && (
                   <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Shipping & Tracking</p>
@@ -2633,10 +2707,11 @@ export default function JobOrdersPage() {
                 {canConfirmReturnReceived(viewOrder) && (
                   <button
                     onClick={() => handleConfirmReturnReceived(viewOrder)}
-                    className="px-4 py-2 border border-indigo-600 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors"
+                    disabled={isConfirmingReturn}
+                    className="px-4 py-2 border border-indigo-600 bg-indigo-600 hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60 text-white rounded-lg font-medium transition-colors"
                     title="Confirm returned item received"
                   >
-                    Confirm Return Received
+                    {isConfirmingReturn ? 'Confirming...' : 'Confirm Return Received'}
                   </button>
                 )}
                 {canArrangeReturnPickup(viewOrder) && (

@@ -161,36 +161,9 @@ class StaffOrderController extends Controller
                         'message' => $cancelledShipment->events->first()?->message,
                     ] : null,
                     'retail_pos_refund' => $retailPosRefundSummaries[(int) $order->id] ?? null,
-                    'latest_refund' => $latestRefund ? [
-                        'id' => (int) $latestRefund->id,
-                        'status' => (string) $latestRefund->status,
-                        'reason_code' => $latestRefund->reason_code,
-                        'reason_note' => $latestRefund->reason_note,
-                        'other_reason_note' => $latestRefund->other_reason_note,
-                        'shop_owner_status' => (string) ($latestRefund->shop_owner_status ?? 'pending'),
-                        'finance_status' => (string) ($latestRefund->finance_status ?? 'pending'),
-                        'return_status' => (string) ($latestRefund->return_status ?? 'awaiting_approval'),
-                        'return_source' => (string) ($latestRefund->return_source ?? 'customer'),
-                        'customer_return_tracking_number' => $latestRefund->customer_return_tracking_number,
-                        'customer_return_carrier' => $latestRefund->customer_return_carrier,
-                        'customer_return_rider_name' => $latestRefund->customer_return_rider_name,
-                        'customer_return_rider_phone' => $latestRefund->customer_return_rider_phone,
-                        'customer_return_tracking_link' => $latestRefund->customer_return_tracking_link,
-                        'customer_return_shipped_at' => optional($latestRefund->customer_return_shipped_at)->toDateTimeString(),
-                        'staff_return_tracking_number' => $latestRefund->staff_return_tracking_number,
-                        'staff_return_carrier' => $latestRefund->staff_return_carrier,
-                        'staff_return_rider_name' => $latestRefund->staff_return_rider_name,
-                        'staff_return_rider_phone' => $latestRefund->staff_return_rider_phone,
-                        'staff_return_tracking_link' => $latestRefund->staff_return_tracking_link,
-                        'staff_return_shipped_at' => optional($latestRefund->staff_return_shipped_at)->toDateTimeString(),
-                        'return_arranged_by_staff_at' => optional($latestRefund->return_arranged_by_staff_at)->toDateTimeString(),
-                        'return_confirmed_at' => optional($latestRefund->return_confirmed_at)->toDateTimeString(),
-                        'refund_executed_at' => optional($latestRefund->refund_executed_at)->toDateTimeString(),
-                        'rejected_at' => optional($latestRefund->rejected_at)->toDateTimeString(),
-                        'rejection_reason' => $latestRefund->rejection_reason,
-                        'flow_type' => (string) ($latestRefund->flow_type ?? ''),
-                        'items' => $latestRefundItems,
-                    ] : null,
+                    'latest_refund' => $latestRefund
+                        ? $this->serializeLatestRefund($latestRefund, $latestRefundItems)
+                        : null,
                     'created_at' => $order->created_at->toISOString(),
                     'updated_at' => $order->updated_at->toISOString(),
                     'items' => $order->items->map(function ($item) {
@@ -317,36 +290,9 @@ class StaffOrderController extends Controller
             'eta' => $order->eta ?? null,
             'shop_owned_coverage' => $this->shopOwnedCoverage($order),
             'retail_pos_refund' => $retailPosRefundSummary[(int) $order->id] ?? null,
-            'latest_refund' => $latestRefund ? [
-                'id' => (int) $latestRefund->id,
-                'status' => (string) $latestRefund->status,
-                'reason_code' => $latestRefund->reason_code,
-                'reason_note' => $latestRefund->reason_note,
-                'other_reason_note' => $latestRefund->other_reason_note,
-                'shop_owner_status' => (string) ($latestRefund->shop_owner_status ?? 'pending'),
-                'finance_status' => (string) ($latestRefund->finance_status ?? 'pending'),
-                'return_status' => (string) ($latestRefund->return_status ?? 'awaiting_approval'),
-                'return_source' => (string) ($latestRefund->return_source ?? 'customer'),
-                'customer_return_tracking_number' => $latestRefund->customer_return_tracking_number,
-                'customer_return_carrier' => $latestRefund->customer_return_carrier,
-                'customer_return_rider_name' => $latestRefund->customer_return_rider_name,
-                'customer_return_rider_phone' => $latestRefund->customer_return_rider_phone,
-                'customer_return_tracking_link' => $latestRefund->customer_return_tracking_link,
-                'customer_return_shipped_at' => optional($latestRefund->customer_return_shipped_at)->toDateTimeString(),
-                'staff_return_tracking_number' => $latestRefund->staff_return_tracking_number,
-                'staff_return_carrier' => $latestRefund->staff_return_carrier,
-                'staff_return_rider_name' => $latestRefund->staff_return_rider_name,
-                'staff_return_rider_phone' => $latestRefund->staff_return_rider_phone,
-                'staff_return_tracking_link' => $latestRefund->staff_return_tracking_link,
-                'staff_return_shipped_at' => optional($latestRefund->staff_return_shipped_at)->toDateTimeString(),
-                'return_arranged_by_staff_at' => optional($latestRefund->return_arranged_by_staff_at)->toDateTimeString(),
-                'return_confirmed_at' => optional($latestRefund->return_confirmed_at)->toDateTimeString(),
-                'refund_executed_at' => optional($latestRefund->refund_executed_at)->toDateTimeString(),
-                'rejected_at' => optional($latestRefund->rejected_at)->toDateTimeString(),
-                'rejection_reason' => $latestRefund->rejection_reason,
-                'flow_type' => (string) ($latestRefund->flow_type ?? ''),
-                'items' => $latestRefundItems,
-            ] : null,
+            'latest_refund' => $latestRefund
+                ? $this->serializeLatestRefund($latestRefund, $latestRefundItems)
+                : null,
             'created_at' => $order->created_at->toISOString(),
             'updated_at' => $order->updated_at->toISOString(),
             'items' => $order->items->map(function ($item) {
@@ -368,6 +314,74 @@ class StaffOrderController extends Controller
                 'shop_name' => $order->shopOwner->shop_name,
             ] : null,
         ]);
+    }
+
+    private function serializeLatestRefund(OrderRefund $refund, array $items): array
+    {
+        $shipment = Shipment::query()
+            ->with('legs.proofs')
+            ->where('shop_owner_id', $refund->shop_owner_id)
+            ->where('source_type', 'order_refund')
+            ->where('source_id', $refund->id)
+            ->where('purpose', 'refund_return')
+            ->latest('id')
+            ->first();
+        $returnLeg = $shipment?->legs
+            ->whereIn('leg_type', ['inbound', 'return_to_shop'])
+            ->sortByDesc('sequence')
+            ->first();
+
+        return [
+            'id' => (int) $refund->id,
+            'status' => (string) $refund->status,
+            'reason_code' => $refund->reason_code,
+            'reason_note' => $refund->reason_note,
+            'other_reason_note' => $refund->other_reason_note,
+            'shop_owner_status' => (string) ($refund->shop_owner_status ?? 'pending'),
+            'finance_status' => (string) ($refund->finance_status ?? 'pending'),
+            'return_status' => (string) ($refund->return_status ?? 'awaiting_approval'),
+            'return_source' => (string) ($refund->return_source ?? 'customer'),
+            'customer_return_tracking_number' => $refund->customer_return_tracking_number,
+            'customer_return_carrier' => $refund->customer_return_carrier,
+            'customer_return_rider_name' => $refund->customer_return_rider_name,
+            'customer_return_rider_phone' => $refund->customer_return_rider_phone,
+            'customer_return_tracking_link' => $refund->customer_return_tracking_link,
+            'customer_return_shipped_at' => optional($refund->customer_return_shipped_at)->toDateTimeString(),
+            'staff_return_tracking_number' => $refund->staff_return_tracking_number,
+            'staff_return_carrier' => $refund->staff_return_carrier,
+            'staff_return_rider_name' => $refund->staff_return_rider_name,
+            'staff_return_rider_phone' => $refund->staff_return_rider_phone,
+            'staff_return_tracking_link' => $refund->staff_return_tracking_link,
+            'staff_return_shipped_at' => optional($refund->staff_return_shipped_at)->toDateTimeString(),
+            'return_arranged_by_staff_at' => optional($refund->return_arranged_by_staff_at)->toDateTimeString(),
+            'return_confirmed_at' => optional($refund->return_confirmed_at)->toDateTimeString(),
+            'refund_executed_at' => optional($refund->refund_executed_at)->toDateTimeString(),
+            'rejected_at' => optional($refund->rejected_at)->toDateTimeString(),
+            'rejection_reason' => $refund->rejection_reason,
+            'flow_type' => (string) ($refund->flow_type ?? ''),
+            'payout_amount_value' => $this->orderRefundService->resolvePayoutAmount($refund),
+            'evidence_media' => is_array($refund->evidence_media) ? $refund->evidence_media : [],
+            'items' => $items,
+            'return_logistics' => $shipment && $returnLeg ? [
+                'shipment_id' => (int) $shipment->id,
+                'shipment_status' => $shipment->status->value,
+                'leg_id' => (int) $returnLeg->id,
+                'leg_type' => $returnLeg->leg_type,
+                'leg_status' => $returnLeg->status->value,
+                'tracking_number' => $returnLeg->tracking_number,
+                'tracking_url' => $returnLeg->tracking_url,
+                'proofs' => $returnLeg->proofs
+                    ->filter(fn ($proof) => trim((string) ($proof->file_path ?? '')) !== '')
+                    ->map(fn ($proof) => [
+                        'id' => (int) $proof->id,
+                        'handoff_type' => $proof->handoff_type,
+                        'proof_type' => $proof->proof_type,
+                        'file_url' => "/api/logistics/proofs/{$proof->id}/file",
+                    ])
+                    ->values()
+                    ->all(),
+            ] : null,
+        ];
     }
 
     public function updateStatus(Request $request, $id)
