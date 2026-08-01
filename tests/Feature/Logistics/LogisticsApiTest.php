@@ -11,6 +11,7 @@ use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\Notification;
 use App\Models\Order;
+use App\Models\OrderRefund;
 use App\Models\PosRefund;
 use App\Models\PosTransaction;
 use App\Models\RepairPaymentSession;
@@ -571,6 +572,59 @@ class LogisticsApiTest extends TestCase
 
         $this->actingAs(User::factory()->create(), 'user')
             ->get("/api/logistics/proofs/{$proof->id}/file")
+            ->assertForbidden();
+    }
+
+    public function test_same_shop_job_order_staff_can_only_fetch_refund_return_proofs(): void
+    {
+        Storage::fake('local');
+        Permission::findOrCreate('access-staff-job-orders', 'user');
+
+        $shop = ShopOwner::factory()->create();
+        $staff = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $staff->givePermissionTo('access-staff-job-orders');
+        $refund = OrderRefund::factory()->create(['shop_owner_id' => $shop->id]);
+        $returnShipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order_refund',
+            'source_id' => $refund->id,
+            'purpose' => 'refund_return',
+        ]);
+        $returnLeg = ShipmentLeg::factory()->create([
+            'shipment_id' => $returnShipment->id,
+            'leg_type' => 'return_to_shop',
+        ]);
+        $returnProof = HandoffProof::factory()->create([
+            'shipment_leg_id' => $returnLeg->id,
+            'file_path' => "logistics-proof/{$returnLeg->id}/refund-return.png",
+        ]);
+        Storage::disk('local')->put($returnProof->file_path, 'refund-return-proof');
+
+        $this->actingAs($staff, 'user')
+            ->get("/api/logistics/proofs/{$returnProof->id}/file")
+            ->assertOk()
+            ->assertStreamedContent('refund-return-proof');
+
+        $otherShopStaff = User::factory()->create(['shop_owner_id' => ShopOwner::factory()->create()->id]);
+        $otherShopStaff->givePermissionTo('access-staff-job-orders');
+        $this->actingAs($otherShopStaff, 'user')
+            ->get("/api/logistics/proofs/{$returnProof->id}/file")
+            ->assertForbidden();
+
+        $deliveryShipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+            'purpose' => 'retail_delivery',
+        ]);
+        $deliveryLeg = ShipmentLeg::factory()->create(['shipment_id' => $deliveryShipment->id]);
+        $deliveryProof = HandoffProof::factory()->create([
+            'shipment_leg_id' => $deliveryLeg->id,
+            'file_path' => "logistics-proof/{$deliveryLeg->id}/delivery.png",
+        ]);
+        Storage::disk('local')->put($deliveryProof->file_path, 'delivery-proof');
+
+        $this->actingAs($staff, 'user')
+            ->get("/api/logistics/proofs/{$deliveryProof->id}/file")
             ->assertForbidden();
     }
 

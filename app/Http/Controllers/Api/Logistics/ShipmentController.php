@@ -133,8 +133,15 @@ class ShipmentController extends Controller
 
     public function proofFile(HandoffProof $proof)
     {
-        $shop = $this->authorizedShop('assign-logistics-deliveries');
         $proof->loadMissing('leg.shipment');
+        $shipment = $proof->leg->shipment;
+        $isRefundReturn = $shipment->source_type === 'order_refund'
+            && $shipment->purpose === 'refund_return'
+            && $proof->leg->leg_type === 'return_to_shop';
+        $user = Auth::guard('user')->user();
+        $shop = $this->authorizedShop($isRefundReturn && $user?->can('access-staff-job-orders')
+            ? 'access-staff-job-orders'
+            : 'assign-logistics-deliveries');
         $this->abortUnlessTenant((int) $proof->leg->shipment->shop_owner_id, $shop);
         abort_unless($proof->file_path && Storage::disk('local')->exists($proof->file_path), 404);
 
