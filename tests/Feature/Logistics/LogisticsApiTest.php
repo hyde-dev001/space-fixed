@@ -17,10 +17,12 @@ use App\Models\RepairPaymentSession;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Services\Logistics\ProofService;
 use App\Services\Logistics\ShipmentLegService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
@@ -201,7 +203,14 @@ class LogisticsApiTest extends TestCase
         $rider->givePermissionTo(['record-logistics-proof', 'update-logistics-status']);
         $approver->givePermissionTo('approve-proof-of-delivery');
         $profile = RiderProfile::factory()->create(['shop_owner_id' => $shop->id, 'linked_type' => User::class, 'linked_id' => $rider->id]);
-        $leg->assignments()->create(['assignment_type' => 'internal_rider', 'rider_profile_id' => $profile->id, 'status' => 'assigned', 'assigned_at' => now()]);
+        $assignment = $leg->assignments()->create(['assignment_type' => 'internal_rider', 'rider_profile_id' => $profile->id, 'status' => 'assigned', 'assigned_at' => now()]);
+        $leg->events()->create([
+            'shipment_id' => $leg->shipment_id,
+            'event_type' => 'dropoff_arrived',
+            'visibility' => 'internal',
+            'message' => 'Rider arrived at the customer location.',
+            'metadata' => ['delivery_assignment_id' => $assignment->id],
+        ]);
         Storage::fake('local');
         $proof = $this->actingAs($rider, 'user')->post("/api/logistics/legs/{$leg->id}/proof", [
             'handoff_type' => 'delivery',
@@ -229,11 +238,18 @@ class LogisticsApiTest extends TestCase
             'linked_type' => User::class,
             'linked_id' => $rider->id,
         ]);
-        $leg->assignments()->create([
+        $assignment = $leg->assignments()->create([
             'assignment_type' => 'internal_rider',
             'rider_profile_id' => $profile->id,
             'status' => 'accepted',
             'assigned_at' => now(),
+        ]);
+        $leg->events()->create([
+            'shipment_id' => $leg->shipment_id,
+            'event_type' => 'dropoff_arrived',
+            'visibility' => 'internal',
+            'message' => 'Rider arrived at the customer location.',
+            'metadata' => ['delivery_assignment_id' => $assignment->id],
         ]);
         Storage::fake('local');
         $payload = [
@@ -255,6 +271,223 @@ class LogisticsApiTest extends TestCase
         $this->assertSame(1, $leg->proofs()->count());
         Storage::disk('local')->assertExists($first->json('proof.file_path'));
         $this->assertCount(1, Storage::disk('local')->allFiles("logistics-proof/{$leg->id}"));
+    }
+
+    public function test_unassigned_same_shop_rider_cannot_submit_delivery_proof(): void
+    {
+        Permission::findOrCreate('record-logistics-proof', 'user');
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id,
+            'status' => 'in_transit',
+        ]);
+        $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $rider->givePermissionTo('record-logistics-proof');
+        Storage::fake('local');
+
+        $this->actingAs($rider, 'user')->post("/api/logistics/legs/{$leg->id}/proof", [
+            'handoff_type' => 'delivery',
+            'proof_type' => 'photo',
+            'proof_file' => $this->fakeAttemptPhoto('unassigned-proof.png'),
+        ], ['Accept' => 'application/json'])->assertForbidden();
+
+        $this->assertSame('in_transit', $leg->fresh()->status->value);
+        $this->assertSame(0, $leg->proofs()->count());
+        $this->assertSame([], Storage::disk('local')->allFiles());
+    }
+
+    public function test_unassigned_rider_cannot_replay_another_riders_proof_key(): void
+    {
+        Permission::findOrCreate('record-logistics-proof', 'user');
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id,
+            'status' => 'awaiting_proof_approval',
+        ]);
+        $proof = HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'handoff_type' => 'delivery',
+            'proof_type' => 'photo',
+            'idempotency_key' => 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        ]);
+        $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $rider->givePermissionTo('record-logistics-proof');
+        Storage::fake('local');
+
+        $this->actingAs($rider, 'user')->post("/api/logistics/legs/{$leg->id}/proof", [
+            'handoff_type' => 'delivery',
+            'proof_type' => 'photo',
+            'idempotency_key' => $proof->idempotency_key,
+            'proof_file' => $this->fakeAttemptPhoto('replayed-proof.png'),
+        ], ['Accept' => 'application/json'])->assertForbidden();
+
+        $this->assertSame(1, $leg->proofs()->count());
+        $this->assertSame([], Storage::disk('local')->allFiles());
+    }
+
+    public function test_assigned_rider_cannot_submit_delivery_proof_without_current_arrival(): void
+    {
+        Permission::findOrCreate('record-logistics-proof', 'user');
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id,
+            'status' => 'in_transit',
+        ]);
+        $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $rider->givePermissionTo('record-logistics-proof');
+        $profile = RiderProfile::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'linked_type' => User::class,
+            'linked_id' => $rider->id,
+        ]);
+        $leg->assignments()->create([
+            'assignment_type' => 'internal_rider',
+            'rider_profile_id' => $profile->id,
+            'status' => 'accepted',
+            'assigned_at' => now(),
+        ]);
+        Storage::fake('local');
+
+        $this->actingAs($rider, 'user')->post("/api/logistics/legs/{$leg->id}/proof", [
+            'handoff_type' => 'delivery',
+            'proof_type' => 'photo',
+            'proof_file' => $this->fakeAttemptPhoto('no-arrival-proof.png'),
+        ], ['Accept' => 'application/json'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('arrival');
+
+        $this->assertSame('in_transit', $leg->fresh()->status->value);
+        $this->assertSame(0, $leg->proofs()->count());
+        $this->assertSame([], Storage::disk('local')->allFiles());
+    }
+
+    public function test_back_office_proof_capability_takes_precedence_over_rider_assignment(): void
+    {
+        Permission::findOrCreate('record-logistics-proof', 'user');
+
+        foreach (['assign-logistics-deliveries', 'approve-proof-of-delivery'] as $capability) {
+            Permission::findOrCreate($capability, 'user');
+            $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+            $leg = ShipmentLeg::factory()->create([
+                'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id,
+                'status' => 'in_transit',
+            ]);
+            $user = User::factory()->create(['shop_owner_id' => $shop->id]);
+            $user->givePermissionTo(['record-logistics-proof', $capability]);
+            $profile = RiderProfile::factory()->create([
+                'shop_owner_id' => $shop->id,
+                'linked_type' => User::class,
+                'linked_id' => $user->id,
+            ]);
+            $leg->assignments()->create([
+                'assignment_type' => 'internal_rider',
+                'rider_profile_id' => $profile->id,
+                'status' => 'accepted',
+                'assigned_at' => now(),
+            ]);
+            Storage::fake('local');
+
+            $this->actingAs($user, 'user')->post("/api/logistics/legs/{$leg->id}/proof", [
+                'handoff_type' => 'delivery',
+                'proof_type' => 'photo',
+                'proof_file' => $this->fakeAttemptPhoto("{$capability}.png"),
+            ], ['Accept' => 'application/json'])->assertCreated();
+        }
+    }
+
+    public function test_pickup_rejection_cannot_mutate_a_proof_from_another_leg(): void
+    {
+        [$shop, $leg, $rider] = $this->assignedRiderLeg('assigned');
+        $otherLeg = ShipmentLeg::factory()->create([
+            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id,
+            'status' => 'assigned',
+        ]);
+        $proof = HandoffProof::factory()->create([
+            'shipment_leg_id' => $otherLeg->id,
+            'handoff_type' => 'pickup',
+            'review_status' => 'pending',
+        ]);
+
+        $this->actingAs($rider, 'user')
+            ->postJson("/api/logistics/legs/{$leg->id}/pickup-proofs/{$proof->id}/reject", [
+                'reason' => 'Wrong parcel',
+            ])
+            ->assertUnprocessable();
+
+        $this->assertSame('pending', $proof->fresh()->review_status);
+    }
+
+    public function test_pickup_rejection_cannot_mutate_non_pickup_or_reviewed_proof(): void
+    {
+        [, $leg, $rider] = $this->assignedRiderLeg('assigned');
+        $deliveryProof = HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'handoff_type' => 'delivery',
+            'review_status' => 'pending',
+        ]);
+        $approvedPickup = HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'handoff_type' => 'pickup',
+            'review_status' => 'approved',
+        ]);
+
+        foreach ([$deliveryProof, $approvedPickup] as $proof) {
+            $this->actingAs($rider, 'user')
+                ->postJson("/api/logistics/legs/{$leg->id}/pickup-proofs/{$proof->id}/reject", [
+                    'reason' => 'Wrong parcel',
+                ])
+                ->assertUnprocessable();
+        }
+
+        $this->assertSame('pending', $deliveryProof->fresh()->review_status);
+        $this->assertSame('approved', $approvedPickup->fresh()->review_status);
+    }
+
+    public function test_rejected_pickup_proof_cannot_be_confirmed(): void
+    {
+        [, $leg, $rider] = $this->assignedRiderLeg('assigned');
+        $leg->assignments()->update(['status' => 'accepted', 'accepted_at' => now()]);
+        $proof = HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'handoff_type' => 'pickup',
+            'review_status' => 'rejected',
+        ]);
+
+        $this->actingAs($rider, 'user')
+            ->postJson("/api/logistics/legs/{$leg->id}/pickup-proofs/{$proof->id}/confirm")
+            ->assertUnprocessable();
+
+        $this->assertSame('rejected', $proof->fresh()->review_status);
+        $this->assertSame('assigned', $leg->fresh()->status->value);
+    }
+
+    public function test_proof_service_rechecks_that_the_rider_assignment_is_active(): void
+    {
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id,
+            'status' => 'in_transit',
+        ]);
+        $profile = RiderProfile::factory()->create(['shop_owner_id' => $shop->id]);
+        DeliveryAssignment::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'rider_profile_id' => $profile->id,
+            'status' => 'cancelled',
+        ]);
+
+        try {
+            app(ProofService::class)->recordProof($leg, [
+                'handoff_type' => 'delivery',
+                'proof_type' => 'photo',
+                'file_path' => 'proof.jpg',
+            ], $profile);
+            $this->fail('A rider without an active assignment recorded proof.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('assignment', $exception->errors());
+        }
+
+        $this->assertSame(0, $leg->proofs()->count());
+        $this->assertSame('in_transit', $leg->fresh()->status->value);
     }
 
     public function test_rider_cannot_submit_proof_for_a_noncanonical_legacy_active_delivery(): void

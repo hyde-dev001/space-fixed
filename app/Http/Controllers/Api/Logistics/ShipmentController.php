@@ -101,13 +101,12 @@ class ShipmentController extends Controller
         $this->abortUnlessTenant($leg->shipment->shop_owner_id, $shop);
 
         $payload = $request->validated();
-        if (filled($payload['idempotency_key'] ?? null)) {
-            $existing = $leg->proofs()->where('idempotency_key', $payload['idempotency_key'])->first();
-            if ($existing) {
-                return response()->json(['proof' => $existing]);
-            }
+        $user = Auth::guard('user')->user();
+        $backOffice = $user && ($user->can('assign-logistics-deliveries') || $user->can('approve-proof-of-delivery'));
+        $rider = $backOffice ? null : $this->riderProfileIfAssigned($leg);
+        if ($user && ! $backOffice && ! $rider) {
+            abort(403);
         }
-        $rider = $this->riderProfileIfAssigned($leg);
         if ($rider) {
             $this->activeWork->assertCanAdvanceLeg($rider, $leg);
         }

@@ -109,6 +109,22 @@ class ShipmentLegService
             }
             if ($rider) {
                 $this->activeWork->assertCanAdvanceLeg($rider, $leg);
+                $assignment = $leg->assignments()
+                    ->where('rider_profile_id', $rider->id)
+                    ->whereIn('status', ['assigned', 'accepted'])
+                    ->latest('id')
+                    ->lockForUpdate()
+                    ->first();
+                if (! $assignment) {
+                    throw ValidationException::withMessages([
+                        'rider' => 'This delivery is no longer assigned to this rider.',
+                    ]);
+                }
+                if (! $this->arrivals->eventForAssignment($leg, 'pickup_arrived', $assignment)) {
+                    throw ValidationException::withMessages([
+                        'arrival' => 'Record your pickup arrival before confirming pickup.',
+                    ]);
+                }
             }
 
             return $this->transition($leg, 'picked_up', ['picked_up_at' => now()], 'picked_up', 'Shipment leg picked up.');
@@ -126,6 +142,11 @@ class ShipmentLegService
             }
             if ($leg->status->value === 'picked_up' && $proof->review_status === 'approved') {
                 return $leg;
+            }
+            if ($proof->review_status !== 'pending') {
+                throw ValidationException::withMessages([
+                    'proof' => 'Only a pending pickup proof can be confirmed.',
+                ]);
             }
             $this->activeWork->assertCanAdvanceLeg($rider, $leg);
             $proof->update(['review_status' => 'approved', 'reviewed_by_type' => RiderProfile::class, 'reviewed_by_id' => $rider->id, 'reviewed_at' => now()]);
@@ -145,6 +166,16 @@ class ShipmentLegService
             $proof = HandoffProof::query()->lockForUpdate()->findOrFail($proof->id);
             if (! $leg->assignments()->where('rider_profile_id', $rider->id)->whereIn('status', ['assigned', 'accepted'])->exists()) {
                 abort(403);
+            }
+            if ($proof->shipment_leg_id !== $leg->id || $proof->handoff_type !== 'pickup') {
+                throw ValidationException::withMessages([
+                    'proof' => 'This pickup proof does not belong to this delivery.',
+                ]);
+            }
+            if ($proof->review_status !== 'pending') {
+                throw ValidationException::withMessages([
+                    'proof' => 'Only a pending pickup proof can be rejected.',
+                ]);
             }
             $proof->update(['review_status' => 'rejected', 'rejection_reason' => $reason, 'reviewed_by_type' => RiderProfile::class, 'reviewed_by_id' => $rider->id, 'reviewed_at' => now()]);
 

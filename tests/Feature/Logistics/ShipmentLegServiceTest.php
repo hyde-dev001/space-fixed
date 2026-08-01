@@ -470,10 +470,17 @@ class ShipmentLegServiceTest extends TestCase
             'delivery_batch_id' => null,
             'requires_pickup_proof' => false,
         ]);
-        DeliveryAssignment::factory()->create([
+        $assignment = DeliveryAssignment::factory()->create([
             'shipment_leg_id' => $leg->id,
             'rider_profile_id' => $rider->id,
             'status' => 'accepted',
+        ]);
+        $leg->events()->create([
+            'shipment_id' => $leg->shipment_id,
+            'event_type' => 'pickup_arrived',
+            'visibility' => 'internal',
+            'message' => 'Rider arrived for pickup.',
+            'metadata' => ['delivery_assignment_id' => $assignment->id],
         ]);
 
         return $leg;
