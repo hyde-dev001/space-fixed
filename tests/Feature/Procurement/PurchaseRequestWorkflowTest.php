@@ -182,6 +182,51 @@ class PurchaseRequestWorkflowTest extends TestCase
             ->assertUnprocessable();
     }
 
+    public function test_http_creation_copies_identity_and_total_quantity_from_the_stock_request(): void
+    {
+        $inventory = InventoryItem::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'name' => 'Authoritative shoe',
+            'category' => 'shoes',
+        ]);
+        $stockRequest = StockRequestApproval::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'inventory_item_id' => $inventory->id,
+            'requested_by' => $this->requester->id,
+            'product_name' => 'Authoritative shoe',
+            'quantity_needed' => 200,
+            'requested_size' => null,
+            'requested_color' => 'Black',
+            'priority' => 'high',
+            'status' => 'accepted',
+        ]);
+        $this->assertSame($inventory->id, $stockRequest->inventory_item_id);
+
+        $response = $this->actingAs($this->requester)
+            ->postJson('/api/erp/procurement/purchase-requests', [
+                'stock_request_id' => $stockRequest->id,
+                'product_name' => 'Spoofed product',
+                'inventory_item_id' => null,
+                'requested_size' => 'US 99',
+                'requested_color' => 'Red',
+                'supplier_id' => $this->supplier->id,
+                'quantity' => 1,
+                'unit_cost' => 4100,
+                'priority' => 'low',
+                'justification' => 'Use the accepted stock request as source.',
+            ])
+            ->assertCreated();
+
+        $purchaseRequest = PurchaseRequest::findOrFail($response->json('data.id'));
+        $this->assertSame($inventory->id, $purchaseRequest->inventory_item_id);
+        $this->assertSame('Authoritative shoe', $purchaseRequest->product_name);
+        $this->assertSame(200, $purchaseRequest->quantity);
+        $this->assertNull($purchaseRequest->requested_size);
+        $this->assertSame('Black', $purchaseRequest->requested_color);
+        $this->assertSame('high', $purchaseRequest->priority);
+        $this->assertSame('820000.00', $purchaseRequest->total_cost);
+    }
+
     private function pendingRequest(string $status): PurchaseRequest
     {
         return PurchaseRequest::factory()->create([

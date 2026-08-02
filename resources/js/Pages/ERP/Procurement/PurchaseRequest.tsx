@@ -5,7 +5,7 @@ import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import { purchaseRequestApi, supplierApi, type PurchaseRequest as PurchaseRequestType, type Supplier } from "@/services/procurementApi";
 import { stockRequestApi } from "@/services/stockRequestApi";
 import { workflowFeedback } from "@/utils/workflowFeedback";
-import { clearModalDraft, loadModalDraft, saveModalDraft } from "@/utils/modalDraft";
+import { clearModalDraft, isModalDraftSourceAvailable, loadModalDraft, saveModalDraft, scopedModalDraftKey } from "@/utils/modalDraft";
 import type { StockRequestApproval } from "@/types/procurement";
 
 type RequestPriority = "high" | "medium" | "low";
@@ -286,7 +286,8 @@ const currency = new Intl.NumberFormat("en-PH", {
 });
 
 export default function PurchaseRequest() {
-	const { initialData, initialSuppliers, initialAcceptedRequests } = usePage().props as any;
+	const { auth, initialData, initialSuppliers, initialAcceptedRequests } = usePage().props as any;
+	const draftKey = scopedModalDraftKey(PURCHASE_REQUEST_DRAFT_KEY, auth?.user?.shop_owner_id, auth?.user?.id);
 	const [purchaseRequests, setPurchaseRequests] = useState<PurchaseRequestType[]>(initialData?.data ?? []);
 	const [suppliers, setSuppliers] = useState<Supplier[]>(initialSuppliers ?? []);
 	const [acceptedStockRequests, setAcceptedStockRequests] = useState<StockRequestApproval[]>(initialAcceptedRequests?.data ?? []);
@@ -342,13 +343,16 @@ export default function PurchaseRequest() {
 	};
 
 	// Fetch accepted stock requests — only these may become a PR
-	const fetchAcceptedStockRequests = async () => {
+	const fetchAcceptedStockRequests = async (): Promise<StockRequestApproval[]> => {
 		try {
 			const response = await stockRequestApi.getAll({ status: 'accepted', per_page: 200 });
 			const data = (response as any).data ?? response ?? [];
-			setAcceptedStockRequests(Array.isArray(data) ? data : []);
+			const requests = Array.isArray(data) ? data : [];
+			setAcceptedStockRequests(requests);
+			return requests;
 		} catch (error) {
 			console.error("Error fetching accepted stock requests:", error);
+			return [];
 		}
 	};
 
@@ -374,13 +378,17 @@ export default function PurchaseRequest() {
 	}, []);
 
 	useEffect(() => {
+		clearModalDraft(PURCHASE_REQUEST_DRAFT_KEY);
+	}, []);
+
+	useEffect(() => {
 		if (!isCreateModalOpen) return;
 		if (isCreateFormDirty) {
-			saveModalDraft(PURCHASE_REQUEST_DRAFT_KEY, formData);
+			saveModalDraft(draftKey, formData);
 			return;
 		}
-		clearModalDraft(PURCHASE_REQUEST_DRAFT_KEY);
-	}, [formData, isCreateFormDirty, isCreateModalOpen]);
+		clearModalDraft(draftKey);
+	}, [draftKey, formData, isCreateFormDirty, isCreateModalOpen]);
 
 	useEffect(() => {
 		if (!isCreateModalOpen || !isCreateFormDirty) return;
@@ -395,9 +403,15 @@ export default function PurchaseRequest() {
 	}, [isCreateFormDirty, isCreateModalOpen]);
 
 	const handleOpenCreateModal = async () => {
-		await fetchAcceptedStockRequests();
+		const currentRequests = await fetchAcceptedStockRequests();
 
-		const savedDraft = loadModalDraft<Partial<PurchaseRequestFormState>>(PURCHASE_REQUEST_DRAFT_KEY);
+		const savedDraft = loadModalDraft<Partial<PurchaseRequestFormState>>(draftKey);
+		if (savedDraft && !isModalDraftSourceAvailable(savedDraft.stockRequestId, currentRequests.map((request) => request.id))) {
+			clearModalDraft(draftKey);
+			setFormData(initialFormState);
+			setIsCreateModalOpen(true);
+			return;
+		}
 		if (savedDraft) {
 			const shouldRestore = await workflowFeedback.confirm({
 				title: "Restore draft?",
@@ -409,7 +423,7 @@ export default function PurchaseRequest() {
 			if (shouldRestore.isConfirmed) {
 				setFormData({ ...initialFormState, ...savedDraft });
 			} else {
-				clearModalDraft(PURCHASE_REQUEST_DRAFT_KEY);
+				clearModalDraft(draftKey);
 				setFormData(initialFormState);
 			}
 		} else {
@@ -489,7 +503,7 @@ export default function PurchaseRequest() {
 	const requestCloseCreateModal = async () => {
 		if (!isCreateFormDirty) {
 			closeCreateModal();
-			clearModalDraft(PURCHASE_REQUEST_DRAFT_KEY);
+			clearModalDraft(draftKey);
 			return;
 		}
 
@@ -502,7 +516,7 @@ export default function PurchaseRequest() {
 
 		if (!confirmClose.isConfirmed) return;
 
-		saveModalDraft(PURCHASE_REQUEST_DRAFT_KEY, formData);
+		saveModalDraft(draftKey, formData);
 		closeCreateModal();
 	};
 
@@ -543,7 +557,7 @@ export default function PurchaseRequest() {
 			const newPR = await purchaseRequestApi.create(requestData);
 			const submittedPrNumber = newPR?.pr_number || "Purchase request";
 
-			clearModalDraft(PURCHASE_REQUEST_DRAFT_KEY);
+			clearModalDraft(draftKey);
 			closeCreateModal();
 			await fetchPurchaseRequests();
 			await fetchMetrics();
