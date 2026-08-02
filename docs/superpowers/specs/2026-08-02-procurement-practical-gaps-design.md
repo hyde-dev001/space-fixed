@@ -141,6 +141,18 @@ Automated tests cover:
 
 Manual verification covers the seven reported scenarios with two shops and Inventory, Procurement, Finance, and Shop Owner accounts.
 
+## Follow-up: consumed requests and all-size clarity
+
+An accepted Stock Request becomes unavailable for PR creation as soon as any Purchase Request links to it. The initial Inertia payload and the modal refresh API both exclude linked Stock Requests; the existing unique `stock_request_id` validation remains the final duplicate-write guard. Rejected, approved, and completed PRs all keep their source Stock Request consumed; a new need starts with a new Stock Request.
+
+All-size quantities remain physical totals, not per-size multipliers. Inventory Stock Request details, Procurement Stock Request review, Procurement PR details, Finance PR details, and Shop Owner PR details show:
+
+- `Requested Size: All Sizes`
+- the included size labels for the requested color when available
+- `Total Quantity Across All Sizes: <quantity> units`
+
+Specific-size and non-shoe records keep the shorter `Quantity` or `Quantity Needed` wording. Exact distribution among included sizes is recorded during Inventory receiving.
+
 ## Explicitly deferred
 
 This repair does not add RFQs, bid comparison, contracts, budgets, supplier portals, invoice matching, advanced accounting posting, or supplier analytics. Basic supplier recording and the approved SME purchasing flow remain unchanged.
