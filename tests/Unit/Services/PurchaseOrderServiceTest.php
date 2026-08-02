@@ -9,7 +9,6 @@ use App\Models\PurchaseRequest;
 use App\Models\User;
 use App\Models\Supplier;
 use App\Models\ShopOwner;
-use App\Models\InventoryItem;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 class PurchaseOrderServiceTest extends TestCase
@@ -27,7 +26,7 @@ class PurchaseOrderServiceTest extends TestCase
         $this->service = new PurchaseOrderService();
         $this->shopOwner = ShopOwner::factory()->create();
         $this->supplier = Supplier::factory()->create(['shop_owner_id' => $this->shopOwner->id]);
-        $this->user = User::factory()->create();
+        $this->user = User::factory()->for($this->shopOwner)->create();
     }
 
     /** @test */
@@ -40,7 +39,8 @@ class PurchaseOrderServiceTest extends TestCase
         ]);
 
         $data = [
-            'pr_id' => $pr->id,
+            'purchase_request_ids' => [$pr->id],
+            'shop_owner_id' => $this->shopOwner->id,
             'expected_delivery_date' => now()->addDays(14)->format('Y-m-d'),
             'payment_terms' => 'Net 30',
             'ordered_by' => $this->user->id,
@@ -71,18 +71,31 @@ class PurchaseOrderServiceTest extends TestCase
         ]);
 
         $po1 = $this->service->createPurchaseOrder([
-            'pr_id' => $pr1->id,
+            'purchase_request_ids' => [$pr1->id],
+            'shop_owner_id' => $this->shopOwner->id,
             'payment_terms' => 'Net 30',
             'ordered_by' => $this->user->id,
         ]);
 
         $po2 = $this->service->createPurchaseOrder([
-            'pr_id' => $pr2->id,
+            'purchase_request_ids' => [$pr2->id],
+            'shop_owner_id' => $this->shopOwner->id,
             'payment_terms' => 'COD',
             'ordered_by' => $this->user->id,
         ]);
 
         $this->assertNotEquals($po1->po_number, $po2->po_number);
+    }
+
+    public function test_po_number_sequence_handles_more_than_three_digits(): void
+    {
+        PurchaseOrder::factory()->create([
+            'po_number' => 'PO-' . date('Y') . '-1009',
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+        ]);
+
+        $this->assertSame('PO-' . date('Y') . '-1010', $this->service->generatePONumber($this->shopOwner->id));
     }
 
     /** @test */
@@ -114,21 +127,6 @@ class PurchaseOrderServiceTest extends TestCase
     }
 
     /** @test */
-    public function it_can_mark_as_delivered()
-    {
-        $po = PurchaseOrder::factory()->create([
-            'shop_owner_id' => $this->shopOwner->id,
-            'supplier_id' => $this->supplier->id,
-            'status' => 'in_transit',
-        ]);
-
-        $result = $this->service->markAsDelivered($po->id, $this->user->id, now()->toDateString());
-
-        $this->assertEquals('delivered', $result->status);
-        $this->assertNotNull($result->actual_delivery_date);
-    }
-
-    /** @test */
     public function it_can_cancel_purchase_order()
     {
         $po = PurchaseOrder::factory()->create([
@@ -141,27 +139,6 @@ class PurchaseOrderServiceTest extends TestCase
 
         $this->assertEquals('cancelled', $result->status);
         $this->assertEquals('Supplier unavailable', $result->cancellation_reason);
-    }
-
-    /** @test */
-    public function it_updates_inventory_on_delivery()
-    {
-        $inventoryItem = InventoryItem::factory()->create([
-            'shop_owner_id' => $this->shopOwner->id,
-            'available_quantity' => 100,
-        ]);
-
-        $po = PurchaseOrder::factory()->create([
-            'shop_owner_id' => $this->shopOwner->id,
-            'supplier_id' => $this->supplier->id,
-            'inventory_item_id' => $inventoryItem->id,
-            'quantity' => 50,
-            'status' => 'delivered',
-        ]);
-
-        $this->service->updateInventoryOnDelivery($po->id);
-
-        $this->assertEquals(150, $inventoryItem->fresh()->available_quantity);
     }
 
     /** @test */

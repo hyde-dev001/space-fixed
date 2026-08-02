@@ -79,6 +79,18 @@ class RolesAndPermissionsSeeder extends Seeder
             'access-suppliers-management',
             'access-supplier-order-monitoring',
             'view-procurement', // Required for erp/procurement route group
+            'procurement.view',
+            'procurement.create_purchase_requests',
+            'procurement.submit_purchase_requests',
+            'procurement.review_purchase_requests',
+            'procurement.create_purchase_orders',
+            'procurement.manage_purchase_orders',
+            'procurement.receive_purchase_orders',
+            'procurement.complete_purchase_orders',
+            'procurement.cancel_purchase_orders',
+            'procurement.void_purchase_order_receipts',
+            'procurement.manage_suppliers',
+            'procurement.review_stock_requests',
             
             // ===== STAFF MODULE =====
             'access-staff-dashboard',
@@ -165,6 +177,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'access-refund-approval',
             'access-repair-price-approval',
             'access-shoe-price-approval',
+            'procurement.review_purchase_requests',
             // Global Access
             'access-global-search',
             'access-notification-center',
@@ -239,6 +252,10 @@ class RolesAndPermissionsSeeder extends Seeder
             'access-upload-inventory',
             'access-inventory-overview',
             'view-inventory', // Required for erp/inventory route group
+            'procurement.view',
+            'procurement.create_purchase_requests',
+            'procurement.submit_purchase_requests',
+            'procurement.receive_purchase_orders',
             // Global Access
             'access-global-search',
             'access-notification-center',
@@ -257,6 +274,16 @@ class RolesAndPermissionsSeeder extends Seeder
             'access-suppliers-management',
             'access-supplier-order-monitoring',
             'view-procurement', // Required for erp/procurement route group
+            'procurement.view',
+            'procurement.create_purchase_requests',
+            'procurement.submit_purchase_requests',
+            'procurement.create_purchase_orders',
+            'procurement.manage_purchase_orders',
+            'procurement.receive_purchase_orders',
+            'procurement.complete_purchase_orders',
+            'procurement.cancel_purchase_orders',
+            'procurement.manage_suppliers',
+            'procurement.review_stock_requests',
             // Global Access
             'access-global-search',
             'access-notification-center',

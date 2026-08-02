@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Approval;
 use App\Models\Finance\Expense;
 use App\Models\User;
+use App\Models\PurchaseOrderReceipt;
 use App\Enums\ApprovalStatus;
 use App\Enums\NotificationType;
 
@@ -14,6 +15,55 @@ class ExpenseApprovalService
         private ApprovalService $approvalService,
         private NotificationService $notificationService
     ) {}
+
+    public function submitProcurementExpense(
+        PurchaseOrderReceipt $receipt,
+        User $creator,
+        float $amount
+    ): Expense {
+        $purchaseOrder = $receipt->purchaseOrder()->with('supplier')->firstOrFail();
+
+        return Expense::firstOrCreate(
+            ['procurement_receipt_id' => $receipt->id],
+            [
+                'reference' => "PROC-RCV-{$receipt->id}",
+                'date' => $receipt->received_at->toDateString(),
+                'category' => 'Procurement',
+                'vendor' => $purchaseOrder->supplier?->name,
+                'description' => "Receipt for purchase order {$purchaseOrder->po_number}",
+                'amount' => $amount,
+                'tax_amount' => 0,
+                'status' => 'submitted',
+                'shop_id' => $purchaseOrder->shop_owner_id,
+                'created_by' => $creator->id,
+                'meta' => [
+                    'source' => 'procurement_receipt',
+                    'purchase_order_id' => $purchaseOrder->id,
+                    'po_number' => $purchaseOrder->po_number,
+                    'receipt_id' => $receipt->id,
+                    'created_by' => $creator->id,
+                ],
+            ]
+        );
+    }
+
+    public function rejectForVoidedReceipt(Expense $expense, PurchaseOrderReceipt $receipt): void
+    {
+        if ($expense->status === 'submitted') {
+            $expense->update([
+                'status' => 'rejected',
+                'approval_notes' => "System rejected after procurement receipt #{$receipt->id} was voided.",
+            ]);
+        }
+
+        $approval = $expense->approval()->lockForUpdate()->first();
+        if ($approval?->status === ApprovalStatus::PENDING) {
+            $approval->update([
+                'status' => ApprovalStatus::CANCELLED,
+                'comments' => "Cancelled because procurement receipt #{$receipt->id} was voided.",
+            ]);
+        }
+    }
 
     /**
      * Create a 4-step approval workflow for an expense

@@ -6,7 +6,7 @@ import axios from "axios";
 import AppLayout_shopOwner from "../../../layout/AppLayout_shopOwner";
 
 type RequestPriority = "high" | "medium" | "low";
-type ApprovalStatus = "pending_finance" | "pending_shop_owner" | "approved" | "rejected";
+type ApprovalStatus = "pending_finance" | "pending_shop_owner" | "pending_finance_final" | "approved" | "rejected";
 type StatusFilter = ApprovalStatus | "all";
 type MetricColor = "success" | "warning" | "info";
 const SIZE_SYSTEMS = ["US", "UK", "EU", "AU", "CN"] as const;
@@ -38,6 +38,7 @@ const priorityBadgeClass: Record<RequestPriority, string> = {
 const statusBadgeClass: Record<ApprovalStatus, string> = {
 	pending_finance: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300",
 	pending_shop_owner: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+	pending_finance_final: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300",
 	approved: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
 	rejected: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
 };
@@ -45,6 +46,7 @@ const statusBadgeClass: Record<ApprovalStatus, string> = {
 const statusDisplayName: Record<ApprovalStatus, string> = {
 	pending_finance: "Pending Finance",
 	pending_shop_owner: "Pending Shop Owner",
+	pending_finance_final: "Pending Finance Final",
 	approved: "Approved",
 	rejected: "Rejected",
 };
@@ -331,7 +333,7 @@ export default function PurchaseRequestApproval({ onModalStateChange }: Purchase
 
 	const totalRequests = requests.length;
 	const pendingCount = requests.filter((request) => request.status === "pending_shop_owner").length;
-	const approvedCount = requests.filter((request) => request.status === "approved").length;
+	const approvedCount = requests.filter((request) => request.status === "approved" || request.status === "pending_finance_final").length;
 
 	const handleApprove = async (request: PurchaseRequestApprovalItem) => {
 		setViewingRequest(null);
@@ -517,6 +519,7 @@ export default function PurchaseRequestApproval({ onModalStateChange }: Purchase
 							>
 								<option value="all">All Statuses</option>
 								<option value="pending_shop_owner">Pending Shop Owner</option>
+								<option value="pending_finance_final">Pending Finance Final</option>
 								<option value="pending_finance">Pending Finance</option>
 								<option value="approved">Approved</option>
 								<option value="rejected">Rejected</option>
@@ -714,4 +717,3 @@ export default function PurchaseRequestApproval({ onModalStateChange }: Purchase
 		</AppLayout_shopOwner>
 	);
 }
-

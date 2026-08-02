@@ -24,8 +24,12 @@ class ReplenishmentAndStockRequestTest extends TestCase
         config(['auth.defaults.guard' => 'user']);
         $this->shopOwner = ShopOwner::factory()->create();
         $this->user = User::factory()->for($this->shopOwner)->create();
-        Permission::findOrCreate('access-procurement-dashboard', 'user');
-        $this->user->givePermissionTo('access-procurement-dashboard');
+        Permission::findOrCreate('procurement.create_purchase_requests', 'user');
+        Permission::findOrCreate('procurement.review_stock_requests', 'user');
+        $this->user->givePermissionTo([
+            'procurement.create_purchase_requests',
+            'procurement.review_stock_requests',
+        ]);
         $this->inventoryItem = InventoryItem::factory()->create([
             'shop_owner_id' => $this->shopOwner->id,
         ]);

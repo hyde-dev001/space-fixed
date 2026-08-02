@@ -23,6 +23,7 @@ class PurchaseRequestController extends Controller
         'requester',
         'reviewer',
         'approver',
+        'shopOwnerApprover',
     ];
 
     /**
@@ -107,9 +108,9 @@ class PurchaseRequestController extends Controller
         ]);
 
         try {
-            $purchaseRequest = $this->purchaseRequestService->approvePurchaseRequest(
+            $purchaseRequest = $this->purchaseRequestService->approveByShopOwner(
                 (int) $purchaseRequest->id,
-                (int) $shopOwner->id,
+                $shopOwner,
                 $request->approval_notes
             );
 
@@ -127,8 +128,8 @@ class PurchaseRequestController extends Controller
             );
 
             return response()->json([
-                'message' => 'Purchase request approved by Shop Owner and forwarded to Finance for final approval.',
-                'purchase_request' => $payload,
+                'message' => 'Purchase request acknowledged by the Shop Owner and sent to Finance for final release.',
+                'data' => $payload,
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -148,7 +149,7 @@ class PurchaseRequestController extends Controller
         $purchaseRequest = PurchaseRequest::where('shop_owner_id', $shopOwner->id)
             ->findOrFail($id);
 
-        if (!in_array($purchaseRequest->status, ['pending_shop_owner', 'pending_finance'])) {
+        if ($purchaseRequest->status !== 'pending_shop_owner') {
             return response()->json([
                 'message' => 'This request cannot be rejected in its current state.',
                 'current_status' => $purchaseRequest->status,
@@ -160,9 +161,9 @@ class PurchaseRequestController extends Controller
         ]);
 
         try {
-            $purchaseRequest = $this->purchaseRequestService->rejectPurchaseRequest(
+            $purchaseRequest = $this->purchaseRequestService->rejectByShopOwner(
                 (int) $purchaseRequest->id,
-                (int) $shopOwner->id,
+                $shopOwner,
                 $request->rejection_reason
             );
 
@@ -181,7 +182,7 @@ class PurchaseRequestController extends Controller
 
             return response()->json([
                 'message' => 'Purchase request rejected and returned to procurement.',
-                'purchase_request' => $payload,
+                'data' => $payload,
             ]);
         } catch (\Exception $e) {
             return response()->json([
