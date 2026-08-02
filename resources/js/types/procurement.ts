@@ -109,6 +109,8 @@ export interface PurchaseOrderItem {
     unit_cost: number;
     line_total: number;
     quantity_multiplier: number;
+    eligible_size_ids?: number[];
+    inventory_item?: InventoryItem;
 }
 
 export interface PurchaseOrderReceiptItem {
@@ -337,7 +339,12 @@ export interface CreatePurchaseOrderReceiptPayload {
     idempotency_key: string;
     received_at?: string;
     notes?: string;
-    items: Array<{ purchase_order_item_id: number; received_quantity: number; defective_quantity: number }>;
+    items: Array<{
+        purchase_order_item_id: number;
+        received_quantity: number;
+        defective_quantity: number;
+        size_quantities?: Array<{ inventory_size_id: number; received_quantity: number; defective_quantity: number }>;
+    }>;
 }
 
 export interface CancelPurchaseOrderPayload {

@@ -4,6 +4,7 @@ import { purchaseOrderApi } from "@/services/purchaseOrderApi";
 import type { PurchaseOrder } from "@/types/procurement";
 
 type Quantities = Record<number, { received: string; defective: string }>;
+type SizeQuantities = Record<string, { received: string; defective: string }>;
 
 type Props = {
 	order: PurchaseOrder;
@@ -14,6 +15,7 @@ type Props = {
 
 export default function PurchaseOrderReceiptPanel({ order, onChanged, canReceive: mayReceive = true, canVoid = true }: Props) {
 	const [quantities, setQuantities] = useState<Quantities>({});
+	const [sizeQuantities, setSizeQuantities] = useState<SizeQuantities>({});
 	const [notes, setNotes] = useState("");
 	const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
 	const [saving, setSaving] = useState(false);
@@ -26,13 +28,38 @@ export default function PurchaseOrderReceiptPanel({ order, onChanged, canReceive
 		}));
 		setIdempotencyKey(null);
 	};
+	const setSizeQuantity = (itemId: number, sizeId: number, field: "received" | "defective", value: string) => {
+		const key = `${itemId}:${sizeId}`;
+		setSizeQuantities((current) => ({
+			...current,
+			[key]: { received: current[key]?.received ?? "", defective: current[key]?.defective ?? "", [field]: value },
+		}));
+		setIdempotencyKey(null);
+	};
 
 	const receive = async () => {
-		const items = (order.items ?? []).map((item) => ({
-			purchase_order_item_id: item.id,
-			received_quantity: Number(quantities[item.id]?.received || 0),
-			defective_quantity: Number(quantities[item.id]?.defective || 0),
-		})).filter((item) => item.received_quantity > 0);
+		const items = (order.items ?? []).map((item) => {
+			const eligible = (item.inventory_item?.sizes ?? []).filter((size) => item.eligible_size_ids?.includes(size.id));
+			if (eligible.length > 1) {
+				const allocations = eligible.map((size) => ({
+					inventory_size_id: size.id,
+					received_quantity: Number(sizeQuantities[`${item.id}:${size.id}`]?.received || 0),
+					defective_quantity: Number(sizeQuantities[`${item.id}:${size.id}`]?.defective || 0),
+				}));
+				return {
+					purchase_order_item_id: item.id,
+					received_quantity: allocations.reduce((sum, row) => sum + row.received_quantity, 0),
+					defective_quantity: allocations.reduce((sum, row) => sum + row.defective_quantity, 0),
+					size_quantities: allocations,
+				};
+			}
+
+			return {
+				purchase_order_item_id: item.id,
+				received_quantity: Number(quantities[item.id]?.received || 0),
+				defective_quantity: Number(quantities[item.id]?.defective || 0),
+			};
+		}).filter((item) => item.received_quantity > 0);
 
 		if (!items.length || items.some((item) => item.defective_quantity > item.received_quantity)) {
 			await Swal.fire("Invalid quantities", "Enter a received quantity and keep defects at or below it.", "warning");
@@ -56,6 +83,7 @@ export default function PurchaseOrderReceiptPanel({ order, onChanged, canReceive
 		try {
 			await purchaseOrderApi.receive(order.id, { idempotency_key: key, notes: notes.trim() || undefined, items });
 			setQuantities({});
+			setSizeQuantities({});
 			setNotes("");
 			setIdempotencyKey(null);
 			await onChanged();
@@ -96,16 +124,19 @@ export default function PurchaseOrderReceiptPanel({ order, onChanged, canReceive
 				<table className="min-w-full text-sm">
 					<thead><tr className="text-left text-xs text-gray-500"><th className="py-2 pr-3">Item</th><th className="px-2">Ordered</th><th className="px-2">Accepted</th><th className="px-2">Remaining</th>{canReceive && <><th className="px-2">Received now</th><th className="px-2">Defective</th></>}</tr></thead>
 					<tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-						{(order.items ?? []).map((item) => (
+						{(order.items ?? []).map((item) => {
+							const eligible = (item.inventory_item?.sizes ?? []).filter((size) => item.eligible_size_ids?.includes(size.id));
+							const perSize = eligible.length > 1;
+							return (
 							<tr key={item.id}>
-								<td className="py-2 pr-3 text-gray-900 dark:text-white">{item.product_name}</td>
+								<td className="py-2 pr-3 text-gray-900 dark:text-white">{item.product_name}{perSize && <div className="text-xs text-gray-500">{eligible.map((size) => `${size.size_system ?? "US"} ${size.size}`).join(", ")}</div>}</td>
 								<td className="px-2">{item.ordered_quantity}</td><td className="px-2">{item.accepted_quantity}</td><td className="px-2">{item.remaining_quantity}</td>
 								{canReceive && <>
-									<td className="px-2"><input aria-label={`Received ${item.product_name}`} type="number" min="0" value={quantities[item.id]?.received ?? ""} onChange={(event) => setQuantity(item.id, "received", event.target.value)} className="w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" /></td>
-									<td className="px-2"><input aria-label={`Defective ${item.product_name}`} type="number" min="0" value={quantities[item.id]?.defective ?? ""} onChange={(event) => setQuantity(item.id, "defective", event.target.value)} className="w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" /></td>
+									<td className="px-2">{perSize ? <div className="space-y-1">{eligible.map((size) => { const key = `${item.id}:${size.id}`; const name = `${item.product_name} ${size.size_system ?? "US"} ${size.size}`; return <input key={size.id} aria-label={`Received ${name}`} type="number" min="0" value={sizeQuantities[key]?.received ?? ""} onChange={(event) => setSizeQuantity(item.id, size.id, "received", event.target.value)} className="block w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" />; })}</div> : <input aria-label={`Received ${item.product_name}`} type="number" min="0" value={quantities[item.id]?.received ?? ""} onChange={(event) => setQuantity(item.id, "received", event.target.value)} className="w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" />}</td>
+									<td className="px-2">{perSize ? <div className="space-y-1">{eligible.map((size) => { const key = `${item.id}:${size.id}`; const name = `${item.product_name} ${size.size_system ?? "US"} ${size.size}`; return <input key={size.id} aria-label={`Defective ${name}`} type="number" min="0" value={sizeQuantities[key]?.defective ?? ""} onChange={(event) => setSizeQuantity(item.id, size.id, "defective", event.target.value)} className="block w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" />; })}</div> : <input aria-label={`Defective ${item.product_name}`} type="number" min="0" value={quantities[item.id]?.defective ?? ""} onChange={(event) => setQuantity(item.id, "defective", event.target.value)} className="w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" />}</td>
 								</>}
 							</tr>
-						))}
+						);})}
 					</tbody>
 				</table>
 			</div>

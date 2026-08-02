@@ -33,10 +33,10 @@ class PurchaseOrderReceiptVoidTest extends TestCase
         $this->owner = ShopOwner::factory()->create();
         $this->receiver = User::factory()->for($this->owner)->create();
         $this->supplier = Supplier::factory()->create(['shop_owner_id' => $this->owner->id]);
-        foreach (['procurement.receive_purchase_orders', 'procurement.void_purchase_order_receipts'] as $permission) {
+        foreach (['procurement.receive_purchase_orders', 'procurement.void_purchase_order_receipts', 'view-inventory'] as $permission) {
             Permission::findOrCreate($permission, 'user');
         }
-        $this->receiver->givePermissionTo(['procurement.receive_purchase_orders', 'procurement.void_purchase_order_receipts']);
+        $this->receiver->givePermissionTo(['procurement.receive_purchase_orders', 'procurement.void_purchase_order_receipts', 'view-inventory']);
     }
 
     public function test_void_reverses_inventory_once_and_rejects_submitted_expense(): void
@@ -78,14 +78,29 @@ class PurchaseOrderReceiptVoidTest extends TestCase
             'size_system' => 'US',
             'quantity' => 0,
         ]));
-        [$po, $item] = $this->poItem(2, 100, [
+        [$po, $item] = $this->poItem(3, 100, [
             'inventory_item_id' => $inventory->id,
             'requested_size' => null,
-            'quantity_multiplier' => 3,
+            'quantity_multiplier' => 1,
             'eligible_size_ids' => $sizes->pluck('id')->all(),
-            'line_total' => 600,
+            'line_total' => 300,
         ]);
-        $receiptId = $this->postReceipt($po, $item, 1, 0);
+        $receiptId = (int) $this->actingAs($this->receiver, 'user')->postJson(
+            "/api/erp/procurement/purchase-orders/{$po->id}/receipts",
+            [
+                'idempotency_key' => fake()->uuid(),
+                'items' => [[
+                    'purchase_order_item_id' => $item->id,
+                    'received_quantity' => 3,
+                    'defective_quantity' => 0,
+                    'size_quantities' => $sizes->map(fn ($size) => [
+                        'inventory_size_id' => $size->id,
+                        'received_quantity' => 1,
+                        'defective_quantity' => 0,
+                    ])->all(),
+                ]],
+            ]
+        )->assertCreated()->json('data.id');
 
         $this->actingAs($this->receiver, 'user')->postJson(
             "/api/erp/procurement/purchase-orders/{$po->id}/receipts/{$receiptId}/void",

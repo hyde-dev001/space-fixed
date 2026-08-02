@@ -97,7 +97,7 @@ class PurchaseOrderItem extends Model
 
         return [
             'eligible_size_ids' => $ids,
-            'quantity_multiplier' => trim((string) $requestedSize) === '' ? max(1, count($ids)) : 1,
+            'quantity_multiplier' => 1,
         ];
     }
 }

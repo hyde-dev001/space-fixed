@@ -10,8 +10,10 @@ use App\Models\StockRequestApproval;
 use App\Models\Supplier;
 use App\Models\User;
 use App\Services\PurchaseRequestService;
+use App\Services\StockRequestApprovalService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 class PurchaseRequestWorkflowTest extends TestCase
@@ -34,6 +36,7 @@ class PurchaseRequestWorkflowTest extends TestCase
         $this->give($this->requester, 'procurement.create_purchase_requests');
         $this->give($this->requester, 'procurement.submit_purchase_requests');
         $this->give($this->finance, 'procurement.review_purchase_requests');
+        $this->finance->assignRole(Role::firstOrCreate(['name' => 'Finance', 'guard_name' => 'user']));
     }
 
     public function test_pr_follows_finance_then_shop_owner_approval(): void
@@ -49,6 +52,11 @@ class PurchaseRequestWorkflowTest extends TestCase
             ->postJson("/api/erp/procurement/purchase-requests/{$purchaseRequest->id}/submit-to-finance")
             ->assertOk();
 
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $this->finance->id,
+            'action_url' => "/finance/purchase-request-approval?purchase_request={$purchaseRequest->id}",
+        ]);
+
         $this->actingAs($this->finance)
             ->postJson("/api/erp/procurement/purchase-requests/{$purchaseRequest->id}/approve", [
                 'approval_notes' => 'Budget checked.',
@@ -57,6 +65,10 @@ class PurchaseRequestWorkflowTest extends TestCase
 
         $this->assertSame('pending_shop_owner', $purchaseRequest->fresh()->status);
         $this->assertSame($this->finance->id, $purchaseRequest->fresh()->reviewed_by);
+        $this->assertDatabaseHas('notifications', [
+            'shop_owner_id' => $this->shopOwner->id,
+            'action_url' => "/shop-owner/purchase-request-approval?purchase_request={$purchaseRequest->id}",
+        ]);
 
         $this->actingAs($this->shopOwner, 'shop_owner')
             ->postJson("/api/shop-owner/purchase-requests/{$purchaseRequest->id}/approve", [
@@ -68,6 +80,11 @@ class PurchaseRequestWorkflowTest extends TestCase
         $this->assertSame('pending_finance_final', $ownerApproved->status);
         $this->assertSame($this->shopOwner->id, $ownerApproved->approved_by_shop_owner_id);
         $this->assertNull($ownerApproved->approved_by);
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $this->finance->id,
+            'title' => 'Purchase Request Returned To Finance',
+            'action_url' => "/finance/purchase-request-approval?purchase_request={$purchaseRequest->id}",
+        ]);
 
         $this->actingAs($this->finance, 'user')
             ->postJson("/api/erp/procurement/purchase-requests/{$purchaseRequest->id}/approve", [
@@ -80,6 +97,26 @@ class PurchaseRequestWorkflowTest extends TestCase
         $this->assertSame($this->finance->id, $final->approved_by);
         $this->assertSame($this->finance->id, $final->reviewed_by);
         $this->assertSame($this->shopOwner->id, $final->approved_by_shop_owner_id);
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $this->requester->id,
+            'action_url' => "/erp/procurement/purchase-request?purchase_request={$purchaseRequest->id}",
+        ]);
+    }
+
+    public function test_stock_request_result_notification_returns_inventory_requester_to_inventory_page(): void
+    {
+        $stockRequest = StockRequestApproval::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'requested_by' => $this->requester->id,
+            'status' => 'pending',
+        ]);
+
+        app(StockRequestApprovalService::class)->approveStockRequest($stockRequest->id, $this->finance->id);
+
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $this->requester->id,
+            'action_url' => "/erp/inventory/stock-request?stock_request={$stockRequest->id}",
+        ]);
     }
 
     public function test_each_actor_rejection_uses_its_own_foreign_key(): void

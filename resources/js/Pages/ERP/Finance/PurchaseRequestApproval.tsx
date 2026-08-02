@@ -140,16 +140,10 @@ const getAvailableSizeLabels = (
 
 const getEffectiveQuantity = (
 	quantity: number,
-	unitCost: number,
-	totalCost: number,
-	isAllSizes: boolean,
-): number => {
-	if (!isAllSizes) return quantity;
-	if (unitCost <= 0) return quantity;
-
-	const calculatedQuantity = Math.round(totalCost / unitCost);
-	return calculatedQuantity > 0 ? calculatedQuantity : quantity;
-};
+	_unitCost?: number,
+	_totalCost?: number,
+	_isAllSizes?: boolean,
+): number => quantity;
 
 const isRepairMaterialsRequest = (request: PurchaseRequestApprovalItem): boolean => {
 	const category = String((request as any)?.inventory_item?.category || "").trim().toLowerCase();
@@ -260,6 +254,10 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 	const [statusFilter, setStatusFilter] = useState<"all" | ApprovalStatus>("all");
 	const [currentPage, setCurrentPage] = useState(1);
 	const [viewingRequest, setViewingRequest] = useState<PurchaseRequestApprovalItem | null>(null);
+	useEffect(() => {
+		const id = Number(new URLSearchParams(window.location.search).get("purchase_request"));
+		if (id > 0) setViewingRequest(requests.find((request) => request.id === id) ?? null);
+	}, [requests]);
 
 	const fetchPurchaseRequests = async () => {
 		try {

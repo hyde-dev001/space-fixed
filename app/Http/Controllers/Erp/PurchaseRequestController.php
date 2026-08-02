@@ -7,7 +7,6 @@ use App\Models\PurchaseRequest;
 use App\Http\Requests\StorePurchaseRequestRequest;
 use App\Http\Requests\ApprovePurchaseRequestRequest;
 use App\Http\Requests\RejectPurchaseRequestRequest;
-use App\Models\InventoryItem;
 use App\Models\StockRequestApproval;
 use App\Services\PurchaseRequestService;
 use Illuminate\Database\QueryException;

@@ -46,6 +46,40 @@ describe("PurchaseOrderReceiptPanel", () => {
 		expect(screen.queryByRole("button", { name: "Void" })).not.toBeInTheDocument();
 	});
 
+	it("posts exact quantities per snapshotted shoe size", async () => {
+		vi.mocked(purchaseOrderApi.receive).mockResolvedValue({} as any);
+		render(<PurchaseOrderReceiptPanel order={order({
+			items: [{
+				id: 20, purchase_order_id: 10, product_name: "Shoe", ordered_quantity: 5,
+				accepted_quantity: 0, remaining_quantity: 5, unit_cost: 100, line_total: 500,
+				quantity_multiplier: 1, eligible_size_ids: [71, 72],
+				inventory_item: { sizes: [
+					{ id: 71, size: "7", size_system: "US" },
+					{ id: 72, size: "8", size_system: "US" },
+				] },
+			} as any],
+		})} onChanged={vi.fn().mockResolvedValue(undefined)} />);
+
+		fireEvent.change(screen.getByLabelText("Received Shoe US 7"), { target: { value: "2" } });
+		fireEvent.change(screen.getByLabelText("Received Shoe US 8"), { target: { value: "3" } });
+		fireEvent.change(screen.getByLabelText("Defective Shoe US 8"), { target: { value: "1" } });
+		fireEvent.click(screen.getByRole("button", { name: "Post receipt" }));
+
+		await waitFor(() => expect(purchaseOrderApi.receive).toHaveBeenCalledWith(10, {
+			idempotency_key: "123e4567-e89b-12d3-a456-426614174000",
+			notes: undefined,
+			items: [{
+				purchase_order_item_id: 20,
+				received_quantity: 5,
+				defective_quantity: 1,
+				size_quantities: [
+					{ inventory_size_id: 71, received_quantity: 2, defective_quantity: 0 },
+					{ inventory_size_id: 72, received_quantity: 3, defective_quantity: 1 },
+				],
+			}],
+		}));
+	});
+
 	it("hides receiving and void actions when the user lacks those permissions", () => {
 		render(<PurchaseOrderReceiptPanel
 			order={order({ receipts: [{ id: 1, purchase_order_id: 10, source: "manual", status: "posted", received_at: "2026-08-02", items: [] }] })}

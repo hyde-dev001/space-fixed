@@ -62,12 +62,16 @@ class BackfillPurchaseOrderItems extends Command
             $purchaseOrder->requested_color
         );
         $eligibleSizeIds = $snapshot['eligible_size_ids'];
-        $multiplier = $snapshot['quantity_multiplier'];
         $terminal = in_array($purchaseOrder->status, ['delivered', 'completed', 'cancelled'], true);
         $allSizes = blank($purchaseOrder->requested_size) && $eligibleSizeIds !== [];
-        $expectedTotal = round($purchaseOrder->quantity * (float) $purchaseOrder->unit_cost * $multiplier, 2);
+        $unitCost = (float) $purchaseOrder->unit_cost;
+        $derivedQuantity = $unitCost > 0 ? (int) round((float) $purchaseOrder->total_cost / $unitCost) : (int) $purchaseOrder->quantity;
+        $totalMatchesUnits = abs(($derivedQuantity * $unitCost) - (float) $purchaseOrder->total_cost) <= 0.009;
+        $orderedQuantity = !$terminal && $allSizes && $totalMatchesUnits
+            ? max((int) $purchaseOrder->quantity, $derivedQuantity)
+            : (int) $purchaseOrder->quantity;
 
-        if (!$terminal && $allSizes && abs($expectedTotal - (float) $purchaseOrder->total_cost) > 0.009) {
+        if (!$terminal && $allSizes && !$totalMatchesUnits) {
             $this->unresolved++;
             $this->warn("PO {$purchaseOrder->po_number} has an all-size total that does not match its current size snapshot.");
             return;
@@ -89,7 +93,10 @@ class BackfillPurchaseOrderItems extends Command
             return;
         }
 
-        DB::transaction(function () use ($purchaseOrder, $eligibleSizeIds, $multiplier, $terminal, $hasReceipt): void {
+        DB::transaction(function () use ($purchaseOrder, $eligibleSizeIds, $orderedQuantity, $terminal, $hasReceipt): void {
+            if (!$terminal && $purchaseOrder->quantity !== $orderedQuantity) {
+                $purchaseOrder->update(['quantity' => $orderedQuantity]);
+            }
             $item = PurchaseOrderItem::firstOrCreate(
                 ['purchase_order_id' => $purchaseOrder->id, 'source' => 'migration'],
                 [
@@ -98,10 +105,10 @@ class BackfillPurchaseOrderItems extends Command
                     'product_name' => $purchaseOrder->product_name,
                     'requested_size' => $purchaseOrder->requested_size,
                     'requested_color' => $purchaseOrder->requested_color,
-                    'ordered_quantity' => $purchaseOrder->quantity,
+                    'ordered_quantity' => $orderedQuantity,
                     'unit_cost' => $purchaseOrder->unit_cost,
                     'line_total' => $purchaseOrder->total_cost,
-                    'quantity_multiplier' => $multiplier,
+                    'quantity_multiplier' => 1,
                     'eligible_size_ids' => $eligibleSizeIds,
                 ]
             );

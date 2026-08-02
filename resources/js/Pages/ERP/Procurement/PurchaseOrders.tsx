@@ -76,16 +76,10 @@ const isAllSizesRequest = (requestedSize?: string | null, category?: string | nu
 
 const getEffectiveQuantity = (
 	quantity: number,
-	unitCost: number,
-	totalCost: number,
-	isAllSizes: boolean,
-): number => {
-	if (!isAllSizes) return quantity;
-	if (unitCost <= 0) return quantity;
-
-	const calculatedQuantity = Math.round(totalCost / unitCost);
-	return calculatedQuantity > 0 ? calculatedQuantity : quantity;
-};
+	_unitCost?: number,
+	_totalCost?: number,
+	_isAllSizes?: boolean,
+): number => quantity;
 
 const formatSizeRowLabel = (size?: string | null, sizeSystem?: string | null): string => {
 	const rawSize = (size ?? "").trim();
@@ -357,7 +351,6 @@ export default function PurchaseOrders() {
 	const canManage = hasPermission(auth, "procurement.manage_purchase_orders");
 	const canComplete = hasPermission(auth, "procurement.complete_purchase_orders");
 	const canCancel = hasPermission(auth, "procurement.cancel_purchase_orders");
-	const canReceive = hasPermission(auth, "procurement.receive_purchase_orders");
 	const canVoid = hasPermission(auth, "procurement.void_purchase_order_receipts");
 	const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderType[]>(initialData?.data ?? []);
 	const [approvedPRs, setApprovedPRs] = useState<PurchaseRequest[]>(initialApprovedPRs ?? []);
@@ -1161,7 +1154,7 @@ export default function PurchaseOrders() {
 
 							<PurchaseOrderReceiptPanel
 								order={viewingOrder}
-								canReceive={canReceive}
+								canReceive={false}
 								canVoid={canVoid}
 								onChanged={async () => {
 									const refreshed = await purchaseOrderApi.getById(viewingOrder.id);

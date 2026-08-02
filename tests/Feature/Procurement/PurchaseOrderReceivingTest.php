@@ -14,6 +14,7 @@ use App\Models\Supplier;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 class PurchaseOrderReceivingTest extends TestCase
@@ -32,12 +33,15 @@ class PurchaseOrderReceivingTest extends TestCase
         $this->receiver = User::factory()->for($this->owner)->create();
         $this->supplier = Supplier::factory()->create(['shop_owner_id' => $this->owner->id]);
         Permission::findOrCreate('procurement.receive_purchase_orders', 'user');
+        Permission::findOrCreate('view-inventory', 'user');
         Permission::findOrCreate('access-finance-expenses', 'user');
-        $this->receiver->givePermissionTo('procurement.receive_purchase_orders');
+        $this->receiver->givePermissionTo(['procurement.receive_purchase_orders', 'view-inventory']);
     }
 
     public function test_partial_receipt_posts_inventory_and_submitted_expense_once(): void
     {
+        $finance = User::factory()->for($this->owner)->create();
+        $finance->assignRole(Role::firstOrCreate(['name' => 'Finance', 'guard_name' => 'user']));
         [$po, $item, $inventory] = $this->poItem(5, 100);
         $payload = $this->payload('receive-1', $item->id, 3, 1);
 
@@ -59,6 +63,17 @@ class PurchaseOrderReceivingTest extends TestCase
         $this->assertSame($this->receiver->id, $expense->created_by);
         $this->assertSame('200.00', $expense->amount);
         $this->assertSame($response->json('data.id'), $expense->procurement_receipt_id);
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $finance->id,
+            'action_url' => '/erp/finance/expenses',
+        ]);
+        $this->actingAs($this->owner, 'shop_owner')
+            ->getJson('/api/shop-owner/expenses?status=submitted')
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+        $this->actingAs($this->owner, 'shop_owner')
+            ->postJson("/api/shop-owner/expenses/{$expense->id}/approve")
+            ->assertNotFound();
         $this->receiver->givePermissionTo('access-finance-expenses');
         $this->actingAs($this->receiver, 'user')->getJson("/api/finance/expenses/{$expense->id}")
             ->assertOk()
@@ -107,7 +122,7 @@ class PurchaseOrderReceivingTest extends TestCase
         $this->assertEqualsCanonicalizing(['300.00', '200.00'], Expense::pluck('amount')->all());
     }
 
-    public function test_all_size_receipt_uses_the_frozen_multiplier_and_size_ids(): void
+    public function test_all_size_receipt_posts_exact_inventory_allocations(): void
     {
         $inventory = InventoryItem::factory()->create([
             'shop_owner_id' => $this->owner->id,
@@ -120,21 +135,56 @@ class PurchaseOrderReceivingTest extends TestCase
             'size_system' => 'US',
             'quantity' => 0,
         ]));
-        [$po, $item] = $this->poItem(2, 100, [
+        [$po, $item] = $this->poItem(5, 100, [
             'inventory_item_id' => $inventory->id,
             'requested_size' => null,
-            'quantity_multiplier' => 3,
+            'quantity_multiplier' => 1,
             'eligible_size_ids' => $sizes->pluck('id')->all(),
-            'line_total' => 600,
+            'line_total' => 500,
         ]);
 
         $this->actingAs($this->receiver, 'user')
-            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts", $this->payload('all-sizes', $item->id, 1, 0))
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts", [
+                'idempotency_key' => 'all-sizes',
+                'items' => [[
+                    'purchase_order_item_id' => $item->id,
+                    'received_quantity' => 5,
+                    'defective_quantity' => 1,
+                    'size_quantities' => [
+                        ['inventory_size_id' => $sizes[0]->id, 'received_quantity' => 2, 'defective_quantity' => 0],
+                        ['inventory_size_id' => $sizes[1]->id, 'received_quantity' => 1, 'defective_quantity' => 1],
+                        ['inventory_size_id' => $sizes[2]->id, 'received_quantity' => 2, 'defective_quantity' => 0],
+                    ],
+                ]],
+            ])
             ->assertCreated();
 
-        $this->assertSame(3, $inventory->fresh()->available_quantity);
-        $this->assertSame([1, 1, 1], $sizes->map(fn ($size) => $size->fresh()->quantity)->all());
-        $this->assertSame('300.00', Expense::sole()->amount);
+        $this->assertSame(4, $inventory->fresh()->available_quantity);
+        $this->assertSame([2, 0, 2], $sizes->map(fn ($size) => $size->fresh()->quantity)->all());
+        $this->assertSame('400.00', Expense::sole()->amount);
+        $this->assertSame('partially_received', $po->fresh()->status);
+    }
+
+    public function test_all_size_receipt_requires_each_snapshotted_size(): void
+    {
+        $inventory = InventoryItem::factory()->create(['shop_owner_id' => $this->owner->id, 'category' => 'shoes']);
+        $sizes = collect(['7', '8'])->map(fn ($size) => InventorySize::create([
+            'inventory_item_id' => $inventory->id,
+            'size' => $size,
+            'size_system' => 'US',
+            'quantity' => 0,
+        ]));
+        [$po, $item] = $this->poItem(2, 100, [
+            'inventory_item_id' => $inventory->id,
+            'requested_size' => null,
+            'eligible_size_ids' => $sizes->pluck('id')->all(),
+        ]);
+
+        $this->actingAs($this->receiver, 'user')
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts", $this->payload('missing-allocation', $item->id, 2, 0))
+            ->assertUnprocessable();
+
+        $this->assertSame(0, PurchaseOrderReceipt::count());
     }
 
     public function test_specific_size_full_receipt_delivers_and_updates_only_that_size(): void

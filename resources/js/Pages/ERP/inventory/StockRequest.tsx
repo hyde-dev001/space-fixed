@@ -216,6 +216,10 @@ export default function StockRequest() {
 	const [isSubmittingCreateRequest, setIsSubmittingCreateRequest] = useState(false);
 	const [formData, setFormData] = useState<RequestFormState>(initialFormState);
 	const [viewingRequest, setViewingRequest] = useState<StockRequestApproval | null>(null);
+	useEffect(() => {
+		const id = Number(new URLSearchParams(window.location.search).get("stock_request"));
+		if (id > 0) setViewingRequest(requests.find((request) => request.id === id) ?? null);
+	}, [requests]);
 	const [isProductPickerOpen, setIsProductPickerOpen] = useState(false);
 	const [productPickerSearch, setProductPickerSearch] = useState("");
 	const isCreateFormDirty = useMemo(
@@ -322,53 +326,8 @@ export default function StockRequest() {
 		return sizeOptionsForSelectedColor.find((option) => option.label === formData.requestSize) ?? null;
 	}, [formData.requestSize, sizeOptionsForSelectedColor]);
 
-	const inventoryItemsById = useMemo(() => {
-		const map = new Map<number, InventoryItem>();
-		for (const item of inventoryItems) {
-			map.set(Number(item.id), item);
-		}
-		return map;
-	}, [inventoryItems]);
-
-	const getAllSizeMultiplierForRequest = (request: StockRequestApproval): number => {
-		if (!isAllSizesRequest(request.requested_size)) {
-			return 1;
-		}
-
-		const inventoryItemId = Number(request.inventory_item_id);
-		const item = inventoryItemsById.get(inventoryItemId);
-		if (!item || item.category !== "shoes") {
-			return 1;
-		}
-
-		const requestedColor = (request.requested_color ?? "").trim().toLowerCase();
-		if (requestedColor) {
-			const matchedVariant = (item.color_variants ?? []).find(
-				(variant) => String(variant.color_name).trim().toLowerCase() === requestedColor,
-			);
-
-			if (matchedVariant) {
-				const variantSizeCount = (matchedVariant.sizes ?? []).length;
-				if (variantSizeCount > 0) {
-					return variantSizeCount;
-				}
-
-				const scopedSizeCount = (item.sizes ?? []).filter(
-					(sizeOption) => Number(sizeOption.inventory_color_variant_id) === Number(matchedVariant.id),
-				).length;
-
-				if (scopedSizeCount > 0) {
-					return scopedSizeCount;
-				}
-			}
-		}
-
-		const fallbackSizeCount = (item.sizes ?? []).length;
-		return fallbackSizeCount > 0 ? fallbackSizeCount : 1;
-	};
-
 	const getEffectiveQuantityNeeded = (request: StockRequestApproval): number => {
-		return Number(request.quantity_needed ?? 0) * getAllSizeMultiplierForRequest(request);
+		return Number(request.quantity_needed ?? 0);
 	};
 
 	useEffect(() => {

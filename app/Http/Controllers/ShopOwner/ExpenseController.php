@@ -30,6 +30,7 @@ class ExpenseController extends Controller
         $shopOwner = $this->shopOwner();
 
         $query = Expense::where('shop_id', $shopOwner->id)
+            ->whereNull('procurement_receipt_id')
             ->orderByDesc('date')
             ->orderByDesc('created_at');
 
@@ -58,7 +59,7 @@ class ExpenseController extends Controller
     {
         $shopOwner = $this->shopOwner();
 
-        $expense = Expense::where('shop_id', $shopOwner->id)->findOrFail($id);
+        $expense = Expense::where('shop_id', $shopOwner->id)->whereNull('procurement_receipt_id')->findOrFail($id);
 
         // If expense has 4-step approval workflow, use it
         if ($expense->approval_id && $expense->approval_workflow_version === 'v4_multi_level') {
@@ -162,7 +163,7 @@ class ExpenseController extends Controller
     {
         $shopOwner = $this->shopOwner();
 
-        $expense = Expense::where('shop_id', $shopOwner->id)->findOrFail($id);
+        $expense = Expense::where('shop_id', $shopOwner->id)->whereNull('procurement_receipt_id')->findOrFail($id);
 
         if ($expense->status !== 'submitted') {
             return response()->json([

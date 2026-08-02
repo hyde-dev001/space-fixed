@@ -193,16 +193,10 @@ const getAvailableSizeLabels = (
 
 const getEffectiveQuantity = (
 	quantity: number,
-	unitCost: number,
-	totalCost: number,
-	isAllSizes: boolean,
-): number => {
-	if (!isAllSizes) return quantity;
-	if (unitCost <= 0) return quantity;
-
-	const calculatedQuantity = Math.round(totalCost / unitCost);
-	return calculatedQuantity > 0 ? calculatedQuantity : quantity;
-};
+	_unitCost?: number,
+	_totalCost?: number,
+	_isAllSizes?: boolean,
+): number => quantity;
 
 interface MetricCardProps {
 	title: string;
@@ -298,6 +292,10 @@ export default function PurchaseRequest() {
 	const [currentPage, setCurrentPage] = useState(1);
 	const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 	const [viewingRequest, setViewingRequest] = useState<PurchaseRequestType | null>(null);
+	useEffect(() => {
+		const id = Number(new URLSearchParams(window.location.search).get("purchase_request"));
+		if (id > 0) setViewingRequest(purchaseRequests.find((request) => request.id === id) ?? null);
+	}, [purchaseRequests]);
 	const [formData, setFormData] = useState<PurchaseRequestFormState>(initialFormState);
 	const [metrics, setMetrics] = useState({ total_requests: 0, pending_finance: 0, approved: 0 });
 	const isCreateFormDirty = useMemo(

@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\ShopOwner;
 
 use App\Http\Controllers\Controller;
-use App\Models\InventoryItem;
 use App\Models\PurchaseRequest;
 use App\Services\PurchaseRequestService;
 use Illuminate\Http\Request;
@@ -197,57 +196,6 @@ class PurchaseRequestController extends Controller
         $quantity = (int) ($data['quantity'] ?? 0);
         $unitCost = (float) ($data['unit_cost'] ?? 0);
 
-        if ($quantity <= 0 || $unitCost < 0) {
-            return 0;
-        }
-
-        $requestedSize = trim((string) ($data['requested_size'] ?? ''));
-        $requestedColor = trim((string) ($data['requested_color'] ?? ''));
-
-        if (!$this->isAllSizesRequest($requestedSize)) {
-            return round($quantity * $unitCost, 2);
-        }
-
-        $inventoryItemId = $data['inventory_item_id'] ?? null;
-        if (!$inventoryItemId) {
-            return round($quantity * $unitCost, 2);
-        }
-
-        $inventoryItem = InventoryItem::query()
-            ->whereKey($inventoryItemId)
-            ->where('shop_owner_id', $shopOwnerId)
-            ->first();
-
-        if (!$inventoryItem) {
-            return round($quantity * $unitCost, 2);
-        }
-
-        $sizeRowsQuery = $inventoryItem->sizes();
-
-        if ($requestedColor !== '') {
-            $targetColorVariant = $inventoryItem->colorVariants()
-                ->whereRaw('LOWER(color_name) = ?', [strtolower($requestedColor)])
-                ->first();
-
-            if ($targetColorVariant) {
-                $sizeRowsQuery->where('inventory_color_variant_id', $targetColorVariant->id);
-            }
-        }
-
-        $sizeRowCount = $sizeRowsQuery->count();
-        $effectiveQuantity = $quantity * max(1, $sizeRowCount);
-
-        return round($effectiveQuantity * $unitCost, 2);
-    }
-
-    private function isAllSizesRequest(?string $requestedSize): bool
-    {
-        $normalized = strtolower(trim((string) $requestedSize));
-        if ($normalized === '') {
-            return true;
-        }
-
-        $normalized = preg_replace('/[\s-]+/', '_', $normalized) ?? $normalized;
-        return in_array($normalized, ['all', 'all_sizes', 'all_size', 'any'], true);
+        return $quantity > 0 && $unitCost >= 0 ? round($quantity * $unitCost, 2) : 0;
     }
 }
