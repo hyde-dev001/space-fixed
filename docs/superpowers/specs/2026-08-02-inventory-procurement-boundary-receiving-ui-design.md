@@ -36,7 +36,7 @@ Existing receipt behavior remains unchanged:
 - Defective quantity cannot exceed received quantity.
 - Accepted quantity is received minus defective.
 - Only accepted units enter usable stock.
-- The receipt continues to create a pending Finance expense.
+- Existing Finance behavior remains unchanged: when the receipt rules generate an expense, it is created as pending for review.
 
 ## Permissions
 
