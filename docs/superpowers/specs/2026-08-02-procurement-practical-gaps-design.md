@@ -93,7 +93,7 @@ Every procurement notification uses a real page the recipient can access and inc
 
 - Inventory stock-request requester: `/erp/inventory/stock-request?stock_request=<id>`
 - Procurement stock-request reviewer: `/erp/procurement/stock-request-approval?stock_request=<id>`
-- Finance PR reviewer: `/finance/purchase-request-approval?purchase_request=<id>`
+- Finance PR reviewer: `/finance?section=purchase-request-approval&purchase_request=<id>`
 - Shop Owner PR reviewer: `/shop-owner/purchase-request-approval?purchase_request=<id>`
 - Procurement PR requester: `/erp/procurement/purchase-request?purchase_request=<id>`
 
@@ -140,6 +140,20 @@ Automated tests cover:
 10. Existing multiplied records normalize once without changing stock or creating duplicate movements/expenses.
 
 Manual verification covers the seven reported scenarios with two shops and Inventory, Procurement, Finance, and Shop Owner accounts.
+
+## Follow-up: consumed requests and all-size clarity
+
+An accepted Stock Request becomes unavailable for PR creation as soon as any Purchase Request links to it. The initial Inertia payload and the modal refresh API both exclude linked Stock Requests; the existing unique `stock_request_id` validation remains the final duplicate-write guard. Rejected, approved, and completed PRs all keep their source Stock Request consumed; a new need starts with a new Stock Request.
+
+All-size quantities remain physical totals, not per-size multipliers. Inventory Stock Request details, Procurement Stock Request review, Procurement PR details, Finance PR details, and Shop Owner PR details show:
+
+- `Requested Size: All Sizes`
+- the included size labels for the requested color when available
+- `Total Quantity Across All Sizes: <quantity> units`
+
+Specific-size and non-shoe records keep the shorter `Quantity` or `Quantity Needed` wording. Exact distribution among included sizes is recorded during Inventory receiving.
+
+The PO builder uses the same wording (`<quantity> total units across All Sizes`) so selecting an approved PR cannot be mistaken for a per-size multiplier. Finance notifications enter through the Finance shell, and the legacy standalone Finance approval URL redirects there while preserving the selected PR.
 
 ## Explicitly deferred
 

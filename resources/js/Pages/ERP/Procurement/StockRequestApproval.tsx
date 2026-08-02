@@ -645,8 +645,14 @@ export default function StockRequest() {
 
 								<div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
 									<div className="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-800/40">
-										<p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Quantity Needed</p>
-										<p className="mt-1 text-lg font-semibold tabular-nums text-gray-900 dark:text-white">{formatQuantity(viewingRequest.quantity_needed)}</p>
+										<p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+											{viewingRequest.inventory_item?.category === "shoes" && isAllSizesRequest(viewingRequest.requested_size)
+												? "Total Quantity Across All Sizes"
+												: "Quantity Needed"}
+										</p>
+										<p className="mt-1 text-lg font-semibold tabular-nums text-gray-900 dark:text-white">
+											{formatQuantity(viewingRequest.quantity_needed)}{viewingRequest.inventory_item?.category === "shoes" && isAllSizesRequest(viewingRequest.requested_size) ? " units" : ""}
+										</p>
 									</div>
 									<div className="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-800/40">
 										<p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Priority</p>

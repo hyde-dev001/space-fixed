@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import PurchaseOrders from "../PurchaseOrders";
 
 const mocks = vi.hoisted(() => {
@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => {
 		receipts: [],
 	};
 
-	return { order };
+	return { order, approvedPrs: [] as any[], permissions: ["procurement.complete_purchase_orders"] };
 });
 
 vi.mock("@inertiajs/react", () => ({
@@ -30,8 +30,8 @@ vi.mock("@inertiajs/react", () => ({
 	usePage: () => ({
 		props: {
 			initialData: { data: [mocks.order] },
-			initialApprovedPRs: [],
-			auth: { permissions: ["procurement.complete_purchase_orders"] },
+			initialApprovedPRs: mocks.approvedPrs,
+			auth: { permissions: mocks.permissions },
 		},
 	}),
 }));
@@ -46,11 +46,16 @@ vi.mock("@/services/purchaseOrderApi", () => ({
 		cancel: vi.fn(),
 	},
 }));
-vi.mock("@/services/purchaseRequestApi", () => ({ purchaseRequestApi: { getApproved: vi.fn().mockResolvedValue([]) } }));
+vi.mock("@/services/purchaseRequestApi", () => ({ purchaseRequestApi: { getApproved: vi.fn(() => Promise.resolve(mocks.approvedPrs)) } }));
 vi.mock("../components/PurchaseOrderReceiptPanel", () => ({ default: () => null }));
 vi.mock("sweetalert2", () => ({ default: { fire: vi.fn() } }));
 
 describe("Purchase Orders lifecycle actions", () => {
+	beforeEach(() => {
+		mocks.approvedPrs.length = 0;
+		mocks.permissions.splice(0, mocks.permissions.length, "procurement.complete_purchase_orders");
+	});
+
 	it("allows an authorized user to complete a delivered order", async () => {
 		render(<PurchaseOrders />);
 		fireEvent.click(await screen.findByTitle("View details"));
@@ -63,5 +68,24 @@ describe("Purchase Orders lifecycle actions", () => {
 		await screen.findByTitle("View details");
 
 		expect(screen.queryByRole("button", { name: "+ New PO" })).not.toBeInTheDocument();
+	});
+
+	it("describes an all-size PR quantity as one total in the PO selector", async () => {
+		mocks.permissions.push("procurement.create_purchase_orders");
+		mocks.approvedPrs.push({
+			id: 20,
+			pr_number: "PR-20",
+			product_name: "Runner",
+			quantity: 50,
+			unit_cost: 100,
+			total_cost: 5000,
+			requested_size: "",
+			inventory_item: { category: "shoes" },
+		});
+
+		render(<PurchaseOrders />);
+		fireEvent.click(await screen.findByRole("button", { name: "+ New PO" }));
+
+		expect(await screen.findByRole("option", { name: /Qty: 50 total units across All Sizes/ })).toBeInTheDocument();
 	});
 });

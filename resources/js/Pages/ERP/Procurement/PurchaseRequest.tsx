@@ -40,7 +40,6 @@ const initialFormState: PurchaseRequestFormState = {
 };
 
 const PURCHASE_REQUEST_DRAFT_KEY = "erp.purchase-request.create-modal.draft";
-const STOCK_REQUEST_NOTE_MARKER_REGEX = /\[stock_request_id:(\d+)\]/i;
 
 const formatPriority = (priority: string): string => {
 	const map: Record<string, string> = {
@@ -343,7 +342,7 @@ export default function PurchaseRequest() {
 	// Fetch accepted stock requests — only these may become a PR
 	const fetchAcceptedStockRequests = async (): Promise<StockRequestApproval[]> => {
 		try {
-			const response = await stockRequestApi.getAll({ status: 'accepted', per_page: 200 });
+			const response = await stockRequestApi.getAll({ status: 'accepted', available_for_purchase_request: true, per_page: 200 });
 			const data = (response as any).data ?? response ?? [];
 			const requests = Array.isArray(data) ? data : [];
 			setAcceptedStockRequests(requests);
@@ -458,25 +457,6 @@ export default function PurchaseRequest() {
 	const totalPages = Math.max(1, Math.ceil((filteredData?.length || 0) / itemsPerPage));
 	const startIndex = (currentPage - 1) * itemsPerPage;
 	const paginatedItems = filteredData?.slice(startIndex, startIndex + itemsPerPage) || [];
-
-	const processedStockRequestIds = useMemo(() => {
-		return new Set(
-			(purchaseRequests || [])
-				.filter((pr) => pr.status !== "rejected")
-				.map((pr) => {
-					const noteValue = String(pr.notes || "");
-					const match = noteValue.match(STOCK_REQUEST_NOTE_MARKER_REGEX);
-					return match ? Number(match[1]) : null;
-				})
-				.filter((id): id is number => id !== null && !Number.isNaN(id))
-		);
-	}, [purchaseRequests]);
-
-	const availableAcceptedStockRequests = useMemo(() => {
-		return acceptedStockRequests.filter((sr) => {
-			return !processedStockRequestIds.has(Number(sr.id));
-		});
-	}, [acceptedStockRequests, processedStockRequestIds]);
 
 	const selectedStockRequest = useMemo(
 		() => acceptedStockRequests.find((sr) => String(sr.id) === formData.stockRequestId),
@@ -825,14 +805,14 @@ export default function PurchaseRequest() {
 									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
 								>
 									<option value="">— Select an approved stock request —</option>
-									{availableAcceptedStockRequests
+									{acceptedStockRequests
 										.map((sr) => (
 											<option key={sr.id} value={String(sr.id)}>
-												{sr.request_number} — {sr.product_name} (Qty: {sr.quantity_needed}{shouldShowRequestedSize(sr.requested_size, sr.inventory_item?.category) ? `, ${getRequestedSizeLabel(sr.requested_size)}` : ""}{sr.requested_color ? `, Color ${sr.requested_color}` : ""})
+												{sr.request_number} — {sr.product_name} (Qty: {sr.quantity_needed}{isAllSizesRequest(sr.requested_size, sr.inventory_item?.category) ? " total units across All Sizes" : shouldShowRequestedSize(sr.requested_size, sr.inventory_item?.category) ? `, ${getRequestedSizeLabel(sr.requested_size)}` : " units"}{sr.requested_color ? `, Color ${sr.requested_color}` : ""})
 											</option>
 										))}
 								</select>
-								{availableAcceptedStockRequests.length === 0 && (
+								{acceptedStockRequests.length === 0 && (
 									<p className="mt-1 text-xs text-amber-600 dark:text-amber-400">⚠ No approved stock requests yet. Inventory staff must submit and get approval first.</p>
 								)}
 							</div>
@@ -894,7 +874,11 @@ export default function PurchaseRequest() {
 
 							<div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
 								<div>
-									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Quantity</label>
+									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+										{selectedStockRequest && isAllSizesRequest(selectedStockRequest.requested_size, selectedStockRequest.inventory_item?.category)
+											? "Total Quantity Across All Sizes"
+											: "Quantity"}
+									</label>
 									<input
 										type="number"
 										min={1}
@@ -1017,14 +1001,18 @@ export default function PurchaseRequest() {
 
 							<div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
-									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Quantity</p>
+									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
+										{isAllSizesRequest(viewingRequest.requested_size, viewingRequest.inventory_item?.category)
+											? "Total Quantity Across All Sizes"
+											: "Quantity"}
+									</p>
 									<p className="text-base font-semibold text-gray-900 dark:text-white">
 										{getEffectiveQuantity(
 											viewingRequest.quantity,
 											viewingRequest.unit_cost,
 											viewingRequest.total_cost,
 											isAllSizesRequest(viewingRequest.requested_size, viewingRequest.inventory_item?.category),
-										)}
+										)}{isAllSizesRequest(viewingRequest.requested_size, viewingRequest.inventory_item?.category) ? " units" : ""}
 									</p>
 								</div>
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">

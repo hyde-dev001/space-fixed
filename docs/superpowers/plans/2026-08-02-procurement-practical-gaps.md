@@ -110,7 +110,7 @@ Assert exact actions:
 ```text
 /erp/inventory/stock-request?stock_request=<id>
 /erp/procurement/stock-request-approval?stock_request=<id>
-/finance/purchase-request-approval?purchase_request=<id>
+/finance?section=purchase-request-approval&purchase_request=<id>
 /shop-owner/purchase-request-approval?purchase_request=<id>
 /erp/procurement/purchase-request?purchase_request=<id>
 ```
@@ -158,6 +158,9 @@ Commit: `fix: route procurement notifications by recipient`
 - Modify: `resources/js/Pages/ERP/Procurement/PurchaseRequest.tsx`
 - Modify: `resources/js/Pages/ERP/Finance/PurchaseRequestApproval.tsx`
 - Modify: `resources/js/Pages/ShopOwner/Approvals/PurchaseRequestApproval.tsx`
+- Modify: `resources/js/Pages/ERP/Procurement/PurchaseOrders.tsx`
+- Modify: `app/Services/NotificationService.php`
+- Modify: `app/Services/PurchaseRequestService.php`
 - Modify: `resources/js/Pages/ERP/Procurement/PurchaseOrders.tsx`
 
 - [ ] **Step 1: Write failing new-record tests**
@@ -378,6 +381,63 @@ Commit: `docs: finalize procurement practical workflow`
 
 ---
 
+### Task 8: Hide consumed Stock Requests and clarify all-size totals
+
+**Files:**
+- Modify: `app/Models/StockRequestApproval.php`
+- Modify: `app/Http/Controllers/Erp/StockRequestApprovalController.php`
+- Modify: `routes/web.php`
+- Modify: `resources/js/services/stockRequestApi.ts`
+- Modify: `resources/js/types/procurement.ts`
+- Modify: `resources/js/Pages/ERP/Procurement/PurchaseRequest.tsx`
+- Modify: `resources/js/Pages/ERP/Procurement/StockRequestApproval.tsx`
+- Modify: `resources/js/Pages/ERP/inventory/StockRequest.tsx`
+- Modify: `resources/js/Pages/ERP/Finance/PurchaseRequestApproval.tsx`
+- Modify: `resources/js/Pages/ShopOwner/Approvals/PurchaseRequestApproval.tsx`
+- Test: `tests/Feature/Procurement/PurchaseRequestWorkflowTest.php`
+- Test: focused Vitest detail-view regression tests
+- Regenerate: `public/build/**`
+
+- [ ] **Step 1: Write and run a failing backend test**
+
+Create two accepted same-shop Stock Requests, link one to a PR, request `status=accepted&available_for_purchase_request=1`, and assert only the unlinked request is returned.
+
+Run:
+
+```powershell
+php artisan test tests/Feature/Procurement/PurchaseRequestWorkflowTest.php --filter=available
+```
+
+Expected: FAIL because the API currently returns both accepted requests.
+
+- [ ] **Step 2: Implement the availability filter**
+
+Add the canonical Stock Request-to-PR relation, apply `whereDoesntHave('purchaseRequest')` only when `available_for_purchase_request=1`, use the same condition in the initial Inertia query, and request the flag from the PR builder. Remove the legacy notes-marker client filter.
+
+- [ ] **Step 3: Verify the backend test passes**
+
+Run the focused test again. Expected: PASS, while duplicate creation remains rejected by the existing unique validation.
+
+- [ ] **Step 4: Write failing all-size detail tests**
+
+Render all-size Stock Request and PR details and assert the label `Total Quantity Across All Sizes` appears with the unchanged physical quantity.
+
+- [ ] **Step 5: Implement the display-only wording**
+
+Use conditional labels in Inventory and Procurement Stock Request details plus Procurement, Finance, and Shop Owner PR details. Reuse each page's existing all-size and available-size helpers; do not add a multiplier or change stored quantities/costs.
+
+Also label the approved-PR option in the PO builder as one total across all sizes. Route Finance notification links through `/finance?section=purchase-request-approval&purchase_request=<id>` and redirect the legacy standalone route to the same Finance shell.
+
+- [ ] **Step 6: Run frontend and procurement regressions**
+
+Run focused Vitest tests, the Procurement backend suite, `npm run test:frontend`, and `npm run build`. Expected: all pass and a fresh `public/build` is emitted.
+
+- [ ] **Step 7: Review, commit, and push**
+
+Run `git diff --check`, review the branch diff, commit source and fresh build, and push `fix/procurement-practical-gaps`.
+
+---
+
 ## Done criteria
 
 - All seven reported defects have an automated regression test.
@@ -387,4 +447,6 @@ Commit: `docs: finalize procurement practical workflow`
 - Only Inventory records receipts/defects; Procurement only sees receipt history.
 - Receipt expenses require Finance review without a second Shop Owner approval.
 - Existing stock movements and expenses are not replayed during normalization.
+- Linked Stock Requests never reappear in the PR builder.
+- All all-size Stock Request and PR detail views explicitly label the physical total quantity.
 - Backend tests, frontend tests, and a fresh production build pass.

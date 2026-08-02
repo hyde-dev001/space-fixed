@@ -329,7 +329,7 @@ class PurchaseRequestService
                 title: 'Purchase Request Returned To Finance',
                 message: "{$payload['reference']} was approved by shop owner and requires final Finance review.",
                 data: $payload,
-                actionUrl: "/finance/purchase-request-approval?purchase_request={$purchaseRequest->id}",
+                actionUrl: "/finance?section=purchase-request-approval&purchase_request={$purchaseRequest->id}",
                 priority: 'medium'
             );
 
