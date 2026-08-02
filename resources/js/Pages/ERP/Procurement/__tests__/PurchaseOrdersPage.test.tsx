@@ -9,9 +9,11 @@ const mocks = vi.hoisted(() => {
 		shop_owner_id: 1,
 		supplier_id: 1,
 		product_name: "Shoe cleaner",
-		quantity: 1,
+		quantity: 50,
 		unit_cost: 100,
-		total_cost: 100,
+		total_cost: 5000,
+		requested_size: "",
+		inventory_item: { category: "shoes" },
 		payment_terms: "COD",
 		status: "delivered",
 		ordered_by: 1,
@@ -87,5 +89,12 @@ describe("Purchase Orders lifecycle actions", () => {
 		fireEvent.click(await screen.findByRole("button", { name: "+ New PO" }));
 
 		expect(await screen.findByRole("option", { name: /Qty: 50 total units across All Sizes/ })).toBeInTheDocument();
+	});
+
+	it("labels the PO detail quantity as a total across all sizes", async () => {
+		render(<PurchaseOrders />);
+		fireEvent.click(await screen.findByTitle("View details"));
+
+		expect(screen.getByText("Total Quantity Ordered Across All Sizes:")).toBeInTheDocument();
 	});
 });

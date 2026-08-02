@@ -1082,7 +1082,9 @@ export default function PurchaseOrders() {
 								<div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4">
 									<h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Product Details</h3>
 									<div className="space-y-2">
-										<p className="text-sm text-gray-700 dark:text-gray-300"><strong>Quantity Ordered:</strong> {getEffectiveQuantity(
+										<p className="text-sm text-gray-700 dark:text-gray-300"><strong>{isAllSizesRequest(viewingOrder.requested_size, viewingOrder.inventory_item?.category)
+											? "Total Quantity Ordered Across All Sizes:"
+											: "Quantity Ordered:"}</strong> {getEffectiveQuantity(
 											viewingOrder.quantity,
 											viewingOrder.unit_cost,
 											viewingOrder.total_cost,
