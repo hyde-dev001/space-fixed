@@ -254,8 +254,6 @@ class RolesAndPermissionsSeeder extends Seeder
             'access-supplier-order-monitoring',
             'view-inventory', // Required for erp/inventory route group
             'procurement.view',
-            'procurement.create_purchase_requests',
-            'procurement.submit_purchase_requests',
             'procurement.receive_purchase_orders',
             // Global Access
             'access-global-search',

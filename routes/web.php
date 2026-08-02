@@ -2317,70 +2317,10 @@ Route::prefix('erp/inventory')->name('erp.inventory.')->middleware(['auth:user',
 
         return Inertia::render('ERP/inventory/SupplierOrderMonitoring', compact('initialData'));
     })->name('supplier-order-monitoring');
-
-    Route::get('/stock-request-approval', function () {
-        if (Auth::guard('user')->user()?->force_password_change) {
-            return redirect()->route('erp.profile');
-        }
-        $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
-        $initialData = \App\Models\StockRequestApproval::with(['shopOwner', 'inventoryItem.sizes', 'inventoryItem.colorVariants.sizes', 'requester', 'approver'])
-            ->where('shop_owner_id', $shopOwnerId)
-            ->where(function ($query) {
-                $query->where('request_source', 'manual')
-                    ->orWhere(function ($repairQuery) {
-                        $repairQuery->where('request_source', 'repair')
-                            ->whereNotNull('inventory_approved_date');
-                    });
-            })
-            ->orderBy('requested_date', 'desc')
-            ->paginate(100);
-
-        return Inertia::render('ERP/Procurement/StockRequestApproval', compact('initialData'));
-    })->name('stock-request-approval');
-
-    Route::get('/purchase-request', function () {
-        if (Auth::guard('user')->user()?->force_password_change) {
-            return redirect()->route('erp.profile');
-        }
-        $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
-        $initialData = \App\Models\PurchaseRequest::with(['shopOwner', 'supplier', 'inventoryItem', 'requester', 'reviewer', 'approver'])
-            ->where('shop_owner_id', $shopOwnerId)->orderBy('requested_date', 'desc')->paginate(100);
-        $initialSuppliers = \App\Models\Supplier::where('shop_owner_id', $shopOwnerId)->orderBy('name')->get();
-        $initialAcceptedRequests = \App\Models\StockRequestApproval::with(['inventoryItem', 'requester'])
-            ->where('shop_owner_id', $shopOwnerId)->where('status', 'accepted')
-            ->whereDoesntHave('purchaseRequest')->orderBy('requested_date', 'desc')->paginate(200);
-
-        return Inertia::render('ERP/Procurement/PurchaseRequest', compact('initialData', 'initialSuppliers', 'initialAcceptedRequests'));
-    })->name('purchase-request');
-
-    Route::get('/purchase-orders', function () {
-        if (Auth::guard('user')->user()?->force_password_change) {
-            return redirect()->route('erp.profile');
-        }
-        $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
-        $initialData = \App\Models\PurchaseOrder::with(['purchaseRequest', 'shopOwner', 'supplier', 'inventoryItem', 'orderer'])
-            ->where('shop_owner_id', $shopOwnerId)->orderBy('ordered_date', 'desc')->paginate(100);
-        $initialApprovedPRs = \App\Models\PurchaseRequest::with(['supplier', 'inventoryItem', 'requester'])
-            ->where('shop_owner_id', $shopOwnerId)->approved()
-            ->whereDoesntHave('purchaseOrders', fn ($q) => $q->whereNotIn('status', ['cancelled']))
-            ->orderBy('approved_date', 'desc')->get();
-
-        return Inertia::render('ERP/Procurement/PurchaseOrders', compact('initialData', 'initialApprovedPRs'));
-    })->name('purchase-orders');
-
-    Route::get('/suppliers-management', function () {
-        if (Auth::guard('user')->user()?->force_password_change) {
-            return redirect()->route('erp.profile');
-        }
-        $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
-        $initialData = \App\Models\Supplier::where('shop_owner_id', $shopOwnerId)->orderBy('name')->paginate(100);
-
-        return Inertia::render('ERP/Procurement/SuppliersManagement', compact('initialData'));
-    })->name('suppliers-management');
 });
 
 // PROCUREMENT MODULE routes (accessible by Procurement Manager role or users with explicit permissions)
-Route::prefix('erp/procurement')->name('erp.procurement.')->middleware(['auth:user', 'permission:view-procurement|access-procurement-dashboard|access-purchase-requests|access-purchase-orders|access-stock-request-approval|access-suppliers-management|access-supplier-order-monitoring'])->group(function () {
+Route::prefix('erp/procurement')->name('erp.procurement.')->middleware('auth:user')->group(function () {
 
     Route::get('/purchase-request', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
@@ -2395,7 +2335,7 @@ Route::prefix('erp/procurement')->name('erp.procurement.')->middleware(['auth:us
             ->whereDoesntHave('purchaseRequest')->orderBy('requested_date', 'desc')->paginate(200);
 
         return Inertia::render('ERP/Procurement/PurchaseRequest', compact('initialData', 'initialSuppliers', 'initialAcceptedRequests'));
-    })->name('purchase-request');
+    })->middleware('permission:view-procurement|access-purchase-requests')->name('purchase-request');
 
     Route::get('/purchase-orders', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
@@ -2410,7 +2350,7 @@ Route::prefix('erp/procurement')->name('erp.procurement.')->middleware(['auth:us
             ->orderBy('approved_date', 'desc')->get();
 
         return Inertia::render('ERP/Procurement/PurchaseOrders', compact('initialData', 'initialApprovedPRs'));
-    })->name('purchase-orders');
+    })->middleware('permission:view-procurement|access-purchase-orders')->name('purchase-orders');
 
     Route::get('/stock-request-approval', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
@@ -2421,7 +2361,7 @@ Route::prefix('erp/procurement')->name('erp.procurement.')->middleware(['auth:us
             ->where('shop_owner_id', $shopOwnerId)->orderBy('requested_date', 'desc')->paginate(100);
 
         return Inertia::render('ERP/Procurement/StockRequestApproval', compact('initialData'));
-    })->name('stock-request-approval');
+    })->middleware('permission:view-procurement|access-stock-request-approval')->name('stock-request-approval');
 
     Route::get('/suppliers-management', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
@@ -2431,7 +2371,7 @@ Route::prefix('erp/procurement')->name('erp.procurement.')->middleware(['auth:us
         $initialData = \App\Models\Supplier::where('shop_owner_id', $shopOwnerId)->orderBy('name')->paginate(100);
 
         return Inertia::render('ERP/Procurement/SuppliersManagement', compact('initialData'));
-    })->name('suppliers-management');
+    })->middleware('permission:view-procurement|access-suppliers-management')->name('suppliers-management');
 });
 
 // STAFF routes (both MANAGER and STAFF can access)
