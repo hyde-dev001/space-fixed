@@ -2,7 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Models\Logistics\DeliveryAssignment;
 use App\Models\Logistics\HandoffProof;
+use App\Models\Logistics\RiderProfile;
+use App\Models\Logistics\Shipment;
+use App\Models\Logistics\ShippingMethod;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\OrderRefund;
@@ -60,10 +64,25 @@ class StaffOrderRefundPayloadTest extends TestCase
         $shipment = app(SourceShipmentService::class)->ensureRefundReturnShipment($refund);
         $shipment->update(['status' => 'completed']);
         $leg = $shipment->legs()->firstOrFail();
+        $method = ShippingMethod::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'name' => 'Shop-owned logistics',
+        ]);
+        $rider = RiderProfile::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'name' => 'Marco Santos',
+            'phone' => '09171234567',
+        ]);
         $leg->update([
             'status' => 'delivered',
+            'shipping_method_id' => $method->id,
             'tracking_number' => 'RETURN-1001',
             'tracking_url' => 'https://example.test/returns/1001',
+        ]);
+        DeliveryAssignment::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'rider_profile_id' => $rider->id,
+            'status' => 'completed',
         ]);
         $proof = HandoffProof::factory()->create([
             'shipment_leg_id' => $leg->id,
@@ -81,6 +100,9 @@ class StaffOrderRefundPayloadTest extends TestCase
             $this->assertSame(['/storage/refunds/customer-evidence.jpg'], $payload['evidence_media']);
             $this->assertSame($shipment->id, $payload['return_logistics']['shipment_id']);
             $this->assertSame('inbound', $payload['return_logistics']['leg_type']);
+            $this->assertSame('Shop-owned logistics', $payload['return_logistics']['carrier']);
+            $this->assertSame('Marco Santos', $payload['return_logistics']['rider_name']);
+            $this->assertSame('09171234567', $payload['return_logistics']['rider_phone']);
             $this->assertSame("/api/logistics/proofs/{$proof->id}/file", $payload['return_logistics']['proofs'][0]['file_url']);
             $this->assertArrayNotHasKey('file_path', $payload['return_logistics']['proofs'][0]);
         }
@@ -90,6 +112,85 @@ class StaffOrderRefundPayloadTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.0.payoutAmountValue', 2499)
             ->assertJsonPath('data.0.shippingFee', 108);
+    }
+
+    public function test_staff_list_and_show_include_order_logistics(): void
+    {
+        [$shop, $staff, , $order] = $this->refundFixture();
+        $shipment = app(SourceShipmentService::class)->ensureRetailOrderShipment($order);
+        $shipment->update(['status' => 'active']);
+        $leg = $shipment->legs()->firstOrFail();
+        $leg->update([
+            'status' => 'in_transit',
+            'tracking_number' => 'DELIVERY-1001',
+        ]);
+
+        $list = $this->actingAs($staff, 'user')->getJson('/api/staff/orders')->assertOk();
+        $show = $this->actingAs($staff, 'user')->getJson("/api/staff/orders/{$order->id}")->assertOk();
+
+        foreach ([$list->json('0.logistics'), $show->json('logistics')] as $payload) {
+            $this->assertSame($shipment->id, $payload['shipment_id']);
+            $this->assertSame('active', $payload['shipment_status']);
+            $this->assertSame('outbound', $payload['leg_type']);
+            $this->assertSame('in_transit', $payload['leg_status']);
+            $this->assertSame('DELIVERY-1001', $payload['tracking_number']);
+        }
+    }
+
+    public function test_shipment_without_leg_keeps_summary_fields_nullable(): void
+    {
+        [$shop, $staff, , $order] = $this->refundFixture();
+        $shipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+            'source_id' => $order->id,
+            'purpose' => 'retail_delivery',
+            'status' => 'requested',
+        ]);
+
+        $payload = $this->actingAs($staff, 'user')
+            ->getJson("/api/staff/orders/{$order->id}")
+            ->assertOk()
+            ->json('logistics');
+
+        $this->assertSame($shipment->id, $payload['shipment_id']);
+        $this->assertNull($payload['leg_id']);
+        $this->assertNull($payload['leg_status']);
+        $this->assertSame([], $payload['proofs']);
+    }
+
+    public function test_non_delivered_return_leg_does_not_expose_proof(): void
+    {
+        [, $staff, , $order, $refund] = $this->refundFixture();
+        $shipment = app(SourceShipmentService::class)->ensureRefundReturnShipment($refund);
+        $leg = $shipment->legs()->firstOrFail();
+        $leg->update(['status' => 'in_transit']);
+        HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'file_path' => 'logistics-proof/not-delivered.jpg',
+        ]);
+
+        $this->actingAs($staff, 'user')
+            ->getJson("/api/staff/orders/{$order->id}")
+            ->assertOk()
+            ->assertJsonPath('latest_refund.return_logistics.proofs', []);
+    }
+
+    public function test_staff_payload_ignores_another_shops_shipment_for_same_order_id(): void
+    {
+        [, $staff, , $order] = $this->refundFixture();
+        $otherShop = ShopOwner::factory()->approved()->create(['business_type' => 'retail']);
+        Shipment::factory()->create([
+            'shop_owner_id' => $otherShop->id,
+            'source_type' => 'order',
+            'source_id' => $order->id,
+            'purpose' => 'retail_delivery',
+        ]);
+
+        $this->actingAs($staff, 'user')
+            ->getJson("/api/staff/orders/{$order->id}")
+            ->assertOk()
+            ->assertJsonPath('logistics', null);
     }
 
     public function test_legacy_normal_refund_execution_excludes_original_shipping_fee(): void
