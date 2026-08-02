@@ -3,14 +3,18 @@ import { render, screen } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import AppSidebarERP from '../AppSidebar_ERP';
 
-const state = vi.hoisted(() => ({ permissions: [] as string[] }));
+const state = vi.hoisted(() => ({
+  role: 'Logistics Dispatcher',
+  roles: ['Logistics Dispatcher'] as string[],
+  permissions: [] as string[],
+}));
 
 vi.mock('@inertiajs/react', () => ({
   usePage: () => ({
     url: '/erp/logistics',
     props: {
       auth: {
-        user: { role: 'Logistics Dispatcher', roles: ['Logistics Dispatcher'] },
+        user: { role: state.role, roles: state.roles },
         permissions: state.permissions,
       },
     },
@@ -38,10 +42,31 @@ vi.mock('../../context/SidebarContext', () => ({
 }));
 
 beforeEach(() => {
+  state.role = 'Logistics Dispatcher';
+  state.roles = ['Logistics Dispatcher'];
+  state.permissions = [];
   Object.defineProperty(window, 'localStorage', {
     configurable: true,
     value: { getItem: vi.fn(), removeItem: vi.fn() },
   });
+});
+
+it('keeps supplier orders under Inventory without showing Procurement pages', () => {
+  state.role = 'Inventory Manager';
+  state.roles = ['Inventory Manager'];
+  state.permissions = [
+    'view-inventory',
+    'access-supplier-order-monitoring',
+    'procurement.view',
+    'procurement.receive_purchase_orders',
+  ];
+
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('link', { name: /supplier orders/i })).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /purchase requests/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /purchase orders/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /suppliers management/i })).not.toBeInTheDocument();
 });
 
 it('shows logistics settings only with its permission', () => {
