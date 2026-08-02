@@ -91,7 +91,7 @@ draft -> sent -> confirmed -> in_transit
 - `delivered` is set automatically when every item is fully accepted.
 - `completed` is a manual verification action allowed only from `delivered`.
 - A PO may be cancelled from `draft`, `sent`, `confirmed`, or `in_transit` only while it has no receipts.
-- A PO with any receipt cannot be cancelled or edited.
+- A PO with any posted, non-voided receipt cannot be cancelled or edited. If every receipt is voided, normal pre-receiving cancellation rules apply again.
 - Delivery cannot be recorded through the generic status endpoint. It must pass through the receipt workflow.
 - Transition methods return a clear validation failure when the current state is invalid; controllers never report success after a rejected transition.
 
@@ -105,7 +105,7 @@ The header stores the purchase order, shop, receipt date, receiver, notes, times
 
 ### Receipt items
 
-Each row stores the PO item, received quantity, defective quantity, and accepted quantity. Accepted quantity is calculated on the server:
+Each row stores the PO item, received quantity, defective quantity, accepted quantity, and an immutable inventory-effect snapshot containing the exact parent, color-variant, and size-row IDs and quantity deltas changed during posting. Accepted quantity is calculated on the server:
 
 ```text
 accepted quantity = received quantity - defective quantity
@@ -120,21 +120,55 @@ Rules:
 - Receipt submission locks the PO and affected item rows, rechecks remaining quantities, and writes the receipt in one database transaction.
 - Retrying the same idempotency key returns the existing result and does not post inventory or Finance records again.
 - Reusing an idempotency key with the same normalized payload returns the existing receipt. Reusing it with different item IDs or quantities returns `409 Conflict` and creates no side effects.
-- Receipt records are immutable after posting. Return, reversal, and correction workflows are outside this repair scope; the receiving screen must show a final confirmation containing all quantities before posting.
+- Receipt contents are immutable after posting. An eligible incorrect receipt may be voided through the controlled correction flow below; it is never edited or deleted. Returns and corrections after financial/PO finalization remain outside this repair scope.
 
 The existing aggregate received and defective fields remain synchronized during the compatibility period, but receipt rows are the authoritative audit trail.
 
+## Receipt correction
+
+Incorrect posted receipts use an audit-safe void operation rather than editing or deletion. A receipt stores `posted` or `voided` status plus nullable `voided_by`, `voided_at`, and `void_reason` fields. The void reason is required.
+
+A receipt may be voided only when:
+
+- It belongs to the authenticated shop and PO.
+- It is a normal posted receipt, not a migration-source receipt or an immutable historical PO receipt.
+- The actor has `void_purchase_order_receipts` permission.
+- The receipt is still posted and the PO is not `completed`.
+- Its linked expense is absent, `submitted`, or `rejected`. `approved` and `posted` expenses block voiding; no other expense status is treated as implicitly pending.
+- Every parent item, color variant, and size row in the receipt item's inventory-effect snapshot has enough currently available stock to remove its recorded delta.
+
+The void operation locks the PO, receipt, receipt items, affected inventory rows, stock movements, expense, and approval workflow before rechecking eligibility. In one transaction it:
+
+1. Marks the receipt voided with actor, timestamp, and reason.
+2. Creates one negative reversing parent stock movement for every original receipt-linked parent movement and applies the exact negative deltas from the receipt item's inventory-effect snapshot to its parent, color, and size rows.
+3. Marks a linked submitted expense `rejected` with a system audit reason identifying the voided receipt. If its approval workflow is `pending`, the workflow becomes `cancelled` while preserving completed level history; a previously rejected expense/workflow remains rejected.
+4. Recalculates PO aggregate received/defective quantities and status using only posted, non-voided receipts.
+5. Recomputes the PO delivery actor and delivery timestamp/date from the remaining receipt that completes all ordered quantities, or clears all delivery audit fields when full delivery no longer exists.
+
+After recalculation, a PO with no active receipts returns to `in_transit`, one with remaining accepted quantities is `partially_received`, and one whose items remain fully accepted is `delivered`. Once all receipts are voided, the PO may be cancelled under the normal lifecycle rule. The user records the corrected quantities through a new receipt.
+
+A repeated void request returns the already-voided receipt and never creates a second reversal. Any failed eligibility check or side effect rolls back the whole operation. If stock is insufficient, the user must resolve the stock discrepancy through an authorized inventory adjustment before retrying.
+
+Shop Owners receive the void permission by default. A Procurement Manager receives it only through an explicit assignment; ordinary receiving permission does not imply void authority.
+
 ## Inventory posting
 
-Each receipt item creates one receipt-linked stock movement for its accepted quantity. Defective quantity never increases available stock.
+Each receipt item creates one receipt-linked parent stock movement whose quantity is the total parent delta. Defective quantity never increases available stock. The receipt item's inventory-effect snapshot records every subordinate balance changed by that movement:
 
-The receipt, stock movements, inventory increments, expense, and PO status update run in the same database transaction. If any operation fails, all operations roll back. A unique link between the stock movement and receipt item prevents a retry from increasing stock twice.
+- Specific size without color: parent `+accepted`; selected size `+accepted`.
+- Specific size with color: parent `+accepted`; selected color `+accepted`; selected size `+accepted`.
+- All sizes without color: every snapshotted size `+accepted`; parent `+(accepted x multiplier)`.
+- All sizes with color: every snapshotted size for that color `+accepted`; selected color and parent each `+(accepted x multiplier)`.
+
+Posting and voiding lock and validate every row in that snapshot. A void requires parent, color, and size balances to each cover their own recorded delta; it then subtracts those exact deltas. This snapshot, rather than current variant configuration, is the source of truth for reversal.
+
+The receipt, stock movements, inventory increments, expense, and PO status update run in the same database transaction. If any operation fails, all operations roll back. A unique link between the stock movement and receipt item prevents a retry from increasing stock twice. A reversing movement stores a unique link to its original movement so a receipt can be reversed only once.
 
 Size and color updates reuse the existing inventory variant behavior. The posted quantity must affect only the selected item or variant. For an all-size item, ordered and received quantities mean quantity per eligible size: inventory adds accepted quantity only to the size IDs snapshotted on the PO item, while parent inventory increases by `accepted quantity x quantity multiplier`. Later additions or removals in the supplier/inventory size list never silently change the PO. If a snapshotted target no longer exists, receiving fails with a configuration error for correction instead of posting to a substitute size.
 
 ## Finance posting
 
-Every successfully posted receipt with a positive accepted value creates exactly one Finance expense in `submitted` or equivalent pending-review status.
+Every successfully posted receipt with a positive accepted value creates exactly one Finance expense in `submitted` status. Its optional multi-stage approval workflow begins in `pending` status.
 
 - Amount is the sum of `accepted quantity x PO-item unit cost x quantity multiplier` for that receipt. The multiplier is `1` for non-all-size items.
 - The receiving user is recorded as the creator, not the approver.
@@ -159,6 +193,7 @@ Minimum action permissions:
 - Receive PO
 - Complete PO
 - Cancel PO
+- Void PO receipt
 - View procurement records
 
 The explicit `receive_purchase_orders` permission may be assigned to Procurement and authorized Inventory roles. Shop Owner access follows ownership and admin authority. Broad dashboard access alone never authorizes approval, rejection, receiving, cancellation, or status changes.
@@ -183,12 +218,14 @@ The current procurement API namespace remains canonical.
 - PO creation accepts one or more approved purchase-request IDs, not client-authored order-line totals.
 - PO detail responses expose header data, item rows, cumulative receipt totals, remaining quantities, and receipt history.
 - A dedicated receipt endpoint accepts the idempotency key and per-item received/defective quantities.
+- A dedicated receipt-void endpoint accepts a required reason and performs the controlled correction transaction.
 - The generic PO status endpoint is retained only for strict non-receiving transitions.
 - PR, PO, Supplier, and Receipt mutations use a consistent `{ message, data }` response envelope, and the frontend API adapters unwrap it consistently.
 - Invalid business transitions and quantities return `422`.
 - Unauthorized actions return `403`.
 - Records outside the authenticated shop return `404`.
 - A duplicate idempotency submission with the same normalized payload returns the previously created receipt without creating side effects. Reuse with a different payload returns `409 Conflict`.
+- Ineligible void requests return `422`; already-voided receipts return the existing void result without side effects.
 
 Legacy `SupplierOrder` create, update, receive, and status-write endpoints return `410 Gone` with a pointer to the canonical Purchase Order workflow. Historical list and detail endpoints remain readable and clearly marked legacy.
 
@@ -202,7 +239,9 @@ The existing Purchase Orders page becomes the single purchasing and receiving wo
 - The default one-item case does not require an extra wizard or advanced form.
 - PO details show item rows, ordered/accepted/defective/remaining quantities, and receipt history.
 - The receiving form lists only items with remaining quantity and requires received and defective quantities per submitted line.
-- A final confirmation summarizes the irreversible receipt posting before submission.
+- A final confirmation explains that receipt contents are immutable after posting and summarizes the quantities before submission; eligible receipts may later be voided through the controlled correction action.
+- Eligible receipts show a **Void receipt** action only to authorized users. Its destructive confirmation summarizes the inventory and pending-expense impact and requires a reason.
+- Voided receipts remain visible with the void actor, time, reason, and reversing movements.
 - The UI shows only valid next lifecycle actions, while the backend remains authoritative.
 - Errors are displayed without clearing entered receipt data.
 - Legacy Supplier Orders are labeled read-only and removed from normal create/edit/receive navigation.
@@ -223,10 +262,10 @@ Unreachable or divergent automation is not expanded during this repair.
 
 The cutover is additive and reversible at the schema level:
 
-1. Add PO item, receipt, and receipt-item tables plus the receipt link on Finance expenses and receipt-item link on stock movements.
+1. Add PO item, receipt, and receipt-item tables; receipt void-audit fields; the receipt link on Finance expenses; and original/reversing receipt-item links on stock movements.
 2. Backfill one PO item for every existing `PurchaseOrder` and verify counts and totals. For an all-size item, snapshot the currently eligible inventory-size IDs and set the multiplier to their count. A non-terminal PO whose derived multiplier conflicts with its stored total is reported and must be resolved before receipt cutover; a terminal historical PO preserves its stored total and remains immutable.
-3. For an existing non-terminal PO with stored received quantities, create migration-source receipt rows from those aggregates without posting inventory or expenses again, then mark it `partially_received` when appropriate.
-4. Treat existing `delivered`, `completed`, and `cancelled` POs as immutable historical POs. Backfill migration-source receipt rows when aggregates exist, preserve their terminal status even if historical quantities are incomplete, and never replay inventory or Finance side effects.
+3. For an existing non-terminal PO with stored received quantities, create migration-source receipt rows from those aggregates without posting inventory or expenses again, then mark it `partially_received` when appropriate. Migration-source receipts cannot be voided because they do not own reconstructable side effects.
+4. Treat existing `delivered`, `completed`, and `cancelled` POs as immutable historical POs. Backfill migration-source receipt rows when aggregates exist, preserve their terminal status even if historical quantities are incomplete, never replay inventory or Finance side effects, and never expose receipt-void actions for them.
 5. Deploy canonical reads from PO item rows while retaining compatibility fields. Migration-source receipts are display/audit records, not proof that side effects should be replayed.
 6. Deploy multi-item PO creation and receipt posting.
 7. Switch monitoring and metrics to canonical POs.
@@ -240,6 +279,7 @@ Legacy tables and historical rows are not deleted in this project. Removal requi
 - Concurrency conflicts and stale quantities return a clear retryable validation error.
 - Unexpected failures are logged with shop, PO, receipt submission key, and actor identifiers, without exposing stack traces or database messages to clients.
 - Duplicate submission retries with the same normalized payload are treated as successful idempotent retrievals, not errors. Different-payload reuse returns `409 Conflict`.
+- Receipt voiding rolls back completely if stock, Finance workflow closure, PO recalculation, or any reversing movement fails.
 - No controller returns raw exception messages in production responses.
 
 ## Required tests
@@ -254,18 +294,21 @@ The repair is complete only when automated tests cover:
 - Partial, complete, defective, replacement, over-acceptance, retry, and concurrent receiving.
 - Exact-once inventory changes and stock-movement creation per receipt item.
 - Submitted, never auto-approved, expense creation with the correct accepted value.
+- Receipt-void authorization, cross-shop blocking, required reason, insufficient-stock rejection, and approved/posted-expense blocking.
+- Migration/historical receipt exclusion; concurrent-void serialization; and all-size reversal of parent, color, and size balances.
+- Exact-once reversing movements, submitted-expense rejection, pending-approval cancellation, preserved approval history, repeated-void idempotency, PO quantity/status/delivery-audit recalculation, and full void rollback.
 - Full transaction rollback when inventory or Finance posting fails.
 - Backfill compatibility for existing single-item POs.
 - Read-only legacy endpoints and canonical monitoring/metrics.
 - Consistent API response handling in the Purchase Orders frontend.
 
-Focused procurement tests and relevant Inventory and Finance integration tests must pass before cutover. A manual browser check covers one one-item PO and one multi-item PO with two partial receipts.
+Focused procurement tests and relevant Inventory and Finance integration tests must pass before cutover. A manual browser check covers one one-item PO, one multi-item PO with two partial receipts, and one eligible receipt void with inventory and pending-expense reversal.
 
 ## Deferred capabilities
 
 The following remain intentionally out of scope until actual SME usage proves the need:
 
-- Receipt reversal, returns, and close-short workflows
+- Returns, close-short workflows, and correction after expense approval/PO completion
 - RFQ and supplier quotation comparison
 - Supplier accreditation, contracts, and performance scoring
 - Catalogs, tiered pricing, tax/freight allocation, and multi-currency settlement
