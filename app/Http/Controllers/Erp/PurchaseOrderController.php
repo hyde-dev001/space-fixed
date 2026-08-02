@@ -27,7 +27,7 @@ class PurchaseOrderController extends Controller
         $this->authorize('viewAny', PurchaseOrder::class);
 
         $query = PurchaseOrder::query()
-            ->with(['items.purchaseRequest', 'receipts.items', 'shopOwner', 'supplier', 'orderer'])
+            ->with(['items.purchaseRequest', 'items.inventoryItem.sizes', 'receipts.items', 'shopOwner', 'supplier', 'orderer'])
             ->where('shop_owner_id', Auth::user()->shop_owner_id);
 
         // Search
@@ -113,6 +113,7 @@ class PurchaseOrderController extends Controller
             'deliverer',
             'completer',
             'items.purchaseRequest',
+            'items.inventoryItem.sizes',
             'receipts.items',
         ])->where('shop_owner_id', Auth::user()->shop_owner_id)->findOrFail($id);
 

@@ -23,7 +23,7 @@ class ExpenseApprovalService
     ): Expense {
         $purchaseOrder = $receipt->purchaseOrder()->with('supplier')->firstOrFail();
 
-        return Expense::firstOrCreate(
+        $expense = Expense::firstOrCreate(
             ['procurement_receipt_id' => $receipt->id],
             [
                 'reference' => "PROC-RCV-{$receipt->id}",
@@ -45,6 +45,17 @@ class ExpenseApprovalService
                 ],
             ]
         );
+
+        if ($expense->wasRecentlyCreated) {
+            $this->notificationService->notifyExpenseSubmitted((int) $purchaseOrder->shop_owner_id, [
+                'reference' => $expense->reference,
+                'amount' => number_format((float) $expense->amount, 2),
+                'category' => $expense->category,
+                'expense_id' => $expense->id,
+            ]);
+        }
+
+        return $expense;
     }
 
     public function rejectForVoidedReceipt(Expense $expense, PurchaseOrderReceipt $receipt): void

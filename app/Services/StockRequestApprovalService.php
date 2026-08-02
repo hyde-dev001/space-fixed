@@ -255,7 +255,7 @@ class StockRequestApprovalService
             title: 'New Stock Request Submitted',
             message: "Stock request {$payload['request_number']} for {$payload['product_name']} (Qty: {$payload['quantity_needed']}) needs review.",
             data: $payload,
-            actionUrl: '/erp/procurement/stock-request-approval',
+            actionUrl: "/erp/procurement/stock-request-approval?stock_request={$stockRequest->id}",
             priority: $stockRequest->priority === 'high' ? 'high' : 'medium'
         );
     }
@@ -270,7 +270,7 @@ class StockRequestApprovalService
             title: 'Repair Material Request Forwarded',
             message: "Repair material request {$payload['request_number']} for {$payload['product_name']} is now ready for procurement approval.",
             data: $payload,
-            actionUrl: '/erp/procurement/stock-request-approval',
+            actionUrl: "/erp/procurement/stock-request-approval?stock_request={$stockRequest->id}",
             priority: $stockRequest->priority === 'high' ? 'high' : 'medium'
         );
     }
@@ -290,7 +290,7 @@ class StockRequestApprovalService
             title: 'Stock Request Approved',
             message: "Your stock request {$payload['request_number']} for {$payload['product_name']} was approved.",
             data: $payload,
-            actionUrl: '/erp/procurement/stock-request-approval',
+            actionUrl: "/erp/inventory/stock-request?stock_request={$stockRequest->id}",
             shopId: (int) $stockRequest->shop_owner_id,
             priority: 'medium'
         );
@@ -311,7 +311,7 @@ class StockRequestApprovalService
             title: 'Stock Request Rejected',
             message: "Your stock request {$payload['request_number']} was rejected. Reason: {$reason}",
             data: $payload,
-            actionUrl: '/erp/procurement/stock-request-approval',
+            actionUrl: "/erp/inventory/stock-request?stock_request={$stockRequest->id}",
             shopId: (int) $stockRequest->shop_owner_id,
             priority: 'medium'
         );
@@ -332,7 +332,7 @@ class StockRequestApprovalService
             title: 'Stock Request Needs Details',
             message: "More details were requested for {$payload['request_number']}.",
             data: $payload,
-            actionUrl: '/erp/procurement/stock-request-approval',
+            actionUrl: "/erp/inventory/stock-request?stock_request={$stockRequest->id}",
             shopId: (int) $stockRequest->shop_owner_id,
             priority: 'medium'
         );

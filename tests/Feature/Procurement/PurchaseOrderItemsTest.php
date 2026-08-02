@@ -4,6 +4,8 @@ namespace Tests\Feature\Procurement;
 
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseRequest;
+use App\Models\InventoryItem;
+use App\Models\InventorySize;
 use App\Models\ShopOwner;
 use App\Models\Supplier;
 use App\Models\User;
@@ -63,6 +65,38 @@ class PurchaseOrderItemsTest extends TestCase
         ])->assertUnprocessable();
 
         $this->assertDatabaseCount('purchase_orders', 0);
+    }
+
+    public function test_all_size_order_keeps_total_units_and_snapshots_sizes_without_multiplying(): void
+    {
+        $inventory = InventoryItem::factory()->create([
+            'shop_owner_id' => $this->owner->id,
+            'category' => 'shoes',
+        ]);
+        $sizeIds = collect(['6', '7', '8', '9'])->map(fn ($size) => InventorySize::create([
+            'inventory_item_id' => $inventory->id,
+            'size' => $size,
+            'size_system' => 'US',
+            'quantity' => 0,
+        ])->id)->all();
+        $pr = $this->approvedPr([
+            'inventory_item_id' => $inventory->id,
+            'requested_size' => null,
+            'quantity' => 200,
+            'unit_cost' => 4100,
+            'total_cost' => 820000,
+        ]);
+
+        $response = $this->actingAs($this->user, 'user')->postJson('/api/erp/procurement/purchase-orders', [
+            'purchase_request_ids' => [$pr->id],
+            'payment_terms' => 'COD',
+        ])->assertCreated();
+
+        $po = PurchaseOrder::with('items')->findOrFail($response->json('data.id'));
+        $this->assertSame(200, $po->quantity);
+        $this->assertSame(200, $po->items->sole()->ordered_quantity);
+        $this->assertSame(1, $po->items->sole()->quantity_multiplier);
+        $this->assertEqualsCanonicalizing($sizeIds, $po->items->sole()->eligible_size_ids);
     }
 
     public function test_mixed_supplier_and_unapproved_prs_are_rejected(): void

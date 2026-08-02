@@ -25,11 +25,20 @@ class PurchaseOrderReceiptService
         return DB::transaction(function () use ($purchaseOrder, $receiver, $data): PurchaseOrderReceipt {
             $purchaseOrder = PurchaseOrder::whereKey($purchaseOrder->id)->lockForUpdate()->firstOrFail();
             $normalizedItems = collect($data['items'])
-                ->map(fn ($item) => [
-                    'purchase_order_item_id' => (int) $item['purchase_order_item_id'],
-                    'received_quantity' => (int) $item['received_quantity'],
-                    'defective_quantity' => (int) $item['defective_quantity'],
-                ])
+                ->map(function ($item): array {
+                    $sizes = collect($item['size_quantities'] ?? [])->map(fn ($size) => [
+                        'inventory_size_id' => (int) $size['inventory_size_id'],
+                        'received_quantity' => (int) $size['received_quantity'],
+                        'defective_quantity' => (int) $size['defective_quantity'],
+                    ])->sortBy('inventory_size_id')->values();
+
+                    return [
+                        'purchase_order_item_id' => (int) $item['purchase_order_item_id'],
+                        'received_quantity' => $sizes->isEmpty() ? (int) $item['received_quantity'] : $sizes->sum('received_quantity'),
+                        'defective_quantity' => $sizes->isEmpty() ? (int) $item['defective_quantity'] : $sizes->sum('defective_quantity'),
+                        'size_quantities' => $sizes->all(),
+                    ];
+                })
                 ->sortBy('purchase_order_item_id')->values();
             $payloadHash = hash('sha256', json_encode($normalizedItems->all(), JSON_THROW_ON_ERROR));
             $existing = PurchaseOrderReceipt::where('purchase_order_id', $purchaseOrder->id)
@@ -58,11 +67,21 @@ class PurchaseOrderReceiptService
             }
 
             foreach ($normalizedItems as $input) {
+                $orderItem = $orderItems[$input['purchase_order_item_id']];
+                $eligibleSizeIds = array_map('intval', $orderItem->eligible_size_ids ?? []);
+                $submittedSizeIds = array_column($input['size_quantities'], 'inventory_size_id');
+                if (count($eligibleSizeIds) > 1
+                    && array_values(array_diff($eligibleSizeIds, $submittedSizeIds)) !== []) {
+                    throw ValidationException::withMessages(['items' => 'Every snapshotted size requires a receipt allocation.']);
+                }
+                if (array_diff($submittedSizeIds, $eligibleSizeIds) !== []) {
+                    throw ValidationException::withMessages(['items' => 'A size allocation does not belong to this purchase order item.']);
+                }
                 $accepted = $input['received_quantity'] - $input['defective_quantity'];
                 if ($input['defective_quantity'] > $input['received_quantity']) {
                     throw ValidationException::withMessages(['items' => 'Defective quantity cannot exceed received quantity.']);
                 }
-                if ($accepted > $orderItems[$input['purchase_order_item_id']]->remainingQuantity()) {
+                if ($accepted > $orderItem->remainingQuantity()) {
                     throw ValidationException::withMessages(['items' => 'Accepted quantity exceeds the remaining ordered quantity.']);
                 }
             }
@@ -94,9 +113,9 @@ class PurchaseOrderReceiptService
 
                 if ($accepted > 0) {
                     $receiptItem->update([
-                        'inventory_effects' => $this->postInventory($purchaseOrder, $orderItem, $receiptItem, $accepted, $receiver->id),
+                        'inventory_effects' => $this->postInventory($purchaseOrder, $orderItem, $receiptItem, $accepted, $input['size_quantities'], $receiver->id),
                     ]);
-                    $expenseAmount += $accepted * (float) $orderItem->unit_cost * $orderItem->quantity_multiplier;
+                    $expenseAmount += $accepted * (float) $orderItem->unit_cost;
                 }
             }
 
@@ -219,6 +238,7 @@ class PurchaseOrderReceiptService
         PurchaseOrderItem $orderItem,
         PurchaseOrderReceiptItem $receiptItem,
         int $accepted,
+        array $sizeQuantities,
         int $receiverId
     ): array {
         if (!$orderItem->inventory_item_id) {
@@ -240,11 +260,21 @@ class PurchaseOrderReceiptService
             throw ValidationException::withMessages(['items' => 'The requested inventory size is not available for receiving.']);
         }
 
-        $parentDelta = $accepted * $orderItem->quantity_multiplier;
+        $sizeDeltas = collect($sizeQuantities)->mapWithKeys(fn ($size) => [
+            (int) $size['inventory_size_id'] => (int) $size['received_quantity'] - (int) $size['defective_quantity'],
+        ])->all();
+        if ($sizeDeltas === [] && $sizes->count() === 1) {
+            $sizeDeltas[(int) $sizes->first()->id] = $accepted;
+        }
+
+        $parentDelta = $sizes->isEmpty() ? $accepted : array_sum($sizeDeltas);
         $sizeEffects = [];
         foreach ($sizes as $size) {
-            $size->increment('quantity', $accepted);
-            $sizeEffects[] = ['id' => $size->id, 'delta' => $accepted];
+            $delta = (int) ($sizeDeltas[$size->id] ?? 0);
+            if ($delta > 0) {
+                $size->increment('quantity', $delta);
+                $sizeEffects[] = ['id' => $size->id, 'delta' => $delta];
+            }
         }
 
         $colorEffect = null;

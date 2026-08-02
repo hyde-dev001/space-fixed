@@ -7,7 +7,6 @@ use App\Models\PurchaseRequest;
 use App\Http\Requests\StorePurchaseRequestRequest;
 use App\Http\Requests\ApprovePurchaseRequestRequest;
 use App\Http\Requests\RejectPurchaseRequestRequest;
-use App\Models\InventoryItem;
 use App\Models\StockRequestApproval;
 use App\Services\PurchaseRequestService;
 use Illuminate\Database\QueryException;
@@ -166,6 +165,13 @@ class PurchaseRequestController extends Controller
             }
 
             $data = $this->sanitizePurchaseRequestPayloadForSchema($data);
+
+            $data['product_name'] = $sourceStockRequest->product_name;
+            $data['inventory_item_id'] = $sourceStockRequest->inventory_item_id;
+            $data['requested_size'] = $sourceStockRequest->requested_size;
+            $data['requested_color'] = $sourceStockRequest->requested_color;
+            $data['quantity'] = $sourceStockRequest->quantity_needed;
+            $data['priority'] = $sourceStockRequest->priority;
 
             $data['shop_owner_id'] = $shopOwnerId;
             $data['requested_by'] = Auth::id();
@@ -380,58 +386,12 @@ class PurchaseRequestController extends Controller
         ]);
     }
 
-    /**
-     * Calculate PR total cost with support for all-size requests.
-     *
-     * For blank/all requested_size values, quantity is treated per size row.
-     */
     private function calculatePurchaseRequestTotalCost(array $data, int $shopOwnerId): float
     {
         $quantity = (int) ($data['quantity'] ?? 0);
         $unitCost = (float) ($data['unit_cost'] ?? 0);
 
-        if ($quantity <= 0 || $unitCost < 0) {
-            return 0;
-        }
-
-        $requestedSize = trim((string) ($data['requested_size'] ?? ''));
-        $requestedColor = trim((string) ($data['requested_color'] ?? ''));
-
-        // Specific size keeps the original formula.
-        if (!$this->isAllSizesRequest($requestedSize)) {
-            return round($quantity * $unitCost, 2);
-        }
-
-        $inventoryItemId = $data['inventory_item_id'] ?? null;
-        if (!$inventoryItemId) {
-            return round($quantity * $unitCost, 2);
-        }
-
-        $inventoryItem = InventoryItem::query()
-            ->whereKey($inventoryItemId)
-            ->where('shop_owner_id', $shopOwnerId)
-            ->first();
-
-        if (!$inventoryItem) {
-            return round($quantity * $unitCost, 2);
-        }
-
-        $sizeRowsQuery = $inventoryItem->sizes();
-
-        if ($requestedColor !== '') {
-            $targetColorVariant = $inventoryItem->colorVariants()
-                ->whereRaw('LOWER(color_name) = ?', [strtolower($requestedColor)])
-                ->first();
-
-            if ($targetColorVariant) {
-                $sizeRowsQuery->where('inventory_color_variant_id', $targetColorVariant->id);
-            }
-        }
-
-        $sizeRowCount = $sizeRowsQuery->count();
-        $effectiveQuantity = $quantity * max(1, $sizeRowCount);
-
-        return round($effectiveQuantity * $unitCost, 2);
+        return $quantity > 0 && $unitCost >= 0 ? round($quantity * $unitCost, 2) : 0;
     }
 
     private function isAllSizesRequest(?string $requestedSize): bool

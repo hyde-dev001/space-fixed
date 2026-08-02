@@ -294,6 +294,7 @@ class PurchaseRequestService
         $payload = $this->buildPurchaseRequestNotificationData($purchaseRequest);
 
         $this->notificationService->notifyPurchaseRequestSubmitted((int) $purchaseRequest->shop_owner_id, [
+            'purchase_request_id' => $purchaseRequest->id,
             'reference' => $payload['reference'],
             'total_cost' => $payload['total_cost'],
             'product_name' => $payload['product_name'],
@@ -313,7 +314,7 @@ class PurchaseRequestService
                 title: 'Purchase Request Awaiting Approval',
                 message: "{$payload['reference']} ({$payload['product_name']}) now requires shop owner approval.",
                 data: $payload,
-                actionUrl: '/shop-owner/purchase-requests',
+                actionUrl: "/shop-owner/purchase-request-approval?purchase_request={$purchaseRequest->id}",
                 priority: 'medium'
             );
 
@@ -328,7 +329,7 @@ class PurchaseRequestService
                 title: 'Purchase Request Returned To Finance',
                 message: "{$payload['reference']} was approved by shop owner and requires final Finance review.",
                 data: $payload,
-                actionUrl: '/erp/procurement/purchase-requests',
+                actionUrl: "/finance/purchase-request-approval?purchase_request={$purchaseRequest->id}",
                 priority: 'medium'
             );
 
@@ -344,7 +345,7 @@ class PurchaseRequestService
                     title: 'Purchase Request Approved',
                     message: "{$payload['reference']} has been approved.",
                     data: $payload,
-                    actionUrl: '/erp/procurement/purchase-requests',
+                    actionUrl: "/erp/procurement/purchase-request?purchase_request={$purchaseRequest->id}",
                     shopId: $shopOwnerId
                 );
             }
@@ -365,7 +366,7 @@ class PurchaseRequestService
                 title: 'Purchase Request Rejected',
                 message: "{$payload['reference']} was rejected. Reason: {$reason}",
                 data: $payload,
-                actionUrl: '/erp/procurement/purchase-requests',
+                actionUrl: "/erp/procurement/purchase-request?purchase_request={$purchaseRequest->id}",
                 shopId: $shopOwnerId
             );
         }
@@ -377,7 +378,7 @@ class PurchaseRequestService
                 title: 'Purchase Request Rejected by Finance',
                 message: "{$payload['reference']} was rejected by Finance. Reason: {$reason}",
                 data: $payload,
-                actionUrl: '/shop-owner/purchase-requests',
+                actionUrl: "/shop-owner/purchase-request-approval?purchase_request={$purchaseRequest->id}",
                 priority: 'medium'
             );
         }

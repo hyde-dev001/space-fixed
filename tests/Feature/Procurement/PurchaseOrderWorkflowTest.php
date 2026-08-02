@@ -27,10 +27,10 @@ class PurchaseOrderWorkflowTest extends TestCase
         config(['auth.defaults.guard' => 'user']);
         $this->shopOwner = ShopOwner::factory()->create();
         $this->user = User::factory()->for($this->shopOwner)->create();
-        foreach (['procurement.view', 'procurement.create_purchase_orders', 'procurement.manage_purchase_orders', 'procurement.receive_purchase_orders', 'procurement.cancel_purchase_orders'] as $permission) {
+        foreach (['procurement.view', 'procurement.create_purchase_orders', 'procurement.manage_purchase_orders', 'procurement.receive_purchase_orders', 'procurement.cancel_purchase_orders', 'view-inventory'] as $permission) {
             Permission::findOrCreate($permission, 'user');
         }
-        $this->user->givePermissionTo(['procurement.view', 'procurement.create_purchase_orders', 'procurement.manage_purchase_orders', 'procurement.receive_purchase_orders', 'procurement.cancel_purchase_orders']);
+        $this->user->givePermissionTo(['procurement.view', 'procurement.create_purchase_orders', 'procurement.manage_purchase_orders', 'procurement.receive_purchase_orders', 'procurement.cancel_purchase_orders', 'view-inventory']);
         $this->supplier = Supplier::factory()->create(['shop_owner_id' => $this->shopOwner->id]);
         
         $this->pr = PurchaseRequest::factory()->create([

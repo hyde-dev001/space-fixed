@@ -5,7 +5,7 @@ import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import { stockRequestApi } from "@/services/stockRequestApi";
 import { inventoryItemAPI } from "@/services/inventoryAPI";
 import { workflowFeedback } from "@/utils/workflowFeedback";
-import { clearModalDraft, loadModalDraft, saveModalDraft } from "@/utils/modalDraft";
+import { clearModalDraft, loadModalDraft, saveModalDraft, scopedModalDraftKey } from "@/utils/modalDraft";
 import type { InventoryItem } from "@/types/inventory";
 import type { StockRequestApproval } from "@/types/procurement";
 
@@ -203,7 +203,8 @@ const MetricCard = ({ title, value, description, icon: Icon, color }: MetricCard
 };
 
 export default function StockRequest() {
-	const { initialRequests, initialInventoryItems } = usePage().props as any;
+		const { auth, initialRequests, initialInventoryItems } = usePage().props as any;
+		const draftKey = scopedModalDraftKey(STOCK_REQUEST_DRAFT_KEY, auth?.user?.shop_owner_id, auth?.user?.id);
 	const [requests, setRequests] = useState<StockRequestApproval[]>(initialRequests?.data ?? []);
 	const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>(initialInventoryItems?.data ?? []);
 	const [isLoading, setIsLoading] = useState(false);
@@ -215,6 +216,10 @@ export default function StockRequest() {
 	const [isSubmittingCreateRequest, setIsSubmittingCreateRequest] = useState(false);
 	const [formData, setFormData] = useState<RequestFormState>(initialFormState);
 	const [viewingRequest, setViewingRequest] = useState<StockRequestApproval | null>(null);
+	useEffect(() => {
+		const id = Number(new URLSearchParams(window.location.search).get("stock_request"));
+		if (id > 0) setViewingRequest(requests.find((request) => request.id === id) ?? null);
+	}, [requests]);
 	const [isProductPickerOpen, setIsProductPickerOpen] = useState(false);
 	const [productPickerSearch, setProductPickerSearch] = useState("");
 	const isCreateFormDirty = useMemo(
@@ -231,11 +236,15 @@ export default function StockRequest() {
 	useEffect(() => {
 		if (!isCreateModalOpen) return;
 		if (isCreateFormDirty) {
-			saveModalDraft(STOCK_REQUEST_DRAFT_KEY, formData);
+				saveModalDraft(draftKey, formData);
 			return;
 		}
-		clearModalDraft(STOCK_REQUEST_DRAFT_KEY);
-	}, [formData, isCreateFormDirty, isCreateModalOpen]);
+			clearModalDraft(draftKey);
+		}, [draftKey, formData, isCreateFormDirty, isCreateModalOpen]);
+
+		useEffect(() => {
+			clearModalDraft(STOCK_REQUEST_DRAFT_KEY);
+		}, []);
 
 	useEffect(() => {
 		if (!isCreateModalOpen || !isCreateFormDirty) return;
@@ -317,53 +326,8 @@ export default function StockRequest() {
 		return sizeOptionsForSelectedColor.find((option) => option.label === formData.requestSize) ?? null;
 	}, [formData.requestSize, sizeOptionsForSelectedColor]);
 
-	const inventoryItemsById = useMemo(() => {
-		const map = new Map<number, InventoryItem>();
-		for (const item of inventoryItems) {
-			map.set(Number(item.id), item);
-		}
-		return map;
-	}, [inventoryItems]);
-
-	const getAllSizeMultiplierForRequest = (request: StockRequestApproval): number => {
-		if (!isAllSizesRequest(request.requested_size)) {
-			return 1;
-		}
-
-		const inventoryItemId = Number(request.inventory_item_id);
-		const item = inventoryItemsById.get(inventoryItemId);
-		if (!item || item.category !== "shoes") {
-			return 1;
-		}
-
-		const requestedColor = (request.requested_color ?? "").trim().toLowerCase();
-		if (requestedColor) {
-			const matchedVariant = (item.color_variants ?? []).find(
-				(variant) => String(variant.color_name).trim().toLowerCase() === requestedColor,
-			);
-
-			if (matchedVariant) {
-				const variantSizeCount = (matchedVariant.sizes ?? []).length;
-				if (variantSizeCount > 0) {
-					return variantSizeCount;
-				}
-
-				const scopedSizeCount = (item.sizes ?? []).filter(
-					(sizeOption) => Number(sizeOption.inventory_color_variant_id) === Number(matchedVariant.id),
-				).length;
-
-				if (scopedSizeCount > 0) {
-					return scopedSizeCount;
-				}
-			}
-		}
-
-		const fallbackSizeCount = (item.sizes ?? []).length;
-		return fallbackSizeCount > 0 ? fallbackSizeCount : 1;
-	};
-
 	const getEffectiveQuantityNeeded = (request: StockRequestApproval): number => {
-		return Number(request.quantity_needed ?? 0) * getAllSizeMultiplierForRequest(request);
+		return Number(request.quantity_needed ?? 0);
 	};
 
 	useEffect(() => {
@@ -483,7 +447,7 @@ export default function StockRequest() {
 				...prev.filter((request) => request.id !== createdRequest.id),
 			]);
 			void refreshData();
-			clearModalDraft(STOCK_REQUEST_DRAFT_KEY);
+			clearModalDraft(draftKey);
 			setFormData(initialFormState);
 			setIsCreateModalOpen(false);
 			setCurrentPage(1);
@@ -500,7 +464,7 @@ export default function StockRequest() {
 	};
 
 	const handleOpenCreateModal = async () => {
-		const savedDraft = loadModalDraft<Partial<RequestFormState>>(STOCK_REQUEST_DRAFT_KEY);
+			const savedDraft = loadModalDraft<Partial<RequestFormState>>(draftKey);
 
 		if (!savedDraft) {
 			setFormData(initialFormState);
@@ -518,7 +482,7 @@ export default function StockRequest() {
 		if (shouldRestore.isConfirmed) {
 			setFormData({ ...initialFormState, ...savedDraft });
 		} else {
-			clearModalDraft(STOCK_REQUEST_DRAFT_KEY);
+				clearModalDraft(draftKey);
 			setFormData(initialFormState);
 		}
 
@@ -531,7 +495,7 @@ export default function StockRequest() {
 		if (!isCreateFormDirty) {
 			setIsCreateModalOpen(false);
 			setFormData(initialFormState);
-			clearModalDraft(STOCK_REQUEST_DRAFT_KEY);
+				clearModalDraft(draftKey);
 			return;
 		}
 
@@ -544,7 +508,7 @@ export default function StockRequest() {
 
 		if (!confirmClose.isConfirmed) return;
 
-		saveModalDraft(STOCK_REQUEST_DRAFT_KEY, formData);
+			saveModalDraft(draftKey, formData);
 		setIsCreateModalOpen(false);
 		setFormData(initialFormState);
 	};

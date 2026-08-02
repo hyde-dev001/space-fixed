@@ -28,6 +28,10 @@ class StorePurchaseOrderReceiptRequest extends FormRequest
             ],
             'items.*.received_quantity' => ['required', 'integer', 'min:0'],
             'items.*.defective_quantity' => ['required', 'integer', 'min:0'],
+            'items.*.size_quantities' => ['nullable', 'array'],
+            'items.*.size_quantities.*.inventory_size_id' => ['required', 'integer', 'distinct'],
+            'items.*.size_quantities.*.received_quantity' => ['required', 'integer', 'min:0'],
+            'items.*.size_quantities.*.defective_quantity' => ['required', 'integer', 'min:0'],
         ];
     }
 
@@ -41,6 +45,11 @@ class StorePurchaseOrderReceiptRequest extends FormRequest
             foreach ($this->input('items', []) as $index => $item) {
                 if ((int) ($item['defective_quantity'] ?? 0) > (int) ($item['received_quantity'] ?? 0)) {
                     $validator->errors()->add("items.{$index}.defective_quantity", 'Defective quantity cannot exceed received quantity.');
+                }
+                foreach ($item['size_quantities'] ?? [] as $sizeIndex => $size) {
+                    if ((int) ($size['defective_quantity'] ?? 0) > (int) ($size['received_quantity'] ?? 0)) {
+                        $validator->errors()->add("items.{$index}.size_quantities.{$sizeIndex}.defective_quantity", 'Defective quantity cannot exceed received quantity.');
+                    }
                 }
             }
         }];

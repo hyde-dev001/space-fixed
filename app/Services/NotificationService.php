@@ -1017,7 +1017,7 @@ class NotificationService
         $this->sendToErpRole('Finance', $shopId, NotificationType::PURCHASE_REQUEST_SUBMITTED,
             'New Purchase Request',
             "Purchase request {$prData['reference']} of ₱{$prData['total_cost']} requires finance review.",
-            $prData, '/erp/finance/invoices', 'medium'
+            $prData, "/finance/purchase-request-approval?purchase_request={$prData['purchase_request_id']}", 'medium'
         );
     }
 

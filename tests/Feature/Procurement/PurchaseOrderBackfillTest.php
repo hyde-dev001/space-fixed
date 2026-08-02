@@ -61,7 +61,7 @@ class PurchaseOrderBackfillTest extends TestCase
         $this->assertSame(0, Expense::count());
     }
 
-    public function test_all_size_line_snapshots_current_size_ids_and_multiplier(): void
+    public function test_all_size_line_snapshots_current_size_ids_and_total_units(): void
     {
         $po = $this->legacyPurchaseOrder([
             'requested_size' => null,
@@ -79,7 +79,9 @@ class PurchaseOrderBackfillTest extends TestCase
         $this->artisan('procurement:backfill-purchase-orders')->assertSuccessful();
 
         $item = PurchaseOrderItem::sole();
-        $this->assertSame(3, $item->quantity_multiplier);
+        $this->assertSame(1, $item->quantity_multiplier);
+        $this->assertSame(6, $item->ordered_quantity);
+        $this->assertSame(6, $po->fresh()->quantity);
         $this->assertEqualsCanonicalizing($sizes->pluck('id')->all(), $item->eligible_size_ids);
         $this->assertSame('600.00', $item->line_total);
     }
@@ -162,7 +164,7 @@ class PurchaseOrderBackfillTest extends TestCase
             'requested_size' => 'US 8',
             'quantity' => 5,
             'unit_cost' => 100,
-            'total_cost' => 500,
+            'total_cost' => 550,
         ], $overrides));
     }
 }

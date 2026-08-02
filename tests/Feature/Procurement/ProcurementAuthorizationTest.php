@@ -129,8 +129,35 @@ class ProcurementAuthorizationTest extends TestCase
 
         $this->assertTrue($inventory->hasPermissionTo('procurement.receive_purchase_orders'));
         $this->assertFalse($inventory->hasPermissionTo('procurement.void_purchase_order_receipts'));
-        $this->assertTrue($procurement->hasPermissionTo('procurement.receive_purchase_orders'));
+        $this->assertFalse($procurement->hasPermissionTo('procurement.receive_purchase_orders'));
         $this->assertFalse($procurement->hasPermissionTo('procurement.void_purchase_order_receipts'));
+    }
+
+    public function test_receiving_permission_without_inventory_access_is_forbidden(): void
+    {
+        [$user, $shop] = $this->userForShop();
+        $this->give($user, 'procurement.receive_purchase_orders');
+        $supplier = Supplier::factory()->create(['shop_owner_id' => $shop->id]);
+        $purchaseOrder = PurchaseOrder::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'supplier_id' => $supplier->id,
+            'status' => 'in_transit',
+        ]);
+        $item = PurchaseOrderItem::factory()->create([
+            'purchase_order_id' => $purchaseOrder->id,
+            'ordered_quantity' => 1,
+        ]);
+
+        $this->actingAs($user)
+            ->postJson("/api/erp/procurement/purchase-orders/{$purchaseOrder->id}/receipts", [
+                'idempotency_key' => 'inventory-gate',
+                'items' => [[
+                    'purchase_order_item_id' => $item->id,
+                    'received_quantity' => 1,
+                    'defective_quantity' => 0,
+                ]],
+            ])
+            ->assertForbidden();
     }
 
     public function test_completion_uses_the_dedicated_permission(): void

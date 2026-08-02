@@ -2329,7 +2329,7 @@ Route::prefix('erp/inventory')->name('erp.inventory.')->middleware(['auth:user',
             return redirect()->route('erp.profile');
         }
         $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
-        $initialData = \App\Models\PurchaseOrder::with(['supplier', 'purchaseRequest.inventoryItem'])
+        $initialData = \App\Models\PurchaseOrder::with(['supplier', 'items.inventoryItem.sizes', 'receipts.items'])
             ->where('shop_owner_id', $shopOwnerId)->orderBy('ordered_date', 'desc')->paginate(200);
 
         return Inertia::render('ERP/inventory/SupplierOrderMonitoring', compact('initialData'));
