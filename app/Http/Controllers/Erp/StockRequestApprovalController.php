@@ -82,6 +82,10 @@ class StockRequestApprovalController extends Controller
             $query->where('status', $request->status);
         }
 
+        if ($request->boolean('available_for_purchase_request')) {
+            $query->whereDoesntHave('purchaseRequest');
+        }
+
         // Priority filter
         if ($request->filled('priority')) {
             $query->where('priority', $request->priority);

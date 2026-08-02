@@ -101,6 +101,26 @@ function isAllSizesRequest(value?: string | null): boolean {
 	return ["all", "all_sizes", "all_size", "any"].includes(normalized);
 }
 
+function getAvailableSizeLabelsForRequest(request: StockRequestApproval): string[] {
+	if (!isAllSizesRequest(request.requested_size) || request.inventory_item?.category !== "shoes") return [];
+
+	const item = request.inventory_item as any;
+	const allSizes = Array.isArray(item?.sizes) ? item.sizes : [];
+	const requestedColor = (request.requested_color ?? "").trim().toLowerCase();
+	const matchedVariant = requestedColor
+		? (item?.color_variants ?? []).find((variant: any) => String(variant.color_name).trim().toLowerCase() === requestedColor)
+		: null;
+	const sizes = matchedVariant?.sizes?.length
+		? matchedVariant.sizes
+		: matchedVariant
+			? allSizes.filter((size: any) => Number(size.inventory_color_variant_id) === Number(matchedVariant.id))
+			: allSizes;
+
+	return Array.from(new Set(
+		sizes.map((size: any) => formatRequestedSizeLabel(size.size, size.size_system)).filter(Boolean),
+	));
+}
+
 function formatDatetime(dateString: string): string {
 	try {
 		const date = new Date(dateString);
@@ -932,8 +952,14 @@ export default function StockRequest() {
 
 							<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
-									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Quantity Needed</p>
-									<p className="text-base font-semibold text-gray-900 dark:text-white">{getEffectiveQuantityNeeded(viewingRequest)}</p>
+									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
+										{viewingRequest.inventory_item?.category === "shoes" && isAllSizesRequest(viewingRequest.requested_size)
+											? "Total Quantity Across All Sizes"
+											: "Quantity Needed"}
+									</p>
+									<p className="text-base font-semibold text-gray-900 dark:text-white">
+										{getEffectiveQuantityNeeded(viewingRequest)}{viewingRequest.inventory_item?.category === "shoes" && isAllSizesRequest(viewingRequest.requested_size) ? " units" : ""}
+									</p>
 								</div>
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
 									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Priority</p>
@@ -947,6 +973,13 @@ export default function StockRequest() {
 								<div className="rounded-xl bg-indigo-50 dark:bg-indigo-900/20 p-4 border border-indigo-200 dark:border-indigo-800">
 									<p className="text-sm font-medium text-indigo-600 dark:text-indigo-400 mb-1">Requested Size</p>
 									<p className="text-base font-semibold text-gray-900 dark:text-white">{getRequestedSizeLabel(viewingRequest.requested_size)}</p>
+								</div>
+							)}
+
+							{getAvailableSizeLabelsForRequest(viewingRequest).length > 0 && (
+								<div className="rounded-xl bg-blue-50 dark:bg-blue-900/20 p-4 border border-blue-200 dark:border-blue-800">
+									<p className="text-sm font-medium text-blue-600 dark:text-blue-400 mb-1">Available Sizes {viewingRequest.requested_color ? `(${viewingRequest.requested_color})` : ""}</p>
+									<p className="text-base font-semibold text-gray-900 dark:text-white">{getAvailableSizeLabelsForRequest(viewingRequest).join(", ")}</p>
 								</div>
 							)}
 

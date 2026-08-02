@@ -2024,27 +2024,10 @@ Route::prefix('finance')->name('finance.')->middleware(['auth:user', 'role_or_pe
             return redirect()->route('erp.profile');
         }
 
-        abort_unless(Auth::user()->can('viewAny', \App\Models\PurchaseRequest::class), 403);
-
-        $requests = \App\Models\PurchaseRequest::query()
-            ->with(['shopOwner', 'supplier', 'inventoryItem', 'requester', 'reviewer', 'approver'])
-            ->where('shop_owner_id', Auth::user()->shop_owner_id)
-            ->whereIn('status', ['pending_finance', 'pending_finance_final'])
-            ->orderBy('requested_date', 'desc')
-            ->get();
-
-        $requests = $requests->map(function (\App\Models\PurchaseRequest $purchaseRequest) {
-            $payload = $purchaseRequest->toArray();
-            $payload['approval_stage'] = $purchaseRequest->status === 'pending_finance_final'
-                ? 'finance_final'
-                : ($purchaseRequest->status === 'pending_finance' ? 'finance_initial' : null);
-
-            return $payload;
-        });
-
-        return Inertia::render('ERP/Finance/PurchaseRequestApproval', [
-            'requests' => $requests,
-        ]);
+        return redirect('/finance?'.http_build_query(array_filter([
+            'section' => 'purchase-request-approval',
+            'purchase_request' => request()->query('purchase_request'),
+        ], fn ($value) => $value !== null)));
     })->middleware('permission:access-finance-dashboard|access-approval-workflow|access-purchase-request-approval')->name('purchase-request-approval');
 });
 
@@ -2308,7 +2291,7 @@ Route::prefix('erp/inventory')->name('erp.inventory.')->middleware(['auth:user',
             return redirect()->route('erp.profile');
         }
         $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
-        $initialRequests = \App\Models\StockRequestApproval::with(['inventoryItem', 'requester'])
+        $initialRequests = \App\Models\StockRequestApproval::with(['inventoryItem.sizes', 'inventoryItem.colorVariants.sizes', 'requester'])
             ->where('shop_owner_id', $shopOwnerId)->orderBy('requested_date', 'desc')->paginate(200);
         $initialInventoryItems = \App\Models\InventoryItem::with(['sizes', 'colorVariants', 'images'])
             ->where('shop_owner_id', $shopOwnerId)->where('is_active', true)->orderBy('name')->paginate(200);
@@ -2340,7 +2323,7 @@ Route::prefix('erp/inventory')->name('erp.inventory.')->middleware(['auth:user',
             return redirect()->route('erp.profile');
         }
         $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
-        $initialData = \App\Models\StockRequestApproval::with(['shopOwner', 'inventoryItem', 'requester', 'approver'])
+        $initialData = \App\Models\StockRequestApproval::with(['shopOwner', 'inventoryItem.sizes', 'inventoryItem.colorVariants.sizes', 'requester', 'approver'])
             ->where('shop_owner_id', $shopOwnerId)
             ->where(function ($query) {
                 $query->where('request_source', 'manual')
@@ -2364,7 +2347,8 @@ Route::prefix('erp/inventory')->name('erp.inventory.')->middleware(['auth:user',
             ->where('shop_owner_id', $shopOwnerId)->orderBy('requested_date', 'desc')->paginate(100);
         $initialSuppliers = \App\Models\Supplier::where('shop_owner_id', $shopOwnerId)->orderBy('name')->get();
         $initialAcceptedRequests = \App\Models\StockRequestApproval::with(['inventoryItem', 'requester'])
-            ->where('shop_owner_id', $shopOwnerId)->where('status', 'accepted')->orderBy('requested_date', 'desc')->paginate(200);
+            ->where('shop_owner_id', $shopOwnerId)->where('status', 'accepted')
+            ->whereDoesntHave('purchaseRequest')->orderBy('requested_date', 'desc')->paginate(200);
 
         return Inertia::render('ERP/Procurement/PurchaseRequest', compact('initialData', 'initialSuppliers', 'initialAcceptedRequests'));
     })->name('purchase-request');
@@ -2407,7 +2391,8 @@ Route::prefix('erp/procurement')->name('erp.procurement.')->middleware(['auth:us
             ->where('shop_owner_id', $shopOwnerId)->orderBy('requested_date', 'desc')->paginate(100);
         $initialSuppliers = \App\Models\Supplier::where('shop_owner_id', $shopOwnerId)->orderBy('name')->get();
         $initialAcceptedRequests = \App\Models\StockRequestApproval::with(['inventoryItem', 'requester'])
-            ->where('shop_owner_id', $shopOwnerId)->where('status', 'accepted')->orderBy('requested_date', 'desc')->paginate(200);
+            ->where('shop_owner_id', $shopOwnerId)->where('status', 'accepted')
+            ->whereDoesntHave('purchaseRequest')->orderBy('requested_date', 'desc')->paginate(200);
 
         return Inertia::render('ERP/Procurement/PurchaseRequest', compact('initialData', 'initialSuppliers', 'initialAcceptedRequests'));
     })->name('purchase-request');
@@ -2432,7 +2417,7 @@ Route::prefix('erp/procurement')->name('erp.procurement.')->middleware(['auth:us
             return redirect()->route('erp.profile');
         }
         $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
-        $initialData = \App\Models\StockRequestApproval::with(['shopOwner', 'inventoryItem', 'requester', 'approver'])
+        $initialData = \App\Models\StockRequestApproval::with(['shopOwner', 'inventoryItem.sizes', 'inventoryItem.colorVariants.sizes', 'requester', 'approver'])
             ->where('shop_owner_id', $shopOwnerId)->orderBy('requested_date', 'desc')->paginate(100);
 
         return Inertia::render('ERP/Procurement/StockRequestApproval', compact('initialData'));

@@ -54,7 +54,7 @@ class PurchaseRequestWorkflowTest extends TestCase
 
         $this->assertDatabaseHas('notifications', [
             'user_id' => $this->finance->id,
-            'action_url' => "/finance/purchase-request-approval?purchase_request={$purchaseRequest->id}",
+            'action_url' => "/finance?section=purchase-request-approval&purchase_request={$purchaseRequest->id}",
         ]);
 
         $this->actingAs($this->finance)
@@ -83,7 +83,7 @@ class PurchaseRequestWorkflowTest extends TestCase
         $this->assertDatabaseHas('notifications', [
             'user_id' => $this->finance->id,
             'title' => 'Purchase Request Returned To Finance',
-            'action_url' => "/finance/purchase-request-approval?purchase_request={$purchaseRequest->id}",
+            'action_url' => "/finance?section=purchase-request-approval&purchase_request={$purchaseRequest->id}",
         ]);
 
         $this->actingAs($this->finance, 'user')
@@ -262,6 +262,34 @@ class PurchaseRequestWorkflowTest extends TestCase
         $this->assertSame('Black', $purchaseRequest->requested_color);
         $this->assertSame('high', $purchaseRequest->priority);
         $this->assertSame('820000.00', $purchaseRequest->total_cost);
+    }
+
+    public function test_available_stock_requests_exclude_any_request_already_linked_to_a_pr(): void
+    {
+        $consumed = $this->acceptedStockRequest();
+        $available = $this->acceptedStockRequest();
+        PurchaseRequest::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'stock_request_id' => $consumed->id,
+            'supplier_id' => $this->supplier->id,
+            'requested_by' => $this->requester->id,
+            'status' => 'approved',
+        ]);
+
+        $this->actingAs($this->requester)
+            ->getJson('/api/erp/procurement/stock-requests?status=accepted&available_for_purchase_request=1&per_page=200')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $available->id);
+    }
+
+    public function test_legacy_finance_pr_page_redirects_into_the_finance_shell(): void
+    {
+        $this->give($this->finance, 'access-purchase-request-approval');
+
+        $this->actingAs($this->finance)
+            ->get('/finance/purchase-request-approval?purchase_request=42')
+            ->assertRedirect('/finance?section=purchase-request-approval&purchase_request=42');
     }
 
     private function pendingRequest(string $status): PurchaseRequest

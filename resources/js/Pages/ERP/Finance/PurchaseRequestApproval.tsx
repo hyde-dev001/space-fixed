@@ -656,14 +656,18 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 
 							<div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
-									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Quantity</p>
+									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
+										{isAllSizesRequest(viewingRequest.requested_size) && String((viewingRequest as any)?.inventory_item?.category || "").toLowerCase() === "shoes"
+											? "Total Quantity Across All Sizes"
+											: "Quantity"}
+									</p>
 									<p className="text-base font-semibold text-gray-900 dark:text-white">
 										{getEffectiveQuantity(
 											viewingRequest.quantity,
 											viewingRequest.unit_cost,
 											viewingRequest.total_cost,
 											isAllSizesRequest(viewingRequest.requested_size),
-										)}
+										)}{isAllSizesRequest(viewingRequest.requested_size) && String((viewingRequest as any)?.inventory_item?.category || "").toLowerCase() === "shoes" ? " units" : ""}
 									</p>
 								</div>
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">

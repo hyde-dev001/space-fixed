@@ -270,6 +270,7 @@ export interface PurchaseOrderFilters {
 export interface StockRequestFilters {
     search?: string;
     status?: string;
+    available_for_purchase_request?: boolean;
     priority?: string;
     request_source?: 'manual' | 'repair';
     page?: number;

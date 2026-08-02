@@ -110,7 +110,7 @@ Assert exact actions:
 ```text
 /erp/inventory/stock-request?stock_request=<id>
 /erp/procurement/stock-request-approval?stock_request=<id>
-/finance/purchase-request-approval?purchase_request=<id>
+/finance?section=purchase-request-approval&purchase_request=<id>
 /shop-owner/purchase-request-approval?purchase_request=<id>
 /erp/procurement/purchase-request?purchase_request=<id>
 ```
@@ -158,6 +158,9 @@ Commit: `fix: route procurement notifications by recipient`
 - Modify: `resources/js/Pages/ERP/Procurement/PurchaseRequest.tsx`
 - Modify: `resources/js/Pages/ERP/Finance/PurchaseRequestApproval.tsx`
 - Modify: `resources/js/Pages/ShopOwner/Approvals/PurchaseRequestApproval.tsx`
+- Modify: `resources/js/Pages/ERP/Procurement/PurchaseOrders.tsx`
+- Modify: `app/Services/NotificationService.php`
+- Modify: `app/Services/PurchaseRequestService.php`
 - Modify: `resources/js/Pages/ERP/Procurement/PurchaseOrders.tsx`
 
 - [ ] **Step 1: Write failing new-record tests**
@@ -422,6 +425,8 @@ Render all-size Stock Request and PR details and assert the label `Total Quantit
 - [ ] **Step 5: Implement the display-only wording**
 
 Use conditional labels in Inventory and Procurement Stock Request details plus Procurement, Finance, and Shop Owner PR details. Reuse each page's existing all-size and available-size helpers; do not add a multiplier or change stored quantities/costs.
+
+Also label the approved-PR option in the PO builder as one total across all sizes. Route Finance notification links through `/finance?section=purchase-request-approval&purchase_request=<id>` and redirect the legacy standalone route to the same Finance shell.
 
 - [ ] **Step 6: Run frontend and procurement regressions**
 

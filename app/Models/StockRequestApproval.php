@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Builder;
 
 class StockRequestApproval extends Model
@@ -81,6 +82,11 @@ class StockRequestApproval extends Model
     public function inventoryApprover(): BelongsTo
     {
         return $this->belongsTo(User::class, 'inventory_approved_by');
+    }
+
+    public function purchaseRequest(): HasOne
+    {
+        return $this->hasOne(PurchaseRequest::class, 'stock_request_id');
     }
 
     // Scopes

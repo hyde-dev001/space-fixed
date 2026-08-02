@@ -93,7 +93,7 @@ Every procurement notification uses a real page the recipient can access and inc
 
 - Inventory stock-request requester: `/erp/inventory/stock-request?stock_request=<id>`
 - Procurement stock-request reviewer: `/erp/procurement/stock-request-approval?stock_request=<id>`
-- Finance PR reviewer: `/finance/purchase-request-approval?purchase_request=<id>`
+- Finance PR reviewer: `/finance?section=purchase-request-approval&purchase_request=<id>`
 - Shop Owner PR reviewer: `/shop-owner/purchase-request-approval?purchase_request=<id>`
 - Procurement PR requester: `/erp/procurement/purchase-request?purchase_request=<id>`
 
@@ -152,6 +152,8 @@ All-size quantities remain physical totals, not per-size multipliers. Inventory 
 - `Total Quantity Across All Sizes: <quantity> units`
 
 Specific-size and non-shoe records keep the shorter `Quantity` or `Quantity Needed` wording. Exact distribution among included sizes is recorded during Inventory receiving.
+
+The PO builder uses the same wording (`<quantity> total units across All Sizes`) so selecting an approved PR cannot be mistaken for a per-size multiplier. Finance notifications enter through the Finance shell, and the legacy standalone Finance approval URL redirects there while preserving the selected PR.
 
 ## Explicitly deferred
 
