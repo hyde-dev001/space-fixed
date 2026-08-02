@@ -1442,7 +1442,6 @@ const AppSidebar_ERP: React.FC = () => {
       'access-purchase-orders',
       'access-stock-request-approval',
       'access-suppliers-management',
-      'access-supplier-order-monitoring',
     ];
     return procurementPagePermissions.some(p => permissions.includes(p));
   };

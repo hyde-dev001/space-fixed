@@ -127,10 +127,72 @@ class ProcurementAuthorizationTest extends TestCase
         $inventory = Role::findByName('Inventory Manager', 'user');
         $procurement = Role::findByName('Procurement Manager', 'user');
 
+        $this->assertTrue($inventory->hasPermissionTo('procurement.view'));
         $this->assertTrue($inventory->hasPermissionTo('procurement.receive_purchase_orders'));
+        $this->assertFalse($inventory->hasPermissionTo('procurement.create_purchase_requests'));
+        $this->assertFalse($inventory->hasPermissionTo('procurement.submit_purchase_requests'));
         $this->assertFalse($inventory->hasPermissionTo('procurement.void_purchase_order_receipts'));
         $this->assertFalse($procurement->hasPermissionTo('procurement.receive_purchase_orders'));
         $this->assertFalse($procurement->hasPermissionTo('procurement.void_purchase_order_receipts'));
+    }
+
+    public function test_inventory_manager_can_monitor_supplier_orders_but_cannot_open_procurement_pages(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        [$user] = $this->userForShop();
+        $user->assignRole('Inventory Manager');
+
+        $this->actingAs($user, 'user')
+            ->get('/erp/inventory/supplier-order-monitoring')
+            ->assertOk();
+
+        foreach (['purchase-request', 'stock-request-approval', 'purchase-orders', 'suppliers-management'] as $page) {
+            $this->get("/erp/procurement/{$page}")->assertForbidden();
+            $this->get("/erp/inventory/{$page}")->assertNotFound();
+        }
+    }
+
+    public function test_page_permission_only_unlocks_its_procurement_page(): void
+    {
+        [$user] = $this->userForShop();
+        $this->give($user, 'access-purchase-requests');
+
+        $this->actingAs($user, 'user')
+            ->get('/erp/procurement/purchase-request')
+            ->assertOk();
+        $this->get('/erp/procurement/purchase-orders')->assertForbidden();
+    }
+
+    public function test_procurement_manager_can_open_all_procurement_pages(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        [$user] = $this->userForShop();
+        $user->assignRole('Procurement Manager');
+
+        $this->actingAs($user, 'user');
+        foreach (['purchase-request', 'stock-request-approval', 'purchase-orders', 'suppliers-management'] as $page) {
+            $this->get("/erp/procurement/{$page}")->assertOk();
+        }
+    }
+
+    public function test_migration_removes_only_stale_inventory_manager_purchase_request_permissions(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        $inventory = Role::findByName('Inventory Manager', 'user');
+        $inventory->givePermissionTo([
+            'procurement.create_purchase_requests',
+            'procurement.submit_purchase_requests',
+        ]);
+
+        $migration = require database_path('migrations/2026_08_02_000006_remove_procurement_creation_permissions_from_inventory_manager_role.php');
+        $migration->up();
+        $migration->up();
+        $inventory = $inventory->fresh();
+
+        $this->assertFalse($inventory->hasPermissionTo('procurement.create_purchase_requests'));
+        $this->assertFalse($inventory->hasPermissionTo('procurement.submit_purchase_requests'));
+        $this->assertTrue($inventory->hasPermissionTo('procurement.view'));
+        $this->assertTrue($inventory->hasPermissionTo('procurement.receive_purchase_orders'));
     }
 
     public function test_receiving_permission_without_inventory_access_is_forbidden(): void
