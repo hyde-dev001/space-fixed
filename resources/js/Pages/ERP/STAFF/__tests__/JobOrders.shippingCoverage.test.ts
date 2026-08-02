@@ -288,6 +288,19 @@ describe('staff refund visibility', () => {
     shipping_fee: 108,
     vat_amount: 267.75,
     grand_total: 2607,
+    logistics: {
+      shipment_id: 81,
+      shipment_status: 'completed',
+      leg_id: 82,
+      leg_type: 'outbound',
+      leg_status: 'delivered',
+      carrier: 'Shop-owned logistics',
+      rider_name: 'Marco Santos',
+      rider_phone: '09171234567',
+      tracking_number: 'DELIVERY-81',
+      tracking_url: 'https://example.test/deliveries/81',
+      proofs: [],
+    },
     latest_refund: {
       id: 71,
       status: 'succeeded',
@@ -310,9 +323,12 @@ describe('staff refund visibility', () => {
         shipment_status: 'completed',
         leg_id: 92,
         leg_type: 'return_to_shop',
-        leg_status: 'completed',
+        leg_status: 'delivered',
+        carrier: 'Shop-owned logistics',
+        rider_name: 'Paolo Mendoza',
+        rider_phone: '09179876543',
         tracking_number: 'RETURN-91',
-        tracking_url: null,
+        tracking_url: 'https://example.test/returns/91',
         proofs: [{
           id: 93,
           handoff_type: 'return',
@@ -321,6 +337,19 @@ describe('staff refund visibility', () => {
         }],
       },
     },
+  });
+
+  it('always shows a logistics empty state when no shipment exists', async () => {
+    const order = makeOrder(42);
+    mockPage.props.initialOrders = [order];
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse(200, [order]))));
+
+    render(React.createElement(JobOrdersPage));
+    fireEvent.click(await screen.findByRole('button', { name: 'Processing (1)' }));
+    fireEvent.click((await screen.findAllByTitle('View order details'))[0]);
+
+    expect(screen.getByText('Logistics')).toBeInTheDocument();
+    expect(screen.getByText('No logistics shipment yet.')).toBeInTheDocument();
   });
 
   it('shows a shipping-excluded full payout as Refunded', async () => {
@@ -346,9 +375,48 @@ describe('staff refund visibility', () => {
 
     expect(screen.getByText('Refund Evidence')).toBeInTheDocument();
     expect(screen.getByAltText('Refund evidence 1')).toHaveAttribute('src', '/storage/refunds/customer-evidence.jpg');
-    expect(screen.getByText('Return Logistics')).toBeInTheDocument();
+    expect(screen.getByText('Logistics')).toBeInTheDocument();
+    expect(screen.getByText('Customer delivery')).toBeInTheDocument();
+    expect(screen.getByText('Return to shop')).toBeInTheDocument();
+    expect(screen.getByText('81')).toBeInTheDocument();
+    expect(screen.getByText('91')).toBeInTheDocument();
+    expect(screen.getByText('Received')).toBeInTheDocument();
+    expect(screen.getAllByText('Shop-owned logistics')).toHaveLength(2);
+    expect(screen.getByText('Marco Santos')).toBeInTheDocument();
+    expect(screen.getByText('09171234567')).toBeInTheDocument();
+    expect(screen.getByText('Paolo Mendoza')).toBeInTheDocument();
     expect(screen.getByText('RETURN-91')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'View return proof 1' })).toHaveAttribute('href', '/api/logistics/proofs/93/file');
+    expect(screen.getByRole('link', { name: 'Return delivery proof 1' })).toHaveAttribute('href', '/api/logistics/proofs/93/file');
+    expect(screen.getByText('No proof submitted yet.')).toBeInTheDocument();
+  });
+
+  it('shows a shipment even before its delivery leg is created', async () => {
+    const order = {
+      ...makeOrder(43),
+      logistics: {
+        shipment_id: 83,
+        shipment_status: 'requested',
+        leg_id: null,
+        leg_type: null,
+        leg_status: null,
+        carrier: null,
+        rider_name: null,
+        rider_phone: null,
+        tracking_number: null,
+        tracking_url: null,
+        proofs: [],
+      },
+    };
+    mockPage.props.initialOrders = [order];
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse(200, [order]))));
+
+    render(React.createElement(JobOrdersPage));
+    fireEvent.click(await screen.findByRole('button', { name: 'Processing (1)' }));
+    fireEvent.click((await screen.findAllByTitle('View order details'))[0]);
+
+    expect(screen.getByText('83')).toBeInTheDocument();
+    expect(screen.getByText('Leg not created yet')).toBeInTheDocument();
+    expect(screen.getAllByText('Not assigned').length).toBeGreaterThan(0);
   });
 
   it('closes stale order details after confirming a returned item', async () => {

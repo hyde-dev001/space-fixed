@@ -21,6 +21,27 @@ type OrderItem = {
   color: string | null;
 };
 
+type LogisticsProof = {
+  id: number;
+  handoff_type: string;
+  proof_type: string;
+  file_url: string;
+};
+
+type LogisticsSummary = {
+  shipment_id: number;
+  shipment_status: string;
+  leg_id?: number | null;
+  leg_type?: string | null;
+  leg_status?: string | null;
+  carrier?: string | null;
+  rider_name?: string | null;
+  rider_phone?: string | null;
+  tracking_number?: string | null;
+  tracking_url?: string | null;
+  proofs: LogisticsProof[];
+};
+
 type Order = {
   id: number;
   order_number: string;
@@ -55,6 +76,7 @@ type Order = {
   carrierPhone?: string;
   trackingNumber?: string;
   trackingLink?: string;
+  logistics?: LogisticsSummary | null;
   shopOwnedCoverage?: {
     available: boolean;
     reason: string | null;
@@ -108,21 +130,7 @@ type Order = {
     flow_type?: string;
     payout_amount_value?: number;
     evidence_media?: string[];
-    return_logistics?: {
-      shipment_id: number;
-      shipment_status: string;
-      leg_id: number;
-      leg_type: string;
-      leg_status: string;
-      tracking_number?: string | null;
-      tracking_url?: string | null;
-      proofs: Array<{
-        id: number;
-        handoff_type: string;
-        proof_type: string;
-        file_url: string;
-      }>;
-    } | null;
+    return_logistics?: LogisticsSummary | null;
     items?: Array<{
       order_item_id: number;
       product_name: string;
@@ -517,6 +525,7 @@ export default function JobOrdersPage() {
       carrierPhone: order.carrier_phone || undefined,
       trackingNumber: order.tracking_number || undefined,
       trackingLink: order.tracking_link || undefined,
+      logistics: order.logistics || null,
       shopOwnedCoverage: order.shop_owned_coverage || undefined,
       items: order.items || [],
       quantity: order.items ? order.items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0) : 0,
@@ -2631,43 +2640,80 @@ export default function JobOrdersPage() {
                     </div>
                   </div>
                 )}
-                {viewOrder.latest_refund?.return_logistics && (
-                  <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
-                    <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Return Logistics</p>
-                    <div className="bg-gray-50 dark:bg-gray-900/30 rounded-lg p-4 space-y-3 text-sm text-gray-700 dark:text-gray-300">
-                      <div className="flex items-center justify-between gap-4">
-                        <span className="text-gray-600 dark:text-gray-400">Shipment status</span>
-                        <span className="font-medium capitalize">{viewOrder.latest_refund.return_logistics.shipment_status.replaceAll('_', ' ')}</span>
-                      </div>
-                      <div className="flex items-center justify-between gap-4">
-                        <span className="text-gray-600 dark:text-gray-400">Return leg</span>
-                        <span className="font-medium capitalize">{viewOrder.latest_refund.return_logistics.leg_status.replaceAll('_', ' ')}</span>
-                      </div>
-                      {viewOrder.latest_refund.return_logistics.tracking_number && (
-                        <div className="flex items-center justify-between gap-4">
-                          <span className="text-gray-600 dark:text-gray-400">Tracking #</span>
-                          <span className="font-medium">{viewOrder.latest_refund.return_logistics.tracking_number}</span>
-                        </div>
-                      )}
-                      {viewOrder.latest_refund.return_logistics.proofs.length > 0 && (
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-1">
-                          {viewOrder.latest_refund.return_logistics.proofs.map((proof, index) => (
-                            <a
-                              key={proof.id}
-                              href={proof.file_url}
-                              target="_blank"
-                              rel="noreferrer"
-                              aria-label={`View return proof ${index + 1}`}
-                              className="block overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700"
-                            >
-                              <img src={proof.file_url} alt={`Return proof ${index + 1}`} loading="lazy" className="h-28 w-full object-cover" />
-                            </a>
-                          ))}
-                        </div>
-                      )}
+                <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Logistics</p>
+                  {!viewOrder.logistics && !viewOrder.latest_refund?.return_logistics ? (
+                    <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 p-4 text-sm text-gray-500 dark:text-gray-400">
+                      No logistics shipment yet.
                     </div>
-                  </div>
-                )}
+                  ) : (
+                    <div className="space-y-3">
+                      {[
+                        { label: 'Customer delivery', summary: viewOrder.logistics, proofLabel: 'Delivery proof', returnStatus: null },
+                        {
+                          label: 'Return to shop',
+                          summary: viewOrder.latest_refund?.return_logistics,
+                          proofLabel: 'Return delivery proof',
+                          returnStatus: viewOrder.latest_refund?.return_status || null,
+                        },
+                      ].filter((card) => card.summary).map((card) => {
+                        const summary = card.summary as LogisticsSummary;
+                        const readable = (status: string) => status.replaceAll('_', ' ').replace(/^./, (character) => character.toUpperCase());
+                        const rows = [
+                          ['Shipment ID', summary.shipment_id],
+                          ['Shipment status', readable(summary.shipment_status)],
+                          ...(card.returnStatus ? [['Return status', readable(card.returnStatus)]] : []),
+                          ['Leg status', summary.leg_status ? readable(summary.leg_status) : 'Leg not created yet'],
+                          ['Carrier', summary.carrier || 'Not available'],
+                          ['Rider', summary.rider_name || 'Not assigned'],
+                          ['Rider phone', summary.rider_phone || 'Not available'],
+                        ];
+
+                        return (
+                          <section key={card.label} aria-label={card.label} className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-900/30 dark:text-gray-300">
+                            <h4 className="mb-3 font-semibold text-gray-900 dark:text-white">{card.label}</h4>
+                            <dl className="space-y-2">
+                              {rows.map(([label, value]) => (
+                                <div key={label} className="flex items-start justify-between gap-4">
+                                  <dt className="text-gray-600 dark:text-gray-400">{label}</dt>
+                                  <dd className="text-right font-medium">{value}</dd>
+                                </div>
+                              ))}
+                              <div className="flex items-start justify-between gap-4">
+                                <dt className="text-gray-600 dark:text-gray-400">Tracking</dt>
+                                <dd className="text-right font-medium">
+                                  {summary.tracking_url ? (
+                                    <a href={summary.tracking_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline dark:text-blue-400">
+                                      {summary.tracking_number || 'Open tracking'}
+                                    </a>
+                                  ) : summary.tracking_number || 'Not available'}
+                                </dd>
+                              </div>
+                            </dl>
+                            {summary.proofs.length > 0 ? (
+                              <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                                {summary.proofs.map((proof, index) => (
+                                  <a
+                                    key={proof.id}
+                                    href={proof.file_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    aria-label={`${card.proofLabel} ${index + 1}`}
+                                    className="block overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700"
+                                  >
+                                    <img src={proof.file_url} alt={`${card.proofLabel} ${index + 1}`} loading="lazy" className="h-28 w-full object-cover" />
+                                  </a>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">No proof submitted yet.</p>
+                            )}
+                          </section>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
                 {(viewOrder.trackingNumber || viewOrder.trackingLink || viewOrder.eta) && (
                   <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Shipping & Tracking</p>
