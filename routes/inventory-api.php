@@ -96,15 +96,15 @@ Route::middleware([
     // Supplier Orders Management
     // =====================================
     Route::get('/supplier-orders', [SupplierOrderController::class, 'index'])->name('inventory.supplier-orders.index');
-    Route::post('/supplier-orders', [SupplierOrderController::class, 'store'])->name('inventory.supplier-orders.store');
+    Route::post('/supplier-orders', [SupplierOrderController::class, 'legacyGone'])->name('inventory.supplier-orders.store');
     Route::get('/supplier-orders/{id}', [SupplierOrderController::class, 'show'])->name('inventory.supplier-orders.show');
-    Route::put('/supplier-orders/{id}', [SupplierOrderController::class, 'update'])->name('inventory.supplier-orders.update');
-    Route::delete('/supplier-orders/{id}', [SupplierOrderController::class, 'destroy'])->name('inventory.supplier-orders.destroy');
+    Route::put('/supplier-orders/{id}', [SupplierOrderController::class, 'legacyGone'])->name('inventory.supplier-orders.update');
+    Route::delete('/supplier-orders/{id}', [SupplierOrderController::class, 'legacyGone'])->name('inventory.supplier-orders.destroy');
     
     // Supplier Order Actions
-    Route::put('/supplier-orders/{id}/status', [SupplierOrderMonitoringController::class, 'updateStatus'])->name('inventory.supplier-orders.status');
-    Route::post('/supplier-orders/{id}/receive', [SupplierOrderController::class, 'receiveOrder'])->name('inventory.supplier-orders.receive');
-    Route::post('/supplier-orders/generate-po', [SupplierOrderController::class, 'generatePO'])->name('inventory.supplier-orders.generate-po');
+    Route::put('/supplier-orders/{id}/status', [SupplierOrderController::class, 'legacyGone'])->name('inventory.supplier-orders.status');
+    Route::post('/supplier-orders/{id}/receive', [SupplierOrderController::class, 'legacyGone'])->name('inventory.supplier-orders.receive');
+    Route::post('/supplier-orders/generate-po', [SupplierOrderController::class, 'legacyGone'])->name('inventory.supplier-orders.generate-po');
     
     // =====================================
     // Supplier Order Monitoring
@@ -112,7 +112,7 @@ Route::middleware([
     Route::get('/supplier-orders-monitoring', [SupplierOrderMonitoringController::class, 'index'])->name('inventory.monitoring.index');
     Route::get('/supplier-orders-monitoring/metrics', [SupplierOrderMonitoringController::class, 'getMetrics'])->name('inventory.monitoring.metrics');
     Route::get('/supplier-orders-monitoring/{id}', [SupplierOrderMonitoringController::class, 'show'])->name('inventory.monitoring.show');
-    Route::post('/supplier-orders-monitoring/{id}/receive', [SupplierOrderMonitoringController::class, 'receiveOrder'])->name('inventory.monitoring.receive');
+    Route::post('/supplier-orders-monitoring/{id}/receive', [SupplierOrderController::class, 'legacyGone'])->name('inventory.monitoring.receive');
 
     // =====================================
     // Repair Material Approval Queue (Inventory)

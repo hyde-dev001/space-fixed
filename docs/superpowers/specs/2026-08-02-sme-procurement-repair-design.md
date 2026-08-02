@@ -19,8 +19,9 @@ Supplier management remains basic master-data recording: name, contact details, 
 ```text
 Stock Request
   -> Purchase Request
-  -> Finance Review
-  -> Shop Owner Approval
+  -> Finance Initial Review
+  -> Shop Owner Approval/Acknowledgment
+  -> Finance Final Release
   -> Purchase Order with one or more items
   -> One or more Receipts
   -> Accepted quantities posted to Inventory exactly once
@@ -32,20 +33,24 @@ No legacy `SupplierOrder` record is automatically migrated into `PurchaseOrder`.
 
 ## Purchase-request approval
 
-The existing approval sequence is retained and tightened:
+The existing three-step approval sequence is retained and tightened. Finance is the final approver because it owns the last budget and cash-availability check; the Shop Owner step records business awareness and consent before funds are released:
 
 ```text
-draft -> pending_finance -> pending_shop_owner -> approved
-                       \-> rejected
-                                            \-> rejected
+draft -> pending_finance -> pending_shop_owner -> pending_finance_final -> approved
+                       \-> rejected          \-> rejected              \-> rejected
 ```
 
-- Procurement or authorized Inventory staff may create and submit a purchase request.
-- Only Finance may review a request in `pending_finance` and advance or reject it.
-- Only the Shop Owner may approve or reject a request in `pending_shop_owner`.
-- A requester cannot review or approve their own request.
-- Each action records the actor, timestamp, and optional remarks using the correct actor type and foreign key.
+- Procurement or authorized Inventory staff may save a draft or explicitly create-and-submit it to Finance in one action. Create-and-submit is only a UX shortcut; it enters `pending_finance` and skips no approval stage.
+- Only Finance may perform the initial review in `pending_finance`, advancing the request to `pending_shop_owner` or rejecting it.
+- Only the Shop Owner may approve/acknowledge or reject a request in `pending_shop_owner`. Approval advances to `pending_finance_final`; it does not release the PR for a PO.
+- Only Finance may perform the final budget/cash-availability release in `pending_finance_final`, advancing the request to `approved` or rejecting it.
+- Finance cannot override a Shop Owner rejection, and an owner-approved PR cannot be edited before Finance final release. Any material supplier, item, quantity, or cost change requires rejection and a corrected PR through the full sequence.
+- A requester is a `User` referenced by `requested_by` and cannot perform either Finance action on their own request. The Shop Owner is a separate authenticated principal and is never written into a User foreign key.
+- Finance initial review stores its User actor and time in `reviewed_by` and `reviewed_date`. Shop Owner approval stores its ShopOwner actor and time in `approved_by_shop_owner_id` and `shop_owner_approved_at`. Finance final release stores its User actor and time in `approved_by` and `approved_date` without overwriting the initial review fields.
+- Rejection stores exactly one actor type: Finance uses `rejected_by_user_id`; Shop Owner uses `rejected_by_shop_owner_id`; both use `rejected_at` and `rejection_reason`. Optional stage remarks are appended with an explicit `Finance Initial`, `Shop Owner`, or `Finance Final` label.
 - Invalid transitions are rejected; no role may skip an approval state.
+
+Low-value thresholds, settings, queued jobs, events, and listeners must never approve or advance a PR. The existing auto-approval job and schedule are retired. Every submitted PR, including explicit create-and-submit and low-value requests, must enter `pending_finance` and traverse Finance initial review, Shop Owner approval/acknowledgment, and Finance final release.
 
 ## Purchase-order structure
 
@@ -186,8 +191,8 @@ Every query and every foreign-key-like request input is scoped to the authentica
 Minimum action permissions:
 
 - Create and submit PR
-- Finance-review PR
-- Shop Owner approve/reject PR
+- Finance initial/final-review PR
+- Shop Owner approve/acknowledge or reject PR
 - Create and manage PO
 - Send/progress PO
 - Receive PO
@@ -202,8 +207,8 @@ Default responsibility assignments are:
 
 - Procurement Manager: view procurement records; create and submit PRs; create and edit draft POs; record supplier confirmation and transit; send, cancel, receive, and complete POs when the matching action permission is assigned.
 - Authorized Inventory staff: view relevant records; create and submit stock/PR requests; receive POs only when `receive_purchase_orders` is assigned. They cannot perform Finance review or commercial PO lifecycle actions by default.
-- Finance: view and review `pending_finance` PRs and submitted expenses. Finance cannot receive or progress POs by default.
-- Shop Owner: view shop procurement records, perform final PR approval/rejection, and exercise shop-level PO cancellation/completion authority.
+- Finance: view and review `pending_finance` and `pending_finance_final` PRs plus submitted expenses. Finance cannot receive or progress POs by default.
+- Shop Owner: view shop procurement records, approve/acknowledge or reject `pending_shop_owner` PRs, and exercise shop-level PO cancellation/completion authority.
 
 Supplier-facing milestones are recorded by an authorized internal user; this scope does not create a supplier login or supplier-side confirmation action.
 
@@ -287,7 +292,7 @@ Legacy tables and historical rows are not deleted in this project. Removal requi
 The repair is complete only when automated tests cover:
 
 - Cross-shop viewing, creation references, approvals, transitions, and receiving.
-- Requester self-approval prevention and Finance/Shop Owner approval boundaries.
+- Requester self-approval prevention and Finance-initial/Shop-Owner/Finance-final approval boundaries.
 - One-item and same-shop/same-supplier multi-item PO creation.
 - Rejection of mixed-shop, mixed-supplier, unapproved, and already-active PR selections.
 - Valid lifecycle transitions and rejection of every skipped or reversed transition.

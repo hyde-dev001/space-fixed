@@ -57,7 +57,7 @@ class SupplierOrderTest extends TestCase
     }
 
     /** @test */
-    public function it_creates_supplier_order()
+    public function legacy_supplier_order_mutations_return_gone()
     {
         $item = InventoryItem::factory()->create([
             'shop_owner_id' => $this->shopOwner->id,
@@ -78,14 +78,7 @@ class SupplierOrderTest extends TestCase
             'remarks' => 'Test order',
         ]);
 
-        $response->assertStatus(201)
-            ->assertJsonStructure([
-                'order' => [
-                    'id',
-                    'po_number',
-                    'status',
-                ],
-            ]);
+        $response->assertGone()->assertJsonPath('data.canonical_url', '/api/erp/procurement/purchase-orders');
     }
 
     /** @test */
@@ -122,8 +115,8 @@ class SupplierOrderTest extends TestCase
             'remarks' => 'Updated notes',
         ]);
 
-        $response->assertStatus(200);
-        $this->assertEquals('Updated notes', $order->fresh()->remarks);
+        $response->assertGone();
+        $this->assertNotEquals('Updated notes', $order->fresh()->remarks);
     }
 
     /** @test */
@@ -149,8 +142,8 @@ class SupplierOrderTest extends TestCase
             ]],
         ]);
 
-        $response->assertStatus(200);
-        $this->assertEquals('delivered', $order->fresh()->status);
+        $response->assertGone();
+        $this->assertEquals('confirmed', $order->fresh()->status);
     }
 
     /** @test */
@@ -188,7 +181,7 @@ class SupplierOrderTest extends TestCase
 
         $response = $this->deleteJson("/api/erp/inventory/supplier-orders/{$order->id}");
 
-        $response->assertStatus(200);
-        $this->assertSoftDeleted($order);
+        $response->assertGone();
+        $this->assertNotSoftDeleted($order);
     }
 }

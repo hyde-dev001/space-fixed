@@ -5,14 +5,19 @@ namespace App\Http\Controllers\Erp;
 use App\Http\Controllers\Controller;
 use App\Models\Supplier;
 use Illuminate\Http\Request;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 
 class SupplierController extends Controller
 {
+    use AuthorizesRequests;
+
     /**
      * Display a listing of suppliers
      */
     public function index(Request $request)
     {
+        $this->authorize('viewAny', Supplier::class);
+
         $shopOwnerId = $request->user()->shop_owner_id;
         $showArchived = $request->boolean('archived');
         
@@ -52,6 +57,8 @@ class SupplierController extends Controller
      */
     public function store(Request $request)
     {
+        $this->authorize('create', Supplier::class);
+
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'contact_person' => 'nullable|string|max:255',
@@ -75,7 +82,7 @@ class SupplierController extends Controller
         
         return response()->json([
             'message' => 'Supplier created successfully',
-            'supplier' => $supplier
+            'data' => $supplier
         ], 201);
     }
 
@@ -91,6 +98,8 @@ class SupplierController extends Controller
             }])
             ->where('shop_owner_id', $shopOwnerId)
             ->findOrFail($id);
+
+        $this->authorize('view', $supplier);
         
         return response()->json($supplier);
     }
@@ -100,6 +109,10 @@ class SupplierController extends Controller
      */
     public function update(Request $request, $id)
     {
+        $supplier = Supplier::where('shop_owner_id', $request->user()->shop_owner_id)
+            ->findOrFail($id);
+        $this->authorize('update', $supplier);
+
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'contact_person' => 'nullable|string|max:255',
@@ -115,16 +128,11 @@ class SupplierController extends Controller
             'notes' => 'nullable|string'
         ]);
         
-        $shopOwnerId = $request->user()->shop_owner_id;
-        
-        $supplier = Supplier::where('shop_owner_id', $shopOwnerId)
-            ->findOrFail($id);
-        
         $supplier->update($validated);
         
         return response()->json([
             'message' => 'Supplier updated successfully',
-            'supplier' => $supplier
+            'data' => $supplier
         ]);
     }
 
@@ -137,10 +145,12 @@ class SupplierController extends Controller
         
         $supplier = Supplier::where('shop_owner_id', $shopOwnerId)
             ->findOrFail($id);
+
+        $this->authorize('delete', $supplier);
         
         // Check if supplier has active orders
         $activeOrders = $supplier->purchaseOrders()
-            ->whereIn('status', ['sent', 'confirmed', 'in_transit'])
+            ->active()
             ->count();
         
         if ($activeOrders > 0) {
@@ -153,7 +163,8 @@ class SupplierController extends Controller
         $supplier->delete();
         
         return response()->json([
-            'message' => 'Supplier archived successfully'
+            'message' => 'Supplier archived successfully',
+            'data' => $supplier
         ]);
     }
 
@@ -168,10 +179,13 @@ class SupplierController extends Controller
             ->where('shop_owner_id', $shopOwnerId)
             ->findOrFail($id);
 
+        $this->authorize('restore', $supplier);
+
         $supplier->restore();
 
         return response()->json([
-            'message' => 'Supplier restored successfully'
+            'message' => 'Supplier restored successfully',
+            'data' => $supplier->fresh()
         ]);
     }
 }

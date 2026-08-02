@@ -27,8 +27,10 @@ class PurchaseOrderWorkflowTest extends TestCase
         config(['auth.defaults.guard' => 'user']);
         $this->shopOwner = ShopOwner::factory()->create();
         $this->user = User::factory()->for($this->shopOwner)->create();
-        Permission::findOrCreate('access-procurement-dashboard', 'user');
-        $this->user->givePermissionTo('access-procurement-dashboard');
+        foreach (['procurement.view', 'procurement.create_purchase_orders', 'procurement.manage_purchase_orders', 'procurement.receive_purchase_orders', 'procurement.cancel_purchase_orders'] as $permission) {
+            Permission::findOrCreate($permission, 'user');
+        }
+        $this->user->givePermissionTo(['procurement.view', 'procurement.create_purchase_orders', 'procurement.manage_purchase_orders', 'procurement.receive_purchase_orders', 'procurement.cancel_purchase_orders']);
         $this->supplier = Supplier::factory()->create(['shop_owner_id' => $this->shopOwner->id]);
         
         $this->pr = PurchaseRequest::factory()->create([
@@ -43,7 +45,7 @@ class PurchaseOrderWorkflowTest extends TestCase
     {
         $response = $this->actingAs($this->user)
             ->postJson('/api/erp/procurement/purchase-orders', [
-                'pr_id' => $this->pr->id,
+                'purchase_request_ids' => [$this->pr->id],
                 'expected_delivery_date' => now()->addDays(14)->format('Y-m-d'),
                 'payment_terms' => 'Net 30',
                 'notes' => 'Rush delivery required',
@@ -51,13 +53,14 @@ class PurchaseOrderWorkflowTest extends TestCase
 
             $response->assertStatus(201)
             ->assertJsonStructure([
-                'purchase_order' => [
+                'data' => [
                     'id',
                     'po_number',
                     'status',
                     'total_cost',
                 ]
             ]);
+		$this->assertSame(['message', 'data'], array_keys($response->json()));
 
         $this->assertDatabaseHas('purchase_orders', [
             'pr_id' => $this->pr->id,
@@ -109,7 +112,7 @@ class PurchaseOrderWorkflowTest extends TestCase
     }
 
     /** @test */
-    public function user_can_mark_po_as_delivered()
+    public function direct_delivery_route_is_removed()
     {
         $inventoryItem = InventoryItem::factory()->create([
             'shop_owner_id' => $this->shopOwner->id,
@@ -131,15 +134,9 @@ class PurchaseOrderWorkflowTest extends TestCase
                 'defective_quantity' => 0,
             ]);
 
-        $response->assertStatus(200);
-
-        $this->assertDatabaseHas('purchase_orders', [
-            'id' => $po->id,
-            'status' => 'delivered',
-        ]);
-
-        // Verify inventory was updated
-        $this->assertEquals(150, $inventoryItem->fresh()->available_quantity);
+        $response->assertNotFound();
+        $this->assertSame('in_transit', $po->fresh()->status);
+        $this->assertEquals(100, $inventoryItem->fresh()->available_quantity);
     }
 
     /** @test */
@@ -192,7 +189,7 @@ class PurchaseOrderWorkflowTest extends TestCase
     }
 
     /** @test */
-    public function complete_po_workflow_from_creation_to_delivery()
+    public function complete_manual_po_workflow_stops_at_in_transit()
     {
         $inventoryItem = InventoryItem::factory()->create([
             'shop_owner_id' => $this->shopOwner->id,
@@ -202,13 +199,13 @@ class PurchaseOrderWorkflowTest extends TestCase
         // Step 1: Create PO
         $createResponse = $this->actingAs($this->user)
             ->postJson('/api/erp/procurement/purchase-orders', [
-                'pr_id' => $this->pr->id,
+                'purchase_request_ids' => [$this->pr->id],
                 'expected_delivery_date' => now()->addDays(10)->format('Y-m-d'),
                 'payment_terms' => 'COD',
             ]);
 
         $createResponse->assertStatus(201);
-        $poId = $createResponse->json('purchase_order.id');
+        $poId = $createResponse->json('data.id');
 
         // Update PO with inventory item
         PurchaseOrder::find($poId)->update([
@@ -235,22 +232,22 @@ class PurchaseOrderWorkflowTest extends TestCase
             ]);
         $transitResponse->assertStatus(200);
 
-        // Step 5: Mark as Delivered
+        // Receipt posting, not a generic transition, owns delivery.
         $deliverResponse = $this->actingAs($this->user)
             ->postJson("/api/erp/procurement/purchase-orders/{$poId}/mark-delivered", [
                 'actual_delivery_date' => now()->format('Y-m-d'),
                 'received_quantity' => 50,
                 'defective_quantity' => 0,
             ]);
-        $deliverResponse->assertStatus(200);
+        $deliverResponse->assertNotFound();
 
         // Verify final state
         $this->assertDatabaseHas('purchase_orders', [
             'id' => $poId,
-            'status' => 'delivered',
+            'status' => 'in_transit',
         ]);
 
         // Verify inventory updated
-        $this->assertEquals(150, $inventoryItem->fresh()->available_quantity);
+        $this->assertEquals(100, $inventoryItem->fresh()->available_quantity);
     }
 }

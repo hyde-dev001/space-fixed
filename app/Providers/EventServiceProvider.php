@@ -3,20 +3,14 @@
 namespace App\Providers;
 
 use App\Events\PurchaseOrderCompleted;
-use App\Events\PurchaseOrderDelivered;
-use App\Events\PurchaseOrderSent;
 use App\Events\PurchaseRequestApproved;
 use App\Events\PurchaseRequestRejected;
 use App\Events\PurchaseRequestSubmittedToFinance;
 use App\Events\ReplenishmentRequestAccepted;
-use App\Listeners\CreatePurchaseOrderFromPR;
-use App\Listeners\CreateStockMovementOnDelivery;
 use App\Listeners\NotifyFinanceOfNewPR;
 use App\Listeners\NotifyReplenishmentReviewed;
 use App\Listeners\NotifyRequesterOfPRApproval;
 use App\Listeners\NotifyRequesterOfPRRejection;
-use App\Listeners\SendPOToSupplier;
-use App\Listeners\UpdateInventoryOnDelivery;
 use App\Listeners\UpdateSupplierMetrics;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Auth\Listeners\SendEmailVerificationNotification;
@@ -42,7 +36,6 @@ class EventServiceProvider extends ServiceProvider
 
         PurchaseRequestApproved::class => [
             NotifyRequesterOfPRApproval::class,
-            CreatePurchaseOrderFromPR::class,
         ],
 
         PurchaseRequestRejected::class => [
@@ -50,15 +43,6 @@ class EventServiceProvider extends ServiceProvider
         ],
 
         // Purchase Order Events
-        PurchaseOrderSent::class => [
-            SendPOToSupplier::class,
-        ],
-
-        PurchaseOrderDelivered::class => [
-            UpdateInventoryOnDelivery::class,
-            CreateStockMovementOnDelivery::class,
-        ],
-
         PurchaseOrderCompleted::class => [
             UpdateSupplierMetrics::class,
         ],

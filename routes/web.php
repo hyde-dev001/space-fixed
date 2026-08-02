@@ -2033,13 +2033,8 @@ Route::prefix('finance')->name('finance.')->middleware(['auth:user', 'role_or_pe
             ->orderBy('requested_date', 'desc')
             ->get();
 
-        $policyService = app(\App\Services\ShopOwnerApprovalPolicyService::class);
-        $requests = $requests->map(function (\App\Models\PurchaseRequest $purchaseRequest) use ($policyService) {
+        $requests = $requests->map(function (\App\Models\PurchaseRequest $purchaseRequest) {
             $payload = $purchaseRequest->toArray();
-            $payload['requires_owner_approval'] = $policyService->requiresOwnerApprovalForPurchaseRequest(
-                (int) $purchaseRequest->shop_owner_id,
-                (float) $purchaseRequest->total_cost
-            );
             $payload['approval_stage'] = $purchaseRequest->status === 'pending_finance_final'
                 ? 'finance_final'
                 : ($purchaseRequest->status === 'pending_finance' ? 'finance_initial' : null);

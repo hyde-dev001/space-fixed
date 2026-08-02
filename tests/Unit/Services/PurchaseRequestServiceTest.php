@@ -26,7 +26,7 @@ class PurchaseRequestServiceTest extends TestCase
         $this->service = new PurchaseRequestService();
         $this->shopOwner = ShopOwner::factory()->create();
         $this->supplier = Supplier::factory()->create(['shop_owner_id' => $this->shopOwner->id]);
-        $this->user = User::factory()->create();
+        $this->user = User::factory()->for($this->shopOwner)->create();
     }
 
     /** @test */
@@ -97,7 +97,7 @@ class PurchaseRequestServiceTest extends TestCase
     }
 
     /** @test */
-    public function it_can_approve_purchase_request()
+    public function finance_review_always_advances_to_shop_owner()
     {
         $pr = PurchaseRequest::factory()->create([
             'shop_owner_id' => $this->shopOwner->id,
@@ -105,15 +105,15 @@ class PurchaseRequestServiceTest extends TestCase
             'status' => 'pending_finance',
         ]);
 
-        $result = $this->service->approvePurchaseRequest($pr->id, $this->user->id, 'Budget approved');
+        $result = $this->service->reviewByFinance($pr->id, $this->user, 'Budget approved');
 
-        $this->assertEquals('approved', $result->status);
-        $this->assertEquals($this->user->id, $result->approved_by);
-        $this->assertEquals('Finance Final: Budget approved', $result->notes);
+        $this->assertEquals('pending_shop_owner', $result->status);
+        $this->assertEquals($this->user->id, $result->reviewed_by);
+        $this->assertStringContainsString('Finance Initial: Budget approved', $result->notes);
     }
 
     /** @test */
-    public function it_can_reject_purchase_request()
+    public function finance_can_reject_purchase_request()
     {
         $pr = PurchaseRequest::factory()->create([
             'shop_owner_id' => $this->shopOwner->id,
@@ -121,14 +121,36 @@ class PurchaseRequestServiceTest extends TestCase
             'status' => 'pending_finance',
         ]);
 
-        $result = $this->service->rejectPurchaseRequest($pr->id, $this->user->id, 'Exceeds budget');
+        $result = $this->service->rejectByFinance($pr->id, $this->user, 'Exceeds budget');
 
         $this->assertEquals('rejected', $result->status);
         $this->assertEquals('Exceeds budget', $result->rejection_reason);
     }
 
     /** @test */
-    public function it_auto_approves_low_value_requests()
+    public function owner_approval_then_finance_release_preserves_each_stage_actor()
+    {
+        $finalFinance = User::factory()->for($this->shopOwner)->create();
+        $pr = PurchaseRequest::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'status' => 'pending_shop_owner',
+            'reviewed_by' => $this->user->id,
+            'reviewed_date' => now(),
+        ]);
+
+        $ownerApproved = $this->service->approveByShopOwner($pr->id, $this->shopOwner, 'Proceed');
+        $this->assertSame('pending_finance_final', $ownerApproved->status);
+
+        $approved = $this->service->releaseByFinance($pr->id, $finalFinance, 'Funds released');
+        $this->assertSame('approved', $approved->status);
+        $this->assertSame($this->user->id, $approved->reviewed_by);
+        $this->assertSame($this->shopOwner->id, $approved->approved_by_shop_owner_id);
+        $this->assertSame($finalFinance->id, $approved->approved_by);
+    }
+
+    /** @test */
+    public function low_value_settings_never_bypass_the_two_approvers()
     {
         ProcurementSettings::create([
             'shop_owner_id' => $this->shopOwner->id,
@@ -147,7 +169,7 @@ class PurchaseRequestServiceTest extends TestCase
             'requested_by' => $this->user->id,
         ]);
 
-        $this->assertEquals('approved', $pr->status);
+        $this->assertEquals('draft', $pr->status);
     }
 
     /** @test */

@@ -6,13 +6,16 @@ import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import { purchaseOrderApi } from "@/services/purchaseOrderApi";
 import { purchaseRequestApi } from "@/services/purchaseRequestApi";
 import type { PurchaseOrder as PurchaseOrderType, PurchaseRequest } from "@/types/procurement";
+import { hasPermission } from "@/utils/permissions";
+import PurchaseOrderReceiptPanel from "./components/PurchaseOrderReceiptPanel";
 
-type PurchaseOrderStatus = "draft" | "sent" | "confirmed" | "in_transit" | "delivered" | "completed" | "cancelled";
+type PurchaseOrderStatus = "draft" | "sent" | "confirmed" | "in_transit" | "partially_received" | "delivered" | "completed" | "cancelled";
 type MetricColor = "success" | "warning" | "info";
 const SIZE_SYSTEMS = ["US", "UK", "EU", "AU", "CN"] as const;
 
 interface PurchaseOrderFormState {
 	selectedPrId: number | null;
+	additionalPrIds: number[];
 	expectedDeliveryDate: string;
 	paymentTerms: string;
 	notes: string;
@@ -24,6 +27,7 @@ const formatStatus = (status: string): string => {
 		sent: "Sent",
 		confirmed: "Confirmed",
 		in_transit: "In Transit",
+		partially_received: "Partially Received",
 		delivered: "Delivered",
 		completed: "Completed",
 		cancelled: "Cancelled"
@@ -155,6 +159,7 @@ interface MetricCardProps {
 
 const initialFormState: PurchaseOrderFormState = {
 	selectedPrId: null,
+	additionalPrIds: [],
 	expectedDeliveryDate: "",
 	paymentTerms: "Net 30",
 	notes: "",
@@ -165,6 +170,7 @@ const statusBadgeClass: Record<string, string> = {
 	sent: "bg-white text-black border border-gray-300 dark:bg-gray-900 dark:text-white dark:border-gray-600",
 	confirmed: "bg-white text-black border border-gray-300 dark:bg-gray-900 dark:text-white dark:border-gray-600",
 	in_transit: "bg-white text-black border border-gray-300 dark:bg-gray-900 dark:text-white dark:border-gray-600",
+	partially_received: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
 	delivered: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300",
 	completed: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
 	cancelled: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
@@ -342,10 +348,17 @@ const nextStatusMap: Partial<Record<PurchaseOrderStatus, PurchaseOrderStatus>> =
 	draft: "sent",
 	sent: "confirmed",
 	confirmed: "in_transit",
+	delivered: "completed",
 };
 
 export default function PurchaseOrders() {
-	const { initialData, initialApprovedPRs } = usePage().props as any;
+	const { initialData, initialApprovedPRs, auth } = usePage().props as any;
+	const canCreate = hasPermission(auth, "procurement.create_purchase_orders");
+	const canManage = hasPermission(auth, "procurement.manage_purchase_orders");
+	const canComplete = hasPermission(auth, "procurement.complete_purchase_orders");
+	const canCancel = hasPermission(auth, "procurement.cancel_purchase_orders");
+	const canReceive = hasPermission(auth, "procurement.receive_purchase_orders");
+	const canVoid = hasPermission(auth, "procurement.void_purchase_order_receipts");
 	const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderType[]>(initialData?.data ?? []);
 	const [approvedPRs, setApprovedPRs] = useState<PurchaseRequest[]>(initialApprovedPRs ?? []);
 	const [loading, setLoading] = useState(false);
@@ -427,6 +440,9 @@ export default function PurchaseOrders() {
 		() => approvedPRs.find((item) => item.id === formData.selectedPrId) ?? null,
 		[formData.selectedPrId, approvedPRs]
 	);
+	const sameSupplierPrs = useMemo(() => selectedPrOption
+		? approvedPRs.filter((item) => item.id !== selectedPrOption.id && item.supplier_id === selectedPrOption.supplier_id)
+		: [], [approvedPRs, selectedPrOption]);
 
 	const selectedPrEffectiveQuantity = useMemo(() => {
 		if (!selectedPrOption) return null;
@@ -550,17 +566,15 @@ export default function PurchaseOrders() {
 
 		try {
 			setIsCreatingPO(true);
-			const createdPrId = formData.selectedPrId;
+			const createdPrIds = [formData.selectedPrId, ...formData.additionalPrIds];
 			await purchaseOrderApi.create({
-				pr_id: formData.selectedPrId,
+				purchase_request_ids: createdPrIds,
 				expected_delivery_date: formData.expectedDeliveryDate,
 				payment_terms: formData.paymentTerms,
 				notes: formData.notes.trim() || undefined,
 			});
 
-			if (createdPrId) {
-				setApprovedPRs((prev) => prev.filter((pr) => pr.id !== createdPrId));
-			}
+			setApprovedPRs((prev) => prev.filter((pr) => !createdPrIds.includes(pr.id)));
 
 			await Swal.fire({
 				icon: "success",
@@ -588,7 +602,7 @@ export default function PurchaseOrders() {
 
 	const handleProgressOrder = async (order: PurchaseOrderType) => {
 		const nextStatus = nextStatusMap[order.status as PurchaseOrderStatus];
-		if (!nextStatus) return;
+		if (!nextStatus || (nextStatus === "completed" ? !canComplete : !canManage)) return;
 
 		const result = await Swal.fire({
 			title: `Move to ${formatStatus(nextStatus)}?`,
@@ -628,7 +642,7 @@ export default function PurchaseOrders() {
 	};
 
 	const handleCancelOrder = async (order: PurchaseOrderType) => {
-		if (["in_transit", "delivered", "completed", "cancelled"].includes(order.status)) return;
+		if (["partially_received", "delivered", "completed", "cancelled"].includes(order.status)) return;
 
 		const { value: reason } = await Swal.fire({
 			title: "Cancel this PO?",
@@ -691,7 +705,7 @@ export default function PurchaseOrders() {
 						<h1 className="text-2xl font-semibold mb-1">Purchase Orders</h1>
 						<p className="text-gray-600 dark:text-gray-400">Create PO from approved PR, send to supplier, then track order progress end-to-end</p>
 					</div>
-					<button
+					{canCreate && <button
 						onClick={() => {
 							setIsCreateModalOpen(true);
 							setDeliveryCalendarMonth(new Date(today.getFullYear(), today.getMonth(), 1));
@@ -700,7 +714,7 @@ export default function PurchaseOrders() {
 						className="px-4 py-2 bg-blue-600 hover:bg-blue-900 text-white rounded-lg font-medium transition-colors whitespace-nowrap"
 					>
 						+ New PO
-					</button>
+					</button>}
 				</div>
 
 				<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -743,6 +757,7 @@ export default function PurchaseOrders() {
 								<option value="sent">Sent</option>
 								<option value="confirmed">Confirmed</option>
 								<option value="in_transit">In Transit</option>
+								<option value="partially_received">Partially Received</option>
 								<option value="delivered">Delivered</option>
 								<option value="completed">Completed</option>
 								<option value="cancelled">Cancelled</option>
@@ -846,7 +861,7 @@ export default function PurchaseOrders() {
 									title="Select approved purchase request"
 									aria-label="Select approved purchase request"
 									value={formData.selectedPrId || ""}
-									onChange={(event) => setFormData((prev) => ({ ...prev, selectedPrId: event.target.value ? Number(event.target.value) : null }))}
+									onChange={(event) => setFormData((prev) => ({ ...prev, selectedPrId: event.target.value ? Number(event.target.value) : null, additionalPrIds: [] }))}
 									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
 								>
 									<option value="">-- Choose an approved PR --</option>
@@ -878,6 +893,18 @@ export default function PurchaseOrders() {
 										</p>
 									)}
 								</div>
+							)}
+
+							{sameSupplierPrs.length > 0 && (
+								<fieldset className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+									<legend className="px-1 text-sm font-medium text-gray-700 dark:text-gray-300">Add approved requests from the same supplier</legend>
+									<div className="mt-2 space-y-2">
+										{sameSupplierPrs.map((pr) => <label key={pr.id} className="flex items-center gap-2 text-sm">
+											<input type="checkbox" checked={formData.additionalPrIds.includes(pr.id)} onChange={(event) => setFormData((current) => ({ ...current, additionalPrIds: event.target.checked ? [...current.additionalPrIds, pr.id] : current.additionalPrIds.filter((id) => id !== pr.id) }))} />
+											<span>{pr.pr_number} — {pr.product_name} ({currency.format(pr.total_cost)})</span>
+										</label>)}
+									</div>
+								</fieldset>
 							)}
 
 							<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1131,11 +1158,22 @@ export default function PurchaseOrders() {
 									<p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{viewingOrder.notes}</p>
 								</div>
 							)}
+
+							<PurchaseOrderReceiptPanel
+								order={viewingOrder}
+								canReceive={canReceive}
+								canVoid={canVoid}
+								onChanged={async () => {
+									const refreshed = await purchaseOrderApi.getById(viewingOrder.id);
+									setViewingOrder(refreshed);
+									await Promise.all([fetchPurchaseOrders(), fetchMetrics()]);
+								}}
+							/>
 						</div>
 
 						<div className="flex gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 sticky bottom-0">
 							<button onClick={() => setViewingOrder(null)} className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Close</button>
-							{nextStatusMap[viewingOrder.status as PurchaseOrderStatus] && (
+							{nextStatusMap[viewingOrder.status as PurchaseOrderStatus] && (viewingOrder.status === "delivered" ? canComplete : canManage) && (
 								<button
 									onClick={() => handleProgressOrder(viewingOrder)}
 									className="flex-1 px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white font-medium transition-colors"
@@ -1143,7 +1181,7 @@ export default function PurchaseOrders() {
 									Mark as {formatStatus(nextStatusMap[viewingOrder.status as PurchaseOrderStatus]!)}
 								</button>
 							)}
-							{!["in_transit", "delivered", "completed", "cancelled"].includes(viewingOrder.status) && (
+							{canCancel && !["partially_received", "delivered", "completed", "cancelled"].includes(viewingOrder.status) && (
 								<button
 									onClick={() => handleCancelOrder(viewingOrder)}
 									className="flex-1 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium transition-colors"

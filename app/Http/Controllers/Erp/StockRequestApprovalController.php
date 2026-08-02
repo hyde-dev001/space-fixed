@@ -9,9 +9,13 @@ use App\Http\Requests\ApproveStockRequestRequest;
 use App\Services\StockRequestApprovalService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Validation\Rule;
 
 class StockRequestApprovalController extends Controller
 {
+    use AuthorizesRequests;
+
     public function __construct(
         private StockRequestApprovalService $stockRequestApprovalService
     ) {}
@@ -52,7 +56,7 @@ class StockRequestApprovalController extends Controller
      */
     public function index(Request $request)
     {
-        // $this->authorize('viewAny', StockRequestApproval::class);
+        $this->authorize('viewAny', StockRequestApproval::class);
 
         $query = StockRequestApproval::query()
             ->with(['shopOwner', 'inventoryItem.sizes', 'inventoryItem.colorVariants.sizes', 'requester', 'approver'])
@@ -113,9 +117,9 @@ class StockRequestApprovalController extends Controller
             'inventoryItem.colorVariants.sizes',
             'requester',
             'approver'
-        ])->findOrFail($id);
+        ])->where('shop_owner_id', Auth::user()->shop_owner_id)->findOrFail($id);
 
-        // $this->authorize('view', $stockRequest);
+        $this->authorize('view', $stockRequest);
 
         return response()->json($stockRequest);
     }
@@ -125,20 +129,23 @@ class StockRequestApprovalController extends Controller
      */
     public function store(Request $request)
     {
-        // $this->authorize('create', StockRequestApproval::class);
+        $this->authorize('create', StockRequestApproval::class);
+
+        $shopOwnerId = (int) Auth::user()->shop_owner_id;
 
         $validated = $request->validate([
-            'inventory_item_id' => 'required|exists:inventory_items,id',
+            'inventory_item_id' => ['required', Rule::exists('inventory_items', 'id')->where('shop_owner_id', $shopOwnerId)],
             'quantity_needed'   => 'required|integer|min:1',
             'priority'          => 'required|in:high,medium,low',
             'requested_size'    => 'nullable|string|max:20',
             'requested_color'   => 'nullable|string|max:50',
             'notes'             => 'nullable|string|max:1000',
             'request_source'    => 'nullable|in:manual,repair',
-            'repair_request_id' => 'nullable|exists:repair_requests,id',
+            'repair_request_id' => ['nullable', Rule::exists('repair_requests', 'id')->where('shop_owner_id', $shopOwnerId)],
         ]);
 
-        $inventoryItem = InventoryItem::findOrFail($validated['inventory_item_id']);
+        $inventoryItem = InventoryItem::where('shop_owner_id', $shopOwnerId)
+            ->findOrFail($validated['inventory_item_id']);
 
         if (($validated['request_source'] ?? 'manual') === 'repair' && (string) $inventoryItem->category !== 'repair_materials') {
             return response()->json([
@@ -183,11 +190,11 @@ class StockRequestApprovalController extends Controller
     }
     public function approve(ApproveStockRequestRequest $request, $id)
     {
-        $stockRequest = StockRequestApproval::findOrFail($id);
+        $stockRequest = StockRequestApproval::where('shop_owner_id', Auth::user()->shop_owner_id)->findOrFail($id);
         $isInventoryWorkflow = $this->isInventoryWorkflow($request);
         $isProcurementWorkflow = $this->isProcurementWorkflow($request);
         
-        // $this->authorize('approve', $stockRequest);
+        $this->authorize('approve', $stockRequest);
 
         if (!$stockRequest->canBeApproved()) {
             return response()->json([
@@ -255,11 +262,11 @@ class StockRequestApprovalController extends Controller
      */
     public function reject(Request $request, $id)
     {
-        $stockRequest = StockRequestApproval::findOrFail($id);
+        $stockRequest = StockRequestApproval::where('shop_owner_id', Auth::user()->shop_owner_id)->findOrFail($id);
         $isInventoryWorkflow = $this->isInventoryWorkflow($request);
         $isProcurementWorkflow = $this->isProcurementWorkflow($request);
         
-        // $this->authorize('reject', $stockRequest);
+        $this->authorize('reject', $stockRequest);
 
         if (!$stockRequest->canBeRejected()) {
             return response()->json([
@@ -308,11 +315,11 @@ class StockRequestApprovalController extends Controller
      */
     public function requestDetails(Request $request, $id)
     {
-        $stockRequest = StockRequestApproval::findOrFail($id);
+        $stockRequest = StockRequestApproval::where('shop_owner_id', Auth::user()->shop_owner_id)->findOrFail($id);
         $isInventoryWorkflow = $this->isInventoryWorkflow($request);
         $isProcurementWorkflow = $this->isProcurementWorkflow($request);
         
-        // $this->authorize('approve', $stockRequest);
+        $this->authorize('requestDetails', $stockRequest);
 
         $validatedData = $request->validate([
             'approval_notes' => 'nullable|string|min:10|required_without:response_notes',
@@ -364,7 +371,7 @@ class StockRequestApprovalController extends Controller
      */
     public function getMetrics(Request $request)
     {
-        // $this->authorize('viewAny', StockRequestApproval::class);
+        $this->authorize('viewAny', StockRequestApproval::class);
 
         $shopOwnerId = Auth::user()->shop_owner_id;
 

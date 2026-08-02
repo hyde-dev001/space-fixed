@@ -4,23 +4,20 @@ namespace App\Http\Controllers\Erp;
 
 use App\Http\Controllers\Controller;
 use App\Models\PurchaseOrder;
-use App\Models\PurchaseRequest;
-use App\Models\Finance\Expense;
 use App\Http\Requests\StorePurchaseOrderRequest;
 use App\Http\Requests\UpdatePurchaseOrderStatusRequest;
 use App\Http\Requests\CancelPurchaseOrderRequest;
 use App\Events\PurchaseOrderCompleted;
-use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use App\Services\PurchaseOrderService;
 
 class PurchaseOrderController extends Controller
 {
     use AuthorizesRequests;
+
+    public function __construct(private PurchaseOrderService $purchaseOrderService) {}
 
     /**
      * Display a listing of purchase orders with filters.
@@ -30,7 +27,7 @@ class PurchaseOrderController extends Controller
         $this->authorize('viewAny', PurchaseOrder::class);
 
         $query = PurchaseOrder::query()
-            ->with(['purchaseRequest', 'shopOwner', 'supplier', 'inventoryItem', 'orderer'])
+            ->with(['items.purchaseRequest', 'receipts.items', 'shopOwner', 'supplier', 'orderer'])
             ->where('shop_owner_id', Auth::user()->shop_owner_id);
 
         // Search
@@ -88,75 +85,16 @@ class PurchaseOrderController extends Controller
     {
         $this->authorize('create', PurchaseOrder::class);
 
-        try {
-            DB::beginTransaction();
+        $purchaseOrder = $this->purchaseOrderService->createPurchaseOrder([
+            ...$request->validated(),
+            'shop_owner_id' => Auth::user()->shop_owner_id,
+            'ordered_by' => Auth::id(),
+        ]);
 
-            $purchaseRequest = PurchaseRequest::findOrFail($request->pr_id);
-
-            // Verify PR is approved
-            if ($purchaseRequest->status !== 'approved') {
-                return response()->json([
-                    'message' => 'Purchase request must be approved before creating a purchase order.'
-                ], 403);
-            }
-
-            $data = $request->validated();
-            $data['shop_owner_id'] = Auth::user()->shop_owner_id;
-            $data['supplier_id'] = $purchaseRequest->supplier_id;
-            $data['product_name'] = $purchaseRequest->product_name;
-            $data['inventory_item_id'] = $purchaseRequest->inventory_item_id;
-            $data['requested_size'] = $purchaseRequest->requested_size;
-            $data['requested_color'] = $purchaseRequest->requested_color;
-            $data['quantity'] = $purchaseRequest->quantity;
-            $data['unit_cost'] = $purchaseRequest->unit_cost;
-            $data['total_cost'] = $purchaseRequest->total_cost;
-            $data['ordered_by'] = Auth::id();
-            $data['ordered_date'] = now();
-            $data['status'] = 'draft';
-
-            $data = $this->sanitizePurchaseOrderPayloadForSchema($data);
-
-            $candidatePoNumber = $this->generatePONumber();
-            $purchaseOrder = null;
-
-            for ($attempt = 0; $attempt < 10; $attempt++) {
-                $data['po_number'] = $candidatePoNumber;
-
-                try {
-                    $purchaseOrder = PurchaseOrder::create($data);
-                    break;
-                } catch (QueryException $queryException) {
-                    if (!$this->isPoNumberDuplicateException($queryException) || $attempt === 9) {
-                        throw $queryException;
-                    }
-
-                    Log::warning('PO number collision detected; retrying with next sequence.', [
-                        'candidate_po_number' => $candidatePoNumber,
-                        'attempt' => $attempt + 1,
-                    ]);
-
-                    $candidatePoNumber = $this->incrementPoNumber($candidatePoNumber);
-                }
-            }
-
-            if (!$purchaseOrder) {
-                throw new \RuntimeException('Unable to generate a unique purchase order number.');
-            }
-
-            DB::commit();
-
-            return response()->json([
-                'message' => 'Purchase order created successfully.',
-                'purchase_order' => $purchaseOrder->load(['purchaseRequest', 'shopOwner', 'supplier', 'inventoryItem', 'orderer'])
-            ], 201);
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json([
-                'message' => 'Failed to create purchase order.',
-                'error' => $e->getMessage()
-            ], 500);
-        }
+        return response()->json([
+            'message' => 'Purchase order created.',
+            'data' => $purchaseOrder,
+        ], 201);
     }
 
     /**
@@ -173,8 +111,10 @@ class PurchaseOrderController extends Controller
             'orderer',
             'confirmer',
             'deliverer',
-            'completer'
-        ])->findOrFail($id);
+            'completer',
+            'items.purchaseRequest',
+            'receipts.items',
+        ])->where('shop_owner_id', Auth::user()->shop_owner_id)->findOrFail($id);
 
         $this->authorize('view', $purchaseOrder);
 
@@ -186,7 +126,7 @@ class PurchaseOrderController extends Controller
      */
     public function update(Request $request, $id)
     {
-        $purchaseOrder = PurchaseOrder::findOrFail($id);
+        $purchaseOrder = PurchaseOrder::where('shop_owner_id', Auth::user()->shop_owner_id)->findOrFail($id);
         
         $this->authorize('update', $purchaseOrder);
 
@@ -198,7 +138,7 @@ class PurchaseOrderController extends Controller
         }
 
         $validatedData = $request->validate([
-            'expected_delivery_date' => 'nullable|date|after:today',
+            'expected_delivery_date' => 'nullable|date|after_or_equal:today',
             'payment_terms' => 'sometimes|string|max:255',
             'notes' => 'nullable|string',
         ]);
@@ -208,7 +148,7 @@ class PurchaseOrderController extends Controller
 
             return response()->json([
                 'message' => 'Purchase order updated successfully.',
-                'purchase_order' => $purchaseOrder->fresh(['purchaseRequest', 'shopOwner', 'supplier', 'inventoryItem', 'orderer'])
+                'data' => $purchaseOrder->fresh(['items.purchaseRequest', 'supplier', 'orderer'])
             ]);
 
         } catch (\Exception $e) {
@@ -224,7 +164,7 @@ class PurchaseOrderController extends Controller
      */
     public function destroy($id)
     {
-        $purchaseOrder = PurchaseOrder::findOrFail($id);
+        $purchaseOrder = PurchaseOrder::where('shop_owner_id', Auth::user()->shop_owner_id)->findOrFail($id);
         
         $this->authorize('delete', $purchaseOrder);
 
@@ -238,7 +178,8 @@ class PurchaseOrderController extends Controller
         $purchaseOrder->delete();
 
         return response()->json([
-            'message' => 'Purchase order deleted successfully.'
+            'message' => 'Purchase order deleted successfully.',
+            'data' => $purchaseOrder
         ]);
     }
 
@@ -247,64 +188,25 @@ class PurchaseOrderController extends Controller
      */
     public function updateStatus(UpdatePurchaseOrderStatusRequest $request, $id)
     {
-        $purchaseOrder = PurchaseOrder::findOrFail($id);
+        $purchaseOrder = PurchaseOrder::where('shop_owner_id', Auth::user()->shop_owner_id)->findOrFail($id);
         
-        $this->authorize('updateStatus', $purchaseOrder);
+        $this->authorize($request->status === 'completed' ? 'complete' : 'updateStatus', $purchaseOrder);
 
-        if (!$purchaseOrder->canProgressStatus()) {
-            return response()->json([
-                'message' => 'Purchase order cannot progress from its current status.'
-            ], 403);
+        $purchaseOrder = $this->purchaseOrderService->updateStatus(
+            $purchaseOrder->id,
+            $request->status,
+            (int) Auth::id(),
+            $request->only('notes')
+        );
+
+        if ($request->status === 'completed') {
+            event(new PurchaseOrderCompleted($purchaseOrder));
         }
 
-        try {
-            DB::beginTransaction();
-
-            $status = $request->status;
-            $userId = Auth::id();
-
-            switch ($status) {
-                case 'sent':
-                    $purchaseOrder->sendToSupplier();
-                    break;
-                case 'confirmed':
-                    $purchaseOrder->markAsConfirmed($userId);
-                    break;
-                case 'in_transit':
-                    $purchaseOrder->markAsInTransit($userId);
-                    break;
-                case 'delivered':
-                    $purchaseOrder->markAsDelivered($userId, $request->actual_delivery_date ?? now()->toDateString());
-                    $purchaseOrder->updateInventoryOnDelivery();
-                    $this->createExpenseFromDeliveredPurchaseOrder($purchaseOrder, $userId);
-                    break;
-                case 'completed':
-                    $purchaseOrder->markAsCompleted($userId);
-                    event(new PurchaseOrderCompleted($purchaseOrder));
-                    break;
-                default:
-                    return response()->json(['message' => 'Invalid status.'], 400);
-            }
-
-            if ($request->filled('notes')) {
-                $purchaseOrder->notes = $request->notes;
-                $purchaseOrder->save();
-            }
-
-            DB::commit();
-
-            return response()->json([
-                'message' => "Purchase order marked as {$status} successfully.",
-                'purchase_order' => $purchaseOrder->fresh(['purchaseRequest', 'shopOwner', 'supplier', 'inventoryItem'])
-            ]);
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json([
-                'message' => 'Failed to update purchase order status.',
-                'error' => $e->getMessage()
-                ], 500);
-        }
+        return response()->json([
+            'message' => "Purchase order marked as {$request->status} successfully.",
+            'data' => $purchaseOrder->load(['items.purchaseRequest', 'supplier']),
+        ]);
     }
 
     /**
@@ -312,7 +214,7 @@ class PurchaseOrderController extends Controller
      */
     public function sendToSupplier($id)
     {
-        $purchaseOrder = PurchaseOrder::findOrFail($id);
+        $purchaseOrder = PurchaseOrder::where('shop_owner_id', Auth::user()->shop_owner_id)->findOrFail($id);
         
         $this->authorize('updateStatus', $purchaseOrder);
 
@@ -327,7 +229,7 @@ class PurchaseOrderController extends Controller
 
             return response()->json([
                 'message' => 'Purchase order sent to supplier successfully.',
-                'purchase_order' => $purchaseOrder->fresh()
+                'data' => $purchaseOrder->fresh()
             ]);
 
         } catch (\Exception $e) {
@@ -339,92 +241,24 @@ class PurchaseOrderController extends Controller
     }
 
     /**
-     * Mark purchase order as delivered.
-     */
-    public function markAsDelivered(Request $request, $id)
-    {
-        $purchaseOrder = PurchaseOrder::findOrFail($id);
-        
-        $this->authorize('updateStatus', $purchaseOrder);
-
-        $validatedData = $request->validate([
-            'actual_delivery_date' => 'required|date',
-            'received_quantity'    => 'required|integer|min:0',
-            'defective_quantity'   => 'required|integer|min:0',
-            'notes' => 'nullable|string',
-        ]);
-
-        if ($validatedData['defective_quantity'] > $validatedData['received_quantity']) {
-            return response()->json(['message' => 'Defective quantity cannot exceed received quantity.'], 422);
-        }
-
-        if ($purchaseOrder->status !== 'in_transit') {
-            return response()->json([
-                'message' => 'Only in-transit purchase orders can be marked as delivered.'
-            ], 403);
-        }
-
-        try {
-            DB::beginTransaction();
-
-            $purchaseOrder->received_quantity  = $validatedData['received_quantity'];
-            $purchaseOrder->defective_quantity  = $validatedData['defective_quantity'];
-            $purchaseOrder->save();
-
-            $purchaseOrder->markAsDelivered(Auth::id(), $validatedData['actual_delivery_date']);
-            $purchaseOrder->updateInventoryOnDelivery();
-            $this->createExpenseFromDeliveredPurchaseOrder($purchaseOrder, (int) Auth::id());
-
-            if (isset($validatedData['notes'])) {
-                $purchaseOrder->notes = $validatedData['notes'];
-                $purchaseOrder->save();
-            }
-
-            DB::commit();
-
-            return response()->json([
-                'message' => 'Purchase order marked as delivered successfully.',
-                'purchase_order' => $purchaseOrder->fresh(['purchaseRequest', 'shopOwner', 'supplier', 'inventoryItem'])
-            ]);
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json([
-                'message' => 'Failed to mark purchase order as delivered.',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
      * Cancel purchase order.
      */
     public function cancel(CancelPurchaseOrderRequest $request, $id)
     {
-        $purchaseOrder = PurchaseOrder::findOrFail($id);
+        $purchaseOrder = PurchaseOrder::where('shop_owner_id', Auth::user()->shop_owner_id)->findOrFail($id);
         
         $this->authorize('cancel', $purchaseOrder);
 
-        if (in_array($purchaseOrder->status, ['in_transit', 'delivered', 'completed', 'cancelled'])) {
-            return response()->json([
-                'message' => 'Purchase order cannot be cancelled in its current state.'
-            ], 403);
-        }
+        $purchaseOrder = $this->purchaseOrderService->cancelPurchaseOrder(
+            $purchaseOrder->id,
+            (int) Auth::id(),
+            $request->cancellation_reason
+        );
 
-        try {
-            $purchaseOrder->cancel(Auth::id(), $request->cancellation_reason);
-
-            return response()->json([
-                'message' => 'Purchase order cancelled successfully.',
-                'purchase_order' => $purchaseOrder->fresh()
-            ]);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Failed to cancel purchase order.',
-                'error' => $e->getMessage()
-            ], 500);
-        }
+        return response()->json([
+            'message' => 'Purchase order cancelled successfully.',
+            'data' => $purchaseOrder,
+        ]);
     }
 
     /**
@@ -449,122 +283,4 @@ class PurchaseOrderController extends Controller
         return response()->json($metrics);
     }
 
-    /**
-     * Auto-create Finance expense from delivered procurement purchase order.
-     */
-    private function createExpenseFromDeliveredPurchaseOrder(PurchaseOrder $purchaseOrder, int $userId): void
-    {
-        $amount = (float) ($purchaseOrder->total_cost ?? 0);
-        if ($amount <= 0) {
-            return;
-        }
-
-        $template = config('finance_expense_templates.procurement', []);
-
-        $category = (string) ($template['category'] ?? 'Procurement');
-        $status = (string) ($template['status'] ?? 'submitted');
-        $referencePrefix = (string) ($template['reference_prefix'] ?? 'PROC-EXP-');
-        $descriptionTemplate = (string) ($template['description_template'] ?? 'Auto-generated from Purchase Order: :reference');
-        $metaSource = (string) ($template['meta_source'] ?? 'purchase_order');
-
-        $referenceToken = (string) ($purchaseOrder->po_number ?: ('PO-' . $purchaseOrder->id));
-        $reference = $referencePrefix . $referenceToken;
-
-        $description = strtr($descriptionTemplate, [
-            ':reference' => $referenceToken,
-            ':po_number' => (string) ($purchaseOrder->po_number ?? $referenceToken),
-        ]);
-
-        $expenseDate = $purchaseOrder->actual_delivery_date
-            ? \Illuminate\Support\Carbon::parse($purchaseOrder->actual_delivery_date)->toDateString()
-            : now()->toDateString();
-
-        $purchaseOrder->loadMissing('supplier');
-
-        $expensePayload = [
-            'date' => $expenseDate,
-            'category' => $category,
-            'vendor' => $purchaseOrder->supplier?->name,
-            'description' => $description,
-            'amount' => $amount,
-            'tax_amount' => 0,
-            'status' => $status,
-            'shop_id' => $purchaseOrder->shop_owner_id,
-            'meta' => [
-                'source' => $metaSource,
-                'purchase_order_id' => $purchaseOrder->id,
-                'po_number' => $purchaseOrder->po_number,
-                'created_by' => $userId,
-            ],
-        ];
-
-        if ($status === 'approved') {
-            $expensePayload['approved_by'] = $userId;
-            $expensePayload['approved_at'] = now();
-            $expensePayload['approval_notes'] = 'Auto-approved from delivered purchase order.';
-        }
-
-        Expense::firstOrCreate(
-            ['reference' => $reference],
-            $expensePayload
-        );
-    }
-
-    /**
-     * Generate unique PO number.
-     */
-    private function generatePONumber()
-    {
-        $year = (int) date('Y');
-        $maxSequence = 0;
-
-        $existingPoNumbers = PurchaseOrder::query()
-            ->where('po_number', 'LIKE', "PO-{$year}-%")
-            ->pluck('po_number');
-
-        foreach ($existingPoNumbers as $poNumber) {
-            if (preg_match('/^PO-(\d{4})-(\d+)$/', (string) $poNumber, $matches) !== 1) {
-                continue;
-            }
-
-            if ((int) $matches[1] !== $year) {
-                continue;
-            }
-
-            $maxSequence = max($maxSequence, (int) $matches[2]);
-        }
-
-        return sprintf('PO-%d-%03d', $year, $maxSequence + 1);
-    }
-
-    private function incrementPoNumber(string $poNumber): string
-    {
-        if (preg_match('/^PO-(\d{4})-(\d+)$/', $poNumber, $matches) !== 1) {
-            return $this->generatePONumber();
-        }
-
-        $year = (int) $matches[1];
-        $sequence = (int) $matches[2] + 1;
-
-        return sprintf('PO-%d-%03d', $year, $sequence);
-    }
-
-    private function isPoNumberDuplicateException(QueryException $exception): bool
-    {
-        $message = strtolower($exception->getMessage());
-
-        return str_contains($message, 'duplicate entry')
-            && str_contains($message, 'po_number');
-    }
-
-    private function sanitizePurchaseOrderPayloadForSchema(array $payload): array
-    {
-        static $purchaseOrderColumns = null;
-
-        if (!is_array($purchaseOrderColumns)) {
-            $purchaseOrderColumns = array_flip(Schema::getColumnListing('purchase_orders'));
-        }
-
-        return array_intersect_key($payload, $purchaseOrderColumns);
-    }
 }

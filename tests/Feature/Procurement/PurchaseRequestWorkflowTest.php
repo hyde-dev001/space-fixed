@@ -2,259 +2,211 @@
 
 namespace Tests\Feature\Procurement;
 
-use Tests\TestCase;
-use App\Models\User;
-use App\Models\ShopOwner;
-use App\Models\Supplier;
+use App\Jobs\AutoApproveLowValuePRsJob;
 use App\Models\PurchaseRequest;
+use App\Models\InventoryItem;
+use App\Models\ShopOwner;
+use App\Models\StockRequestApproval;
+use App\Models\Supplier;
+use App\Models\User;
+use App\Services\PurchaseRequestService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Permission;
+use Tests\TestCase;
 
 class PurchaseRequestWorkflowTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected User $user;
-    protected ShopOwner $shopOwner;
-    protected Supplier $supplier;
+    private ShopOwner $shopOwner;
+    private Supplier $supplier;
+    private User $requester;
+    private User $finance;
 
     protected function setUp(): void
     {
         parent::setUp();
         config(['auth.defaults.guard' => 'user']);
         $this->shopOwner = ShopOwner::factory()->create();
-        $this->user = User::factory()->for($this->shopOwner)->create();
-        Permission::findOrCreate('access-procurement-dashboard', 'user');
-        $this->user->givePermissionTo('access-procurement-dashboard');
         $this->supplier = Supplier::factory()->create(['shop_owner_id' => $this->shopOwner->id]);
+        $this->requester = User::factory()->for($this->shopOwner)->create();
+        $this->finance = User::factory()->for($this->shopOwner)->create();
+        $this->give($this->requester, 'procurement.create_purchase_requests');
+        $this->give($this->requester, 'procurement.submit_purchase_requests');
+        $this->give($this->finance, 'procurement.review_purchase_requests');
     }
 
-    /** @test */
-    public function user_can_create_purchase_request()
+    public function test_pr_follows_finance_then_shop_owner_approval(): void
     {
-        $response = $this->actingAs($this->user)
+        $purchaseRequest = PurchaseRequest::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'requested_by' => $this->requester->id,
+            'status' => 'draft',
+        ]);
+
+        $this->actingAs($this->requester)
+            ->postJson("/api/erp/procurement/purchase-requests/{$purchaseRequest->id}/submit-to-finance")
+            ->assertOk();
+
+        $this->actingAs($this->finance)
+            ->postJson("/api/erp/procurement/purchase-requests/{$purchaseRequest->id}/approve", [
+                'approval_notes' => 'Budget checked.',
+            ])
+            ->assertOk();
+
+        $this->assertSame('pending_shop_owner', $purchaseRequest->fresh()->status);
+        $this->assertSame($this->finance->id, $purchaseRequest->fresh()->reviewed_by);
+
+        $this->actingAs($this->shopOwner, 'shop_owner')
+            ->postJson("/api/shop-owner/purchase-requests/{$purchaseRequest->id}/approve", [
+                'approval_notes' => 'Final approval.',
+            ])
+            ->assertOk();
+
+        $ownerApproved = $purchaseRequest->fresh();
+        $this->assertSame('pending_finance_final', $ownerApproved->status);
+        $this->assertSame($this->shopOwner->id, $ownerApproved->approved_by_shop_owner_id);
+        $this->assertNull($ownerApproved->approved_by);
+
+        $this->actingAs($this->finance, 'user')
+            ->postJson("/api/erp/procurement/purchase-requests/{$purchaseRequest->id}/approve", [
+                'approval_notes' => 'Funds released.',
+            ])
+            ->assertOk();
+
+        $final = $purchaseRequest->fresh();
+        $this->assertSame('approved', $final->status);
+        $this->assertSame($this->finance->id, $final->approved_by);
+        $this->assertSame($this->finance->id, $final->reviewed_by);
+        $this->assertSame($this->shopOwner->id, $final->approved_by_shop_owner_id);
+    }
+
+    public function test_each_actor_rejection_uses_its_own_foreign_key(): void
+    {
+        $financeRequest = $this->pendingRequest('pending_finance');
+
+        $this->actingAs($this->finance)
+            ->postJson("/api/erp/procurement/purchase-requests/{$financeRequest->id}/reject", [
+                'rejection_reason' => 'Budget unavailable.',
+            ])
+            ->assertOk();
+
+        $this->assertSame($this->finance->id, $financeRequest->fresh()->rejected_by_user_id);
+        $this->assertNull($financeRequest->fresh()->rejected_by_shop_owner_id);
+
+        $ownerRequest = $this->pendingRequest('pending_shop_owner');
+
+        $this->actingAs($this->shopOwner, 'shop_owner')
+            ->postJson("/api/shop-owner/purchase-requests/{$ownerRequest->id}/reject", [
+                'rejection_reason' => 'Not needed.',
+            ])
+            ->assertOk();
+
+        $this->assertSame($this->shopOwner->id, $ownerRequest->fresh()->rejected_by_shop_owner_id);
+        $this->assertNull($ownerRequest->fresh()->rejected_by_user_id);
+    }
+
+    public function test_create_and_retired_job_never_skip_approval(): void
+    {
+        $stockRequest = $this->acceptedStockRequest();
+        $response = $this->actingAs($this->requester)
             ->postJson('/api/erp/procurement/purchase-requests', [
-                'product_name' => 'Office Supplies',
+                'stock_request_id' => $stockRequest->id,
+                'product_name' => 'Shoe adhesive',
                 'supplier_id' => $this->supplier->id,
-                'quantity' => 100,
-                'unit_cost' => 50.00,
+                'quantity' => 2,
+                'unit_cost' => 50,
                 'priority' => 'medium',
-                'justification' => 'Restock for Q2 operations',
-            ]);
+                'justification' => 'Routine workshop stock.',
+                'submit_to_finance' => true,
+            ])
+            ->assertCreated();
 
-        $response->assertStatus(201)
-            ->assertJsonStructure([
-                'purchase_request' => [
-                    'id',
-                    'pr_number',
-                    'product_name',
-                    'total_cost',
-                    'status',
-                ]
-            ]);
+		$this->assertSame(['message', 'data'], array_keys($response->json()));
 
-        $this->assertDatabaseHas('purchase_requests', [
-            'product_name' => 'Office Supplies',
-            'quantity' => 100,
-            'status' => 'draft',
-        ]);
+        $purchaseRequest = PurchaseRequest::findOrFail($response->json('data.id'));
+        $this->assertSame('pending_finance', $purchaseRequest->status);
+
+        app(AutoApproveLowValuePRsJob::class)->handle(app(PurchaseRequestService::class));
+        $this->assertSame('pending_finance', $purchaseRequest->fresh()->status);
     }
 
-    /** @test */
-    public function user_can_submit_pr_to_finance()
+    public function test_create_only_permission_cannot_create_and_submit(): void
     {
-        $pr = PurchaseRequest::factory()->create([
-            'shop_owner_id' => $this->shopOwner->id,
-            'supplier_id' => $this->supplier->id,
-            'status' => 'draft',
-        ]);
+        $createOnly = User::factory()->for($this->shopOwner)->create();
+        $this->give($createOnly, 'procurement.create_purchase_requests');
+        $stockRequest = $this->acceptedStockRequest($createOnly);
 
-        $response = $this->actingAs($this->user)
-            ->postJson("/api/erp/procurement/purchase-requests/{$pr->id}/submit-to-finance");
-
-        $response->assertStatus(200);
-
-        $this->assertDatabaseHas('purchase_requests', [
-            'id' => $pr->id,
-            'status' => 'pending_finance',
-        ]);
-    }
-
-    /** @test */
-    public function finance_user_can_approve_pr()
-    {
-        $pr = PurchaseRequest::factory()->create([
-            'shop_owner_id' => $this->shopOwner->id,
-            'supplier_id' => $this->supplier->id,
-            'status' => 'pending_finance',
-        ]);
-
-        $response = $this->actingAs($this->user)
-            ->postJson("/api/erp/procurement/purchase-requests/{$pr->id}/approve", [
-                'approval_notes' => 'Budget approved',
-            ]);
-
-        $response->assertStatus(200);
-
-        $this->assertDatabaseHas('purchase_requests', [
-            'id' => $pr->id,
-            'status' => 'approved',
-        ]);
-    }
-
-    /** @test */
-    public function finance_user_can_reject_pr()
-    {
-        $pr = PurchaseRequest::factory()->create([
-            'shop_owner_id' => $this->shopOwner->id,
-            'supplier_id' => $this->supplier->id,
-            'status' => 'pending_finance',
-        ]);
-
-        $response = $this->actingAs($this->user)
-            ->postJson("/api/erp/procurement/purchase-requests/{$pr->id}/reject", [
-                'rejection_reason' => 'Exceeds budget allocation',
-            ]);
-
-        $response->assertStatus(200);
-
-        $this->assertDatabaseHas('purchase_requests', [
-            'id' => $pr->id,
-            'status' => 'rejected',
-            'rejection_reason' => 'Exceeds budget allocation',
-        ]);
-    }
-
-    /** @test */
-    public function user_can_get_pr_metrics()
-    {
-        PurchaseRequest::factory()->create([
-            'shop_owner_id' => $this->shopOwner->id,
-            'supplier_id' => $this->supplier->id,
-            'status' => 'pending_finance',
-        ]);
-
-        PurchaseRequest::factory()->create([
-            'shop_owner_id' => $this->shopOwner->id,
-            'supplier_id' => $this->supplier->id,
-            'status' => 'approved',
-        ]);
-
-        $response = $this->actingAs($this->user)
-            ->getJson('/api/erp/procurement/purchase-requests/metrics');
-
-        $response->assertStatus(200)
-            ->assertJsonStructure([
-                'total_purchase_requests',
-                'pending_finance',
-                'approved_requests',
-            ]);
-    }
-
-    /** @test */
-    public function user_can_filter_purchase_requests()
-    {
-        PurchaseRequest::factory()->create([
-            'shop_owner_id' => $this->shopOwner->id,
-            'supplier_id' => $this->supplier->id,
-            'status' => 'approved',
-        ]);
-
-        PurchaseRequest::factory()->create([
-            'shop_owner_id' => $this->shopOwner->id,
-            'supplier_id' => $this->supplier->id,
-            'status' => 'draft',
-        ]);
-
-        $response = $this->actingAs($this->user)
-            ->getJson('/api/erp/procurement/purchase-requests?status=approved');
-
-        $response->assertStatus(200)
-            ->assertJsonCount(1, 'data');
-    }
-
-    /** @test */
-    public function user_can_update_draft_pr()
-    {
-        $pr = PurchaseRequest::factory()->create([
-            'shop_owner_id' => $this->shopOwner->id,
-            'supplier_id' => $this->supplier->id,
-            'status' => 'draft',
-            'quantity' => 100,
-        ]);
-
-        $response = $this->actingAs($this->user)
-            ->putJson("/api/erp/procurement/purchase-requests/{$pr->id}", [
-                'product_name' => 'Updated Product',
-                'supplier_id' => $this->supplier->id,
-                'quantity' => 150,
-                'unit_cost' => 60.00,
-                'priority' => 'high',
-                'justification' => 'Updated justification',
-            ]);
-
-        $response->assertStatus(200);
-
-        $this->assertDatabaseHas('purchase_requests', [
-            'id' => $pr->id,
-            'quantity' => 150,
-        ]);
-    }
-
-    /** @test */
-    public function user_can_delete_draft_pr()
-    {
-        $pr = PurchaseRequest::factory()->create([
-            'shop_owner_id' => $this->shopOwner->id,
-            'supplier_id' => $this->supplier->id,
-            'status' => 'draft',
-        ]);
-
-        $response = $this->actingAs($this->user)
-            ->deleteJson("/api/erp/procurement/purchase-requests/{$pr->id}");
-
-        $response->assertStatus(200);
-
-        $this->assertSoftDeleted('purchase_requests', [
-            'id' => $pr->id,
-        ]);
-    }
-
-    /** @test */
-    public function complete_pr_workflow_from_creation_to_approval()
-    {
-        // Step 1: Create PR
-        $createResponse = $this->actingAs($this->user)
+        $this->actingAs($createOnly)
             ->postJson('/api/erp/procurement/purchase-requests', [
-                'product_name' => 'Test Product',
+                'stock_request_id' => $stockRequest->id,
+                'product_name' => 'Shoe cleaner',
                 'supplier_id' => $this->supplier->id,
-                'quantity' => 50,
-                'unit_cost' => 100.00,
-                'priority' => 'high',
-                'justification' => 'Urgent requirement',
-            ]);
+                'quantity' => 1,
+                'unit_cost' => 100,
+                'priority' => 'medium',
+                'justification' => 'Create and submit permission check.',
+                'submit_to_finance' => true,
+            ])
+            ->assertForbidden();
 
-        $createResponse->assertStatus(201);
-        $prId = $createResponse->json('purchase_request.id');
+        $this->assertDatabaseMissing('purchase_requests', ['product_name' => 'Shoe cleaner']);
+    }
 
-        // Step 2: Submit to Finance
-        $submitResponse = $this->actingAs($this->user)
-            ->postJson("/api/erp/procurement/purchase-requests/{$prId}/submit-to-finance");
+    public function test_http_creation_requires_and_uniquely_links_an_accepted_stock_request(): void
+    {
+        $payload = [
+            'product_name' => 'Shoe laces',
+            'supplier_id' => $this->supplier->id,
+            'quantity' => 2,
+            'unit_cost' => 50,
+            'priority' => 'medium',
+            'justification' => 'Required stock request linkage.',
+        ];
 
-        $submitResponse->assertStatus(200);
+        $this->actingAs($this->requester)
+            ->postJson('/api/erp/procurement/purchase-requests', $payload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('stock_request_id');
 
-        // Step 3: Approve
-        $approveResponse = $this->actingAs($this->user)
-            ->postJson("/api/erp/procurement/purchase-requests/{$prId}/approve", [
-                'approval_notes' => 'Approved for urgent requirement',
-            ]);
+        $stockRequest = $this->acceptedStockRequest();
+        $this->actingAs($this->requester)
+            ->postJson('/api/erp/procurement/purchase-requests', ['stock_request_id' => $stockRequest->id, ...$payload])
+            ->assertCreated();
 
-        $approveResponse->assertStatus(200);
+        $this->assertDatabaseHas('purchase_requests', ['stock_request_id' => $stockRequest->id]);
 
-        // Verify final state
-        $this->assertDatabaseHas('purchase_requests', [
-            'id' => $prId,
-            'status' => 'approved',
+        $this->actingAs($this->requester)
+            ->postJson('/api/erp/procurement/purchase-requests', ['stock_request_id' => $stockRequest->id, ...$payload])
+            ->assertUnprocessable();
+    }
+
+    private function pendingRequest(string $status): PurchaseRequest
+    {
+        return PurchaseRequest::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'requested_by' => $this->requester->id,
+            'status' => $status,
         ]);
+    }
+
+    private function acceptedStockRequest(?User $requester = null): StockRequestApproval
+    {
+        $inventory = InventoryItem::factory()->create(['shop_owner_id' => $this->shopOwner->id]);
+
+        return StockRequestApproval::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'inventory_item_id' => $inventory->id,
+            'requested_by' => ($requester ?? $this->requester)->id,
+            'status' => 'accepted',
+        ]);
+    }
+
+    private function give(User $user, string $permission): void
+    {
+        Permission::findOrCreate($permission, 'user');
+        $user->givePermissionTo($permission);
     }
 }

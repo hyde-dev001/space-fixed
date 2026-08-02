@@ -20,7 +20,7 @@ class PurchaseRequestTest extends TestCase
         // Setup test data
         $this->shopOwner = ShopOwner::factory()->create();
         $this->supplier = Supplier::factory()->create(['shop_owner_id' => $this->shopOwner->id]);
-        $this->user = User::factory()->create();
+        $this->user = User::factory()->for($this->shopOwner)->create();
     }
 
     /** @test */
@@ -97,7 +97,7 @@ class PurchaseRequestTest extends TestCase
             'status' => 'pending_finance',
         ]);
 
-        $pr->approve($this->user->id, 'Approved for budget compliance');
+        $pr->reviewByFinance($this->user, 'Approved for budget compliance');
 
         $this->assertEquals('pending_shop_owner', $pr->fresh()->status);
         $this->assertEquals($this->user->id, $pr->fresh()->reviewed_by);
@@ -105,7 +105,50 @@ class PurchaseRequestTest extends TestCase
     }
 
     /** @test */
-    public function it_can_be_rejected()
+    public function shop_owner_approval_advances_to_finance_final_and_uses_the_owner_audit_column()
+    {
+        $pr = PurchaseRequest::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'status' => 'pending_shop_owner',
+        ]);
+
+        $this->assertTrue($pr->approveByShopOwner($this->shopOwner, 'Approved by owner'));
+
+        $fresh = $pr->fresh();
+        $this->assertSame('pending_finance_final', $fresh->status);
+        $this->assertSame($this->shopOwner->id, $fresh->approved_by_shop_owner_id);
+        $this->assertNull($fresh->approved_by);
+        $this->assertNotNull($fresh->shop_owner_approved_at);
+        $this->assertNull($fresh->approved_date);
+    }
+
+    /** @test */
+    public function finance_final_release_preserves_initial_and_owner_audits()
+    {
+        $finalFinance = User::factory()->for($this->shopOwner)->create();
+        $pr = PurchaseRequest::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'status' => 'pending_finance_final',
+            'reviewed_by' => $this->user->id,
+            'reviewed_date' => now()->subHour(),
+            'approved_by_shop_owner_id' => $this->shopOwner->id,
+            'shop_owner_approved_at' => now()->subMinutes(30),
+        ]);
+
+        $this->assertTrue($pr->releaseByFinance($finalFinance, 'Funds available'));
+
+        $fresh = $pr->fresh();
+        $this->assertSame('approved', $fresh->status);
+        $this->assertSame($this->user->id, $fresh->reviewed_by);
+        $this->assertSame($this->shopOwner->id, $fresh->approved_by_shop_owner_id);
+        $this->assertSame($finalFinance->id, $fresh->approved_by);
+        $this->assertNotNull($fresh->approved_date);
+    }
+
+    /** @test */
+    public function finance_rejection_uses_the_user_audit_column()
     {
         $pr = PurchaseRequest::factory()->create([
             'shop_owner_id' => $this->shopOwner->id,
@@ -113,10 +156,11 @@ class PurchaseRequestTest extends TestCase
             'status' => 'pending_finance',
         ]);
 
-        $pr->reject($this->user->id, 'Exceeds budget allocation');
+        $pr->rejectByFinance($this->user, 'Exceeds budget allocation');
 
         $this->assertEquals('rejected', $pr->fresh()->status);
-        $this->assertEquals($this->user->id, $pr->fresh()->reviewed_by);
+        $this->assertEquals($this->user->id, $pr->fresh()->rejected_by_user_id);
+        $this->assertNull($pr->fresh()->rejected_by_shop_owner_id);
         $this->assertEquals('Exceeds budget allocation', $pr->fresh()->rejection_reason);
     }
 

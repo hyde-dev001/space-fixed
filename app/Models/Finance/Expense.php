@@ -34,7 +34,9 @@ class Expense extends Model
         'receipt_mime_type',
         'receipt_size',
         'shop_id',
+        'created_by',
         'purchase_order_id',
+        'procurement_receipt_id',
         'meta',
         'approval_id',
         'current_approval_level',
@@ -52,6 +54,16 @@ class Expense extends Model
     public function supplierOrder()
     {
         return $this->belongsTo(\App\Models\SupplierOrder::class, 'purchase_order_id');
+    }
+
+    public function procurementReceipt()
+    {
+        return $this->belongsTo(\App\Models\PurchaseOrderReceipt::class, 'procurement_receipt_id');
+    }
+
+    public function creator()
+    {
+        return $this->belongsTo(\App\Models\User::class, 'created_by');
     }
 
     /**

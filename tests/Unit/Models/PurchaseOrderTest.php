@@ -9,6 +9,9 @@ use App\Models\User;
 use App\Models\Supplier;
 use App\Models\ShopOwner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
+use App\Models\PurchaseOrderItem;
+use App\Models\PurchaseOrderReceipt;
 
 class PurchaseOrderTest extends TestCase
 {
@@ -91,20 +94,47 @@ class PurchaseOrderTest extends TestCase
     }
 
     /** @test */
-    public function it_can_be_marked_as_delivered()
+    public function valid_manual_transitions_are_strictly_sequential()
     {
         $po = PurchaseOrder::factory()->create([
             'shop_owner_id' => $this->shopOwner->id,
             'supplier_id' => $this->supplier->id,
-            'status' => 'in_transit',
+            'status' => 'draft',
         ]);
 
-        $po->markAsDelivered($this->user->id);
+        $po->sendToSupplier();
+        $po->markAsConfirmed($this->user->id);
+        $po->markAsInTransit($this->user->id);
 
-        $this->assertEquals('delivered', $po->fresh()->status);
-        $this->assertEquals($this->user->id, $po->fresh()->delivered_by);
-        $this->assertNotNull($po->fresh()->delivered_date);
-        $this->assertNotNull($po->fresh()->actual_delivery_date);
+        $this->assertEquals('in_transit', $po->fresh()->status);
+    }
+
+    public function test_skipped_or_repeated_manual_transition_throws_validation_error(): void
+    {
+        $po = PurchaseOrder::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'status' => 'draft',
+        ]);
+
+        $this->expectException(ValidationException::class);
+        $po->markAsConfirmed($this->user->id);
+    }
+
+    public function test_completion_requires_full_receipt_quantities(): void
+    {
+        $po = PurchaseOrder::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'status' => 'delivered',
+        ]);
+        PurchaseOrderItem::factory()->create([
+            'purchase_order_id' => $po->id,
+            'ordered_quantity' => 2,
+        ]);
+
+        $this->expectException(ValidationException::class);
+        $po->markAsCompleted($this->user->id);
     }
 
     /** @test */
@@ -120,6 +150,24 @@ class PurchaseOrderTest extends TestCase
 
         $this->assertEquals('cancelled', $po->fresh()->status);
         $this->assertEquals('Supplier cannot fulfill order', $po->fresh()->cancellation_reason);
+    }
+
+    public function test_posted_receipt_blocks_cancellation(): void
+    {
+        $po = PurchaseOrder::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'status' => 'in_transit',
+        ]);
+        PurchaseOrderReceipt::factory()->create([
+            'purchase_order_id' => $po->id,
+            'shop_owner_id' => $this->shopOwner->id,
+            'received_by' => $this->user->id,
+            'status' => 'posted',
+        ]);
+
+        $this->expectException(ValidationException::class);
+        $po->cancel($this->user->id, 'Supplier cannot fulfill order');
     }
 
     /** @test */

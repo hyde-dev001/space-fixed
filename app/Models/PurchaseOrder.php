@@ -6,7 +6,9 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Validation\ValidationException;
 
 class PurchaseOrder extends Model
 {
@@ -30,6 +32,7 @@ class PurchaseOrder extends Model
         'actual_delivery_date',
         'payment_terms',
         'status',
+        'is_historical',
         'cancellation_reason',
         'ordered_by',
         'ordered_date',
@@ -54,6 +57,7 @@ class PurchaseOrder extends Model
         'quantity' => 'integer',
         'received_quantity' => 'integer',
         'defective_quantity' => 'integer',
+        'is_historical' => 'boolean',
     ];
 
     protected $appends = [
@@ -82,6 +86,21 @@ class PurchaseOrder extends Model
     public function inventoryItem(): BelongsTo
     {
         return $this->belongsTo(InventoryItem::class);
+    }
+
+    public function items(): HasMany
+    {
+        return $this->hasMany(PurchaseOrderItem::class);
+    }
+
+    public function receipts(): HasMany
+    {
+        return $this->hasMany(PurchaseOrderReceipt::class);
+    }
+
+    public function activeReceipts(): HasMany
+    {
+        return $this->receipts()->where('status', 'posted');
     }
 
     public function orderer(): BelongsTo
@@ -143,7 +162,7 @@ class PurchaseOrder extends Model
 
     public function scopeActive(Builder $query): Builder
     {
-        return $query->whereIn('status', ['sent', 'confirmed', 'in_transit']);
+        return $query->whereIn('status', ['sent', 'confirmed', 'in_transit', 'partially_received']);
     }
 
     public function scopeOverdue(Builder $query): Builder
@@ -166,6 +185,7 @@ class PurchaseOrder extends Model
             'sent' => 'Sent',
             'confirmed' => 'Confirmed',
             'in_transit' => 'In Transit',
+            'partially_received' => 'Partially Received',
             'delivered' => 'Delivered',
             'completed' => 'Completed',
             'cancelled' => 'Cancelled',
@@ -203,9 +223,7 @@ class PurchaseOrder extends Model
 
     public function sendToSupplier(): bool
     {
-        if ($this->status !== 'draft') {
-            return false;
-        }
+        $this->requireStatus('draft');
 
         $this->status = 'sent';
         return $this->save();
@@ -213,9 +231,7 @@ class PurchaseOrder extends Model
 
     public function markAsConfirmed(int $userId): bool
     {
-        if ($this->status !== 'sent') {
-            return false;
-        }
+        $this->requireStatus('sent');
 
         $this->status = 'confirmed';
         $this->confirmed_by = $userId;
@@ -225,18 +241,19 @@ class PurchaseOrder extends Model
 
     public function markAsInTransit(int $userId): bool
     {
-        if ($this->status !== 'confirmed') {
-            return false;
-        }
+        $this->requireStatus('confirmed');
 
         $this->status = 'in_transit';
         return $this->save();
     }
 
-    public function markAsDelivered(int $userId, ?string $actualDate = null): bool
+    public function markAsDeliveredFromReceipts(int $userId, ?string $actualDate = null): bool
     {
-        if (!in_array($this->status, ['confirmed', 'in_transit'])) {
-            return false;
+        if (!in_array($this->status, ['in_transit', 'partially_received'], true)) {
+            throw ValidationException::withMessages(['status' => 'Only an in-transit purchase order can become delivered.']);
+        }
+        if ($this->items()->get()->contains(fn (PurchaseOrderItem $item) => $item->remainingQuantity() > 0)) {
+            throw ValidationException::withMessages(['status' => 'All purchase-order items must be fully received before delivery.']);
         }
 
         $this->status = 'delivered';
@@ -248,8 +265,10 @@ class PurchaseOrder extends Model
 
     public function markAsCompleted(int $userId): bool
     {
-        if ($this->status !== 'delivered') {
-            return false;
+        $this->requireStatus('delivered');
+        $items = $this->items()->get();
+        if ($items->isEmpty() || $items->contains(fn (PurchaseOrderItem $item) => $item->remainingQuantity() > 0)) {
+            throw ValidationException::withMessages(['status' => 'All purchase-order items must be fully received before completion.']);
         }
 
         $this->status = 'completed';
@@ -260,8 +279,11 @@ class PurchaseOrder extends Model
 
     public function cancel(int $userId, string $reason): bool
     {
-        if (in_array($this->status, ['in_transit', 'delivered', 'completed', 'cancelled'])) {
-            return false;
+        if (!in_array($this->status, ['draft', 'sent', 'confirmed', 'in_transit'], true)) {
+            throw ValidationException::withMessages(['status' => 'Purchase order cannot be cancelled in its current state.']);
+        }
+        if ($this->receipts()->where('status', 'posted')->exists()) {
+            throw ValidationException::withMessages(['status' => 'A purchase order with a posted receipt cannot be cancelled.']);
         }
 
         $this->status = 'cancelled';
@@ -280,10 +302,18 @@ class PurchaseOrder extends Model
             'draft' => 'sent',
             'sent' => 'confirmed',
             'confirmed' => 'in_transit',
-            'in_transit' => 'delivered',
             'delivered' => 'completed',
             default => null,
         };
+    }
+
+    private function requireStatus(string $expected): void
+    {
+        if ($this->status !== $expected) {
+            throw ValidationException::withMessages([
+                'status' => "Purchase order must be {$expected} before this transition.",
+            ]);
+        }
     }
 
     public function updateInventoryOnDelivery(): bool

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Finance\Expense;
 use App\Models\PurchaseOrder;
+use App\Models\PurchaseOrderReceipt;
 use App\Models\AuditLog;
 use App\Models\User;
 use App\Services\NotificationService;
@@ -81,10 +82,36 @@ class ExpenseController extends Controller
      */
     private function appendProcurementDetails($expenses, int $shopId): void
     {
+        $receiptIds = $expenses->pluck('procurement_receipt_id')->filter()->unique()->values();
+        $receipts = PurchaseOrderReceipt::with([
+            'purchaseOrder.supplier:id,name',
+            'purchaseOrder.items',
+            'items.purchaseOrderItem',
+        ])->where('shop_owner_id', $shopId)->whereIn('id', $receiptIds)->get()->keyBy('id');
         $poIds = [];
         $poNumbers = [];
 
         foreach ($expenses as $expense) {
+            $receipt = $receipts->get($expense->procurement_receipt_id);
+            if ($receipt) {
+                $purchaseOrder = $receipt->purchaseOrder;
+                $expense->setAttribute('procurement_details', [
+                    'purchase_order_id' => $purchaseOrder->id,
+                    'po_number' => $purchaseOrder->po_number,
+                    'supplier_name' => $purchaseOrder->supplier?->name,
+                    'receipt_id' => $receipt->id,
+                    'received_at' => $receipt->received_at,
+                    'items' => $receipt->items->map(fn ($receiptItem) => [
+                        'purchase_order_item_id' => $receiptItem->purchase_order_item_id,
+                        'product_name' => $receiptItem->purchaseOrderItem?->product_name,
+                        'received_quantity' => $receiptItem->received_quantity,
+                        'defective_quantity' => $receiptItem->defective_quantity,
+                        'accepted_quantity' => $receiptItem->accepted_quantity,
+                    ])->values(),
+                ]);
+                continue;
+            }
+
             $meta = is_array($expense->meta) ? $expense->meta : [];
             $poId = (int) ($expense->purchase_order_id ?? ($meta['purchase_order_id'] ?? 0));
             if ($poId > 0) {
