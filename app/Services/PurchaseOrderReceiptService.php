@@ -88,6 +88,7 @@ class PurchaseOrderReceiptService
                 if ($accepted > $remaining) {
                     throw ValidationException::withMessages(['items' => 'Accepted quantity exceeds the remaining ordered quantity.']);
                 }
+                $this->validatePerSizeQuantities($orderItem, $input['size_quantities']);
             }
 
             $receivedAt = Carbon::parse($data['received_at'] ?? now());
@@ -131,6 +132,52 @@ class PurchaseOrderReceiptService
 
             return $receipt;
         });
+    }
+
+    private function validatePerSizeQuantities(PurchaseOrderItem $orderItem, array $sizeQuantities): void
+    {
+        $eligibleSizeIds = array_values(array_unique(array_map('intval', $orderItem->eligible_size_ids ?? [])));
+        if (count($eligibleSizeIds) <= 1) {
+            return;
+        }
+
+        $maximumPerSize = intdiv(
+            (int) $orderItem->ordered_quantity + count($eligibleSizeIds) - 1,
+            count($eligibleSizeIds)
+        );
+        $acceptedBySize = $this->acceptedQuantitiesBySize($orderItem);
+
+        foreach ($sizeQuantities as $sizeQuantity) {
+            $sizeId = (int) $sizeQuantity['inventory_size_id'];
+            $remainingForSize = max(0, $maximumPerSize - ($acceptedBySize[$sizeId] ?? 0));
+
+            if ((int) $sizeQuantity['received_quantity'] > $remainingForSize) {
+                throw ValidationException::withMessages([
+                    'items' => 'Received quantity for a size exceeds its remaining ordered quantity.',
+                ]);
+            }
+        }
+    }
+
+    private function acceptedQuantitiesBySize(PurchaseOrderItem $orderItem): array
+    {
+        $acceptedBySize = [];
+        $receiptItems = $orderItem->receiptItems()
+            ->whereHas('receipt', fn ($query) => $query->where('status', 'posted'))
+            ->get(['inventory_effects']);
+
+        foreach ($receiptItems as $receiptItem) {
+            foreach (($receiptItem->inventory_effects['sizes'] ?? []) as $sizeEffect) {
+                $sizeId = (int) ($sizeEffect['id'] ?? 0);
+                if ($sizeId < 1) {
+                    continue;
+                }
+
+                $acceptedBySize[$sizeId] = ($acceptedBySize[$sizeId] ?? 0) + (int) ($sizeEffect['delta'] ?? 0);
+            }
+        }
+
+        return $acceptedBySize;
     }
 
     public function void(

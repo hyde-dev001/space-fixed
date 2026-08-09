@@ -27,7 +27,8 @@ describe("PurchaseOrderReceiptPanel size labels", () => {
 
 		expect(screen.getAllByText("US 3")).toHaveLength(2);
 		expect(screen.getAllByText("US 5")).toHaveLength(2);
-		expect(screen.getByRole("spinbutton", { name: "Received Runner US 3" })).toBeInTheDocument();
+		expect(screen.getByText("US 3, US 5 · 3 each")).toBeInTheDocument();
+		expect(screen.getByRole("spinbutton", { name: "Received Runner US 3" })).toHaveAttribute("max", "3");
 		expect(screen.getByRole("spinbutton", { name: "Defective Runner US 3" })).toBeInTheDocument();
 	});
 });
