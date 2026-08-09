@@ -457,6 +457,8 @@ Route::prefix('api/logistics')->middleware(['auth:user,shop_owner'])->group(func
     Route::post('/legs/{leg}/out-for-delivery', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'outForDelivery']);
     Route::post('/legs/{leg}/delivered', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'delivered']);
     Route::get('/proofs/{proof}/file', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'proofFile']);
+    Route::get('/attempts/{attempt}/file', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'attemptFile'])
+        ->name('api.logistics.attempts.file');
     Route::post('/proofs/{proof}/approve', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'approveProof']);
     Route::post('/proofs/{proof}/reject', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'rejectProof']);
     Route::post('/legs/{leg}/attempts', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'attempts']);
@@ -467,6 +469,9 @@ Route::prefix('api/logistics')->middleware(['auth:user,shop_owner'])->group(func
     Route::post('/legs/{leg}/resolve/return', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'returnResolution']);
     Route::post('/legs/{leg}/incidents', [\App\Http\Controllers\Api\Logistics\DeliveryIncidentController::class, 'store']);
     Route::post('/incidents/{incident}/resolve', [\App\Http\Controllers\Api\Logistics\DeliveryIncidentController::class, 'resolve']);
+    Route::get('/incidents/{incident}/evidence/{index}', [\App\Http\Controllers\Api\Logistics\DeliveryIncidentController::class, 'evidence'])
+        ->whereNumber('index')
+        ->name('api.logistics.incidents.evidence');
     Route::post('/legs/{leg}/return-to-shop', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'createReturn']);
     Route::post('/legs/{leg}/return-proofs/{proof}/handoff', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'confirmReturnHandoff']);
     Route::post('/legs/{leg}/return-proofs/{proof}/receipt', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'confirmReturnReceipt']);

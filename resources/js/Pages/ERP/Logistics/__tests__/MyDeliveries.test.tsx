@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
     } as any,
     canRecordProof: true,
     maxDeliveryAttempts: 2,
+    today: '2026-07-29',
   },
   reload: vi.fn((options?: { onFinish?: () => void }) => options?.onFinish?.()),
   get: vi.fn(),
@@ -38,6 +39,7 @@ const mocks = vi.hoisted(() => ({
   confirmPickup: vi.fn(() => Promise.resolve()),
   outForDelivery: vi.fn(() => Promise.resolve()),
   markInTransit: vi.fn(() => Promise.resolve()),
+  retryDelivery: vi.fn(() => Promise.resolve()),
   arrive: vi.fn(() => Promise.resolve()),
   reportIssue: vi.fn(() => Promise.resolve()),
   recordProof: vi.fn(() => Promise.resolve({ data: { proof: { id: 17 } } })),
@@ -67,6 +69,7 @@ vi.mock('@/services/logisticsApi', () => ({ logisticsApi: {
   confirmPickup: mocks.confirmPickup,
   outForDelivery: mocks.outForDelivery,
   markInTransit: mocks.markInTransit,
+  retryDelivery: mocks.retryDelivery,
   arrive: mocks.arrive,
   reportIssue: mocks.reportIssue,
   recordProof: mocks.recordProof,
@@ -775,6 +778,29 @@ describe('MyDeliveries rider interactions', () => {
     expect(screen.getByText('Return item to shop: Customer cancelled.')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'View all 1 deliveries' }));
     expect(screen.getAllByText('Return item to shop: Customer cancelled.')).toHaveLength(2);
+  });
+
+  it('shows a staged retry, blocks it before the scheduled date, and starts it when due', async () => {
+    const retry = {
+      ...leg(18, null, 'needs_resolution', 'Retry customer'),
+      resolution_type: 'retry',
+      resolution_reason: 'Customer requested another attempt.',
+      scheduled_delivery_date: '2026-07-30',
+      assignments: [{ id: 180, status: 'accepted' }],
+    };
+    mocks.props.deliveryData.current = workItem('single', 'needs_resolution', [retry]);
+
+    const view = render(<MyDeliveries />);
+
+    expect(screen.getByText('Retry scheduled for Jul 30, 2026')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Start retry' })).toBeDisabled();
+
+    mocks.props.today = '2026-07-30';
+    view.rerender(<MyDeliveries />);
+    expect(screen.getByRole('button', { name: 'Start retry' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Start retry' }));
+
+    await waitFor(() => expect(mocks.markInTransit).toHaveBeenCalledWith(18));
   });
 
   it('shows no state-changing action while waiting for proof approval', () => {

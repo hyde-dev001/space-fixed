@@ -166,7 +166,7 @@ class FailedDeliveryRefundWorkflowTest extends TestCase
         $refund = app(OrderRefundService::class)
             ->reserveFailedDeliveryRefund($order, $leg, 'vehicle_or_delivery_problem')['refund'];
         $refund->update([
-            'status' => 'approved',
+            'status' => 'requested',
             'shop_owner_status' => 'approved',
             'finance_status' => 'approved',
             'return_status' => 'received',
@@ -226,9 +226,9 @@ class FailedDeliveryRefundWorkflowTest extends TestCase
         $this->assertSame(1100.0, round((float) OrderRefund::where('order_id', $order->id)->sum('amount'), 2));
     }
 
-    public function test_maximum_attempt_bootstraps_paid_retail_refund_but_not_cod(): void
+    public function test_maximum_attempt_waits_for_return_selection_before_refund_reservation(): void
     {
-        foreach (['paymongo_card' => 1, 'cod' => 0] as $paymentMethod => $expectedRefunds) {
+        foreach (['paymongo_card', 'cod'] as $paymentMethod) {
             [$order, $leg] = $this->paidOrderWithOutboundLeg();
             $order->update(['payment_method' => $paymentMethod]);
             $leg->update(['status' => 'in_transit']);
@@ -253,13 +253,20 @@ class FailedDeliveryRefundWorkflowTest extends TestCase
                 'file_path' => 'failed-delivery-evidence.jpg',
             ]);
 
-            $this->assertSame($expectedRefunds, OrderRefund::where('order_id', $order->id)->count(), $paymentMethod);
-            if ($expectedRefunds === 1) {
+            $this->assertSame(0, OrderRefund::where('order_id', $order->id)->count(), $paymentMethod);
+            $this->assertSame('needs_resolution', $leg->fresh()->status->value);
+            $this->assertSame('accepted', $assignment->fresh()->status);
+            $this->assertSame(0, ShipmentLeg::where('return_for_leg_id', $leg->id)->count());
+
+            app(ShipmentLegService::class)->requireReturn($leg->fresh(), 'Dispatcher selected return.');
+
+            if ($paymentMethod === 'paymongo_card') {
                 $refund = OrderRefund::where('order_id', $order->id)->sole();
                 $this->assertSame(1000.0, round((float) $refund->amount, 2));
                 $this->assertStringContainsString('shipping fee of PHP 100.00 was retained', (string) $refund->reason_note);
+            } else {
+                $this->assertSame(0, OrderRefund::where('order_id', $order->id)->count());
             }
-            $this->assertSame('needs_resolution', $leg->fresh()->status->value);
         }
     }
 
@@ -496,6 +503,8 @@ class FailedDeliveryRefundWorkflowTest extends TestCase
             'reason_code' => 'recipient_unavailable',
             'file_path' => 'failed-delivery-evidence.jpg',
         ]);
+
+        app(ShipmentLegService::class)->requireReturn($leg->fresh(), 'Return selected after investigation.');
 
         return [
             OrderRefund::where('order_id', $order->id)->firstOrFail(),

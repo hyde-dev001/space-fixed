@@ -118,6 +118,12 @@ const scheduleText = (item: RiderDeliveryWorkItem) => {
   return window ? `${date} · ${window}` : date;
 };
 
+const retryDateText = (value?: string | null) => value
+  ? new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeZone: 'UTC' }).format(
+      new Date(`${value.slice(0, 10)}T00:00:00Z`),
+    )
+  : 'Not scheduled';
+
 function StatusChip({ status, label }: { status: string; label?: string }) {
   const symbol = ['delivered', 'completed'].includes(status)
     ? '✓'
@@ -237,6 +243,7 @@ function DeliveryActions({
   online,
   pendingAction,
   canRecordProof,
+  today,
   runAction,
 }: {
   item: RiderDeliveryWorkItem;
@@ -245,6 +252,7 @@ function DeliveryActions({
   online: boolean;
   pendingAction: string | null;
   canRecordProof: boolean;
+  today: string;
   runAction: ActionRunner;
 }) {
   const [proofFile, setProofFile] = useState<File | null>(null);
@@ -290,6 +298,7 @@ function DeliveryActions({
 
   if (!delivery) return null;
   const isReturnToShop = delivery.leg_type === 'return_to_shop';
+  const isStagedRetry = delivery.status === 'needs_resolution' && delivery.resolution_type === 'retry';
   const isRepairPickup = delivery.shipment?.purpose === 'repair_pickup'
     && ['assigned', 'pickup_scheduled'].includes(delivery.status);
   const requiresIssuePhoto = isRepairPickup || photoIssueReasons.has(issueReason);
@@ -315,6 +324,37 @@ function DeliveryActions({
     item.kind === 'batch'
       ? `stop ${delivery.stop_sequence ?? delivery.id} in batch #${item.id}`
       : `delivery #${delivery.id}`;
+
+  if (isStagedRetry) {
+    const scheduledDate = delivery.scheduled_delivery_date?.slice(0, 10) ?? null;
+    const retryDue = Boolean(scheduledDate && scheduledDate <= today);
+    const key = `delivery-retry:${delivery.id}`;
+
+    return (
+      <div className="space-y-3 rounded-xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/30">
+        <p className="text-sm font-semibold text-amber-950 dark:text-amber-100">
+          Retry scheduled for {retryDateText(scheduledDate)}
+        </p>
+        <button
+          type="button"
+          disabled={mutationDisabled || !retryDue || pendingAction === key}
+          onClick={() => runAction(key, () => logisticsApi.markInTransit(delivery.id), {
+            title: `Start retry for ${deliveryReference}?`,
+            text: 'This starts the scheduled delivery retry without recording another pickup.',
+            confirmButtonText: 'Start retry',
+          })}
+          className={buttonClass}
+        >
+          Start retry
+        </button>
+        {!retryDue && (
+          <p role="status" className="text-center text-xs font-semibold text-amber-800 dark:text-amber-200">
+            Retry is unavailable until the scheduled date.
+          </p>
+        )}
+      </div>
+    );
+  }
   const submitIssue = () => {
     if (
       !issueReason ||
@@ -750,6 +790,7 @@ function CurrentDeliveryCard({
   online,
   pendingAction,
   canRecordProof,
+  today,
   runAction,
 }: {
   item: RiderDeliveryWorkItem | null;
@@ -759,6 +800,7 @@ function CurrentDeliveryCard({
   online: boolean;
   pendingAction: string | null;
   canRecordProof: boolean;
+  today: string;
   runAction: ActionRunner;
 }) {
   if (!item) {
@@ -835,6 +877,7 @@ function CurrentDeliveryCard({
                   online={online}
                   pendingAction={pendingAction}
                   canRecordProof={canRecordProof}
+                  today={today}
                   runAction={runAction}
                 />
               </div>
@@ -876,6 +919,7 @@ function UpNextCard({
   online,
   pendingAction,
   canRecordProof,
+  today,
   runAction,
 }: {
   item: RiderDeliveryWorkItem | null;
@@ -883,6 +927,7 @@ function UpNextCard({
   online: boolean;
   pendingAction: string | null;
   canRecordProof: boolean;
+  today: string;
   runAction: ActionRunner;
 }) {
   const [showDetails, setShowDetails] = useState(false);
@@ -912,6 +957,7 @@ function UpNextCard({
             online={online}
             pendingAction={pendingAction}
             canRecordProof={canRecordProof}
+            today={today}
             runAction={runAction}
           />
         </div>
@@ -1236,10 +1282,11 @@ function DeliveryLists({
 }
 
 export default function MyDeliveries() {
-  const { deliveryData, canRecordProof } = usePage<{
+  const { deliveryData, canRecordProof, today = new Date().toISOString().slice(0, 10) } = usePage<{
     deliveryData: RiderDeliveryPageData;
     canRecordProof: boolean;
     maxDeliveryAttempts: number;
+    today?: string;
   }>().props;
   const [showSequence, setShowSequence] = useState(false);
   const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine);
@@ -1378,6 +1425,7 @@ export default function MyDeliveries() {
           online={online}
           pendingAction={pendingAction}
           canRecordProof={canRecordProof}
+          today={today}
           runAction={runAction}
         />
         <OfferRegion
@@ -1392,6 +1440,7 @@ export default function MyDeliveries() {
           online={online}
           pendingAction={pendingAction}
           canRecordProof={canRecordProof}
+          today={today}
           runAction={runAction}
         />
         {actionError && (

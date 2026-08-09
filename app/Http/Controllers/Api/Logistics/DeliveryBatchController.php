@@ -138,8 +138,10 @@ class DeliveryBatchController extends Controller
     private function assignedRider(DeliveryBatch $batch): RiderProfile
     {
         $user = Auth::guard('user')->user();
-        abort_unless($user, 403);
-        $rider = RiderProfile::query()->whereKey($batch->rider_profile_id)
+        abort_unless($user instanceof User && (int) $user->shop_owner_id === (int) $batch->shop_owner_id, 403);
+        $rider = RiderProfile::query()
+            ->where('shop_owner_id', $batch->shop_owner_id)
+            ->whereKey($batch->rider_profile_id)
             ->where('linked_type', User::class)->where('linked_id', $user->id)->first();
         abort_unless($rider, 403);
         return $rider;

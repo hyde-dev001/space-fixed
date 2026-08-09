@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Logistics;
 use App\Http\Controllers\Controller;
 use App\Models\Logistics\DeliveryAssignment;
 use App\Models\Logistics\DeliveryBatch;
+use App\Models\Logistics\DeliveryAttempt;
 use App\Models\Logistics\LogisticsSetting;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
@@ -21,6 +22,7 @@ use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -133,7 +135,10 @@ class ErpLogisticsController extends Controller
                 ->withQueryString(), function ($shipments) use ($shopOwnerId): void {
                     $this->attachShipmentSummaries($shipments->getCollection(), $shopOwnerId);
                     $shipments->getCollection()->flatMap->legs
-                        ->each(fn (ShipmentLeg $leg) => $this->attachArrivalPayload($leg));
+                        ->each(function (ShipmentLeg $leg): void {
+                            $this->attachArrivalPayload($leg);
+                            $leg->attempts->each(fn (DeliveryAttempt $attempt) => $this->attachAttemptEvidencePayload($attempt));
+                        });
                 }),
             'filters' => [
                 'status' => $status,
@@ -340,6 +345,7 @@ class ErpLogisticsController extends Controller
             'maxDeliveryAttempts' => (int) LogisticsSetting::firstOrCreate([
                 'shop_owner_id' => $shopOwnerId,
             ])->max_delivery_attempts,
+            'today' => now($shopTimezone)->toDateString(),
         ]);
     }
 
@@ -427,6 +433,7 @@ class ErpLogisticsController extends Controller
             $group = match ($legStatus) {
                 'assigned', 'pickup_scheduled' => 'upcoming',
                 'picked_up', 'in_transit', 'delivery_attempted', 'awaiting_proof_approval' => 'current',
+                'needs_resolution' => $leg->resolution_type === 'retry' ? 'current' : null,
                 'delivered', 'cancelled' => 'history',
                 default => null,
             };
@@ -535,6 +542,22 @@ class ErpLogisticsController extends Controller
     {
         $leg->setAttribute('arrivals', $this->arrivalPayload($leg));
         $leg->unsetRelation('events');
+    }
+
+    private function attachAttemptEvidencePayload(DeliveryAttempt $attempt): void
+    {
+        $path = $attempt->getRawOriginal('file_path');
+        $available = is_string($path)
+            && str_starts_with($path, 'logistics-attempt/')
+            && ! str_contains($path, '..')
+            && ! str_contains($path, '\\')
+            && Storage::disk('local')->exists($path);
+
+        $attempt->setAttribute('proof_available', $available);
+        $attempt->setAttribute(
+            'proof_url',
+            $available ? route('api.logistics.attempts.file', ['attempt' => $attempt]) : null,
+        );
     }
 
     private function arrivalPayload(ShipmentLeg $leg): array

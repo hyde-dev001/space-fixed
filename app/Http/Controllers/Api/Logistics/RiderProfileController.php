@@ -10,6 +10,8 @@ use App\Services\Logistics\RiderProfileSyncService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class RiderProfileController extends Controller
 {
@@ -30,6 +32,7 @@ class RiderProfileController extends Controller
     {
         $shop = $this->authorizedShop('manage-logistics-riders');
         $data = $request->validate($this->rules());
+        $this->assertLinkedUserBelongsToShop($data, $shop);
 
         if (($data['rider_type'] ?? null) === 'shop_owner' && strtolower((string) $shop->registration_type) !== 'individual') {
             abort(422, 'Owner delivery is only allowed for individual shops.');
@@ -50,7 +53,9 @@ class RiderProfileController extends Controller
             abort(403);
         }
 
-        $rider->update($request->validate($this->rules(false)));
+        $data = $request->validate($this->rules(false));
+        $this->assertLinkedUserBelongsToShop($data, $shop, $rider);
+        $rider->update($data);
 
         return response()->json(['rider' => $rider->fresh()]);
     }
@@ -61,13 +66,31 @@ class RiderProfileController extends Controller
 
         return [
             'rider_type' => [$required, 'in:shop_owner,employee,contractor'],
-            'linked_type' => ['nullable', 'string', 'max:255'],
-            'linked_id' => ['nullable', 'integer'],
+            'linked_type' => ['nullable', 'string', 'max:255', Rule::in([User::class])],
+            'linked_id' => ['nullable', 'integer', 'required_with:linked_type'],
             'name' => [$required, 'string', 'max:255'],
             'phone' => ['nullable', 'string', 'max:50'],
             'availability_status' => ['sometimes', 'in:available,busy,inactive'],
             'active' => ['sometimes', 'boolean'],
         ];
+    }
+
+    private function assertLinkedUserBelongsToShop(array $data, ShopOwner $shop, ?RiderProfile $existing = null): void
+    {
+        $linkedType = array_key_exists('linked_type', $data) ? $data['linked_type'] : $existing?->linked_type;
+        $linkedId = array_key_exists('linked_id', $data) ? $data['linked_id'] : $existing?->linked_id;
+
+        if ($linkedType === null && $linkedId === null) {
+            return;
+        }
+
+        if ($linkedType !== User::class
+            || ! $linkedId
+            || ! User::query()->whereKey($linkedId)->where('shop_owner_id', $shop->id)->exists()) {
+            throw ValidationException::withMessages([
+                'linked_id' => 'Linked rider must belong to this shop.',
+            ]);
+        }
     }
 
     private function authorizedShop(string $permission): ShopOwner

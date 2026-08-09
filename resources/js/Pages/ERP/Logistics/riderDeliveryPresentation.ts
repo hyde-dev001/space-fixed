@@ -51,7 +51,10 @@ export const completedProgress = (deliveries: TrackingShipmentLeg[]) => {
 };
 
 export const nextActionableDelivery = (deliveries: TrackingShipmentLeg[]) =>
-  orderedDeliveries(deliveries).find(({ status }) => actionableStatuses.has(status));
+  orderedDeliveries(deliveries).find((delivery) =>
+    actionableStatuses.has(delivery.status)
+    || (delivery.status === 'needs_resolution' && delivery.resolution_type === 'retry'),
+  );
 
 export const riderResolutionInstruction = (delivery: TrackingShipmentLeg) => {
   if (delivery.resolution_type === 'retry') {
@@ -92,6 +95,7 @@ export const deliveryStatusLabel = (status: string) => {
     in_transit: 'Delivering',
     delivery_attempted: 'Needs attention',
     awaiting_proof_approval: 'Waiting for proof approval',
+    needs_resolution: 'Resolution required',
     delivered: 'Delivered',
     completed: 'Completed',
     declined: 'Declined',

@@ -710,7 +710,7 @@ class LogisticsApiTest extends TestCase
 
     public function test_assigned_rider_can_report_a_delivery_issue_with_a_customer_safe_event(): void
     {
-        Storage::fake('public');
+        Storage::fake('local');
         Permission::findOrCreate('update-logistics-status', 'user');
         [$shop, $leg, $rider] = $this->assignedRiderLeg('in_transit');
         $rider->givePermissionTo('update-logistics-status');
@@ -725,7 +725,7 @@ class LogisticsApiTest extends TestCase
             ->assertCreated()
             ->assertJsonPath('attempt.attempt_type', 'delivery')
             ->assertJsonPath('attempt.reason_code', 'recipient_unavailable');
-        Storage::disk('public')->assertExists($response->json('attempt.file_path'));
+        Storage::disk('local')->assertExists((string) $leg->attempts()->value('file_path'));
 
         $this->assertDatabaseHas('delivery_attempts', [
             'shipment_leg_id' => $leg->id,
@@ -746,12 +746,74 @@ class LogisticsApiTest extends TestCase
             'proof_file' => $this->fakeAttemptPhoto('replay.png'),
         ], ['Accept' => 'application/json'])->assertCreated();
         $this->assertSame($response->json('attempt.id'), $replay->json('attempt.id'));
-        $this->assertCount(1, Storage::disk('public')->allFiles());
+        $this->assertCount(1, Storage::disk('local')->allFiles());
+    }
+
+    public function test_failed_attempt_photo_is_stored_privately_and_not_returned_as_a_public_path(): void
+    {
+        Storage::fake('local');
+        Storage::fake('public');
+        Permission::findOrCreate('update-logistics-status', 'user');
+        [, $leg, $rider] = $this->assignedRiderLeg('in_transit');
+        $rider->givePermissionTo('update-logistics-status');
+
+        $response = $this->actingAs($rider, 'user')
+            ->post("/api/logistics/legs/{$leg->id}/report-issue", [
+                'delivery_assignment_id' => $leg->assignments()->value('id'),
+                'reason_code' => 'recipient_unavailable',
+                'proof_file' => $this->fakeAttemptPhoto(),
+            ], ['Accept' => 'application/json'])
+            ->assertCreated()
+            ->assertJsonPath('attempt.file_path', null);
+
+        $path = (string) $leg->attempts()->value('file_path');
+        $this->assertStringStartsWith("logistics-attempt/{$leg->id}/", $path);
+        Storage::disk('local')->assertExists($path);
+        Storage::disk('public')->assertMissing($path);
+        $this->assertNotSame('', (string) $response->json('attempt.id'));
+    }
+
+    public function test_same_shop_logistics_staff_can_fetch_private_attempt_evidence_but_other_shop_staff_cannot(): void
+    {
+        Storage::fake('local');
+        Permission::findOrCreate('assign-logistics-deliveries', 'user');
+        $shop = ShopOwner::factory()->create();
+        $otherShop = ShopOwner::factory()->create();
+        $staff = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $otherStaff = User::factory()->create(['shop_owner_id' => $otherShop->id]);
+        $exceptionStaff = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+        $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id]);
+        $path = "logistics-attempt/{$leg->id}/attempt.jpg";
+        $attempt = $leg->attempts()->create([
+            'attempt_type' => 'delivery',
+            'status' => 'failed',
+            'reason_code' => 'recipient_unavailable',
+            'file_path' => $path,
+            'attempted_at' => now(),
+        ]);
+        Storage::disk('local')->put($path, 'private-attempt-photo');
+        $url = "/api/logistics/attempts/{$attempt->id}/file";
+
+        $staff->givePermissionTo('assign-logistics-deliveries');
+        $otherStaff->givePermissionTo('assign-logistics-deliveries');
+        Permission::findOrCreate('resolve-logistics-exceptions', 'user');
+        $exceptionStaff->givePermissionTo('resolve-logistics-exceptions');
+
+        $this->actingAs($staff, 'user')
+            ->get($url)
+            ->assertOk()
+            ->assertStreamedContent('private-attempt-photo');
+        $this->actingAs($otherStaff, 'user')->get($url)->assertForbidden();
+        $this->actingAs($exceptionStaff, 'user')
+            ->get($url)
+            ->assertOk()
+            ->assertStreamedContent('private-attempt-photo');
     }
 
     public function test_assigned_rider_can_report_a_failed_repair_pickup_once(): void
     {
-        Storage::fake('public');
+        Storage::fake('local');
         Permission::findOrCreate('update-logistics-status', 'user');
         [, $leg, $rider] = $this->assignedRepairPickupLeg();
         $rider->givePermissionTo('update-logistics-status');
@@ -778,12 +840,12 @@ class LogisticsApiTest extends TestCase
         $this->assertSame($first->json('attempt.id'), $replay->json('attempt.id'));
         $this->assertSame(1, $leg->attempts()->where('attempt_type', 'pickup')->count());
         $this->assertSame('needs_resolution', $leg->fresh()->status->value);
-        $this->assertCount(1, Storage::disk('public')->allFiles());
+        $this->assertCount(1, Storage::disk('local')->allFiles());
     }
 
     public function test_reassigned_repair_and_warranty_pickups_require_a_fresh_arrival_and_increment_attempts(): void
     {
-        Storage::fake('public');
+        Storage::fake('local');
         Permission::findOrCreate('update-logistics-status', 'user');
 
         foreach ([false, true] as $isWarranty) {
@@ -855,7 +917,7 @@ class LogisticsApiTest extends TestCase
 
     public function test_final_repair_pickup_attempt_is_terminal_and_blocks_stale_actions(): void
     {
-        Storage::fake('public');
+        Storage::fake('local');
         Permission::findOrCreate('update-logistics-status', 'user');
         [$shop, $leg, $rider] = $this->assignedRepairPickupLeg();
         LogisticsSetting::updateOrCreate(
@@ -927,7 +989,7 @@ class LogisticsApiTest extends TestCase
 
     public function test_final_paid_repair_pickup_refund_obeys_failure_responsibility(): void
     {
-        Storage::fake('public');
+        Storage::fake('local');
         Permission::findOrCreate('update-logistics-status', 'user');
         $cases = [
             'customer_unavailable' => ['partial', 400.00, 'pickup fee of PHP 100.00 was retained'],
@@ -1034,7 +1096,7 @@ class LogisticsApiTest extends TestCase
 
     public function test_final_online_repair_pickup_backfills_a_refund_source_and_retains_customer_caused_pickup_fee(): void
     {
-        Storage::fake('public');
+        Storage::fake('local');
         Permission::findOrCreate('update-logistics-status', 'user');
         [$shop, $leg, $rider] = $this->assignedRepairPickupLeg();
         LogisticsSetting::updateOrCreate(
@@ -1105,7 +1167,7 @@ class LogisticsApiTest extends TestCase
 
     public function test_final_warranty_pickup_cancels_without_refund(): void
     {
-        Storage::fake('public');
+        Storage::fake('local');
         Permission::findOrCreate('update-logistics-status', 'user');
         [$shop, $leg, $rider] = $this->assignedRepairPickupLeg();
         LogisticsSetting::updateOrCreate(
@@ -1159,7 +1221,7 @@ class LogisticsApiTest extends TestCase
         $this->assertSame(1, $leg->attempts()->where('attempt_type', 'pickup')->count());
         $proofPath = (string) $leg->attempts()->value('file_path');
         $this->assertNotSame('', $proofPath);
-        Storage::disk('public')->assertExists($proofPath);
+        Storage::disk('local')->assertExists($proofPath);
         $this->assertFalse(PosRefund::query()
             ->where('module_type', 'repair')
             ->where('module_reference_id', $repair->id)
@@ -1168,7 +1230,7 @@ class LogisticsApiTest extends TestCase
 
     public function test_failed_repair_pickup_requires_arrival_photo_idempotency_and_valid_context(): void
     {
-        Storage::fake('public');
+        Storage::fake('local');
         Permission::findOrCreate('update-logistics-status', 'user');
 
         foreach ([
@@ -1221,7 +1283,7 @@ class LogisticsApiTest extends TestCase
 
     public function test_failed_repair_pickup_accepts_each_approved_reason(): void
     {
-        Storage::fake('public');
+        Storage::fake('local');
         Permission::findOrCreate('update-logistics-status', 'user');
         $reasons = [
             'customer_unavailable',
@@ -1277,7 +1339,7 @@ class LogisticsApiTest extends TestCase
 
     public function test_report_issue_enforces_reason_specific_photo_and_note_evidence(): void
     {
-        Storage::fake('public');
+        Storage::fake('local');
         Permission::findOrCreate('update-logistics-status', 'user');
         $matrix = [
             'recipient_unavailable' => 'proof_file',
@@ -1333,7 +1395,7 @@ class LogisticsApiTest extends TestCase
 
     public function test_rider_cannot_report_an_issue_for_another_shop(): void
     {
-        Storage::fake('public');
+        Storage::fake('local');
         Permission::findOrCreate('update-logistics-status', 'user');
         [, $leg, $rider] = $this->assignedRiderLeg('in_transit');
         $rider->update(['shop_owner_id' => ShopOwner::factory()->create()->id]);
@@ -1344,7 +1406,7 @@ class LogisticsApiTest extends TestCase
             'proof_file' => $this->fakeAttemptPhoto(),
         ], ['Accept' => 'application/json'])->assertForbidden();
 
-        $this->assertSame([], Storage::disk('public')->allFiles());
+        $this->assertSame([], Storage::disk('local')->allFiles());
     }
 
     public function test_shop_owner_cannot_report_an_issue(): void
@@ -1374,7 +1436,7 @@ class LogisticsApiTest extends TestCase
 
     public function test_rider_report_issue_rejects_pre_delivery_statuses_before_upload(): void
     {
-        Storage::fake('public');
+        Storage::fake('local');
         Permission::findOrCreate('update-logistics-status', 'user');
 
         foreach (['assigned', 'picked_up'] as $status) {
@@ -1392,12 +1454,12 @@ class LogisticsApiTest extends TestCase
             $this->assertSame(0, $leg->attempts()->count());
         }
 
-        $this->assertSame([], Storage::disk('public')->allFiles());
+        $this->assertSame([], Storage::disk('local')->allFiles());
     }
 
     public function test_rider_can_report_issues_from_each_delivery_status(): void
     {
-        Storage::fake('public');
+        Storage::fake('local');
         Permission::findOrCreate('update-logistics-status', 'user');
 
         foreach (['in_transit', 'delivery_attempted'] as $status) {
@@ -1414,7 +1476,7 @@ class LogisticsApiTest extends TestCase
 
     public function test_report_issue_deletes_uploaded_photo_when_locked_status_check_rejects_a_race(): void
     {
-        Storage::fake('public');
+        Storage::fake('local');
         Permission::findOrCreate('update-logistics-status', 'user');
         [, $leg, $rider] = $this->assignedRiderLeg('in_transit');
         $rider->givePermissionTo('update-logistics-status');
@@ -1436,7 +1498,7 @@ class LogisticsApiTest extends TestCase
         ], ['Accept' => 'application/json'])->assertUnprocessable();
 
         $this->assertSame(0, $leg->attempts()->count());
-        $this->assertSame([], Storage::disk('public')->allFiles());
+        $this->assertSame([], Storage::disk('local')->allFiles());
     }
 
     public function test_generic_attempts_endpoint_still_rejects_assigned_legs(): void

@@ -7,6 +7,7 @@ import AppLayoutERP from '@/layout/AppLayout_ERP';
 import ArrivalSummary from './components/ArrivalSummary';
 import RetailOrderSummary from './components/RetailOrderSummary';
 import { riderResolutionInstruction } from './riderDeliveryPresentation';
+import { logisticsApi } from '@/services/logisticsApi';
 import {
   logisticsModuleForSourceType,
   logisticsModuleLabel,
@@ -153,10 +154,16 @@ export default function Shipments({ children }: React.PropsWithChildren) {
     || (filters.window ?? 'all') !== 'all'
     || (showModuleFilter && selectedModule !== 'all');
 
-  const act = async (url: string, body?: FormData | Record<string, string>, issue = false) => {
+  const act = async (
+    target: string | (() => Promise<unknown>),
+    body?: FormData | Record<string, string>,
+    issue = false,
+  ) => {
     setActionError(null);
     try {
-      await axios.post(url, body, body instanceof FormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : undefined);
+      await (typeof target === 'string'
+        ? axios.post(target, body, body instanceof FormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : undefined)
+        : target());
       toast(issue ? 'warning' : 'success', issue ? 'Delivery issue reported.' : 'Delivery updated.');
       router.reload({ only: issue && riderMode ? ['shipments', 'batches'] : ['shipments'] });
       return true;
@@ -207,6 +214,26 @@ export default function Shipments({ children }: React.PropsWithChildren) {
       `/api/logistics/legs/${legId}/${action === 'retry' ? 'resolve/retry' : 'cancel'}`,
       { reason },
     );
+  };
+
+  const resolveFailedDelivery = async (legId: number, action: 'retry' | 'return') => {
+    const result = await Swal.fire({
+      title: action === 'retry' ? 'Retry delivery?' : 'Return to shop?',
+      input: 'textarea',
+      inputLabel: 'Resolution reason',
+      inputPlaceholder: 'Explain why this recovery path was selected...',
+      inputValidator: (value) => value.trim() ? undefined : 'Enter a reason.',
+      showCancelButton: true,
+      confirmButtonText: action === 'retry' ? 'Retry delivery' : 'Return to shop',
+      cancelButtonText: 'Back',
+    });
+    if (!result.isConfirmed) return;
+    const reason = String(result.value ?? '').trim();
+    if (!reason) return;
+
+    await act(() => action === 'retry'
+      ? logisticsApi.retryDelivery(legId, reason)
+      : logisticsApi.returnDelivery(legId, reason));
   };
 
   const submitProof = (legId: number) => {
@@ -518,6 +545,14 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                             const attemptsMaxed = !isPickupAttempt && failedAttemptCount >= maxDeliveryAttempts;
                             const canAssignLeg = leg.status === 'pending' && !activeAssignment && !attemptsMaxed;
                             const isReturnToShop = leg.leg_type === 'return_to_shop';
+                            const hasReturnLeg = (shipment.legs ?? []).some((candidate) => candidate.return_for_leg_id === leg.id);
+                            const canResolveDelivery = canAssign
+                              && !riderMode
+                              && !isReturnToShop
+                              && leg.status === 'needs_resolution'
+                              && !leg.resolution_type
+                              && !hasReturnLeg
+                              && Boolean(activeAssignment);
                             const returnProof = leg.proofs?.find((proof) => proof.handoff_type === 'receive');
                             const canReportIssue = riderMode && !isReturnToShop && ['in_transit', 'delivery_attempted'].includes(leg.status);
                             const canScheduleLeg = canAssign && !riderMode && !leg.scheduled_delivery_date && leg.delivery_batch_id == null && ['pending', 'assigned'].includes(leg.status);
@@ -560,14 +595,14 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                           <p>Failed pickup · {failedPickupCount} {failedPickupCount === 1 ? 'attempt' : 'attempts'}</p>
                                           {latestAttempt.reason_code && <p>{label(latestAttempt.reason_code)}</p>}
                                           {formatDateTime(latestAttempt.attempted_at) && <p>Reported {formatDateTime(latestAttempt.attempted_at)}</p>}
-                                          {latestAttempt.file_path && <a href={`/storage/${latestAttempt.file_path}`} target="_blank" rel="noreferrer" className="inline-block font-semibold text-blue-600 hover:underline">View failed-pickup photo</a>}
+                                          {latestAttempt.proof_url && <a href={latestAttempt.proof_url} target="_blank" rel="noreferrer" className="inline-block font-semibold text-blue-600 hover:underline">View failed-pickup photo</a>}
                                         </div>
                                       : <div className="mt-2 space-y-1 text-xs text-gray-600 dark:text-gray-300">
                                           <span className="inline-flex rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">Failed attempt - {failedAttemptCount}/{maxDeliveryAttempts}</span>
-                                          {attemptsMaxed && <p className="font-semibold text-red-600">Subject for refund</p>}
+                                          {attemptsMaxed && leg.status === 'needs_resolution' && !leg.resolution_type && <p className="font-semibold text-red-600">Resolution required</p>}
                                           {latestAttempt.reason_code && <p>{label(latestAttempt.reason_code)}</p>}
                                           {latestAttempt.notes && <p>Internal note: {latestAttempt.notes}</p>}
-                                          {latestAttempt.file_path && <a href={`/storage/${latestAttempt.file_path}`} target="_blank" rel="noreferrer" className="inline-block font-semibold text-blue-600 hover:underline">View failed-attempt photo</a>}
+                                          {latestAttempt.proof_url && <a href={latestAttempt.proof_url} target="_blank" rel="noreferrer" className="inline-block font-semibold text-blue-600 hover:underline">View failed-attempt photo</a>}
                                         </div>
                                   )}
                                 </div>
@@ -577,6 +612,27 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                     <div className="grid gap-2 sm:grid-cols-2">
                                       <button type="button" onClick={() => void resolveFailedPickup(leg.id, 'retry')} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">Reschedule Pickup</button>
                                       <button type="button" onClick={() => void resolveFailedPickup(leg.id, 'cancel')} className="rounded-lg border border-red-600 px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50">Cancel Pickup</button>
+                                    </div>
+                                  )}
+                                  {canResolveDelivery && (
+                                    <div className="grid gap-2 rounded-lg border border-red-200 bg-red-50 p-3 sm:grid-cols-2 dark:border-red-900 dark:bg-red-950/30">
+                                      <p className="sm:col-span-2 text-sm font-semibold text-red-900 dark:text-red-100">
+                                        Choose one recovery path for this exhausted delivery.
+                                      </p>
+                                      <button
+                                        type="button"
+                                        onClick={() => void resolveFailedDelivery(leg.id, 'retry')}
+                                        className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                                      >
+                                        Retry delivery
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => void resolveFailedDelivery(leg.id, 'return')}
+                                        className="rounded-lg border border-red-600 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 dark:text-red-300"
+                                      >
+                                        Return to shop
+                                      </button>
                                     </div>
                                   )}
                                   {canUpdateStatus && leg.status === 'assigned' && <button type="button" onClick={() => void act(`/api/logistics/legs/${leg.id}/picked-up`)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">Picked up</button>}

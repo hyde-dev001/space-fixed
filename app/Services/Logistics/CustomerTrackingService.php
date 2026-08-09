@@ -104,7 +104,7 @@ class CustomerTrackingService
                             : (self::ATTEMPT_REASON_LABELS[$attempt->reason_code]
                                 ?? ($attempt->attempt_type === 'pickup' ? 'Pickup could not be completed' : 'Delivery could not be completed')),
                         'attempted_at' => optional($attempt->attempted_at)->toISOString(),
-                        'proof_url' => $attempt->file_path && Storage::disk('public')->exists($attempt->file_path)
+                        'proof_url' => $this->attemptProofAvailable($attempt->file_path)
                             ? route('customer.tracking.attempt-proof', [$shipment, $attempt])
                             : null,
                     ] : null,
@@ -147,6 +147,16 @@ class CustomerTrackingService
             $snapshot['name'] ?? null,
             $snapshot['address'] ?? null,
         ])->filter()->implode(' - ') ?: 'Location unavailable';
+    }
+
+    private function attemptProofAvailable(?string $path): bool
+    {
+        if (! $path || ! str_starts_with($path, 'logistics-attempt/')
+            || str_contains($path, '..') || str_contains($path, '\\')) {
+            return false;
+        }
+
+        return Storage::disk('local')->exists($path);
     }
 
     private function repairSourceSummary(Shipment $shipment): ?array

@@ -3,6 +3,7 @@
 namespace Tests\Feature\Logistics;
 
 use App\Models\Logistics\RiderProfile;
+use App\Models\Logistics\ShippingMethod;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\ShopOwner;
@@ -10,6 +11,7 @@ use App\Models\User;
 use App\Services\Logistics\AssignmentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class AssignmentServiceTest extends TestCase
@@ -48,5 +50,47 @@ class AssignmentServiceTest extends TestCase
 
         $this->assertSame('assigned', $assignment->status);
         $this->assertSame('assigned', $leg->fresh()->status->value);
+    }
+
+    #[DataProvider('unsupportedInternalAssignmentMethods')]
+    public function test_assignment_service_rejects_unsupported_internal_methods(array $attributes): void
+    {
+        $company = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $user = User::factory()->create(['shop_owner_id' => $company->id]);
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $company->id]);
+        $method = ShippingMethod::factory()->create($attributes);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id,
+            'shipping_method_id' => $method->id,
+        ]);
+        $rider = RiderProfile::factory()->create([
+            'shop_owner_id' => $company->id,
+            'rider_type' => 'employee',
+            'linked_type' => User::class,
+            'linked_id' => $user->id,
+        ]);
+
+        try {
+            app(AssignmentService::class)->assignInternalRider($leg, $rider, $company);
+            $this->fail('Unsupported shipping method was accepted for rider assignment.');
+        } catch (ValidationException $exception) {
+            $this->assertSame(
+                'Selected shipping method is not supported by shop-owned logistics.',
+                $exception->errors()['shipping_method_id'][0] ?? null,
+            );
+        }
+
+        $this->assertDatabaseCount('delivery_assignments', 0);
+        $this->assertSame('pending', $leg->fresh()->status->value);
+    }
+
+    public static function unsupportedInternalAssignmentMethods(): array
+    {
+        return [
+            'inactive method' => [['carrier_type' => 'internal', 'requires_assignment' => true, 'active' => false]],
+            'assignment free method' => [['carrier_type' => 'internal', 'requires_assignment' => false, 'active' => true]],
+            'external method' => [['carrier_type' => 'external', 'requires_assignment' => false, 'active' => true]],
+            'customer controlled method' => [['carrier_type' => 'customer_controlled', 'requires_assignment' => false, 'active' => true]],
+        ];
     }
 }

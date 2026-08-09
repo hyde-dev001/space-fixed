@@ -2,6 +2,7 @@
 
 namespace App\Services\Logistics;
 
+use App\Enums\Logistics\CarrierType;
 use App\Models\Logistics\DeliveryAssignment;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\ShipmentLeg;
@@ -32,8 +33,22 @@ class AssignmentService
         }
 
         return DB::transaction(function () use ($leg, $rider, $actor, $eventMetadata) {
-            $leg = ShipmentLeg::query()->lockForUpdate()->findOrFail($leg->id);
-            $leg->loadMissing('shipment');
+            $leg = ShipmentLeg::query()
+                ->with(['shipment', 'shippingMethod'])
+                ->lockForUpdate()
+                ->findOrFail($leg->id);
+
+            $method = $leg->shippingMethod;
+            if ($method !== null
+                && (! $method->active
+                    || $method->carrier_type !== CarrierType::INTERNAL
+                    || ! $method->requires_assignment
+                    || ($method->shop_owner_id !== null
+                        && (int) $method->shop_owner_id !== (int) $leg->shipment->shop_owner_id))) {
+                throw ValidationException::withMessages([
+                    'shipping_method_id' => 'Selected shipping method is not supported by shop-owned logistics.',
+                ]);
+            }
 
             if (in_array($leg->status->value, ['needs_resolution', 'delivered', 'cancelled'], true)) {
                 throw ValidationException::withMessages(['shipment_leg_id' => 'Only retryable delivery legs can be assigned.']);
