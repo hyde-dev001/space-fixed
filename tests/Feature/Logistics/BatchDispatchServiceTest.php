@@ -111,6 +111,38 @@ class BatchDispatchServiceTest extends TestCase
         $this->assertSame(['assigned'], $started->legs->pluck('status.value')->unique()->values()->all());
     }
 
+    public function test_batch_offer_rejects_an_unlinked_employee_rider(): void
+    {
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company', 'business_type' => 'retail']);
+        $rider = RiderProfile::query()->create([
+            'shop_owner_id' => $shop->id,
+            'rider_type' => 'employee',
+            'name' => 'Unlinked employee',
+            'availability_status' => 'available',
+            'active' => true,
+        ]);
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id, 'source_type' => 'order']);
+        $legs = ShipmentLeg::factory()->count(2)->create([
+            'shipment_id' => $shipment->id,
+            'scheduled_delivery_date' => '2026-07-15',
+            'delivery_window' => 'morning',
+            'schedule_status' => 'scheduled',
+            'status' => 'pending',
+        ]);
+        $service = app(BatchDispatchService::class);
+        $batch = $service->createDraft($shop, '2026-07-15', 'morning', $legs->pluck('id')->all());
+
+        try {
+            $service->offer($batch, $rider, $shop);
+            $this->fail('An unlinked employee rider was offered work.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('rider_profile_id', $exception->errors());
+        }
+
+        $this->assertSame('draft', $batch->fresh()->status);
+        $this->assertDatabaseCount('delivery_assignments', 0);
+    }
+
     public function test_rejection_returns_batch_to_draft_and_cancellation_returns_legs_to_pool(): void
     {
         $shop = ShopOwner::factory()->create(['registration_type' => 'company', 'business_type' => 'retail']);

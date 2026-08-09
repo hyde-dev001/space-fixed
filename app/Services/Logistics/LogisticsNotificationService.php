@@ -13,6 +13,18 @@ use App\Models\User;
 
 class LogisticsNotificationService
 {
+    private const EXCEPTION_EVENTS = [
+        'loss_confirmed',
+        'return_required',
+        'overdue_batch_offer',
+        'overdue_unscheduled_resolution',
+        'overdue_delivery_stop',
+        'overdue_return_receipt',
+        'delivery_estimate_delayed',
+        'delivery_incident_reported',
+        'delivery_incident_resolved',
+    ];
+
     public function notifyForEvent(DeliveryEvent $event): void
     {
         if (!$this->shouldNotify($event)) {
@@ -25,7 +37,13 @@ class LogisticsNotificationService
             return;
         }
 
-        if (in_array($event->event_type, ['shipment_requested', 'batch_rejected', 'proof_required', 'delivery_attempt_failed'], true)) {
+        if (in_array($event->event_type, [
+            'shipment_requested',
+            'batch_rejected',
+            'proof_required',
+            'delivery_attempt_failed',
+            ...self::EXCEPTION_EVENTS,
+        ], true)) {
             $this->notifyDispatchers($event, $type);
         }
 
@@ -53,16 +71,12 @@ class LogisticsNotificationService
                 'user_id' => $customer->id,
                 'shop_id' => $event->shipment->shop_owner_id,
                 'type' => $type->value,
-                'priority' => $event->event_type === 'delivery_attempt_failed' ? 'high' : 'medium',
+                'priority' => $this->requiresAction($event->event_type) ? 'high' : 'medium',
                 'title' => $type->label(),
                 'message' => $event->message ?: $type->label(),
-                'data' => [
-                    'shipment_id' => $event->shipment_id,
-                    'shipment_leg_id' => $event->shipment_leg_id,
-                    'event_type' => $event->event_type,
-                ],
+                'data' => $this->eventData($event),
                 'action_url' => '/tracking/shipments/' . $event->shipment_id,
-                'requires_action' => $event->event_type === 'delivery_attempt_failed',
+                'requires_action' => $this->requiresAction($event->event_type),
             ]);
         }
     }
@@ -70,7 +84,16 @@ class LogisticsNotificationService
     private function shouldNotify(DeliveryEvent $event): bool
     {
         return $event->visibility === 'customer'
-            || in_array($event->event_type, ['shipment_requested', 'leg_assigned', 'batch_offered', 'batch_rejected', 'delivery_attempt_failed', 'proof_required', 'proof_rejected'], true);
+            || in_array($event->event_type, [
+                'shipment_requested',
+                'leg_assigned',
+                'batch_offered',
+                'batch_rejected',
+                'delivery_attempt_failed',
+                'proof_required',
+                'proof_rejected',
+                ...self::EXCEPTION_EVENTS,
+            ], true);
     }
 
     private function notifyDispatchers(DeliveryEvent $event, NotificationType $type): void
@@ -89,12 +112,23 @@ class LogisticsNotificationService
                         'batch_rejected' => "{$event->metadata['rider_name']} rejected the batch offer: {$event->metadata['rejection_reason']}",
                         'proof_required' => 'Delivery proof is awaiting your approval.',
                         'delivery_attempt_failed' => 'A delivery attempt failed and needs review.',
+                        'delivery_incident_reported' => 'A delivery incident requires review.',
+                        'delivery_incident_resolved' => 'A delivery incident was resolved and recorded.',
+                        'loss_confirmed' => 'Parcel loss was confirmed and needs review.',
+                        'return_required' => 'A parcel return is awaiting logistics action.',
+                        'overdue_batch_offer' => 'A delivery batch offer is awaiting a response.',
+                        'overdue_return_receipt' => 'A parcel return is awaiting handoff or shop receipt.',
+                        'delivery_estimate_delayed' => 'A delivery estimate changed and needs review.',
+                        'overdue_unscheduled_resolution', 'overdue_delivery_stop' => 'A delivery requires dispatcher attention.',
                         default => 'A new shipment needs rider assignment.',
                     },
-                    'data' => $this->eventData($event) + ($event->event_type === 'batch_rejected' ? [
-                        'delivery_batch_id' => $event->metadata['delivery_batch_id'],
-                        'rejection_reason' => $event->metadata['rejection_reason'],
-                    ] : []),
+                    'data' => $this->eventData($event) + array_filter([
+                        'delivery_batch_id' => $event->metadata['delivery_batch_id'] ?? null,
+                        'rejection_reason' => $event->metadata['rejection_reason'] ?? null,
+                        'incident_id' => $event->metadata['incident_id'] ?? null,
+                        'incident_type' => $event->metadata['type'] ?? null,
+                        'resolution' => $event->metadata['resolution'] ?? null,
+                    ], fn ($value) => $value !== null),
                     'action_url' => match ($event->event_type) {
                         'batch_rejected' => '/erp/logistics/batches',
                         'proof_required' => '/erp/logistics/shipments?status=awaiting_proof_approval',
@@ -175,11 +209,30 @@ class LogisticsNotificationService
         ];
     }
 
+    private function requiresAction(string $eventType): bool
+    {
+        return in_array($eventType, [
+            'delivery_attempt_failed',
+            'loss_confirmed',
+            'return_required',
+            'overdue_batch_offer',
+            'overdue_unscheduled_resolution',
+            'overdue_delivery_stop',
+            'overdue_return_receipt',
+            'delivery_incident_reported',
+        ], true);
+    }
+
     private function createOnce(DeliveryEvent $event, int $userId, array $data): Notification
     {
         $groupKey = implode(':', array_filter([
             'logistics', $userId, $event->shipment_id, $event->shipment_leg_id ?: 0, $event->event_type,
-            in_array($event->event_type, ['batch_rejected', 'proof_rejected'], true) ? $event->id : null,
+            in_array($event->event_type, [
+                'batch_rejected',
+                'proof_rejected',
+                'delivery_incident_reported',
+                'delivery_incident_resolved',
+            ], true) ? $event->id : null,
         ], fn ($value) => $value !== null));
         return Notification::firstOrCreate(['user_id' => $userId, 'group_key' => $groupKey], [...$data, 'group_key' => $groupKey]);
     }
@@ -198,7 +251,9 @@ class LogisticsNotificationService
             'proof_required' => NotificationType::LOGISTICS_PROOF_REQUIRED,
             'proof_rejected' => NotificationType::LOGISTICS_PROOF_REQUIRED,
             'delivered' => NotificationType::LOGISTICS_DELIVERED,
-            default => null,
+            default => in_array($eventType, self::EXCEPTION_EVENTS, true)
+                ? NotificationType::LOGISTICS_EXCEPTION
+                : null,
         };
     }
 

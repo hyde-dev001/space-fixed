@@ -3,8 +3,10 @@
 namespace App\Console\Commands;
 
 use App\Models\Logistics\DeliveryBatch;
+use App\Models\Logistics\LogisticsSetting;
 use App\Models\Logistics\ShipmentLeg;
 use App\Services\Logistics\DeliveryEventService;
+use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 
 class MonitorOverdueDeliveries extends Command
@@ -26,16 +28,28 @@ class MonitorOverdueDeliveries extends Command
                 ]);
             });
 
-        ShipmentLeg::query()->with('shipment')
-            ->whereNotNull('scheduled_delivery_date')->whereDate('scheduled_delivery_date', '<=', today())
+        $timezone = config('app.shop_timezone', 'Asia/Manila');
+        $now = CarbonImmutable::now($timezone);
+
+        ShipmentLeg::query()->with('shipment.shopOwner.logisticsSetting')
+            ->whereNotNull('scheduled_delivery_date')->whereDate('scheduled_delivery_date', '<=', $now->toDateString())
             ->whereIn('status', ['pending', 'assigned', 'picked_up', 'in_transit', 'needs_resolution'])
-            ->each(function ($leg) use ($events) {
+            ->each(function ($leg) use ($events, $now, $timezone) {
+                $settings = $leg->shipment->shopOwner?->logisticsSetting
+                    ?: LogisticsSetting::firstOrCreate(['shop_owner_id' => $leg->shipment->shop_owner_id]);
+                if (! $this->windowHasElapsed($leg, $settings, $now, $timezone)) {
+                    return;
+                }
+
                 $type = $leg->status->value === 'needs_resolution' ? 'overdue_unscheduled_resolution' : 'overdue_delivery_stop';
                 if (!$leg->events()->where('event_type', $type)->exists()) {
                     $events->record($leg->shipment, $leg, ['event_type' => $type, 'message' => 'Delivery requires dispatcher attention.']);
                 }
-                if ($leg->scheduled_delivery_date->isPast() && !$leg->events()->where('event_type', 'delivery_estimate_delayed')->exists()) {
-                    $leg->update(['scheduled_delivery_date' => now(config('app.shop_timezone', 'Asia/Manila'))->addDay()->toDateString()]);
+
+                if (in_array($leg->status->value, ['pending', 'assigned'], true)
+                    && !$leg->events()->where('event_type', 'delivery_estimate_delayed')->exists()) {
+                    $nextDate = $this->nextOperatingDate($now->startOfDay()->addDay(), $settings);
+                    $leg->update(['scheduled_delivery_date' => $nextDate->toDateString()]);
                     $events->record($leg->shipment, $leg, ['event_type' => 'delivery_estimate_delayed', 'visibility' => 'customer', 'message' => 'The delivery estimate has changed due to a delay.']);
                 }
             });
@@ -49,5 +63,34 @@ class MonitorOverdueDeliveries extends Command
             });
 
         return self::SUCCESS;
+    }
+
+    private function windowHasElapsed(ShipmentLeg $leg, LogisticsSetting $settings, CarbonImmutable $now, string $timezone): bool
+    {
+        $scheduledDate = $leg->scheduled_delivery_date->toDateString();
+        if ($scheduledDate < $now->toDateString()) {
+            return true;
+        }
+        if ($scheduledDate > $now->toDateString()) {
+            return false;
+        }
+
+        $windowEnd = $leg->delivery_window === 'morning'
+            ? $settings->morning_end
+            : $settings->afternoon_end;
+
+        return $now->greaterThanOrEqualTo(
+            CarbonImmutable::parse("{$scheduledDate} ".substr((string) $windowEnd, 0, 5), $timezone)
+        );
+    }
+
+    private function nextOperatingDate(CarbonImmutable $date, LogisticsSetting $settings): CarbonImmutable
+    {
+        while (! in_array($date->dayOfWeekIso, $settings->operating_days, true)
+            || in_array($date->toDateString(), $settings->blackout_dates, true)) {
+            $date = $date->addDay();
+        }
+
+        return $date;
     }
 }

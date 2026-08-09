@@ -42,6 +42,7 @@ const mocks = vi.hoisted(() => ({
   retryDelivery: vi.fn(() => Promise.resolve()),
   arrive: vi.fn(() => Promise.resolve()),
   reportIssue: vi.fn(() => Promise.resolve()),
+  reportIncident: vi.fn(() => Promise.resolve()),
   recordProof: vi.fn(() => Promise.resolve({ data: { proof: { id: 17 } } })),
   confirmReturnHandoff: vi.fn(() => Promise.resolve()),
   getCurrentPosition: vi.fn(),
@@ -72,6 +73,7 @@ vi.mock('@/services/logisticsApi', () => ({ logisticsApi: {
   retryDelivery: mocks.retryDelivery,
   arrive: mocks.arrive,
   reportIssue: mocks.reportIssue,
+  reportIncident: mocks.reportIncident,
   recordProof: mocks.recordProof,
   confirmReturnHandoff: mocks.confirmReturnHandoff,
 } }));
@@ -1038,5 +1040,26 @@ describe('MyDeliveries rider interactions', () => {
 
     expect(screen.getByRole('button', { name: "I've arrived" })).toBeDisabled();
     expect(screen.getByText('Retry after reconnect')).toBeVisible();
+  });
+
+  it('lets a rider submit a typed incident with photo evidence', async () => {
+    mocks.props.deliveryData.current = workItem('single', 'in_transit', [
+      leg(10, null, 'in_transit'),
+    ]);
+    render(<MyDeliveries />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Report incident' }));
+    fireEvent.change(screen.getByLabelText('Incident type'), { target: { value: 'vehicle_problem' } });
+    fireEvent.change(screen.getByLabelText('Incident notes'), { target: { value: 'Motorcycle puncture on route.' } });
+    const photo = new File(['incident'], 'incident.jpg', { type: 'image/jpeg' });
+    fireEvent.change(screen.getByLabelText('Incident evidence photo'), { target: { files: [photo] } });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit incident' }));
+
+    await waitFor(() => expect(mocks.reportIncident).toHaveBeenCalledOnce());
+    const [legId, form] = mocks.reportIncident.mock.calls[0];
+    expect(legId).toBe(10);
+    expect((form as FormData).get('type')).toBe('vehicle_problem');
+    expect((form as FormData).get('notes')).toBe('Motorcycle puncture on route.');
+    expect((form as FormData).get('photo_files[]')).toBe(photo);
   });
 });

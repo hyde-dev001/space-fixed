@@ -221,6 +221,27 @@ class ShipmentLegServiceTest extends TestCase
         $this->assertNotNull($shipment->fresh()->completed_at);
     }
 
+    public function test_mixed_delivered_and_confirmed_loss_shipment_cannot_complete(): void
+    {
+        $shipment = Shipment::factory()->create(['status' => 'active']);
+        ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id,
+            'status' => 'delivered',
+            'requires_delivery_proof' => false,
+        ]);
+        $lostLeg = ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id,
+            'status' => 'needs_resolution',
+            'requires_delivery_proof' => false,
+        ]);
+
+        app(ShipmentLegService::class)->confirmLoss($lostLeg, 'Investigation confirmed the parcel was lost.');
+
+        $this->assertSame('cancelled', $shipment->fresh()->status->value);
+        $this->assertNull($shipment->fresh()->completed_at);
+        $this->assertNotNull($shipment->fresh()->cancelled_at);
+    }
+
     public function test_completed_shop_owned_delivery_completes_its_order(): void
     {
         $shop = ShopOwner::factory()->create();

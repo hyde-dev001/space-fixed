@@ -10,6 +10,10 @@ class HandoffProof extends Model
 {
     use HasFactory;
 
+    protected $hidden = [
+        'file_path',
+    ];
+
     protected $fillable = [
         'shipment_leg_id',
         'idempotency_key',

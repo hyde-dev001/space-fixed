@@ -125,6 +125,8 @@ class ShipmentController extends Controller
                 Storage::disk('local')->delete($storedPath);
             }
 
+            $proof->setAttribute('proof_url', $this->proofUrl($proof));
+
             return response()->json(['proof' => $proof], $proof->wasRecentlyCreated ? 201 : 200);
         } catch (\Throwable $exception) {
             if ($storedPath) {
@@ -608,6 +610,20 @@ class ShipmentController extends Controller
         return str_starts_with($path, 'logistics-attempt/')
             && ! str_contains($path, '..')
             && ! str_contains($path, '\\');
+    }
+
+    private function proofUrl(HandoffProof $proof): ?string
+    {
+        $path = $proof->getRawOriginal('file_path');
+        if (! is_string($path)
+            || ! str_starts_with($path, 'logistics-proof/')
+            || str_contains($path, '..')
+            || str_contains($path, '\\')
+            || ! Storage::disk('local')->exists($path)) {
+            return null;
+        }
+
+        return '/api/logistics/proofs/' . $proof->id . '/file';
     }
 
     private function canApproveProof(?User $user): bool

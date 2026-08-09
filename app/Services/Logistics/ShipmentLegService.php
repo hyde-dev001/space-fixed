@@ -291,6 +291,14 @@ class ShipmentLegService
         }
 
         return DB::transaction(function () use ($leg, $customerReason) {
+            $leg->assignments()
+                ->whereIn('status', ['assigned', 'accepted'])
+                ->lockForUpdate()
+                ->get()
+                ->each(fn (DeliveryAssignment $assignment) => $assignment->update([
+                    'status' => 'cancelled',
+                    'cancelled_at' => now(),
+                ]));
             $leg->update(['status' => 'cancelled']);
             $this->syncShipmentStatus($leg);
             $this->reconcileBatchState($leg->delivery_batch_id);
@@ -1052,6 +1060,12 @@ class ShipmentLegService
     {
         $shipment = $leg->shipment;
         $statuses = $shipment->legs()->pluck('status')->map(fn ($status) => $status->value ?? $status);
+
+        if ($shipment->legs()->where('resolution_type', 'loss_confirmed')->exists()) {
+            $shipment->update(['status' => 'cancelled', 'completed_at' => null, 'cancelled_at' => now()]);
+
+            return;
+        }
 
         if ($statuses->isNotEmpty() && $statuses->every(fn ($status) => $status === 'cancelled')) {
             $shipment->update(['status' => 'cancelled', 'completed_at' => null, 'cancelled_at' => now()]);

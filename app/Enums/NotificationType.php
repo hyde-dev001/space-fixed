@@ -98,6 +98,7 @@ enum NotificationType: string
     case LOGISTICS_DELIVERY_FAILED = 'logistics_delivery_failed';
     case LOGISTICS_PROOF_REQUIRED = 'logistics_proof_required';
     case LOGISTICS_DELIVERED = 'logistics_delivered';
+    case LOGISTICS_EXCEPTION = 'logistics_exception';
 
     /**
      * Get human-readable label for notification type
@@ -199,6 +200,7 @@ enum NotificationType: string
             self::LOGISTICS_DELIVERY_FAILED => 'Delivery Attempt Failed',
             self::LOGISTICS_PROOF_REQUIRED => 'Delivery Proof Required',
             self::LOGISTICS_DELIVERED => 'Delivered',
+            self::LOGISTICS_EXCEPTION => 'Delivery Exception',
         };
     }
 
@@ -242,7 +244,7 @@ enum NotificationType: string
             self::LOGISTICS_BATCH_REJECTED,
             self::LOGISTICS_PICKUP_SCHEDULED, self::LOGISTICS_IN_TRANSIT,
             self::LOGISTICS_DELIVERY_FAILED, self::LOGISTICS_PROOF_REQUIRED,
-            self::LOGISTICS_DELIVERED => 'logistics',
+            self::LOGISTICS_DELIVERED, self::LOGISTICS_EXCEPTION => 'logistics',
 
             self::SHOP_REGISTRATION_PENDING, self::SHOP_REPORT_FILED, self::REVIEW_REPORTED => 'admin',
             
@@ -273,6 +275,7 @@ enum NotificationType: string
             self::LOGISTICS_IN_TRANSIT,
             self::LOGISTICS_DELIVERY_FAILED,
             self::LOGISTICS_DELIVERED,
+            self::LOGISTICS_EXCEPTION,
             self::PAYMENT_RECEIVED,
             self::PAYMENT_FAILED,
             self::MESSAGE_RECEIVED,

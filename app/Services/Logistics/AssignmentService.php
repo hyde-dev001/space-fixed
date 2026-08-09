@@ -28,6 +28,13 @@ class AssignmentService
             throw ValidationException::withMessages(['rider_profile_id' => 'Rider is not available for assignment.']);
         }
 
+        if ($rider->rider_type === 'employee'
+            && ($rider->linked_type !== \App\Models\User::class || ! $rider->linked_id)) {
+            throw ValidationException::withMessages([
+                'rider_profile_id' => 'Employee rider must have a linked user account before work is assigned.',
+            ]);
+        }
+
         if ($rider->rider_type === 'shop_owner' && strtolower((string) $actor->registration_type) !== 'individual') {
             throw ValidationException::withMessages(['rider_profile_id' => 'Owner delivery is only allowed for individual shops.']);
         }

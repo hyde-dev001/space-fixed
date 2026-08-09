@@ -56,12 +56,48 @@ class RiderTenantAuthorizationTest extends TestCase
             ->assertJsonValidationErrors('linked_type');
     }
 
+    public function test_employee_rider_profile_requires_a_linked_user(): void
+    {
+        $shop = ShopOwner::factory()->create();
+
+        $this->actingAs($shop, 'shop_owner')
+            ->postJson('/api/logistics/riders', [
+                'rider_type' => 'employee',
+                'name' => 'Unlinked rider',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['linked_type', 'linked_id']);
+
+        $this->assertDatabaseMissing('rider_profiles', [
+            'shop_owner_id' => $shop->id,
+            'name' => 'Unlinked rider',
+        ]);
+    }
+
+    public function test_company_shop_cannot_update_a_rider_to_shop_owner(): void
+    {
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $profile = RiderProfile::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'rider_type' => 'employee',
+        ]);
+
+        $this->actingAs($shop, 'shop_owner')
+            ->patchJson("/api/logistics/riders/{$profile->id}", [
+                'rider_type' => 'shop_owner',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('rider_type');
+
+        $this->assertSame('employee', $profile->fresh()->rider_type);
+    }
+
     public function test_rider_profile_update_cannot_link_a_user_from_another_shop(): void
     {
         $shop = ShopOwner::factory()->create();
         $foreignShop = ShopOwner::factory()->create();
         $foreignUser = User::factory()->create(['shop_owner_id' => $foreignShop->id]);
-        $profile = RiderProfile::factory()->create(['shop_owner_id' => $shop->id]);
+        $profile = RiderProfile::factory()->unlinked()->create(['shop_owner_id' => $shop->id]);
 
         $this->actingAs($shop, 'shop_owner')
             ->patchJson("/api/logistics/riders/{$profile->id}", [

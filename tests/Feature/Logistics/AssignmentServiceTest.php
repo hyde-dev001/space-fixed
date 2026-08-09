@@ -52,6 +52,30 @@ class AssignmentServiceTest extends TestCase
         $this->assertSame('assigned', $leg->fresh()->status->value);
     }
 
+    public function test_unlinked_employee_rider_cannot_be_assigned(): void
+    {
+        $company = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $company->id]);
+        $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id]);
+        $rider = RiderProfile::query()->create([
+            'shop_owner_id' => $company->id,
+            'rider_type' => 'employee',
+            'name' => 'Unlinked employee',
+            'availability_status' => 'available',
+            'active' => true,
+        ]);
+
+        try {
+            app(AssignmentService::class)->assignInternalRider($leg, $rider, $company);
+            $this->fail('An unlinked employee rider was assigned work.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('rider_profile_id', $exception->errors());
+        }
+
+        $this->assertDatabaseCount('delivery_assignments', 0);
+        $this->assertSame('pending', $leg->fresh()->status->value);
+    }
+
     #[DataProvider('unsupportedInternalAssignmentMethods')]
     public function test_assignment_service_rejects_unsupported_internal_methods(array $attributes): void
     {

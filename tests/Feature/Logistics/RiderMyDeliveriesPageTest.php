@@ -266,6 +266,22 @@ class RiderMyDeliveriesPageTest extends TestCase
         $this->assertArrayNotHasKey('search_text', $props['current']);
     }
 
+    public function test_exhausted_custody_hold_is_visible_as_current_work(): void
+    {
+        [, $leg] = $this->shipmentWithLeg('retail_delivery', [
+            'status' => 'needs_resolution',
+            'resolution_type' => null,
+        ]);
+        $this->assign($leg, $this->rider, 'accepted');
+
+        $props = $this->deliveryData();
+        $delivery = $props['current']['deliveries'][0];
+
+        $this->assertSame("single:{$leg->id}", $props['current']['key']);
+        $this->assertSame('needs_resolution', $delivery['status']);
+        $this->assertNull($delivery['resolution_type']);
+    }
+
     private function deliveryData(string $query = ''): array
     {
         return $this->actingAs($this->user->fresh(), 'user')

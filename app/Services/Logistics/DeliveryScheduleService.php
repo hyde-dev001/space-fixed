@@ -2,6 +2,8 @@
 
 namespace App\Services\Logistics;
 
+use App\Models\Logistics\DeliveryAssignment;
+use App\Models\Logistics\DeliveryBatch;
 use App\Models\Logistics\LogisticsSetting;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\ShipmentLeg;
@@ -35,8 +37,15 @@ class DeliveryScheduleService
             ->where('shop_owner_id', $shop->id)
             ->where('active', true)
             ->where('availability_status', 'available')
-            ->count();
-        if ($riders === 0) {
+            ->where(function ($query) {
+                $query->where('rider_type', '!=', 'employee')
+                    ->orWhere(function ($query) {
+                        $query->where('linked_type', \App\Models\User::class)
+                            ->whereNotNull('linked_id');
+                    });
+            })
+            ->get();
+        if ($riders->isEmpty()) {
             return $this->result('needs_capacity', distance: $distance);
         }
 
@@ -49,14 +58,39 @@ class DeliveryScheduleService
             $date = $this->nextOperatingDate($date->addDay(), $settings);
         }
 
-        $capacity = $riders * $settings->daily_rider_capacity;
         for ($days = 0; $days < 366; $days++) {
+            $eligibleRiders = $riders->filter(fn (RiderProfile $rider) =>
+                (! $rider->work_days || in_array($date->dayOfWeekIso, $rider->work_days, true))
+                && ! in_array($date->toDateString(), $rider->leave_dates ?? [], true)
+            );
+            $capacity = $eligibleRiders->sum(fn (RiderProfile $rider) =>
+                $rider->daily_capacity ?? $settings->daily_rider_capacity
+            );
+            if ($capacity < 1) {
+                $date = $this->nextOperatingDate($date->addDay(), $settings);
+                continue;
+            }
+
             $used = ShipmentLeg::query()
                 ->whereHas('shipment', fn ($query) => $query->where('shop_owner_id', $shop->id))
                 ->whereDate('scheduled_delivery_date', $date->toDateString())
                 ->where('schedule_status', 'scheduled')
                 ->where('status', '!=', 'cancelled')
                 ->count();
+            $batchStops = DeliveryBatch::query()
+                ->where('shop_owner_id', $shop->id)
+                ->whereDate('delivery_date', $date->toDateString())
+                ->whereIn('status', ['offered', 'accepted', 'in_progress', 'completed'])
+                ->sum('assigned_stop_count');
+            $standaloneStops = DeliveryAssignment::query()
+                ->whereIn('rider_profile_id', $eligibleRiders->pluck('id'))
+                ->whereIn('status', ['assigned', 'accepted'])
+                ->whereHas('leg', fn ($query) => $query
+                    ->whereNull('delivery_batch_id')
+                    ->whereDate('scheduled_delivery_date', $date->toDateString())
+                    ->whereHas('shipment', fn ($shipment) => $shipment->where('shop_owner_id', $shop->id)))
+                ->count();
+            $used = max($used, (int) $batchStops, $standaloneStops);
             if ($used < $capacity) {
                 return $this->result(
                     'scheduled',

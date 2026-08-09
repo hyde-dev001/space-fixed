@@ -135,4 +135,66 @@ class DeliveryIncidentServiceTest extends TestCase
             'photo_paths' => ['../../private/secrets.txt'],
         ]);
     }
+
+    public function test_service_rejects_unknown_incident_resolutions(): void
+    {
+        $shop = ShopOwner::factory()->create();
+        $rider = RiderProfile::factory()->create(['shop_owner_id' => $shop->id]);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id,
+            'status' => 'picked_up',
+        ]);
+        DeliveryAssignment::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'rider_profile_id' => $rider->id,
+            'status' => 'accepted',
+        ]);
+        $incident = app(DeliveryIncidentService::class)->report($leg, $rider, [
+            'type' => 'damaged',
+            'notes' => 'Parcel damaged',
+            'photo_paths' => ['incident-evidence/leg-damaged/report.png'],
+        ]);
+
+        try {
+            app(DeliveryIncidentService::class)->resolve($incident, $shop, 'invented_resolution', 'Not a supported workflow.');
+            $this->fail('An unknown incident resolution was accepted.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('resolution', $exception->errors());
+        }
+
+        $this->assertSame('reported', $incident->fresh()->status);
+        $this->assertNull($incident->fresh()->resolution);
+    }
+
+    public function test_resolved_incident_cannot_be_overwritten_with_a_different_resolution(): void
+    {
+        $shop = ShopOwner::factory()->create();
+        $rider = RiderProfile::factory()->create(['shop_owner_id' => $shop->id]);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id,
+            'status' => 'picked_up',
+        ]);
+        DeliveryAssignment::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'rider_profile_id' => $rider->id,
+            'status' => 'accepted',
+        ]);
+        $service = app(DeliveryIncidentService::class);
+        $incident = $service->report($leg, $rider, [
+            'type' => 'damaged',
+            'notes' => 'Parcel damaged',
+            'photo_paths' => ['incident-evidence/leg-damaged/overwrite.png'],
+        ]);
+        $service->resolve($incident, $shop, 'dismissed', 'Issue reviewed and closed.');
+
+        try {
+            $service->resolve($incident->fresh(), $shop, 'retry', 'Try again instead.');
+            $this->fail('A resolved incident was overwritten.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('resolution', $exception->errors());
+        }
+
+        $this->assertSame('dismissed', $incident->fresh()->resolution);
+        $this->assertSame('resolved', $incident->fresh()->status);
+    }
 }

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Logistics;
 
+use App\Models\Logistics\DeliveryBatch;
 use App\Models\Logistics\LogisticsSetting;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
@@ -138,6 +139,56 @@ class DeliveryScheduleServiceTest extends TestCase
 
         ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'scheduled_delivery_date' => '2026-07-13', 'delivery_window' => 'afternoon', 'schedule_status' => 'scheduled']);
         $this->assertSame('2026-07-14', $service->estimate($shop, $ready, 14.60, 120.98)['scheduled_delivery_date']);
+    }
+
+    public function test_capacity_uses_riders_working_that_day_and_their_existing_workload(): void
+    {
+        $shop = ShopOwner::factory()->create(['shop_latitude' => 14.5995, 'shop_longitude' => 120.9842]);
+        LogisticsSetting::create([
+            'shop_owner_id' => $shop->id,
+            'lead_time_days' => 0,
+            'daily_rider_capacity' => 2,
+            'operating_days' => [1, 2, 3, 4, 5],
+        ]);
+        $workingRider = RiderProfile::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'active' => true,
+            'availability_status' => 'available',
+            'work_days' => [1],
+            'daily_capacity' => 2,
+        ]);
+        RiderProfile::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'active' => true,
+            'availability_status' => 'available',
+            'work_days' => [2],
+            'daily_capacity' => 2,
+        ]);
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+        ShipmentLeg::factory()->count(2)->create([
+            'shipment_id' => $shipment->id,
+            'scheduled_delivery_date' => '2026-07-13',
+            'delivery_window' => 'morning',
+            'schedule_status' => 'scheduled',
+            'status' => 'pending',
+        ]);
+        DeliveryBatch::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'rider_profile_id' => $workingRider->id,
+            'delivery_date' => '2026-07-13',
+            'status' => 'accepted',
+            'assigned_stop_count' => 2,
+        ]);
+
+        $result = app(DeliveryScheduleService::class)->estimate(
+            $shop,
+            CarbonImmutable::parse('2026-07-13 01:00:00', 'UTC'),
+            14.60,
+            120.98,
+        );
+
+        $this->assertSame('scheduled', $result['schedule_status']);
+        $this->assertSame('2026-07-14', $result['scheduled_delivery_date']);
     }
 
     public function test_no_available_rider_requires_capacity_review(): void
