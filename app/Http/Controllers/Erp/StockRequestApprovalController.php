@@ -133,7 +133,10 @@ class StockRequestApprovalController extends Controller
      */
     public function store(Request $request)
     {
-        $this->authorize('create', StockRequestApproval::class);
+        $ability = $request->routeIs('inventory.stock-requests.store')
+            ? 'createFromInventory'
+            : 'create';
+        $this->authorize($ability, StockRequestApproval::class);
 
         $shopOwnerId = (int) Auth::user()->shop_owner_id;
 

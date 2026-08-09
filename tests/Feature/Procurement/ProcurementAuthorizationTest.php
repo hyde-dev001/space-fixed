@@ -152,6 +152,50 @@ class ProcurementAuthorizationTest extends TestCase
         }
     }
 
+    public function test_inventory_manager_can_create_stock_request_only_from_inventory_route(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        [$user, $shop] = $this->userForShop();
+        $shop->update(['business_type' => 'both']);
+        $user->assignRole('Inventory Manager');
+        $inventoryItem = InventoryItem::factory()->create(['shop_owner_id' => $shop->id]);
+
+        $this->assertFalse($user->can('procurement.create_purchase_requests'));
+
+        $payload = [
+            'inventory_item_id' => $inventoryItem->id,
+            'quantity_needed' => 5,
+            'priority' => 'medium',
+            'notes' => 'Inventory replenishment.',
+        ];
+
+        $this->actingAs($user, 'user')
+            ->postJson('/api/erp/inventory/stock-requests', $payload)
+            ->assertCreated()
+            ->assertJsonPath('stock_request.status', 'pending');
+
+        $this->assertDatabaseHas('stock_request_approvals', [
+            'shop_owner_id' => $shop->id,
+            'inventory_item_id' => $inventoryItem->id,
+            'quantity_needed' => 5,
+            'status' => 'pending',
+        ]);
+
+        $this->actingAs($user, 'user')
+            ->postJson('/api/erp/procurement/stock-requests', $payload)
+            ->assertForbidden();
+
+        $this->actingAs($user, 'user')
+            ->postJson('/api/erp/procurement/replenishment-requests', $payload)
+            ->assertForbidden();
+
+        $this->actingAs($user, 'user')
+            ->postJson('/api/erp/inventory/request-material-approvals', array_merge($payload, [
+                'request_source' => 'repair',
+            ]))
+            ->assertForbidden();
+    }
+
     public function test_page_permission_only_unlocks_its_procurement_page(): void
     {
         [$user] = $this->userForShop();

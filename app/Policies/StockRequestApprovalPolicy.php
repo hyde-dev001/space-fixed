@@ -27,6 +27,15 @@ class StockRequestApprovalPolicy
     }
 
     /**
+     * Inventory staff may submit a replenishment request from the canonical
+     * Inventory flow without gaining access to Procurement request creation.
+     */
+    public function createFromInventory(User $user): bool
+    {
+        return $user->can('view-inventory');
+    }
+
+    /**
      * Determine whether the user can view the stock request approval.
      */
     public function view(User $user, StockRequestApproval $stockRequestApproval): bool
