@@ -34,6 +34,8 @@ class ExpenseApprovalWorkflowTest extends TestCase
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
         Permission::findOrCreate('approve-expenses', 'user');
+        Permission::findOrCreate('access-finance-expenses', 'user');
+        Permission::findOrCreate('access-approval-workflow', 'user');
 
         Role::findOrCreate('finance', 'user');
         Role::findOrCreate('shop-owner', 'user');
@@ -158,6 +160,26 @@ class ExpenseApprovalWorkflowTest extends TestCase
         $expense->refresh();
         $this->assertSame(1, $expense->current_approval_level);
         $this->assertSame('rejected', $expense->status);
+    }
+
+    public function test_finance_module_permission_can_approve_without_legacy_expense_permission(): void
+    {
+        $this->withMiddleware();
+        $this->financeFirst->givePermissionTo('access-approval-workflow');
+
+        $expense = $this->createWorkflowBoundExpense();
+
+        $response = $this->actingAs($this->financeFirst, 'user')
+            ->postJson("/api/finance/expenses/{$expense->id}/approve", [
+                'approval_notes' => 'Approved from the Finance expense page',
+            ]);
+
+        $response->assertOk()
+            ->assertJson([
+                'is_final' => false,
+            ]);
+
+        $this->assertSame(2, $expense->fresh()->current_approval_level);
     }
 
     private function createWorkflowBoundExpense(): Expense
