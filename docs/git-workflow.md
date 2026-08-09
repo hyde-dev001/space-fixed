@@ -1,6 +1,18 @@
 # Team Git Workflow
 
-Use a separate feature branch for every task. Do not develop or push directly on `solespace-b`.
+Use a separate feature branch for every task and person. Do not develop or push directly on `solespace-b`.
+
+For two people, use separate branches:
+
+```text
+solespace-b
+├── feature/alice-task
+└── fix/bob-task
+```
+
+One person may use the same feature branch on two devices, but must push completed
+commits before switching devices and pull the branch before continuing. Do not have
+two people actively pushing to the same feature branch.
 
 ## 1. Start from the latest shared branch
 
@@ -11,6 +23,16 @@ git status
 ```
 
 If unfinished work exists, commit it to its current feature branch before continuing.
+
+For a new device, clone the repository first. Replace the placeholders with the
+repository URL and folder name:
+
+```powershell
+git clone <repository-url> <repository-folder>
+cd <repository-folder>
+git fetch origin
+git switch --track origin/solespace-b
+```
 
 Update the shared branch and create a task branch:
 
@@ -27,6 +49,24 @@ feature/premium-showroom
 fix/logistics-settings
 feature/customer-notifications
 ```
+
+If `solespace-b` does not exist locally yet, create the local tracking branch first:
+
+```powershell
+git fetch origin
+git switch --track origin/solespace-b
+```
+
+To continue the same task on another device, use the existing remote feature branch:
+
+```powershell
+git fetch origin --prune
+git switch --track origin/feature/short-task-name
+git pull --rebase origin feature/short-task-name
+```
+
+If the feature branch already exists locally, use `git switch feature/short-task-name`
+instead of the tracking command.
 
 ## 2. Review changes while working
 
@@ -60,9 +100,13 @@ Avoid `git add .` unless every listed file has been reviewed.
 ## 4. Rebase before pushing
 
 ```powershell
-git fetch origin
+git fetch origin --prune
 git rebase origin/solespace-b
 ```
+
+Rebase only your own feature branch. If another person has already pulled or pushed
+to that feature branch, coordinate with them before rewriting its history. Never
+force-push a shared branch.
 
 If Git reports conflicts:
 
@@ -98,21 +142,15 @@ Run the relevant checks:
 
 ```powershell
 php artisan test tests/Feature/Logistics
-npm run build
-```
-
-For the current logistics implementation, expect:
-
-```text
-114 tests
-320 assertions
+pnpm run test:frontend
+pnpm run build
+git diff --check
 ```
 
 Do not push when:
 
 - unrelated files are present;
 - an unexpected file is deleted;
-- the logistics test count drops below the expected baseline;
 - any test or build fails.
 
 ## 6. Push the feature branch
@@ -141,7 +179,16 @@ The reviewer must confirm:
 
 Merge through GitHub only after approval.
 
-## 8. Update after merge
+## 8. Protect the shared branch
+
+Configure `solespace-b` in GitHub so that:
+
+- changes require a Pull Request;
+- at least one review is required;
+- required tests and builds must pass;
+- force-pushes and branch deletion are blocked.
+
+## 9. Update after merge
 
 ```powershell
 git switch solespace-b
@@ -161,4 +208,6 @@ git pull --rebase origin solespace-b
 git stash pop
 ```
 
-Review all conflicts and deletions before committing or pushing.
+Review all conflicts, deletions, and restored changes before committing or pushing.
+If `git stash pop` reports conflicts, resolve them and verify `git status` and
+`git diff` before continuing.
