@@ -93,7 +93,7 @@ class PurchaseOrderPolicy
     {
         return $user->can('procurement.cancel_purchase_orders')
             && $user->shop_owner_id === $purchaseOrder->shop_owner_id
-            && !in_array($purchaseOrder->status, ['delivered', 'completed', 'cancelled']);
+            && $purchaseOrder->isCancellableState();
     }
 
     public function complete(User $user, PurchaseOrder $purchaseOrder): bool

@@ -55,6 +55,7 @@ vi.mock("sweetalert2", () => ({ default: { fire: vi.fn() } }));
 describe("Purchase Orders lifecycle actions", () => {
 	beforeEach(() => {
 		mocks.approvedPrs.length = 0;
+		mocks.order.status = "delivered";
 		mocks.permissions.splice(0, mocks.permissions.length, "procurement.complete_purchase_orders");
 	});
 
@@ -70,6 +71,26 @@ describe("Purchase Orders lifecycle actions", () => {
 		await screen.findByTitle("View details");
 
 		expect(screen.queryByRole("button", { name: "+ New PO" })).not.toBeInTheDocument();
+	});
+
+	it("hides cancellation for an in-transit order", async () => {
+		mocks.order.status = "in_transit";
+		mocks.permissions.splice(0, mocks.permissions.length, "procurement.cancel_purchase_orders");
+
+		render(<PurchaseOrders />);
+		fireEvent.click(await screen.findByTitle("View details"));
+
+		expect(screen.queryByRole("button", { name: "Cancel PO" })).not.toBeInTheDocument();
+	});
+
+	it("shows cancellation for a confirmed order", async () => {
+		mocks.order.status = "confirmed";
+		mocks.permissions.splice(0, mocks.permissions.length, "procurement.cancel_purchase_orders");
+
+		render(<PurchaseOrders />);
+		fireEvent.click(await screen.findByTitle("View details"));
+
+		expect(screen.getByRole("button", { name: "Cancel PO" })).toBeInTheDocument();
 	});
 
 	it("describes an all-size PR quantity as one total in the PO selector", async () => {

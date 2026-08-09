@@ -279,7 +279,7 @@ class PurchaseOrder extends Model
 
     public function cancel(int $userId, string $reason): bool
     {
-        if (!in_array($this->status, ['draft', 'sent', 'confirmed', 'in_transit'], true)) {
+        if (! $this->isCancellableState()) {
             throw ValidationException::withMessages(['status' => 'Purchase order cannot be cancelled in its current state.']);
         }
         if ($this->receipts()->where('status', 'posted')->exists()) {
@@ -289,6 +289,11 @@ class PurchaseOrder extends Model
         $this->status = 'cancelled';
         $this->cancellation_reason = $reason;
         return $this->save();
+    }
+
+    public function isCancellableState(): bool
+    {
+        return in_array($this->status, ['draft', 'sent', 'confirmed'], true);
     }
 
     public function canProgressStatus(): bool

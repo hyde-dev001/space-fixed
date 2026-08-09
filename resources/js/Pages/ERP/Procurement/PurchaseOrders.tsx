@@ -345,6 +345,8 @@ const nextStatusMap: Partial<Record<PurchaseOrderStatus, PurchaseOrderStatus>> =
 	delivered: "completed",
 };
 
+const cancellableStatuses: PurchaseOrderStatus[] = ["draft", "sent", "confirmed"];
+
 export default function PurchaseOrders() {
 	const { initialData, initialApprovedPRs, auth } = usePage().props as any;
 	const canCreate = hasPermission(auth, "procurement.create_purchase_orders");
@@ -635,7 +637,7 @@ export default function PurchaseOrders() {
 	};
 
 	const handleCancelOrder = async (order: PurchaseOrderType) => {
-		if (["partially_received", "delivered", "completed", "cancelled"].includes(order.status)) return;
+		if (!cancellableStatuses.includes(order.status)) return;
 
 		const { value: reason } = await Swal.fire({
 			title: "Cancel this PO?",
@@ -1178,7 +1180,7 @@ export default function PurchaseOrders() {
 									Mark as {formatStatus(nextStatusMap[viewingOrder.status as PurchaseOrderStatus]!)}
 								</button>
 							)}
-							{canCancel && !["partially_received", "delivered", "completed", "cancelled"].includes(viewingOrder.status) && (
+			{canCancel && cancellableStatuses.includes(viewingOrder.status) && (
 								<button
 									onClick={() => handleCancelOrder(viewingOrder)}
 									className="flex-1 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium transition-colors"
