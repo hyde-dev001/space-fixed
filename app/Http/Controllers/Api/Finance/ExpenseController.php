@@ -327,7 +327,15 @@ class ExpenseController extends Controller
 
         $expense = Expense::where('shop_id', $shopId)->findOrFail($id);
 
-        // If expense has new 4-step approval workflow, use it
+        if ($expense->procurement_receipt_id) {
+            $this->expenseApprovalService->clearProcurementApprovalWorkflow($expense);
+
+            return response()->json([
+                'message' => 'Procurement receipt expenses are review-only and do not require approval.',
+            ], 422);
+        }
+
+        // If expense has a 4-step approval workflow, use it
         if ($expense->approval_id) {
             $result = $this->expenseApprovalService->approveExpense(
                 $expense,
@@ -430,7 +438,15 @@ class ExpenseController extends Controller
 
         $expense = Expense::where('shop_id', $shopId)->findOrFail($id);
 
-        // If expense has new 4-step approval workflow, use it
+        if ($expense->procurement_receipt_id) {
+            $this->expenseApprovalService->clearProcurementApprovalWorkflow($expense);
+
+            return response()->json([
+                'message' => 'Procurement receipt expenses are review-only and do not require approval.',
+            ], 422);
+        }
+
+        // If expense has a 4-step approval workflow, use it
         if ($expense->approval_id) {
             $result = $this->expenseApprovalService->rejectExpense(
                 $expense,

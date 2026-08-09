@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use App\Models\Approval;
 use App\Models\ApprovalHistory;
+use App\Models\Finance\Expense;
 use App\Services\NotificationService;
 use App\Services\ApprovalService;
 
@@ -40,18 +41,19 @@ class ApprovalController extends Controller
             // 1. Get expenses with 'submitted' status that need approval - WITH STAFF INFO AND JOB CONTEXT
             $expenses = DB::table('finance_expenses as e')
                 ->leftJoin('users as u', 'e.created_by', '=', 'u.id')
-                ->leftJoin('employees as emp', 'u.id', '=', 'emp.user_id')
+                ->leftJoin('employees as emp', 'u.email', '=', 'emp.email')
                 ->leftJoin('orders as o', 'e.job_order_id', '=', 'o.id')
                 ->where('e.shop_id', $shopOwnerId)
                 ->where('e.status', 'submitted')
+                ->whereNull('e.procurement_receipt_id')
                 ->select(
                     'e.*',
                     'u.name as created_by_name',
                     'emp.position as created_by_position',
-                    'emp.employee_id as created_by_employee_id',
+                    'emp.id as created_by_employee_id',
                     'o.id as job_order_id',
-                    'o.customer as job_customer',
-                    'o.product as job_product',
+                    'o.customer_name as job_customer',
+                    DB::raw('NULL as job_product'),
                     'o.status as job_status'
                 )
                 ->orderBy('e.created_at', 'desc')
@@ -119,6 +121,7 @@ class ApprovalController extends Controller
 
             // 2. Get approvals from the approvals table (for other types) using ApprovalService with role-based filtering
             $approvalRecords = $this->approvalService->getPendingApprovalsForUser($user)
+                ->reject(fn (Approval $approval) => $this->isProcurementReceiptApproval($approval))
                 ->map(function ($approval) {
                     return [
                         'id' => $approval->id,
@@ -164,6 +167,7 @@ class ApprovalController extends Controller
             // Get expenses with 'approved' or 'rejected' status
             $expenses = DB::table('finance_expenses')
                 ->where('shop_id', $shopOwnerId)
+                ->whereNull('procurement_receipt_id')
                 ->whereIn('status', ['approved', 'rejected'])
                 ->orderBy('updated_at', 'desc')
                 ->limit(100)
@@ -293,6 +297,14 @@ class ApprovalController extends Controller
                 ->first();
 
             if ($expense) {
+                if ($expense->procurement_receipt_id) {
+                    DB::rollBack();
+
+                    return response()->json([
+                        'error' => 'Procurement receipt expenses are review-only and do not require approval.',
+                    ], 422);
+                }
+
                 // This is an expense approval
                 // Update the expense status to approved
                 DB::table('finance_expenses')
@@ -317,7 +329,7 @@ class ApprovalController extends Controller
                             'reference' => $expense->reference,
                             'amount' => $expense->amount,
                         ],
-                        actionUrl: '/erp/finance/expenses',
+                        actionUrl: "/finance?section=expense-tracking&expense={$expense->id}",
                         shopId: $shopOwnerId
                     );
                 }
@@ -344,6 +356,14 @@ class ApprovalController extends Controller
             if (!$approval) {
                 DB::rollBack();
                 return response()->json(['error' => 'Approval request not found or already processed'], 404);
+            }
+
+            if ($this->isProcurementReceiptApproval($approval)) {
+                DB::rollBack();
+
+                return response()->json([
+                    'error' => 'Procurement receipt expenses are review-only and do not require approval.',
+                ], 422);
             }
 
             // Use ApprovalService to handle approval transition
@@ -407,6 +427,14 @@ class ApprovalController extends Controller
                 ->first();
 
             if ($expense) {
+                if ($expense->procurement_receipt_id) {
+                    DB::rollBack();
+
+                    return response()->json([
+                        'error' => 'Procurement receipt expenses are review-only and do not require approval.',
+                    ], 422);
+                }
+
                 // This is an expense rejection
                 // Update the expense status to rejected
                 DB::table('finance_expenses')
@@ -432,7 +460,7 @@ class ApprovalController extends Controller
                             'amount' => $expense->amount,
                             'rejection_reason' => $request->comments,
                         ],
-                        actionUrl: '/erp/finance/expenses',
+                        actionUrl: "/finance?section=expense-tracking&expense={$expense->id}",
                         shopId: $shopOwnerId
                     );
                 }
@@ -459,6 +487,14 @@ class ApprovalController extends Controller
             if (!$approval) {
                 DB::rollBack();
                 return response()->json(['error' => 'Approval request not found or already processed'], 404);
+            }
+
+            if ($this->isProcurementReceiptApproval($approval)) {
+                DB::rollBack();
+
+                return response()->json([
+                    'error' => 'Procurement receipt expenses are review-only and do not require approval.',
+                ], 422);
             }
 
             // Use ApprovalService to handle rejection
@@ -488,6 +524,14 @@ class ApprovalController extends Controller
             DB::rollBack();
             return response()->json(['error' => 'Failed to reject request', 'message' => $e->getMessage()], 500);
         }
+    }
+
+    private function isProcurementReceiptApproval(Approval $approval): bool
+    {
+        return $approval->approvable_type === Expense::class
+            && Expense::whereKey($approval->approvable_id)
+                ->whereNotNull('procurement_receipt_id')
+                ->exists();
     }
 
     /**

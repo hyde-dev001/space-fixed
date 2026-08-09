@@ -99,6 +99,14 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
       return '/finance?section=refund-approvals';
     }
 
+    if (normalized === '/erp/finance/expenses' || normalized === '/erp/finance/approvals') {
+      return '/finance?section=expense-tracking';
+    }
+
+    if (normalized === '/shop-owner/expenses') {
+      return '/shop-owner/expense-approvals';
+    }
+
     return normalized;
   };
 

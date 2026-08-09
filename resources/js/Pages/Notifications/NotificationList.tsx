@@ -148,6 +148,23 @@ const NotificationList: React.FC<NotificationListProps> = ({
       return `${href}${separator}${key}=${encodeURIComponent(String(value))}`;
     };
 
+    const resolveLegacyActionUrl = (actionUrl?: string | null) => {
+      const normalized = String(actionUrl || '').trim();
+      if (!normalized) return null;
+
+      if (normalized === '/erp/finance/expenses' || normalized === '/erp/finance/approvals') {
+        return '/finance?section=expense-tracking';
+      }
+
+      if (normalized === '/shop-owner/expenses') {
+        return '/shop-owner/expense-approvals';
+      }
+
+      return normalized;
+    };
+
+    const actionUrl = resolveLegacyActionUrl(notification.action_url);
+
     const getStaffRepairHighlightValue = () => {
       const data = notification.data || {};
       return data.repair_id || data.repair_request_id || data.request_id || data.order_number || notification.id;
@@ -192,16 +209,16 @@ const NotificationList: React.FC<NotificationListProps> = ({
       const staffRoute = getStaffNotificationRoute();
       if (staffRoute) return staffRoute;
 
-      if (notification.action_url) {
-        if (!canAccessHrDashboard && /^\/erp\/hr(?:$|[/?#])/.test(notification.action_url)) {
+      if (actionUrl) {
+        if (!canAccessHrDashboard && /^\/erp\/hr(?:$|[/?#])/.test(actionUrl)) {
           return notificationsListHref;
         }
 
         const repairHighlight = getStaffRepairHighlightValue();
         if (String(notification.type || '').toLowerCase().includes('repair')) {
-          return appendQueryParam(notification.action_url, 'highlightRepair', repairHighlight);
+          return appendQueryParam(actionUrl, 'highlightRepair', repairHighlight);
         }
-        return notification.action_url;
+        return actionUrl;
       }
     }
 
@@ -211,7 +228,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
     }
 
     // Use explicit action_url when set (all live DB notifications have this)
-    if (notification.action_url) return notification.action_url;
+    if (actionUrl) return actionUrl;
 
     if (!basePath.includes('shop-owner') && !basePath.includes('staff') && notification.type?.includes('repair')) {
       const repairId = notification.data?.repair_id || notification.data?.repair_request_id || notification.id;
@@ -244,7 +261,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
       return orderId ? `/my-orders?highlightOrder=${orderId}` : '/my-orders';
     }
 
-    return notification.action_url || notificationsListHref;
+    return actionUrl || notificationsListHref;
   };
 
   const handleNotificationNavigate = (notification: Notification) => {

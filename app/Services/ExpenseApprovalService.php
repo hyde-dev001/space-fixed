@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\PurchaseOrderReceipt;
 use App\Enums\ApprovalStatus;
 use App\Enums\NotificationType;
+use Illuminate\Support\Facades\DB;
 
 class ExpenseApprovalService
 {
@@ -46,11 +47,6 @@ class ExpenseApprovalService
             ]
         );
 
-        if (!$expense->approval_id) {
-            $shopOwner = User::findOrFail((int) $purchaseOrder->shop_owner_id);
-            $this->createExpenseApproval($expense, $shopOwner);
-        }
-
         if ($expense->wasRecentlyCreated) {
             try {
                 $this->notificationService->notifyExpenseSubmitted((int) $purchaseOrder->shop_owner_id, [
@@ -58,6 +54,7 @@ class ExpenseApprovalService
                     'amount' => number_format((float) $expense->amount, 2),
                     'category' => $expense->category,
                     'expense_id' => $expense->id,
+                    'source' => 'procurement_receipt',
                 ]);
             } catch (\Throwable $exception) {
                 report($exception);
@@ -65,6 +62,34 @@ class ExpenseApprovalService
         }
 
         return $expense->fresh();
+    }
+
+    /**
+     * Convert legacy procurement receipt workflows to Finance-only review.
+     */
+    public function clearProcurementApprovalWorkflow(Expense $expense): void
+    {
+        if (!$expense->procurement_receipt_id || !$expense->approval_id) {
+            return;
+        }
+
+        DB::transaction(function () use ($expense): void {
+            $approval = Approval::query()
+                ->lockForUpdate()
+                ->find($expense->approval_id);
+
+            if ($approval?->status === ApprovalStatus::PENDING) {
+                $approval->update([
+                    'status' => ApprovalStatus::CANCELLED,
+                    'comments' => 'Cancelled because procurement receipt expenses are reviewed by Finance only.',
+                ]);
+            }
+
+            $expense->update([
+                'approval_id' => null,
+                'current_approval_level' => null,
+            ]);
+        });
     }
 
     public function rejectForVoidedReceipt(Expense $expense, PurchaseOrderReceipt $receipt): void
@@ -240,6 +265,8 @@ class ExpenseApprovalService
     ): void {
         $shopOwnerId = (int) $approval->shop_owner_id;
         $expenseData = $this->buildExpenseNotificationData($expense, $approver, null);
+        $financeActionUrl = "/finance?section=expense-tracking&expense={$expense->id}";
+        $shopOwnerActionUrl = "/shop-owner/expense-approvals?expense={$expense->id}";
 
         if ($result['is_final'] ?? false) {
             $requesterId = $this->resolveRequesterId($expense, $approval);
@@ -250,7 +277,7 @@ class ExpenseApprovalService
                     title: 'Expense Approved',
                     message: "Your expense {$expenseData['reference']} for ₱{$expenseData['amount']} has been approved.",
                     data: $expenseData,
-                    actionUrl: '/erp/finance/expenses',
+                    actionUrl: $financeActionUrl,
                     shopId: $shopOwnerId
                 );
             }
@@ -265,7 +292,7 @@ class ExpenseApprovalService
                 title: 'Expense Awaiting Your Approval',
                 message: "Expense {$expenseData['reference']} for ₱{$expenseData['amount']} now requires shop owner approval.",
                 data: $expenseData,
-                actionUrl: '/shop-owner/expenses',
+                actionUrl: $shopOwnerActionUrl,
                 priority: 'medium'
             );
 
@@ -287,7 +314,7 @@ class ExpenseApprovalService
                 title: $title,
                 message: $message,
                 data: $expenseData,
-                actionUrl: '/erp/finance/expenses',
+                actionUrl: $financeActionUrl,
                 priority: 'medium'
             );
         }
