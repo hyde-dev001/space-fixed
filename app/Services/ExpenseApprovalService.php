@@ -46,16 +46,25 @@ class ExpenseApprovalService
             ]
         );
 
-        if ($expense->wasRecentlyCreated) {
-            $this->notificationService->notifyExpenseSubmitted((int) $purchaseOrder->shop_owner_id, [
-                'reference' => $expense->reference,
-                'amount' => number_format((float) $expense->amount, 2),
-                'category' => $expense->category,
-                'expense_id' => $expense->id,
-            ]);
+        if (!$expense->approval_id) {
+            $shopOwner = User::findOrFail((int) $purchaseOrder->shop_owner_id);
+            $this->createExpenseApproval($expense, $shopOwner);
         }
 
-        return $expense;
+        if ($expense->wasRecentlyCreated) {
+            try {
+                $this->notificationService->notifyExpenseSubmitted((int) $purchaseOrder->shop_owner_id, [
+                    'reference' => $expense->reference,
+                    'amount' => number_format((float) $expense->amount, 2),
+                    'category' => $expense->category,
+                    'expense_id' => $expense->id,
+                ]);
+            } catch (\Throwable $exception) {
+                report($exception);
+            }
+        }
+
+        return $expense->fresh();
     }
 
     public function rejectForVoidedReceipt(Expense $expense, PurchaseOrderReceipt $receipt): void
@@ -67,7 +76,9 @@ class ExpenseApprovalService
             ]);
         }
 
-        $approval = $expense->approval()->lockForUpdate()->first();
+        $approval = $expense->approval_id
+            ? Approval::query()->lockForUpdate()->find($expense->approval_id)
+            : $expense->approval()->lockForUpdate()->first();
         if ($approval?->status === ApprovalStatus::PENDING) {
             $approval->update([
                 'status' => ApprovalStatus::CANCELLED,

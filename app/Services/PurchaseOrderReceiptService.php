@@ -81,7 +81,11 @@ class PurchaseOrderReceiptService
                 if ($input['defective_quantity'] > $input['received_quantity']) {
                     throw ValidationException::withMessages(['items' => 'Defective quantity cannot exceed received quantity.']);
                 }
-                if ($accepted > $orderItem->remainingQuantity()) {
+                $remaining = $orderItem->remainingQuantity();
+                if ($input['received_quantity'] > $remaining) {
+                    throw ValidationException::withMessages(['items' => 'Received quantity exceeds the remaining ordered quantity.']);
+                }
+                if ($accepted > $remaining) {
                     throw ValidationException::withMessages(['items' => 'Accepted quantity exceeds the remaining ordered quantity.']);
                 }
             }

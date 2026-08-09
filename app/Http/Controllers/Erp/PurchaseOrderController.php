@@ -8,6 +8,7 @@ use App\Http\Requests\StorePurchaseOrderRequest;
 use App\Http\Requests\UpdatePurchaseOrderStatusRequest;
 use App\Http\Requests\CancelPurchaseOrderRequest;
 use App\Events\PurchaseOrderCompleted;
+use App\Events\PurchaseOrderSent;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
@@ -202,6 +203,8 @@ class PurchaseOrderController extends Controller
 
         if ($request->status === 'completed') {
             event(new PurchaseOrderCompleted($purchaseOrder));
+        } elseif ($request->status === 'sent') {
+            event(new PurchaseOrderSent($purchaseOrder));
         }
 
         return response()->json([
@@ -227,6 +230,7 @@ class PurchaseOrderController extends Controller
 
         try {
             $purchaseOrder->sendToSupplier();
+            event(new PurchaseOrderSent($purchaseOrder));
 
             return response()->json([
                 'message' => 'Purchase order sent to supplier successfully.',

@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 
 class PurchaseRequestController extends Controller
@@ -157,6 +158,8 @@ class PurchaseRequestController extends Controller
                 ], 422);
             }
 
+            $data = $this->lockToAcceptedStockRequest($data, $sourceStockRequest);
+
             if (Schema::hasColumn('purchase_requests', 'notes')) {
                 $sourceNumber = $sourceStockRequest->request_number ?: (string) $sourceStockRequest->id;
                 $sourceSummary = "Source Stock Request: {$sourceNumber}";
@@ -194,6 +197,9 @@ class PurchaseRequestController extends Controller
                 ])
             ], 201);
 
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            throw $e;
         } catch (\Exception $e) {
             DB::rollBack();
 
@@ -263,6 +269,13 @@ class PurchaseRequestController extends Controller
             DB::beginTransaction();
 
             $data = $request->validated();
+            $sourceStockRequest = StockRequestApproval::query()
+                ->where('id', (int) $data['stock_request_id'])
+                ->where('shop_owner_id', (int) $purchaseRequest->shop_owner_id)
+                ->where('status', 'accepted')
+                ->lockForUpdate()
+                ->firstOrFail();
+            $data = $this->lockToAcceptedStockRequest($data, $sourceStockRequest);
             $data = $this->sanitizePurchaseRequestPayloadForSchema($data);
             $data['total_cost'] = $this->calculatePurchaseRequestTotalCost($data, (int) $purchaseRequest->shop_owner_id);
             
@@ -286,6 +299,9 @@ class PurchaseRequestController extends Controller
                 ])
             ]);
 
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            throw $e;
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
@@ -425,6 +441,49 @@ class PurchaseRequestController extends Controller
         }
 
         return $data;
+    }
+
+    /**
+     * Keep the PR's demand fields aligned with the accepted stock request.
+     */
+    private function lockToAcceptedStockRequest(array $data, StockRequestApproval $source): array
+    {
+        $lockedFields = [
+            'product_name' => $source->product_name,
+            'inventory_item_id' => $source->inventory_item_id,
+            'requested_size' => $source->requested_size,
+            'requested_color' => $source->requested_color,
+            'quantity' => $source->quantity_needed,
+            'priority' => $source->priority,
+        ];
+
+        foreach ($lockedFields as $field => $expected) {
+            if (array_key_exists($field, $data)
+                && $this->normalizeStockRequestField($field, $data[$field])
+                    !== $this->normalizeStockRequestField($field, $expected)) {
+                throw ValidationException::withMessages([
+                    $field => 'This value must match the accepted stock request.',
+                ]);
+            }
+
+            $data[$field] = $expected;
+        }
+
+        return $data;
+    }
+
+    private function normalizeStockRequestField(string $field, mixed $value): mixed
+    {
+        if (in_array($field, ['requested_size', 'requested_color'], true)) {
+            $value = trim((string) $value);
+            return $value === '' ? null : $value;
+        }
+
+        if (in_array($field, ['inventory_item_id', 'quantity'], true)) {
+            return $value === null ? null : (int) $value;
+        }
+
+        return is_string($value) ? trim($value) : $value;
     }
 
     /**
