@@ -65,6 +65,10 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access
         Route::patch('/{id}', [ExpenseController::class, 'update'])->name('finance.expenses.update');
         Route::delete('/{id}', [ExpenseController::class, 'destroy'])->name('finance.expenses.destroy');
         Route::post('/{id}/restore', [ExpenseController::class, 'restore'])->name('finance.expenses.restore');
+        Route::middleware('permission:access-approval-workflow|approve-expenses')->group(function () {
+            Route::post('/{id}/approve', [ExpenseController::class, 'approve'])->name('finance.expenses.approve');
+            Route::post('/{id}/reject', [ExpenseController::class, 'reject'])->name('finance.expenses.reject');
+        });
         
     });
 

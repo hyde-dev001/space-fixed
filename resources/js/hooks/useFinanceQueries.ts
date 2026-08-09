@@ -60,6 +60,11 @@ export interface Expense {
   approved_at?: string;
 }
 
+type ExpenseApprovalInput = {
+  expenseId: string;
+  approvalNotes?: string;
+};
+
 export interface JournalEntry {
   id: string;
   reference: string;
@@ -344,10 +349,36 @@ export function useApproveExpense() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: async (expenseId: string) => {
-      const response = await api.post(`/api/finance/expenses/${expenseId}/approve`);
+    mutationFn: async ({ expenseId, approvalNotes }: ExpenseApprovalInput) => {
+      const response = await api.post(`/api/finance/expenses/${expenseId}/approve`, {
+        approval_notes: approvalNotes || undefined,
+      });
       if (!response.ok) {
         throw new Error(response.error || 'Failed to approve expense');
+      }
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.expenses });
+      queryClient.invalidateQueries({ queryKey: queryKeys.approvals.pending });
+    },
+  });
+}
+
+/**
+ * Reject expense mutation
+ */
+export function useRejectExpense() {
+  const api = useFinanceApi();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ expenseId, approvalNotes }: ExpenseApprovalInput) => {
+      const response = await api.post(`/api/finance/expenses/${expenseId}/reject`, {
+        approval_notes: approvalNotes,
+      });
+      if (!response.ok) {
+        throw new Error(response.error || 'Failed to reject expense');
       }
       return response.data;
     },

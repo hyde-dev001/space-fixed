@@ -3,7 +3,7 @@ import Swal from "sweetalert2";
 import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
 import { useFinanceApi } from "../../../hooks/useFinanceApi";
-import { useExpenses, useTaxRates } from "../../../hooks/useFinanceQueries";
+import { useApproveExpense, useExpenses, useRejectExpense, useTaxRates } from "../../../hooks/useFinanceQueries";
 import { getApprovalStatusBadge } from "./InlineApprovalUtils";
 
 // Loading Spinner Component
@@ -228,6 +228,9 @@ const Expense: React.FC = () => {
   // React Query hooks - automatically handle loading, caching, refetching
   const { data: expensesData = [], isLoading, refetch: refetchExpenses } = useExpenses({ archived: showArchived });
   const { data: taxRates = [], isLoading: isLoadingTaxRates } = useTaxRates();
+  const approveExpense = useApproveExpense();
+  const rejectExpense = useRejectExpense();
+  const isApprovalActionPending = approveExpense.isPending || rejectExpense.isPending;
   
   // Normalize expenses data
   const expenses = useMemo(() => 
@@ -395,6 +398,61 @@ const Expense: React.FC = () => {
   const closeViewModal = () => {
     setActiveExpense(null);
     setIsViewOpen(false);
+  };
+
+  const handleApprovalAction = async (expense: Expense, action: "approve" | "reject") => {
+    const isRejecting = action === "reject";
+    const result = await Swal.fire({
+      title: isRejecting ? "Reject this expense?" : "Approve this expense?",
+      text: isRejecting
+        ? `Please provide a reason for rejecting "${expense.category}".`
+        : `${expense.category} — ${formatCurrency(expense.amount)}`,
+      icon: isRejecting ? "warning" : "question",
+      input: "textarea",
+      inputLabel: isRejecting ? "Rejection reason" : "Approval notes (optional)",
+      inputPlaceholder: isRejecting ? "Type reason here..." : "Add any notes...",
+      showCancelButton: true,
+      confirmButtonText: isRejecting ? "Reject" : "Approve",
+      cancelButtonText: "Cancel",
+      confirmButtonColor: isRejecting ? "#dc2626" : "#16a34a",
+      cancelButtonColor: "#6b7280",
+      inputValidator: isRejecting
+        ? (value) => (!value || !value.trim() ? "A rejection reason is required." : undefined)
+        : undefined,
+    });
+
+    if (!result.isConfirmed || (isRejecting && !result.value?.trim())) return;
+
+    try {
+      const mutation = isRejecting ? rejectExpense : approveExpense;
+      const response = await mutation.mutateAsync({
+        expenseId: expense.id,
+        approvalNotes: String(result.value || "").trim() || undefined,
+      });
+
+      closeViewModal();
+      await refetchExpenses();
+
+      const isFinalApproval = !isRejecting && Boolean(response?.is_final);
+      await Swal.fire({
+        icon: "success",
+        title: isRejecting ? "Expense rejected" : isFinalApproval ? "Expense approved" : "Approval recorded",
+        text: isRejecting
+          ? "The expense has been rejected."
+          : isFinalApproval
+          ? "The expense completed the approval workflow."
+          : "The expense moved to the next approval step.",
+        timer: 1600,
+        showConfirmButton: false,
+      });
+    } catch (error) {
+      await Swal.fire({
+        icon: "error",
+        title: "Action failed",
+        text: error instanceof Error ? error.message : "The expense could not be updated.",
+        confirmButtonColor: "#2563eb",
+      });
+    }
   };
 
   const calculateTax = (amount: number, taxRateId: string) => {
@@ -813,6 +871,28 @@ const Expense: React.FC = () => {
                       >
                         <EyeIcon className="size-5" />
                       </button>
+                      {!showArchived && expense.status === "submitted" && (
+                        <>
+                          <button
+                            disabled={isApprovalActionPending}
+                            className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-lg text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            aria-label="Approve expense"
+                            title="Approve expense"
+                            onClick={() => handleApprovalAction(expense, "approve")}
+                          >
+                            Approve
+                          </button>
+                          <button
+                            disabled={isApprovalActionPending}
+                            className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-lg text-xs font-semibold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-900/30 hover:bg-rose-100 dark:hover:bg-rose-900/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            aria-label="Reject expense"
+                            title="Reject expense"
+                            onClick={() => handleApprovalAction(expense, "reject")}
+                          >
+                            Reject
+                          </button>
+                        </>
+                      )}
                       {!showArchived && expense.status !== "approved" && expense.status !== "posted" && (
                         <button
                           className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-rose-600 dark:text-rose-400 hover:text-rose-800 dark:hover:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition-colors"
@@ -961,12 +1041,30 @@ const Expense: React.FC = () => {
             </div>
 
             <div className="flex flex-col gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800">
-              <div className="flex items-center justify-end gap-3">
+              <div className="flex items-center justify-between gap-3">
+                {activeExpense.status === "submitted" && !showArchived ? (
+                  <div className="flex items-center gap-2">
+                    <button
+                      disabled={isApprovalActionPending}
+                      className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      onClick={() => handleApprovalAction(activeExpense, "approve")}
+                    >
+                      Approve
+                    </button>
+                    <button
+                      disabled={isApprovalActionPending}
+                      className="px-3 py-2 rounded-lg bg-rose-600 text-white text-sm font-semibold hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      onClick={() => handleApprovalAction(activeExpense, "reject")}
+                    >
+                      Reject
+                    </button>
+                  </div>
+                ) : <span />}
                 <button
-                className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                onClick={closeViewModal}
-              >
-                Close
+                  className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  onClick={closeViewModal}
+                >
+                  Close
                 </button>
               </div>
             </div>

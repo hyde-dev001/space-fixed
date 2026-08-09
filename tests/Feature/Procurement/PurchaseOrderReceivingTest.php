@@ -224,6 +224,49 @@ class PurchaseOrderReceivingTest extends TestCase
         $this->assertSame(200, $response->json('data.items.0.accepted_quantity'));
     }
 
+    public function test_all_size_receipt_rejects_over_receiving_one_size(): void
+    {
+        $inventory = InventoryItem::factory()->create([
+            'shop_owner_id' => $this->owner->id,
+            'category' => 'shoes',
+            'available_quantity' => 0,
+        ]);
+        $sizes = collect(['3', '5', '7', '9'])->map(fn ($size) => InventorySize::create([
+            'inventory_item_id' => $inventory->id,
+            'size' => $size,
+            'size_system' => 'US',
+            'quantity' => 0,
+        ]));
+        [$po, $item] = $this->poItem(200, 100, [
+            'inventory_item_id' => $inventory->id,
+            'requested_size' => null,
+            'eligible_size_ids' => $sizes->pluck('id')->all(),
+            'line_total' => 20000,
+        ]);
+
+        $response = $this->actingAs($this->receiver, 'user')
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts", [
+                'idempotency_key' => 'over-one-size',
+                'items' => [[
+                    'purchase_order_item_id' => $item->id,
+                    'received_quantity' => 200,
+                    'defective_quantity' => 0,
+                    'size_quantities' => $sizes->map(fn ($size, $index) => [
+                        'inventory_size_id' => $size->id,
+                        'received_quantity' => $index === 0 ? 200 : 0,
+                        'defective_quantity' => 0,
+                    ])->all(),
+                ]],
+            ])
+            ->assertUnprocessable();
+
+        $response->assertJsonValidationErrors('items');
+        $this->assertSame('in_transit', $po->fresh()->status);
+        $this->assertSame(0, PurchaseOrderReceipt::count());
+        $this->assertSame(0, $inventory->fresh()->available_quantity);
+        $this->assertSame([0, 0, 0, 0], $sizes->map(fn ($size) => $size->fresh()->quantity)->all());
+    }
+
     public function test_all_size_receipt_requires_each_snapshotted_size(): void
     {
         $inventory = InventoryItem::factory()->create(['shop_owner_id' => $this->owner->id, 'category' => 'shoes']);

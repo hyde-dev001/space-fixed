@@ -330,8 +330,6 @@ Route::middleware(['web', 'auth:web,user', 'old_role:Finance Staff,Finance Manag
     Route::put('expenses/{id}', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'update']);
     Route::delete('expenses/{id}', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'destroy']);
     Route::post('expenses/{id}/restore', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'restore']);
-    Route::post('expenses/{id}/approve', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'approve'])->middleware('permission:approve-expenses');
-    Route::post('expenses/{id}/reject', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'reject'])->middleware('permission:approve-expenses');
 
     // Expense Receipt Management
     Route::post('expenses/{id}/receipt', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'uploadReceipt']);
