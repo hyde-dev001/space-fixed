@@ -735,7 +735,7 @@ class NotificationService
             title: 'New Expense Approval Required',
             message: "Expense of ₱{$expenseData['amount']} requires your approval",
             data: $expenseData,
-            actionUrl: '/erp/finance/approvals',
+            actionUrl: $this->financeExpenseActionUrl($expenseData),
             shopId: $shopId
         );
     }
@@ -992,10 +992,16 @@ class NotificationService
     /** Notify Finance users when an expense is submitted */
     public function notifyExpenseSubmitted(int $shopId, array $expenseData): void
     {
+        $isProcurementExpense = ($expenseData['source'] ?? null) === 'procurement_receipt';
+        $title = $isProcurementExpense ? 'Procurement Expense Recorded' : 'New Expense Submitted';
+        $message = $isProcurementExpense
+            ? "Procurement expense {$expenseData['reference']} of ₱{$expenseData['amount']} is ready for Finance review."
+            : "Expense {$expenseData['reference']} of ₱{$expenseData['amount']} ({$expenseData['category']}) needs review.";
+
         $this->sendToErpRole('Finance', $shopId, NotificationType::EXPENSE_SUBMITTED,
-            'New Expense Submitted',
-            "Expense {$expenseData['reference']} of ₱{$expenseData['amount']} ({$expenseData['category']}) needs review.",
-            $expenseData, '/erp/finance/expenses', 'medium'
+            $title,
+            $message,
+            $expenseData, $this->financeExpenseActionUrl($expenseData), 'medium'
         );
     }
 
@@ -1007,8 +1013,18 @@ class NotificationService
         $this->sendToUser($userId, NotificationType::EXPENSE_REJECTED,
             'Expense Request Rejected',
             "Your expense request of ₱{$expenseData['amount']} ({$expenseData['category']}) was rejected.{$reasonText}",
-            $expenseData, '/erp/finance/expenses', $shopId
+            $expenseData, $this->financeExpenseActionUrl($expenseData), $shopId
         );
+    }
+
+    private function financeExpenseActionUrl(array $expenseData): string
+    {
+        $actionUrl = '/finance?section=expense-tracking';
+        $expenseId = (int) ($expenseData['expense_id'] ?? 0);
+
+        return $expenseId > 0
+            ? "{$actionUrl}&expense={$expenseId}"
+            : $actionUrl;
     }
 
     /** Notify Finance users when a purchase request is submitted */

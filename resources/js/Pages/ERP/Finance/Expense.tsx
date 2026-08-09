@@ -33,7 +33,9 @@ type Expense = {
   receipt_original_name?: string | null;
   receipt_mime_type?: string | null;
   receipt_size?: number | null;
+  procurement_receipt_id?: number | null;
   procurement_details?: {
+    receipt_id?: number;
     purchase_order_id?: number;
     po_number?: string;
     supplier_name?: string | null;
@@ -191,6 +193,10 @@ const normalizeExpense = (expense: Expense) => ({
   amount: Number(expense.amount) || 0,
   tax_amount: Number(expense.tax_amount) || 0,
 });
+
+const isProcurementExpense = (expense: Expense) => Boolean(
+  expense.procurement_receipt_id || expense.procurement_details?.receipt_id
+);
 
 const normalizeApiDateString = (value: string) => {
   // Some API values include 6-digit fractional seconds, which JS Date cannot parse reliably.
@@ -859,7 +865,11 @@ const Expense: React.FC = () => {
                   <td className="py-4 px-4 text-sm text-gray-700 dark:text-gray-300">{expense.description}</td>
                   <td className="py-4 px-6 text-right text-sm font-semibold text-gray-900 dark:text-white">{formatCurrency(expense.amount)}</td>
                   <td className="py-4 px-6">
-                    {getApprovalStatusBadge(false, expense.status)}
+                    {isProcurementExpense(expense) ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                        Review only
+                      </span>
+                    ) : getApprovalStatusBadge(false, expense.status)}
                   </td>
                   <td className="py-4 px-4 text-sm text-gray-700 dark:text-gray-300">
                     <div className="flex items-center justify-center gap-2">
@@ -871,7 +881,7 @@ const Expense: React.FC = () => {
                       >
                         <EyeIcon className="size-5" />
                       </button>
-                      {!showArchived && expense.status === "submitted" && (
+                      {!showArchived && expense.status === "submitted" && !isProcurementExpense(expense) && (
                         <>
                           <button
                             disabled={isApprovalActionPending}
@@ -1018,7 +1028,9 @@ const Expense: React.FC = () => {
               <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300 items-center">
                 <span className="text-gray-500 dark:text-gray-400">Status</span>
                 <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(activeExpense.status)}`}>
-                  {activeExpense.status.charAt(0).toUpperCase() + activeExpense.status.slice(1)}
+                  {isProcurementExpense(activeExpense)
+                    ? "Review only"
+                    : activeExpense.status.charAt(0).toUpperCase() + activeExpense.status.slice(1)}
                 </span>
               </div>
               
@@ -1042,7 +1054,7 @@ const Expense: React.FC = () => {
 
             <div className="flex flex-col gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800">
               <div className="flex items-center justify-between gap-3">
-                {activeExpense.status === "submitted" && !showArchived ? (
+                {activeExpense.status === "submitted" && !showArchived && !isProcurementExpense(activeExpense) ? (
                   <div className="flex items-center gap-2">
                     <button
                       disabled={isApprovalActionPending}

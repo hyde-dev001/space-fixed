@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Procurement;
 
+use App\Enums\ApprovalStatus;
 use App\Models\Finance\Expense;
 use App\Models\Approval;
 use App\Models\InventoryItem;
@@ -36,13 +37,17 @@ class PurchaseOrderReceivingTest extends TestCase
         Permission::findOrCreate('procurement.receive_purchase_orders', 'user');
         Permission::findOrCreate('view-inventory', 'user');
         Permission::findOrCreate('access-finance-expenses', 'user');
+        Permission::findOrCreate('access-approval-workflow', 'user');
         $this->receiver->givePermissionTo(['procurement.receive_purchase_orders', 'view-inventory']);
     }
 
     public function test_partial_receipt_posts_inventory_and_submitted_expense_once(): void
     {
         $finance = User::factory()->for($this->owner)->create();
-        $finance->assignRole(Role::firstOrCreate(['name' => 'Finance', 'guard_name' => 'user']));
+        $finance->assignRole([
+            Role::firstOrCreate(['name' => 'Finance', 'guard_name' => 'user']),
+            Role::firstOrCreate(['name' => 'Finance Staff', 'guard_name' => 'user']),
+        ]);
         [$po, $item, $inventory] = $this->poItem(5, 100);
         $payload = $this->payload('receive-1', $item->id, 3, 1);
 
@@ -61,21 +66,16 @@ class PurchaseOrderReceivingTest extends TestCase
         $expense = Expense::sole();
         $this->assertSame('submitted', $expense->status);
         $this->assertNull($expense->approved_by);
-        $this->assertNotNull($expense->approval_id);
-        $approval = Approval::findOrFail($expense->approval_id);
-        $this->assertSame(4, $approval->total_levels);
-        $this->assertSame([
-            '1' => 'finance',
-            '2' => 'shop_owner',
-            '3' => 'finance',
-            '4' => 'finance_final',
-        ], $approval->approval_roles);
+        $this->assertNull($expense->approval_id);
+        $this->assertSame(0, Approval::where('approvable_type', Expense::class)
+            ->where('approvable_id', $expense->id)
+            ->count());
         $this->assertSame($this->receiver->id, $expense->created_by);
         $this->assertSame('200.00', $expense->amount);
         $this->assertSame($response->json('data.id'), $expense->procurement_receipt_id);
         $this->assertDatabaseHas('notifications', [
             'user_id' => $finance->id,
-            'action_url' => '/erp/finance/expenses',
+            'action_url' => "/finance?section=expense-tracking&expense={$expense->id}",
         ]);
         $this->actingAs($this->owner, 'shop_owner')
             ->getJson('/api/shop-owner/expenses?status=submitted')
@@ -84,6 +84,20 @@ class PurchaseOrderReceivingTest extends TestCase
         $this->actingAs($this->owner, 'shop_owner')
             ->postJson("/api/shop-owner/expenses/{$expense->id}/approve")
             ->assertNotFound();
+        $finance->givePermissionTo(['access-approval-workflow', 'access-finance-expenses']);
+        $this->actingAs($finance, 'user')
+            ->getJson('/api/finance/approvals/pending')
+            ->assertOk()
+            ->assertJsonCount(0, 'approvals');
+        $this->actingAs($finance, 'user')
+            ->postJson("/api/finance/expenses/{$expense->id}/approve")
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Procurement receipt expenses are review-only and do not require approval.');
+        $this->actingAs($finance, 'user')
+            ->postJson("/api/finance/expenses/{$expense->id}/reject", ['approval_notes' => 'Not required.'])
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Procurement receipt expenses are review-only and do not require approval.');
+        $this->assertSame('submitted', $expense->fresh()->status);
         $this->receiver->givePermissionTo('access-finance-expenses');
         $this->actingAs($this->receiver, 'user')->getJson("/api/finance/expenses/{$expense->id}")
             ->assertOk()
@@ -98,6 +112,69 @@ class PurchaseOrderReceivingTest extends TestCase
         $this->assertSame(1, StockMovement::count());
         $this->assertSame(1, Expense::count());
         $this->assertSame(12, $inventory->fresh()->available_quantity);
+    }
+
+    public function test_existing_procurement_expense_workflow_is_blocked_for_finance_approval(): void
+    {
+        $finance = User::factory()->for($this->owner)->create();
+        $finance->givePermissionTo('access-approval-workflow');
+        $finance->assignRole([
+            Role::firstOrCreate(['name' => 'Finance', 'guard_name' => 'user']),
+            Role::firstOrCreate(['name' => 'Finance Staff', 'guard_name' => 'user']),
+        ]);
+        [$po, $item] = $this->poItem(2, 100);
+
+        $this->actingAs($this->receiver, 'user')
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts", $this->payload('legacy-workflow', $item->id, 2, 0))
+            ->assertCreated();
+
+        $expense = Expense::sole();
+        $legacyApproval = $this->attachLegacyApproval($expense);
+        $expense->update([
+            'approval_id' => $legacyApproval->id,
+            'current_approval_level' => 2,
+        ]);
+        $finance->givePermissionTo(['access-approval-workflow', 'access-finance-expenses']);
+
+        $this->actingAs($finance, 'user')
+            ->getJson('/api/finance/approvals/pending')
+            ->assertOk()
+            ->assertJsonCount(0, 'approvals');
+
+        $this->actingAs($finance, 'user')
+            ->postJson("/api/finance/expenses/{$expense->id}/approve")
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Procurement receipt expenses are review-only and do not require approval.');
+
+        $this->assertSame('submitted', $expense->fresh()->status);
+        $this->assertNull($expense->fresh()->approval_id);
+        $this->assertSame(ApprovalStatus::CANCELLED, $legacyApproval->fresh()->status);
+    }
+
+    public function test_existing_procurement_expense_workflow_is_blocked_for_finance_rejection(): void
+    {
+        $finance = User::factory()->for($this->owner)->create();
+        $finance->givePermissionTo('access-approval-workflow');
+        $finance->assignRole(Role::firstOrCreate(['name' => 'Finance', 'guard_name' => 'user']));
+        [$po, $item] = $this->poItem(2, 100);
+
+        $this->actingAs($this->receiver, 'user')
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts", $this->payload('legacy-rejection', $item->id, 2, 0))
+            ->assertCreated();
+
+        $expense = Expense::sole();
+        $legacyApproval = $this->attachLegacyApproval($expense);
+
+        $this->actingAs($finance, 'user')
+            ->postJson("/api/finance/expenses/{$expense->id}/reject", [
+                'approval_notes' => 'Receipt cost needs correction.',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Procurement receipt expenses are review-only and do not require approval.');
+
+        $this->assertSame('submitted', $expense->fresh()->status);
+        $this->assertNull($expense->fresh()->approval_id);
+        $this->assertSame(ApprovalStatus::CANCELLED, $legacyApproval->fresh()->status);
     }
 
     public function test_same_key_with_different_payload_returns_conflict(): void
@@ -445,5 +522,37 @@ class PurchaseOrderReceivingTest extends TestCase
                 'defective_quantity' => $defective,
             ]],
         ];
+    }
+
+    private function attachLegacyApproval(Expense $expense): Approval
+    {
+        $approval = Approval::create([
+            'shop_owner_id' => $this->owner->id,
+            'approvable_type' => Expense::class,
+            'approvable_id' => $expense->id,
+            'reference' => $expense->reference,
+            'description' => $expense->description,
+            'amount' => $expense->amount,
+            'requested_by' => $this->receiver->id,
+            'current_level' => 2,
+            'total_levels' => 4,
+            'status' => ApprovalStatus::PENDING,
+            'approval_roles' => [
+                '1' => 'finance',
+                '2' => 'shop_owner',
+                '3' => 'finance',
+                '4' => 'finance_final',
+            ],
+            'current_approver_role' => 'shop_owner',
+            'level_reviewers' => [],
+            'metadata' => ['source' => 'legacy_procurement_expense'],
+        ]);
+
+        $expense->update([
+            'approval_id' => $approval->id,
+            'current_approval_level' => 2,
+        ]);
+
+        return $approval;
     }
 }
