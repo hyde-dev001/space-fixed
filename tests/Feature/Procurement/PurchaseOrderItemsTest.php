@@ -100,6 +100,33 @@ class PurchaseOrderItemsTest extends TestCase
         $this->assertEqualsCanonicalizing($sizeIds, $po->items->sole()->eligible_size_ids);
     }
 
+    public function test_invalid_requested_variant_is_rejected_before_po_creation(): void
+    {
+        $inventory = InventoryItem::factory()->create([
+            'shop_owner_id' => $this->owner->id,
+            'category' => 'shoes',
+        ]);
+        InventorySize::create([
+            'inventory_item_id' => $inventory->id,
+            'size' => '8',
+            'size_system' => 'US',
+            'quantity' => 0,
+        ]);
+        $pr = $this->approvedPr([
+            'inventory_item_id' => $inventory->id,
+            'requested_size' => 'US 9',
+        ]);
+
+        $this->actingAs($this->user, 'user')
+            ->postJson('/api/erp/procurement/purchase-orders', [
+                'purchase_request_ids' => [$pr->id],
+                'payment_terms' => 'COD',
+            ])
+            ->assertUnprocessable();
+
+        $this->assertDatabaseCount('purchase_orders', 0);
+    }
+
     public function test_mixed_supplier_and_unapproved_prs_are_rejected(): void
     {
         $approved = $this->approvedPr();

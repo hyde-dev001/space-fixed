@@ -3,6 +3,7 @@
 namespace Tests\Feature\Procurement;
 
 use App\Models\Finance\Expense;
+use App\Models\Approval;
 use App\Models\InventoryItem;
 use App\Models\InventorySize;
 use App\Models\PurchaseOrder;
@@ -60,6 +61,15 @@ class PurchaseOrderReceivingTest extends TestCase
         $expense = Expense::sole();
         $this->assertSame('submitted', $expense->status);
         $this->assertNull($expense->approved_by);
+        $this->assertNotNull($expense->approval_id);
+        $approval = Approval::findOrFail($expense->approval_id);
+        $this->assertSame(4, $approval->total_levels);
+        $this->assertSame([
+            '1' => 'finance',
+            '2' => 'shop_owner',
+            '3' => 'finance',
+            '4' => 'finance_final',
+        ], $approval->approval_roles);
         $this->assertSame($this->receiver->id, $expense->created_by);
         $this->assertSame('200.00', $expense->amount);
         $this->assertSame($response->json('data.id'), $expense->procurement_receipt_id);
@@ -315,6 +325,20 @@ class PurchaseOrderReceivingTest extends TestCase
             ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts", $this->payload('wrong-state', $item->id, 1, 0))
             ->assertForbidden();
 
+        $this->assertSame(10, $inventory->fresh()->available_quantity);
+        $this->assertSame(0, PurchaseOrderReceipt::count());
+        $this->assertSame(0, Expense::count());
+    }
+
+    public function test_total_received_cannot_exceed_remaining_ordered_quantity(): void
+    {
+        [$po, $item, $inventory] = $this->poItem(5, 100);
+
+        $this->actingAs($this->receiver, 'user')
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts", $this->payload('over-physical', $item->id, 6, 1))
+            ->assertUnprocessable();
+
+        $this->assertSame('in_transit', $po->fresh()->status);
         $this->assertSame(10, $inventory->fresh()->available_quantity);
         $this->assertSame(0, PurchaseOrderReceipt::count());
         $this->assertSame(0, Expense::count());

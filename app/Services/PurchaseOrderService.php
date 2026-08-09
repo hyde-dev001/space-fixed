@@ -39,6 +39,15 @@ class PurchaseOrderService
                 || $purchaseRequests->contains(fn ($request) => !$request->supplier_id)) {
                 throw ValidationException::withMessages(['purchase_request_ids' => 'Purchase requests must use the same supplier.']);
             }
+
+            $supplier = Supplier::query()
+                ->whereKey($purchaseRequests->first()->supplier_id)
+                ->where('shop_owner_id', $shopOwnerId)
+                ->where('is_active', true)
+                ->first();
+            if (!$supplier) {
+                throw ValidationException::withMessages(['purchase_request_ids' => 'The selected supplier is inactive or unavailable.']);
+            }
             if (PurchaseOrderItem::whereIn('purchase_request_id', $ids)
                 ->whereHas('purchaseOrder', fn ($query) => $query->where('status', '!=', 'cancelled'))
                 ->exists()) {
@@ -51,6 +60,14 @@ class PurchaseOrderService
                     $request->requested_size,
                     $request->requested_color
                 );
+                $hasInventorySizes = $request->inventoryItem?->sizes()->exists() ?? false;
+                $hasRequestedVariant = filled($request->requested_size) || filled($request->requested_color);
+                if (($hasRequestedVariant && $hasInventorySizes)
+                    && $sizeSnapshot['eligible_size_ids'] === []) {
+                    throw ValidationException::withMessages([
+                        'purchase_request_ids' => "{$request->pr_number} has no eligible inventory variant for the requested size/color.",
+                    ]);
+                }
                 if (blank($request->requested_size) && $request->inventoryItem?->category === 'shoes'
                     && $sizeSnapshot['eligible_size_ids'] === []) {
                     throw ValidationException::withMessages([

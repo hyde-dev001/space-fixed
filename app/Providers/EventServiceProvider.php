@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Events\PurchaseOrderCompleted;
+use App\Events\PurchaseOrderSent;
 use App\Events\PurchaseRequestApproved;
 use App\Events\PurchaseRequestRejected;
 use App\Events\PurchaseRequestSubmittedToFinance;
@@ -11,6 +12,7 @@ use App\Listeners\NotifyFinanceOfNewPR;
 use App\Listeners\NotifyReplenishmentReviewed;
 use App\Listeners\NotifyRequesterOfPRApproval;
 use App\Listeners\NotifyRequesterOfPRRejection;
+use App\Listeners\SendPOToSupplier;
 use App\Listeners\UpdateSupplierMetrics;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Auth\Listeners\SendEmailVerificationNotification;
@@ -45,6 +47,9 @@ class EventServiceProvider extends ServiceProvider
         // Purchase Order Events
         PurchaseOrderCompleted::class => [
             UpdateSupplierMetrics::class,
+        ],
+        PurchaseOrderSent::class => [
+            SendPOToSupplier::class,
         ],
 
         // Replenishment Request Events

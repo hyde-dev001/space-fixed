@@ -10,7 +10,9 @@ use App\Models\PurchaseRequest;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderReceipt;
 use App\Models\InventoryItem;
+use App\Events\PurchaseOrderSent;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use Spatie\Permission\Models\Permission;
 
 class PurchaseOrderWorkflowTest extends TestCase
@@ -72,6 +74,8 @@ class PurchaseOrderWorkflowTest extends TestCase
     /** @test */
     public function user_can_send_po_to_supplier()
     {
+        Event::fake([PurchaseOrderSent::class]);
+
         $po = PurchaseOrder::factory()->create([
             'shop_owner_id' => $this->shopOwner->id,
             'supplier_id' => $this->supplier->id,
@@ -87,6 +91,31 @@ class PurchaseOrderWorkflowTest extends TestCase
             'id' => $po->id,
             'status' => 'sent',
         ]);
+        Event::assertDispatched(PurchaseOrderSent::class, function (PurchaseOrderSent $event) use ($po): bool {
+            return $event->purchaseOrder->is($po);
+        });
+    }
+
+    /** @test */
+    public function user_can_update_status_to_sent_and_dispatch_the_supplier_event(): void
+    {
+        Event::fake([PurchaseOrderSent::class]);
+
+        $po = PurchaseOrder::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'status' => 'draft',
+        ]);
+
+        $this->actingAs($this->user)
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/update-status", [
+                'status' => 'sent',
+            ])
+            ->assertOk();
+
+        Event::assertDispatched(PurchaseOrderSent::class, function (PurchaseOrderSent $event) use ($po): bool {
+            return $event->purchaseOrder->is($po);
+        });
     }
 
     /** @test */

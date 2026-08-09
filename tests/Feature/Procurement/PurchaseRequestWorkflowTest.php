@@ -152,11 +152,14 @@ class PurchaseRequestWorkflowTest extends TestCase
         $response = $this->actingAs($this->requester)
             ->postJson('/api/erp/procurement/purchase-requests', [
                 'stock_request_id' => $stockRequest->id,
-                'product_name' => 'Shoe adhesive',
+                'product_name' => $stockRequest->product_name,
                 'supplier_id' => $this->supplier->id,
-                'quantity' => 2,
+                'inventory_item_id' => $stockRequest->inventory_item_id,
+                'requested_size' => $stockRequest->requested_size,
+                'requested_color' => $stockRequest->requested_color,
+                'quantity' => $stockRequest->quantity_needed,
                 'unit_cost' => 50,
-                'priority' => 'medium',
+                'priority' => $stockRequest->priority,
                 'justification' => 'Routine workshop stock.',
                 'submit_to_finance' => true,
             ])
@@ -182,7 +185,7 @@ class PurchaseRequestWorkflowTest extends TestCase
                 'stock_request_id' => $stockRequest->id,
                 'product_name' => 'Shoe cleaner',
                 'supplier_id' => $this->supplier->id,
-                'quantity' => 1,
+                'quantity' => 200,
                 'unit_cost' => 100,
                 'priority' => 'medium',
                 'justification' => 'Create and submit permission check.',
@@ -210,6 +213,15 @@ class PurchaseRequestWorkflowTest extends TestCase
             ->assertJsonValidationErrors('stock_request_id');
 
         $stockRequest = $this->acceptedStockRequest();
+        $payload = [
+            ...$payload,
+            'product_name' => $stockRequest->product_name,
+            'inventory_item_id' => $stockRequest->inventory_item_id,
+            'requested_size' => $stockRequest->requested_size,
+            'requested_color' => $stockRequest->requested_color,
+            'quantity' => $stockRequest->quantity_needed,
+            'priority' => $stockRequest->priority,
+        ];
         $this->actingAs($this->requester)
             ->postJson('/api/erp/procurement/purchase-requests', ['stock_request_id' => $stockRequest->id, ...$payload])
             ->assertCreated();
@@ -244,14 +256,14 @@ class PurchaseRequestWorkflowTest extends TestCase
         $response = $this->actingAs($this->requester)
             ->postJson('/api/erp/procurement/purchase-requests', [
                 'stock_request_id' => $stockRequest->id,
-                'product_name' => 'Spoofed product',
-                'inventory_item_id' => null,
-                'requested_size' => 'US 99',
-                'requested_color' => 'Red',
+                'product_name' => 'Authoritative shoe',
+                'inventory_item_id' => $inventory->id,
+                'requested_size' => null,
+                'requested_color' => 'Black',
                 'supplier_id' => $this->supplier->id,
-                'quantity' => 1,
+                'quantity' => 200,
                 'unit_cost' => 4100,
-                'priority' => 'low',
+                'priority' => 'high',
                 'justification' => 'Use the accepted stock request as source.',
             ])
             ->assertCreated();
@@ -309,9 +321,9 @@ class PurchaseRequestWorkflowTest extends TestCase
         $response = $this->actingAs($this->requester, 'user')
             ->postJson('/api/erp/procurement/purchase-requests', [
                 'stock_request_id' => $source->id,
-                'product_name' => 'Ignored client name',
+                'product_name' => $stockRequest['product_name'],
                 'supplier_id' => $this->supplier->id,
-                'quantity' => 1,
+                'quantity' => $stockRequest['quantity_needed'],
                 'unit_cost' => 4100,
                 'priority' => 'high',
                 'justification' => 'Physical quantity from all configured sizes.',
@@ -348,6 +360,82 @@ class PurchaseRequestWorkflowTest extends TestCase
         $this->actingAs($this->finance)
             ->get('/finance/purchase-request-approval?purchase_request=42')
             ->assertRedirect('/finance?section=purchase-request-approval&purchase_request=42');
+    }
+
+    public function test_pr_cannot_change_accepted_stock_request_details(): void
+    {
+        $stockRequest = $this->acceptedStockRequest();
+
+        $this->actingAs($this->requester)
+            ->postJson('/api/erp/procurement/purchase-requests', [
+                'stock_request_id' => $stockRequest->id,
+                'product_name' => $stockRequest->product_name . ' (tampered)',
+                'supplier_id' => $this->supplier->id,
+                'inventory_item_id' => $stockRequest->inventory_item_id,
+                'requested_size' => $stockRequest->requested_size,
+                'requested_color' => $stockRequest->requested_color,
+                'quantity' => $stockRequest->quantity_needed + 1,
+                'unit_cost' => 50,
+                'priority' => $stockRequest->priority,
+                'justification' => 'The approved stock request details must remain unchanged.',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('product_name');
+    }
+
+    public function test_inactive_supplier_cannot_be_used_for_a_purchase_request(): void
+    {
+        $this->supplier->update(['is_active' => false]);
+        $stockRequest = $this->acceptedStockRequest();
+
+        $this->actingAs($this->requester)
+            ->postJson('/api/erp/procurement/purchase-requests', [
+                'stock_request_id' => $stockRequest->id,
+                'product_name' => $stockRequest->product_name,
+                'supplier_id' => $this->supplier->id,
+                'inventory_item_id' => $stockRequest->inventory_item_id,
+                'requested_size' => $stockRequest->requested_size,
+                'requested_color' => $stockRequest->requested_color,
+                'quantity' => $stockRequest->quantity_needed,
+                'unit_cost' => 50,
+                'priority' => $stockRequest->priority,
+                'justification' => 'An inactive supplier must not be selected for new purchases.',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('supplier_id');
+    }
+
+    public function test_draft_pr_can_be_updated_without_changing_its_stock_request_source(): void
+    {
+        $stockRequest = $this->acceptedStockRequest();
+        $purchaseRequest = PurchaseRequest::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'stock_request_id' => $stockRequest->id,
+            'product_name' => $stockRequest->product_name,
+            'supplier_id' => $this->supplier->id,
+            'inventory_item_id' => $stockRequest->inventory_item_id,
+            'requested_size' => $stockRequest->requested_size,
+            'requested_color' => $stockRequest->requested_color,
+            'quantity' => $stockRequest->quantity_needed,
+            'priority' => $stockRequest->priority,
+            'requested_by' => $this->requester->id,
+            'status' => 'draft',
+        ]);
+
+        $this->actingAs($this->requester)
+            ->putJson("/api/erp/procurement/purchase-requests/{$purchaseRequest->id}", [
+                'stock_request_id' => $stockRequest->id,
+                'product_name' => $stockRequest->product_name,
+                'supplier_id' => $this->supplier->id,
+                'inventory_item_id' => $stockRequest->inventory_item_id,
+                'requested_size' => $stockRequest->requested_size,
+                'requested_color' => $stockRequest->requested_color,
+                'quantity' => $stockRequest->quantity_needed,
+                'unit_cost' => 75,
+                'priority' => $stockRequest->priority,
+                'justification' => 'Update cost while preserving approved demand.',
+            ])
+            ->assertOk();
     }
 
     private function pendingRequest(string $status): PurchaseRequest

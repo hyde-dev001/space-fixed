@@ -332,7 +332,7 @@ export default function PurchaseRequest() {
 	// Fetch suppliers
 	const fetchSuppliers = async () => {
 		try {
-			const response = await supplierApi.getAll({ page: 1, per_page: 100 });
+			const response = await supplierApi.getAll({ page: 1, per_page: 100, is_active: true });
 			setSuppliers(response.data || []);
 		} catch (error) {
 			console.error("Error fetching suppliers:", error);
