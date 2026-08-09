@@ -4,6 +4,7 @@ namespace Tests\Feature\Logistics;
 
 use App\Models\Logistics\DeliveryAssignment;
 use App\Models\Logistics\DeliveryBatch;
+use App\Models\Logistics\HandoffProof;
 use App\Models\Logistics\LogisticsSetting;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
@@ -1263,6 +1264,43 @@ class LogisticsPageAccessTest extends TestCase
 
         $this->assertSame([$awaiting->id], collect($response->viewData('page')['props']['shipments']['data'])->pluck('id')->all());
         $this->assertSame('awaiting_proof_approval', $response->viewData('page')['props']['filters']['status']);
+    }
+
+    public function test_dispatcher_completed_delivery_includes_viewable_delivery_proof(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        Storage::fake('local');
+
+        $shop = ShopOwner::factory()->create(['business_type' => 'both']);
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $dispatcher->assignRole('Logistics Dispatcher');
+        $shipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'status' => 'completed',
+        ]);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id,
+            'status' => 'delivered',
+        ]);
+        $path = "logistics-proof/{$leg->id}/delivery.jpg";
+        Storage::disk('local')->put($path, 'proof');
+        $proof = HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'file_path' => $path,
+            'review_status' => 'approved',
+        ]);
+
+        $response = $this->actingAs($dispatcher, 'user')
+            ->get('/erp/logistics/shipments?status=completed')
+            ->assertOk();
+
+        $payload = collect($response->viewData('page')['props']['shipments']['data'])
+            ->firstWhere('id', $shipment->id);
+
+        $this->assertSame(
+            "/api/logistics/proofs/{$proof->id}/file",
+            collect($payload['legs'][0]['proofs'])->firstWhere('id', $proof->id)['proof_url'],
+        );
     }
 
     public function test_dispatcher_shipments_include_available_riders_for_assignment(): void
