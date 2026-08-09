@@ -26,7 +26,9 @@ final class RiderActiveWorkGuard
             ->whereKeyNot($batch->id)
             ->exists();
 
-        $this->reject($hasBatch || $this->activeStandaloneQuery($rider)->exists());
+        $this->reject($hasBatch
+            || $this->activeStandaloneQuery($rider)->exists()
+            || $this->custodyHoldQuery($rider)->exists());
     }
 
     public function assertCanStartStandalone(RiderProfile $rider, ShipmentLeg $leg): void
@@ -42,7 +44,7 @@ final class RiderActiveWorkGuard
             ->whereKeyNot($leg->id)
             ->exists();
 
-        $this->reject($hasBatch || $hasStandalone);
+        $this->reject($hasBatch || $hasStandalone || $this->custodyHoldQuery($rider)->exists());
     }
 
     public function assertCanAdvanceLeg(RiderProfile $rider, ShipmentLeg $leg): void
@@ -100,6 +102,15 @@ final class RiderActiveWorkGuard
             ->whereHas('latestAssignment', fn ($query) => $query
                 ->where('rider_profile_id', $rider->id)
                 ->whereIn('status', ['assigned', 'accepted']));
+    }
+
+    private function custodyHoldQuery(RiderProfile $rider)
+    {
+        return ShipmentLeg::query()
+            ->where('status', 'needs_resolution')
+            ->whereHas('latestAssignment', fn ($query) => $query
+                ->where('rider_profile_id', $rider->id)
+                ->where('status', 'accepted'));
     }
 
     private function reject(bool $blocked): void

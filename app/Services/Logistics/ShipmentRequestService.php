@@ -2,6 +2,8 @@
 
 namespace App\Services\Logistics;
 
+use App\Enums\Logistics\CarrierType;
+use App\Models\Logistics\ShippingMethod;
 use App\Models\Logistics\Shipment;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -53,8 +55,11 @@ class ShipmentRequestService
             foreach (array_values($data['legs']) as $index => $legData) {
                 $method = null;
                 if (!empty($legData['shipping_method_id'])) {
-                    $method = \App\Models\Logistics\ShippingMethod::query()
+                    $method = ShippingMethod::query()
                         ->whereKey($legData['shipping_method_id'])
+                        ->where('active', true)
+                        ->where('carrier_type', CarrierType::INTERNAL->value)
+                        ->where('requires_assignment', true)
                         ->where(function ($query) use ($data) {
                             $query->whereNull('shop_owner_id')
                                 ->orWhere('shop_owner_id', $data['shop_owner_id']);
@@ -62,7 +67,9 @@ class ShipmentRequestService
                         ->first();
 
                     if (!$method) {
-                        throw ValidationException::withMessages(['legs' => 'Selected shipping method is not available for this shop.']);
+                        throw ValidationException::withMessages([
+                            "legs.{$index}.shipping_method_id" => 'Selected shipping method is not supported by shop-owned logistics.',
+                        ]);
                     }
                 }
 

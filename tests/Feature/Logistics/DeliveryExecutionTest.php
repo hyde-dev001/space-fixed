@@ -12,6 +12,7 @@ use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\ShopOwner;
 use App\Services\Logistics\AssignmentService;
+use App\Services\Logistics\RiderActiveWorkGuard;
 use App\Services\Logistics\ShipmentLegService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
@@ -149,7 +150,7 @@ class DeliveryExecutionTest extends TestCase
         }
     }
 
-    public function test_failed_attempt_is_idempotent_reschedules_and_preserves_return_custody_at_maximum(): void
+    public function test_failed_attempt_is_idempotent_and_stages_resolution_at_maximum(): void
     {
         [$leg, $rider, $shop, $firstAssignment] = $this->fixture();
         LogisticsSetting::updateOrCreate(['shop_owner_id' => $shop->id], ['max_delivery_attempts' => 2, 'lead_time_days' => 0]);
@@ -195,15 +196,24 @@ class DeliveryExecutionTest extends TestCase
             'file_path' => 'proof2.jpg',
         ], true);
         $this->assertSame('needs_resolution', $leg->fresh()->status->value);
-        $this->assertSame('return_required', $leg->fresh()->resolution_type);
-        $this->assertSame('cancelled', $secondAssignment->fresh()->status);
-        $return = ShipmentLeg::where('return_for_leg_id', $leg->id)->firstOrFail();
-        $this->assertSame('picked_up', $return->status->value);
+        $this->assertNull($leg->fresh()->resolution_type);
+        $this->assertSame('accepted', $secondAssignment->fresh()->status);
+        $this->assertSame(0, ShipmentLeg::where('return_for_leg_id', $leg->id)->count());
         $this->assertDatabaseHas('delivery_assignments', [
-            'shipment_leg_id' => $return->id,
+            'shipment_leg_id' => $leg->id,
             'rider_profile_id' => $rider->id,
             'status' => 'accepted',
         ]);
+
+        try {
+            app(RiderActiveWorkGuard::class)->assertCanStartStandalone(
+                $rider,
+                ShipmentLeg::factory()->create(['shipment_id' => $leg->shipment_id]),
+            );
+            $this->fail('A rider with unresolved custody started unrelated work.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('active_work', $exception->errors());
+        }
     }
 
     public function test_failed_attempt_cancels_an_in_progress_batch_after_its_last_stop_is_removed(): void
@@ -338,11 +348,68 @@ class DeliveryExecutionTest extends TestCase
         $leg->update(['status' => 'needs_resolution']);
         $service = app(ShipmentLegService::class);
         $retry = $service->resolveRetry($leg->fresh(), 'One final attempt');
-        $this->assertSame('pending', $retry->status->value);
-        $retry->update(['status' => 'needs_resolution']);
-        $return = $service->requireReturn($retry->fresh(), 'Customer cancelled');
+        $this->assertSame('needs_resolution', $retry->status->value);
+        $this->assertSame('retry', $retry->resolution_type);
+        $this->assertSame('accepted', $leg->assignments()->latest('id')->value('status'));
+        $this->assertSame(2, $leg->events()->where('event_type', 'delivery_retry_authorized')->count());
+        $retryAgain = $service->resolveRetry($retry->fresh(), 'One final attempt');
+        $this->assertSame($retry->id, $retryAgain->id);
+        $this->assertSame(2, $leg->events()->where('event_type', 'delivery_retry_authorized')->count());
+
+        try {
+            $service->requireReturn($retry->fresh(), 'Customer cancelled');
+            $this->fail('A retry-selected leg accepted a return decision.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('resolution', $exception->errors());
+        }
+
+        [$returnLeg] = $this->fixture();
+        $returnLeg->update(['status' => 'needs_resolution']);
+        $return = $service->requireReturn($returnLeg->fresh(), 'Customer cancelled');
         $this->assertSame('needs_resolution', $return->status->value);
         $this->assertSame('return_required', $return->resolution_type);
+        $returnLeg = $returnLeg->fresh();
+        $returnAssignment = ShipmentLeg::where('return_for_leg_id', $returnLeg->id)->firstOrFail();
+        $this->assertSame('cancelled', $returnLeg->assignments()->latest('id')->value('status'));
+        $this->assertSame('picked_up', $returnAssignment->status->value);
+
+        try {
+            $service->resolveRetry($returnLeg, 'Retry after return selection');
+            $this->fail('A return-selected leg accepted a retry decision.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('resolution', $exception->errors());
+        }
+    }
+
+    public function test_staged_delivery_retry_requires_due_date_and_assigned_rider(): void
+    {
+        [$leg, $rider] = $this->fixture();
+        $leg->update([
+            'status' => 'needs_resolution',
+            'resolution_type' => 'retry',
+            'scheduled_delivery_date' => now(config('app.shop_timezone', 'Asia/Manila'))->addDay()->toDateString(),
+        ]);
+
+        try {
+            app(ShipmentLegService::class)->markInTransit($leg->fresh(), $rider);
+            $this->fail('A staged retry started before its scheduled date.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('scheduled_delivery_date', $exception->errors());
+        }
+
+        $leg->update(['scheduled_delivery_date' => now(config('app.shop_timezone', 'Asia/Manila'))->toDateString()]);
+
+        try {
+            app(ShipmentLegService::class)->markInTransit($leg->fresh());
+            $this->fail('A staged retry started without a rider handoff.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('rider', $exception->errors());
+        }
+
+        $started = app(ShipmentLegService::class)->markInTransit($leg->fresh(), $rider);
+
+        $this->assertSame('in_transit', $started->status->value);
+        $this->assertSame(0, $leg->attempts()->count());
     }
 
     public function test_assignment_service_rejects_non_retryable_leg_states(): void

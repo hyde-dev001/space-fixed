@@ -11,15 +11,22 @@ use Illuminate\Validation\ValidationException;
 
 class DeliveryIncidentService
 {
-    public function __construct(private DeliveryEventService $events) {}
+    public function __construct(
+        private DeliveryEventService $events,
+        private ShipmentLegService $legs,
+    ) {}
 
     public function report(ShipmentLeg $leg, RiderProfile $rider, array $data): DeliveryIncident
     {
+        $photoPaths = $data['photo_paths'] ?? [];
         if (!in_array($data['type'] ?? null, ['damaged', 'lost', 'vehicle_problem', 'customer_dispute', 'other'], true)
-            || !filled($data['notes'] ?? null) || empty($data['photo_paths'])) {
+            || !filled($data['notes'] ?? null)
+            || !is_array($photoPaths)
+            || empty($photoPaths)
+            || count(array_filter($photoPaths, fn ($path) => $this->isSafeEvidencePath($path))) !== count($photoPaths)) {
             throw ValidationException::withMessages(['incident' => 'Incident type, notes, and evidence are required.']);
         }
-        return DB::transaction(function () use ($leg, $rider, $data) {
+        return DB::transaction(function () use ($leg, $rider, $data, $photoPaths) {
             $leg = ShipmentLeg::query()->with('shipment')->lockForUpdate()->findOrFail($leg->id);
             if (!$leg->assignments()->where('rider_profile_id', $rider->id)->whereIn('status', ['assigned', 'accepted'])->exists()
                 || $rider->shop_owner_id !== $leg->shipment->shop_owner_id) abort(403);
@@ -27,7 +34,7 @@ class DeliveryIncidentService
             if ($existing) return $existing;
             $incident = $leg->incidents()->create([
                 'shop_owner_id' => $leg->shipment->shop_owner_id, 'reporting_rider_profile_id' => $rider->id,
-                'type' => $data['type'], 'notes' => $data['notes'], 'photo_paths' => $data['photo_paths'],
+                'type' => $data['type'], 'notes' => $data['notes'], 'photo_paths' => array_values($photoPaths),
             ]);
             $this->events->record($leg->shipment, $leg, ['event_type' => 'delivery_incident_reported', 'message' => 'A delivery incident requires review.', 'metadata' => ['incident_id' => $incident->id, 'type' => $incident->type]]);
             return $incident;
@@ -36,6 +43,10 @@ class DeliveryIncidentService
 
     public function resolve(DeliveryIncident $incident, ShopOwner $shop, string $resolution, string $note, array $evidence = []): DeliveryIncident
     {
+        if (count(array_filter($evidence, fn ($path) => $this->isSafeEvidencePath($path))) !== count($evidence)) {
+            throw ValidationException::withMessages(['evidence' => 'Incident evidence must be stored by the logistics upload flow.']);
+        }
+
         return DB::transaction(function () use ($incident, $shop, $resolution, $note, $evidence) {
             $incident = DeliveryIncident::query()->with('leg.shipment')->lockForUpdate()->findOrFail($incident->id);
             if ($incident->shop_owner_id !== $shop->id) abort(403);
@@ -44,9 +55,20 @@ class DeliveryIncidentService
                 throw ValidationException::withMessages(['resolution' => 'Confirmed loss requires a lost incident, investigation note, and evidence.']);
             }
             $incident->update(['status' => 'resolved', 'resolution' => $resolution, 'notes' => $note, 'photo_paths' => array_values(array_unique([...($incident->photo_paths ?? []), ...$evidence])), 'resolved_at' => now()]);
-            if ($resolution === 'loss_confirmed') $incident->leg->update(['resolution_type' => 'loss_confirmed', 'resolution_reason' => $note]);
-            $this->events->record($incident->leg->shipment, $incident->leg, ['event_type' => $resolution === 'loss_confirmed' ? 'loss_confirmed' : 'delivery_incident_resolved', 'message' => $resolution === 'loss_confirmed' ? 'Parcel loss was confirmed after investigation.' : 'Delivery incident resolved.']);
+            if ($resolution === 'loss_confirmed') {
+                $this->legs->confirmLoss($incident->leg, $note);
+            } else {
+                $this->events->record($incident->leg->shipment, $incident->leg, ['event_type' => 'delivery_incident_resolved', 'message' => 'Delivery incident resolved.']);
+            }
             return $incident->fresh();
         });
+    }
+
+    private function isSafeEvidencePath(mixed $path): bool
+    {
+        return is_string($path)
+            && str_starts_with($path, 'incident-evidence/')
+            && ! str_contains($path, '..')
+            && ! str_contains($path, '\\');
     }
 }

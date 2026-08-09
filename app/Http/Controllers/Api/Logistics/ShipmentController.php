@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Logistics;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Logistics\AssignShipmentLegRequest;
 use App\Http\Requests\Logistics\RecordHandoffProofRequest;
+use App\Models\Logistics\DeliveryAttempt;
 use App\Models\Logistics\HandoffProof;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
@@ -62,7 +63,9 @@ class ShipmentController extends Controller
         $leg->loadMissing('shipment');
         $this->abortUnlessTenant($leg->shipment->shop_owner_id, $shop);
 
-        $rider = RiderProfile::query()->findOrFail($request->integer('rider_profile_id'));
+        $rider = RiderProfile::query()
+            ->where('shop_owner_id', $shop->id)
+            ->findOrFail($request->integer('rider_profile_id'));
         $assignment = $assignments->assignInternalRider($leg, $rider, $shop);
 
         return response()->json([
@@ -146,6 +149,27 @@ class ShipmentController extends Controller
         abort_unless($proof->file_path && Storage::disk('local')->exists($proof->file_path), 404);
 
         return Storage::disk('local')->response($proof->file_path);
+    }
+
+    public function attemptFile(DeliveryAttempt $attempt)
+    {
+        $shop = $this->authorizedAttemptEvidenceShop();
+        $attempt->loadMissing('leg.shipment');
+        $shipment = $attempt->leg?->shipment;
+        abort_unless($shipment, 404);
+        $this->abortUnlessTenant((int) $shipment->shop_owner_id, $shop);
+
+        $path = (string) $attempt->getRawOriginal('file_path');
+        abort_unless($this->isSafeAttemptEvidencePath($path), 404);
+
+        $headers = [
+            'Cache-Control' => 'no-store, private',
+            'X-Content-Type-Options' => 'nosniff',
+        ];
+        $private = Storage::disk('local');
+        abort_unless($private->exists($path), 404);
+
+        return $private->response($path, null, $headers);
     }
 
     public function pickedUp(ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse
@@ -343,12 +367,14 @@ class ShipmentController extends Controller
                     || in_array($request->input('reason_code'), ShipmentLegService::PHOTO_REQUIRED_REASONS, true)),
                 'nullable',
                 'image',
+                'mimes:jpg,jpeg,png,webp',
+                'mimetypes:image/jpeg,image/png,image/webp',
                 'max:10240',
             ],
         ]);
         $storedPath = null;
         if ($request->hasFile('proof_file')) {
-            $storedPath = $request->file('proof_file')->store('logistics-attempt/'.$leg->id, 'public');
+            $storedPath = $request->file('proof_file')->store('logistics-attempt/'.$leg->id, 'local');
             $payload['file_path'] = $storedPath;
         }
 
@@ -360,11 +386,11 @@ class ShipmentController extends Controller
                 'recorded_by_id' => $actor->id,
             ], $isPickup);
             if ($storedPath && $attempt->file_path !== $storedPath) {
-                Storage::disk('public')->delete($storedPath);
+                Storage::disk('local')->delete($storedPath);
             }
         } catch (\Throwable $exception) {
             if ($storedPath) {
-                Storage::disk('public')->delete($storedPath);
+                Storage::disk('local')->delete($storedPath);
             }
             throw $exception;
         }
@@ -520,9 +546,11 @@ class ShipmentController extends Controller
 
     private function authorizeAttemptAssignment(ShipmentLeg $leg, User $user, int $assignmentId): void
     {
+        $leg->loadMissing('shipment');
         abort_unless($assignmentId > 0 && $leg->assignments()
             ->whereKey($assignmentId)
             ->whereHas('riderProfile', fn ($query) => $query
+                ->where('shop_owner_id', $leg->shipment->shop_owner_id)
                 ->where('linked_type', User::class)
                 ->where('linked_id', $user->id))
             ->exists(), 403);
@@ -560,6 +588,28 @@ class ShipmentController extends Controller
         return $user->shopOwner;
     }
 
+    private function authorizedAttemptEvidenceShop(): ShopOwner
+    {
+        if ($shop = Auth::guard('shop_owner')->user()) {
+            return $shop;
+        }
+
+        $user = Auth::guard('user')->user();
+        if (! $user instanceof User || ! $user->shopOwner
+            || (! $user->can('assign-logistics-deliveries') && ! $user->can('resolve-logistics-exceptions'))) {
+            abort(403);
+        }
+
+        return $user->shopOwner;
+    }
+
+    private function isSafeAttemptEvidencePath(string $path): bool
+    {
+        return str_starts_with($path, 'logistics-attempt/')
+            && ! str_contains($path, '..')
+            && ! str_contains($path, '\\');
+    }
+
     private function canApproveProof(?User $user): bool
     {
         return $user && ($user->can('approve-proof-of-delivery') || $user->can('assign-logistics-deliveries'));
@@ -594,10 +644,14 @@ class ShipmentController extends Controller
 
     private function userHasActiveAssignment(ShipmentLeg $leg, User $user): bool
     {
+        $leg->loadMissing('shipment');
+        abort_unless($leg->shipment, 404);
+
         return $leg->assignments()
             ->whereIn('status', ['assigned', 'accepted'])
-            ->whereHas('riderProfile', function ($query) use ($user) {
-                $query->where('linked_type', User::class)
+            ->whereHas('riderProfile', function ($query) use ($user, $leg) {
+                $query->where('shop_owner_id', $leg->shipment->shop_owner_id)
+                    ->where('linked_type', User::class)
                     ->where('linked_id', $user->id);
             })
             ->exists();
@@ -607,8 +661,14 @@ class ShipmentController extends Controller
     {
         $user = Auth::guard('user')->user();
         abort_unless($user instanceof User, 403);
+        $leg->loadMissing('shipment');
+        abort_unless($leg->shipment, 404);
+        abort_unless((int) $user->shop_owner_id === (int) $leg->shipment->shop_owner_id, 403);
         $statuses = $includeRejected ? ['assigned', 'accepted', 'rejected'] : ['assigned', 'accepted'];
-        $profile = RiderProfile::query()->where('linked_type', User::class)->where('linked_id', $user->id)
+        $profile = RiderProfile::query()
+            ->where('shop_owner_id', $leg->shipment->shop_owner_id)
+            ->where('linked_type', User::class)
+            ->where('linked_id', $user->id)
             ->whereHas('assignments', fn ($query) => $query->where('shipment_leg_id', $leg->id)->whereIn('status', $statuses))->first();
         abort_unless($profile, 403);
 

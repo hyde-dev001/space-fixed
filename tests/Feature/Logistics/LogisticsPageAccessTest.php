@@ -16,6 +16,7 @@ use App\Models\User;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
@@ -692,6 +693,7 @@ class LogisticsPageAccessTest extends TestCase
     public function test_dispatcher_shipments_include_only_the_latest_failed_delivery_attempt_per_leg(): void
     {
         $this->seed(RolesAndPermissionsSeeder::class);
+        Storage::fake('local');
 
         $shop = ShopOwner::factory()->create(['business_type' => 'both']);
         LogisticsSetting::create(['shop_owner_id' => $shop->id, 'max_delivery_attempts' => 3]);
@@ -719,6 +721,7 @@ class LogisticsPageAccessTest extends TestCase
             'file_path' => 'logistics-attempt/pickup.jpg',
             'attempted_at' => '2026-07-29 10:00:00',
         ]);
+        Storage::disk('local')->put('logistics-attempt/pickup.jpg', 'pickup-evidence');
         $clean = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
         ShipmentLeg::factory()->create(['shipment_id' => $clean->id]);
 
@@ -735,6 +738,7 @@ class LogisticsPageAccessTest extends TestCase
         $pickupPayload = collect($response->viewData('page')['props']['shipments']['data'])
             ->firstWhere('id', $pickupShipment->id);
         $this->assertSame($pickupAttempt->id, $pickupPayload['legs'][0]['attempts'][0]['id']);
+        $this->assertArrayNotHasKey('file_path', $pickupPayload['legs'][0]['attempts'][0]);
         $this->assertSame(0, $pickupPayload['legs'][0]['failed_attempt_count']);
         $this->assertSame(1, $pickupPayload['legs'][0]['failed_pickup_count']);
 

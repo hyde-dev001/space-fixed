@@ -46,11 +46,16 @@ class CustomerTrackingController extends Controller
         if ((int) $attempt->leg?->shipment_id !== (int) $shipment->id) {
             abort(403);
         }
-        if (! $attempt->file_path || ! Storage::disk('public')->exists($attempt->file_path)) {
-            abort(404);
-        }
+        $path = (string) $attempt->getRawOriginal('file_path');
+        abort_unless($this->isSafeAttemptEvidencePath($path), 404);
+        $headers = [
+            'Cache-Control' => 'no-store, private',
+            'X-Content-Type-Options' => 'nosniff',
+        ];
+        $private = Storage::disk('local');
+        abort_unless($private->exists($path), 404);
 
-        return Storage::disk('public')->response($attempt->file_path);
+        return $private->response($path, null, $headers);
     }
 
     public function deliveryProof(Shipment $shipment, HandoffProof $proof, CustomerTrackingService $tracking)
@@ -102,5 +107,12 @@ class CustomerTrackingController extends Controller
             'Cache-Control' => 'private, no-store',
             'X-Content-Type-Options' => 'nosniff',
         ]);
+    }
+
+    private function isSafeAttemptEvidencePath(string $path): bool
+    {
+        return str_starts_with($path, 'logistics-attempt/')
+            && ! str_contains($path, '..')
+            && ! str_contains($path, '\\');
     }
 }

@@ -33,6 +33,10 @@ class DeliveryAttempt extends Model
         'next_attempt_at' => 'datetime',
     ];
 
+    protected $hidden = [
+        'file_path',
+    ];
+
     public function leg(): BelongsTo
     {
         return $this->belongsTo(ShipmentLeg::class, 'shipment_leg_id');

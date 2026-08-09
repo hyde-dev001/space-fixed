@@ -179,7 +179,7 @@ class CustomerTrackingTest extends TestCase
 
     public function test_customer_payload_exposes_only_safe_latest_failed_attempt_details(): void
     {
-        Storage::fake('public');
+        Storage::fake('local');
         $shipment = Shipment::factory()->create();
         $expectedReasons = [
             'recipient_unavailable' => 'Recipient unavailable',
@@ -195,7 +195,7 @@ class CustomerTrackingTest extends TestCase
         foreach ($expectedReasons as $reasonCode => $reasonLabel) {
             $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id]);
             $path = "logistics-attempt/{$leg->id}/attempt.jpg";
-            Storage::disk('public')->put($path, 'photo');
+            Storage::disk('local')->put($path, 'photo');
             DeliveryAttempt::query()->create([
                 'shipment_leg_id' => $leg->id,
                 'attempt_type' => 'delivery',
@@ -254,7 +254,7 @@ class CustomerTrackingTest extends TestCase
                 ? "logistics-attempt/{$leg->id}/missing.jpg"
                 : "logistics-attempt/{$leg->id}/attempt.jpg";
             if ($reasonCode !== 'vehicle_or_rider_problem') {
-                Storage::disk('public')->put($path, 'pickup-photo');
+                Storage::disk('local')->put($path, 'pickup-photo');
             }
             $attempts[$reasonCode] = DeliveryAttempt::query()->create([
                 'shipment_leg_id' => $leg->id,
@@ -533,6 +533,7 @@ class CustomerTrackingTest extends TestCase
 
     public function test_only_the_owning_customer_can_view_failed_attempt_proof(): void
     {
+        Storage::fake('local');
         Storage::fake('public');
         $customer = User::factory()->create();
         $other = User::factory()->create();
@@ -542,7 +543,7 @@ class CustomerTrackingTest extends TestCase
         ]);
         $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id]);
         $path = "logistics-attempt/{$leg->id}/attempt.jpg";
-        Storage::disk('public')->put($path, 'attempt-photo');
+        Storage::disk('local')->put($path, 'attempt-photo');
         $attempt = DeliveryAttempt::query()->create([
             'shipment_leg_id' => $leg->id, 'attempt_type' => 'delivery', 'status' => 'failed',
             'reason_code' => 'recipient_unavailable', 'file_path' => $path, 'attempted_at' => now(),
@@ -558,7 +559,10 @@ class CustomerTrackingTest extends TestCase
         $this->actingAs($customer, 'user')->get("/tracking/shipments/{$otherShipment->id}/attempts/{$attempt->id}/proof")->assertForbidden();
         $this->actingAs($customer, 'user')->get($url)->assertOk()->assertStreamedContent('attempt-photo');
 
-        Storage::disk('public')->delete($path);
+        Storage::disk('local')->delete($path);
+        $this->actingAs($customer, 'user')->get($url)->assertNotFound();
+
+        Storage::disk('public')->put($path, 'legacy-public-attempt-photo');
         $this->actingAs($customer, 'user')->get($url)->assertNotFound();
     }
 

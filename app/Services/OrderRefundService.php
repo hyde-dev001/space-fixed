@@ -96,6 +96,50 @@ class OrderRefundService
         ], $lines);
     }
 
+    public function reserveConfirmedLossRefund(Order $order, ShipmentLeg $outboundLeg, string $investigationNote): array
+    {
+        if (! $this->isEligibleForOnlineRefund($order)) {
+            return [
+                'result' => 'not_required',
+                'message' => 'No gateway refund claim is required for this order.',
+                'refund' => null,
+            ];
+        }
+
+        $order->loadMissing('items');
+        $lines = $order->items->map(fn ($item) => [
+            'order_item_id' => (int) $item->id,
+            'product_id' => (int) $item->product_id,
+            'product_variant_id' => $item->product_variant_id ? (int) $item->product_variant_id : null,
+            'requested_qty' => (int) $item->quantity,
+            'approved_qty' => (int) $item->quantity,
+            'unit_price_snapshot' => round((float) $item->price, 2),
+            'line_amount' => 0,
+            'inspection_disposition' => 'pending',
+            'inventory_action' => 'pending',
+        ])->all();
+
+        return $this->reserveOrderRefund($order, [
+            'customer_id' => $order->customer_id,
+            'shop_owner_id' => $order->shop_owner_id,
+            'flow_type' => 'request_approval',
+            'status' => 'requested',
+            'shop_owner_status' => 'approved',
+            'shop_owner_approved_at' => now(),
+            'shop_owner_approved_by' => null,
+            'finance_status' => 'pending',
+            'return_status' => 'not_required',
+            'payment_gateway' => 'paymongo',
+            'paymongo_payment_id' => $order->paymongo_payment_id,
+            'currency' => 'PHP',
+            'requested_refund_method' => 'original_payment_method',
+            'reason_code' => 'delivery_loss_confirmed',
+            'reason_note' => 'Refund claim created after confirmed parcel loss. '.$investigationNote,
+            'idempotency_key' => "delivery-loss-confirmed:{$order->id}:{$outboundLeg->id}",
+            'requested_at' => now(),
+        ], $lines);
+    }
+
     public function reserveOrderRefund(Order $order, array $payload, array $lines = [], ?float $capturedAmount = null): array
     {
         return DB::transaction(function () use ($order, $payload, $lines, $capturedAmount) {

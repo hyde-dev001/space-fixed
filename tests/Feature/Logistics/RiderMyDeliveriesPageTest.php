@@ -245,6 +245,27 @@ class RiderMyDeliveriesPageTest extends TestCase
         $this->assertSame([$assignment->id], collect($delivery['assignments'])->pluck('id')->all());
     }
 
+    public function test_staged_delivery_retry_is_current_and_exposes_only_rider_resolution_fields(): void
+    {
+        [, $leg] = $this->shipmentWithLeg('retail_delivery', [
+            'status' => 'needs_resolution',
+            'resolution_type' => 'retry',
+            'resolution_reason' => 'Customer requested another attempt.',
+            'scheduled_delivery_date' => '2026-07-30',
+        ]);
+        $this->assign($leg, $this->rider, 'accepted');
+
+        $props = $this->deliveryData();
+        $delivery = $props['current']['deliveries'][0];
+
+        $this->assertSame("single:{$leg->id}", $props['current']['key']);
+        $this->assertSame('needs_resolution', $delivery['status']);
+        $this->assertSame('retry', $delivery['resolution_type']);
+        $this->assertSame('Customer requested another attempt.', $delivery['resolution_reason']);
+        $this->assertStringStartsWith('2026-07-30', $delivery['scheduled_delivery_date']);
+        $this->assertArrayNotHasKey('search_text', $props['current']);
+    }
+
     private function deliveryData(string $query = ''): array
     {
         return $this->actingAs($this->user->fresh(), 'user')

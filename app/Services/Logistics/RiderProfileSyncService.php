@@ -15,6 +15,7 @@ class RiderProfileSyncService
 
         RiderProfile::updateOrCreate(
             [
+                'shop_owner_id' => (int) $user->shop_owner_id,
                 'linked_type' => User::class,
                 'linked_id' => $user->id,
             ],
@@ -45,7 +46,9 @@ class RiderProfileSyncService
             ->get()
             ->each(function (RiderProfile $profile) {
                 $user = User::find($profile->linked_id);
-                if (!$user || !$this->canRide($user)) {
+                if (!$user
+                    || (int) $user->shop_owner_id !== (int) $profile->shop_owner_id
+                    || ! $this->canRide($user)) {
                     $profile->update(['active' => false]);
                 }
             });

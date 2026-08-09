@@ -83,11 +83,12 @@ class BatchDispatchService
     {
         return DB::transaction(function () use ($batch, $rider, $actor, $capacityOverrideReason) {
             $batch = DeliveryBatch::query()->lockForUpdate()->findOrFail($batch->id);
+            $rider = RiderProfile::query()->lockForUpdate()->findOrFail($rider->id);
+            $this->assertRiderBelongsToBatch($batch, $rider);
             if ($batch->status === 'offered' && $batch->rider_profile_id === $rider->id) {
                 return $batch->load('legs.assignments');
             }
-            $rider = RiderProfile::query()->lockForUpdate()->findOrFail($rider->id);
-            if ($batch->status !== 'draft' || $rider->shop_owner_id !== $batch->shop_owner_id) {
+            if ($batch->status !== 'draft') {
                 throw ValidationException::withMessages(['batch' => 'Batch cannot be offered to this rider.']);
             }
             $date = $batch->delivery_date;
@@ -227,6 +228,7 @@ class BatchDispatchService
 
     public function accept(DeliveryBatch $batch, RiderProfile $rider): DeliveryBatch
     {
+        $this->assertRiderBelongsToBatch($batch, $rider);
         if ($batch->fresh()->status === 'accepted' && $batch->rider_profile_id === $rider->id) {
             return $batch->fresh('legs.assignments');
         }
@@ -244,6 +246,7 @@ class BatchDispatchService
         if (! filled($reason)) {
             throw ValidationException::withMessages(['rejection_reason' => 'Rejection reason is required.']);
         }
+        $this->assertRiderBelongsToBatch($batch, $rider);
 
         $current = $batch->fresh('legs.assignments');
         $matchingRejection = $current->status === 'draft'
@@ -274,6 +277,7 @@ class BatchDispatchService
 
     public function start(DeliveryBatch $batch, RiderProfile $rider): DeliveryBatch
     {
+        $this->assertRiderBelongsToBatch($batch, $rider);
         if ($batch->fresh()->status === 'in_progress' && $batch->rider_profile_id === $rider->id) {
             return $batch->fresh('legs.assignments');
         }
@@ -377,6 +381,8 @@ class BatchDispatchService
     {
         return DB::transaction(function () use ($batch, $rider, $from, $change) {
             $batch = DeliveryBatch::query()->lockForUpdate()->findOrFail($batch->id);
+            $rider = RiderProfile::query()->lockForUpdate()->findOrFail($rider->id);
+            $this->assertRiderBelongsToBatch($batch, $rider);
             if ($batch->rider_profile_id !== $rider->id || $batch->status !== $from) {
                 throw ValidationException::withMessages(['batch' => 'Batch action is stale or not assigned to this rider.']);
             }
@@ -384,6 +390,25 @@ class BatchDispatchService
 
             return $batch->fresh('legs.assignments');
         });
+    }
+
+    private function assertRiderBelongsToBatch(DeliveryBatch $batch, RiderProfile $rider): void
+    {
+        if ((int) $rider->shop_owner_id !== (int) $batch->shop_owner_id) {
+            throw ValidationException::withMessages([
+                'rider_profile_id' => 'Rider does not belong to this shop.',
+            ]);
+        }
+
+        if ($rider->linked_type === User::class
+            && ! User::query()
+                ->whereKey($rider->linked_id)
+                ->where('shop_owner_id', $batch->shop_owner_id)
+                ->exists()) {
+            throw ValidationException::withMessages([
+                'rider_profile_id' => 'Linked rider user does not belong to this shop.',
+            ]);
+        }
     }
 
     private function recordBatchEvent(DeliveryBatch $batch, string $type, string $message, array $metadata = []): void

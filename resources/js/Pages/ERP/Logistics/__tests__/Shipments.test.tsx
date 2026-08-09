@@ -308,7 +308,7 @@ it('lets dispatchers review and resolve failed repair pickups', async () => {
       status: 'failed',
       attempt_number: 1,
       reason_code: 'customer_unavailable',
-      file_path: 'logistics-attempt/91/door.jpg',
+      proof_url: '/api/logistics/attempts/91/file',
       attempted_at: '2026-07-29T10:00:00Z',
     }],
   });
@@ -329,16 +329,16 @@ it('lets dispatchers review and resolve failed repair pickups', async () => {
   expect(screen.getByText('Customer Unavailable')).toBeInTheDocument();
   expect(screen.getByText('Pickup arrival')).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'View failed-pickup photo' }))
-    .toHaveAttribute('href', '/storage/logistics-attempt/91/door.jpg');
+    .toHaveAttribute('href', '/api/logistics/attempts/91/file');
 
   fireEvent.click(screen.getByRole('button', { name: 'Reschedule Pickup' }));
-  await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
+  await waitFor(() => expect(mocks.post).toHaveBeenNthCalledWith(1,
     '/api/logistics/legs/91/resolve/retry',
     { reason: 'Customer confirmed Monday.' },
     undefined,
   ));
   fireEvent.click(screen.getByRole('button', { name: 'Cancel Pickup' }));
-  await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
+  await waitFor(() => expect(mocks.post).toHaveBeenNthCalledWith(2,
     '/api/logistics/legs/91/cancel',
     { reason: 'Customer cancelled.' },
     undefined,
@@ -425,8 +425,54 @@ it('shows subject for refund without reassignment at maximum attempts', () => {
   render(<Shipments />);
   fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
   expect(screen.getByText('Failed attempt - 2/2')).toBeInTheDocument();
-  expect(screen.getByText('Subject for refund')).toBeInTheDocument();
+  expect(screen.getByText('Resolution required')).toBeInTheDocument();
   expect(screen.queryByLabelText('Choose rider for outbound leg')).not.toBeInTheDocument();
+});
+
+it('lets dispatchers choose one delivery recovery path and hides it after a return exists', async () => {
+  const unresolvedLeg = {
+    id: 2,
+    leg_type: 'outbound',
+    status: 'needs_resolution',
+    resolution_type: null,
+    assignments: [{ id: 3, status: 'accepted', rider_profile: { name: 'Rider Nine' } }],
+    proofs: [],
+    failed_attempt_count: 2,
+    attempts: [{ id: 8, status: 'failed', attempt_number: 2, reason_code: 'recipient_refused' }],
+  };
+  setDispatcherLeg(unresolvedLeg);
+  (Swal.fire as any)
+    .mockResolvedValueOnce({ isConfirmed: true, value: 'Try delivery again.' })
+    .mockResolvedValueOnce({ isConfirmed: true })
+    .mockResolvedValueOnce({ isConfirmed: true, value: 'Return to shop.' })
+    .mockResolvedValueOnce({ isConfirmed: true, value: 'Return to shop.' });
+
+  const view = render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+
+  expect(screen.getByRole('button', { name: 'Retry delivery' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Return to shop' })).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Retry delivery' }));
+  await waitFor(() => expect(mocks.post).toHaveBeenNthCalledWith(1,
+    '/api/logistics/legs/2/resolve/retry',
+    { reason: 'Try delivery again.' },
+  ));
+  expect((Swal.fire as any).mock.calls[0][0]).toMatchObject({ input: 'textarea' });
+
+  fireEvent.click(screen.getByRole('button', { name: 'Return to shop' }));
+  await waitFor(() => expect(mocks.post).toHaveBeenNthCalledWith(2,
+    '/api/logistics/legs/2/resolve/return',
+    { reason: 'Return to shop.' },
+  ));
+
+  mocks.props.shipments.data[0].legs = [
+    { ...unresolvedLeg, resolution_type: 'return_required' },
+    { id: 99, leg_type: 'return_to_shop', status: 'picked_up', return_for_leg_id: 2, assignments: [], proofs: [], attempts: [] },
+  ];
+  view.rerender(<Shipments />);
+  expect(screen.queryByRole('button', { name: 'Retry delivery' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Return to shop' })).not.toBeInTheDocument();
 });
 
 it('shows the dispatcher resolution selected for a delivery', () => {
