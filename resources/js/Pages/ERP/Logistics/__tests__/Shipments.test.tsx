@@ -420,6 +420,22 @@ it('lets dispatcher reject pending delivery proof with a reason', async () => {
   ));
 });
 
+it('shows a completed delivery proof even when no approval action is available', () => {
+  setDispatcherLeg({
+    id: 2,
+    leg_type: 'outbound',
+    status: 'delivered',
+    assignments: [],
+    proofs: [{ id: 17, handoff_type: 'delivery', review_status: 'approved', proof_url: '/api/logistics/proofs/17/file' }],
+    attempts: [],
+  });
+
+  render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+
+  expect(screen.getByText('View delivery proof')).toBeInTheDocument();
+});
+
 it('shows subject for refund without reassignment at maximum attempts', () => {
   setDispatcherLeg({ id: 2, leg_type: 'outbound', status: 'needs_resolution', assignments: [], proofs: [], failed_attempt_count: 2, attempts: [{ id: 8, status: 'failed', attempt_number: 2, reason_code: 'recipient_refused' }] });
   render(<Shipments />);

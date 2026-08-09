@@ -140,6 +140,7 @@ class ErpLogisticsController extends Controller
                     $shipments->getCollection()->flatMap->legs
                         ->each(function (ShipmentLeg $leg): void {
                             $this->attachArrivalPayload($leg);
+                            $this->attachProofPayload($leg);
                             $leg->attempts->each(fn (DeliveryAttempt $attempt) => $this->attachAttemptEvidencePayload($attempt));
                         });
                 }),
@@ -541,7 +542,7 @@ class ErpLogisticsController extends Controller
         $payload['arrivals'] = $this->arrivalPayload($leg);
         $payload['proofs'] = $leg->relationLoaded('proofs')
             ? $leg->proofs->map(function (HandoffProof $proof): array {
-                $proof->setAttribute('proof_url', $this->proofUrl($proof));
+                $this->attachProofUrl($proof);
 
                 return $proof->toArray();
             })->values()->all()
@@ -598,6 +599,20 @@ class ErpLogisticsController extends Controller
     {
         $leg->setAttribute('arrivals', $this->arrivalPayload($leg));
         $leg->unsetRelation('events');
+    }
+
+    private function attachProofPayload(ShipmentLeg $leg): void
+    {
+        if (! $leg->relationLoaded('proofs')) {
+            return;
+        }
+
+        $leg->proofs->each(fn (HandoffProof $proof) => $this->attachProofUrl($proof));
+    }
+
+    private function attachProofUrl(HandoffProof $proof): void
+    {
+        $proof->setAttribute('proof_url', $this->proofUrl($proof));
     }
 
     private function attachAttemptEvidencePayload(DeliveryAttempt $attempt): void
