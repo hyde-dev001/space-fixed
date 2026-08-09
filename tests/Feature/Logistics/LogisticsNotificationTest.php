@@ -118,6 +118,65 @@ class LogisticsNotificationTest extends TestCase
         ]);
     }
 
+    public function test_exception_events_notify_dispatchers_and_customers_without_waiting_for_a_page_view(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        $shop = ShopOwner::factory()->create();
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $dispatcher->assignRole('Logistics Dispatcher');
+        $customer = User::factory()->create();
+        $order = Order::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'customer_id' => $customer->id,
+        ]);
+        $shipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+            'source_id' => $order->id,
+        ]);
+        $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id]);
+
+        foreach ([
+            ['loss_confirmed', 'customer'],
+            ['return_required', 'customer'],
+            ['overdue_delivery_stop', 'internal'],
+            ['overdue_unscheduled_resolution', 'internal'],
+            ['overdue_return_receipt', 'internal'],
+            ['delivery_incident_reported', 'internal'],
+            ['delivery_incident_resolved', 'internal'],
+            ['delivery_estimate_delayed', 'customer'],
+        ] as [$eventType, $visibility]) {
+            app(DeliveryEventService::class)->record($shipment, $leg, [
+                'event_type' => $eventType,
+                'visibility' => $visibility,
+                'message' => "Logistics event: {$eventType}.",
+            ]);
+        }
+
+        $this->assertSame(8, Notification::query()
+            ->where('user_id', $dispatcher->id)
+            ->where('type', 'logistics_exception')
+            ->count());
+        $this->assertSame(3, Notification::query()
+            ->where('user_id', $customer->id)
+            ->where('type', 'logistics_exception')
+            ->count());
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $dispatcher->id,
+            'type' => 'logistics_exception',
+            'message' => 'A delivery requires dispatcher attention.',
+            'action_url' => '/erp/logistics/shipments',
+            'requires_action' => true,
+        ]);
+        $delayed = Notification::query()
+            ->where('user_id', $customer->id)
+            ->where('type', 'logistics_exception')
+            ->whereJsonContains('data->event_type', 'delivery_estimate_delayed')
+            ->sole();
+        $this->assertSame('/tracking/shipments/'.$shipment->id, $delayed->action_url);
+        $this->assertFalse($delayed->requires_action);
+    }
+
     public function test_rider_is_notified_when_a_delivery_is_assigned(): void
     {
         $shop = ShopOwner::factory()->create(['registration_type' => 'company']);

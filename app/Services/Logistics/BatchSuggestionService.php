@@ -2,6 +2,8 @@
 
 namespace App\Services\Logistics;
 
+use App\Models\Logistics\DeliveryAssignment;
+use App\Models\Logistics\DeliveryBatch;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
@@ -30,27 +32,56 @@ class BatchSuggestionService
             ->values();
         $riders = RiderProfile::query()
             ->where('shop_owner_id', $shop->id)->where('active', true)
-            ->where('availability_status', 'available')->get()
+            ->where('availability_status', 'available')
+            ->where(function ($query) {
+                $query->where('rider_type', '!=', 'employee')
+                    ->orWhere(function ($query) {
+                        $query->where('linked_type', \App\Models\User::class)
+                            ->whereNotNull('linked_id');
+                    });
+            })
+            ->get()
             ->filter(fn ($rider) => (!$rider->work_days || in_array($date->dayOfWeekIso, $rider->work_days, true))
                 && !in_array($date->toDateString(), $rider->leave_dates ?? [], true));
+        $batchWorkload = DeliveryBatch::query()
+            ->where('shop_owner_id', $shop->id)
+            ->whereDate('delivery_date', $date->toDateString())
+            ->whereIn('status', ['offered', 'accepted', 'in_progress', 'completed'])
+            ->selectRaw('rider_profile_id, SUM(assigned_stop_count) as stop_count')
+            ->groupBy('rider_profile_id')
+            ->pluck('stop_count', 'rider_profile_id');
+        $standaloneWorkload = DeliveryAssignment::query()
+            ->whereIn('rider_profile_id', $riders->pluck('id'))
+            ->whereIn('status', ['assigned', 'accepted'])
+            ->whereHas('leg', fn ($query) => $query
+                ->whereNull('delivery_batch_id')
+                ->whereDate('scheduled_delivery_date', $date->toDateString())
+                ->whereHas('shipment', fn ($shipment) => $shipment->where('shop_owner_id', $shop->id)))
+            ->selectRaw('rider_profile_id, COUNT(*) as stop_count')
+            ->groupBy('rider_profile_id')
+            ->pluck('stop_count', 'rider_profile_id');
 
         return $legs
             ->groupBy(fn ($leg) => Shipment::moduleForSourceType((string) $leg->shipment->source_type))
-            ->flatMap(function ($moduleLegs, string $legModule) use ($riders, $settings, $shop) {
+            ->flatMap(function ($moduleLegs, string $legModule) use ($riders, $settings, $shop, $batchWorkload, $standaloneWorkload) {
                 $orderedIds = $this->nearest(
                     $moduleLegs->all(),
                     (float) $shop->shop_latitude,
                     (float) $shop->shop_longitude,
                 );
+                $remainingLegIds = $orderedIds;
 
-                return $riders->map(function ($rider) use ($settings, $orderedIds, $legModule) {
+                return $riders->map(function ($rider) use (&$remainingLegIds, $settings, $orderedIds, $legModule, $batchWorkload, $standaloneWorkload) {
                     $capacity = $rider->daily_capacity ?? $settings->daily_rider_capacity;
-                    $legIds = array_slice($orderedIds, 0, $capacity);
+                    $assignedCount = (int) ($batchWorkload[$rider->id] ?? 0)
+                        + (int) ($standaloneWorkload[$rider->id] ?? 0);
+                    $remainingCapacity = max(0, $capacity - $assignedCount);
+                    $legIds = array_splice($remainingLegIds, 0, $remainingCapacity);
                     return [
                         'rider_profile_id' => $rider->id,
                         'capacity' => $capacity,
-                        'assigned_count' => 0,
-                        'overload_count' => max(0, count($orderedIds) - $capacity),
+                        'assigned_count' => $assignedCount,
+                        'overload_count' => max(0, count($orderedIds) - $remainingCapacity),
                         'leg_ids' => $legIds,
                         'module' => $legModule,
                     ];

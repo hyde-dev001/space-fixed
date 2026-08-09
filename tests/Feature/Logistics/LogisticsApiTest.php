@@ -170,7 +170,9 @@ class LogisticsApiTest extends TestCase
             ], ['Accept' => 'application/json'])
             ->assertCreated();
 
-        $path = $response->json('proof.file_path');
+        $response->assertJsonMissingPath('proof.file_path');
+        $path = (string) $leg->proofs()->value('file_path');
+        $response->assertJsonPath('proof.proof_url', "/api/logistics/proofs/{$response->json('proof.id')}/file");
         Storage::disk('local')->assertExists($path);
         Storage::disk('public')->assertMissing($path);
     }
@@ -269,8 +271,10 @@ class LogisticsApiTest extends TestCase
         ], ['Accept' => 'application/json'])->assertOk();
 
         $this->assertSame($first->json('proof.id'), $replayed->json('proof.id'));
+        $first->assertJsonMissingPath('proof.file_path');
+        $replayed->assertJsonMissingPath('proof.file_path');
         $this->assertSame(1, $leg->proofs()->count());
-        Storage::disk('local')->assertExists($first->json('proof.file_path'));
+        Storage::disk('local')->assertExists((string) $leg->proofs()->value('file_path'));
         $this->assertCount(1, Storage::disk('local')->allFiles("logistics-proof/{$leg->id}"));
     }
 

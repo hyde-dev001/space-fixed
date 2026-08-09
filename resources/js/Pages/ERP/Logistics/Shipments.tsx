@@ -13,6 +13,7 @@ import {
   logisticsModuleLabel,
   logisticsSourceLabel,
   type LogisticsModule,
+  type LogisticsIncident,
   type LogisticsShipment,
   type PaginatedResponse,
   type TrackingShipmentLeg,
@@ -132,6 +133,9 @@ export default function Shipments({ children }: React.PropsWithChildren) {
   const [proofFiles, setProofFiles] = useState<Record<number, File | null>>({});
   const [issueProofFiles, setIssueProofFiles] = useState<Record<number, File | null>>({});
   const [issueForms, setIssueForms] = useState<Record<number, { reason_code: string; notes: string }>>({});
+  const [incidentNotes, setIncidentNotes] = useState<Record<number, string>>({});
+  const [incidentResolutions, setIncidentResolutions] = useState<Record<number, string>>({});
+  const [incidentEvidenceFiles, setIncidentEvidenceFiles] = useState<Record<number, File | null>>({});
   const [deliveryOutcomes, setDeliveryOutcomes] = useState<Record<number, 'proof' | 'issue'>>({});
   const [search, setSearch] = useState(filters.search ?? '');
 
@@ -353,6 +357,21 @@ export default function Shipments({ children }: React.PropsWithChildren) {
     void act(`/api/logistics/legs/${legId}/report-issue`, data, true);
   };
 
+  const resolveIncident = (incident: LogisticsIncident) => {
+    const resolution = incidentResolutions[incident.id] ?? '';
+    const note = incidentNotes[incident.id]?.trim() ?? '';
+    const evidence = incidentEvidenceFiles[incident.id];
+    if (!resolution) return setActionError('Choose an incident resolution first.');
+    if (!note) return setActionError('Add a resolution note.');
+    if (resolution === 'loss_confirmed' && !evidence) return setActionError('Upload investigation evidence for confirmed loss.');
+
+    const form = new FormData();
+    form.append('resolution', resolution);
+    form.append('note', note);
+    if (evidence) form.append('evidence_files[]', evidence);
+    void act(() => logisticsApi.resolveIncident(incident.id, form));
+  };
+
   const chooseDeliveryOutcome = (legId: number, outcome: 'proof' | 'issue') => {
     setDeliveryOutcomes((current) => ({ ...current, [legId]: outcome }));
 
@@ -565,6 +584,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                             const canSubmitReturnHandoff = riderMode && canRecordProof && isReturnToShop && leg.status === 'in_transit' && !returnProof;
                             const showOutcomeChoice = canSubmitProof && canReportIssue;
                             const deliveryOutcome = deliveryOutcomes[leg.id];
+                            const incidents = leg.incidents ?? [];
 
                             return (
                               <div key={leg.id} className="grid gap-4 rounded-lg border border-gray-200 bg-white p-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] dark:border-gray-700 dark:bg-gray-800">
@@ -588,6 +608,64 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                       <span aria-hidden="true">!</span> {resolutionInstruction}
                                     </p>
                                   )}
+                                  {incidents.map((incident) => (
+                                    <div key={incident.id} className="mt-2 space-y-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm dark:border-red-900 dark:bg-red-950/30">
+                                      <p className="font-semibold text-red-900 dark:text-red-100">
+                                        Incident #{incident.id} · {label(incident.type)} · {label(incident.status)}
+                                      </p>
+                                      {incident.notes && <p className="text-red-800 dark:text-red-200">{incident.notes}</p>}
+                                      {incident.evidence_urls?.map((url, index) => (
+                                        <a key={url} href={url} target="_blank" rel="noreferrer" className="mr-3 inline-block font-semibold text-blue-700 hover:underline dark:text-blue-300">
+                                          View evidence {index + 1}
+                                        </a>
+                                      ))}
+                                      {incident.status === 'resolved' ? (
+                                        <p className="font-semibold text-emerald-800 dark:text-emerald-300">Resolution: {label(incident.resolution ?? 'resolved')}</p>
+                                      ) : !riderMode && canAssign ? (
+                                        <div className="space-y-2">
+                                          <select
+                                            aria-label={`Resolution for incident ${incident.id}`}
+                                            value={incidentResolutions[incident.id] ?? ''}
+                                            onChange={(event) => setIncidentResolutions({ ...incidentResolutions, [incident.id]: event.target.value })}
+                                            className="block w-full rounded-lg border border-red-300 bg-white px-3 py-2 text-sm dark:bg-gray-800 dark:text-white"
+                                          >
+                                            <option value="">Choose resolution</option>
+                                            {incident.type === 'lost' && <option value="loss_confirmed">Confirm loss</option>}
+                                            <option value="dismissed">Dismiss / issue addressed</option>
+                                            {leg.status === 'needs_resolution' && <>
+                                              <option value="retry">Authorize retry</option>
+                                              <option value="return_required">Require return to shop</option>
+                                            </>}
+                                          </select>
+                                          <textarea
+                                            aria-label={`Resolution note for incident ${incident.id}`}
+                                            value={incidentNotes[incident.id] ?? ''}
+                                            onChange={(event) => setIncidentNotes({ ...incidentNotes, [incident.id]: event.target.value })}
+                                            placeholder="Explain the decision"
+                                            rows={2}
+                                            className="block w-full rounded-lg border border-red-300 bg-white px-3 py-2 text-sm dark:bg-gray-800 dark:text-white"
+                                          />
+                                          {(incidentResolutions[incident.id] ?? '') === 'loss_confirmed' && (
+                                            <input
+                                              type="file"
+                                              accept="image/jpeg,image/png,image/webp"
+                                              aria-label={`Investigation evidence for incident ${incident.id}`}
+                                              onChange={(event) => setIncidentEvidenceFiles({ ...incidentEvidenceFiles, [incident.id]: event.target.files?.[0] ?? null })}
+                                              className="block w-full text-sm"
+                                            />
+                                          )}
+                                          <button
+                                            type="button"
+                                            disabled={!incidentResolutions[incident.id] || !(incidentNotes[incident.id] ?? '').trim() || (incidentResolutions[incident.id] === 'loss_confirmed' && !incidentEvidenceFiles[incident.id])}
+                                            onClick={() => resolveIncident(incident)}
+                                            className="rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                          >
+                                            Save incident resolution
+                                          </button>
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  ))}
                                   {!riderMode && latestAttempt?.status === 'failed' && (
                                     isPickupAttempt
                                       ? <div className="mt-2 space-y-1 text-xs text-gray-600 dark:text-gray-300">
@@ -644,7 +722,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                   {riderMode && isReturnToShop && returnProof?.review_status === 'rider_confirmed' && <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">Awaiting shop receipt confirmation</p>}
                                   {canApproveProof && leg.proofs?.filter((proof) => ['delivery', 'receive'].includes(proof.handoff_type)).map((proof) => (
                                     <div key={proof.id} className="flex items-center gap-2">
-                                      {proof.file_path && <a href={`/api/logistics/proofs/${proof.id}/file`} target="_blank" rel="noreferrer" aria-label="Open uploaded delivery proof"><img src={`/api/logistics/proofs/${proof.id}/file`} alt="Uploaded delivery proof" className="h-12 w-12 rounded border border-gray-200 object-cover" /></a>}
+                                      {proof.proof_url && <a href={proof.proof_url} target="_blank" rel="noreferrer" aria-label="Open uploaded delivery proof"><img src={proof.proof_url} alt="Uploaded delivery proof" className="h-12 w-12 rounded border border-gray-200 object-cover" /></a>}
                                       {leg.status === 'awaiting_proof_approval' && proof.review_status === 'pending' && <><button type="button" onClick={() => void confirmAct(`/api/logistics/proofs/${proof.id}/approve`, 'Confirm delivery?', 'This will complete the delivery.')} className="rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white">Confirm delivery</button><button type="button" onClick={() => void rejectProof(proof.id)} className="rounded-lg border border-red-600 px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50">Reject proof</button></>}
                                       {isReturnToShop && proof.handoff_type === 'receive' && proof.review_status === 'rider_confirmed' && <button type="button" onClick={() => void confirmAct(`/api/logistics/legs/${leg.id}/return-proofs/${proof.id}/receipt`, 'Confirm return received?', 'Confirm the physical parcel handoff. Item inspection continues in the refund workflow.')} className="rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white">Confirm return received</button>}
                                     </div>

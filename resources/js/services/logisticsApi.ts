@@ -37,8 +37,8 @@ export const logisticsApi = {
     axios.post(`/api/logistics/legs/${legId}/report-issue`, form, {
       headers: { 'Content-Type': 'multipart/form-data' },
     }),
-  reportIncident: (legId: number, payload: Record<string, unknown>) => axios.post(`/api/logistics/legs/${legId}/incidents`, payload),
-  resolveIncident: (incidentId: number, payload: Record<string, unknown>) => axios.post(`/api/logistics/incidents/${incidentId}/resolve`, payload),
+  reportIncident: (legId: number, payload: FormData) => axios.post(`/api/logistics/legs/${legId}/incidents`, payload, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  resolveIncident: (incidentId: number, payload: FormData | Record<string, unknown>) => axios.post(`/api/logistics/incidents/${incidentId}/resolve`, payload, payload instanceof FormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : undefined),
   createReturnToShop: (legId: number) => axios.post(`/api/logistics/legs/${legId}/return-to-shop`),
   confirmReturnHandoff: (legId: number, proofId: number) => axios.post(`/api/logistics/legs/${legId}/return-proofs/${proofId}/handoff`),
   confirmReturnReceipt: (legId: number, proofId: number) => axios.post(`/api/logistics/legs/${legId}/return-proofs/${proofId}/receipt`),

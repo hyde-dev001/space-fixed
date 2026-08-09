@@ -60,7 +60,7 @@ class DeliveryIncidentController extends Controller
             $shop = ShopOwner::findOrFail($user->shop_owner_id);
         }
         $data = $request->validate([
-            'resolution' => ['required', 'string'],
+            'resolution' => ['required', 'string', Rule::in(DeliveryIncidentService::RESOLUTIONS)],
             'note' => ['required', 'string', 'max:1000'],
             'evidence_files' => [
                 Rule::requiredIf($request->input('resolution') === 'loss_confirmed'),

@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Logistics\DeliveryAssignment;
 use App\Models\Logistics\DeliveryBatch;
 use App\Models\Logistics\DeliveryAttempt;
+use App\Models\Logistics\DeliveryIncident;
+use App\Models\Logistics\HandoffProof;
 use App\Models\Logistics\LogisticsSetting;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
@@ -71,6 +73,7 @@ class ErpLogisticsController extends Controller
                     $query->with([
                         'assignments.riderProfile',
                         'proofs',
+                        'incidents',
                         'events' => fn ($events) => $events
                             ->whereIn('event_type', ['pickup_arrived', 'dropoff_arrived']),
                         'attempts' => fn ($attempts) => $attempts
@@ -204,6 +207,7 @@ class ErpLogisticsController extends Controller
             ->with([
                 'legs.shipment',
                 'legs.proofs',
+                'legs.incidents',
                 'legs.events' => fn ($query) => $query
                     ->whereIn('event_type', ['pickup_arrived', 'dropoff_arrived'])
                     ->oldest('id'),
@@ -227,6 +231,7 @@ class ErpLogisticsController extends Controller
             ->with([
                 'shipment',
                 'proofs',
+                'incidents',
                 'events' => fn ($query) => $query
                     ->whereIn('event_type', ['pickup_arrived', 'dropoff_arrived'])
                     ->oldest('id'),
@@ -433,7 +438,7 @@ class ErpLogisticsController extends Controller
             $group = match ($legStatus) {
                 'assigned', 'pickup_scheduled' => 'upcoming',
                 'picked_up', 'in_transit', 'delivery_attempted', 'awaiting_proof_approval' => 'current',
-                'needs_resolution' => $leg->resolution_type === 'retry' ? 'current' : null,
+                'needs_resolution' => in_array($leg->resolution_type, [null, 'retry'], true) ? 'current' : null,
                 'delivered', 'cancelled' => 'history',
                 default => null,
             };
@@ -534,8 +539,59 @@ class ErpLogisticsController extends Controller
         $payload['status'] = $leg->status->value;
         $payload['failed_attempt_count'] = $leg->attempts->count();
         $payload['arrivals'] = $this->arrivalPayload($leg);
+        $payload['proofs'] = $leg->relationLoaded('proofs')
+            ? $leg->proofs->map(function (HandoffProof $proof): array {
+                $proof->setAttribute('proof_url', $this->proofUrl($proof));
+
+                return $proof->toArray();
+            })->values()->all()
+            : [];
+        $payload['incidents'] = $leg->relationLoaded('incidents')
+            ? $leg->incidents->map(fn (DeliveryIncident $incident) => $this->incidentPayload($incident))->values()->all()
+            : [];
 
         return $payload;
+    }
+
+    private function incidentPayload(DeliveryIncident $incident): array
+    {
+        $evidenceUrls = collect($incident->getRawOriginal('photo_paths') ? $incident->photo_paths : [])
+            ->values()
+            ->map(fn ($path, $index) => is_string($path)
+                && str_starts_with($path, 'incident-evidence/')
+                && ! str_contains($path, '..')
+                && ! str_contains($path, '\\')
+                && Storage::disk('local')->exists($path)
+                ? route('api.logistics.incidents.evidence', ['incident' => $incident, 'index' => $index])
+                : null)
+            ->filter()
+            ->values()
+            ->all();
+
+        return [
+            'id' => $incident->id,
+            'type' => $incident->type,
+            'status' => $incident->status,
+            'notes' => $incident->notes,
+            'resolution' => $incident->resolution,
+            'resolved_at' => $incident->resolved_at?->toISOString(),
+            'reporting_rider_profile_id' => $incident->reporting_rider_profile_id,
+            'evidence_urls' => $evidenceUrls,
+        ];
+    }
+
+    private function proofUrl(HandoffProof $proof): ?string
+    {
+        $path = $proof->getRawOriginal('file_path');
+        if (! is_string($path)
+            || ! str_starts_with($path, 'logistics-proof/')
+            || str_contains($path, '..')
+            || str_contains($path, '\\')
+            || ! Storage::disk('local')->exists($path)) {
+            return null;
+        }
+
+        return '/api/logistics/proofs/' . $proof->id . '/file';
     }
 
     private function attachArrivalPayload(ShipmentLeg $leg): void

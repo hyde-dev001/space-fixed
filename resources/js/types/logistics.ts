@@ -139,7 +139,7 @@ export type TrackingShipmentLeg = {
     id: number;
     handoff_type: string;
     proof_type: string;
-    file_path?: string | null;
+    proof_url?: string | null;
     review_status?: string;
   }>;
   attempts?: Array<{
@@ -153,6 +153,18 @@ export type TrackingShipmentLeg = {
     proof_url?: string | null;
     attempted_at?: string | null;
   }>;
+  incidents?: LogisticsIncident[];
+};
+
+export type LogisticsIncident = {
+  id: number;
+  type: 'damaged' | 'lost' | 'vehicle_problem' | 'customer_dispute' | 'other' | string;
+  status: 'reported' | 'under_review' | 'resolved' | string;
+  notes?: string | null;
+  resolution?: string | null;
+  resolved_at?: string | null;
+  reporting_rider_profile_id?: number | null;
+  evidence_urls?: string[];
 };
 
 export type TrackingShipmentEvent = {

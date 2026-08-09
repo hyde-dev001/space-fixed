@@ -72,6 +72,14 @@ const pickupIssueReasons = [
   ['other', 'Other'],
 ] as const;
 
+const incidentTypes = [
+  ['damaged', 'Parcel damaged'],
+  ['lost', 'Parcel lost'],
+  ['vehicle_problem', 'Vehicle or route problem'],
+  ['customer_dispute', 'Customer dispute'],
+  ['other', 'Other incident'],
+] as const;
+
 const currentPosition = () => new Promise<GeolocationPosition>((resolve, reject) => {
   if (!navigator.geolocation) {
     reject(new Error('Location is unavailable on this device.'));
@@ -260,6 +268,10 @@ function DeliveryActions({
   const [issueReason, setIssueReason] = useState('');
   const [issueNotes, setIssueNotes] = useState('');
   const [issueFile, setIssueFile] = useState<File | null>(null);
+  const [showIncident, setShowIncident] = useState(false);
+  const [incidentType, setIncidentType] = useState('');
+  const [incidentNotes, setIncidentNotes] = useState('');
+  const [incidentFile, setIncidentFile] = useState<File | null>(null);
   const [showArrivalReason, setShowArrivalReason] = useState(false);
   const [arrivalReason, setArrivalReason] = useState('');
   const [arrivalNotes, setArrivalNotes] = useState('');
@@ -355,6 +367,19 @@ function DeliveryActions({
       </div>
     );
   }
+  const isCustodyHold = delivery.status === 'needs_resolution' && delivery.resolution_type === null;
+  if (isCustodyHold) {
+    return (
+      <div className="space-y-2 rounded-xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/30">
+        <p className="text-sm font-semibold text-amber-950 dark:text-amber-100">
+          Delivery attempt limit reached
+        </p>
+        <p className="text-sm text-amber-900 dark:text-amber-200">
+          Keep the parcel secured. A dispatcher must choose the next resolution before you can start other work.
+        </p>
+      </div>
+    );
+  }
   const submitIssue = () => {
     if (
       !issueReason ||
@@ -382,6 +407,22 @@ function DeliveryActions({
           ? 'The dispatcher will choose whether to reschedule or cancel this pickup.'
           : 'This records a failed delivery attempt for dispatcher review.',
         confirmButtonText: isRepairPickup ? 'Submit failed pickup' : 'Submit issue',
+      },
+    );
+  };
+  const submitIncident = () => {
+    if (!incidentType || !incidentNotes.trim() || !incidentFile) return;
+    const form = new FormData();
+    form.append('type', incidentType);
+    form.append('notes', incidentNotes.trim());
+    form.append('photo_files[]', incidentFile);
+    runAction(
+      `incident:${delivery.id}`,
+      () => logisticsApi.reportIncident(delivery.id, form),
+      {
+        title: `Report incident for ${deliveryReference}?`,
+        text: 'The dispatcher will review this incident and choose the next resolution.',
+        confirmButtonText: 'Report incident',
       },
     );
   };
@@ -447,6 +488,54 @@ function DeliveryActions({
         className={buttonClass}
       >
         {isRepairPickup ? 'Submit failed pickup' : 'Submit issue'}
+      </button>
+    </div>
+  ) : null;
+  const incidentPanel = showIncident ? (
+    <div
+      className="space-y-3 rounded-xl border border-red-300 bg-red-50 p-3 dark:border-red-800 dark:bg-red-950/30"
+      aria-label="Delivery incident details"
+    >
+      <p className="text-sm font-semibold text-red-950 dark:text-red-100">Delivery incident</p>
+      <label className="block text-sm font-semibold">
+        Incident type
+        <select
+          aria-label="Incident type"
+          value={incidentType}
+          onChange={(event) => setIncidentType(event.target.value)}
+          className="mt-1 min-h-11 w-full rounded-xl border border-red-300 bg-white px-3 dark:bg-slate-900"
+        >
+          <option value="">Choose an incident</option>
+          {incidentTypes.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
+        </select>
+      </label>
+      <label className="block text-sm font-semibold">
+        What happened?
+        <textarea
+          aria-label="Incident notes"
+          value={incidentNotes}
+          onChange={(event) => setIncidentNotes(event.target.value)}
+          className="mt-1 min-h-20 w-full rounded-xl border border-red-300 bg-white p-3 dark:bg-slate-900"
+        />
+      </label>
+      <label className="block text-sm font-semibold">
+        Evidence photo
+        <input
+          type="file"
+          required
+          accept="image/jpeg,image/png,image/webp"
+          aria-label="Incident evidence photo"
+          onChange={(event) => setIncidentFile(event.target.files?.[0] ?? null)}
+          className="mt-2 block w-full text-sm"
+        />
+      </label>
+      <button
+        type="button"
+        disabled={mutationDisabled || !incidentType || !incidentNotes.trim() || !incidentFile}
+        onClick={submitIncident}
+        className="min-h-11 w-full rounded-xl bg-red-600 px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        Submit incident
       </button>
     </div>
   ) : null;
@@ -717,7 +806,22 @@ function DeliveryActions({
   }
 
   if (delivery.status !== 'in_transit') return null;
-  if (!arrival) return arrivalControl;
+  if (!arrival) {
+    return (
+      <div className="space-y-3">
+        {arrivalControl}
+        <button
+          type="button"
+          disabled={mutationDisabled}
+          onClick={() => setShowIncident((current) => !current)}
+          className="min-h-11 w-full rounded-xl border border-red-400 px-4 text-sm font-bold text-red-700 disabled:cursor-not-allowed disabled:opacity-50 dark:text-red-300"
+        >
+          Report incident
+        </button>
+        {incidentPanel}
+      </div>
+    );
+  }
 
   const proofKey = `proof:${delivery.id}`;
 
@@ -777,7 +881,17 @@ function DeliveryActions({
         Report issue
       </button>
 
+      <button
+        type="button"
+        disabled={mutationDisabled}
+        onClick={() => setShowIncident((current) => !current)}
+        className="min-h-11 w-full rounded-xl border border-red-400 px-4 text-sm font-bold text-red-700 disabled:cursor-not-allowed disabled:opacity-50 dark:text-red-300"
+      >
+        Report incident
+      </button>
+
       {issuePanel}
+      {incidentPanel}
     </div>
   );
 }

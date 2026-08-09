@@ -401,7 +401,7 @@ it('lets dispatcher reject pending delivery proof with a reason', async () => {
     leg_type: 'outbound',
     status: 'awaiting_proof_approval',
     assignments: [{ id: 3, status: 'accepted' }],
-    proofs: [{ id: 17, handoff_type: 'delivery', review_status: 'pending', file_path: 'proof.jpg' }],
+    proofs: [{ id: 17, handoff_type: 'delivery', review_status: 'pending', proof_url: '/api/logistics/proofs/17/file' }],
     attempts: [],
   });
   mocks.props.canApproveProof = true;
@@ -725,7 +725,7 @@ it('lets staff confirm a rider-confirmed return receipt', async () => {
     status: 'in_transit',
     assignments: [{ id: 3, status: 'accepted' }],
     attempts: [],
-    proofs: [{ id: 17, handoff_type: 'receive', review_status: 'rider_confirmed', file_path: 'return.jpg' }],
+    proofs: [{ id: 17, handoff_type: 'receive', review_status: 'rider_confirmed', proof_url: '/api/logistics/proofs/17/file' }],
   });
   mocks.props.canApproveProof = true;
 
@@ -734,4 +734,36 @@ it('lets staff confirm a rider-confirmed return receipt', async () => {
 
   fireEvent.click(screen.getByRole('button', { name: 'Confirm return received' }));
   await waitFor(() => expect(mocks.post).toHaveBeenCalledWith('/api/logistics/legs/2/return-proofs/17/receipt', undefined, undefined));
+});
+
+it('shows dispatcher incident details and saves a resolution', async () => {
+  setDispatcherLeg({
+    ...defaultProps().shipments.data[0].legs[0],
+    incidents: [{
+      id: 41,
+      type: 'customer_dispute',
+      status: 'reported',
+      notes: 'Customer disputes the handoff location.',
+      resolution: null,
+      evidence_urls: ['/api/logistics/incidents/41/evidence/0'],
+    }],
+  });
+
+  render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+
+  expect(screen.getByText(/Incident #41/)).toBeInTheDocument();
+  expect(screen.getByText('Customer disputes the handoff location.')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'View evidence 1' })).toHaveAttribute('href', '/api/logistics/incidents/41/evidence/0');
+  fireEvent.change(screen.getByLabelText('Resolution for incident 41'), { target: { value: 'dismissed' } });
+  fireEvent.change(screen.getByLabelText('Resolution note for incident 41'), { target: { value: 'Dispatcher reviewed the customer claim.' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save incident resolution' }));
+
+  await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
+    '/api/logistics/incidents/41/resolve',
+    expect.any(FormData),
+    expect.objectContaining({ headers: { 'Content-Type': 'multipart/form-data' } }),
+  ));
+  expect((mocks.post.mock.calls[0][1] as FormData).get('resolution')).toBe('dismissed');
+  expect((mocks.post.mock.calls[0][1] as FormData).get('note')).toBe('Dispatcher reviewed the customer claim.');
 });

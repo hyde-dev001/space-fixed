@@ -96,6 +96,29 @@ class DeliveryIncidentControllerTest extends TestCase
         $this->assertStringContainsString('/api/logistics/incidents/'.$incident->id.'/evidence/0', $response->json('incident.evidence_urls.0'));
     }
 
+    public function test_unknown_incident_resolution_is_rejected_by_the_api(): void
+    {
+        [$shop, $leg] = $this->assignedLeg();
+        $incident = DeliveryIncident::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'shipment_leg_id' => $leg->id,
+            'reporting_rider_profile_id' => $leg->assignments()->value('rider_profile_id'),
+            'type' => 'damaged',
+            'status' => 'reported',
+        ]);
+        $staff = User::factory()->create(['shop_owner_id' => $shop->id]);
+        Permission::findOrCreate('resolve-logistics-exceptions', 'user');
+        $staff->givePermissionTo('resolve-logistics-exceptions');
+
+        $this->actingAs($staff, 'user')
+            ->postJson("/api/logistics/incidents/{$incident->id}/resolve", [
+                'resolution' => 'invented_resolution',
+                'note' => 'Not supported.',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('resolution');
+    }
+
     private function assignedLeg(): array
     {
         $shop = ShopOwner::factory()->create();

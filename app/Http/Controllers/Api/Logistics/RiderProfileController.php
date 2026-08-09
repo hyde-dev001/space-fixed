@@ -33,10 +33,7 @@ class RiderProfileController extends Controller
         $shop = $this->authorizedShop('manage-logistics-riders');
         $data = $request->validate($this->rules());
         $this->assertLinkedUserBelongsToShop($data, $shop);
-
-        if (($data['rider_type'] ?? null) === 'shop_owner' && strtolower((string) $shop->registration_type) !== 'individual') {
-            abort(422, 'Owner delivery is only allowed for individual shops.');
-        }
+        $this->assertRiderTypeAllowed($data['rider_type'], $shop);
 
         $rider = RiderProfile::create([
             ...$data,
@@ -55,6 +52,7 @@ class RiderProfileController extends Controller
 
         $data = $request->validate($this->rules(false));
         $this->assertLinkedUserBelongsToShop($data, $shop, $rider);
+        $this->assertRiderTypeAllowed($data['rider_type'] ?? $rider->rider_type, $shop);
         $rider->update($data);
 
         return response()->json(['rider' => $rider->fresh()]);
@@ -72,6 +70,11 @@ class RiderProfileController extends Controller
             'phone' => ['nullable', 'string', 'max:50'],
             'availability_status' => ['sometimes', 'in:available,busy,inactive'],
             'active' => ['sometimes', 'boolean'],
+            'work_days' => ['sometimes', 'array', 'min:1'],
+            'work_days.*' => ['integer', 'distinct', Rule::in(range(1, 7))],
+            'leave_dates' => ['sometimes', 'array'],
+            'leave_dates.*' => ['date_format:Y-m-d', 'distinct', 'after_or_equal:today'],
+            'daily_capacity' => ['sometimes', 'nullable', 'integer', 'min:1'],
         ];
     }
 
@@ -79,8 +82,16 @@ class RiderProfileController extends Controller
     {
         $linkedType = array_key_exists('linked_type', $data) ? $data['linked_type'] : $existing?->linked_type;
         $linkedId = array_key_exists('linked_id', $data) ? $data['linked_id'] : $existing?->linked_id;
+        $riderType = $data['rider_type'] ?? $existing?->rider_type;
 
         if ($linkedType === null && $linkedId === null) {
+            if ($riderType === 'employee') {
+                throw ValidationException::withMessages([
+                    'linked_type' => 'Employee riders must be linked to a user account.',
+                    'linked_id' => 'Employee riders must be linked to a user account.',
+                ]);
+            }
+
             return;
         }
 
@@ -89,6 +100,15 @@ class RiderProfileController extends Controller
             || ! User::query()->whereKey($linkedId)->where('shop_owner_id', $shop->id)->exists()) {
             throw ValidationException::withMessages([
                 'linked_id' => 'Linked rider must belong to this shop.',
+            ]);
+        }
+    }
+
+    private function assertRiderTypeAllowed(string $riderType, ShopOwner $shop): void
+    {
+        if ($riderType === 'shop_owner' && strtolower((string) $shop->registration_type) !== 'individual') {
+            throw ValidationException::withMessages([
+                'rider_type' => 'Owner delivery is only allowed for individual shops.',
             ]);
         }
     }

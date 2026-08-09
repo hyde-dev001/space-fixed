@@ -11,6 +11,13 @@ use Illuminate\Validation\ValidationException;
 
 class DeliveryIncidentService
 {
+    public const RESOLUTIONS = [
+        'dismissed',
+        'retry',
+        'return_required',
+        'loss_confirmed',
+    ];
+
     public function __construct(
         private DeliveryEventService $events,
         private ShipmentLegService $legs,
@@ -43,6 +50,12 @@ class DeliveryIncidentService
 
     public function resolve(DeliveryIncident $incident, ShopOwner $shop, string $resolution, string $note, array $evidence = []): DeliveryIncident
     {
+        if (! in_array($resolution, self::RESOLUTIONS, true)) {
+            throw ValidationException::withMessages(['resolution' => 'Choose a supported incident resolution.']);
+        }
+        if (! filled($note)) {
+            throw ValidationException::withMessages(['note' => 'A resolution note is required.']);
+        }
         if (count(array_filter($evidence, fn ($path) => $this->isSafeEvidencePath($path))) !== count($evidence)) {
             throw ValidationException::withMessages(['evidence' => 'Incident evidence must be stored by the logistics upload flow.']);
         }
@@ -51,15 +64,23 @@ class DeliveryIncidentService
             $incident = DeliveryIncident::query()->with('leg.shipment')->lockForUpdate()->findOrFail($incident->id);
             if ($incident->shop_owner_id !== $shop->id) abort(403);
             if ($incident->status === 'resolved' && $incident->resolution === $resolution) return $incident;
+            if ($incident->status === 'resolved') {
+                throw ValidationException::withMessages(['resolution' => 'A resolved incident cannot be changed.']);
+            }
             if ($resolution === 'loss_confirmed' && ($incident->type !== 'lost' || !filled($note) || !$evidence)) {
                 throw ValidationException::withMessages(['resolution' => 'Confirmed loss requires a lost incident, investigation note, and evidence.']);
             }
             $incident->update(['status' => 'resolved', 'resolution' => $resolution, 'notes' => $note, 'photo_paths' => array_values(array_unique([...($incident->photo_paths ?? []), ...$evidence])), 'resolved_at' => now()]);
-            if ($resolution === 'loss_confirmed') {
-                $this->legs->confirmLoss($incident->leg, $note);
-            } else {
-                $this->events->record($incident->leg->shipment, $incident->leg, ['event_type' => 'delivery_incident_resolved', 'message' => 'Delivery incident resolved.']);
-            }
+            match ($resolution) {
+                'loss_confirmed' => $this->legs->confirmLoss($incident->leg, $note),
+                'retry' => $this->legs->resolveRetry($incident->leg, $note),
+                'return_required' => $this->legs->requireReturn($incident->leg, $note),
+                default => $this->events->record($incident->leg->shipment, $incident->leg, [
+                    'event_type' => 'delivery_incident_resolved',
+                    'message' => 'Delivery incident resolved.',
+                    'metadata' => ['resolution' => $resolution, 'incident_id' => $incident->id],
+                ]),
+            };
             return $incident->fresh();
         });
     }
