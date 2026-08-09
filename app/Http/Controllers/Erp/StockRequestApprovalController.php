@@ -7,10 +7,12 @@ use App\Models\StockRequestApproval;
 use App\Models\InventoryItem;
 use App\Http\Requests\ApproveStockRequestRequest;
 use App\Services\StockRequestApprovalService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Validation\Rule;
+use Illuminate\Support\Collection;
 
 class StockRequestApprovalController extends Controller
 {
@@ -31,6 +33,66 @@ class StockRequestApprovalController extends Controller
         $routeName = (string) optional($request->route())->getName();
         return str_starts_with($routeName, 'procurement.stock-requests.')
             || str_starts_with($routeName, 'procurement.replenishment-requests.');
+    }
+
+    private function isCanonicalInventoryStockRequest(Request $request): bool
+    {
+        return $request->routeIs('inventory.stock-requests.store');
+    }
+
+    private function normalizeRequestedSize(?string $requestedSize): ?string
+    {
+        $trimmed = trim((string) $requestedSize);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        $normalized = strtolower((string) preg_replace('/[\s-]+/', '_', $trimmed));
+
+        return in_array($normalized, ['all', 'all_size', 'all_sizes', 'any'], true)
+            ? null
+            : $trimmed;
+    }
+
+    /**
+     * Return the configured size rows used to normalize a new per-size request.
+     * Stock-on-hand is deliberately not part of eligibility; a configured size
+     * with zero stock still needs to be replenished.
+     */
+    private function configuredSizesForPerSizeRequest(InventoryItem $inventoryItem, ?string $requestedColor): Collection|JsonResponse
+    {
+        $colorVariants = $inventoryItem->colorVariants()->get();
+        $normalizedColor = strtolower(trim((string) $requestedColor));
+
+        if ($colorVariants->isNotEmpty()) {
+            if ($normalizedColor === '') {
+                return response()->json([
+                    'message' => 'Select a color before requesting all shoe sizes.',
+                ], 422);
+            }
+
+            $variant = $colorVariants->first(
+                fn ($candidate) => strtolower(trim((string) $candidate->color_name)) === $normalizedColor
+            );
+
+            if (! $variant) {
+                return response()->json([
+                    'message' => 'The selected color is not configured for this item.',
+                ], 422);
+            }
+
+            return $inventoryItem->sizes()
+                ->where('inventory_color_variant_id', $variant->id)
+                ->get();
+        }
+
+        if ($normalizedColor !== '') {
+            return response()->json([
+                'message' => 'This item has no configured color variants.',
+            ], 422);
+        }
+
+        return $inventoryItem->sizes()->get();
     }
 
     private function applyWorkflowVisibility($query, Request $request): void
@@ -133,13 +195,17 @@ class StockRequestApprovalController extends Controller
      */
     public function store(Request $request)
     {
-        $this->authorize('create', StockRequestApproval::class);
+        $ability = $request->routeIs('inventory.stock-requests.store')
+            ? 'createFromInventory'
+            : 'create';
+        $this->authorize($ability, StockRequestApproval::class);
 
         $shopOwnerId = (int) Auth::user()->shop_owner_id;
 
         $validated = $request->validate([
             'inventory_item_id' => ['required', Rule::exists('inventory_items', 'id')->where('shop_owner_id', $shopOwnerId)],
             'quantity_needed'   => 'required|integer|min:1',
+            'quantity_basis'    => 'nullable|in:total,per_size',
             'priority'          => 'required|in:high,medium,low',
             'requested_size'    => 'nullable|string|max:20',
             'requested_color'   => 'nullable|string|max:50',
@@ -150,6 +216,58 @@ class StockRequestApprovalController extends Controller
 
         $inventoryItem = InventoryItem::where('shop_owner_id', $shopOwnerId)
             ->findOrFail($validated['inventory_item_id']);
+
+        $requestedSize = $this->normalizeRequestedSize($validated['requested_size'] ?? null);
+        $quantityNeeded = (int) $validated['quantity_needed'];
+        $quantityBasis = $validated['quantity_basis'] ?? 'total';
+
+        if ($quantityBasis === 'per_size') {
+            if (! $this->isCanonicalInventoryStockRequest($request)) {
+                return response()->json([
+                    'message' => 'Per-size quantity is only available from the Inventory stock request flow.',
+                ], 422);
+            }
+
+            if (($validated['request_source'] ?? 'manual') !== 'manual') {
+                return response()->json([
+                    'message' => 'Per-size quantity is only available for manual Inventory requests.',
+                ], 422);
+            }
+
+            if (strtolower(trim((string) $inventoryItem->category)) !== 'shoes') {
+                return response()->json([
+                    'message' => 'Per-size quantity is only available for shoe items.',
+                ], 422);
+            }
+
+            if ($requestedSize !== null) {
+                return response()->json([
+                    'message' => 'Per-size quantity requires an All Sizes request.',
+                ], 422);
+            }
+
+            $configuredSizes = $this->configuredSizesForPerSizeRequest(
+                $inventoryItem,
+                $validated['requested_color'] ?? null,
+            );
+
+            if ($configuredSizes instanceof JsonResponse) {
+                return $configuredSizes;
+            }
+
+            $configuredSizeCount = $configuredSizes
+                ->filter(fn ($size) => trim((string) $size->size) !== '')
+                ->unique(fn ($size) => strtolower((string) ($size->size_system ?? '')) . '|' . trim((string) $size->size))
+                ->count();
+
+            if ($configuredSizeCount < 1) {
+                return response()->json([
+                    'message' => 'No configured sizes are available for the selected color.',
+                ], 422);
+            }
+
+            $quantityNeeded *= $configuredSizeCount;
+        }
 
         if (($validated['request_source'] ?? 'manual') === 'repair' && (string) $inventoryItem->category !== 'repair_materials') {
             return response()->json([
@@ -174,8 +292,8 @@ class StockRequestApprovalController extends Controller
             'repair_request_id' => $validated['repair_request_id'] ?? null,
             'product_name'      => $inventoryItem->name,
             'sku_code'          => $inventoryItem->sku ?? '',
-            'quantity_needed'   => $validated['quantity_needed'],
-            'requested_size'    => $validated['requested_size'] ?? null,
+            'quantity_needed'   => $quantityNeeded,
+            'requested_size'    => $requestedSize,
             'requested_color'   => $validated['requested_color'] ?? null,
             'priority'          => $validated['priority'],
             'request_source'    => $validated['request_source'] ?? 'manual',

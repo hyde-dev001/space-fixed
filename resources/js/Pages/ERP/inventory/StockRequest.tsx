@@ -346,6 +346,27 @@ export default function StockRequest() {
 		return sizeOptionsForSelectedColor.find((option) => option.label === formData.requestSize) ?? null;
 	}, [formData.requestSize, sizeOptionsForSelectedColor]);
 
+	const allSizesPerSizeBasis = selectedItem?.category === "shoes" && !formData.requestSize.trim();
+	const eligibleSizeCountForAllSizes = useMemo(() => {
+		if (!selectedItem || selectedItem.category !== "shoes" || formData.requestSize.trim()) return 0;
+
+		if (hasColorVariants) {
+			return sizeOptionsForSelectedColor.length;
+		}
+
+		const labels = new Set(
+			(selectedItem.sizes ?? [])
+				.map((sizeOption: any) => formatRequestedSizeLabel(String(sizeOption.size), sizeOption.size_system))
+				.filter(Boolean),
+		);
+		return labels.size;
+	}, [formData.requestSize, hasColorVariants, selectedItem, sizeOptionsForSelectedColor]);
+
+	const enteredQuantity = Number(formData.quantityNeeded);
+	const physicalTotalPreview = Number.isFinite(enteredQuantity) && enteredQuantity > 0
+		? enteredQuantity * eligibleSizeCountForAllSizes
+		: 0;
+
 	const getEffectiveQuantityNeeded = (request: StockRequestApproval): number => {
 		return Number(request.quantity_needed ?? 0);
 	};
@@ -451,11 +472,20 @@ export default function StockRequest() {
 			return;
 		}
 
+		if (allSizesPerSizeBasis && eligibleSizeCountForAllSizes < 1) {
+			await workflowFeedback.warning(
+				"No configured sizes",
+				"Configure at least one size before requesting All Sizes.",
+			);
+			return;
+		}
+
 		setIsSubmittingCreateRequest(true);
 		try {
 			const createdRequest = await stockRequestApi.createFromInventory({
 				inventory_item_id: Number(formData.inventoryItemId),
 				quantity_needed:   parsedQty,
+				quantity_basis:    allSizesPerSizeBasis ? "per_size" : "total",
 				priority:          formData.priority,
 				requested_size:    formData.requestSize || undefined,
 				requested_color:   formData.requestColor || undefined,
@@ -868,29 +898,39 @@ export default function StockRequest() {
 
 						<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 							<div>
-								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Quantity Needed *</label>									<input
-										type="number"
-										min={1}
-										value={formData.quantityNeeded}
-										onChange={(event) => setFormData((prev) => ({ ...prev, quantityNeeded: event.target.value }))}
-										placeholder="e.g., 40"
-										className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
-									/>
-								</div>
-								<div>
-									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Priority *</label>
-									<select
-										title="Select request priority"
-										aria-label="Select request priority"
-										value={formData.priority}
-										onChange={(event) => setFormData((prev) => ({ ...prev, priority: event.target.value as "high" | "medium" | "low" }))}
-										className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
-									>
-										<option value="high">High</option>
-										<option value="medium">Medium</option>
-										<option value="low">Low</option>
-									</select>
-								</div>
+								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+									{allSizesPerSizeBasis ? "Quantity per size *" : "Quantity Needed *"}
+								</label>
+								<input
+									type="number"
+									min={1}
+									value={formData.quantityNeeded}
+									onChange={(event) => setFormData((prev) => ({ ...prev, quantityNeeded: event.target.value }))}
+									placeholder="e.g., 40"
+									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+								/>
+								{allSizesPerSizeBasis && (
+									<p className="mt-2 text-xs text-indigo-600 dark:text-indigo-300">
+										{eligibleSizeCountForAllSizes > 0
+											? `${eligibleSizeCountForAllSizes} eligible sizes x ${formData.quantityNeeded || 0} = ${physicalTotalPreview} total units`
+											: "Select a configured color to see the physical total."}
+									</p>
+								)}
+							</div>
+							<div>
+								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Priority *</label>
+								<select
+									title="Select request priority"
+									aria-label="Select request priority"
+									value={formData.priority}
+									onChange={(event) => setFormData((prev) => ({ ...prev, priority: event.target.value as "high" | "medium" | "low" }))}
+									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+								>
+									<option value="high">High</option>
+									<option value="medium">Medium</option>
+									<option value="low">Low</option>
+								</select>
+							</div>
 							</div>
 
 							<div>
@@ -954,7 +994,7 @@ export default function StockRequest() {
 								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
 									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
 										{viewingRequest.inventory_item?.category === "shoes" && isAllSizesRequest(viewingRequest.requested_size)
-											? "Total Quantity Across All Sizes"
+											? "Total Quantity (All Sizes)"
 											: "Quantity Needed"}
 									</p>
 									<p className="text-base font-semibold text-gray-900 dark:text-white">

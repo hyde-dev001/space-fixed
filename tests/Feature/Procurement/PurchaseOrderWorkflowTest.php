@@ -8,6 +8,7 @@ use App\Models\ShopOwner;
 use App\Models\Supplier;
 use App\Models\PurchaseRequest;
 use App\Models\PurchaseOrder;
+use App\Models\PurchaseOrderReceipt;
 use App\Models\InventoryItem;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Permission;
@@ -160,6 +161,48 @@ class PurchaseOrderWorkflowTest extends TestCase
             'status' => 'cancelled',
             'cancellation_reason' => 'Supplier cannot fulfill order',
         ]);
+    }
+
+    /** @test */
+    public function user_cannot_cancel_an_in_transit_po(): void
+    {
+        $po = PurchaseOrder::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'status' => 'in_transit',
+        ]);
+
+        $this->actingAs($this->user)
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/cancel", [
+                'cancellation_reason' => 'Supplier cannot fulfill order',
+            ])
+            ->assertForbidden();
+
+        $this->assertSame('in_transit', $po->fresh()->status);
+    }
+
+    /** @test */
+    public function posted_receipt_keeps_an_otherwise_cancellable_po_uncancelled(): void
+    {
+        $po = PurchaseOrder::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'status' => 'sent',
+        ]);
+        PurchaseOrderReceipt::factory()->create([
+            'purchase_order_id' => $po->id,
+            'shop_owner_id' => $this->shopOwner->id,
+            'received_by' => $this->user->id,
+            'status' => 'posted',
+        ]);
+
+        $this->actingAs($this->user)
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/cancel", [
+                'cancellation_reason' => 'Supplier cannot fulfill order',
+            ])
+            ->assertUnprocessable();
+
+        $this->assertSame('sent', $po->fresh()->status);
     }
 
     /** @test */

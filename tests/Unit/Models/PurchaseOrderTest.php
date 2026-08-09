@@ -152,12 +152,26 @@ class PurchaseOrderTest extends TestCase
         $this->assertEquals('Supplier cannot fulfill order', $po->fresh()->cancellation_reason);
     }
 
-    public function test_posted_receipt_blocks_cancellation(): void
+    public function test_in_transit_orders_cannot_be_cancelled_without_a_receipt(): void
     {
         $po = PurchaseOrder::factory()->create([
             'shop_owner_id' => $this->shopOwner->id,
             'supplier_id' => $this->supplier->id,
             'status' => 'in_transit',
+        ]);
+
+        $this->expectException(ValidationException::class);
+        $po->cancel($this->user->id, 'Supplier cannot fulfill order');
+
+        $this->assertSame('in_transit', $po->fresh()->status);
+    }
+
+    public function test_posted_receipt_blocks_cancellation(): void
+    {
+        $po = PurchaseOrder::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'status' => 'sent',
         ]);
         PurchaseOrderReceipt::factory()->create([
             'purchase_order_id' => $po->id,

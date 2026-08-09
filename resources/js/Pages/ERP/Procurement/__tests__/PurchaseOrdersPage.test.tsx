@@ -9,9 +9,9 @@ const mocks = vi.hoisted(() => {
 		shop_owner_id: 1,
 		supplier_id: 1,
 		product_name: "Shoe cleaner",
-		quantity: 50,
+		quantity: 200,
 		unit_cost: 100,
-		total_cost: 5000,
+		total_cost: 20000,
 		requested_size: "",
 		inventory_item: { category: "shoes" },
 		payment_terms: "COD",
@@ -55,6 +55,7 @@ vi.mock("sweetalert2", () => ({ default: { fire: vi.fn() } }));
 describe("Purchase Orders lifecycle actions", () => {
 	beforeEach(() => {
 		mocks.approvedPrs.length = 0;
+		mocks.order.status = "delivered";
 		mocks.permissions.splice(0, mocks.permissions.length, "procurement.complete_purchase_orders");
 	});
 
@@ -72,15 +73,35 @@ describe("Purchase Orders lifecycle actions", () => {
 		expect(screen.queryByRole("button", { name: "+ New PO" })).not.toBeInTheDocument();
 	});
 
+	it("hides cancellation for an in-transit order", async () => {
+		mocks.order.status = "in_transit";
+		mocks.permissions.splice(0, mocks.permissions.length, "procurement.cancel_purchase_orders");
+
+		render(<PurchaseOrders />);
+		fireEvent.click(await screen.findByTitle("View details"));
+
+		expect(screen.queryByRole("button", { name: "Cancel PO" })).not.toBeInTheDocument();
+	});
+
+	it("shows cancellation for a confirmed order", async () => {
+		mocks.order.status = "confirmed";
+		mocks.permissions.splice(0, mocks.permissions.length, "procurement.cancel_purchase_orders");
+
+		render(<PurchaseOrders />);
+		fireEvent.click(await screen.findByTitle("View details"));
+
+		expect(screen.getByRole("button", { name: "Cancel PO" })).toBeInTheDocument();
+	});
+
 	it("describes an all-size PR quantity as one total in the PO selector", async () => {
 		mocks.permissions.push("procurement.create_purchase_orders");
 		mocks.approvedPrs.push({
 			id: 20,
 			pr_number: "PR-20",
 			product_name: "Runner",
-			quantity: 50,
+			quantity: 200,
 			unit_cost: 100,
-			total_cost: 5000,
+			total_cost: 820000,
 			requested_size: "",
 			inventory_item: { category: "shoes" },
 		});
@@ -88,7 +109,7 @@ describe("Purchase Orders lifecycle actions", () => {
 		render(<PurchaseOrders />);
 		fireEvent.click(await screen.findByRole("button", { name: "+ New PO" }));
 
-		expect(await screen.findByRole("option", { name: /Qty: 50 total units across All Sizes/ })).toBeInTheDocument();
+		expect(await screen.findByRole("option", { name: /Qty: 200 total units across All Sizes/ })).toBeInTheDocument();
 	});
 
 	it("labels the PO detail quantity as a total across all sizes", async () => {
@@ -96,5 +117,6 @@ describe("Purchase Orders lifecycle actions", () => {
 		fireEvent.click(await screen.findByTitle("View details"));
 
 		expect(screen.getByText("Total Quantity Ordered Across All Sizes:")).toBeInTheDocument();
+		expect(screen.getByText("200 units")).toBeInTheDocument();
 	});
 });
