@@ -94,6 +94,7 @@ class PurchaseOrderItemsTest extends TestCase
 
         $po = PurchaseOrder::with('items')->findOrFail($response->json('data.id'));
         $this->assertSame(200, $po->quantity);
+        $this->assertSame('820000.00', $po->total_cost);
         $this->assertSame(200, $po->items->sole()->ordered_quantity);
         $this->assertSame(1, $po->items->sole()->quantity_multiplier);
         $this->assertEqualsCanonicalizing($sizeIds, $po->items->sole()->eligible_size_ids);

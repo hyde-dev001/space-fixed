@@ -165,6 +165,55 @@ class PurchaseOrderReceivingTest extends TestCase
         $this->assertSame('partially_received', $po->fresh()->status);
     }
 
+    public function test_normalized_all_size_receipt_accepts_quantity_for_each_configured_size(): void
+    {
+        $inventory = InventoryItem::factory()->create([
+            'shop_owner_id' => $this->owner->id,
+            'category' => 'shoes',
+            'available_quantity' => 0,
+        ]);
+        $sizes = collect(['3', '5', '7', '9'])->map(fn ($size) => InventorySize::create([
+            'inventory_item_id' => $inventory->id,
+            'size' => $size,
+            'size_system' => 'US',
+            'quantity' => 0,
+        ]));
+        [$po, $item] = $this->poItem(200, 100, [
+            'inventory_item_id' => $inventory->id,
+            'requested_size' => null,
+            'requested_color' => null,
+            'quantity_multiplier' => 1,
+            'eligible_size_ids' => $sizes->pluck('id')->all(),
+            'line_total' => 20000,
+        ]);
+
+        $response = $this->actingAs($this->receiver, 'user')
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts", [
+                'idempotency_key' => 'normalized-all-sizes',
+                'items' => [[
+                    'purchase_order_item_id' => $item->id,
+                    'received_quantity' => 200,
+                    'defective_quantity' => 0,
+                    'size_quantities' => $sizes->map(fn ($size) => [
+                        'inventory_size_id' => $size->id,
+                        'received_quantity' => 50,
+                        'defective_quantity' => 0,
+                    ])->all(),
+                ]],
+            ])
+            ->assertCreated();
+
+        $this->assertSame('delivered', $po->fresh()->status);
+        $this->assertSame(200, $inventory->fresh()->available_quantity);
+        $this->assertSame([50, 50, 50, 50], $sizes->map(fn ($size) => $size->fresh()->quantity)->all());
+        $this->assertDatabaseHas('stock_movements', [
+            'inventory_item_id' => $inventory->id,
+            'quantity_change' => 200,
+        ]);
+        $this->assertSame('20000.00', \App\Models\Finance\Expense::sole()->amount);
+        $this->assertSame(200, $response->json('data.items.0.accepted_quantity'));
+    }
+
     public function test_all_size_receipt_requires_each_snapshotted_size(): void
     {
         $inventory = InventoryItem::factory()->create(['shop_owner_id' => $this->owner->id, 'category' => 'shoes']);

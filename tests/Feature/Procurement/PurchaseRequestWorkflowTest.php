@@ -5,6 +5,8 @@ namespace Tests\Feature\Procurement;
 use App\Jobs\AutoApproveLowValuePRsJob;
 use App\Models\PurchaseRequest;
 use App\Models\InventoryItem;
+use App\Models\InventoryColorVariant;
+use App\Models\InventorySize;
 use App\Models\ShopOwner;
 use App\Models\StockRequestApproval;
 use App\Models\Supplier;
@@ -262,6 +264,62 @@ class PurchaseRequestWorkflowTest extends TestCase
         $this->assertSame('Black', $purchaseRequest->requested_color);
         $this->assertSame('high', $purchaseRequest->priority);
         $this->assertSame('820000.00', $purchaseRequest->total_cost);
+    }
+
+    public function test_inventory_per_size_request_flows_to_pr_with_physical_total_and_cost(): void
+    {
+        $this->give($this->requester, 'view-inventory');
+        $inventory = InventoryItem::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'name' => 'Normalized shoe',
+            'category' => 'shoes',
+        ]);
+        $variant = InventoryColorVariant::create([
+            'inventory_item_id' => $inventory->id,
+            'color_name' => 'Black',
+            'quantity' => 0,
+        ]);
+        foreach (['3', '5', '7', '9'] as $size) {
+            InventorySize::create([
+                'inventory_item_id' => $inventory->id,
+                'inventory_color_variant_id' => $variant->id,
+                'size' => $size,
+                'size_system' => 'US',
+                'quantity' => 0,
+            ]);
+        }
+
+        $stockRequest = $this->actingAs($this->requester, 'user')
+            ->postJson('/api/erp/inventory/stock-requests', [
+                'inventory_item_id' => $inventory->id,
+                'quantity_needed' => 50,
+                'quantity_basis' => 'per_size',
+                'priority' => 'high',
+                'requested_size' => '',
+                'requested_color' => 'black',
+                'notes' => 'Restock all configured sizes.',
+            ])
+            ->assertCreated()
+            ->json('stock_request');
+
+        $this->assertSame(200, $stockRequest['quantity_needed']);
+        $source = StockRequestApproval::findOrFail($stockRequest['id']);
+        $source->update(['status' => 'accepted']);
+
+        $response = $this->actingAs($this->requester, 'user')
+            ->postJson('/api/erp/procurement/purchase-requests', [
+                'stock_request_id' => $source->id,
+                'product_name' => 'Ignored client name',
+                'supplier_id' => $this->supplier->id,
+                'quantity' => 1,
+                'unit_cost' => 4100,
+                'priority' => 'high',
+                'justification' => 'Physical quantity from all configured sizes.',
+            ])
+            ->assertCreated();
+
+        $this->assertSame(200, $response->json('data.quantity'));
+        $this->assertSame('820000.00', $response->json('data.total_cost'));
     }
 
     public function test_available_stock_requests_exclude_any_request_already_linked_to_a_pr(): void
