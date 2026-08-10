@@ -42,3 +42,22 @@ export function erpUrl(
     ? capabilities?.[key]?.url ?? null
     : null;
 }
+
+export function erpUrlWithParams(
+  capabilities: ErpCapabilities | undefined,
+  methodOrKey: string,
+  params: Record<string, string | number>,
+): string | null {
+  const template = erpUrl(capabilities, methodOrKey);
+
+  if (!template) {
+    return null;
+  }
+
+  const resolved = Object.entries(params).reduce(
+    (url, [name, value]) => url.split(`__ERP_PARAM_${name}__`).join(encodeURIComponent(String(value))),
+    template,
+  );
+
+  return /__ERP_PARAM_[A-Za-z0-9_.-]+__/.test(resolved) ? null : resolved;
+}

@@ -2,10 +2,23 @@ import React from 'react';
 import { Head, Link, usePage } from '@inertiajs/react';
 import AppLayoutERP from '@/layout/AppLayout_ERP';
 import type { LogisticsStats } from '@/types/logistics';
+import type { ErpCapabilities } from '@/types/erp';
+import { erpUrl } from '@/utils/erpCapabilities';
 
 export default function Dashboard() {
-  const { stats, auth } = usePage<{ stats: LogisticsStats; auth?: { permissions?: string[] } }>().props;
-  const canManageRiders = auth?.permissions?.includes('manage-logistics-riders');
+  const { stats, auth, erpCapabilities } = usePage<{
+    stats: LogisticsStats;
+    auth?: { permissions?: string[]; erpActor?: { ownerMode?: boolean } };
+    erpCapabilities?: ErpCapabilities;
+  }>().props;
+  const ownerMode = auth?.erpActor?.ownerMode === true;
+  const shipmentsUrl = erpUrl(erpCapabilities, 'GET:erp.logistics.shipments')
+    ?? (ownerMode ? null : '/erp/logistics/shipments');
+  const ridersUrl = erpUrl(erpCapabilities, 'GET:erp.logistics.riders')
+    ?? (ownerMode ? null : '/erp/logistics/riders');
+  const canManageRiders = ownerMode
+    ? ridersUrl !== null
+    : auth?.permissions?.includes('manage-logistics-riders');
 
   return (
     <AppLayoutERP>
@@ -24,9 +37,11 @@ export default function Dashboard() {
           ))}
         </div>
         <div className="flex flex-wrap gap-3">
-          <Link href="/erp/logistics/shipments" className="rounded-lg bg-gray-950 px-4 py-2 text-sm font-semibold text-white">Shipments</Link>
-          {canManageRiders && (
-            <Link href="/erp/logistics/riders" className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-900">Riders</Link>
+          {shipmentsUrl && (
+            <Link href={shipmentsUrl} className="rounded-lg bg-gray-950 px-4 py-2 text-sm font-semibold text-white">Shipments</Link>
+          )}
+          {canManageRiders && ridersUrl && (
+            <Link href={ridersUrl} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-900">Riders</Link>
           )}
         </div>
       </div>

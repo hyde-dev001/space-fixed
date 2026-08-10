@@ -13,6 +13,7 @@ use App\Support\Erp\ErpActorContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -133,6 +134,32 @@ final class InertiaModuleStateShareTest extends TestCase
             route('shop-owner.erp.workspace'),
             $share['erpCapabilities']['GET:shop-owner.erp.workspace']['url'],
         );
+    }
+
+    public function test_owner_capabilities_share_parameterized_read_urls_as_client_resolvable_templates(): void
+    {
+        config([
+            'shop_modules.owner_erp_workspace_enabled' => true,
+            'shop_modules.enforcement_enabled' => true,
+        ]);
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+        ShopOwnerModule::factory()->create([
+            'shop_owner_id' => $owner->id,
+            'module_key' => 'crm',
+            'enabled' => true,
+        ]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get('/shop-owner/erp/crm/customers')
+            ->assertInertia(fn ($page) => $page->where(
+                'erpCapabilities',
+                fn (Collection $capabilities): bool => $capabilities->get('GET:crm.api.customers.show')['url']
+                    === route('shop-owner.erp.api.crm.customers.show', ['id' => '__ERP_PARAM_id__']),
+            )
+            );
     }
 
     public function test_dual_sessions_share_the_route_selected_employee_actor_and_preserve_employee_permissions(): void

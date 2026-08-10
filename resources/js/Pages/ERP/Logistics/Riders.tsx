@@ -3,6 +3,8 @@ import { Head, Link, router, usePage } from '@inertiajs/react';
 import AppLayoutERP from '@/layout/AppLayout_ERP';
 import { Table, TableBody, TableCell, TableHeader, TableRow } from '@/components/ui/table';
 import type { LogisticsRider, PaginatedResponse } from '@/types/logistics';
+import type { ErpCapabilities } from '@/types/erp';
+import { erpUrl } from '@/utils/erpCapabilities';
 
 type RiderFilters = {
   availability: string;
@@ -33,13 +35,21 @@ function availabilityClass(status: string) {
 }
 
 export default function Riders() {
-  const { riders, filters } = usePage<{
+  const { riders, filters, auth, erpCapabilities } = usePage<{
     riders: PaginatedResponse<LogisticsRider>;
     filters: RiderFilters;
+    auth?: { erpActor?: { ownerMode?: boolean } };
+    erpCapabilities?: ErpCapabilities;
   }>().props;
+  const ownerMode = auth?.erpActor?.ownerMode === true;
 
   const updateFilter = (key: keyof RiderFilters, value: string) => {
-    router.get('/erp/logistics/riders', { ...filters, [key]: value, page: 1 }, {
+    const ridersUrl = erpUrl(erpCapabilities, 'GET:erp.logistics.riders')
+      ?? (ownerMode ? null : '/erp/logistics/riders');
+
+    if (!ridersUrl) return;
+
+    router.get(ridersUrl, { ...filters, [key]: value, page: 1 }, {
       preserveScroll: true,
       preserveState: true,
     });

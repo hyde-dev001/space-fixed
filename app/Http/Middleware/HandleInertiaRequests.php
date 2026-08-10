@@ -402,11 +402,16 @@ class HandleInertiaRequests extends Middleware
     private function routeUrl(string $routeName): ?string
     {
         $route = RouteFacade::getRoutes()->getByName($routeName);
-        if (! $route instanceof Route || $route->parameterNames() !== []) {
+        if (! $route instanceof Route) {
             return null;
         }
 
-        return route($routeName);
+        $parameters = [];
+        foreach ($route->parameterNames() as $parameterName) {
+            $parameters[$parameterName] = '__ERP_PARAM_'.$parameterName.'__';
+        }
+
+        return route($routeName, $parameters);
     }
 
     /**

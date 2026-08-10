@@ -5,6 +5,7 @@ import {
   canUseErpCapability,
   erpCapabilityKey,
   erpUrl,
+  erpUrlWithParams,
 } from '../erpCapabilities';
 
 const capabilities: ErpCapabilities = {
@@ -40,5 +41,22 @@ describe('ERP capability helpers', () => {
     expect(canUseErpCapability(capabilities, 'GET:erp.missing')).toBe(false);
     expect(erpUrl(capabilities, 'GET:erp.finance')).toBeNull();
     expect(erpUrl(capabilities, 'GET:erp.missing')).toBeNull();
+  });
+
+  it('fills server-provided route placeholders without changing the capability contract', () => {
+    const parameterizedCapabilities: ErpCapabilities = {
+      'GET:crm.customer.show': {
+        allowed: true,
+        method: 'GET',
+        routeName: 'crm.customer.show',
+        url: '/api/shop-owner/erp/crm/customers/__ERP_PARAM_id__',
+        reason: null,
+      },
+    };
+
+    expect(erpUrlWithParams(parameterizedCapabilities, 'GET:crm.customer.show', { id: 42 }))
+      .toBe('/api/shop-owner/erp/crm/customers/42');
+    expect(erpUrlWithParams(parameterizedCapabilities, 'GET:crm.customer.missing', { id: 42 }))
+      .toBeNull();
   });
 });
