@@ -96,6 +96,12 @@ it('shows enabled employee modules to a business shop owner', () => {
   expect(screen.getByRole('link', { name: 'Procurement' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'CRM' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Logistics' })).toHaveAttribute('href', '/shop-owner.logistics.shipments');
+  expect(screen.getByRole('link', { name: 'Job Orders Retail' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Job Orders Repair' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Product Management' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Services Management' })).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Warranty Queue' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Stock Management' })).not.toBeInTheDocument();
 });
 
 it('hides disabled employee modules from a business shop owner', () => {

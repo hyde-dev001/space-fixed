@@ -67,7 +67,7 @@ final class OwnerAdministrativeModuleAccessTest extends TestCase
             'business_type' => 'both',
         ]);
 
-        foreach (['hr_employees', 'finance', 'inventory', 'procurement', 'crm', 'logistics'] as $moduleKey) {
+        foreach (['retail_operations', 'repair_operations', 'hr_employees', 'finance', 'inventory', 'procurement', 'crm', 'logistics'] as $moduleKey) {
             ShopOwnerModule::factory()->create([
                 'shop_owner_id' => $owner->id,
                 'module_key' => $moduleKey,
@@ -86,6 +86,10 @@ final class OwnerAdministrativeModuleAccessTest extends TestCase
             'shop-owner.purchase-request-approval',
             'shop-owner.customers',
             'shop-owner.logistics.shipments',
+            'shop-owner.job-orders-retail',
+            'shop-owner.product-uploder',
+            'shop-owner.job-orders-repair',
+            'shop-owner.upload-services',
         ] as $routeName) {
             $this->get(route($routeName))->assertOk();
         }

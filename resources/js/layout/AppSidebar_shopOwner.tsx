@@ -324,6 +324,10 @@ const productManagementItems: NavItem[] = [
   },
 ];
 
+const ownerOperationalItems = productManagementItems.filter(
+  (item) => item.route !== "shop-owner.refund-approvals",
+);
+
 const customerManagementItems: NavItem[] = [
   {
     icon: (
@@ -478,8 +482,9 @@ const AppSidebar_shopOwner: React.FC = () => {
       return isCompany || canManageStaff;
     }
 
-    // Operational routes - only visible to individual accounts, NOT business accounts
-    // Business accounts have staff to handle these tasks
+    // Operational pages are available to business owners as well as
+    // employees. Keep the individual-only warranty/material pages hidden
+    // because their routes explicitly reject company registrations.
     const operationalRoutes = [
       'shop-owner.job-orders-retail',
       'shop-owner.job-orders-repair',
@@ -490,12 +495,15 @@ const AppSidebar_shopOwner: React.FC = () => {
     ];
 
     if (menuItem.route && operationalRoutes.includes(menuItem.route)) {
-      // Hide from business accounts - they manage staff who do these tasks
-      if (isCompany || canManageStaff) {
+      const individualOnlyOperationalRoutes = [
+        'shop-owner.warranty-queue',
+        'shop-owner.upload-stock-materials',
+      ];
+
+      if ((isCompany || canManageStaff) && individualOnlyOperationalRoutes.includes(menuItem.route)) {
         return false;
       }
 
-      // For individual accounts, show based on business type
       const retailRoutes = ['shop-owner.job-orders-retail', 'shop-owner.product-uploder'];
       const repairRoutes = ['shop-owner.job-orders-repair', 'shop-owner.warranty-queue', 'shop-owner.upload-services', 'shop-owner.upload-stock-materials'];
 
@@ -832,6 +840,24 @@ const AppSidebar_shopOwner: React.FC = () => {
               </h2>
               {renderMenuItems(isIndividualAccount ? productManagementItems : approvalWorkflowItems, isIndividualAccount ? "product" : "approval")}
             </div>
+
+            {!isIndividualAccount && (
+              <div>
+                <h2
+                  className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${!isExpanded && !isHovered
+                      ? "lg:justify-center"
+                      : "justify-start"
+                    }`}
+                >
+                  {isExpanded || isHovered || isMobileOpen ? (
+                    "Operations"
+                  ) : (
+                    <HorizontaLDots className="size-6" />
+                  )}
+                </h2>
+                {renderMenuItems(ownerOperationalItems, "product")}
+              </div>
+            )}
 
             {!isIndividualAccount && (
               <div>
