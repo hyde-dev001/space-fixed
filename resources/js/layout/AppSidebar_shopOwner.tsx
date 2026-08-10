@@ -149,7 +149,11 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
   const shopOwner = auth?.shop_owner || auth?.user?.shop_owner || (props as any)?.shop_owner;
   const authModuleStates = auth?.shopModules;
   const sharedModuleStates = (props as any)?.moduleStates;
-  const activeModule = activeModuleProp ?? ((props as any)?.activeModule as OwnerErpModule | null | undefined) ?? null;
+  const currentPath = normalizePath(url);
+  const isModuleScopedErpRoute = /^\/shop-owner\/erp\/(?!workspace(?:\/|$))/i.test(currentPath);
+  const activeModule = isModuleScopedErpRoute
+    ? activeModuleProp ?? ((props as any)?.activeModule as OwnerErpModule | null | undefined) ?? null
+    : null;
   const shopModules = authModuleStates && typeof authModuleStates === "object" && Object.keys(authModuleStates).length > 0
     ? authModuleStates
     : sharedModuleStates;
