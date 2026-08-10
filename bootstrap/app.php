@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use Illuminate\Auth\AuthenticationException;
 use App\Http\Middleware\Authenticate;
 use App\Http\Middleware\EnsureErpAudience;
+use App\Http\Middleware\EnsureOwnerErpWorkspaceEnabled;
 use App\Http\Middleware\ResolveErpActorContext;
 use App\Http\Middleware\EnsureShopModuleEnabled;
 use App\Support\Erp\ErpAccessResponder;
@@ -39,6 +40,12 @@ return Application::configure(basePath: dirname(__DIR__))
 
             Route::middleware('api')
                 ->group(base_path('routes/shop-owner-api.php'));
+
+            Route::middleware('web')
+                ->group(base_path('routes/shop-owner-erp.php'));
+
+            Route::middleware('web')
+                ->group(base_path('routes/shop-owner-erp-api.php'));
 
             $isErpRoute = static function (string $routeName): bool {
                 foreach ([
@@ -161,6 +168,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'erp.actor' => ResolveErpActorContext::class,
         ]);
         $middleware->priority([
+            EnsureOwnerErpWorkspaceEnabled::class,
             EnsureErpAudience::class,
             Authenticate::class,
             ResolveErpActorContext::class,

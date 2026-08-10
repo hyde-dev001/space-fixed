@@ -1003,8 +1003,33 @@ foreach ($routeBuckets as $bucket => $routeNames) {
     }
 }
 
+$workspaceRoute = $routeEntry(
+    modules: $modules,
+    classification: 'core',
+    mode: null,
+    moduleKeys: [],
+    methods: ['GET'],
+    audience: 'shop_owner',
+    actorGuard: 'shop_owner',
+    action: 'view',
+    ownerDenialReason: 'owner_workspace_not_exposed',
+    navigationGroup: 'workspace',
+    selfService: false,
+);
+$workspaceRoute['registration_types'] = ['company'];
+$workspaceRoute['business_types'] = ['retail', 'repair', 'both'];
+$workspaceRoute['owner_access'] = 'allowed';
+$workspaceRoute['owner_denial_reason'] = null;
+$workspaceRoute['supporting_routes'] = ['shop-owner.erp.api.workspace'];
+$routes['shop-owner.erp.workspace'] = $workspaceRoute;
+
+$workspaceApiRoute = $workspaceRoute;
+$workspaceApiRoute['supporting_routes'] = ['shop-owner.erp.workspace'];
+$routes['shop-owner.erp.api.workspace'] = $workspaceApiRoute;
+
 return [
     'enforcement_enabled' => (bool) env('SHOP_MODULE_ENFORCEMENT_ENABLED', false),
+    'owner_erp_workspace_enabled' => (bool) env('SHOP_OWNER_ERP_WORKSPACE_ENABLED', false),
     'supported_gate_modes' => ['single', 'all_of', 'any_of'],
     'modules' => $modules,
     'routes' => $routes,
