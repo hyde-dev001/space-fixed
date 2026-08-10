@@ -187,7 +187,6 @@ $routeBuckets = [
         'shop-owner.shop-profile',
         'shop-owner.shop-profile.password.update',
         'shop-owner.shop-profile.update',
-        'shop-owner.suspend-accounts',
         'shop-owner.two-factor.challenge',
         'shop-owner.two-factor.resend',
         'shop-owner.two-factor.verify',
@@ -226,6 +225,7 @@ $routeBuckets = [
         'shop-owner.product-uploder',
         'shop-owner.products',
         'shop-owner.vouchers-discount',
+        'shopOwner.ecommerce',
         'shop_owner.orders.activate-pickup',
         'shop_owner.orders.arrange-return-pickup',
         'shop_owner.orders.confirm-return-received',
@@ -437,6 +437,9 @@ $routeBuckets = [
         'hr.suspension_requests.index',
         'hr.suspension_requests.show',
         'hr.suspension_requests.store',
+        'shop-owner.suspend-accounts',
+        'shopOwner.suspend-accounts',
+        'shopOwner.user-access-control',
         'shop-owner.employees.activate',
         'shop-owner.employees.apply-template',
         'shop-owner.employees.destroy',
@@ -533,6 +536,7 @@ $routeBuckets = [
         'shop-owner.price-approvals',
         'shop-owner.refund-approvals',
         'shop-owner.salary-adjustment-approvals',
+        'shopOwner.refund-approvals',
         'shop_owner.expenses.approve',
         'shop_owner.expenses.index',
         'shop_owner.expenses.reject',
@@ -735,6 +739,7 @@ foreach ($routeBuckets as $bucket => $routeNames) {
 
         $actorGuards = str_starts_with($routeName, 'shop-owner.')
             || str_starts_with($routeName, 'shop_owner.')
+            || str_starts_with($routeName, 'shopOwner.')
             ? ['shop_owner']
             : ['user'];
 
