@@ -31,6 +31,33 @@ return Application::configure(basePath: dirname(__DIR__))
 
             Route::middleware('api')
                 ->group(base_path('routes/shop-owner-api.php'));
+
+            foreach (Route::getRoutes() as $route) {
+                $routeName = $route->getName();
+                $routeCatalog = config('shop_modules.routes', []);
+                $entry = is_string($routeName)
+                    ? ($routeCatalog[$routeName] ?? config("shop_modules.routes.{$routeName}"))
+                    : null;
+
+                if (is_array($entry)
+                    && ($entry['classification'] ?? null) === 'module'
+                    && is_array($entry['actor_guards'] ?? null)
+                    && $entry['actor_guards'] !== []) {
+                    $actorGuard = (string) $entry['actor_guards'][0];
+                    $declaredMiddleware = $route->middleware();
+                    $hasActorAuthentication = collect($declaredMiddleware)
+                        ->contains(static fn (string $middleware): bool => str_contains($middleware, 'Authenticate:'.$actorGuard)
+                            || $middleware === 'auth:'.$actorGuard);
+
+                    if (! $hasActorAuthentication) {
+                        $route->middleware('auth:'.$actorGuard);
+                    }
+
+                    if (! in_array('shop.module', $route->middleware(), true)) {
+                        $route->middleware('shop.module');
+                    }
+                }
+            }
         }
     )
     ->withMiddleware(function (Middleware $middleware): void {

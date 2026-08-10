@@ -24,7 +24,10 @@ final class EnsureShopModuleEnabled
         }
 
         $routeName = $request->route()?->getName();
-        $entry = is_string($routeName) ? config("shop_modules.routes.{$routeName}") : null;
+        $routeCatalog = config('shop_modules.routes', []);
+        $entry = is_string($routeName)
+            ? ($routeCatalog[$routeName] ?? config("shop_modules.routes.{$routeName}"))
+            : null;
         if (! is_array($entry) || ($entry['classification'] ?? null) !== 'module') {
             return $this->deny($request, ShopModuleAccessDecision::deny(
                 code: 'UNKNOWN_MODULE',

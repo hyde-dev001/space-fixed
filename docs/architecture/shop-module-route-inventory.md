@@ -10,7 +10,7 @@ Generated from `php artisan route:list --json` on 2026-08-10 after reading the r
 - Ordered actor guards are explicit: `shop_owner` is used for owner routes and `user` for employee/ERP routes. Shared routes must list the declared precedence in the config entry.
 - Customer-capable routes are intentionally absent from this internal table and retain their existing customer authorization.
 
-Current named internal route counts: HR and Employees 152, Logistics 9, Core 114, Inventory 85, Retail Operations 45, CRM 20, Finance 76, Repair Operations 56, Procurement 48. The route files still contain unnamed internal routes; Task 10 assigns stable names before enforcement is enabled.
+Current named internal route counts: HR and Employees 152, Logistics 9, Core 116, Inventory 85, Retail Operations 45, CRM 20, Finance 76, Repair Operations 56, Procurement 48. The route files still contain unnamed internal routes; Task 10 assigns stable names before enforcement is enabled.
 
 ## Coverage checklist
 
@@ -593,6 +593,8 @@ Current named internal route counts: HR and Employees 152, Logistics 9, Core 114
 | `shop-owner.roles.available` | GET\|HEAD | `shop-owner/roles/available` | `App\Http\Controllers\ShopOwner\UserAccessControlController@getAvailableRoles` | `shop_owner` | No | Core | auth guard + existing route permissions | none (core) |
 | `shop-owner.salary-adjustment-approvals` | GET\|HEAD | `shop-owner/salary-adjustment-approvals` | `Closure` | `shop_owner` | No | Finance | auth guard + existing route permissions | shop.module (finance) |
 | `shop-owner.settings` | GET\|HEAD | `shop-owner/settings` | `App\Http\Controllers\ShopOwner\ShopSettingsController@index` | `shop_owner` | No | Core | auth guard + existing route permissions | none (core) |
+| `shop-owner.upgrade-requests.store` | POST | `shop-owner/settings/business-upgrade` | `App\Http\Controllers\ShopOwner\ShopOwnerUpgradeRequestController@store` | `shop_owner` | No | Core | auth guard + existing route permissions | none (core) |
+| `shop-owner.modules.update` | PATCH | `shop-owner/settings/modules/{moduleKey}` | `App\Http\Controllers\ShopOwner\ShopOwnerModuleController@update` | `shop_owner` | No | Core | auth guard + existing route permissions | none (core) |
 | `shop-owner.settings.geofence` | POST | `shop-owner/settings/geofence` | `App\Http\Controllers\ShopOwner\ShopSettingsController@updateGeofence` | `shop_owner` | No | Core | auth guard + existing route permissions | none (core) |
 | `shop-owner.settings.paymongo-key` | POST | `shop-owner/settings/paymongo-key` | `App\Http\Controllers\ShopOwner\ShopSettingsController@updatePaymongoKey` | `shop_owner` | No | Core | auth guard + existing route permissions | none (core) |
 | `shop-owner.settings.paymongo-key.remove` | DELETE | `shop-owner/settings/paymongo-key` | `App\Http\Controllers\ShopOwner\ShopSettingsController@removePaymongoKey` | `shop_owner` | No | Core | auth guard + existing route permissions | none (core) |
@@ -631,4 +633,3 @@ Current named internal route counts: HR and Employees 152, Logistics 9, Core 114
 | `staff.overtime.today_approved` | GET\|HEAD | `api/staff/overtime/today-approved` | `App\Http\Controllers\Erp\HR\OvertimeController@getTodayApprovedOvertime` | `user` | No | HR and Employees | auth guard + existing route permissions | shop.module (hr_employees) |
 | `staff.payslips.my` | GET\|HEAD | `api/staff/payslips/my` | `App\Http\Controllers\Erp\HR\PayrollController@myPayslips` | `user` | No | Finance | auth guard + existing route permissions | shop.module (finance) |
 | `staff.shop_hours.today` | GET\|HEAD | `api/staff/shop-hours/today` | `App\Http\Controllers\Erp\HR\AttendanceController@getShopHoursToday` | `user` | No | HR and Employees | auth guard + existing route permissions | shop.module (hr_employees) |
-

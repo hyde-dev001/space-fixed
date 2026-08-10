@@ -175,6 +175,8 @@ $routeBuckets = [
         'shop-owner.roles.allowed',
         'shop-owner.roles.available',
         'shop-owner.settings',
+        'shop-owner.upgrade-requests.store',
+        'shop-owner.modules.update',
         'shop-owner.settings.geofence',
         'shop-owner.settings.paymongo-key',
         'shop-owner.settings.paymongo-key.remove',
