@@ -10,6 +10,7 @@ use App\Models\ShopOwnerSubscription;
 use App\Services\CaviteLocationPolicyService;
 use App\Services\ShopPolicyTemplateService;
 use App\Services\ShopPolicyVersionService;
+use App\Services\ShopOwnerDocumentRequirementService;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
@@ -23,6 +24,10 @@ use Inertia\Response;
 
 class ShopSettingsController extends Controller
 {
+    public function __construct(
+        private readonly ShopOwnerDocumentRequirementService $documentRequirements,
+    ) {}
+
     /**
      * Display the shop settings page for the authenticated shop owner.
      */
@@ -63,46 +68,7 @@ class ShopSettingsController extends Controller
         $businessType = $this->normalizeBusinessType((string) $shopOwner->business_type);
         $isRetailCapable = in_array($businessType, ['retail', 'both'], true);
 
-        $requiredDocumentTypes = [
-            'dti_registration' => [
-                'title' => 'Business Registration (DTI)',
-                'description' => 'Official DTI or SEC registration certificate for your business.',
-            ],
-            'mayors_permit' => [
-                'title' => "Mayor's Permit / Business Permit",
-                'description' => 'Current local business permit issued by your city or municipality.',
-            ],
-            'bir_certificate' => [
-                'title' => 'BIR Certificate of Registration (COR)',
-                'description' => 'BIR-issued certificate proving your business is tax-registered.',
-            ],
-            'valid_id' => [
-                'title' => 'Valid ID of Owner',
-                'description' => 'Government-issued valid ID of the registered owner.',
-            ],
-        ];
-
-        $requiredDocuments = [];
-        $documentsByType = $shopOwner->documents
-            ->sortByDesc('created_at')
-            ->groupBy(fn ($document) => $this->normalizeShopDocumentType((string) $document->document_type));
-
-        foreach ($requiredDocumentTypes as $type => $meta) {
-            $document = $documentsByType->get($type)?->first();
-            $filePath = $document?->file_path;
-            $extension = $filePath ? strtolower(pathinfo($filePath, PATHINFO_EXTENSION)) : '';
-            $isImage = in_array($extension, ['jpg', 'jpeg', 'png', 'gif', 'webp']);
-
-            $requiredDocuments[] = [
-                'key' => $type,
-                'title' => $meta['title'],
-                'description' => $meta['description'],
-                'status' => $document?->status ?? 'missing',
-                'is_uploaded' => (bool) $document,
-                'is_image' => $isImage,
-                'file_url' => $filePath ? asset('storage/' . ltrim($filePath, '/')) : null,
-            ];
-        }
+        $requiredDocuments = $this->documentRequirements->settingsPayload($shopOwner->documents);
 
         return Inertia::render('ShopOwner/Settings/shopSetting', [
             'shop_settings' => [
@@ -141,31 +107,6 @@ class ShopSettingsController extends Controller
                 ],
             ],
         ]);
-    }
-
-    /**
-     * Normalize shop document type values across legacy and current formats.
-     */
-    private function normalizeShopDocumentType(string $type): string
-    {
-        $normalized = strtolower(trim($type));
-
-        $aliases = [
-            'dti_registration' => 'dti_registration',
-            'dti registration' => 'dti_registration',
-            'business registration (dti/sec)' => 'dti_registration',
-            'mayors_permit' => 'mayors_permit',
-            "mayor's permit" => 'mayors_permit',
-            "mayor's permit / business permit" => 'mayors_permit',
-            'bir_certificate' => 'bir_certificate',
-            'bir certificate' => 'bir_certificate',
-            'bir certificate of registration (cor)' => 'bir_certificate',
-            'valid_id' => 'valid_id',
-            'valid id' => 'valid_id',
-            'valid id of owner' => 'valid_id',
-        ];
-
-        return $aliases[$normalized] ?? str_replace('-', '_', $normalized);
     }
 
     private function normalizeBusinessType(?string $value): string
