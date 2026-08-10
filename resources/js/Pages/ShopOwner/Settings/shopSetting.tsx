@@ -4,6 +4,7 @@ import axios from 'axios';
 import 'leaflet/dist/leaflet.css';
 																																								import { AlertTriangle, Building2, CalendarDays, Check, CheckCircle2, ChevronDown, Eye, EyeOff, FileText, MapPin, Pencil, Settings, Store, Trash2, User, Wrench } from 'lucide-react';
 																																								import UserSwal from '../../UserSide/Shared/UserModal';
+import BusinessScalingSettings, { type BusinessScalingPayload } from './components/BusinessScalingSettings';
 import { requiredPolicySectionKeys } from '../../../utils/policySectionResolver';
 import type { PolicySectionKey, ShopPolicyEditorStateResponse, ShopPolicySections } from '../../../types/shopPolicy';
 
@@ -26,6 +27,7 @@ type ShopSettingsPayload = {
 	max_locations: number | null;
 	business_name: string;
 	approval_pages: ApprovalPages;
+	business_scaling: BusinessScalingPayload;
 	pay_cycle: 'monthly' | 'semi_monthly';
 	pay_day_first: number;
 	pay_day_second: number;
@@ -2086,6 +2088,10 @@ const ShopSetting: React.FC = () => {
 								</div>
 								</div>
 							</div>
+
+					<div className="lg:col-span-12 lg:order-3">
+						<BusinessScalingSettings businessScaling={shop_settings.business_scaling} />
+					</div>
 
 					<div className="rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-12 lg:order-7">
 						<div className="border-b border-gray-200 p-5">

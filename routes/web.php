@@ -7,6 +7,8 @@ use App\Http\Controllers\ForgotPasswordOtpController;
 use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\ShopOwner\EcommerceController;
 use App\Http\Controllers\ShopOwner\ShopSettingsController;
+use App\Http\Controllers\ShopOwner\ShopOwnerUpgradeRequestController;
+use App\Http\Controllers\ShopOwner\ShopOwnerModuleController;
 use App\Http\Controllers\ShopOwner\UserAccessControlController;
 use App\Http\Controllers\ShopOwnerAuthController;
 use App\Http\Controllers\ShopOwnerPasswordSetupController;
@@ -15,6 +17,7 @@ use App\Http\Controllers\superAdmin\DataReportAccessController;
 use App\Http\Controllers\superAdmin\FlaggedAccountsController;
 use App\Http\Controllers\superAdmin\NotificationCommunicationToolsController;
 use App\Http\Controllers\superAdmin\ShopOwnerRegistrationViewController;
+use App\Http\Controllers\superAdmin\ShopOwnerUpgradeRequestController as SuperAdminShopOwnerUpgradeRequestController;
 use App\Http\Controllers\superAdmin\SuperAdminUserManagementController;
 use App\Http\Controllers\superAdmin\SystemMonitoringDashboardController;
 use App\Http\Controllers\SuperAdminAuthController;
@@ -838,6 +841,12 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
     // SHOP SETTINGS - Available to ALL
     Route::get('/settings', [ShopSettingsController::class, 'index'])->name('settings');
     Route::put('/settings', [ShopSettingsController::class, 'update'])->name('settings.update');
+    Route::post('/settings/business-upgrade', [ShopOwnerUpgradeRequestController::class, 'store'])
+        ->middleware('throttle:5,1')
+        ->name('upgrade-requests.store');
+    Route::patch('/settings/modules/{moduleKey}', [ShopOwnerModuleController::class, 'update'])
+        ->middleware('throttle:30,1')
+        ->name('modules.update');
     Route::get('/settings/policies', [ShopSettingsController::class, 'getPolicyEditorState'])->name('settings.policies');
     Route::put('/settings/policies/draft', [ShopSettingsController::class, 'savePolicyDraft'])->name('settings.policies.draft');
     Route::post('/settings/policies/publish', [ShopSettingsController::class, 'publishPolicy'])->name('settings.policies.publish');
@@ -1705,6 +1714,12 @@ Route::middleware('super_admin.auth')->prefix('admin')->name('admin.')->group(fu
 
     // Shop management routes
     Route::get('/registered-shops', [SuperAdminController::class, 'showRegisteredShops'])->name('registered-shops');
+    Route::get('/business-upgrade-requests', [SuperAdminShopOwnerUpgradeRequestController::class, 'index'])
+        ->name('business-upgrade-requests.index');
+    Route::patch('/business-upgrade-requests/{upgradeRequest}', [SuperAdminShopOwnerUpgradeRequestController::class, 'update'])
+        ->name('business-upgrade-requests.update');
+    Route::get('/business-upgrade-requests/{upgradeRequest}/documents/{document}', [SuperAdminShopOwnerUpgradeRequestController::class, 'download'])
+        ->name('business-upgrade-requests.documents.download');
     Route::get('/shops/{id}/details', [SuperAdminController::class, 'shopDetails'])->name('shops.details');
     Route::get('/subscription-management', [SuperAdminController::class, 'showSubscriptionManagement'])->name('subscription-management');
     Route::post('/premium-plans', [SuperAdminController::class, 'storePremiumPlan'])->name('premium-plans.store');

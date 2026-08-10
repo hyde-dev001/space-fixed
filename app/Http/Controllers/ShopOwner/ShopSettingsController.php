@@ -5,9 +5,13 @@ namespace App\Http\Controllers\ShopOwner;
 use App\Http\Controllers\Controller;
 use App\Models\HR\BranchPayrollSetting;
 use App\Models\ProcurementSettings;
-use App\Models\ShopPolicyVersion;
+use App\Models\ShopOwner;
 use App\Models\ShopOwnerSubscription;
+use App\Models\ShopOwnerUpgradeRequest;
+use App\Models\ShopPolicyVersion;
 use App\Services\CaviteLocationPolicyService;
+use App\Services\ShopModuleAccessService;
+use App\Services\ShopOwnerDocumentRequirementService;
 use App\Services\ShopPolicyTemplateService;
 use App\Services\ShopPolicyVersionService;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -23,6 +27,11 @@ use Inertia\Response;
 
 class ShopSettingsController extends Controller
 {
+    public function __construct(
+        private readonly ShopOwnerDocumentRequirementService $documentRequirements,
+        private readonly ShopModuleAccessService $shopModuleAccess,
+    ) {}
+
     /**
      * Display the shop settings page for the authenticated shop owner.
      */
@@ -63,46 +72,8 @@ class ShopSettingsController extends Controller
         $businessType = $this->normalizeBusinessType((string) $shopOwner->business_type);
         $isRetailCapable = in_array($businessType, ['retail', 'both'], true);
 
-        $requiredDocumentTypes = [
-            'dti_registration' => [
-                'title' => 'Business Registration (DTI)',
-                'description' => 'Official DTI or SEC registration certificate for your business.',
-            ],
-            'mayors_permit' => [
-                'title' => "Mayor's Permit / Business Permit",
-                'description' => 'Current local business permit issued by your city or municipality.',
-            ],
-            'bir_certificate' => [
-                'title' => 'BIR Certificate of Registration (COR)',
-                'description' => 'BIR-issued certificate proving your business is tax-registered.',
-            ],
-            'valid_id' => [
-                'title' => 'Valid ID of Owner',
-                'description' => 'Government-issued valid ID of the registered owner.',
-            ],
-        ];
-
-        $requiredDocuments = [];
-        $documentsByType = $shopOwner->documents
-            ->sortByDesc('created_at')
-            ->groupBy(fn ($document) => $this->normalizeShopDocumentType((string) $document->document_type));
-
-        foreach ($requiredDocumentTypes as $type => $meta) {
-            $document = $documentsByType->get($type)?->first();
-            $filePath = $document?->file_path;
-            $extension = $filePath ? strtolower(pathinfo($filePath, PATHINFO_EXTENSION)) : '';
-            $isImage = in_array($extension, ['jpg', 'jpeg', 'png', 'gif', 'webp']);
-
-            $requiredDocuments[] = [
-                'key' => $type,
-                'title' => $meta['title'],
-                'description' => $meta['description'],
-                'status' => $document?->status ?? 'missing',
-                'is_uploaded' => (bool) $document,
-                'is_image' => $isImage,
-                'file_url' => $filePath ? asset('storage/' . ltrim($filePath, '/')) : null,
-            ];
-        }
+        $requiredDocuments = $this->documentRequirements->settingsPayload($shopOwner->documents);
+        $businessScaling = $this->businessScalingPayload($shopOwner, $businessType);
 
         return Inertia::render('ShopOwner/Settings/shopSetting', [
             'shop_settings' => [
@@ -113,6 +84,7 @@ class ShopSettingsController extends Controller
                 'business_name'          => $shopOwner->business_name,
                 'approval_pages'         => $approvalPages,
                 'required_documents'     => $requiredDocuments,
+                'business_scaling'       => $businessScaling,
                 'repair_payment_policy'  => $normalizedRepairPaymentPolicy,
                 'repair_workload_limit'  => (int) ($shopOwner->repair_workload_limit ?? 20),
                 'order_refund_deadline_days' => (int) ($shopOwner->order_refund_deadline_days ?? 7),
@@ -144,28 +116,162 @@ class ShopSettingsController extends Controller
     }
 
     /**
-     * Normalize shop document type values across legacy and current formats.
+     * Build the owner-facing business scaling payload without exposing private
+     * evidence storage details or full upgrade request records.
+     *
+     * @return array<string, mixed>
      */
-    private function normalizeShopDocumentType(string $type): string
+    private function businessScalingPayload(ShopOwner $shopOwner, string $businessType): array
     {
-        $normalized = strtolower(trim($type));
+        $registrationType = strtolower(trim((string) $shopOwner->registration_type));
+        $businessType = $this->normalizeBusinessType($businessType);
+        $accountTransitions = [];
+        $capabilityTransitions = [];
+        $combinedTransitions = [];
 
-        $aliases = [
-            'dti_registration' => 'dti_registration',
-            'dti registration' => 'dti_registration',
-            'business registration (dti/sec)' => 'dti_registration',
-            'mayors_permit' => 'mayors_permit',
-            "mayor's permit" => 'mayors_permit',
-            "mayor's permit / business permit" => 'mayors_permit',
-            'bir_certificate' => 'bir_certificate',
-            'bir certificate' => 'bir_certificate',
-            'bir certificate of registration (cor)' => 'bir_certificate',
-            'valid_id' => 'valid_id',
-            'valid id' => 'valid_id',
-            'valid id of owner' => 'valid_id',
+        if ($registrationType === 'individual') {
+            $accountTransitions[] = [
+                'key' => 'individual_to_company',
+                'label' => 'Business account',
+                'requested_registration_type' => 'company',
+                'requested_business_type' => $businessType,
+            ];
+        }
+
+        if (in_array($businessType, ['retail', 'repair'], true)) {
+            $capabilityTransitions[] = [
+                'key' => $businessType.'_to_both',
+                'label' => $businessType === 'retail' ? 'Retail + Repair' : 'Repair + Retail',
+                'requested_registration_type' => $registrationType,
+                'requested_business_type' => 'both',
+            ];
+
+            if ($registrationType === 'individual') {
+                $combinedTransitions[] = [
+                    'key' => 'individual_'.$businessType.'_to_company_both',
+                    'label' => 'Business account + both capabilities',
+                    'requested_registration_type' => 'company',
+                    'requested_business_type' => 'both',
+                ];
+            }
+        }
+
+        $pendingRequest = null;
+        $latestTerminalRequest = null;
+        if (Schema::hasTable('shop_owner_upgrade_requests')) {
+            $pendingRequest = $shopOwner->upgradeRequests()
+                ->with('documents')
+                ->where('status', ShopOwnerUpgradeRequest::STATUS_PENDING)
+                ->latest('id')
+                ->first();
+            $latestTerminalRequest = $shopOwner->upgradeRequests()
+                ->with('documents')
+                ->whereIn('status', [
+                    ShopOwnerUpgradeRequest::STATUS_APPROVED,
+                    ShopOwnerUpgradeRequest::STATUS_REJECTED,
+                    ShopOwnerUpgradeRequest::STATUS_SUPERSEDED,
+                ])
+                ->latest('id')
+                ->first();
+        }
+
+        $documentsByType = $shopOwner->documents
+            ->sortByDesc('created_at')
+            ->groupBy(fn ($document): string => $this->documentRequirements->normalizeType((string) $document->document_type));
+        $requiredEvidence = [];
+        foreach ($this->documentRequirements->requirementSnapshot() as $key => $definition) {
+            $document = $documentsByType->get($key)?->first();
+            $requiredEvidence[] = [
+                'key' => $key,
+                'title' => $definition['title'],
+                'description' => $definition['description'],
+                'required' => true,
+                'existing_document_id' => $document?->status === 'approved' ? (int) $document->id : null,
+                'existing_status' => $document?->status,
+            ];
+        }
+
+        $moduleCatalog = [];
+        foreach (config('shop_modules.modules', []) as $moduleKey => $module) {
+            $moduleCatalog[] = [
+                'key' => (string) $moduleKey,
+                'label' => (string) ($module['label'] ?? $moduleKey),
+                'registration_types' => array_values($module['registration_types'] ?? []),
+                'business_types' => array_values($module['business_types'] ?? []),
+            ];
+        }
+
+        $modules = Schema::hasTable('shop_owner_modules')
+            ? $this->shopModuleAccess->statesFor($shopOwner)
+            : $this->fallbackModuleStates($shopOwner, $registrationType, $businessType);
+
+        return [
+            'current' => [
+                'registration_type' => $registrationType,
+                'business_type' => $businessType,
+            ],
+            'available_account_transitions' => $accountTransitions,
+            'available_capability_transitions' => $capabilityTransitions,
+            'available_combined_transitions' => $combinedTransitions,
+            'pending_request' => $this->serializeUpgradeRequest($pendingRequest),
+            'latest_terminal_request' => $this->serializeUpgradeRequest($latestTerminalRequest),
+            'required_evidence' => $requiredEvidence,
+            'module_catalog' => $moduleCatalog,
+            'modules' => $modules,
         ];
+    }
 
-        return $aliases[$normalized] ?? str_replace('-', '_', $normalized);
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function serializeUpgradeRequest(?ShopOwnerUpgradeRequest $request): ?array
+    {
+        if (! $request) {
+            return null;
+        }
+
+        return [
+            'id' => (int) $request->id,
+            'status' => (string) $request->status,
+            'current_registration_type' => (string) $request->current_registration_type,
+            'current_business_type' => (string) $request->current_business_type,
+            'requested_registration_type' => (string) $request->requested_registration_type,
+            'requested_business_type' => (string) $request->requested_business_type,
+            'decision_reason' => $request->decision_reason,
+            'submitted_at' => $request->created_at?->toIso8601String(),
+            'reviewed_at' => $request->reviewed_at?->toIso8601String(),
+            'documents' => $request->documents->map(static fn ($document): array => [
+                'document_type' => (string) $document->document_type,
+                'status' => (string) ($document->source_status ?? ''),
+                'source_status' => (string) ($document->source_status ?? ''),
+            ])->values()->all(),
+        ];
+    }
+
+    /**
+     * Keep the settings page renderable during a deployment where the module
+     * tables have not yet been migrated. Access remains fail-closed.
+     *
+     * @return array<string, array<string, bool|string|null>>
+     */
+    private function fallbackModuleStates(ShopOwner $shopOwner, string $registrationType, string $businessType): array
+    {
+        $status = strtolower(trim((string) $shopOwner->status));
+        $states = [];
+        foreach (config('shop_modules.modules', []) as $moduleKey => $module) {
+            $eligible = $status === 'approved'
+                && in_array($registrationType, $module['registration_types'] ?? [], true)
+                && in_array($businessType, $module['business_types'] ?? [], true);
+            $states[$moduleKey] = [
+                'eligible' => $eligible,
+                'enabled' => false,
+                'accessible' => false,
+                'code' => 'MODULE_STATE_MISSING',
+                'reason' => 'This module has not been initialized for the shop.',
+            ];
+        }
+
+        return $states;
     }
 
     private function normalizeBusinessType(?string $value): string
@@ -223,6 +329,7 @@ class ShopSettingsController extends Controller
         }
 
         $encoded = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
         return $encoded === false ? '' : $encoded;
     }
 
