@@ -49,6 +49,8 @@ This removal applies to all shop owners, including Individual accounts. The chan
 
 The readable slugs map server-side to the existing module keys, for example `retail` maps to `retail_operations` and `hr` maps to `hr_employees`.
 
+While the picker is open and no module is active, the owner shell may retain the core portal items alongside **ERP Workspace**. It must not render the **Employee Modules** group or the standalone **Logistics** accordion in this state. After a module is selected, the scoped ERP sidebar replaces those core items with only the selected module's pages and the ERP Workspace link.
+
 ### Module state
 
 Each module route renders a lightweight landing page inside `AppLayoutERP` containing:
