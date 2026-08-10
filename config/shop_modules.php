@@ -580,6 +580,10 @@ $routeBuckets = [
         'staff.payslips.my',
     ],
     'crm' => [
+        'crm.api.customers.index',
+        'crm.api.customers.show',
+        'crm.api.dashboard-stats',
+        'crm.api.reviews.index',
         'crm.dashboard',
         'crm.customer-reviews',
         'crm.customer-support',
@@ -742,6 +746,10 @@ $routeBuckets = [
     'logistics' => [
         'api.logistics.attempts.file',
         'api.logistics.incidents.evidence',
+        'logistics.api.dashboard-stats',
+        'logistics.api.riders.index',
+        'logistics.api.shipments.index',
+        'logistics.api.shipments.show',
         'erp.logistics.batches',
         'erp.logistics.dashboard',
         'erp.logistics.deliveries',
@@ -1030,27 +1038,27 @@ $routes['shop-owner.erp.api.workspace'] = $workspaceApiRoute;
 $ownerReadPairs = [
     'crm.dashboard' => [
         'shop-owner.erp.crm.dashboard',
-        'shop-owner.erp.api.crm.dashboard',
+        'shop-owner.erp.api.crm.dashboard-stats',
     ],
     'crm.customers' => [
         'shop-owner.erp.crm.customers',
-        'shop-owner.erp.api.crm.customers',
+        'shop-owner.erp.api.crm.customers.index',
     ],
     'crm.customer-reviews' => [
         'shop-owner.erp.crm.customer-reviews',
-        'shop-owner.erp.api.crm.reviews',
+        'shop-owner.erp.api.crm.reviews.index',
     ],
     'erp.logistics.dashboard' => [
         'shop-owner.erp.logistics.dashboard',
-        'shop-owner.erp.api.logistics.dashboard',
+        'shop-owner.erp.api.logistics.dashboard-stats',
     ],
     'erp.logistics.shipments' => [
         'shop-owner.erp.logistics.shipments',
-        'shop-owner.erp.api.logistics.shipments',
+        'shop-owner.erp.api.logistics.shipments.index',
     ],
     'erp.logistics.riders' => [
         'shop-owner.erp.logistics.riders',
-        'shop-owner.erp.api.logistics.riders',
+        'shop-owner.erp.api.logistics.riders.index',
     ],
     'erp.hr.audit-logs' => [
         'shop-owner.erp.hr.audit-logs',
@@ -1111,6 +1119,37 @@ foreach ($ownerReadPairs as $employeeRouteName => [$ownerRouteName, $supportingR
     $ownerRoute['actor_guard'] = 'shop_owner';
     $ownerRoute['paired_route'] = $employeeRouteName;
     $ownerRoute['supporting_routes'] = [$supportingRouteName];
+    $routes[$ownerRouteName] = $ownerRoute;
+}
+
+$ownerReadApiPairs = [
+    'crm.api.dashboard-stats' => 'shop-owner.erp.api.crm.dashboard-stats',
+    'crm.api.customers.index' => 'shop-owner.erp.api.crm.customers.index',
+    'crm.api.customers.show' => 'shop-owner.erp.api.crm.customers.show',
+    'crm.api.reviews.index' => 'shop-owner.erp.api.crm.reviews.index',
+    'logistics.api.dashboard-stats' => 'shop-owner.erp.api.logistics.dashboard-stats',
+    'logistics.api.shipments.index' => 'shop-owner.erp.api.logistics.shipments.index',
+    'logistics.api.shipments.show' => 'shop-owner.erp.api.logistics.shipments.show',
+    'logistics.api.riders.index' => 'shop-owner.erp.api.logistics.riders.index',
+];
+
+foreach ($ownerReadApiPairs as $employeeRouteName => $ownerRouteName) {
+    if (! isset($routes[$employeeRouteName])) {
+        continue;
+    }
+
+    $employeeRoute = $routes[$employeeRouteName];
+    $employeeRoute['owner_access'] = 'allowed';
+    $employeeRoute['owner_denial_reason'] = null;
+    $employeeRoute['paired_route'] = $ownerRouteName;
+    $employeeRoute['supporting_routes'] = [$ownerRouteName];
+    $routes[$employeeRouteName] = $employeeRoute;
+
+    $ownerRoute = $employeeRoute;
+    $ownerRoute['audience'] = 'shop_owner';
+    $ownerRoute['actor_guard'] = 'shop_owner';
+    $ownerRoute['paired_route'] = $employeeRouteName;
+    $ownerRoute['supporting_routes'] = [$employeeRouteName];
     $routes[$ownerRouteName] = $ownerRoute;
 }
 

@@ -447,8 +447,10 @@ Route::prefix('api/logistics')->middleware(['auth:user,shop_owner'])->group(func
     Route::post('/batches/{batch}/restore', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'restore']);
     Route::get('/settings', [\App\Http\Controllers\Api\Logistics\LogisticsSettingController::class, 'show']);
     Route::put('/settings', [\App\Http\Controllers\Api\Logistics\LogisticsSettingController::class, 'update']);
-    Route::get('/shipments', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'index']);
-    Route::get('/shipments/{shipment}', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'show']);
+    Route::get('/shipments', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'index'])
+        ->name('logistics.api.shipments.index');
+    Route::get('/shipments/{shipment}', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'show'])
+        ->name('logistics.api.shipments.show');
     Route::post('/legs/{leg}/assign', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'assign']);
     Route::post('/legs/{leg}/accept', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'acceptOffer']);
     Route::post('/legs/{leg}/reject', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'rejectOffer']);
@@ -478,10 +480,15 @@ Route::prefix('api/logistics')->middleware(['auth:user,shop_owner'])->group(func
     Route::post('/legs/{leg}/return-to-shop', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'createReturn']);
     Route::post('/legs/{leg}/return-proofs/{proof}/handoff', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'confirmReturnHandoff']);
     Route::post('/legs/{leg}/return-proofs/{proof}/receipt', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'confirmReturnReceipt']);
-    Route::get('/riders', [\App\Http\Controllers\Api\Logistics\RiderProfileController::class, 'index']);
+    Route::get('/riders', [\App\Http\Controllers\Api\Logistics\RiderProfileController::class, 'index'])
+        ->name('logistics.api.riders.index');
     Route::post('/riders', [\App\Http\Controllers\Api\Logistics\RiderProfileController::class, 'store']);
     Route::patch('/riders/{rider}', [\App\Http\Controllers\Api\Logistics\RiderProfileController::class, 'update']);
 });
+
+Route::get('/api/logistics/dashboard-stats', [\App\Http\Controllers\Logistics\ErpLogisticsController::class, 'dashboardStats'])
+    ->middleware(['auth:user', 'check.suspension'])
+    ->name('logistics.api.dashboard-stats');
 
 // Customer Conversation Routes - Customer-side chat with shops
 Route::prefix('api/customer/conversations')->middleware(['auth:user', 'customer.account'])->group(function () {

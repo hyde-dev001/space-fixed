@@ -19,6 +19,7 @@ use App\Models\User;
 use App\Services\Logistics\ArrivalService;
 use App\Services\Logistics\RiderProfileSyncService;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
@@ -39,6 +40,15 @@ class ErpLogisticsController extends Controller
         $shopOwnerId = $this->authorizedShopOwnerId('access-logistics-dashboard');
 
         return Inertia::render('ERP/Logistics/Dashboard', [
+            'stats' => $this->stats($shopOwnerId),
+        ]);
+    }
+
+    public function dashboardStats(): JsonResponse
+    {
+        $shopOwnerId = $this->authorizedShopOwnerId('access-logistics-dashboard');
+
+        return response()->json([
             'stats' => $this->stats($shopOwnerId),
         ]);
     }
