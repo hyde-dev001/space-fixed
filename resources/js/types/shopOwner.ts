@@ -8,6 +8,26 @@ export type BusinessType = 'retail' | 'repair' | 'both' | 'both (retail & repair
 export type RegistrationType = 'individual' | 'company';
 export type ShopOwnerStatusType = 'pending' | 'approved' | 'rejected' | 'suspended';
 
+export type ShopModuleKey =
+    | 'retail_operations'
+    | 'repair_operations'
+    | 'hr_employees'
+    | 'finance'
+    | 'crm'
+    | 'inventory'
+    | 'procurement'
+    | 'logistics';
+
+export interface ShopModuleState {
+    eligible: boolean;
+    enabled: boolean;
+    accessible: boolean;
+    code: string | null;
+    reason: string | null;
+}
+
+export type ShopModuleStates = Record<ShopModuleKey, ShopModuleState>;
+
 /**
  * Shop Owner model interface
  * Matches the data shared from backend via Inertia middleware
@@ -64,6 +84,7 @@ export interface NavigationSubItem {
 export interface ShopOwnerPageProps {
     auth: {
         shop_owner: ShopOwner | null;
+        shopModules?: ShopModuleStates;
         user?: any;
         super_admin?: any;
     };

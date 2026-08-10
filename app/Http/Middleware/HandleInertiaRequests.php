@@ -2,15 +2,20 @@
 
 namespace App\Http\Middleware;
 
-use App\Models\Notification;
-use App\Models\ConversationMessage;
 use App\Models\CartItem;
+use App\Models\ConversationMessage;
+use App\Models\Notification;
+use App\Services\ShopModuleAccessService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
 {
+    public function __construct(
+        private readonly ShopModuleAccessService $shopModuleAccess,
+    ) {}
+
     /**
      * The root template that's loaded on the first page visit.
      *
@@ -41,6 +46,18 @@ class HandleInertiaRequests extends Middleware
     {
         $user = Auth::guard('user')->user();
         $isCustomer = $user && empty($user->shop_owner_id);
+        $internalShopOwner = null;
+
+        if (! Auth::guard('super_admin')->check()) {
+            if (Auth::guard('shop_owner')->check()) {
+                $internalShopOwner = Auth::guard('shop_owner')->user();
+            } elseif ($user && ! $isCustomer) {
+                $internalShopOwner = $this->shopModuleAccess->resolveShopOwnerForActor($user);
+                if ($internalShopOwner && ! $user->relationLoaded('shopOwner')) {
+                    $user->setRelation('shopOwner', $internalShopOwner);
+                }
+            }
+        }
 
         $orderStatusCount = 0;
         $repairStatusCount = 0;
@@ -185,6 +202,10 @@ class HandleInertiaRequests extends Middleware
                         : (Auth::guard('super_admin')->check()
                             ? ['*'] // Super admin has full access
                             : [])),
+
+                ...($internalShopOwner ? [
+                    'shopModules' => fn (): array => $this->shopModuleAccess->statesFor($internalShopOwner),
+                ] : []),
             ],
         ];
     }
