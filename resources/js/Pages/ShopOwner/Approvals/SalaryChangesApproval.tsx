@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Head, usePage } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import AppLayout_shopOwner from "../../../layout/AppLayout_shopOwner";
+import AppLayoutERP from "../../../layout/AppLayout_ERP";
 
 type ChangeStatus = "pending" | "approved" | "rejected" | "applied" | "cancelled";
 type ChangeType = "new_hire_rate_setup" | "minor_adjustment" | "major_adjustment" | "correction";
@@ -189,7 +190,8 @@ const getCsrfToken = (): string =>
 	(document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content ?? "";
 
 const SalaryAdjustmentApprovalPage: React.FC = () => {
-	const { auth } = usePage().props as any;
+	const { auth, erpMode } = usePage().props as any;
+	const Layout = erpMode === true ? AppLayoutERP : AppLayout_shopOwner;
 	const permissions: string[] = auth?.permissions ?? [];
 	const canApprove = permissions.includes("approve-salary-change") || Boolean(auth?.shop_owner);
 
@@ -439,7 +441,7 @@ const SalaryAdjustmentApprovalPage: React.FC = () => {
 	);
 
 	return (
-		<AppLayout_shopOwner>
+		<Layout>
 			<Head title="Salary Adjustment Approval - Solespace" />
 
 			<div className="space-y-6">
@@ -578,7 +580,7 @@ const SalaryAdjustmentApprovalPage: React.FC = () => {
 
 				{viewAdjustment && <ViewModal adjustment={viewAdjustment} />}
 			</div>
-		</AppLayout_shopOwner>
+		</Layout>
 	);
 };
 

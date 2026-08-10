@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
 import AppLayoutShopOwner from '../../../layout/AppLayout_shopOwner';
+import AppLayoutERP from '../../../layout/AppLayout_ERP';
 import Swal from 'sweetalert2';
 import Button from '../../../components/ui/button/Button';
 import { Modal } from '../../../components/ui/modal';
@@ -162,6 +163,8 @@ const MetricCard: React.FC<MetricData> = ({
 
 const UserAccessControl: React.FC = () => {
   const pageProps = usePage().props as any;
+  const erpMode = pageProps?.erpMode === true;
+  const Layout = erpMode ? AppLayoutERP : AppLayoutShopOwner;
   const flash = pageProps.flash || {};
   const initialEmployees = pageProps.employees;
   
@@ -2109,7 +2112,7 @@ const UserAccessControl: React.FC = () => {
   };
 
   return (
-    <AppLayoutShopOwner>
+    <Layout>
       <Head title="User Access Control" />
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
         <div className="max-w-7xl mx-auto p-6">
@@ -3254,7 +3257,7 @@ const UserAccessControl: React.FC = () => {
           )}
         </div>
       </div>
-    </AppLayoutShopOwner>
+    </Layout>
   );
 };
 

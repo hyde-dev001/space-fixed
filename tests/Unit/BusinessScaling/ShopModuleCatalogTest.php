@@ -62,6 +62,8 @@ final class ShopModuleCatalogTest extends TestCase
             'risk_tier',
             'paired_route',
             'navigation_group',
+            'navigation_label',
+            'navigation_order',
             'self_service',
             'supporting_routes',
             'actor_persistence',

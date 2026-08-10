@@ -6,6 +6,7 @@ namespace Tests\Feature\BusinessScaling;
 
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerModule;
+use App\Services\ErpWorkspaceNavigationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -114,6 +115,15 @@ final class OwnerErpPageContractTest extends TestCase
             );
     }
 
+    public function test_owner_module_navigation_uses_loaded_catalog_pages_instead_of_a_hard_coded_list(): void
+    {
+        $pages = app(ErpWorkspaceNavigationService::class)->forKey('crm')['pages'];
+        $routeNames = array_column($pages, 'routeName');
+
+        $this->assertContains('shop-owner.erp.staff.customers', $routeNames);
+        $this->assertNotContains('shop-owner.erp.api.crm.dashboard-stats', $routeNames);
+    }
+
     public function test_every_enabled_module_landing_exposes_only_its_related_pages(): void
     {
         config([
@@ -129,22 +139,46 @@ final class OwnerErpPageContractTest extends TestCase
             [
                 'key' => 'retail_operations',
                 'slug' => 'retail',
-                'pages' => ['shop-owner.erp.retail.products'],
+                'pages' => [
+                    'shop-owner.erp.retail.products',
+                    'shop-owner.erp.retail.orders',
+                    'shop-owner.erp.retail.point-of-sale',
+                    'shop-owner.erp.retail.discounts',
+                ],
             ],
             [
                 'key' => 'repair_operations',
                 'slug' => 'repair',
-                'pages' => ['shop-owner.erp.staff.repair-dashboard'],
+                'pages' => [
+                    'shop-owner.erp.staff.repair-dashboard',
+                    'shop-owner.erp.repair.job-orders',
+                    'shop-owner.erp.repair.warranty-queue',
+                    'shop-owner.erp.repair.services',
+                    'shop-owner.erp.repair.stock-materials',
+                    'shop-owner.erp.repair.point-of-sale',
+                    'shop-owner.erp.repair.support',
+                ],
             ],
             [
                 'key' => 'hr_employees',
                 'slug' => 'hr',
-                'pages' => ['shop-owner.erp.hr.audit-logs'],
+                'pages' => [
+                    'shop-owner.erp.hr.employee-directory',
+                    'shop-owner.erp.hr.suspend-accounts',
+                    'shop-owner.erp.hr.audit-logs',
+                ],
             ],
             [
                 'key' => 'finance',
                 'slug' => 'finance',
-                'pages' => ['shop-owner.erp.finance.audit-logs'],
+                'pages' => [
+                    'shop-owner.erp.finance.expense-approvals',
+                    'shop-owner.erp.finance.refund-approvals',
+                    'shop-owner.erp.finance.price-approvals',
+                    'shop-owner.erp.finance.payslip-approvals',
+                    'shop-owner.erp.finance.salary-adjustment-approvals',
+                    'shop-owner.erp.finance.audit-logs',
+                ],
             ],
             [
                 'key' => 'crm',
@@ -153,6 +187,8 @@ final class OwnerErpPageContractTest extends TestCase
                     'shop-owner.erp.crm.dashboard',
                     'shop-owner.erp.crm.customers',
                     'shop-owner.erp.crm.customer-reviews',
+                    'shop-owner.erp.staff.customers',
+                    'shop-owner.erp.crm.customer-support',
                 ],
             ],
             [
@@ -162,12 +198,16 @@ final class OwnerErpPageContractTest extends TestCase
                     'shop-owner.erp.inventory.inventory-dashboard',
                     'shop-owner.erp.inventory.product-inventory',
                     'shop-owner.erp.inventory.stock-movement',
+                    'shop-owner.erp.inventory.overview',
                 ],
             ],
             [
                 'key' => 'procurement',
                 'slug' => 'procurement',
-                'pages' => ['shop-owner.erp.procurement.suppliers-management'],
+                'pages' => [
+                    'shop-owner.erp.procurement.suppliers-management',
+                    'shop-owner.erp.procurement.purchase-request-approval',
+                ],
             ],
             [
                 'key' => 'logistics',
@@ -221,7 +261,7 @@ final class OwnerErpPageContractTest extends TestCase
         ]);
 
         $pages = [
-            ['/shop-owner/erp/retail/products', 'retail_operations', 'ERP/STAFF/ProductManagementWithVariants'],
+            ['/shop-owner/erp/retail/products', 'retail_operations', 'ShopOwner/Products/product management/ProductManagementWithVariants'],
             ['/shop-owner/erp/staff/repair-dashboard', 'repair_operations', 'ERP/repairer/dashboardRepair'],
             ['/shop-owner/erp/hr/audit-logs', 'hr_employees', 'ERP/HR/AuditLogs'],
             ['/shop-owner/erp/finance/audit-logs', 'finance', 'ERP/Finance/AuditLogs'],
@@ -243,11 +283,18 @@ final class OwnerErpPageContractTest extends TestCase
             $this->actingAs($owner, 'shop_owner')
                 ->get($uri)
                 ->assertOk()
-                ->assertInertia(fn (Assert $page) => $page
-                    ->component($component, false)
-                    ->where('activeModule.key', $moduleKey)
-                    ->where('navigationMode', 'module')
-                );
+                ->assertInertia(function (Assert $page) use ($component, $moduleKey, $uri): Assert {
+                    $page
+                        ->component($component, false)
+                        ->where('activeModule.key', $moduleKey)
+                        ->where('navigationMode', 'module');
+
+                    if ($uri === '/shop-owner/erp/retail/products') {
+                        $page->where('erpMode', true);
+                    }
+
+                    return $page;
+                });
         }
     }
 
@@ -346,9 +393,42 @@ final class OwnerErpPageContractTest extends TestCase
             ->get('/shop-owner/erp/retail/products')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->component('ERP/STAFF/ProductManagementWithVariants', false)
+                ->component('ShopOwner/Products/product management/ProductManagementWithVariants', false)
+                ->where('erpMode', true)
                 ->where('activeModule.key', 'retail_operations')
             );
+    }
+
+    public function test_retail_operational_pages_use_owner_safe_components_in_the_erp_shell(): void
+    {
+        config([
+            'shop_modules.owner_erp_workspace_enabled' => true,
+            'shop_modules.enforcement_enabled' => true,
+        ]);
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'retail',
+        ]);
+        ShopOwnerModule::factory()->create([
+            'shop_owner_id' => $owner->id,
+            'module_key' => 'retail_operations',
+            'enabled' => true,
+        ]);
+
+        foreach ([
+            ['/shop-owner/erp/retail/orders', 'ShopOwner/Orders/order management/JobOrders'],
+            ['/shop-owner/erp/retail/point-of-sale', 'ShopOwner/Repairs/service management/POS'],
+            ['/shop-owner/erp/retail/discounts', 'ShopOwner/Orders/order management/discount'],
+        ] as [$uri, $component]) {
+            $this->actingAs($owner, 'shop_owner')
+                ->get($uri)
+                ->assertOk()
+                ->assertInertia(fn (Assert $page) => $page
+                    ->component($component, false)
+                    ->where('erpMode', true)
+                    ->where('activeModule.key', 'retail_operations')
+                    ->where('navigationMode', 'module'));
+        }
     }
 
     public function test_workspace_ignores_a_client_supplied_shop_identifier(): void
@@ -398,6 +478,7 @@ final class OwnerErpPageContractTest extends TestCase
             ['/shop-owner/erp/crm/dashboard', 'ERP/CRM/CRMDashboard'],
             ['/shop-owner/erp/crm/customers', 'ERP/CRM/Customers'],
             ['/shop-owner/erp/crm/customer-reviews', 'ERP/CRM/CustomerReviews'],
+            ['/shop-owner/erp/crm/customer-support', 'ShopOwner/Customers/customer management/customerSupport'],
             ['/shop-owner/erp/logistics/dashboard', 'ERP/Logistics/Dashboard'],
             ['/shop-owner/erp/logistics/shipments', 'ERP/Logistics/Shipments'],
             ['/shop-owner/erp/logistics/riders', 'ERP/Logistics/Riders'],
@@ -432,13 +513,22 @@ final class OwnerErpPageContractTest extends TestCase
 
         $pages = [
             ['/shop-owner/erp/hr/audit-logs', 'ERP/HR/AuditLogs'],
+            ['/shop-owner/erp/hr/employee-directory', 'ShopOwner/TeamManagement/UserAccessControl'],
+            ['/shop-owner/erp/hr/suspend-accounts', 'ShopOwner/TeamManagement/suspendAccount'],
             ['/shop-owner/erp/finance/audit-logs', 'ERP/Finance/AuditLogs'],
+            ['/shop-owner/erp/finance/expense-approvals', 'ShopOwner/Approvals/ExpenseApproval'],
+            ['/shop-owner/erp/finance/refund-approvals', 'ShopOwner/Approvals/refundApproval'],
+            ['/shop-owner/erp/finance/price-approvals', 'ShopOwner/Approvals/PriceApprovals'],
+            ['/shop-owner/erp/finance/payslip-approvals', 'ShopOwner/Approvals/PayslipApproval'],
+            ['/shop-owner/erp/finance/salary-adjustment-approvals', 'ShopOwner/Approvals/SalaryChangesApproval'],
             ['/shop-owner/erp/manager/reports', 'ERP/Manager/Reports'],
             ['/shop-owner/erp/manager/audit-logs', 'ERP/Manager/AuditLogs'],
             ['/shop-owner/erp/inventory/inventory-dashboard', 'ERP/inventory/InventoryDashboard'],
             ['/shop-owner/erp/inventory/product-inventory', 'ERP/inventory/ProductInventory'],
             ['/shop-owner/erp/inventory/stock-movement', 'ERP/inventory/StockMovement'],
+            ['/shop-owner/erp/inventory/overview', 'ShopOwner/Products/product management/InventoryOverview'],
             ['/shop-owner/erp/procurement/suppliers-management', 'ERP/Procurement/SuppliersManagement'],
+            ['/shop-owner/erp/procurement/purchase-request-approval', 'ShopOwner/Approvals/PurchaseRequestApproval'],
         ];
 
         foreach ($pages as [$uri, $component]) {
@@ -478,6 +568,56 @@ final class OwnerErpPageContractTest extends TestCase
                 ->get($uri)
                 ->assertOk()
                 ->assertInertia(fn (Assert $page) => $page->component($component, false));
+        }
+    }
+
+    public function test_repair_module_exposes_owner_operational_pages_in_the_erp_shell(): void
+    {
+        config([
+            'shop_modules.owner_erp_workspace_enabled' => true,
+            'shop_modules.enforcement_enabled' => true,
+        ]);
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'repair',
+        ]);
+        ShopOwnerModule::factory()->create([
+            'shop_owner_id' => $owner->id,
+            'module_key' => 'repair_operations',
+            'enabled' => true,
+        ]);
+
+        $expectedPages = [
+            'shop-owner.erp.staff.repair-dashboard',
+            'shop-owner.erp.repair.job-orders',
+            'shop-owner.erp.repair.warranty-queue',
+            'shop-owner.erp.repair.services',
+            'shop-owner.erp.repair.stock-materials',
+            'shop-owner.erp.repair.point-of-sale',
+            'shop-owner.erp.repair.support',
+        ];
+
+        $this->assertSame(
+            $expectedPages,
+            array_column(app(ErpWorkspaceNavigationService::class)->forKey('repair_operations')['pages'], 'routeName'),
+        );
+
+        foreach ([
+            ['/shop-owner/erp/repair/job-orders', 'ShopOwner/Repairs/service management/JobOrdersRepair'],
+            ['/shop-owner/erp/repair/warranty-queue', 'ShopOwner/Repairs/service management/WarrantyQueue'],
+            ['/shop-owner/erp/repair/services', 'ShopOwner/Repairs/service management/uploadService'],
+            ['/shop-owner/erp/repair/stock-materials', 'ShopOwner/Repairs/individual/uploadStockMaterial'],
+            ['/shop-owner/erp/repair/point-of-sale', 'ShopOwner/Repairs/service management/POS'],
+            ['/shop-owner/erp/repair/support', 'ShopOwner/Customers/customer management/repairSupport'],
+        ] as [$uri, $component]) {
+            $this->actingAs($owner, 'shop_owner')
+                ->get($uri)
+                ->assertOk()
+                ->assertInertia(fn (Assert $page) => $page
+                    ->component($component, false)
+                    ->where('erpMode', true)
+                    ->where('activeModule.key', 'repair_operations')
+                    ->where('navigationMode', 'module'));
         }
     }
 }

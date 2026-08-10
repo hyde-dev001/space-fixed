@@ -1,9 +1,10 @@
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import type { ComponentType } from "react";
 import { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import axios from "axios";
 import AppLayout_shopOwner from "../../../layout/AppLayout_shopOwner";
+import AppLayoutERP from "../../../layout/AppLayout_ERP";
 
 type RequestPriority = "high" | "medium" | "low";
 type ApprovalStatus = "pending_finance" | "pending_shop_owner" | "pending_finance_final" | "approved" | "rejected";
@@ -278,6 +279,8 @@ interface PurchaseRequestApprovalProps {
 }
 
 export default function PurchaseRequestApproval({ onModalStateChange }: PurchaseRequestApprovalProps) {
+	const erpMode = (usePage().props as any)?.erpMode === true;
+	const Layout = erpMode ? AppLayoutERP : AppLayout_shopOwner;
 	const [requests, setRequests] = useState<PurchaseRequestApprovalItem[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [searchQuery, setSearchQuery] = useState("");
@@ -467,7 +470,7 @@ export default function PurchaseRequestApproval({ onModalStateChange }: Purchase
 	}, [isAnyModalOpen, onModalStateChange]);
 
 	return (
-		<AppLayout_shopOwner hideHeader={isAnyModalOpen}>
+		<Layout hideHeader={isAnyModalOpen}>
 			<Head title="Purchase Request Approval - Solespace ERP" />
 			{isAnyModalOpen && <div className="fixed inset-0 z-40" />}
 
@@ -716,6 +719,6 @@ export default function PurchaseRequestApproval({ onModalStateChange }: Purchase
 					</div>
 				</div>
 			)}
-		</AppLayout_shopOwner>
+		</Layout>
 	);
 }

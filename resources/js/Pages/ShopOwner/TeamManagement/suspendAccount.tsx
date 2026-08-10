@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import AppLayoutShopOwner from "../../../layout/AppLayout_shopOwner";
+import AppLayoutERP from "../../../layout/AppLayout_ERP";
 
 // Icons
 const CheckIcon = ({ className }: { className?: string }) => (
@@ -133,6 +134,8 @@ const MetricCard: React.FC<MetricCardProps> = ({
 };
 
 const SuspendAccount: React.FC = () => {
+  const erpMode = (usePage().props as any)?.erpMode === true;
+  const Layout = erpMode ? AppLayoutERP : AppLayoutShopOwner;
   const [requests, setRequests] = useState<SuspensionRequest[]>([]);
   const [filteredRequests, setFilteredRequests] = useState<SuspensionRequest[]>([]);
   const [loading, setLoading] = useState(false);
@@ -352,7 +355,7 @@ const SuspendAccount: React.FC = () => {
   };
 
   return (
-    <AppLayoutShopOwner>
+    <Layout>
       <Head title="Suspend Accounts" />
 
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 p-6">
@@ -798,7 +801,7 @@ const SuspendAccount: React.FC = () => {
           </div>
         </div>
       )}
-    </AppLayoutShopOwner>
+    </Layout>
   );
 };
 

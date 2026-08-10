@@ -2,6 +2,7 @@ import { Head, usePage } from "@inertiajs/react";
 import { useState, useEffect } from "react";
 import type { ComponentType } from "react";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
+import AppLayoutERP from "../../../../layout/AppLayout_ERP";
 
 type MetricColor = "success" | "warning" | "info";
 type ChangeType = "increase" | "decrease";
@@ -153,6 +154,8 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
 
 export default function InventoryOverview() {
   const pageProps = usePage().props as any;
+  const erpMode = pageProps?.erpMode === true;
+  const Layout = erpMode ? AppLayoutERP : AppLayoutShopOwner;
   const userRole = String(pageProps?.auth?.user?.role ?? pageProps?.auth?.user?.account_type ?? "").toLowerCase();
   const isStaffAccount = userRole.includes("staff") || window.location.pathname.toLowerCase().includes("/staff/");
 
@@ -237,7 +240,7 @@ export default function InventoryOverview() {
   };
 
   return (
-    <AppLayoutShopOwner>
+    <Layout>
       <Head title="Inventory Overview - Solespace" />
       <div className="p-6 space-y-6">
         {/* Header */}
@@ -553,6 +556,6 @@ export default function InventoryOverview() {
           </div>
         )}
       </div>
-    </AppLayoutShopOwner>
+    </Layout>
   );
 }

@@ -1,6 +1,7 @@
   import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Head } from '@inertiajs/react';
+import { Head, usePage } from '@inertiajs/react';
+import AppLayoutERP from '../../../../layout/AppLayout_ERP';
 import AppLayoutShopOwner from '../../../../layout/AppLayout_shopOwner';
 import Swal from 'sweetalert2';
 import { ColorVariantManager, ColorVariant } from '@/components/variants/ColorVariantManager';
@@ -170,6 +171,8 @@ const MetricCard: React.FC<MetricCardProps> = ({
 };
 
 export default function ProductManagement() {
+  const page = usePage<{ erpMode?: boolean }>();
+  const Layout = page.props.erpMode ? AppLayoutERP : AppLayoutShopOwner;
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [showArchived, setShowArchived] = useState(false);
@@ -1650,7 +1653,7 @@ export default function ProductManagement() {
 
   return (
     <>
-      <AppLayoutShopOwner>
+      <Layout>
         <Head title="Product Management" />
 
         <div className="space-y-6">
@@ -1883,7 +1886,7 @@ export default function ProductManagement() {
             )}
           </div>
         </div>
-      </AppLayoutShopOwner>
+      </Layout>
 
       {/* Add/Edit Product Modal with Variant Management */}
       {isModalOpen && createPortal(

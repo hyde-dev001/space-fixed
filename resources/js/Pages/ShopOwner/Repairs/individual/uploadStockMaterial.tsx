@@ -1,9 +1,10 @@
-import { Head } from '@inertiajs/react';
+import { Head, usePage } from '@inertiajs/react';
 import { useEffect, useMemo, useState } from 'react';
 import type { ComponentType } from 'react';
 import axios from 'axios';
 import Swal from 'sweetalert2';
 import AppLayoutShopOwner from '../../../../layout/AppLayout_shopOwner';
+import AppLayoutERP from '../../../../layout/AppLayout_ERP';
 
 type MaterialItem = {
   id: number;
@@ -182,6 +183,8 @@ const MetricCard = ({ title, value, change, changeType, description, icon: Icon,
 };
 
 export default function UploadStockMaterial() {
+  const erpMode = (usePage().props as any)?.erpMode === true;
+  const Layout = erpMode ? AppLayoutERP : AppLayoutShopOwner;
   const [materials, setMaterials] = useState<MaterialItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showArchived, setShowArchived] = useState(false);
@@ -402,7 +405,7 @@ export default function UploadStockMaterial() {
   };
 
   return (
-    <AppLayoutShopOwner hideHeader={isModalOpen}>
+    <Layout hideHeader={isModalOpen}>
       <Head title="Upload Stock Materials" />
 
       <div className="space-y-6 p-6">
@@ -637,6 +640,6 @@ export default function UploadStockMaterial() {
           </div>
         </div>
       )}
-    </AppLayoutShopOwner>
+    </Layout>
   );
 }

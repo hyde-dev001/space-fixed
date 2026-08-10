@@ -115,6 +115,8 @@ $routeEntry = static function (
         'risk_tier' => 'normal',
         'paired_route' => null,
         'navigation_group' => $navigationGroup,
+        'navigation_label' => null,
+        'navigation_order' => null,
         'self_service' => $selfService,
         'supporting_routes' => [],
         'actor_persistence' => 'not_applicable',
@@ -1243,7 +1245,313 @@ $retailProductsRoute['supporting_routes'] = [
     'shop_owner.products.color-variants.images.reorder',
     'shop_owner.products.showroom-entitlement',
 ];
+$retailProductsRoute['navigation_label'] = 'Products';
+$retailProductsRoute['navigation_order'] = 10;
 $routes['shop-owner.erp.retail.products'] = $retailProductsRoute;
+
+if (isset($routes['shop-owner.erp.staff.repair-dashboard'])) {
+    $routes['shop-owner.erp.staff.repair-dashboard']['navigation_label'] = 'Repair Dashboard';
+    $routes['shop-owner.erp.staff.repair-dashboard']['navigation_order'] = 10;
+}
+
+$ownerOperationalPageRoute = static function (
+    string $moduleKey,
+    string $navigationLabel,
+    int $navigationOrder,
+    array $supportingRoutes = [],
+) use ($routeEntry, $modules): array {
+    $route = $routeEntry(
+        modules: $modules,
+        classification: 'module',
+        mode: 'single',
+        moduleKeys: [$moduleKey],
+        methods: ['GET'],
+        audience: 'shop_owner',
+        actorGuard: 'shop_owner',
+        action: 'view',
+        ownerDenialReason: 'owner_operation_not_reviewed',
+        navigationGroup: $moduleKey,
+        selfService: false,
+    );
+    $route['owner_access'] = 'allowed';
+    $route['owner_denial_reason'] = null;
+    $route['navigation_label'] = $navigationLabel;
+    $route['navigation_order'] = $navigationOrder;
+    $route['supporting_routes'] = $supportingRoutes;
+
+    return $route;
+};
+
+$retailOwnerPages = [
+    'shop-owner.erp.retail.orders' => [
+        'label' => 'Orders',
+        'order' => 20,
+        'supporting_routes' => [
+            'shop_owner.orders.index',
+            'shop_owner.orders.show',
+            'shop_owner.orders.update-status',
+            'shop_owner.orders.activate-pickup',
+            'shop_owner.orders.arrange-return-pickup',
+            'shop_owner.orders.confirm-return-received',
+        ],
+    ],
+    'shop-owner.erp.retail.point-of-sale' => [
+        'label' => 'Point of Sale',
+        'order' => 30,
+        'supporting_routes' => ['shop-owner.point-of-sale'],
+    ],
+    'shop-owner.erp.retail.discounts' => [
+        'label' => 'Vouchers and Discounts',
+        'order' => 40,
+        'supporting_routes' => [
+            'shop_owner.promos.index',
+            'shop_owner.promos.products',
+            'shop_owner.promos.store',
+            'shop_owner.promos.update',
+            'shop_owner.promos.destroy',
+            'shop_owner.promos.update-status',
+        ],
+    ],
+];
+
+foreach ($retailOwnerPages as $routeName => $page) {
+    $routes[$routeName] = $ownerOperationalPageRoute(
+        moduleKey: 'retail_operations',
+        navigationLabel: $page['label'],
+        navigationOrder: $page['order'],
+        supportingRoutes: $page['supporting_routes'],
+    );
+}
+
+$ownerModulePageGroups = [
+    'hr_employees' => [
+        'shop-owner.erp.hr.employee-directory' => [
+            'label' => 'Employee Directory',
+            'order' => 10,
+            'supporting_routes' => [
+                'shop-owner.employees.store',
+                'shop-owner.employees.update',
+                'shop-owner.employees.destroy',
+                'shop-owner.employees.suspend',
+                'shop-owner.employees.activate',
+                'shop-owner.employees.permissions.get',
+                'shop-owner.employees.permissions.update',
+                'shop-owner.employees.permissions.sync',
+                'shop-owner.employees.roles.sync',
+                'shop-owner.employees.apply-template',
+            ],
+        ],
+        'shop-owner.erp.hr.suspend-accounts' => [
+            'label' => 'Suspend Accounts',
+            'order' => 20,
+            'supporting_routes' => [
+                'shop_owner.suspension_requests.index',
+                'shop_owner.suspension_requests.show',
+                'shop_owner.suspension_requests.review',
+            ],
+        ],
+    ],
+    'finance' => [
+        'shop-owner.erp.finance.expense-approvals' => [
+            'label' => 'Expense Approvals',
+            'order' => 10,
+            'supporting_routes' => [
+                'shop_owner.expenses.index',
+                'shop_owner.expenses.approve',
+                'shop_owner.expenses.reject',
+            ],
+        ],
+        'shop-owner.erp.finance.refund-approvals' => [
+            'label' => 'Refund Approvals',
+            'order' => 20,
+            'supporting_routes' => [
+                'shop_owner.refunds.index',
+                'shop_owner.refunds.approve',
+                'shop_owner.refunds.reject',
+                'shop_owner.refunds.execute',
+                'shop_owner.repair-refunds.index',
+                'shop_owner.repair-refunds.approve',
+                'shop_owner.repair-refunds.reject',
+                'shop_owner.repair-refunds.execute',
+            ],
+        ],
+        'shop-owner.erp.finance.price-approvals' => [
+            'label' => 'Price Approvals',
+            'order' => 30,
+            'supporting_routes' => [
+                'shop_owner.price-changes.all',
+                'shop_owner.price-changes.approve',
+                'shop_owner.price-changes.reject',
+                'shop_owner.repair-price-changes.all',
+                'shop_owner.repair-price-changes.approve',
+                'shop_owner.repair-price-changes.reject',
+            ],
+        ],
+        'shop-owner.erp.finance.payslip-approvals' => [
+            'label' => 'Payslip Approvals',
+            'order' => 40,
+            'supporting_routes' => [
+                'shop_owner.payslip_approval.index',
+                'shop_owner.payslip_approval.show',
+                'shop_owner.payslip_approval.final_approve',
+                'shop_owner.payslip_approval.batch_final_approve',
+            ],
+        ],
+        'shop-owner.erp.finance.salary-adjustment-approvals' => [
+            'label' => 'Salary Adjustments',
+            'order' => 50,
+            'supporting_routes' => [
+                'shop_owner.salary-changes.index',
+                'shop_owner.salary-changes.approve',
+                'shop_owner.salary-changes.reject',
+            ],
+        ],
+    ],
+    'crm' => [
+        'shop-owner.erp.crm.customer-support' => [
+            'label' => 'Customer Support',
+            'order' => 50,
+            'supporting_routes' => [
+                'shop_owner.conversations.index',
+                'shop_owner.conversations.show',
+                'shop_owner.conversations.messages.store',
+                'shop_owner.conversations.transfer',
+            ],
+        ],
+    ],
+    'inventory' => [
+        'shop-owner.erp.inventory.overview' => [
+            'label' => 'Inventory Overview',
+            'order' => 40,
+            'supporting_routes' => ['shop_owner.inventory.overview'],
+        ],
+    ],
+    'procurement' => [
+        'shop-owner.erp.procurement.purchase-request-approval' => [
+            'label' => 'Purchase Request Approval',
+            'order' => 20,
+            'supporting_routes' => [
+                'shop_owner.purchase-requests.index',
+                'shop_owner.purchase-requests.approve',
+                'shop_owner.purchase-requests.reject',
+            ],
+        ],
+    ],
+];
+
+foreach ($ownerModulePageGroups as $moduleKey => $pages) {
+    foreach ($pages as $routeName => $page) {
+        $routes[$routeName] = $ownerOperationalPageRoute(
+            moduleKey: $moduleKey,
+            navigationLabel: $page['label'],
+            navigationOrder: $page['order'],
+            supportingRoutes: $page['supporting_routes'],
+        );
+    }
+}
+
+$existingOwnerPageMetadata = [
+    'shop-owner.erp.crm.dashboard' => ['label' => 'Dashboard', 'order' => 10],
+    'shop-owner.erp.crm.customers' => ['label' => 'Customers', 'order' => 20],
+    'shop-owner.erp.crm.customer-reviews' => ['label' => 'Customer Reviews', 'order' => 30],
+    'shop-owner.erp.staff.customers' => ['label' => 'Customer Directory', 'order' => 40],
+    'shop-owner.erp.inventory.inventory-dashboard' => ['label' => 'Dashboard', 'order' => 10],
+    'shop-owner.erp.inventory.product-inventory' => ['label' => 'Product Inventory', 'order' => 20],
+    'shop-owner.erp.inventory.stock-movement' => ['label' => 'Stock Movement', 'order' => 30],
+    'shop-owner.erp.inventory.overview' => ['label' => 'Inventory Overview', 'order' => 40],
+    'shop-owner.erp.procurement.suppliers-management' => ['label' => 'Suppliers Management', 'order' => 10],
+    'shop-owner.erp.hr.audit-logs' => ['label' => 'Audit Logs', 'order' => 30],
+    'shop-owner.erp.finance.audit-logs' => ['label' => 'Audit Logs', 'order' => 60],
+    'shop-owner.erp.logistics.dashboard' => ['label' => 'Dashboard', 'order' => 10],
+    'shop-owner.erp.logistics.shipments' => ['label' => 'Shipments', 'order' => 20],
+    'shop-owner.erp.logistics.riders' => ['label' => 'Riders', 'order' => 30],
+    'shop-owner.erp.staff.repair-dashboard' => ['label' => 'Repair Dashboard', 'order' => 10],
+];
+
+foreach ($existingOwnerPageMetadata as $routeName => $metadata) {
+    if (isset($routes[$routeName])) {
+        $routes[$routeName]['navigation_label'] = $metadata['label'];
+        $routes[$routeName]['navigation_order'] = $metadata['order'];
+    }
+}
+
+$repairOwnerPages = [
+    'shop-owner.erp.repair.job-orders' => [
+        'label' => 'Repair Job Orders',
+        'order' => 20,
+        'supporting_routes' => [
+            'shop_owner.repairs.index',
+            'shop_owner.repairs.accept',
+            'shop_owner.repairs.reject',
+            'shop_owner.repairs.mark-received',
+            'shop_owner.repairs.start-work',
+            'shop_owner.repairs.resume-work',
+            'shop_owner.repairs.mark-completed',
+            'shop_owner.repairs.materials.index',
+            'shop_owner.repairs.materials.store',
+            'shop_owner.repairs.materials.destroy',
+            'shop_owner.repairs.mark-ready',
+            'shop_owner.repairs.activate-pickup',
+            'shop_owner.repairs.activate-payment',
+            'shop_owner.repairs.mark-paid-in-shop',
+            'shop_owner.repairs.ship',
+        ],
+    ],
+    'shop-owner.erp.repair.warranty-queue' => [
+        'label' => 'Warranty Queue',
+        'order' => 30,
+        'supporting_routes' => ['shop-owner.warranty-queue'],
+    ],
+    'shop-owner.erp.repair.services' => [
+        'label' => 'Services and Packages',
+        'order' => 40,
+        'supporting_routes' => [
+            'shop_owner.repair-services.index',
+            'shop_owner.repair-services.store',
+            'shop_owner.repair-services.show',
+            'shop_owner.repair-services.update',
+            'shop_owner.repair-services.destroy',
+            'shop_owner.repair-services.restore',
+            'shop_owner.repair-materials.index',
+        ],
+    ],
+    'shop-owner.erp.repair.stock-materials' => [
+        'label' => 'Stock Materials',
+        'order' => 50,
+        'supporting_routes' => [
+            'shop_owner.inventory.items.index',
+            'shop_owner.inventory.items.store',
+            'shop_owner.inventory.items.update',
+            'shop_owner.inventory.items.destroy',
+            'shop_owner.inventory.items.restore',
+        ],
+    ],
+    'shop-owner.erp.repair.point-of-sale' => [
+        'label' => 'Repair Point of Sale',
+        'order' => 60,
+        'supporting_routes' => ['shop-owner.point-of-sale'],
+    ],
+    'shop-owner.erp.repair.support' => [
+        'label' => 'Repair Support',
+        'order' => 70,
+        'supporting_routes' => [
+            'shop_owner.conversations.index',
+            'shop_owner.conversations.show',
+            'shop_owner.conversations.messages.store',
+            'shop_owner.conversations.transfer',
+            'shop_owner.conversations.activate-payment',
+        ],
+    ],
+];
+
+foreach ($repairOwnerPages as $routeName => $page) {
+    $routes[$routeName] = $ownerOperationalPageRoute(
+        moduleKey: 'repair_operations',
+        navigationLabel: $page['label'],
+        navigationOrder: $page['order'],
+        supportingRoutes: $page['supporting_routes'],
+    );
+}
 
 return [
     'enforcement_enabled' => (bool) env('SHOP_MODULE_ENFORCEMENT_ENABLED', false),

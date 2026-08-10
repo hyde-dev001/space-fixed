@@ -3,6 +3,7 @@ import type { ComponentType } from "react";
 import { useState, useEffect } from "react";
 import Swal from "sweetalert2";
 import AppLayout_shopOwner from "../../../layout/AppLayout_shopOwner";
+import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import { canAccessProducts, canAccessServices } from "../../../utils/shopOwnerAccess";
 
 // Icons
@@ -998,9 +999,12 @@ function PriceApprovalContent() {
 }
 
 export default function PriceApproval() {
+	const erpMode = (usePage().props as any)?.erpMode === true;
+	const Layout = erpMode ? AppLayoutERP : AppLayout_shopOwner;
+
   return (
-    <AppLayout_shopOwner>
+    <Layout>
       <PriceApprovalContent />
-    </AppLayout_shopOwner>
+    </Layout>
   );
 }
