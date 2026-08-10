@@ -82,18 +82,21 @@ it('hides disabled owner modules while keeping core dashboard visible', () => {
   render(<AppSidebarShopOwner />);
 
   expect(document.querySelector('a[href="/shop-owner.dashboard"]')).toBeInTheDocument();
+  expect(screen.queryByText('Employee Modules', { exact: true })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /^Logistics$/i })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Job Orders Repair' })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Shipments' })).not.toBeInTheDocument();
 });
 
-it('renders an accessible owner module', () => {
+it('does not render module-specific pages in the normal owner portal', () => {
   state.shopModules = accessible({ logistics: true, repair_operations: true });
   render(<AppSidebarShopOwner />);
 
-  expect(screen.getByRole('link', { name: 'Job Orders Repair' })).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Job Orders Repair' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /^Logistics$/i })).not.toBeInTheDocument();
 });
 
-it('shows enabled employee modules to a business shop owner', () => {
+it('removes Employee Modules and standalone Logistics for a shop owner', () => {
   state.shopOwner = {
     registration_type: 'company',
     business_type: 'both',
@@ -104,16 +107,18 @@ it('shows enabled employee modules to a business shop owner', () => {
 
   render(<AppSidebarShopOwner />);
 
-  expect(screen.getByRole('link', { name: 'HR & Employees' })).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: 'Finance' })).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: 'Inventory' })).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: 'Procurement' })).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: 'CRM' })).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: 'Logistics' })).toHaveAttribute('href', '/shop-owner.logistics.shipments');
-  expect(screen.queryByRole('button', { name: 'Retail Operations' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: 'Repair Operations' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('link', { name: 'Warranty Queue' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('link', { name: 'Stock Management' })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /^Dashboard$/i })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /Audit Logs/i })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /User Access Control/i })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /Suspend Accounts/i })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /Assist Center/i })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /Vouchers & Discount/i })).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'HR & Employees' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Finance' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Inventory' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Procurement' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'CRM' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /^Logistics$/i })).not.toBeInTheDocument();
 });
 
 it('uses the top-level module state when the nested auth state is unavailable', () => {
@@ -129,9 +134,11 @@ it('uses the top-level module state when the nested auth state is unavailable', 
 
   render(<AppSidebarShopOwner />);
 
-  expect(screen.getByRole('link', { name: 'Finance' })).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: 'CRM' })).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: 'Customers' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /Audit Logs/i })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /Assist Center/i })).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Finance' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'CRM' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Customers' })).not.toBeInTheDocument();
 
   fireEvent.click(screen.getByRole('button', { name: 'Approval Pages' }));
   expect(screen.getByRole('link', { name: 'Refund Approval' })).toBeInTheDocument();
@@ -200,7 +207,7 @@ it('does not render empty owner module sections when every module is unavailable
 
   render(<AppSidebarShopOwner />);
 
-  expect(screen.queryByText('Approval Workflow', { exact: true })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Approval Pages' })).not.toBeInTheDocument();
   expect(screen.queryByText('Employee Modules', { exact: true })).not.toBeInTheDocument();
   expect(screen.queryByText('Customer Management', { exact: true })).not.toBeInTheDocument();
 });
