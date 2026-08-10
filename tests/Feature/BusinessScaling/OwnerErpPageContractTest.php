@@ -6,6 +6,7 @@ namespace Tests\Feature\BusinessScaling;
 
 use App\Models\ShopOwner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Collection;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -28,12 +29,19 @@ final class OwnerErpPageContractTest extends TestCase
             ->get('/shop-owner/erp/workspace')
             ->assertInertia(fn (Assert $page) => $page
                 ->component('ERP/Workspace', false)
+                ->where('ownerMode', true)
+                ->where('shopModuleEnforcementEnabled', true)
+                ->has('moduleStates')
+                ->where('erpCapabilities', fn (Collection $capabilities): bool => $capabilities->has(
+                    'GET:shop-owner.erp.workspace',
+                ))
                 ->has('enabledModules')
                 ->has('unavailableModules', 8)
                 ->has('navigationGroups', 1)
                 ->where('navigationGroups.0.pages.0.routeName', 'shop-owner.erp.workspace')
                 ->where('urls.portal', route('shop-owner.dashboard'))
                 ->where('urls.settings', route('shop-owner.settings'))
+                ->where('erpUrls.workspace', route('shop-owner.erp.workspace'))
             );
     }
 
