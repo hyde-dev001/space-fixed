@@ -6,6 +6,7 @@ import type { ApexOptions } from "apexcharts";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import { dashboardAPI, productInventoryAPI } from "@/services/inventoryAPI";
 import type { InventoryItem, InventoryMetrics } from "@/types/inventory";
+import { erpUrl } from "@/utils/erpCapabilities";
 
 type MetricColor = "success" | "warning" | "info";
 type ChangeType = "increase" | "decrease";
@@ -110,7 +111,8 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
 };
 
 export default function ERPInventoryOverview() {
-  const { initialData, initialMetrics } = usePage().props as any;
+  const { initialData, initialMetrics, auth, erpCapabilities } = usePage().props as any;
+  const ownerMode = auth?.erpActor?.ownerMode === true;
   const [items, setItems] = useState<InventoryItem[]>(initialData?.data ?? []);
   const [metrics, setMetrics] = useState<InventoryMetrics | null>(initialMetrics ?? null);
   const [loading, setLoading] = useState(false);
@@ -126,9 +128,16 @@ export default function ERPInventoryOverview() {
     setLoading(true);
     setLoadError(null);
     try {
+      const productsUrl = erpUrl(erpCapabilities, "GET:inventory.products.index");
+      const dashboardUrl = erpUrl(erpCapabilities, "GET:inventory.dashboard");
+
+      if (ownerMode && (!productsUrl || !dashboardUrl)) return;
+
       const [itemsResponse, latestMetrics] = await Promise.all([
-        productInventoryAPI.getAll({ per_page: 200 }),
-        dashboardAPI.getMetrics(),
+        productInventoryAPI.getAll({ per_page: 200 }, productsUrl ?? undefined),
+        ownerMode
+          ? dashboardAPI.getOverview(dashboardUrl as string).then((response) => response.metrics)
+          : dashboardAPI.getMetrics(),
       ]);
       setItems(itemsResponse.data ?? []);
       setMetrics(latestMetrics ?? null);

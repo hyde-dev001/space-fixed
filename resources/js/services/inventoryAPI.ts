@@ -46,13 +46,13 @@ export const dashboardAPI = {
     /**
      * Get dashboard overview
      */
-    async getOverview(): Promise<{
+    async getOverview(url = `${API_BASE}/dashboard`): Promise<{
         metrics: InventoryMetrics;
         chartData: ChartData;
         recentItems: InventoryItem[];
     }> {
         try {
-            const response = await axios.get(`${API_BASE}/dashboard`);
+            const response = await axios.get(url);
             return response.data;
         } catch (error) {
             return handleApiError(error);
@@ -62,9 +62,9 @@ export const dashboardAPI = {
     /**
      * Get dashboard metrics only
      */
-    async getMetrics(): Promise<InventoryMetrics> {
+    async getMetrics(url = `${API_BASE}/dashboard/metrics`): Promise<InventoryMetrics> {
         try {
-            const response = await axios.get(`${API_BASE}/dashboard/metrics`);
+            const response = await axios.get(url);
             return response.data;
         } catch (error) {
             return handleApiError(error);
@@ -89,9 +89,9 @@ export const productInventoryAPI = {
     /**
      * Get paginated list of inventory items
      */
-    async getAll(filters?: InventoryFilters): Promise<PaginatedResponse<InventoryItem>> {
+    async getAll(filters?: InventoryFilters, url = `${API_BASE}/products`): Promise<PaginatedResponse<InventoryItem>> {
         try {
-            const response = await axios.get(`${API_BASE}/products`, { params: filters });
+            const response = await axios.get(url, { params: filters });
             return response.data;
         } catch (error) {
             return handleApiError(error);
@@ -140,9 +140,9 @@ export const stockMovementAPI = {
     /**
      * Get paginated list of stock movements
      */
-    async getAll(filters?: StockMovementFilters): Promise<PaginatedResponse<StockMovement>> {
+    async getAll(filters?: StockMovementFilters, url = `${API_BASE}/movements`): Promise<PaginatedResponse<StockMovement>> {
         try {
-            const response = await axios.get(`${API_BASE}/movements`, { params: filters });
+            const response = await axios.get(url, { params: filters });
             return response.data;
         } catch (error) {
             return handleApiError(error);

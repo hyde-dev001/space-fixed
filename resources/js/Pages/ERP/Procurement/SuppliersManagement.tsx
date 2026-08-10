@@ -4,6 +4,7 @@ import Swal from "sweetalert2";
 import axios from "axios";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import { supplierApi, type Supplier } from "@/services/procurementApi";
+import { erpUrl } from "@/utils/erpCapabilities";
 
 
 
@@ -57,7 +58,8 @@ const initialFormState: FormState = {
 };
 
 export default function SuppliersManagement() {
-	const { initialData } = usePage().props as any;
+	const { initialData, auth, erpCapabilities } = usePage().props as any;
+	const ownerMode = auth?.erpActor?.ownerMode === true;
 	const [suppliers, setSuppliers] = useState<Supplier[]>(initialData?.data ?? []);
 	const [loading, setLoading] = useState(false);
 	const [showArchived, setShowArchived] = useState(false);
@@ -86,7 +88,13 @@ export default function SuppliersManagement() {
 	const fetchSuppliers = async () => {
 		setLoading(true);
 		try {
-			const response = await supplierApi.getAll({ page: 1, per_page: 100, archived: showArchived });
+			const suppliersUrl = erpUrl(erpCapabilities, "GET:procurement.suppliers.index");
+			if (ownerMode && !suppliersUrl) return;
+
+			const response = await supplierApi.getAll(
+				{ page: 1, per_page: 100, archived: showArchived },
+				suppliersUrl ?? undefined,
+			);
 			setSuppliers(response.data || []);
 		} catch (error) {
 			console.error("Failed to fetch suppliers:", error);
@@ -124,6 +132,8 @@ export default function SuppliersManagement() {
 	};
 
 	const handleEdit = (supplier: Supplier) => {
+		if (ownerMode) return;
+
 		setEditingSupplier(supplier);
 		setFormData({
 			name: supplier.name,
@@ -136,6 +146,8 @@ export default function SuppliersManagement() {
 	};
 
 	const handleArchive = async (supplierId: number) => {
+		if (ownerMode) return;
+
 		const result = await Swal.fire({
 			title: "Archive Supplier?",
 			text: "Are you sure you want to archive this supplier? You can restore it later if needed.",
@@ -165,6 +177,8 @@ export default function SuppliersManagement() {
 	};
 
 	const handleRestore = async (supplierId: number) => {
+		if (ownerMode) return;
+
 		const result = await Swal.fire({
 			title: "Restore Supplier?",
 			text: "Are you sure you want to restore this supplier to active records?",
@@ -194,6 +208,8 @@ export default function SuppliersManagement() {
 	};
 
 	const handleSaveEdit = async () => {
+		if (ownerMode) return;
+
 		if (!formData.name.trim()) {
 			await Swal.fire("Warning", "Please fill required field (Supplier Name)", "warning");
 			return;
@@ -227,6 +243,8 @@ export default function SuppliersManagement() {
 	};
 
 	const handleOpenModal = () => {
+		if (ownerMode) return;
+
 		setFormData(initialFormState);
 		setIsModalOpen(true);
 	};
@@ -245,6 +263,8 @@ export default function SuppliersManagement() {
 	};
 
 	const handleAddSupplier = async () => {
+		if (ownerMode) return;
+
 		if (!formData.name.trim()) {
 			await Swal.fire("Warning", "Please fill required field (Supplier Name)", "warning");
 			return;
@@ -307,7 +327,7 @@ export default function SuppliersManagement() {
 							{showArchived ? "Show Active" : "Show Archived"}
 						</button>
 
-						{!showArchived && (
+						{!ownerMode && !showArchived && (
 							<button
 								onClick={handleOpenModal}
 								className="px-4 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 text-white rounded-lg font-medium transition-colors whitespace-nowrap"
@@ -383,7 +403,7 @@ export default function SuppliersManagement() {
 															<circle cx="12" cy="12" r="3" />
 														</svg>
 													</button>
-													{showArchived ? (
+														{ownerMode ? null : showArchived ? (
 														<button
 															onClick={() => handleRestore(supplier.id)}
 															className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
@@ -753,4 +773,3 @@ export default function SuppliersManagement() {
 		</AppLayoutERP>
 	);
 }
-

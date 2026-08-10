@@ -21,8 +21,8 @@ export const supplierApi = {
     /**
      * Get all suppliers with optional filters
      */
-    async getAll(filters?: SupplierFilters): Promise<PaginatedResponse<Supplier>> {
-        const response: AxiosResponse<PaginatedResponse<Supplier>> = await axios.get(BASE_URL, {
+    async getAll(filters?: SupplierFilters, url = BASE_URL): Promise<PaginatedResponse<Supplier>> {
+        const response: AxiosResponse<PaginatedResponse<Supplier>> = await axios.get(url, {
             params: filters,
         });
         return response.data;

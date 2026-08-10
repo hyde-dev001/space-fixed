@@ -4,6 +4,7 @@ import type { ComponentType } from "react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import { stockMovementAPI } from "@/services/inventoryAPI";
 import type { StockMovement as ApiStockMovement } from "@/types/inventory";
+import { erpUrl } from "@/utils/erpCapabilities";
 
 type MovementTrack = "Stock IN" | "Stock OUT" | "Adjustments" | "Returns" | "Repairs usage";
 
@@ -136,7 +137,8 @@ const formatQuantity = (quantity: number) => {
 };
 
 export default function StockMovement() {
-	const { initialData } = usePage().props as any;
+	const { initialData, auth, erpCapabilities } = usePage().props as any;
+	const ownerMode = auth?.erpActor?.ownerMode === true;
 	const [movements, setMovements] = useState<StockMovementItem[]>(
 		() => (initialData?.data ?? []).map(mapApiMovement)
 	);
@@ -150,7 +152,10 @@ export default function StockMovement() {
 		setLoading(true);
 		setLoadError(null);
 		try {
-			const response = await stockMovementAPI.getAll({ per_page: 200 });
+			const movementsUrl = erpUrl(erpCapabilities, "GET:inventory.movements.index");
+			if (ownerMode && !movementsUrl) return;
+
+			const response = await stockMovementAPI.getAll({ per_page: 200 }, movementsUrl ?? undefined);
 			setMovements((response.data ?? []).map(mapApiMovement));
 		} catch {
 			setLoadError("Could not refresh stock movements.");

@@ -5,6 +5,7 @@ import Swal from "sweetalert2";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import { productInventoryAPI } from "@/services/inventoryAPI";
 import type { InventoryItem as ApiInventoryItem } from "@/types/inventory";
+import { erpUrl } from "@/utils/erpCapabilities";
 
 type StockStatus = "In stock" | "Low" | "Out";
 type MetricColor = "success" | "warning" | "info";
@@ -110,7 +111,8 @@ const MetricCard = ({ title, value, description, icon: Icon, color }: MetricCard
 };
 
 export default function ProductInventory() {
-	const { initialData } = usePage().props as any;
+	const { initialData, auth, erpCapabilities } = usePage().props as any;
+	const ownerMode = auth?.erpActor?.ownerMode === true;
 	const [inventory, setInventory] = useState<ProductInventoryItem[]>(
 		() => (initialData?.data ?? []).map(mapApiItem)
 	);
@@ -127,14 +129,17 @@ export default function ProductInventory() {
 	const fetchInventory = useCallback(async () => {
 		setLoading(true);
 		try {
-			const res = await productInventoryAPI.getAll({ per_page: 200 });
+			const productsUrl = erpUrl(erpCapabilities, "GET:inventory.products.index");
+			if (ownerMode && !productsUrl) return;
+
+			const res = await productInventoryAPI.getAll({ per_page: 200 }, productsUrl ?? undefined);
 			setInventory((res.data ?? []).map(mapApiItem));
 		} catch (err) {
 			console.error("Failed to load inventory", err);
 		} finally {
 			setLoading(false);
 		}
-	}, []);
+	}, [erpCapabilities, ownerMode]);
 
 	useEffect(() => {
 		void fetchInventory();
@@ -212,7 +217,7 @@ export default function ProductInventory() {
 	};
 
 	const saveQuantityChanges = async () => {
-		if (!selectedProduct) return;
+		if (ownerMode || !selectedProduct) return;
 		const product = selectedProduct;
 		const parsed = Number(editedQuantity);
 
@@ -513,7 +518,7 @@ export default function ProductInventory() {
 											<p className="text-sm text-gray-500">Last Updated</p>
 											<p className="text-sm font-medium text-gray-900 dark:text-white">{selectedProduct.lastUpdated}</p>
 										</div>
-										<div>
+										{!ownerMode && <div>
 											<label htmlFor="edit-available-quantity" className="block text-sm text-gray-500 mb-2">Edit Available Quantity</label>
 											<div className="flex items-center gap-2">
 												<button
@@ -539,7 +544,7 @@ export default function ProductInventory() {
 													+
 												</button>
 											</div>
-										</div>
+										</div>}
 									</div>
 
 									<div className="flex items-center justify-end gap-3">
@@ -550,13 +555,13 @@ export default function ProductInventory() {
 								>
 									Close
 								</button>
-										<button
+										{!ownerMode && <button
 											type="button"
 											onClick={saveQuantityChanges}
 											className="rounded-lg border border-blue-600 bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700"
 										>
 											Save Quantity
-										</button>
+										</button>}
 									</div>
 								</div>
 							</div>
