@@ -79,6 +79,7 @@ enum NotificationType: string
     
     // ==================== SUPER ADMIN NOTIFICATIONS ====================
     case SHOP_REGISTRATION_PENDING = 'shop_registration_pending';
+    case BUSINESS_UPGRADE_REQUEST_PENDING = 'business_upgrade_request_pending';
     case SHOP_REPORT_FILED = 'shop_report_filed';
     case REVIEW_REPORTED = 'review_reported';
 
@@ -181,6 +182,7 @@ enum NotificationType: string
             
             // Super admin notifications
             self::SHOP_REGISTRATION_PENDING => 'New Shop Registration',
+            self::BUSINESS_UPGRADE_REQUEST_PENDING => 'Business Upgrade Request',
             self::SHOP_REPORT_FILED => 'Shop Report Filed',
             self::REVIEW_REPORTED => 'Review Reported',
 
@@ -246,7 +248,8 @@ enum NotificationType: string
             self::LOGISTICS_DELIVERY_FAILED, self::LOGISTICS_PROOF_REQUIRED,
             self::LOGISTICS_DELIVERED, self::LOGISTICS_EXCEPTION => 'logistics',
 
-            self::SHOP_REGISTRATION_PENDING, self::SHOP_REPORT_FILED, self::REVIEW_REPORTED => 'admin',
+            self::SHOP_REGISTRATION_PENDING, self::BUSINESS_UPGRADE_REQUEST_PENDING,
+            self::SHOP_REPORT_FILED, self::REVIEW_REPORTED => 'admin',
             
             default => 'general',
         };
@@ -322,6 +325,7 @@ enum NotificationType: string
             self::SUSPENSION_REQUEST_PENDING,
             self::SALARY_CHANGE_SUBMITTED,
             self::SHOP_REGISTRATION_PENDING,
+            self::BUSINESS_UPGRADE_REQUEST_PENDING,
             self::SHOP_REPORT_FILED,
             self::REVIEW_REPORTED,
         ]);
@@ -334,6 +338,7 @@ enum NotificationType: string
     {
         return in_array($this, [
             self::SHOP_REGISTRATION_PENDING,
+            self::BUSINESS_UPGRADE_REQUEST_PENDING,
             self::SHOP_REPORT_FILED,
             self::REVIEW_REPORTED,
         ]);

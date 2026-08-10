@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\BusinessScaling;
 
+use App\Enums\NotificationType;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerUpgradeRequest;
 use App\Models\SuperAdmin;
@@ -52,6 +53,20 @@ final class BusinessScalingNotificationTest extends TestCase
 
         Notification::assertSentTo($active, ShopOwnerUpgradeRequested::class);
         Notification::assertNotSentTo($inactive, ShopOwnerUpgradeRequested::class);
+        $this->assertDatabaseHas('notifications', [
+            'super_admin_id' => $active->id,
+            'type' => NotificationType::BUSINESS_UPGRADE_REQUEST_PENDING->value,
+            'action_url' => '/admin/business-upgrade-requests?status=pending',
+            'is_read' => false,
+        ]);
+        $this->assertDatabaseMissing('notifications', [
+            'super_admin_id' => $inactive->id,
+            'type' => NotificationType::BUSINESS_UPGRADE_REQUEST_PENDING->value,
+        ]);
+        $this->actingAs($active, 'super_admin')
+            ->getJson('/api/admin/notifications/unread-count')
+            ->assertOk()
+            ->assertJsonPath('count', 1);
         $this->assertDatabaseHas('shop_owner_upgrade_requests', [
             'shop_owner_id' => $owner->id,
             'status' => ShopOwnerUpgradeRequest::STATUS_PENDING,
