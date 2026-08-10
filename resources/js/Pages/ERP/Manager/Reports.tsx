@@ -1,7 +1,8 @@
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
+import { erpUrl } from "@/utils/erpCapabilities";
 
 const DocumentIcon = ({ className }: { className?: string }) => (
   <svg className={className} fill="currentColor" viewBox="0 0 24 24">
@@ -142,6 +143,9 @@ const defaultPayload: ReportsPayload = {
 };
 
 export default function ERPReports() {
+  const { auth, erpCapabilities } = usePage().props as any;
+  const ownerMode = auth?.erpActor?.ownerMode === true;
+
   const queryPreset = useMemo(() => {
     if (typeof window === "undefined") {
       return {
@@ -172,7 +176,7 @@ export default function ERPReports() {
   const [error, setError] = useState<string | null>(null);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(queryPreset.openGenerate ? queryPreset.report : null);
   const [dateRange, setDateRange] = useState(queryPreset.range);
-  const [generateModalOpen, setGenerateModalOpen] = useState(Boolean(queryPreset.openGenerate && queryPreset.report));
+  const [generateModalOpen, setGenerateModalOpen] = useState(Boolean(!ownerMode && queryPreset.openGenerate && queryPreset.report));
   const [reportNotes, setReportNotes] = useState("");
 
   const fetchReports = async () => {
@@ -180,7 +184,15 @@ export default function ERPReports() {
       setLoading(true);
       setError(null);
 
-      const response = await fetch("/api/manager/reports", {
+      const reportsUrl = erpUrl(erpCapabilities, "GET:api.manager.reports.index")
+        ?? (ownerMode ? null : "/api/manager/reports");
+
+      if (!reportsUrl) {
+        setLoading(false);
+        return;
+      }
+
+      const response = await fetch(reportsUrl, {
         credentials: "include",
         headers: {
           Accept: "application/json",
@@ -238,7 +250,7 @@ export default function ERPReports() {
   };
 
   const handleGenerateAndSend = async () => {
-    if (!selectedReportId) {
+    if (ownerMode || !selectedReportId) {
       return;
     }
 
@@ -322,6 +334,8 @@ export default function ERPReports() {
   };
 
   const handleDownloadReport = async (reportId: string) => {
+    if (ownerMode) return;
+
     const reportType = reportsData.report_types.find((entry) => entry.id === reportId);
     const latestReportId = reportType?.last_report?.id;
 
@@ -455,7 +469,7 @@ export default function ERPReports() {
                       Last generated: {formatDateTime(report.last_report?.generated_at ?? null)}
                     </p>
 
-                    <div className="flex gap-2">
+                    {!ownerMode && <div className="flex gap-2">
                       <button
                         onClick={() => openGenerateModal(report.id)}
                         className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
@@ -473,7 +487,7 @@ export default function ERPReports() {
                       >
                         <DownloadIcon className="h-4 w-4" />
                       </button>
-                    </div>
+                    </div>}
                   </div>
                 );
               })}
