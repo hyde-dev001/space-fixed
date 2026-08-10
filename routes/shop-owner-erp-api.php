@@ -13,6 +13,10 @@ use App\Http\Controllers\ERP\HR\AuditLogController as FinanceAuditLogController;
 use App\Http\Controllers\Api\Logistics\RiderProfileController;
 use App\Http\Controllers\Api\Logistics\ShipmentController;
 use App\Http\Controllers\Logistics\ErpLogisticsController;
+use App\Http\Controllers\Erp\InventoryDashboardController;
+use App\Http\Controllers\Erp\ProductInventoryController;
+use App\Http\Controllers\Erp\StockMovementController;
+use App\Http\Controllers\Erp\SupplierController;
 use App\Http\Middleware\EnsureOwnerErpWorkspaceEnabled;
 use Illuminate\Support\Facades\Route;
 
@@ -31,6 +35,15 @@ Route::middleware(EnsureOwnerErpWorkspaceEnabled::class)
             ->name('manager.reports');
         Route::get('/manager/audit-logs', [ActivityLogController::class, 'index'])
             ->name('manager.audit-logs');
+
+        Route::get('/inventory/dashboard', [InventoryDashboardController::class, 'index'])
+            ->name('inventory.dashboard');
+        Route::get('/inventory/products', [ProductInventoryController::class, 'index'])
+            ->name('inventory.products.index');
+        Route::get('/inventory/movements', [StockMovementController::class, 'index'])
+            ->name('inventory.movements.index');
+        Route::get('/procurement/suppliers', [SupplierController::class, 'index'])
+            ->name('procurement.suppliers.index');
 
         Route::get('/crm/dashboard-stats', [CRMDashboardController::class, 'index'])
             ->name('crm.dashboard-stats');

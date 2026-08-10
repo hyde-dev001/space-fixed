@@ -1079,19 +1079,19 @@ $ownerReadPairs = [
     ],
     'erp.inventory.inventory-dashboard' => [
         'shop-owner.erp.inventory.inventory-dashboard',
-        'shop-owner.erp.api.inventory.inventory-dashboard',
+        'shop-owner.erp.api.inventory.dashboard',
     ],
     'erp.inventory.product-inventory' => [
         'shop-owner.erp.inventory.product-inventory',
-        'shop-owner.erp.api.inventory.product-inventory',
+        'shop-owner.erp.api.inventory.products.index',
     ],
     'erp.inventory.stock-movement' => [
         'shop-owner.erp.inventory.stock-movement',
-        'shop-owner.erp.api.inventory.stock-movement',
+        'shop-owner.erp.api.inventory.movements.index',
     ],
     'erp.procurement.suppliers-management' => [
         'shop-owner.erp.procurement.suppliers-management',
-        'shop-owner.erp.api.procurement.suppliers-management',
+        'shop-owner.erp.api.procurement.suppliers.index',
     ],
     'erp.staff.customers' => [
         'shop-owner.erp.staff.customers',
@@ -1128,6 +1128,10 @@ $ownerReadApiPairs = [
     'finance.audit.index' => 'shop-owner.erp.api.finance.audit-logs',
     'api.manager.reports.index' => 'shop-owner.erp.api.manager.reports',
     'api.manager.audit-logs' => 'shop-owner.erp.api.manager.audit-logs',
+    'inventory.dashboard' => 'shop-owner.erp.api.inventory.dashboard',
+    'inventory.products.index' => 'shop-owner.erp.api.inventory.products.index',
+    'inventory.movements.index' => 'shop-owner.erp.api.inventory.movements.index',
+    'procurement.suppliers.index' => 'shop-owner.erp.api.procurement.suppliers.index',
     'crm.api.dashboard-stats' => 'shop-owner.erp.api.crm.dashboard-stats',
     'crm.api.customers.index' => 'shop-owner.erp.api.crm.customers.index',
     'crm.api.customers.show' => 'shop-owner.erp.api.crm.customers.show',

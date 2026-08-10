@@ -99,7 +99,7 @@ final class OwnerErpTenantIsolationTest extends TestCase
         ]);
 
         foreach ([$owner, $otherOwner] as $shopOwner) {
-            foreach (['crm', 'logistics', 'hr_employees', 'finance'] as $moduleKey) {
+            foreach (['crm', 'logistics', 'hr_employees', 'finance', 'inventory', 'procurement'] as $moduleKey) {
                 ShopOwnerModule::factory()->create([
                     'shop_owner_id' => $shopOwner->id,
                     'module_key' => $moduleKey,
@@ -132,6 +132,10 @@ final class OwnerErpTenantIsolationTest extends TestCase
             'shop_owner_id' => $otherOwner->id,
             'name' => 'Other tenant report stock',
             'available_quantity' => 0,
+        ]);
+        Supplier::factory()->create([
+            'shop_owner_id' => $otherOwner->id,
+            'name' => 'Other tenant API supplier',
         ]);
         Activity::create([
             'log_name' => 'default',
@@ -187,6 +191,28 @@ final class OwnerErpTenantIsolationTest extends TestCase
             ->assertOk()
             ->assertJsonPath('logs.total', 0)
             ->assertJsonMissing(['description' => 'Other tenant activity']);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/erp/inventory/dashboard')
+            ->assertOk()
+            ->assertJsonPath('metrics.total_items', 0);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/erp/inventory/products')
+            ->assertOk()
+            ->assertJsonPath('total', 0)
+            ->assertJsonMissing(['name' => 'Other tenant report stock']);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/erp/inventory/movements')
+            ->assertOk()
+            ->assertJsonPath('total', 0);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/erp/procurement/suppliers')
+            ->assertOk()
+            ->assertJsonPath('total', 0)
+            ->assertJsonMissing(['name' => 'Other tenant API supplier']);
 
         $this->actingAs($owner, 'shop_owner')
             ->getJson('/api/shop-owner/erp/logistics/dashboard-stats')

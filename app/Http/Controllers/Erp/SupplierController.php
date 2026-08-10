@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Supplier;
 use Illuminate\Http\Request;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use App\Support\Erp\ErpActorContext;
 
 class SupplierController extends Controller
 {
@@ -16,9 +17,18 @@ class SupplierController extends Controller
      */
     public function index(Request $request)
     {
-        $this->authorize('viewAny', Supplier::class);
+        $context = request()->attributes->get('erp.actor_context');
+        $ownerMode = $context instanceof ErpActorContext && $context->isOwnerMode();
+        if (!$ownerMode) {
+            $this->authorize('viewAny', Supplier::class);
+        }
 
-        $shopOwnerId = $request->user()->shop_owner_id;
+        $shopOwnerId = $ownerMode
+            ? (int) $context->tenantOwner()->getKey()
+            : $request->user()?->shop_owner_id;
+        if (!$shopOwnerId) {
+            return response()->json(['message' => 'Shop context is missing for this account.'], 403);
+        }
         $showArchived = $request->boolean('archived');
         
         $suppliers = Supplier::where('shop_owner_id', $shopOwnerId)

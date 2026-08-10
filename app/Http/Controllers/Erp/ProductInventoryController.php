@@ -8,6 +8,7 @@ use App\Models\StockMovement;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use App\Support\Erp\ErpActorContext;
 
 class ProductInventoryController extends Controller
 {
@@ -256,6 +257,11 @@ class ProductInventoryController extends Controller
 
     private function resolveShopOwnerId(Request $request): ?int
     {
+        $context = request()->attributes->get('erp.actor_context');
+        if ($context instanceof ErpActorContext && $context->isOwnerMode()) {
+            return (int) $context->tenantOwner()->getKey();
+        }
+
         $user = $request->user();
         if (!$user) {
             return null;

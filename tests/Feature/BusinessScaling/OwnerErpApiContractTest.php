@@ -107,4 +107,44 @@ final class OwnerErpApiContractTest extends TestCase
             ->assertOk()
             ->assertJsonStructure(['logs', 'stats']);
     }
+
+    public function test_third_read_api_wave_exposes_owner_inventory_and_procurement_get_contracts(): void
+    {
+        config([
+            'shop_modules.owner_erp_workspace_enabled' => true,
+            'shop_modules.enforcement_enabled' => true,
+        ]);
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+
+        foreach (['inventory', 'procurement'] as $moduleKey) {
+            ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $owner->id,
+                'module_key' => $moduleKey,
+                'enabled' => true,
+            ]);
+        }
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/erp/inventory/dashboard')
+            ->assertOk()
+            ->assertJsonStructure(['metrics', 'chartData', 'products']);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/erp/inventory/products')
+            ->assertOk()
+            ->assertJsonStructure(['data', 'current_page']);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/erp/inventory/movements')
+            ->assertOk()
+            ->assertJsonStructure(['data', 'current_page']);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/erp/procurement/suppliers')
+            ->assertOk()
+            ->assertJsonStructure(['data', 'current_page']);
+    }
 }

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\InventoryItem;
 use App\Models\StockMovement;
 use App\Models\SupplierOrder;
+use App\Support\Erp\ErpActorContext;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -197,6 +198,11 @@ class InventoryDashboardController extends Controller
 
     private function resolveShopOwnerId(?Request $request = null): ?int
     {
+        $context = request()->attributes->get('erp.actor_context');
+        if ($context instanceof ErpActorContext && $context->isOwnerMode()) {
+            return (int) $context->tenantOwner()->getKey();
+        }
+
         $user = $request?->user() ?? Auth::guard('user')->user() ?? Auth::user();
         if (!$user) {
             return null;
