@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Erp;
 
 use App\Http\Controllers\Controller;
+use App\Services\ErpWorkspaceNavigationService;
 use App\Services\ShopModuleAccessService;
+use App\Support\Erp\ErpAccessResponder;
 use App\Support\Erp\ErpActorContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -14,22 +16,10 @@ use Inertia\Response as InertiaResponse;
 
 final class WorkspaceController extends Controller
 {
-    /**
-     * @var array<string, string>
-     */
-    private const MODULE_ENTRY_ROUTES = [
-        'retail_operations' => 'shop-owner.products',
-        'repair_operations' => 'shop-owner.erp.staff.repair-dashboard',
-        'hr_employees' => 'shop-owner.erp.hr.audit-logs',
-        'finance' => 'shop-owner.erp.finance.audit-logs',
-        'crm' => 'shop-owner.erp.crm.customers',
-        'inventory' => 'shop-owner.erp.inventory.product-inventory',
-        'procurement' => 'shop-owner.erp.procurement.suppliers-management',
-        'logistics' => 'shop-owner.erp.logistics.shipments',
-    ];
-
     public function __construct(
         private readonly ShopModuleAccessService $moduleAccess,
+        private readonly ErpWorkspaceNavigationService $navigation,
+        private readonly ErpAccessResponder $responder,
     ) {}
 
     public function index(Request $request): InertiaResponse
@@ -40,6 +30,42 @@ final class WorkspaceController extends Controller
     public function data(Request $request): JsonResponse
     {
         return response()->json($this->payload($request));
+    }
+
+    public function module(Request $request, string $module): InertiaResponse|\Symfony\Component\HttpFoundation\Response
+    {
+        $context = $request->attributes->get('erp.actor_context');
+        if (! $context instanceof ErpActorContext) {
+            abort(500);
+        }
+
+        $activeModule = $this->navigation->forSlug($module);
+        if ($activeModule === null) {
+            abort(404);
+        }
+
+        $decision = $this->moduleAccess->decide(
+            $context->tenantOwner(),
+            $activeModule['key'],
+            (bool) config('shop_modules.enforcement_enabled', false),
+        );
+        if (! $decision->allowed) {
+            return $this->responder->deny(
+                $request,
+                $decision->code ?? 'ERP_ROUTE_NOT_ALLOWED',
+                $decision->moduleKeys,
+                $decision->message,
+            );
+        }
+
+        $request->attributes->set('erp.active_module', $activeModule);
+
+        return Inertia::render('ERP/ModuleLanding', [
+            'tenantOwnerId' => $context->tenantOwner()->getKey(),
+            'activeModule' => $activeModule,
+            'navigationMode' => 'module',
+            'urls' => $this->urls(),
+        ]);
     }
 
     /**
@@ -87,6 +113,8 @@ final class WorkspaceController extends Controller
         return [
             'tenantOwnerId' => $owner->getKey(),
             'workspaceEnabled' => (bool) config('shop_modules.owner_erp_workspace_enabled', false),
+            'activeModule' => null,
+            'navigationMode' => 'picker',
             'enabledModules' => $enabledModules,
             'unavailableModules' => $unavailableModules,
             'navigationGroups' => [
@@ -112,8 +140,18 @@ final class WorkspaceController extends Controller
 
     private function moduleEntryUrl(string $moduleKey): ?string
     {
-        $routeName = self::MODULE_ENTRY_ROUTES[$moduleKey] ?? null;
+        return $this->navigation->urlForKey($moduleKey);
+    }
 
-        return $routeName === null ? null : route($routeName);
+    /**
+     * @return array{portal: string, settings: string, workspace: string}
+     */
+    private function urls(): array
+    {
+        return [
+            'portal' => route('shop-owner.dashboard'),
+            'settings' => route('shop-owner.settings'),
+            'workspace' => route('shop-owner.erp.workspace'),
+        ];
     }
 }

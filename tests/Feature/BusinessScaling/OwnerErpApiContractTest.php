@@ -159,7 +159,7 @@ final class OwnerErpApiContractTest extends TestCase
             'business_type' => 'both',
         ]);
 
-        foreach (['crm', 'repair_operations'] as $moduleKey) {
+        foreach (['crm', 'repair_operations', 'retail_operations'] as $moduleKey) {
             ShopOwnerModule::factory()->create([
                 'shop_owner_id' => $owner->id,
                 'module_key' => $moduleKey,
@@ -181,5 +181,10 @@ final class OwnerErpApiContractTest extends TestCase
                 'revenueRows',
                 'recentRepairs',
             ]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/products')
+            ->assertOk()
+            ->assertJsonStructure(['success', 'products']);
     }
 }

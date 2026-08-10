@@ -8,6 +8,7 @@ use App\Models\Notification;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\ErpRouteCatalog;
+use App\Services\ErpWorkspaceNavigationService;
 use App\Services\ShopModuleAccessService;
 use App\Support\Erp\ErpActorContext;
 use Illuminate\Http\Request;
@@ -21,6 +22,7 @@ class HandleInertiaRequests extends Middleware
     public function __construct(
         private readonly ShopModuleAccessService $shopModuleAccess,
         private readonly ErpRouteCatalog $erpRouteCatalog,
+        private readonly ErpWorkspaceNavigationService $erpWorkspaceNavigation,
     ) {}
 
     /**
@@ -141,6 +143,7 @@ class HandleInertiaRequests extends Middleware
         }
 
         $permissions = $this->sharedPermissions($erpContext, $user);
+        $activeModule = $this->activeModule($request, $erpContext);
 
         return [
             ...parent::share($request),
@@ -160,6 +163,8 @@ class HandleInertiaRequests extends Middleware
                 enforceState: $moduleEnforcementEnabled,
             ),
             'erpUrls' => $this->erpUrls($ownerMode),
+            'activeModule' => $activeModule,
+            'navigationMode' => $activeModule === null ? 'picker' : 'module',
 
             // Share session flash data
             'success' => fn() => $request->session()->get('success'),
@@ -449,5 +454,27 @@ class HandleInertiaRequests extends Middleware
     private function namedRouteUrl(string $routeName): ?string
     {
         return RouteFacade::has($routeName) ? route($routeName) : null;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function activeModule(Request $request, ?ErpActorContext $context): ?array
+    {
+        $requestModule = $request->attributes->get('erp.active_module');
+        if (is_array($requestModule)) {
+            return $requestModule;
+        }
+
+        if ($context === null || ! $context->isOwnerMode()) {
+            return null;
+        }
+
+        $moduleKeys = $context->moduleKeys();
+        if (count($moduleKeys) !== 1) {
+            return null;
+        }
+
+        return $this->erpWorkspaceNavigation->forKey((string) $moduleKeys[0]);
     }
 }

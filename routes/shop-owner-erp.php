@@ -10,7 +10,9 @@ use App\Http\Controllers\Erp\ReadPageController;
 use App\Http\Controllers\Logistics\ErpLogisticsController;
 use App\Http\Controllers\Staff\CustomerController;
 use App\Http\Middleware\EnsureOwnerErpWorkspaceEnabled;
+use App\Services\ErpWorkspaceNavigationService;
 use Illuminate\Support\Facades\Route;
+use Inertia\Inertia;
 
 Route::middleware(EnsureOwnerErpWorkspaceEnabled::class)
     ->prefix('shop-owner/erp')
@@ -19,8 +21,16 @@ Route::middleware(EnsureOwnerErpWorkspaceEnabled::class)
         Route::get('/workspace', [WorkspaceController::class, 'index'])
             ->name('workspace');
 
+        Route::get('/{module}', [WorkspaceController::class, 'module'])
+            ->whereIn('module', ErpWorkspaceNavigationService::slugs())
+            ->name('module');
+
+        Route::get('/retail/products', function (): \Inertia\Response {
+            return Inertia::render('ERP/STAFF/ProductManagementWithVariants');
+        })->name('retail.products');
+
         Route::prefix('crm')->name('crm.')->group(function (): void {
-            Route::get('/', [CRMDashboardController::class, 'indexPage'])
+            Route::get('/dashboard', [CRMDashboardController::class, 'indexPage'])
                 ->name('dashboard');
             Route::get('/customers', [CRMCustomerController::class, 'indexPage'])
                 ->name('customers');
@@ -29,7 +39,7 @@ Route::middleware(EnsureOwnerErpWorkspaceEnabled::class)
         });
 
         Route::prefix('logistics')->name('logistics.')->group(function (): void {
-            Route::get('/', [ErpLogisticsController::class, 'dashboard'])
+            Route::get('/dashboard', [ErpLogisticsController::class, 'dashboard'])
                 ->name('dashboard');
             Route::get('/shipments', [ErpLogisticsController::class, 'shipments'])
                 ->name('shipments');

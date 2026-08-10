@@ -1058,6 +1058,10 @@ $workspaceApiRoute = $workspaceRoute;
 $workspaceApiRoute['supporting_routes'] = ['shop-owner.erp.workspace'];
 $routes['shop-owner.erp.api.workspace'] = $workspaceApiRoute;
 
+$moduleLandingRoute = $workspaceRoute;
+$moduleLandingRoute['supporting_routes'] = ['shop-owner.erp.api.workspace'];
+$routes['shop-owner.erp.module'] = $moduleLandingRoute;
+
 $ownerReadPairs = [
     'crm.dashboard' => [
         'shop-owner.erp.crm.dashboard',
@@ -1145,6 +1149,25 @@ foreach ($ownerReadPairs as $employeeRouteName => [$ownerRouteName, $supportingR
     $routes[$ownerRouteName] = $ownerRoute;
 }
 
+$ownerHrAuditRoute = $routeEntry(
+    modules: $modules,
+    classification: 'module',
+    mode: 'single',
+    moduleKeys: ['hr_employees'],
+    methods: ['GET'],
+    audience: 'shop_owner',
+    actorGuard: 'shop_owner',
+    action: 'view',
+    ownerDenialReason: 'owner_operation_not_reviewed',
+    navigationGroup: 'hr_employees',
+    selfService: false,
+);
+$ownerHrAuditRoute['owner_access'] = 'allowed';
+$ownerHrAuditRoute['owner_denial_reason'] = null;
+$ownerHrAuditRoute['paired_route'] = 'erp.hr.audit-logs';
+$ownerHrAuditRoute['supporting_routes'] = ['shop-owner.erp.api.hr.audit-logs'];
+$routes['shop-owner.erp.hr.audit-logs'] = $ownerHrAuditRoute;
+
 $ownerReadApiPairs = [
     'hr.audit.index' => 'shop-owner.erp.api.hr.audit-logs',
     'finance.audit.index' => 'shop-owner.erp.api.finance.audit-logs',
@@ -1185,6 +1208,42 @@ foreach ($ownerReadApiPairs as $employeeRouteName => $ownerRouteName) {
     $ownerRoute['supporting_routes'] = [$employeeRouteName];
     $routes[$ownerRouteName] = $ownerRoute;
 }
+
+$retailProductsRoute = $routeEntry(
+    modules: $modules,
+    classification: 'module',
+    mode: 'single',
+    moduleKeys: ['retail_operations'],
+    methods: ['GET'],
+    audience: 'shop_owner',
+    actorGuard: 'shop_owner',
+    action: 'view',
+    ownerDenialReason: 'owner_operation_not_reviewed',
+    navigationGroup: 'retail_operations',
+    selfService: false,
+);
+$retailProductsRoute['owner_access'] = 'allowed';
+$retailProductsRoute['owner_denial_reason'] = null;
+$retailProductsRoute['supporting_routes'] = [
+    'shop_owner.products.index',
+    'shop_owner.products.store',
+    'shop_owner.products.show',
+    'shop_owner.products.update',
+    'shop_owner.products.destroy',
+    'shop_owner.products.restore',
+    'shop_owner.products.upload-image',
+    'shop_owner.products.variants',
+    'shop_owner.products.color-variants.index',
+    'shop_owner.products.color-variants.store',
+    'shop_owner.products.color-variants.update',
+    'shop_owner.products.color-variants.destroy',
+    'shop_owner.products.color-variants.images.store',
+    'shop_owner.products.color-variants.images.update',
+    'shop_owner.products.color-variants.images.destroy',
+    'shop_owner.products.color-variants.images.reorder',
+    'shop_owner.products.showroom-entitlement',
+];
+$routes['shop-owner.erp.retail.products'] = $retailProductsRoute;
 
 return [
     'enforcement_enabled' => (bool) env('SHOP_MODULE_ENFORCEMENT_ENABLED', false),

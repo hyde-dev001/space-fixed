@@ -2130,8 +2130,11 @@ const AppSidebar_ERP: React.FC = () => {
   const auth = (props as any)?.auth;
   const erpActor = auth?.erpActor ?? (props as any)?.erpActor;
   const ownerMode = erpActor?.type === 'shop_owner' && erpActor?.ownerMode === true;
+  const activeModule = (props as any)?.activeModule ?? null;
 
-  return ownerMode ? <AppSidebar_shopOwner /> : <EmployeeSidebarERP />;
+  return ownerMode
+    ? <AppSidebar_shopOwner activeModule={activeModule} />
+    : <EmployeeSidebarERP />;
 };
 
 export default AppSidebar_ERP;
