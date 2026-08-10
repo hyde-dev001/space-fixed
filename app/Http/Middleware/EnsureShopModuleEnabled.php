@@ -38,7 +38,9 @@ final class EnsureShopModuleEnabled
 
         $moduleKeys = $this->stringList($entry['module_keys'] ?? null);
         $mode = $entry['mode'] ?? null;
-        $guards = $this->stringList($entry['actor_guards'] ?? null);
+        $guards = isset($entry['actor_guard'])
+            ? $this->stringList([$entry['actor_guard']])
+            : $this->stringList($entry['actor_guards'] ?? null);
         if ($moduleKeys === [] || ! is_string($mode) || ! in_array($mode, config('shop_modules.supported_gate_modes', []), true)
             || $guards === [] || array_diff($guards, ['shop_owner', 'user']) !== []) {
             return $this->deny($request, ShopModuleAccessDecision::deny(

@@ -39,11 +39,14 @@ return Application::configure(basePath: dirname(__DIR__))
                     ? ($routeCatalog[$routeName] ?? config("shop_modules.routes.{$routeName}"))
                     : null;
 
+                $actorGuard = is_array($entry)
+                    ? ($entry['actor_guard'] ?? ($entry['actor_guards'][0] ?? null))
+                    : null;
+
                 if (is_array($entry)
                     && ($entry['classification'] ?? null) === 'module'
-                    && is_array($entry['actor_guards'] ?? null)
-                    && $entry['actor_guards'] !== []) {
-                    $actorGuard = (string) $entry['actor_guards'][0];
+                    && is_string($actorGuard)
+                    && $actorGuard !== '') {
                     $declaredMiddleware = $route->middleware();
                     $hasActorAuthentication = collect($declaredMiddleware)
                         ->contains(static fn (string $middleware): bool => str_contains($middleware, 'Authenticate:'.$actorGuard)

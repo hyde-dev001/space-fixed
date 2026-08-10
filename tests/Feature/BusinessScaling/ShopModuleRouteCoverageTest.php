@@ -20,12 +20,10 @@ final class ShopModuleRouteCoverageTest extends TestCase
 
         foreach ($routes as $routeName => $entry) {
             $this->assertIsArray($entry, $routeName);
-            $this->assertContains($entry['classification'] ?? null, ['core', 'module'], $routeName);
-            $this->assertContains($entry['mode'] ?? null, config('shop_modules.supported_gate_modes', []), $routeName);
+            $this->assertContains($entry['classification'] ?? null, ['core', 'module', 'excluded'], $routeName);
+            $this->assertTrue($entry['mode'] === null || in_array($entry['mode'], config('shop_modules.supported_gate_modes', []), true), $routeName);
             $this->assertIsArray($entry['module_keys'] ?? null, $routeName);
-            $this->assertIsArray($entry['actor_guards'] ?? null, $routeName);
-            $this->assertNotEmpty($entry['actor_guards'], $routeName);
-            $this->assertArrayHasKey('customer_capable', $entry, $routeName);
+            $this->assertContains($entry['actor_guard'] ?? null, ['user', 'shop_owner', null], $routeName);
 
             $route = RouteFacade::getRoutes()->getByName($routeName);
             $this->assertInstanceOf(Route::class, $route, "Missing loaded route {$routeName}.");
@@ -39,7 +37,7 @@ final class ShopModuleRouteCoverageTest extends TestCase
                 $moduleIndex = collect($gathered)->search(static fn (string $middleware): bool => str_contains($middleware, 'EnsureShopModuleEnabled')
                     || $middleware === 'shop.module');
                 $authIndex = collect($gathered)->search(static fn (string $middleware): bool => str_contains($middleware, 'Authenticate')
-                    || str_contains($middleware, 'auth:'.$entry['actor_guards'][0]));
+                    || str_contains($middleware, 'auth:'.$entry['actor_guard']));
                 $this->assertNotFalse($authIndex, $routeName);
                 $this->assertNotFalse($moduleIndex, $routeName);
                 $this->assertLessThan($moduleIndex, $authIndex, $routeName);

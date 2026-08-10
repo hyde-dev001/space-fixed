@@ -79,18 +79,44 @@ $modules = [
 ];
 
 $routeEntry = static function (
+    array $modules,
     string $classification,
-    string $mode,
+    ?string $mode,
     array $moduleKeys,
-    array $actorGuards,
-    bool $customerCapable,
+    string $audience,
+    ?string $actorGuard,
+    string $action,
+    string $ownerDenialReason,
+    ?string $navigationGroup,
+    bool $selfService,
 ): array {
+    $registrationTypes = [];
+    $businessTypes = [];
+
+    foreach ($moduleKeys as $moduleKey) {
+        $registrationTypes = array_merge($registrationTypes, $modules[$moduleKey]['registration_types'] ?? []);
+        $businessTypes = array_merge($businessTypes, $modules[$moduleKey]['business_types'] ?? []);
+    }
+
     return [
+        'methods' => ['GET'],
         'classification' => $classification,
+        'audience' => $audience,
+        'actor_guard' => $actorGuard,
+        'module_keys' => array_values(array_unique($moduleKeys)),
         'mode' => $mode,
-        'module_keys' => $moduleKeys,
-        'actor_guards' => $actorGuards,
-        'customer_capable' => $customerCapable,
+        'registration_types' => array_values(array_unique($registrationTypes)),
+        'business_types' => array_values(array_unique($businessTypes)),
+        'action' => $action,
+        'owner_access' => 'denied',
+        'owner_denial_reason' => $ownerDenialReason,
+        'domain_rule' => null,
+        'risk_tier' => 'normal',
+        'paired_route' => null,
+        'navigation_group' => $navigationGroup,
+        'self_service' => $selfService,
+        'supporting_routes' => [],
+        'actor_persistence' => 'not_applicable',
     ];
 };
 
@@ -726,6 +752,23 @@ $routeBuckets = [
     ],
 ];
 
+$isOwnerRoute = static fn (string $routeName): bool => str_starts_with($routeName, 'shop-owner.')
+    || str_starts_with($routeName, 'shop_owner.')
+    || str_starts_with($routeName, 'shopOwner.');
+
+$isSelfServiceRoute = static fn (string $routeName): bool => str_starts_with($routeName, 'staff.')
+    || in_array($routeName, ['erp.time-in', 'erp.my-payslips', 'erp.profile', 'erp.password.update'], true);
+
+$routeAction = static function (string $routeName): string {
+    foreach (['approve', 'reject', 'checkout', 'assign', 'upload', 'delete', 'update', 'create'] as $action) {
+        if (str_contains($routeName, $action)) {
+            return $action;
+        }
+    }
+
+    return 'view';
+};
+
 $routes = [];
 foreach ($routeBuckets as $bucket => $routeNames) {
     foreach ($routeNames as $routeName) {
@@ -737,18 +780,19 @@ foreach ($routeBuckets as $bucket => $routeNames) {
             $moduleKeys = [];
         }
 
-        $actorGuards = str_starts_with($routeName, 'shop-owner.')
-            || str_starts_with($routeName, 'shop_owner.')
-            || str_starts_with($routeName, 'shopOwner.')
-            ? ['shop_owner']
-            : ['user'];
-
         $routes[$routeName] = $routeEntry(
+            modules: $modules,
             classification: $classification,
-            mode: 'single',
+            mode: $classification === 'module' ? 'single' : null,
             moduleKeys: $moduleKeys,
-            actorGuards: $actorGuards,
-            customerCapable: false,
+            audience: $isOwnerRoute($routeName) ? 'shop_owner' : 'user',
+            actorGuard: $isOwnerRoute($routeName) ? 'shop_owner' : 'user',
+            action: $routeAction($routeName),
+            ownerDenialReason: $isSelfServiceRoute($routeName)
+                ? 'employee_subject_required'
+                : 'owner_operation_not_reviewed',
+            navigationGroup: $classification === 'module' ? $bucket : null,
+            selfService: $isSelfServiceRoute($routeName),
         );
     }
 }

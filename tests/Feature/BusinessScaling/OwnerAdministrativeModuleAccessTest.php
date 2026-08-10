@@ -25,7 +25,7 @@ final class OwnerAdministrativeModuleAccessTest extends TestCase
                 continue;
             }
 
-            $this->assertSame(['shop_owner'], $entry['actor_guards'], $routeName);
+            $this->assertSame('shop_owner', $entry['actor_guard'], $routeName);
             $route = Route::getRoutes()->getByName($routeName);
             $this->assertNotNull($route, $routeName);
             $middleware = $route->gatherMiddleware();
@@ -51,11 +51,11 @@ final class OwnerAdministrativeModuleAccessTest extends TestCase
                 continue;
             }
 
-            $this->assertSame(['user'], $entry['actor_guards'], $routeName);
+            $this->assertSame('user', $entry['actor_guard'], $routeName);
         }
 
         $routes = config('shop_modules.routes', []);
-        $this->assertNotEmpty($routes['staff.attendance.checkin']['actor_guards'] ?? null);
+        $this->assertSame('user', $routes['staff.attendance.checkin']['actor_guard'] ?? null);
     }
 
     public function test_business_owner_can_open_enabled_employee_module_pages_without_an_employee_session(): void
