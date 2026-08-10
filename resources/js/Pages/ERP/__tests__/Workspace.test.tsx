@@ -5,7 +5,7 @@ import Workspace from '../Workspace';
 
 const state = vi.hoisted(() => ({
   props: {
-    enabledModules: [{ key: 'finance', label: 'Finance' }],
+    enabledModules: [{ key: 'finance', label: 'Finance', url: '/shop-owner/erp/finance/audit-logs' }],
     unavailableModules: [
       { key: 'inventory', label: 'Inventory', code: 'MODULE_DISABLED', reason: 'Module disabled for this shop.' },
     ],
@@ -30,7 +30,7 @@ vi.mock('../../../layout/AppLayout_ERP', () => ({
 
 beforeEach(() => {
   state.props = {
-    enabledModules: [{ key: 'finance', label: 'Finance' }],
+    enabledModules: [{ key: 'finance', label: 'Finance', url: '/shop-owner/erp/finance/audit-logs' }],
     unavailableModules: [
       { key: 'inventory', label: 'Inventory', code: 'MODULE_DISABLED', reason: 'Module disabled for this shop.' },
     ],
@@ -52,5 +52,14 @@ it('shows available and unavailable modules with a server-provided manage link',
   expect(screen.getByRole('link', { name: /manage modules/i })).toHaveAttribute(
     'href',
     '/shop-owner/settings',
+  );
+});
+
+it('links an available module card to its server-provided entry page', () => {
+  render(<Workspace />);
+
+  expect(screen.getByRole('link', { name: /Finance/ })).toHaveAttribute(
+    'href',
+    '/shop-owner/erp/finance/audit-logs',
   );
 });

@@ -1,10 +1,12 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import AppSidebarShopOwner from '../AppSidebar_shopOwner';
 
 const state = vi.hoisted(() => ({
-  shopModules: {} as Record<string, unknown>,
+  shopModules: {} as Record<string, unknown> | undefined,
+  moduleStates: {} as Record<string, unknown>,
+  moduleEnforcementEnabled: undefined as boolean | undefined,
   erpUrls: { workspace: null as string | null },
   shopOwner: {
     registration_type: 'individual',
@@ -21,7 +23,10 @@ vi.mock('@inertiajs/react', () => ({
       auth: {
         shop_owner: state.shopOwner,
         shopModules: state.shopModules,
+        shopModuleEnforcementEnabled: state.moduleEnforcementEnabled,
       },
+      moduleStates: state.moduleStates,
+      shopModuleEnforcementEnabled: state.moduleEnforcementEnabled,
       erpUrls: state.erpUrls,
     },
   }),
@@ -68,6 +73,8 @@ beforeEach(() => {
     can_manage_staff: false,
   };
   state.shopModules = accessible({ logistics: false, repair_operations: false });
+  state.moduleStates = state.shopModules;
+  state.moduleEnforcementEnabled = undefined;
   state.erpUrls = { workspace: null };
 });
 
@@ -107,6 +114,28 @@ it('shows enabled employee modules to a business shop owner', () => {
   expect(screen.queryByRole('button', { name: 'Repair Operations' })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Warranty Queue' })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Stock Management' })).not.toBeInTheDocument();
+});
+
+it('uses the top-level module state when the nested auth state is unavailable', () => {
+  state.shopOwner = {
+    registration_type: 'company',
+    business_type: 'both',
+    is_company: true,
+    can_manage_staff: true,
+  };
+  state.shopModules = undefined;
+  state.moduleStates = accessible();
+  state.moduleEnforcementEnabled = true;
+
+  render(<AppSidebarShopOwner />);
+
+  expect(screen.getByRole('link', { name: 'Finance' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'CRM' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Customers' })).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Approval Pages' }));
+  expect(screen.getByRole('link', { name: 'Refund Approval' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Purchase Request Approval' })).toBeInTheDocument();
 });
 
 it('shows one capability-controlled ERP Workspace entry for a company owner', () => {
