@@ -95,4 +95,42 @@ final class ShopModuleBackfillCommandTest extends TestCase
             ->assertExitCode(1);
         $this->assertDatabaseCount('shop_owner_modules', 2);
     }
+
+    public function test_deployment_backfill_migration_repairs_legacy_owners_without_overwriting_disabled_rows(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+
+        ShopOwnerModule::factory()->create([
+            'shop_owner_id' => $owner->id,
+            'module_key' => 'finance',
+            'enabled' => false,
+        ]);
+
+        $migration = require base_path(
+            'database/migrations/2026_08_10_000004_backfill_existing_shop_owner_modules.php',
+        );
+        $migration->up();
+
+        $this->assertSame(
+            collect(array_keys(config('shop_modules.modules', [])))->sort()->values()->all(),
+            ShopOwnerModule::query()
+                ->where('shop_owner_id', $owner->id)
+                ->orderBy('module_key')
+                ->pluck('module_key')
+                ->all(),
+        );
+        $this->assertDatabaseHas('shop_owner_modules', [
+            'shop_owner_id' => $owner->id,
+            'module_key' => 'finance',
+            'enabled' => 0,
+        ]);
+
+        $count = ShopOwnerModule::query()->count();
+        $migration->up();
+
+        $this->assertSame($count, ShopOwnerModule::query()->count());
+    }
 }

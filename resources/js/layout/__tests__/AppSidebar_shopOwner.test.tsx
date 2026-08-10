@@ -179,3 +179,28 @@ it('hides disabled employee modules from a business shop owner', () => {
   expect(screen.queryByRole('link', { name: 'CRM' })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Logistics' })).not.toBeInTheDocument();
 });
+
+it('does not render empty owner module sections when every module is unavailable', () => {
+  state.shopOwner = {
+    registration_type: 'company',
+    business_type: 'both',
+    is_company: true,
+    can_manage_staff: true,
+  };
+  state.shopModules = accessible({
+    retail_operations: false,
+    repair_operations: false,
+    hr_employees: false,
+    finance: false,
+    crm: false,
+    inventory: false,
+    procurement: false,
+    logistics: false,
+  });
+
+  render(<AppSidebarShopOwner />);
+
+  expect(screen.queryByText('Approval Workflow', { exact: true })).not.toBeInTheDocument();
+  expect(screen.queryByText('Employee Modules', { exact: true })).not.toBeInTheDocument();
+  expect(screen.queryByText('Customer Management', { exact: true })).not.toBeInTheDocument();
+});

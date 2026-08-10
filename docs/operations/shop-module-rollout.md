@@ -14,8 +14,10 @@ Do not turn it on as part of an ordinary code deploy.
    php artisan migrate --force
    ```
 
-3. Initialize missing rows. The command is idempotent and does not overwrite
-   an existing disabled state:
+3. The migration automatically initializes missing rows for existing approved
+   owners. Run the idempotent command as a deployment check and to repair any
+   rows created outside the normal approval flow; it does not overwrite an
+   existing disabled state:
 
    ```sh
    php artisan shop-modules:backfill
