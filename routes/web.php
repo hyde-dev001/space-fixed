@@ -8,6 +8,7 @@ use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\ShopOwner\EcommerceController;
 use App\Http\Controllers\ShopOwner\ShopSettingsController;
 use App\Http\Controllers\ShopOwner\ShopOwnerUpgradeRequestController;
+use App\Http\Controllers\ShopOwner\ShopOwnerModuleController;
 use App\Http\Controllers\ShopOwner\UserAccessControlController;
 use App\Http\Controllers\ShopOwnerAuthController;
 use App\Http\Controllers\ShopOwnerPasswordSetupController;
@@ -843,6 +844,9 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
     Route::post('/settings/business-upgrade', [ShopOwnerUpgradeRequestController::class, 'store'])
         ->middleware('throttle:5,1')
         ->name('upgrade-requests.store');
+    Route::patch('/settings/modules/{moduleKey}', [ShopOwnerModuleController::class, 'update'])
+        ->middleware('throttle:30,1')
+        ->name('modules.update');
     Route::get('/settings/policies', [ShopSettingsController::class, 'getPolicyEditorState'])->name('settings.policies');
     Route::put('/settings/policies/draft', [ShopSettingsController::class, 'savePolicyDraft'])->name('settings.policies.draft');
     Route::post('/settings/policies/publish', [ShopSettingsController::class, 'publishPolicy'])->name('settings.policies.publish');
