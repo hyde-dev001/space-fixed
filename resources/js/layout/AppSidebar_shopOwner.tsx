@@ -583,6 +583,13 @@ const AppSidebar_shopOwner: React.FC = () => {
     return true;
   }, [isModuleVisible, shopOwner]);
 
+  const hasVisibleMenuItems = useCallback((items: NavItem[]) => (
+    items.some((item) => (
+      isMenuItemVisible(item)
+      && (!item.subItems || item.subItems.some(isSubItemVisible))
+    ))
+  ), [isMenuItemVisible, isSubItemVisible]);
+
   // Check if route is active using Inertia's route() helper
   const isActive = useCallback(
     (routeName: string) => {
@@ -873,23 +880,25 @@ const AppSidebar_shopOwner: React.FC = () => {
               {renderMenuItems(mainMenuItems, "main")}
             </div>
 
-            <div>
-              <h2
-                className={`${isIndividualAccount ? "mb-1" : "mb-4"} text-xs uppercase flex leading-[20px] text-gray-400 ${!isExpanded && !isHovered
-                    ? "lg:justify-center"
-                    : "justify-start"
-                  }`}
-              >
-                {isExpanded || isHovered || isMobileOpen ? (
-                  isIndividualAccount ? individualAccountSectionLabel : businessAccountSectionLabel
-                ) : (
-                  <HorizontaLDots className="size-6" />
-                )}
-              </h2>
-              {renderMenuItems(isIndividualAccount ? productManagementItems : approvalWorkflowItems, isIndividualAccount ? "product" : "approval")}
-            </div>
+            {hasVisibleMenuItems(isIndividualAccount ? productManagementItems : approvalWorkflowItems) && (
+              <div>
+                <h2
+                  className={`${isIndividualAccount ? "mb-1" : "mb-4"} text-xs uppercase flex leading-[20px] text-gray-400 ${!isExpanded && !isHovered
+                      ? "lg:justify-center"
+                      : "justify-start"
+                    }`}
+                >
+                  {isExpanded || isHovered || isMobileOpen ? (
+                    isIndividualAccount ? individualAccountSectionLabel : businessAccountSectionLabel
+                  ) : (
+                    <HorizontaLDots className="size-6" />
+                  )}
+                </h2>
+                {renderMenuItems(isIndividualAccount ? productManagementItems : approvalWorkflowItems, isIndividualAccount ? "product" : "approval")}
+              </div>
+            )}
 
-            {!isIndividualAccount && (
+            {!isIndividualAccount && hasVisibleMenuItems(businessModuleItems) && (
               <div>
                 <h2
                   className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${!isExpanded && !isHovered
@@ -907,21 +916,23 @@ const AppSidebar_shopOwner: React.FC = () => {
               </div>
             )}
 
-            <div>
-              <h2
-                className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${!isExpanded && !isHovered
-                    ? "lg:justify-center"
-                    : "justify-start"
-                  }`}
-              >
-                {isExpanded || isHovered || isMobileOpen ? (
-                  "Customer Management"
-                ) : (
-                  <HorizontaLDots className="size-6" />
-                )}
-              </h2>
-              {renderMenuItems(customerManagementItems, "customer")}
-            </div>
+            {hasVisibleMenuItems(customerManagementItems) && (
+              <div>
+                <h2
+                  className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${!isExpanded && !isHovered
+                      ? "lg:justify-center"
+                      : "justify-start"
+                    }`}
+                >
+                  {isExpanded || isHovered || isMobileOpen ? (
+                    "Customer Management"
+                  ) : (
+                    <HorizontaLDots className="size-6" />
+                  )}
+                </h2>
+                {renderMenuItems(customerManagementItems, "customer")}
+              </div>
+            )}
           </div>
         </nav>
 
