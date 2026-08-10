@@ -13,6 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use App\Support\Erp\ErpActorContext;
 use Inertia\Inertia;
 
 class CRMCustomerController extends Controller
@@ -21,6 +22,11 @@ class CRMCustomerController extends Controller
 
     private function shopOwnerId(): int
     {
+        $context = request()->attributes->get('erp.actor_context');
+        if ($context instanceof ErpActorContext) {
+            return (int) $context->tenantOwner()->getKey();
+        }
+
         $user = Auth::user();
         return $user->shop_owner_id ?? $user->id;
     }
@@ -47,12 +53,13 @@ class CRMCustomerController extends Controller
     public function indexPage(Request $request)
     {
         $user = Auth::guard('user')->user();
+        $context = $request->attributes->get('erp.actor_context');
 
-        if ($user?->force_password_change) {
+        if (! $context instanceof ErpActorContext && $user?->force_password_change) {
             return redirect()->route('erp.profile');
         }
 
-        $shopOwnerId = $user->shop_owner_id ?? $user->id;
+        $shopOwnerId = $this->shopOwnerId();
 
         // ── Per-customer order stats ──────────────────────────────────────────
         $orderStats = Order::where('shop_owner_id', $shopOwnerId)

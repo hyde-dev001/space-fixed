@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\BusinessScaling;
 
 use App\Models\ShopOwner;
+use App\Models\ShopOwnerModule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -67,5 +68,41 @@ final class OwnerErpPageContractTest extends TestCase
                 ->where('tenantOwnerId', fn (int $tenantOwnerId): bool => $tenantOwnerId === $owner->id
                     && $tenantOwnerId !== $otherOwner->id)
             );
+    }
+
+    public function test_first_read_wave_exposes_owner_crm_and_logistics_pages_with_shared_components(): void
+    {
+        config([
+            'shop_modules.owner_erp_workspace_enabled' => true,
+            'shop_modules.enforcement_enabled' => true,
+        ]);
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+
+        foreach (['crm', 'logistics'] as $moduleKey) {
+            ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $owner->id,
+                'module_key' => $moduleKey,
+                'enabled' => true,
+            ]);
+        }
+
+        $pages = [
+            ['/shop-owner/erp/crm', 'ERP/CRM/CRMDashboard'],
+            ['/shop-owner/erp/crm/customers', 'ERP/CRM/Customers'],
+            ['/shop-owner/erp/crm/customer-reviews', 'ERP/CRM/CustomerReviews'],
+            ['/shop-owner/erp/logistics', 'ERP/Logistics/Dashboard'],
+            ['/shop-owner/erp/logistics/shipments', 'ERP/Logistics/Shipments'],
+            ['/shop-owner/erp/logistics/riders', 'ERP/Logistics/Riders'],
+        ];
+
+        foreach ($pages as [$uri, $component]) {
+            $this->actingAs($owner, 'shop_owner')
+                ->get($uri)
+                ->assertOk()
+                ->assertInertia(fn (Assert $page) => $page->component($component, false));
+        }
     }
 }

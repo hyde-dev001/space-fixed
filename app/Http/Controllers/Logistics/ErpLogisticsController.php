@@ -26,6 +26,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use App\Support\Erp\ErpActorContext;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -44,17 +45,19 @@ class ErpLogisticsController extends Controller
 
     public function shipments(Request $request): Response|RedirectResponse
     {
+        $context = $this->erpContext();
+        $ownerMode = $context?->isOwnerMode() === true;
         $user = Auth::guard('user')->user();
-        if ($user?->can('operate-logistics-deliveries') && ! $user->can('assign-logistics-deliveries')) {
+        if (! $ownerMode && $user?->can('operate-logistics-deliveries') && ! $user->can('assign-logistics-deliveries')) {
             return redirect()->route('erp.logistics.deliveries');
         }
 
         $shopOwnerId = $this->authorizedShopOwnerId('assign-logistics-deliveries');
-        $isDispatcher = $user && (
+        $isDispatcher = $ownerMode || ($user && (
             $user->can('assign-logistics-deliveries') ||
             $user->can('manage-logistics-riders')
-        );
-        $canAssign = $user && $user->can('assign-logistics-deliveries');
+        ));
+        $canAssign = ! $ownerMode && $user && $user->can('assign-logistics-deliveries');
         $shop = ShopOwner::query()->findOrFail($shopOwnerId);
         $search = trim((string) ($request->validate([
             'search' => ['nullable', 'string', 'max:100'],
@@ -157,7 +160,7 @@ class ErpLogisticsController extends Controller
             'canAssign' => $canAssign,
             'canUpdateStatus' => false,
             'canRecordProof' => false,
-            'canApproveProof' => $user && ($user->can('approve-proof-of-delivery') || $user->can('assign-logistics-deliveries')),
+            'canApproveProof' => ! $ownerMode && $user && ($user->can('approve-proof-of-delivery') || $user->can('assign-logistics-deliveries')),
             'riderMode' => false,
             'maxDeliveryAttempts' => $maxDeliveryAttempts,
             'assignableRiders' => $canAssign
@@ -763,7 +766,9 @@ class ErpLogisticsController extends Controller
         $shopOwnerId = $this->authorizedShopOwnerId('manage-logistics-riders');
         $availability = $request->query('availability', 'all');
         $type = $request->query('type', 'all');
-        app(RiderProfileSyncService::class)->syncShop($shopOwnerId);
+        if (! $this->isOwnerMode()) {
+            app(RiderProfileSyncService::class)->syncShop($shopOwnerId);
+        }
 
         return Inertia::render('ERP/Logistics/Riders', [
             'riders' => RiderProfile::query()
@@ -872,6 +877,11 @@ class ErpLogisticsController extends Controller
 
     private function authorizedShopOwnerId(string $permission): int
     {
+        $context = $this->erpContext();
+        if ($context?->isOwnerMode() === true) {
+            return (int) $context->tenantOwner()->getKey();
+        }
+
         $user = Auth::guard('user')->user();
         $hasAccess = $user && $user->can($permission);
 
@@ -880,6 +890,18 @@ class ErpLogisticsController extends Controller
         }
 
         return (int) $user->shop_owner_id;
+    }
+
+    private function isOwnerMode(): bool
+    {
+        return $this->erpContext()?->isOwnerMode() === true;
+    }
+
+    private function erpContext(): ?ErpActorContext
+    {
+        $context = request()->attributes->get('erp.actor_context');
+
+        return $context instanceof ErpActorContext ? $context : null;
     }
 
     private function stats(int $shopOwnerId): array

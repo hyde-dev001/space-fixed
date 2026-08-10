@@ -131,10 +131,8 @@ $routeBuckets = [
         'api.manager.reports.index',
         'api.manager.reports.send',
         'api.manager.staff-performance',
-        'crm.dashboard',
         'erp.hr',
         'erp.hr.audit-logs',
-        'erp.logistics.dashboard',
         'erp.logistics.settings',
         'erp.manager.audit-logs',
         'erp.manager.dashboard',
@@ -582,6 +580,7 @@ $routeBuckets = [
         'staff.payslips.my',
     ],
     'crm' => [
+        'crm.dashboard',
         'crm.customer-reviews',
         'crm.customer-support',
         'crm.customers',
@@ -744,6 +743,7 @@ $routeBuckets = [
         'api.logistics.attempts.file',
         'api.logistics.incidents.evidence',
         'erp.logistics.batches',
+        'erp.logistics.dashboard',
         'erp.logistics.deliveries',
         'erp.logistics.riders',
         'erp.logistics.shipments',
@@ -1026,6 +1026,53 @@ $routes['shop-owner.erp.workspace'] = $workspaceRoute;
 $workspaceApiRoute = $workspaceRoute;
 $workspaceApiRoute['supporting_routes'] = ['shop-owner.erp.workspace'];
 $routes['shop-owner.erp.api.workspace'] = $workspaceApiRoute;
+
+$ownerReadPairs = [
+    'crm.dashboard' => [
+        'shop-owner.erp.crm.dashboard',
+        'shop-owner.erp.api.crm.dashboard',
+    ],
+    'crm.customers' => [
+        'shop-owner.erp.crm.customers',
+        'shop-owner.erp.api.crm.customers',
+    ],
+    'crm.customer-reviews' => [
+        'shop-owner.erp.crm.customer-reviews',
+        'shop-owner.erp.api.crm.reviews',
+    ],
+    'erp.logistics.dashboard' => [
+        'shop-owner.erp.logistics.dashboard',
+        'shop-owner.erp.api.logistics.dashboard',
+    ],
+    'erp.logistics.shipments' => [
+        'shop-owner.erp.logistics.shipments',
+        'shop-owner.erp.api.logistics.shipments',
+    ],
+    'erp.logistics.riders' => [
+        'shop-owner.erp.logistics.riders',
+        'shop-owner.erp.api.logistics.riders',
+    ],
+];
+
+foreach ($ownerReadPairs as $employeeRouteName => [$ownerRouteName, $supportingRouteName]) {
+    if (! isset($routes[$employeeRouteName])) {
+        continue;
+    }
+
+    $employeeRoute = $routes[$employeeRouteName];
+    $employeeRoute['owner_access'] = 'allowed';
+    $employeeRoute['owner_denial_reason'] = null;
+    $employeeRoute['paired_route'] = $ownerRouteName;
+    $employeeRoute['supporting_routes'] = [$supportingRouteName];
+    $routes[$employeeRouteName] = $employeeRoute;
+
+    $ownerRoute = $employeeRoute;
+    $ownerRoute['audience'] = 'shop_owner';
+    $ownerRoute['actor_guard'] = 'shop_owner';
+    $ownerRoute['paired_route'] = $employeeRouteName;
+    $ownerRoute['supporting_routes'] = [$supportingRouteName];
+    $routes[$ownerRouteName] = $ownerRoute;
+}
 
 return [
     'enforcement_enabled' => (bool) env('SHOP_MODULE_ENFORCEMENT_ENABLED', false),
