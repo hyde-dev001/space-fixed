@@ -5,6 +5,7 @@ import AppSidebarShopOwner from '../AppSidebar_shopOwner';
 
 const state = vi.hoisted(() => ({
   shopModules: {} as Record<string, unknown>,
+  erpUrls: { workspace: null as string | null },
   shopOwner: {
     registration_type: 'individual',
     business_type: 'both',
@@ -21,6 +22,7 @@ vi.mock('@inertiajs/react', () => ({
         shop_owner: state.shopOwner,
         shopModules: state.shopModules,
       },
+      erpUrls: state.erpUrls,
     },
   }),
   Link: ({ href, children, ...props }: React.PropsWithChildren<{ href: string }>) => (
@@ -33,14 +35,18 @@ vi.mock('ziggy-js', () => ({
 }));
 
 vi.mock('../../context/SidebarContext', () => ({
-  useSidebar: () => ({
-    isExpanded: true,
-    isMobileOpen: false,
-    isHovered: false,
-    setIsHovered: vi.fn(),
-    openSubmenu: null,
-    toggleSubmenu: vi.fn(),
-  }),
+  useSidebar: () => {
+    const [openSubmenu, setOpenSubmenu] = React.useState<string | null>(null);
+
+    return {
+      isExpanded: true,
+      isMobileOpen: false,
+      isHovered: false,
+      setIsHovered: vi.fn(),
+      openSubmenu,
+      toggleSubmenu: (key: string) => setOpenSubmenu((current) => current === key ? null : key),
+    };
+  },
 }));
 
 const accessible = (overrides: Record<string, boolean> = {}) => Object.fromEntries(
@@ -62,6 +68,7 @@ beforeEach(() => {
     can_manage_staff: false,
   };
   state.shopModules = accessible({ logistics: false, repair_operations: false });
+  state.erpUrls = { workspace: null };
 });
 
 it('hides disabled owner modules while keeping core dashboard visible', () => {
@@ -96,12 +103,33 @@ it('shows enabled employee modules to a business shop owner', () => {
   expect(screen.getByRole('link', { name: 'Procurement' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'CRM' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Logistics' })).toHaveAttribute('href', '/shop-owner.logistics.shipments');
-  expect(screen.getByRole('link', { name: 'Job Orders Retail' })).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: 'Job Orders Repair' })).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: 'Product Management' })).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: 'Services Management' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Retail Operations' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Repair Operations' })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Warranty Queue' })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Stock Management' })).not.toBeInTheDocument();
+});
+
+it('shows one capability-controlled ERP Workspace entry for a company owner', () => {
+  state.shopOwner = {
+    registration_type: 'company',
+    business_type: 'both',
+    is_company: true,
+    can_manage_staff: true,
+  };
+  state.shopModules = accessible();
+  state.erpUrls = { workspace: '/shop-owner/erp/workspace' };
+
+  render(<AppSidebarShopOwner />);
+
+  expect(screen.getAllByRole('link', { name: /ERP Workspace/i })).toHaveLength(1);
+  expect(screen.getByRole('link', { name: /ERP Workspace/i })).toHaveAttribute(
+    'href',
+    '/shop-owner/erp/workspace',
+  );
+  expect(screen.queryByRole('button', { name: 'Retail Operations' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Repair Operations' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Job Orders Retail' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Job Orders Repair' })).not.toBeInTheDocument();
 });
 
 it('hides disabled employee modules from a business shop owner', () => {

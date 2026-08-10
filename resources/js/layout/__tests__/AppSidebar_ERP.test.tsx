@@ -4,24 +4,29 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import AppSidebarERP from '../AppSidebar_ERP';
 
 const state = vi.hoisted(() => ({
+  url: '/erp/logistics',
   role: 'Logistics Dispatcher',
   roles: ['Logistics Dispatcher'] as string[],
   permissions: [] as string[],
   shopModules: {} as Record<string, unknown>,
+  erpActor: null as null | { type: string; ownerMode: boolean },
+  erpCapabilities: {} as Record<string, unknown>,
 }));
 
 vi.mock('@inertiajs/react', () => ({
   usePage: () => ({
-    url: '/erp/logistics',
+    url: state.url,
     props: {
       auth: {
         user: { role: state.role, roles: state.roles },
         permissions: state.permissions,
         shopModules: state.shopModules,
+        erpActor: state.erpActor,
+        erpCapabilities: state.erpCapabilities,
       },
     },
   }),
-  Link: ({ href, children }: React.PropsWithChildren<{ href: string }>) => <a href={href}>{children}</a>,
+  Link: ({ href, children, ...props }: React.PropsWithChildren<{ href: string }>) => <a href={href} {...props}>{children}</a>,
 }));
 
 vi.mock('ziggy-js', () => ({
@@ -44,10 +49,13 @@ vi.mock('../../context/SidebarContext', () => ({
 }));
 
 beforeEach(() => {
+  state.url = '/erp/logistics';
   state.role = 'Logistics Dispatcher';
   state.roles = ['Logistics Dispatcher'];
   state.permissions = [];
   state.shopModules = moduleStates();
+  state.erpActor = null;
+  state.erpCapabilities = {};
   Object.defineProperty(window, 'localStorage', {
     configurable: true,
     value: { getItem: vi.fn(), removeItem: vi.fn() },
@@ -125,4 +133,32 @@ it('keeps employee permission filtering when an eligible module is enabled', () 
 
   expect(screen.getByRole('link', { name: /^logistics$/i })).toBeInTheDocument();
   expect(screen.queryByRole('link', { name: /settings/i })).not.toBeInTheDocument();
+});
+
+it('uses owner capability URLs and excludes employee self-service navigation', () => {
+  state.url = '/shop-owner/erp/workspace';
+  state.role = 'MANAGER';
+  state.roles = ['MANAGER'];
+  state.permissions = ['access-manager-dashboard', 'access-attendance-records', 'access-view-payslip'];
+  state.erpActor = { type: 'shop_owner', ownerMode: true };
+  state.erpCapabilities = {
+    'GET:shop-owner.erp.workspace': {
+      allowed: true,
+      method: 'GET',
+      routeName: 'shop-owner.erp.workspace',
+      url: '/shop-owner/erp/workspace',
+      reason: null,
+    },
+  };
+
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('link', { name: /ERP Workspace/i })).toHaveAttribute(
+    'href',
+    '/shop-owner/erp/workspace',
+  );
+  expect(screen.getByRole('link', { name: /ERP Workspace/i })).toHaveClass('menu-item-active');
+  expect(screen.queryByRole('link', { name: /log attendance/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /my payslips/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /employee/i })).not.toBeInTheDocument();
 });

@@ -431,7 +431,9 @@ class HandleInertiaRequests extends Middleware
         return [
             'portal' => $this->namedRouteUrl('shop-owner.dashboard'),
             'settings' => $settings,
-            'workspace' => $this->namedRouteUrl('shop-owner.erp.workspace'),
+            'workspace' => (bool) config('shop_modules.owner_erp_workspace_enabled', false)
+                ? $this->namedRouteUrl('shop-owner.erp.workspace')
+                : null,
             'notifications' => $this->namedRouteUrl('shop-owner.notifications.index'),
             'profile' => $this->namedRouteUrl('shop-owner.shop-profile'),
             'logout' => $this->namedRouteUrl('shop-owner.logout'),

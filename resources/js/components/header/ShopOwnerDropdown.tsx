@@ -3,16 +3,22 @@ import { usePage, router } from "@inertiajs/react";
 import { Dropdown } from "../ui/dropdown/Dropdown";
 import Swal from "sweetalert2";
 import { Building2, User, Store, Wrench } from "lucide-react";
+import type { ErpActor, ErpUrls } from "../../types/erp";
 
-export default function ShopOwnerDropdown() {
+type ShopOwnerDropdownProps = {
+  actor?: ErpActor;
+  urls?: Partial<ErpUrls>;
+};
+
+export default function ShopOwnerDropdown({ actor, urls }: ShopOwnerDropdownProps = {}) {
   const { auth } = usePage().props as any;
   const [isOpen, setIsOpen] = useState(false);
 
   const shopOwner = auth?.shop_owner;
   
-  if (!shopOwner) return null;
+  if (!shopOwner && !actor) return null;
 
-  const userName = shopOwner?.name || shopOwner?.first_name || "Shop Owner";
+  const userName = actor?.name || shopOwner?.name || shopOwner?.first_name || "Shop Owner";
   const userEmail = shopOwner?.email || "owner@solespace.com";
   const isIndividual = !!shopOwner?.is_individual;
   const isCompany = !!shopOwner?.is_company;
@@ -51,7 +57,7 @@ export default function ShopOwnerDropdown() {
     });
 
     if (result.isConfirmed) {
-      router.post('/shop-owner/logout', {}, {
+      router.post(urls?.logout || '/shop-owner/logout', {}, {
         preserveState: false,
         onSuccess: () => {
           setTimeout(() => { router.visit('/user/login'); }, 200);
@@ -135,7 +141,7 @@ export default function ShopOwnerDropdown() {
         <button
           onClick={() => {
             closeDropdown();
-            router.visit('/shop-owner/shop-profile');
+            router.visit(urls?.profile || '/shop-owner/shop-profile');
           }}
           className="flex items-center gap-3 px-3 py-2.5 font-medium text-gray-700 rounded-lg group text-sm hover:bg-gray-100 w-full dark:text-gray-300 dark:hover:bg-gray-700 transition mx-2 mt-2"
         >
@@ -158,7 +164,7 @@ export default function ShopOwnerDropdown() {
         <button
           onClick={() => {
             closeDropdown();
-            router.visit('/shop-owner/settings');
+            router.visit(urls?.settings || '/shop-owner/settings');
           }}
           className="flex items-center gap-3 px-3 py-2.5 font-medium text-gray-700 rounded-lg group text-sm hover:bg-gray-100 w-full dark:text-gray-300 dark:hover:bg-gray-700 transition mx-2"
         >
