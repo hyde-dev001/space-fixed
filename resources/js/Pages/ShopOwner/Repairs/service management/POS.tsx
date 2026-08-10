@@ -2,6 +2,7 @@ import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
+import AppLayoutERP from "../../../../layout/AppLayout_ERP";
 import Swal from "sweetalert2";
 import { computeCanPay, getPhoneDisplayForReceipt } from "../../../Repairs/posPaymentValidation";
 import { PosMode, resolveAllowedModes } from "../../../ERP/cashier/posModeResolver";
@@ -484,6 +485,8 @@ const buildReceiptText = (snapshot: ReceiptSnapshot): string => {
 
 const PointOfSalePage = () => {
 	const { props } = usePage();
+	const erpMode = (props as any)?.erpMode === true;
+	const Layout = erpMode ? AppLayoutERP : AppLayoutShopOwner;
 	const cashierName = String((props as any)?.auth?.shop_owner?.name || (props as any)?.auth?.user?.name || "Shop Owner Cashier");
 	const shopRepairPaymentPolicy: ManualPaymentPolicy =
 		String(
@@ -2779,7 +2782,7 @@ useEffect(() => {
 	};
 
 	return (
-		<AppLayoutShopOwner hideHeader={isOrderModalOpen || isRefundQueueOpen || isReceiptModalOpen || isHistoryModalOpen || isRetailRefundModalOpen}>
+		<Layout hideHeader={isOrderModalOpen || isRefundQueueOpen || isReceiptModalOpen || isHistoryModalOpen || isRetailRefundModalOpen}>
 			<Head title="Point of Sale" />
 
 			<style>{`
@@ -4326,7 +4329,7 @@ useEffect(() => {
 				)}
 
 			</div>
-		</AppLayoutShopOwner>
+		</Layout>
 	);
 };
 

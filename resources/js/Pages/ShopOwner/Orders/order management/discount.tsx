@@ -1,7 +1,8 @@
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
+import AppLayoutERP from "../../../../layout/AppLayout_ERP";
 
 type PromoKind = "voucher" | "discount";
 type DiscountMode = "percentage" | "fixed";
@@ -158,6 +159,8 @@ const TrashIcon = ({ className = "" }: { className?: string }) => (
 );
 
 export default function VouchersDiscountPage() {
+	const erpMode = (usePage().props as any)?.erpMode === true;
+	const Layout = erpMode ? AppLayoutERP : AppLayoutShopOwner;
 	const [campaigns, setCampaigns] = useState<Campaign[]>([]);
 	const [products, setProducts] = useState<ProductOption[]>([]);
 	const [isLoading, setIsLoading] = useState(false);
@@ -852,7 +855,7 @@ export default function VouchersDiscountPage() {
 	};
 
 	return (
-		<AppLayoutShopOwner>
+		<Layout>
 			<Head title="Vouchers & Discount - Shop Owner" />
 
 			<div className="space-y-6">
@@ -1320,6 +1323,6 @@ export default function VouchersDiscountPage() {
 					</div>
 				</section>
 			</div>
-		</AppLayoutShopOwner>
+		</Layout>
 	);
 }

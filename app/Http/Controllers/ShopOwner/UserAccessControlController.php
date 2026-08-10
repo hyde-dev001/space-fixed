@@ -261,6 +261,7 @@ class UserAccessControlController extends Controller
         
         return Inertia::render('ShopOwner/TeamManagement/UserAccessControl', [
             'employees' => $employees,
+            'erpMode' => str_starts_with((string) request()->route()?->getName(), 'shop-owner.erp.'),
         ]);
     }
 

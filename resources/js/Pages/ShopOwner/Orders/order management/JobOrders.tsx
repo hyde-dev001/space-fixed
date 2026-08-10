@@ -2,6 +2,7 @@ import React, { useMemo, useRef, useState } from "react";
 import Swal from "sweetalert2";
 import { Head, usePage } from "@inertiajs/react";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
+import AppLayoutERP from "../../../../layout/AppLayout_ERP";
 import ErrorModal from "../../../../components/common/ErrorModal";
 import axios from "axios";
 
@@ -323,7 +324,8 @@ const MetricCard: React.FC<MetricCardProps> = ({
 };
 
 export default function JobOrdersPage() {
-  const { auth } = usePage().props as any;
+  const { auth, erpMode } = usePage().props as any;
+  const Layout = erpMode === true ? AppLayoutERP : AppLayoutShopOwner;
   const shopOwnerRegistrationType = String(auth?.shop_owner?.registration_type || auth?.registration_type || '').toLowerCase();
   const isIndividualRegistration = shopOwnerRegistrationType !== 'company';
 
@@ -1617,7 +1619,7 @@ export default function JobOrdersPage() {
   };
 
   return (
-    <AppLayoutShopOwner>
+    <Layout>
       <Head title="Job Orders Retail" />
       {error && <ErrorModal message={error} onClose={() => setError(null)} />}
       
@@ -2669,6 +2671,6 @@ export default function JobOrdersPage() {
         )}
       </div>
     )}
-    </AppLayoutShopOwner>
+    </Layout>
   );
 }

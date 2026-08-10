@@ -1,5 +1,6 @@
-import { Head, router } from "@inertiajs/react";
+import { Head, router, usePage } from "@inertiajs/react";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
+import AppLayoutERP from "../../../../layout/AppLayout_ERP";
 import { useState, useRef, useEffect } from "react";
 import axios from "axios";
 
@@ -51,6 +52,8 @@ const resolveStorageUrl = (path?: string | null) => {
 };
 
 export default function CustomerSupport() {
+  const erpMode = (usePage().props as any)?.erpMode === true;
+  const Layout = erpMode ? AppLayoutERP : AppLayoutShopOwner;
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [selectedTicketId, setSelectedTicketId] = useState<number | null>(null);
   const [newMessage, setNewMessage] = useState("");
@@ -514,7 +517,7 @@ export default function CustomerSupport() {
   };
 
   return (
-    <AppLayoutShopOwner fullBleed>
+    <Layout fullBleed>
       <Head title="Customer Support" />
       
       {/* Notification Toast */}
@@ -1441,6 +1444,6 @@ export default function CustomerSupport() {
           </div>
         </div>
       )}
-    </AppLayoutShopOwner>
+    </Layout>
   );
 }

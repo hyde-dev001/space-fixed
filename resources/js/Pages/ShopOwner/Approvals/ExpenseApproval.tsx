@@ -1,9 +1,10 @@
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import type { ComponentType } from "react";
 import { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import axios from "axios";
 import AppLayout_shopOwner from "../../../layout/AppLayout_shopOwner";
+import AppLayoutERP from "../../../layout/AppLayout_ERP";
 
 type ExpenseStatus = "submitted" | "approved" | "rejected" | "draft" | "posted";
 
@@ -152,6 +153,8 @@ interface ExpenseApprovalProps {
 }
 
 export default function ExpenseApproval({ onModalStateChange }: ExpenseApprovalProps) {
+	const erpMode = (usePage().props as any)?.erpMode === true;
+	const Layout = erpMode ? AppLayoutERP : AppLayout_shopOwner;
 	const [expenses, setExpenses] = useState<Expense[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [searchQuery, setSearchQuery] = useState("");
@@ -293,7 +296,7 @@ export default function ExpenseApproval({ onModalStateChange }: ExpenseApprovalP
 	}, [isAnyModalOpen, onModalStateChange]);
 
 	return (
-		<AppLayout_shopOwner hideHeader={isAnyModalOpen}>
+		<Layout hideHeader={isAnyModalOpen}>
 			<Head title="Expense Approvals - Solespace ERP" />
 			{isAnyModalOpen && <div className="fixed inset-0 z-40" />}
 
@@ -525,6 +528,6 @@ export default function ExpenseApproval({ onModalStateChange }: ExpenseApprovalP
 					</div>
 				</div>
 			)}
-		</AppLayout_shopOwner>
+		</Layout>
 	);
 }

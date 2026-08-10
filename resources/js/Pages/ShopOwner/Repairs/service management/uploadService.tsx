@@ -1,8 +1,9 @@
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import { useState, useEffect } from "react";
 import Swal from "sweetalert2";
 import axios from "axios";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
+import AppLayoutERP from "../../../../layout/AppLayout_ERP";
 import RepairPackageManager from "../../../ERP/repairer/components/RepairPackageManager";
 
 type Service = {
@@ -146,6 +147,8 @@ const MetricCard: React.FC<MetricCardProps> = ({
 };
 
 export default function UploadService() {
+  const erpMode = (usePage().props as any)?.erpMode === true;
+  const Layout = erpMode ? AppLayoutERP : AppLayoutShopOwner;
   const [services, setServices] = useState<Service[]>([]);
   const [repairMaterials, setRepairMaterials] = useState<RepairMaterialOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -716,7 +719,7 @@ export default function UploadService() {
   const categories = Array.from(new Set(services.map((s) => s.category)));
 
   return (
-    <AppLayoutShopOwner>
+    <Layout>
       <Head title="Upload Services" />
 
       <div className="p-6 space-y-6">
@@ -1478,6 +1481,6 @@ export default function UploadService() {
           </div>
         </div>
       )}
-    </AppLayoutShopOwner>
+    </Layout>
   );
 }

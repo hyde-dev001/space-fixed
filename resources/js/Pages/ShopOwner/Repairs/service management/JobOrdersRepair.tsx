@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect, useRef } from "react";
 import Swal from "sweetalert2";
 import { Head, usePage } from "@inertiajs/react";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
+import AppLayoutERP from "../../../../layout/AppLayout_ERP";
 import ErrorModal from "../../../../components/common/ErrorModal";
 import axios from "axios";
 import { buildRepairBreakdown, type RepairTaxMode } from "../../../../utils/repairPricing";
@@ -513,6 +514,8 @@ export default function JobOrdersRepair() {
   const pollingTimeoutRef = useRef<number | null>(null);
   // Repair workload limit — server prop is source of truth; localStorage is a cross-tab cache
   const pageProps = usePage().props as any;
+  const erpMode = pageProps?.erpMode === true;
+  const Layout = erpMode ? AppLayoutERP : AppLayoutShopOwner;
   const { repair_workload_limit: propLimit } = pageProps;
   const isIndividualRepairShop = String(
     pageProps?.auth?.shop_owner?.registration_type
@@ -2310,7 +2313,7 @@ export default function JobOrdersRepair() {
   };
 
   return (
-    <AppLayoutShopOwner>
+    <Layout>
       <Head title="Repair Services - Solespace ERP" />
       {error && <ErrorModal message={error} onClose={() => setError(null)} />}
       
@@ -3889,7 +3892,7 @@ export default function JobOrdersRepair() {
         )}
 
       </div>
-    </AppLayoutShopOwner>
+    </Layout>
   );
 }
 

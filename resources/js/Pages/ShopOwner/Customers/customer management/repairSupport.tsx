@@ -1,5 +1,6 @@
 import { Head, router, usePage } from "@inertiajs/react";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
+import AppLayoutERP from "../../../../layout/AppLayout_ERP";
 import { useState, useRef, useEffect } from "react";
 import axios from "axios";
 
@@ -49,6 +50,8 @@ interface Conversation {
 
 export default function RepairSupport() {
   const pageProps = usePage().props as any;
+  const erpMode = pageProps?.erpMode === true;
+  const Layout = erpMode ? AppLayoutERP : AppLayoutShopOwner;
   const currentShopOwner = pageProps.shop_owner || pageProps.auth?.shop_owner || null;
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -585,7 +588,7 @@ export default function RepairSupport() {
   );
 
   return (
-    <AppLayoutShopOwner>
+    <Layout>
       <Head title="Technical Support - Solespace" />
       
       {/* Notification Toast */}
@@ -1152,6 +1155,6 @@ export default function RepairSupport() {
           />
         </div>
       )}
-    </AppLayoutShopOwner>
+    </Layout>
   );
 }

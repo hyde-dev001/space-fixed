@@ -5,91 +5,71 @@ declare(strict_types=1);
 namespace App\Services;
 
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Str;
 
 final class ErpWorkspaceNavigationService
 {
     /**
-     * @var array<string, array{slug: string, label: string, description: string, pages: array<int, array{label: string, routeName: string}>}>
+     * @var array<string, array{slug: string, label: string, description: string}>
      */
     private const MODULES = [
         'retail_operations' => [
             'slug' => 'retail',
             'label' => 'Retail Operations',
             'description' => 'Manage products and retail operations for your shop.',
-            'pages' => [
-                ['label' => 'Products', 'routeName' => 'shop-owner.erp.retail.products'],
-            ],
         ],
         'repair_operations' => [
             'slug' => 'repair',
             'label' => 'Repair Operations',
             'description' => 'Manage repair work and service operations for your shop.',
-            'pages' => [
-                ['label' => 'Repair Dashboard', 'routeName' => 'shop-owner.erp.staff.repair-dashboard'],
-            ],
         ],
         'hr_employees' => [
             'slug' => 'hr',
             'label' => 'HR and Employees',
             'description' => 'Manage employees and HR operations for your shop.',
-            'pages' => [
-                ['label' => 'Audit Logs', 'routeName' => 'shop-owner.erp.hr.audit-logs'],
-            ],
         ],
         'finance' => [
             'slug' => 'finance',
             'label' => 'Finance',
             'description' => 'Review finance operations and records for your shop.',
-            'pages' => [
-                ['label' => 'Audit Logs', 'routeName' => 'shop-owner.erp.finance.audit-logs'],
-            ],
         ],
         'crm' => [
             'slug' => 'crm',
             'label' => 'CRM',
             'description' => 'Manage customers and customer relationships for your shop.',
-            'pages' => [
-                ['label' => 'Dashboard', 'routeName' => 'shop-owner.erp.crm.dashboard'],
-                ['label' => 'Customers', 'routeName' => 'shop-owner.erp.crm.customers'],
-                ['label' => 'Customer Reviews', 'routeName' => 'shop-owner.erp.crm.customer-reviews'],
-            ],
         ],
         'inventory' => [
             'slug' => 'inventory',
             'label' => 'Inventory',
             'description' => 'Manage inventory and stock movement for your shop.',
-            'pages' => [
-                ['label' => 'Dashboard', 'routeName' => 'shop-owner.erp.inventory.inventory-dashboard'],
-                ['label' => 'Product Inventory', 'routeName' => 'shop-owner.erp.inventory.product-inventory'],
-                ['label' => 'Stock Movement', 'routeName' => 'shop-owner.erp.inventory.stock-movement'],
-            ],
         ],
         'procurement' => [
             'slug' => 'procurement',
             'label' => 'Procurement',
             'description' => 'Manage purchasing and supplier operations for your shop.',
-            'pages' => [
-                ['label' => 'Suppliers Management', 'routeName' => 'shop-owner.erp.procurement.suppliers-management'],
-            ],
         ],
         'logistics' => [
             'slug' => 'logistics',
             'label' => 'Logistics',
             'description' => 'Manage shipments and delivery operations for your shop.',
-            'pages' => [
-                ['label' => 'Dashboard', 'routeName' => 'shop-owner.erp.logistics.dashboard'],
-                ['label' => 'Shipments', 'routeName' => 'shop-owner.erp.logistics.shipments'],
-                ['label' => 'Riders', 'routeName' => 'shop-owner.erp.logistics.riders'],
-            ],
         ],
     ];
 
+    public function __construct(private readonly ErpRouteCatalog $catalog) {}
+
     /**
-     * @return array<string, array{slug: string, label: string, description: string, pages: array<int, array{label: string, routeName: string}>}>
+     * @return array<string, array{slug: string, label: string, description: string, pages: array<int, array{label: string, routeName: string, url: string}>}>
      */
     public function definitions(): array
     {
-        return self::MODULES;
+        $definitions = self::MODULES;
+
+        foreach ($definitions as $moduleKey => &$definition) {
+            $definition['pages'] = $this->pagesForKey($moduleKey);
+        }
+        unset($definition);
+
+        return $definitions;
     }
 
     /**
@@ -139,30 +119,61 @@ final class ErpWorkspaceNavigationService
     }
 
     /**
-     * @param  array{slug: string, label: string, description: string, pages: array<int, array{label: string, routeName: string}>}  $definition
+     * @param  array{slug: string, label: string, description: string}  $definition
      * @return array{key: string, slug: string, label: string, description: string, pages: array<int, array{label: string, routeName: string, url: string}>}
      */
     private function payload(string $moduleKey, array $definition): array
     {
-        $pages = [];
-        foreach ($definition['pages'] as $page) {
-            if (! Route::has($page['routeName'])) {
-                continue;
-            }
-
-            $pages[] = [
-                'label' => $page['label'],
-                'routeName' => $page['routeName'],
-                'url' => route($page['routeName']),
-            ];
-        }
-
         return [
             'key' => $moduleKey,
             'slug' => $definition['slug'],
             'label' => $definition['label'],
             'description' => $definition['description'],
-            'pages' => $pages,
+            'pages' => $this->pagesForKey($moduleKey),
         ];
+    }
+
+    /**
+     * @return array<int, array{label: string, routeName: string, url: string}>
+     */
+    private function pagesForKey(string $moduleKey): array
+    {
+        $pages = [];
+
+        foreach ($this->catalog->all() as $routeName => $entry) {
+            $routeName = (string) $routeName;
+            if (($entry['classification'] ?? null) !== 'module'
+                || ($entry['audience'] ?? null) !== 'shop_owner'
+                || ($entry['owner_access'] ?? null) !== 'allowed'
+                || ($entry['navigation_group'] ?? null) !== $moduleKey
+                || ! str_starts_with($routeName, 'shop-owner.erp.')
+                || str_starts_with($routeName, 'shop-owner.erp.api.')
+                || ! Route::has($routeName)) {
+                continue;
+            }
+
+            $label = $entry['navigation_label']
+                ?? Str::headline(Str::afterLast($routeName, '.'));
+
+            $pages[] = [
+                'label' => (string) $label,
+                'routeName' => $routeName,
+                'url' => route($routeName),
+                '_order' => (int) ($entry['navigation_order'] ?? 1000),
+                '_index' => count($pages),
+            ];
+        }
+
+        usort($pages, static function (array $left, array $right): int {
+            return [$left['_order'], $left['_index']]
+                <=> [$right['_order'], $right['_index']];
+        });
+
+        return array_map(static function (array $page): array {
+            unset($page['_order']);
+            unset($page['_index']);
+
+            return $page;
+        }, $pages);
     }
 }

@@ -3,6 +3,7 @@ import type { ComponentType } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Swal from "sweetalert2";
 import AppLayout_shopOwner from "../../../layout/AppLayout_shopOwner";
+import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import RefundStageBadge from "../../../components/refunds/RefundStageBadge";
 import { buildRepairRefundExecutionPayload, type RepairExecutionChannel } from "../../ERP/Finance/repairRefundExecutionPayload";
 
@@ -486,7 +487,8 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
 };
 
 export default function RefundApproval() {
-	const { auth } = usePage().props as any;
+	const { auth, erpMode } = usePage().props as any;
+	const Layout = erpMode === true ? AppLayoutERP : AppLayout_shopOwner;
 	const registrationType = String(auth?.shop_owner?.registration_type || auth?.registration_type || "").toLowerCase();
 	const isIndividualRegistration = registrationType === "individual";
 
@@ -1251,7 +1253,7 @@ export default function RefundApproval() {
 	};
 
 	return (
-		<AppLayout_shopOwner>
+		<Layout>
 			<Head title="Refund Approvals - Shop Owner" />
 			<div className="p-6 space-y-6">
 				<div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
@@ -1869,6 +1871,6 @@ export default function RefundApproval() {
 					)}
 				</div>
 			)}
-		</AppLayout_shopOwner>
+		</Layout>
 	);
 }
