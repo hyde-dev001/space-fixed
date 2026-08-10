@@ -141,6 +141,16 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         return $this->hasMany(ShopDocument::class);
     }
 
+    public function upgradeRequests(): HasMany
+    {
+        return $this->hasMany(ShopOwnerUpgradeRequest::class, 'shop_owner_id');
+    }
+
+    public function modules(): HasMany
+    {
+        return $this->hasMany(ShopOwnerModule::class, 'shop_owner_id');
+    }
+
     /**
      * Get repair packages created under this shop.
      */
