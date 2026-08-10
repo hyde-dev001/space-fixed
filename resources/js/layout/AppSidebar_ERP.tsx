@@ -9,6 +9,8 @@ import {
   CurrencyDollarIcon,
 } from "../icons";
 import { useSidebar } from "../context/SidebarContext";
+import type { ShopModuleKey } from "../types/shopModules";
+import { canRenderShopModule } from "../utils/shopModuleAccess";
 
 type NavItem = {
   name: string;
@@ -16,7 +18,8 @@ type NavItem = {
   route?: string;
   params?: Record<string, any>;
   extraPaths?: string[];
-  subItems?: { name: string; route: string; params?: Record<string, any>; icon?: React.ReactNode; pro?: boolean; new?: boolean }[];
+  moduleKey?: ShopModuleKey;
+  subItems?: { name: string; route: string; params?: Record<string, any>; icon?: React.ReactNode; moduleKey?: ShopModuleKey; pro?: boolean; new?: boolean }[];
 };
 
 const attendanceItem: NavItem = {
@@ -37,6 +40,7 @@ const myPayslipsItem: NavItem = {
   ),
   name: "My Payslips",
   route: "erp.my-payslips",
+  moduleKey: "finance",
 };
 
 const navItems: NavItem[] = [
@@ -75,11 +79,13 @@ const navItems: NavItem[] = [
       </svg>
     ),
     name: "Attendance Monitoring",
+    moduleKey: "hr_employees",
     subItems: [
       {
         name: "View Attendance",
         route: "erp.hr",
         params: { section: "attendance" },
+        moduleKey: "hr_employees",
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
@@ -92,6 +98,7 @@ const navItems: NavItem[] = [
         name: "Leave Requests",
         route: "erp.hr",
         params: { section: "leaves" },
+        moduleKey: "hr_employees",
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"></path>
@@ -103,6 +110,7 @@ const navItems: NavItem[] = [
         name: "Overtime Requests",
         route: "erp.hr",
         params: { section: "overtime" },
+        moduleKey: "hr_employees",
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -128,6 +136,7 @@ const navItems: NavItem[] = [
         name: "View Slip",
         route: "erp.hr",
         params: { section: "payroll-view" },
+        moduleKey: "finance",
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M6 4h11a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"></path>
@@ -141,6 +150,7 @@ const navItems: NavItem[] = [
         name: "Generate Slip",
         route: "erp.hr",
         params: { section: "payroll-generate" },
+        moduleKey: "finance",
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M4 4h16v6H4z"></path>
@@ -154,6 +164,7 @@ const navItems: NavItem[] = [
         name: "Salary Changes",
         route: "erp.hr",
         params: { section: "salary-changes" },
+        moduleKey: "finance",
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <line x1="12" y1="1" x2="12" y2="23"></line>
@@ -177,6 +188,7 @@ const financeItems: NavItem[] = [
     ),
     name: "Dashboard",
     route: "finance.dashboard",
+    moduleKey: "finance",
   },
   {
     icon: (
@@ -190,6 +202,7 @@ const financeItems: NavItem[] = [
     ),
     name: "Invoices",
     route: "finance.index",
+    moduleKey: "finance",
     params: { section: "invoice-generation" },
     extraPaths: ["/create-invoice"],
   },
@@ -200,11 +213,13 @@ const financeItems: NavItem[] = [
       </svg>
     ),
     name: "Approvals",
+    moduleKey: "finance",
     subItems: [
       {
         name: "Repair Pricing Approval",
         route: "finance.index",
         params: { section: "repair-pricing" },
+        moduleKey: "finance",
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
@@ -215,6 +230,7 @@ const financeItems: NavItem[] = [
         name: "Shoe Pricing Approval",
         route: "finance.index",
         params: { section: "shoe-pricing" },
+        moduleKey: "finance",
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M2 17s.5-3.5 4-3.5 4 3.5 4 3.5m6 0s.5-3.5 4-3.5 4 3.5 4 3.5M2 17h20v4H2z"></path>
@@ -225,6 +241,7 @@ const financeItems: NavItem[] = [
         name: "Purchase Request Review",
         route: "finance.index",
         params: { section: "purchase-request-approval" },
+        moduleKey: "finance",
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <rect x="4" y="4" width="16" height="16" rx="2"></rect>
@@ -238,6 +255,7 @@ const financeItems: NavItem[] = [
         name: "Refund Approval",
         route: "finance.index",
         params: { section: "refund-approvals" },
+        moduleKey: "finance",
         extraPaths: ["/finance?refund-approvals", "/finance?section=refund-approvals"],
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -249,6 +267,7 @@ const financeItems: NavItem[] = [
         name: "Payslip Approvals",
         route: "finance.index",
         params: { section: "payslip-approvals" },
+        moduleKey: "finance",
         extraPaths: ["/finance?payslip-approvals", "/finance?section=payslip-approvals"],
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -270,6 +289,7 @@ const financeItems: NavItem[] = [
     ),
     name: "Expenses",
     route: "finance.index",
+    moduleKey: "finance",
     params: { section: "expense-tracking" },
   },
   // REMOVED: Enterprise features not needed for SMEs
@@ -290,6 +310,7 @@ const crmItems: NavItem[] = [
     ),
     name: "CRM Dashboard",
     route: "crm.dashboard",
+    moduleKey: "crm",
   },
   {
     icon: (
@@ -300,6 +321,7 @@ const crmItems: NavItem[] = [
     ),
     name: "Customers",
     route: "crm.customers",
+    moduleKey: "crm",
   },
   {
     icon: (
@@ -311,6 +333,7 @@ const crmItems: NavItem[] = [
     ),
     name: "Customer Support",
     route: "crm.customer-support",
+    moduleKey: "crm",
   },
   {
     icon: (
@@ -320,6 +343,7 @@ const crmItems: NavItem[] = [
     ),
     name: "Customer Reviews",
     route: "crm.customer-reviews",
+    moduleKey: "crm",
   },
 ];
 
@@ -357,6 +381,7 @@ const managerItems: NavItem[] = [
     ),
     name: "Suspend Approval",
     route: "erp.manager.suspend-approval",
+    moduleKey: "finance",
   },
   {
     icon: (
@@ -366,6 +391,7 @@ const managerItems: NavItem[] = [
     ),
     name: "Repair Rejection Review",
     route: "erp.manager.repair-rejection-review",
+    moduleKey: "repair_operations",
   },
   {
     icon: (
@@ -376,6 +402,7 @@ const managerItems: NavItem[] = [
     ),
     name: "Inventory Overview",
     route: "erp.manager.inventory-overview",
+    moduleKey: "inventory",
   },
   {
     icon: (
@@ -402,6 +429,7 @@ const managerInventoryItems: NavItem[] = [
     ),
     name: "Inventory Dashboard",
     route: "erp.inventory.inventory-dashboard",
+    moduleKey: "inventory",
   },
   {
     icon: (
@@ -413,6 +441,7 @@ const managerInventoryItems: NavItem[] = [
     ),
     name: "Manage Stock Items",
     route: "erp.inventory.upload-stocks",
+    moduleKey: "inventory",
   },
   {
     icon: (
@@ -424,6 +453,7 @@ const managerInventoryItems: NavItem[] = [
     ),
     name: "Stock Movement",
     route: "erp.inventory.stock-movement",
+    moduleKey: "inventory",
   },
   {
     icon: (
@@ -436,6 +466,7 @@ const managerInventoryItems: NavItem[] = [
     ),
     name: "Stock Requests",
     route: "erp.inventory.stock-request",
+    moduleKey: "inventory",
   },
   {
     icon: (
@@ -448,6 +479,7 @@ const managerInventoryItems: NavItem[] = [
     ),
     name: "Material Request Queue",
     route: "erp.inventory.request-material-approval",
+    moduleKey: "inventory",
   },
   {
     icon: (
@@ -462,6 +494,7 @@ const managerInventoryItems: NavItem[] = [
     ),
     name: "Supplier Orders",
     route: "erp.inventory.supplier-order-monitoring",
+    moduleKey: "inventory",
   },
 ];
 
@@ -476,6 +509,7 @@ const procurementItems: NavItem[] = [
     ),
     name: "Purchase Requests",
     route: "erp.procurement.purchase-request",
+    moduleKey: "procurement",
   },
   {
     icon: (
@@ -489,6 +523,7 @@ const procurementItems: NavItem[] = [
     ),
     name: "Stock Request Approval",
     route: "erp.procurement.stock-request-approval",
+    moduleKey: "inventory",
   },
   {
     icon: (
@@ -502,6 +537,7 @@ const procurementItems: NavItem[] = [
     ),
     name: "Purchase Orders",
     route: "erp.procurement.purchase-orders",
+    moduleKey: "procurement",
   },
   {
     icon: (
@@ -514,6 +550,7 @@ const procurementItems: NavItem[] = [
     ),
     name: "Suppliers Management",
     route: "erp.procurement.suppliers-management",
+    moduleKey: "procurement",
   },
 ];
 
@@ -540,6 +577,7 @@ const staffItems: NavItem[] = [
     ),
     name: "Retail Job Orders",
     route: "erp.staff.job-orders",
+    moduleKey: "retail_operations",
   },
   {
     icon: (
@@ -551,6 +589,7 @@ const staffItems: NavItem[] = [
     ),
     name: "Product Management",
     route: "erp.staff.products",
+    moduleKey: "retail_operations",
   },
   {
     icon: (
@@ -561,6 +600,7 @@ const staffItems: NavItem[] = [
     ),
     name: "Shoe Pricing Requests",
     route: "erp.staff.shoe-pricing",
+    moduleKey: "repair_operations",
   },
   {
     icon: (
@@ -571,6 +611,7 @@ const staffItems: NavItem[] = [
     ),
     name: "Inventory Overview",
     route: "erp.staff.inventory-overview",
+    moduleKey: "inventory",
   },
   {
     icon: (
@@ -583,6 +624,7 @@ const staffItems: NavItem[] = [
     ),
     name: "Logistics",
     route: "erp.logistics.shipments",
+    moduleKey: "logistics",
   },
   {
     icon: (
@@ -594,6 +636,7 @@ const staffItems: NavItem[] = [
     ),
     name: "Batches",
     route: "erp.logistics.batches",
+    moduleKey: "logistics",
   },
   {
     icon: (
@@ -603,6 +646,7 @@ const staffItems: NavItem[] = [
     ),
     name: "My Deliveries",
     route: "erp.logistics.deliveries",
+    moduleKey: "logistics",
   },
   {
     icon: (
@@ -615,6 +659,7 @@ const staffItems: NavItem[] = [
     ),
     name: "Riders",
     route: "erp.logistics.riders",
+    moduleKey: "logistics",
   },
   {
     icon: (
@@ -640,6 +685,7 @@ const repairItems: NavItem[] = [
     ),
     name: "Repair Dashboard",
     route: "erp.staff.repair-dashboard",
+    moduleKey: "repair_operations",
   },
   {
     icon: (
@@ -650,6 +696,7 @@ const repairItems: NavItem[] = [
     ),
     name: "Job Orders Repair",
     route: "erp.staff.job-orders-repair",
+    moduleKey: "repair_operations",
   },
   {
     icon: (
@@ -661,6 +708,7 @@ const repairItems: NavItem[] = [
     ),
     name: "Warranty Queue",
     route: "erp.staff.warranty-queue",
+    moduleKey: "repair_operations",
   },
   {
     icon: (
@@ -670,6 +718,7 @@ const repairItems: NavItem[] = [
     ),
     name: "Upload Services",
     route: "erp.staff.upload-services",
+    moduleKey: "repair_operations",
   },
   {
     icon: (
@@ -680,6 +729,7 @@ const repairItems: NavItem[] = [
     ),
     name: "Repair Pricing Requests",
     route: "erp.repairer.pricing-services",
+    moduleKey: "repair_operations",
   },
   {
     icon: (
@@ -690,6 +740,7 @@ const repairItems: NavItem[] = [
     ),
     name: "Stocks Overview",
     route: "erp.staff.stocks-overview",
+    moduleKey: "inventory",
   },
   {
     icon: (
@@ -702,6 +753,7 @@ const repairItems: NavItem[] = [
     ),
     name: "Request Material",
     route: "erp.staff.request-material",
+    moduleKey: "inventory",
   },
   {
     icon: (
@@ -711,6 +763,7 @@ const repairItems: NavItem[] = [
     ),
     name: "Chat",
     route: "erp.repairer.support",
+    moduleKey: "repair_operations",
   },
   {
     icon: (
@@ -720,6 +773,7 @@ const repairItems: NavItem[] = [
     ),
     name: "Repair Reject Approval",
     route: "erp.user.repair-reject-approval",
+    moduleKey: "repair_operations",
   },
 ];
 
@@ -734,6 +788,7 @@ const cashierItems: NavItem[] = [
     ),
     name: "Cashier",
     route: "erp.cashier.point-of-sale",
+    moduleKey: "retail_operations",
   },
 ];
 
@@ -741,6 +796,8 @@ const AppSidebar_ERP: React.FC = () => {
   const { isExpanded, isMobileOpen, isHovered, setIsHovered, openSubmenu, toggleSubmenu, setOpenSubmenu } = useSidebar();
   const { url, props } = usePage();
   const auth = (props as any)?.auth;
+  const shopModules = auth?.shopModules;
+  const moduleEnforcementEnabled = auth?.shopModuleEnforcementEnabled ?? Boolean(shopModules);
   const role = (props as any)?.auth?.user?.role;
   const roles = (props as any)?.auth?.user?.roles || [];
   const permissions = (props as any)?.auth?.permissions || [];
@@ -773,6 +830,10 @@ const AppSidebar_ERP: React.FC = () => {
   const getNavItemKey = (item: NavItem): string => {
     return `${item.route || ""}|${JSON.stringify(item.params || {})}|${item.name}`;
   };
+
+  const isModuleVisible = useCallback((item: { moduleKey?: ShopModuleKey }) => {
+    return canRenderShopModule(shopModules, item.moduleKey, moduleEnforcementEnabled);
+  }, [shopModules, moduleEnforcementEnabled]);
 
   // Helper function to deduplicate items based on route and track what's been rendered
   const deduplicateItems = (items: NavItem[]): NavItem[] => {
@@ -1633,9 +1694,16 @@ const AppSidebar_ERP: React.FC = () => {
   }
 
   const renderMenuItems = (items: NavItem[], menuType: "attendance" | "staff" | "repair" | "cashier" | "manager" | "hr" | "finance" | "crm" | "main" | "others") => {
+    const visibleItems = items
+      .map((item) => ({
+        ...item,
+        subItems: item.subItems?.filter(isModuleVisible),
+      }))
+      .filter((item) => isModuleVisible(item) && (!item.subItems || item.subItems.length > 0));
+
     return (
       <ul className="flex flex-col gap-4">
-        {items.map((nav, index) => {
+        {visibleItems.map((nav, index) => {
           const subItems = nav.subItems?.filter((s) => s.name !== "Create Admin") || nav.subItems;
           if (nav.subItems && (!subItems || subItems.length === 0)) {
             return null;

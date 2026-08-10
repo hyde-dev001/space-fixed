@@ -12,13 +12,16 @@ import {
   BoxIcon,
 } from "../icons";
 import { useSidebar } from "../context/SidebarContext";
+import type { ShopModuleKey } from "../types/shopModules";
+import { canRenderShopModule } from "../utils/shopModuleAccess";
 
 type NavItem = {
   name: string;
   icon: React.ReactNode;
   route?: string; // Changed from 'path' to 'route' to use Laravel route names
   path?: string;
-  subItems?: { name: string; route: string; pro?: boolean; new?: boolean }[];
+  moduleKey?: ShopModuleKey;
+  subItems?: { name: string; route: string; moduleKey?: ShopModuleKey; pro?: boolean; new?: boolean }[];
 };
 
 const navItems: NavItem[] = [
@@ -48,8 +51,8 @@ const navItems: NavItem[] = [
     path: "/shop-owner/logistics",
     subItems: [
       { name: "Dashboard", route: "shop-owner.logistics.dashboard" },
-      { name: "Shipments", route: "shop-owner.logistics.shipments" },
-      { name: "Riders", route: "shop-owner.logistics.riders" },
+      { name: "Shipments", route: "shop-owner.logistics.shipments", moduleKey: "logistics" },
+      { name: "Riders", route: "shop-owner.logistics.riders", moduleKey: "logistics" },
     ],
   },
   {
@@ -71,6 +74,7 @@ const navItems: NavItem[] = [
     ),
     name: "User Access Control",
     route: "shopOwner.user-access-control",
+    moduleKey: "hr_employees",
   },
   {
     icon: (
@@ -81,6 +85,7 @@ const navItems: NavItem[] = [
     name: "Suspend Accounts",
     route: "shopOwner.suspend-accounts",
     path: "/shopOwner/suspend-accounts",
+    moduleKey: "hr_employees",
   },
   {
     icon: (
@@ -106,6 +111,7 @@ const navItems: NavItem[] = [
     name: "Vouchers & Discount",
     route: "shop-owner.vouchers-discount",
     path: "/shop-owner/vouchers-discount",
+    moduleKey: "retail_operations",
   },
 ];
 
@@ -119,13 +125,13 @@ const approvalWorkflowItems: NavItem[] = [
     ),
     name: "Approval Pages",
     subItems: [
-      { name: "Refund Approval", route: "shop-owner.refund-approvals" },
-      { name: "Price Approvals", route: "shop-owner.price-approvals" },
-      { name: "Payslip Approval", route: "shop-owner.payslip-approvals" },
-      { name: "Salary Adjustment Approval", route: "shop-owner.salary-adjustment-approvals" },
-      { name: "Purchase Request Approval", route: "shop-owner.purchase-request-approval" },
-      { name: "Expense Approvals", route: "shop-owner.expense-approvals" },
-      { name: "Repair Reject Approval", route: "shop-owner.repair-reject-approval" },
+      { name: "Refund Approval", route: "shop-owner.refund-approvals", moduleKey: "finance" },
+      { name: "Price Approvals", route: "shop-owner.price-approvals", moduleKey: "finance" },
+      { name: "Payslip Approval", route: "shop-owner.payslip-approvals", moduleKey: "finance" },
+      { name: "Salary Adjustment Approval", route: "shop-owner.salary-adjustment-approvals", moduleKey: "finance" },
+      { name: "Purchase Request Approval", route: "shop-owner.purchase-request-approval", moduleKey: "inventory" },
+      { name: "Expense Approvals", route: "shop-owner.expense-approvals", moduleKey: "finance" },
+      { name: "Repair Reject Approval", route: "shop-owner.repair-reject-approval", moduleKey: "repair_operations" },
     ],
   },
 ];
@@ -143,6 +149,7 @@ const productManagementItems: NavItem[] = [
     name: "Job Orders Retail",
     route: "shop-owner.job-orders-retail",
     path: "/shop-owner/job-orders-retail",
+    moduleKey: "retail_operations",
   },
   {
     icon: (
@@ -156,6 +163,7 @@ const productManagementItems: NavItem[] = [
     name: "Job Orders Repair",
     route: "shop-owner.job-orders-repair",
     path: "/shop-owner/job-orders-repair",
+    moduleKey: "repair_operations",
   },
   {
     icon: (
@@ -168,6 +176,7 @@ const productManagementItems: NavItem[] = [
     name: "Warranty Queue",
     route: "shop-owner.warranty-queue",
     path: "/shop-owner/warranty-queue",
+    moduleKey: "repair_operations",
   },
   {
     icon: (
@@ -180,6 +189,7 @@ const productManagementItems: NavItem[] = [
     name: "Product Management",
     route: "shop-owner.product-uploder",
     path: "/shop-owner/product-uploder",
+    moduleKey: "retail_operations",
   },
   {
     icon: (
@@ -192,6 +202,7 @@ const productManagementItems: NavItem[] = [
     name: "Cashier",
     route: "shop-owner.point-of-sale",
     path: "/shop-owner/point-of-sale",
+    moduleKey: "retail_operations",
   },
   {
     icon: (
@@ -203,6 +214,7 @@ const productManagementItems: NavItem[] = [
     name: "Services Management",
     route: "shop-owner.upload-services",
     path: "/shop-owner/upload-services",
+    moduleKey: "repair_operations",
   },
   {
     icon: (
@@ -215,6 +227,7 @@ const productManagementItems: NavItem[] = [
     name: "Stock Management",
     route: "shop-owner.upload-stock-materials",
     path: "/shop-owner/upload-stock-materials",
+    moduleKey: "repair_operations",
   },
   {
     icon: (
@@ -225,6 +238,7 @@ const productManagementItems: NavItem[] = [
     name: "Refund Approval",
     route: "shop-owner.refund-approvals",
     path: "/shop-owner/refund-approvals",
+    moduleKey: "finance",
   },
 ];
 
@@ -239,6 +253,7 @@ const customerManagementItems: NavItem[] = [
     name: "Customer Support",
     route: "shop-owner.customer-support",
     path: "/shop-owner/customer-support",
+    moduleKey: "crm",
   },
   {
     icon: (
@@ -252,6 +267,7 @@ const customerManagementItems: NavItem[] = [
     name: "Repair Support",
     route: "shop-owner.repair-support",
     path: "/shop-owner/repair-support",
+    moduleKey: "repair_operations",
   },
   {
     icon: (
@@ -265,6 +281,7 @@ const customerManagementItems: NavItem[] = [
     name: "Customers",
     route: "shop-owner.customers",
     path: "/shop-owner/customers",
+    moduleKey: "crm",
   },
   {
     icon: (
@@ -275,6 +292,7 @@ const customerManagementItems: NavItem[] = [
     name: "Customer Reviews",
     route: "shop-owner.customer-reviews",
     path: "/shop-owner/customer-reviews",
+    moduleKey: "crm",
   },
 ];
 
@@ -287,6 +305,8 @@ const AppSidebar_shopOwner: React.FC = () => {
   const { url, props } = usePage();
   const auth = (props as any).auth;
   const shopOwner = auth?.shop_owner || auth?.user?.shop_owner || (props as any)?.shop_owner;
+  const shopModules = auth?.shopModules;
+  const moduleEnforcementEnabled = auth?.shopModuleEnforcementEnabled ?? Boolean(shopModules);
   const isIndividualAccount = shopOwner?.registration_type?.toLowerCase() === "individual";
   const rawBusinessType = shopOwner?.business_type?.toLowerCase();
   // Normalize business type - handle "both (retail & repair)" and "both"
@@ -308,7 +328,37 @@ const AppSidebar_shopOwner: React.FC = () => {
   const subMenuRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // Check if menu item should be visible based on shop owner's registration and business type
+  const isModuleVisible = useCallback((menuItem: { moduleKey?: ShopModuleKey }) => {
+    return canRenderShopModule(shopModules, menuItem.moduleKey, moduleEnforcementEnabled);
+  }, [shopModules, moduleEnforcementEnabled]);
+
+  const isSubItemVisible = useCallback((subItem: { route: string; moduleKey?: ShopModuleKey }) => {
+    if (!isModuleVisible(subItem)) {
+      return false;
+    }
+
+    if (subItem.route !== 'shop-owner.repair-reject-approval') {
+      return true;
+    }
+
+    if (!shopOwner) {
+      return false;
+    }
+
+    const rawSubItemBusinessType = String(shopOwner.business_type || '').toLowerCase();
+    const subItemBusinessType = rawSubItemBusinessType.includes('both') ? 'both' : rawSubItemBusinessType;
+    const isCompanySubItem = shopOwner.is_company === true || shopOwner.registration_type?.toLowerCase() === 'company';
+    const canManageStaffSubItem = shopOwner.can_manage_staff === true;
+
+    return (isCompanySubItem || canManageStaffSubItem)
+      && (subItemBusinessType === 'repair' || subItemBusinessType === 'both');
+  }, [isModuleVisible, shopOwner]);
+
   const isMenuItemVisible = useCallback((menuItem: NavItem) => {
+    if (!isModuleVisible(menuItem)) {
+      return false;
+    }
+
     if (!shopOwner) return true; // Show all if no shop owner data
 
     const registrationType = shopOwner.registration_type?.toLowerCase();
@@ -396,7 +446,7 @@ const AppSidebar_shopOwner: React.FC = () => {
 
     // All other items are visible to everyone
     return true;
-  }, [shopOwner]);
+  }, [isModuleVisible, shopOwner]);
 
   // Check if route is active using Inertia's route() helper
   const isActive = useCallback(
@@ -492,7 +542,10 @@ const AppSidebar_shopOwner: React.FC = () => {
 
   const renderMenuItems = (items: NavItem[], menuType: MenuType) => (
     <ul className="flex flex-col gap-4">
-      {items.filter(isMenuItemVisible).map((nav, index) => (
+      {items.filter((item) => (
+        isMenuItemVisible(item)
+        && (!item.subItems || item.subItems.some(isSubItemVisible))
+      )).map((nav, index) => (
         <li key={nav.name}>
           {nav.subItems ? (
             <button
@@ -581,23 +634,7 @@ const AppSidebar_shopOwner: React.FC = () => {
               }}
             >
               <ul className="mt-2 space-y-1 ml-9">
-                {nav.subItems.filter((subItem) => {
-                  if (subItem.route !== 'shop-owner.repair-reject-approval') {
-                    return true;
-                  }
-
-                  if (!shopOwner) {
-                    return false;
-                  }
-
-                  const rawSubItemBusinessType = String(shopOwner.business_type || '').toLowerCase();
-                  const subItemBusinessType = rawSubItemBusinessType.includes('both') ? 'both' : rawSubItemBusinessType;
-                  const isCompanySubItem = shopOwner.is_company === true || shopOwner.registration_type?.toLowerCase() === 'company';
-                  const canManageStaffSubItem = shopOwner.can_manage_staff === true;
-
-                  return (isCompanySubItem || canManageStaffSubItem)
-                    && (subItemBusinessType === 'repair' || subItemBusinessType === 'both');
-                }).map((subItem) => (
+                {nav.subItems.filter(isSubItemVisible).map((subItem) => (
                   <li key={subItem.name}>
                     <Link
                       href={route(subItem.route)}
