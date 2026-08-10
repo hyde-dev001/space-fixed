@@ -132,4 +132,28 @@ final class ShopModuleCatalogTest extends TestCase
             $this->assertArrayHasKey($name, $routes, "Missing route catalog entry for {$name}");
         }
     }
+
+    public function test_shop_owner_auth_entry_points_remain_public(): void
+    {
+        $routes = config('shop_modules.routes');
+
+        foreach ([
+            'shop-owner.email-verification.send-code',
+            'shop-owner.email-verification.verify-code',
+            'shop-owner.login',
+            'shop-owner.login.form',
+            'shop-owner.password.setup',
+            'shop-owner.password.setup.store',
+            'shop-owner.pending-approval.public',
+            'shop-owner.register',
+            'shop-owner.resubmission.form',
+            'shop-owner.resubmission.submit',
+            'shop-owner.two-factor.challenge',
+            'shop-owner.two-factor.resend',
+            'shop-owner.two-factor.verify',
+        ] as $routeName) {
+            $this->assertSame('public', $routes[$routeName]['audience'], $routeName);
+            $this->assertNull($routes[$routeName]['actor_guard'], $routeName);
+        }
+    }
 }

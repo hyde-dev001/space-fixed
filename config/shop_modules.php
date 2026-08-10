@@ -966,6 +966,22 @@ $isOwnerRoute = static fn (string $routeName): bool => str_starts_with($routeNam
     || str_starts_with($routeName, 'shopOwner.')
     || str_starts_with($routeName, 'api.shop_owner.');
 
+$isPublicRoute = static fn (string $routeName): bool => in_array($routeName, [
+    'shop-owner.email-verification.send-code',
+    'shop-owner.email-verification.verify-code',
+    'shop-owner.login',
+    'shop-owner.login.form',
+    'shop-owner.password.setup',
+    'shop-owner.password.setup.store',
+    'shop-owner.pending-approval.public',
+    'shop-owner.register',
+    'shop-owner.resubmission.form',
+    'shop-owner.resubmission.submit',
+    'shop-owner.two-factor.challenge',
+    'shop-owner.two-factor.resend',
+    'shop-owner.two-factor.verify',
+], true);
+
 $isSelfServiceRoute = static fn (string $routeName): bool => str_starts_with($routeName, 'staff.')
     || in_array($routeName, ['erp.time-in', 'erp.my-payslips', 'erp.profile', 'erp.password.update'], true);
 
@@ -1000,8 +1016,12 @@ foreach ($routeBuckets as $bucket => $routeNames) {
             mode: $classification === 'module' ? 'single' : null,
             moduleKeys: $moduleKeys,
             methods: $routeMethods($routeName),
-            audience: $isOwnerRoute($routeName) ? 'shop_owner' : 'user',
-            actorGuard: $isOwnerRoute($routeName) ? 'shop_owner' : 'user',
+            audience: $isPublicRoute($routeName)
+                ? 'public'
+                : ($isOwnerRoute($routeName) ? 'shop_owner' : 'user'),
+            actorGuard: $isPublicRoute($routeName)
+                ? null
+                : ($isOwnerRoute($routeName) ? 'shop_owner' : 'user'),
             action: $routeAction($routeName),
             ownerDenialReason: $classification === 'excluded'
                 ? 'not_an_erp_route'

@@ -60,6 +60,13 @@ final class ResolveErpActorContext
             : ($actor instanceof User ? $this->access->resolveShopOwnerForActor($actor) : null);
 
         if (! $tenantOwner instanceof ShopOwner) {
+            // Preserve legacy employee routes for accounts that predate tenant
+            // assignment. Owner routes and employees with a stale tenant ID
+            // still fail closed below.
+            if (! $ownerMode && $actor instanceof User && $actor->shop_owner_id === null) {
+                return $next($request);
+            }
+
             return $this->responder->deny(
                 $request,
                 'ERP_ROUTE_NOT_ALLOWED',

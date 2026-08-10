@@ -435,6 +435,7 @@ final class RepairDeliveryService
 
             if ($existing) {
                 $recovery = $this->activePickupRecovery($lockedRepair, 'paid');
+                $previousLeg = $existing->legs()->orderByDesc('sequence')->first();
                 $address = is_array($lockedRepair->intake_address) ? $lockedRepair->intake_address : [];
                 $leg = $existing->legs()->create([
                     'sequence' => ((int) $existing->legs()->max('sequence')) + 1,
@@ -458,10 +459,13 @@ final class RepairDeliveryService
                     'destination_snapshot' => $existing->legs()->first()?->destination_snapshot,
                     'requires_pickup_proof' => false,
                     'requires_delivery_proof' => true,
-                    'scheduled_delivery_date' => $recovery['scheduled_delivery_date'] ?? null,
-                    'delivery_window' => $recovery['delivery_window'] ?? null,
+                    'scheduled_delivery_date' => data_get($recovery, 'scheduled_delivery_date')
+                        ?? $previousLeg?->scheduled_delivery_date,
+                    'delivery_window' => data_get($recovery, 'delivery_window')
+                        ?? $previousLeg?->delivery_window,
                     'schedule_status' => 'scheduled',
-                    'distance_km' => data_get($recovery, 'quote.distance_km'),
+                    'distance_km' => data_get($recovery, 'quote.distance_km')
+                        ?? $previousLeg?->distance_km,
                     'estimated_at' => now(),
                 ]);
                 $existing->update([
