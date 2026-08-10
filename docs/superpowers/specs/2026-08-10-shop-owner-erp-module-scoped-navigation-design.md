@@ -25,7 +25,7 @@ This is primarily a routing and navigation-scope defect. Existing server authori
 
 ### Portal state
 
-The regular shop-owner portal keeps its core navigation and the single **ERP Workspace** entry. It no longer renders:
+The regular shop-owner portal keeps its existing core navigation and the single **ERP Workspace** entry. Core portal items include Dashboard, Audit Logs, User Access Control, Suspend Accounts, Assist Center, Vouchers & Discount, and Approval Pages. It no longer renders:
 
 - the **Employee Modules** group containing HR & Employees, Finance, Inventory, Procurement, CRM, and Logistics;
 - the separate **Logistics** accordion containing Dashboard, Shipments, and Riders.
