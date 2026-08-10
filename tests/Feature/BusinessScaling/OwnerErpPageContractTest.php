@@ -105,4 +105,42 @@ final class OwnerErpPageContractTest extends TestCase
                 ->assertInertia(fn (Assert $page) => $page->component($component, false));
         }
     }
+
+    public function test_second_and_third_read_waves_expose_owner_audit_inventory_and_supplier_pages(): void
+    {
+        config([
+            'shop_modules.owner_erp_workspace_enabled' => true,
+            'shop_modules.enforcement_enabled' => true,
+        ]);
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+
+        foreach (['finance', 'inventory', 'procurement'] as $moduleKey) {
+            ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $owner->id,
+                'module_key' => $moduleKey,
+                'enabled' => true,
+            ]);
+        }
+
+        $pages = [
+            ['/shop-owner/erp/hr/audit-logs', 'ERP/HR/AuditLogs'],
+            ['/shop-owner/erp/finance/audit-logs', 'ERP/Finance/AuditLogs'],
+            ['/shop-owner/erp/manager/reports', 'ERP/Manager/Reports'],
+            ['/shop-owner/erp/manager/audit-logs', 'ERP/Manager/AuditLogs'],
+            ['/shop-owner/erp/inventory/inventory-dashboard', 'ERP/inventory/InventoryDashboard'],
+            ['/shop-owner/erp/inventory/product-inventory', 'ERP/inventory/ProductInventory'],
+            ['/shop-owner/erp/inventory/stock-movement', 'ERP/inventory/StockMovement'],
+            ['/shop-owner/erp/procurement/suppliers-management', 'ERP/Procurement/SuppliersManagement'],
+        ];
+
+        foreach ($pages as [$uri, $component]) {
+            $this->actingAs($owner, 'shop_owner')
+                ->get($uri)
+                ->assertOk()
+                ->assertInertia(fn (Assert $page) => $page->component($component, false));
+        }
+    }
 }

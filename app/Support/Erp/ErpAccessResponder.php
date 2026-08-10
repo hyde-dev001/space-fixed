@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support\Erp;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
 use Symfony\Component\HttpFoundation\Response;
 
 final class ErpAccessResponder
@@ -86,15 +87,15 @@ final class ErpAccessResponder
         }
 
         if ($this->isOwnerErpRequest($request)) {
-            if ($code === 'OWNER_ERP_ACCOUNT_INELIGIBLE' && route()->has('shop-owner.pending-approval')) {
+            if ($code === 'OWNER_ERP_ACCOUNT_INELIGIBLE' && Route::has('shop-owner.pending-approval')) {
                 return route('shop-owner.pending-approval');
             }
 
-            if (route()->has('shop-owner.erp.workspace')) {
+            if (Route::has('shop-owner.erp.workspace')) {
                 return route('shop-owner.erp.workspace');
             }
 
-            if (route()->has('shop-owner.settings')) {
+            if (Route::has('shop-owner.settings')) {
                 return route('shop-owner.settings');
             }
         }

@@ -1052,6 +1052,38 @@ $ownerReadPairs = [
         'shop-owner.erp.logistics.riders',
         'shop-owner.erp.api.logistics.riders',
     ],
+    'erp.hr.audit-logs' => [
+        'shop-owner.erp.hr.audit-logs',
+        'shop-owner.erp.api.hr.audit-logs',
+    ],
+    'erp.finance.audit-logs' => [
+        'shop-owner.erp.finance.audit-logs',
+        'shop-owner.erp.api.finance.audit-logs',
+    ],
+    'erp.manager.reports' => [
+        'shop-owner.erp.manager.reports',
+        'shop-owner.erp.api.manager.reports',
+    ],
+    'erp.manager.audit-logs' => [
+        'shop-owner.erp.manager.audit-logs',
+        'shop-owner.erp.api.manager.audit-logs',
+    ],
+    'erp.inventory.inventory-dashboard' => [
+        'shop-owner.erp.inventory.inventory-dashboard',
+        'shop-owner.erp.api.inventory.inventory-dashboard',
+    ],
+    'erp.inventory.product-inventory' => [
+        'shop-owner.erp.inventory.product-inventory',
+        'shop-owner.erp.api.inventory.product-inventory',
+    ],
+    'erp.inventory.stock-movement' => [
+        'shop-owner.erp.inventory.stock-movement',
+        'shop-owner.erp.api.inventory.stock-movement',
+    ],
+    'erp.procurement.suppliers-management' => [
+        'shop-owner.erp.procurement.suppliers-management',
+        'shop-owner.erp.api.procurement.suppliers-management',
+    ],
 ];
 
 foreach ($ownerReadPairs as $employeeRouteName => [$ownerRouteName, $supportingRouteName]) {

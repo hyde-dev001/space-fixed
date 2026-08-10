@@ -116,6 +116,10 @@ final class OwnerErpAuthorizationTest extends TestCase
                 'module_keys' => ['retail_operations'],
             ]);
 
+        $this->actingAs($owner, 'shop_owner')
+            ->get('/testing/owner-erp/missing-state')
+            ->assertRedirect(route('shop-owner.erp.workspace'));
+
         ShopOwnerModule::factory()->create([
             'shop_owner_id' => $owner->id,
             'module_key' => 'retail_operations',
