@@ -53,6 +53,32 @@ Do not turn it on as part of an ordinary code deploy.
    rows, upgrade requests, evidence, employee permissions, or operational data
    as a rollback step.
 
+## Recovery after a partially recorded migration
+
+MySQL can commit a `CREATE TABLE` statement before Laravel records the
+migration. If `migrate` reports that
+`shop_owner_upgrade_request_documents` already exists, do not drop the table.
+First compare its schema with migration
+`2026_08_10_000002_create_shop_owner_upgrade_request_documents_table`:
+
+```sql
+SELECT migration, batch
+FROM migrations
+WHERE migration =
+  '2026_08_10_000002_create_shop_owner_upgrade_request_documents_table';
+
+SHOW CREATE TABLE shop_owner_upgrade_request_documents;
+```
+
+After deploying the retry-safe migration, run `php artisan migrate --force`
+again. It accepts an existing table only when all required columns are
+present, records the migration, and allows the module-state migration to run.
+If the schema is incomplete, stop and reconcile it manually; never mark the
+migration applied until the required columns and foreign keys are verified.
+
+Once migrations finish, rerun `shop-modules:backfill` and
+`shop-modules:backfill --verify` before enabling enforcement.
+
 ## Data-integrity checks
 
 Run the backfill verification first. For a database-level review, run the
