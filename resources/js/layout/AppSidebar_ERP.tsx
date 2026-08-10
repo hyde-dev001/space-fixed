@@ -11,7 +11,7 @@ import {
 import { useSidebar } from "../context/SidebarContext";
 import type { ShopModuleKey } from "../types/shopModules";
 import { canRenderShopModule } from "../utils/shopModuleAccess";
-import { erpUrl } from "../utils/erpCapabilities";
+import AppSidebar_shopOwner from "./AppSidebar_shopOwner";
 
 type NavItem = {
   name: string;
@@ -793,14 +793,10 @@ const cashierItems: NavItem[] = [
   },
 ];
 
-const AppSidebar_ERP: React.FC = () => {
+const EmployeeSidebarERP: React.FC = () => {
   const { isExpanded, isMobileOpen, isHovered, setIsHovered, openSubmenu, toggleSubmenu, setOpenSubmenu } = useSidebar();
   const { url, props } = usePage();
   const auth = (props as any)?.auth;
-  const erpActor = auth?.erpActor ?? (props as any)?.erpActor;
-  const erpCapabilities = auth?.erpCapabilities ?? (props as any)?.erpCapabilities;
-  const ownerMode = erpActor?.type === 'shop_owner' && erpActor?.ownerMode === true;
-  const ownerWorkspaceUrl = erpUrl(erpCapabilities, 'GET:shop-owner.erp.workspace');
   const authModuleStates = auth?.shopModules;
   const sharedModuleStates = (props as any)?.moduleStates;
   const shopModules = authModuleStates && typeof authModuleStates === 'object' && Object.keys(authModuleStates).length > 0
@@ -1889,41 +1885,7 @@ const AppSidebar_ERP: React.FC = () => {
         ref={sidebarScrollRef}
         className="flex flex-col overflow-y-auto duration-300 ease-linear no-scrollbar"
       >
-        {ownerMode ? (
-          ownerWorkspaceUrl ? (
-            <nav aria-label="ERP workspace navigation" className="mb-6">
-              <ul className="flex flex-col gap-4">
-                <li>
-                  <Link
-                    href={ownerWorkspaceUrl}
-                    className={`menu-item group ${url === ownerWorkspaceUrl || url.startsWith(`${ownerWorkspaceUrl}/`)
-                      ? "menu-item-active"
-                      : "menu-item-inactive"
-                    }`}
-                  >
-                    <span
-                      className={`menu-item-icon-size w-6 h-6 ${url === ownerWorkspaceUrl || url.startsWith(`${ownerWorkspaceUrl}/`)
-                        ? "menu-item-icon-active"
-                        : "menu-item-icon-inactive"
-                      }`}
-                    >
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <rect x="3" y="3" width="7" height="7" rx="1" />
-                        <rect x="14" y="3" width="7" height="7" rx="1" />
-                        <rect x="3" y="14" width="7" height="7" rx="1" />
-                        <rect x="14" y="14" width="7" height="7" rx="1" />
-                      </svg>
-                    </span>
-                    {(isExpanded || isHovered || isMobileOpen) && (
-                      <span className="menu-item-text">ERP Workspace</span>
-                    )}
-                  </Link>
-                </li>
-              </ul>
-            </nav>
-          ) : null
-        ) : (
-          <>
+        <>
         {/* STAFF section - Show if user has Staff role or staff permissions */}
         {hasStaffAccess() && (
           <nav className="mb-6">
@@ -2158,10 +2120,18 @@ const AppSidebar_ERP: React.FC = () => {
           </nav>
         )}
           </>
-        )}
       </div>
     </aside>
   );
+};
+
+const AppSidebar_ERP: React.FC = () => {
+  const { props } = usePage();
+  const auth = (props as any)?.auth;
+  const erpActor = auth?.erpActor ?? (props as any)?.erpActor;
+  const ownerMode = erpActor?.type === 'shop_owner' && erpActor?.ownerMode === true;
+
+  return ownerMode ? <AppSidebar_shopOwner /> : <EmployeeSidebarERP />;
 };
 
 export default AppSidebar_ERP;

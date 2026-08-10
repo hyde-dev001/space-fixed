@@ -22,10 +22,10 @@ final class WorkspaceController extends Controller
         'repair_operations' => 'shop-owner.erp.staff.repair-dashboard',
         'hr_employees' => 'shop-owner.erp.hr.audit-logs',
         'finance' => 'shop-owner.erp.finance.audit-logs',
-        'crm' => 'shop-owner.erp.crm.dashboard',
-        'inventory' => 'shop-owner.erp.inventory.inventory-dashboard',
+        'crm' => 'shop-owner.erp.crm.customers',
+        'inventory' => 'shop-owner.erp.inventory.product-inventory',
         'procurement' => 'shop-owner.erp.procurement.suppliers-management',
-        'logistics' => 'shop-owner.erp.logistics.dashboard',
+        'logistics' => 'shop-owner.erp.logistics.shipments',
     ];
 
     public function __construct(

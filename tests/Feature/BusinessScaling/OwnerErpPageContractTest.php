@@ -46,7 +46,7 @@ final class OwnerErpPageContractTest extends TestCase
             );
     }
 
-    public function test_workspace_modules_expose_server_selected_entry_urls(): void
+    public function test_workspace_modules_expose_server_selected_related_page_urls(): void
     {
         config([
             'shop_modules.owner_erp_workspace_enabled' => true,
@@ -56,18 +56,27 @@ final class OwnerErpPageContractTest extends TestCase
             'registration_type' => 'company',
             'business_type' => 'both',
         ]);
-        ShopOwnerModule::factory()->create([
-            'shop_owner_id' => $owner->id,
-            'module_key' => 'finance',
-            'enabled' => true,
-        ]);
+        foreach (['finance', 'crm', 'inventory', 'logistics'] as $moduleKey) {
+            ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $owner->id,
+                'module_key' => $moduleKey,
+                'enabled' => true,
+            ]);
+        }
+
+        $expectedUrls = [
+            'finance' => 'shop-owner.erp.finance.audit-logs',
+            'crm' => 'shop-owner.erp.crm.customers',
+            'inventory' => 'shop-owner.erp.inventory.product-inventory',
+            'logistics' => 'shop-owner.erp.logistics.shipments',
+        ];
 
         $this->actingAs($owner, 'shop_owner')
             ->get('/shop-owner/erp/workspace')
             ->assertInertia(fn (Assert $page) => $page
-                ->where('enabledModules', fn (Collection $modules): bool => $modules
-                    ->firstWhere('key', 'finance')['url']
-                    === route('shop-owner.erp.finance.audit-logs'))
+                ->where('enabledModules', fn (Collection $modules): bool => collect($expectedUrls)
+                    ->every(fn (string $routeName, string $moduleKey): bool => ($modules
+                        ->firstWhere('key', $moduleKey)['url'] ?? null) === route($routeName)))
             );
     }
 
