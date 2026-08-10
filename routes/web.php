@@ -2684,6 +2684,7 @@ Route::prefix('api/manager')->name('api.manager.')->middleware([
 ])->group(function () {
     Route::get('/dashboard/stats', [ManagerController::class, 'getDashboardStats'])->name('dashboard.stats');
     Route::get('/dss-insights', [\App\Http\Controllers\ShopOwner\DssController::class, 'getInsights'])->name('dss-insights');
+    Route::get('/audit-logs', [\App\Http\Controllers\ActivityLogController::class, 'index'])->name('audit-logs');
     Route::get('/staff-performance', [ManagerController::class, 'getStaffPerformance'])->name('staff-performance');
     Route::get('/analytics', [ManagerController::class, 'getAnalytics'])->name('analytics');
     Route::get('/inventory-overview', [ManagerController::class, 'getInventoryOverview'])->name('inventory-overview');

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\InventoryItem;
 use App\Models\ManagerReport;
+use App\Support\Erp\ErpActorContext;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -1033,17 +1034,21 @@ class ManagerController extends Controller
     public function getReports(Request $request)
     {
         try {
+            $context = request()->attributes->get('erp.actor_context');
+            $ownerMode = $context instanceof ErpActorContext && $context->isOwnerMode();
             $user = Auth::guard('user')->user();
 
-            if (!$user) {
+            if (!$ownerMode && !$user) {
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
 
-            if (!$this->userHasManagerAccess($user)) {
+            if (!$ownerMode && !$this->userHasManagerAccess($user)) {
                 return response()->json(['error' => 'Access denied. Manager role required.'], 403);
             }
 
-            $shopOwnerId = $this->resolveShopOwnerId($user);
+            $shopOwnerId = $ownerMode
+                ? (int) $context->tenantOwner()->getKey()
+                : $this->resolveShopOwnerId($user);
             if (!$shopOwnerId) {
                 return response()->json(['error' => 'No shop association found'], 403);
             }
@@ -1457,4 +1462,3 @@ class ManagerController extends Controller
         }
     }
 }
-

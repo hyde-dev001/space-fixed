@@ -67,4 +67,44 @@ final class OwnerErpApiContractTest extends TestCase
             ->assertOk()
             ->assertJsonStructure(['riders']);
     }
+
+    public function test_second_read_api_wave_exposes_owner_hr_finance_and_manager_get_contracts(): void
+    {
+        config([
+            'shop_modules.owner_erp_workspace_enabled' => true,
+            'shop_modules.enforcement_enabled' => true,
+        ]);
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+
+        foreach (['hr_employees', 'finance'] as $moduleKey) {
+            ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $owner->id,
+                'module_key' => $moduleKey,
+                'enabled' => true,
+            ]);
+        }
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/erp/hr/audit-logs')
+            ->assertOk()
+            ->assertJsonStructure(['success', 'data']);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/erp/finance/audit-logs')
+            ->assertOk()
+            ->assertJsonStructure(['success', 'data']);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/erp/manager/reports')
+            ->assertOk()
+            ->assertJsonStructure(['metrics', 'report_types', 'recent_reports']);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/erp/manager/audit-logs')
+            ->assertOk()
+            ->assertJsonStructure(['logs', 'stats']);
+    }
 }

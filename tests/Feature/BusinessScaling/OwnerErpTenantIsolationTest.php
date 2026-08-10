@@ -15,6 +15,7 @@ use App\Models\Supplier;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
+use Spatie\Activitylog\Models\Activity;
 use Tests\TestCase;
 
 final class OwnerErpTenantIsolationTest extends TestCase
@@ -98,7 +99,7 @@ final class OwnerErpTenantIsolationTest extends TestCase
         ]);
 
         foreach ([$owner, $otherOwner] as $shopOwner) {
-            foreach (['crm', 'logistics'] as $moduleKey) {
+            foreach (['crm', 'logistics', 'hr_employees', 'finance'] as $moduleKey) {
                 ShopOwnerModule::factory()->create([
                     'shop_owner_id' => $shopOwner->id,
                     'module_key' => $moduleKey,
@@ -127,6 +128,21 @@ final class OwnerErpTenantIsolationTest extends TestCase
         RiderProfile::factory()->create([
             'shop_owner_id' => $otherOwner->id,
         ]);
+        InventoryItem::factory()->create([
+            'shop_owner_id' => $otherOwner->id,
+            'name' => 'Other tenant report stock',
+            'available_quantity' => 0,
+        ]);
+        Activity::create([
+            'log_name' => 'default',
+            'description' => 'Other tenant activity',
+            'subject_type' => ShopOwner::class,
+            'subject_id' => $otherOwner->id,
+            'event' => 'updated',
+            'causer_type' => ShopOwner::class,
+            'causer_id' => $otherOwner->id,
+            'properties' => [],
+        ]);
 
         $this->actingAs($owner, 'shop_owner')
             ->getJson('/api/shop-owner/erp/crm/customers')
@@ -150,6 +166,27 @@ final class OwnerErpTenantIsolationTest extends TestCase
         $this->actingAs($owner, 'shop_owner')
             ->getJson('/api/shop-owner/erp/crm/customers/'.$otherCustomer->id)
             ->assertNotFound();
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/erp/hr/audit-logs')
+            ->assertOk()
+            ->assertJsonPath('data.total', 0);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/erp/finance/audit-logs')
+            ->assertOk()
+            ->assertJsonPath('data.total', 0);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/erp/manager/reports')
+            ->assertOk()
+            ->assertJsonPath('metrics.pending_issues', 0);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/erp/manager/audit-logs')
+            ->assertOk()
+            ->assertJsonPath('logs.total', 0)
+            ->assertJsonMissing(['description' => 'Other tenant activity']);
 
         $this->actingAs($owner, 'shop_owner')
             ->getJson('/api/shop-owner/erp/logistics/dashboard-stats')

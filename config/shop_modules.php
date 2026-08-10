@@ -124,6 +124,7 @@ $routeEntry = static function (
 $routeBuckets = [
     'core' => [
         'api.manager.analytics',
+        'api.manager.audit-logs',
         'api.manager.dashboard.stats',
         'api.manager.dss-insights',
         'api.manager.reports.download',
@@ -1123,6 +1124,10 @@ foreach ($ownerReadPairs as $employeeRouteName => [$ownerRouteName, $supportingR
 }
 
 $ownerReadApiPairs = [
+    'hr.audit.index' => 'shop-owner.erp.api.hr.audit-logs',
+    'finance.audit.index' => 'shop-owner.erp.api.finance.audit-logs',
+    'api.manager.reports.index' => 'shop-owner.erp.api.manager.reports',
+    'api.manager.audit-logs' => 'shop-owner.erp.api.manager.audit-logs',
     'crm.api.dashboard-stats' => 'shop-owner.erp.api.crm.dashboard-stats',
     'crm.api.customers.index' => 'shop-owner.erp.api.crm.customers.index',
     'crm.api.customers.show' => 'shop-owner.erp.api.crm.customers.show',
