@@ -5,6 +5,12 @@ import AppSidebarShopOwner from '../AppSidebar_shopOwner';
 
 const state = vi.hoisted(() => ({
   shopModules: {} as Record<string, unknown>,
+  shopOwner: {
+    registration_type: 'individual',
+    business_type: 'both',
+    is_company: false,
+    can_manage_staff: false,
+  },
 }));
 
 vi.mock('@inertiajs/react', () => ({
@@ -12,12 +18,7 @@ vi.mock('@inertiajs/react', () => ({
     url: '/shop-owner/dashboard',
     props: {
       auth: {
-        shop_owner: {
-          registration_type: 'individual',
-          business_type: 'both',
-          is_company: false,
-          can_manage_staff: false,
-        },
+        shop_owner: state.shopOwner,
         shopModules: state.shopModules,
       },
     },
@@ -54,6 +55,12 @@ const accessible = (overrides: Record<string, boolean> = {}) => Object.fromEntri
 );
 
 beforeEach(() => {
+  state.shopOwner = {
+    registration_type: 'individual',
+    business_type: 'both',
+    is_company: false,
+    can_manage_staff: false,
+  };
   state.shopModules = accessible({ logistics: false, repair_operations: false });
 });
 
@@ -70,4 +77,42 @@ it('renders an accessible owner module', () => {
   render(<AppSidebarShopOwner />);
 
   expect(screen.getByRole('link', { name: 'Job Orders Repair' })).toBeInTheDocument();
+});
+
+it('shows enabled employee modules to a business shop owner', () => {
+  state.shopOwner = {
+    registration_type: 'company',
+    business_type: 'both',
+    is_company: true,
+    can_manage_staff: true,
+  };
+  state.shopModules = accessible();
+
+  render(<AppSidebarShopOwner />);
+
+  expect(screen.getByRole('link', { name: 'HR & Employees' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Finance' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Inventory' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Procurement' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'CRM' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Logistics' })).toHaveAttribute('href', '/shop-owner.logistics.shipments');
+});
+
+it('hides disabled employee modules from a business shop owner', () => {
+  state.shopOwner = {
+    registration_type: 'company',
+    business_type: 'retail',
+    is_company: true,
+    can_manage_staff: true,
+  };
+  state.shopModules = accessible({ hr_employees: false, finance: false, inventory: false, procurement: false, crm: false, logistics: false });
+
+  render(<AppSidebarShopOwner />);
+
+  expect(screen.queryByRole('link', { name: 'HR & Employees' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Finance' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Inventory' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Procurement' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'CRM' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Logistics' })).not.toBeInTheDocument();
 });

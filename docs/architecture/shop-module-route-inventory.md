@@ -10,7 +10,7 @@ Generated from `php artisan route:list --json` on 2026-08-10 after reading the r
 - Ordered actor guards are explicit: `shop_owner` is used for owner routes and `user` for employee/ERP routes. Shared routes must list the declared precedence in the config entry.
 - Customer-capable routes are intentionally absent from this internal table and retain their existing customer authorization.
 
-Current named internal route counts: HR and Employees 152, Logistics 9, Core 116, Inventory 85, Retail Operations 45, CRM 20, Finance 76, Repair Operations 56, Procurement 48. The route files still contain unnamed internal routes; Task 10 assigns stable names before enforcement is enabled.
+Current named internal route counts: HR and Employees 155, Logistics 9, Core 115, Inventory 85, Retail Operations 46, CRM 20, Finance 77, Repair Operations 56, Procurement 48. The route files still contain unnamed internal routes; Task 10 assigns stable names before enforcement is enabled.
 
 ## Coverage checklist
 
@@ -26,6 +26,10 @@ Current named internal route counts: HR and Employees 152, Logistics 9, Core 116
 
 | Route name | Methods | URI | Action | Actor guards | Customer-capable | Classification/module | Existing authorization | Intended middleware |
 |---|---|---|---|---|---:|---|---|---|
+| `shopOwner.ecommerce` | GET\|HEAD | `shopOwner/ecommerce` | `App\Http\Controllers\ShopOwner\EcommerceController@index` | `shop_owner` | No | Retail Operations | auth guard + existing route permissions | shop.module (retail_operations) |
+| `shopOwner.refund-approvals` | GET\|HEAD | `shopOwner/refund-approvals` | `Closure` | `shop_owner` | No | Finance | auth guard + existing route permissions | shop.module (finance) |
+| `shopOwner.suspend-accounts` | GET\|HEAD | `shopOwner/suspend-accounts` | `Closure` | `shop_owner` | No | HR and Employees | auth guard + existing route permissions | shop.module (hr_employees) |
+| `shopOwner.user-access-control` | GET\|HEAD | `shopOwner/user-access-control` | `App\Http\Controllers\ShopOwner\UserAccessControlController@index` | `shop_owner` | No | HR and Employees | auth guard + existing route permissions | shop.module (hr_employees) |
 | `api.leave.approve` | POST | `api/leave/{id}/approve` | `App\Http\Controllers\Api\LeaveController@approve` | `user` | No | HR and Employees | auth guard + existing route permissions | shop.module (hr_employees) |
 | `api.leave.cancel` | DELETE | `api/leave/{id}/cancel` | `App\Http\Controllers\Api\LeaveController@cancel` | `user` | No | HR and Employees | auth guard + existing route permissions | shop.module (hr_employees) |
 | `api.leave.index` | GET\|HEAD | `api/leave` | `App\Http\Controllers\Api\LeaveController@index` | `user` | No | HR and Employees | auth guard + existing route permissions | shop.module (hr_employees) |
@@ -605,7 +609,7 @@ Current named internal route counts: HR and Employees 152, Logistics 9, Core 116
 | `shop-owner.shop-profile` | GET\|HEAD | `shop-owner/shop-profile` | `App\Http\Controllers\ShopOwner\ShopProfileController@index` | `shop_owner` | No | Core | auth guard + existing route permissions | none (core) |
 | `shop-owner.shop-profile.password.update` | POST | `shop-owner/shop-profile/password` | `App\Http\Controllers\ShopOwner\ShopProfileController@updatePassword` | `shop_owner` | No | Core | auth guard + existing route permissions | none (core) |
 | `shop-owner.shop-profile.update` | POST | `shop-owner/shop-profile` | `App\Http\Controllers\ShopOwner\ShopProfileController@update` | `shop_owner` | No | Core | auth guard + existing route permissions | none (core) |
-| `shop-owner.suspend-accounts` | GET\|HEAD | `shop-owner/suspend-accounts` | `Closure` | `shop_owner` | No | Core | auth guard + existing route permissions | none (core) |
+| `shop-owner.suspend-accounts` | GET\|HEAD | `shop-owner/suspend-accounts` | `Closure` | `shop_owner` | No | HR and Employees | auth guard + existing route permissions | shop.module (hr_employees) |
 | `shop-owner.two-factor.challenge` | GET\|HEAD | `shop-owner/two-factor` | `App\Http\Controllers\ShopOwnerAuthController@showTwoFactorChallenge` | `shop_owner` | No | Core | auth guard + existing route permissions | none (core) |
 | `shop-owner.two-factor.resend` | POST | `shop-owner/two-factor/resend` | `App\Http\Controllers\ShopOwnerAuthController@resendLoginTwoFactorOtp` | `shop_owner` | No | Core | auth guard + existing route permissions | none (core) |
 | `shop-owner.two-factor.verify` | POST | `shop-owner/two-factor/verify` | `App\Http\Controllers\ShopOwnerAuthController@verifyLoginTwoFactorOtp` | `shop_owner` | No | Core | auth guard + existing route permissions | none (core) |

@@ -770,11 +770,14 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
         Route::get('/product-uploder', function () {
             return Inertia::render('ShopOwner/Products/product management/ProductManagementWithVariants');
         })->name('product-uploder');
-
-        Route::get('/inventory-overview', function () {
-            return Inertia::render('ShopOwner/Products/product management/InventoryOverview');
-        })->middleware('check.registration.type:company')->name('inventory-overview');
     });
+
+    // Inventory is a company module for every supported business type. The
+    // owner overview is read-only and therefore must not inherit the retail
+    // product-management business-type gate above.
+    Route::get('/inventory-overview', function () {
+        return Inertia::render('ShopOwner/Products/product management/InventoryOverview');
+    })->middleware('check.registration.type:company')->name('inventory-overview');
 
     // SERVICE MANAGEMENT - Repair or Both only
     Route::middleware('check.business.type:repair,both')->group(function () {

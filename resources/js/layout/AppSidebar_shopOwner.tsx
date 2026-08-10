@@ -115,6 +115,88 @@ const navItems: NavItem[] = [
   },
 ];
 
+// Business owners manage the enabled employee modules from the owner portal.
+// These links intentionally target owner-administrative pages; employee
+// self-service routes (time-in, personal leave, overtime, and my payslip)
+// remain under the ERP user guard.
+const businessModuleItems: NavItem[] = [
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+        <circle cx="12" cy="7" r="4" />
+      </svg>
+    ),
+    name: "HR & Employees",
+    route: "shopOwner.user-access-control",
+    path: "/shopOwner/user-access-control",
+    moduleKey: "hr_employees",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 7h18M5 7v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7" />
+        <path d="M8 7V5a4 4 0 0 1 8 0v2M9 12h6M9 16h4" />
+      </svg>
+    ),
+    name: "Finance",
+    route: "shop-owner.expense-approvals",
+    path: "/shop-owner/expense-approvals",
+    moduleKey: "finance",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 3h18v18H3z" />
+        <path d="M7 7h4v4H7zM13 7h4v4h-4zM7 13h4v4H7zM13 13h4v4h-4z" />
+      </svg>
+    ),
+    name: "Inventory",
+    route: "shop-owner.inventory-overview",
+    path: "/shop-owner/inventory-overview",
+    moduleKey: "inventory",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4 5h16v14H4z" />
+        <path d="M8 9h8M8 13h5M8 17h3" />
+      </svg>
+    ),
+    name: "Procurement",
+    route: "shop-owner.purchase-request-approval",
+    path: "/shop-owner/purchase-request-approval",
+    moduleKey: "procurement",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="9" cy="8" r="3" />
+        <circle cx="17" cy="10" r="2" />
+        <path d="M3 20a6 6 0 0 1 12 0M14 20a4 4 0 0 1 7 0" />
+      </svg>
+    ),
+    name: "CRM",
+    route: "shop-owner.customers",
+    path: "/shop-owner/customers",
+    moduleKey: "crm",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 7h11v10H3z" />
+        <path d="M14 10h4l3 3v4h-7z" />
+        <circle cx="7" cy="19" r="2" />
+        <circle cx="17" cy="19" r="2" />
+      </svg>
+    ),
+    name: "Logistics",
+    route: "shop-owner.logistics.shipments",
+    path: "/shop-owner/logistics/shipments",
+    moduleKey: "logistics",
+  },
+];
+
 const approvalWorkflowItems: NavItem[] = [
   {
     icon: (
@@ -296,7 +378,7 @@ const customerManagementItems: NavItem[] = [
   },
 ];
 
-type MenuType = "main" | "approval" | "product" | "customer";
+type MenuType = "main" | "approval" | "product" | "customer" | "business";
 const SIDEBAR_PREFETCH: Array<"hover"> = ["hover"];
 const SIDEBAR_PREFETCH_CACHE = "30s";
 
@@ -319,7 +401,6 @@ const AppSidebar_shopOwner: React.FC = () => {
         : businessType === "both"
           ? "Repair & Sales"
           : "Sales";
-  // Business accounts only see approval items, so always show "Approval Workflow"
   const businessAccountSectionLabel = "Approval Workflow";
 
   const [subMenuHeight, setSubMenuHeight] = useState<Record<string, number>>(
@@ -751,6 +832,24 @@ const AppSidebar_shopOwner: React.FC = () => {
               </h2>
               {renderMenuItems(isIndividualAccount ? productManagementItems : approvalWorkflowItems, isIndividualAccount ? "product" : "approval")}
             </div>
+
+            {!isIndividualAccount && (
+              <div>
+                <h2
+                  className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${!isExpanded && !isHovered
+                      ? "lg:justify-center"
+                      : "justify-start"
+                    }`}
+                >
+                  {isExpanded || isHovered || isMobileOpen ? (
+                    "Employee Modules"
+                  ) : (
+                    <HorizontaLDots className="size-6" />
+                  )}
+                </h2>
+                {renderMenuItems(businessModuleItems, "business")}
+              </div>
+            )}
 
             <div>
               <h2
