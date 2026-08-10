@@ -100,6 +100,74 @@ final class ShopModuleRouteCoverageTest extends TestCase
         $this->assertSame([], $errors, implode(PHP_EOL, $errors));
     }
 
+    public function test_operational_erp_routes_select_audience_and_actor_before_capability_or_binding(): void
+    {
+        foreach (config('shop_modules.routes', []) as $routeName => $entry) {
+            if (! in_array($entry['classification'] ?? null, ['core', 'module'], true)
+                || ! $this->isOperationalErpRoute((string) $routeName)) {
+                continue;
+            }
+
+            $route = RouteFacade::getRoutes()->getByName($routeName);
+            $this->assertInstanceOf(Route::class, $route, $routeName);
+            $middleware = app('router')->gatherRouteMiddleware($route);
+
+            $audienceIndex = collect($middleware)->search(
+                static fn (string $value): bool => str_contains($value, 'EnsureErpAudience'),
+            );
+            $authIndex = collect($middleware)->search(
+                static fn (string $value): bool => str_contains($value, 'Authenticate')
+                    || str_contains($value, 'auth:'.($entry['actor_guard'] ?? '')),
+            );
+            $actorIndex = collect($middleware)->search(
+                static fn (string $value): bool => str_contains($value, 'ResolveErpActorContext'),
+            );
+            $bindingIndex = collect($middleware)->search(
+                static fn (string $value): bool => str_contains($value, 'SubstituteBindings'),
+            );
+
+            $this->assertNotFalse($audienceIndex, $routeName);
+            $this->assertNotFalse($authIndex, $routeName);
+            $this->assertNotFalse($actorIndex, $routeName);
+            $this->assertLessThan($authIndex, $audienceIndex, $routeName);
+            $this->assertLessThan($actorIndex, $authIndex, $routeName);
+
+            if ($entry['classification'] === 'module') {
+                $moduleIndex = collect($middleware)->search(
+                    static fn (string $value): bool => str_contains($value, 'EnsureShopModuleEnabled'),
+                );
+                $this->assertNotFalse($moduleIndex, $routeName);
+                $this->assertLessThan($moduleIndex, $actorIndex, $routeName);
+            }
+
+            if ($bindingIndex !== false) {
+                $this->assertLessThan($bindingIndex, $actorIndex, $routeName);
+            }
+        }
+    }
+
+    private function isOperationalErpRoute(string $routeName): bool
+    {
+        foreach ([
+            'api.manager.',
+            'crm.',
+            'erp.',
+            'finance.',
+            'hr.',
+            'inventory.',
+            'procurement.',
+            'staff.',
+            'shop-owner.erp.',
+            'shop_owner.erp.',
+        ] as $prefix) {
+            if (str_starts_with($routeName, $prefix)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function isInternalErpRoute(Route $route): bool
     {
         $name = (string) $route->getName();

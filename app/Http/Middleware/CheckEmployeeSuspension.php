@@ -20,6 +20,12 @@ class CheckEmployeeSuspension
      */
     public function handle(Request $request, Closure $next): Response
     {
+        $routeName = (string) ($request->route()?->getName() ?? '');
+        if (str_starts_with($routeName, 'shop-owner.erp.')
+            || str_starts_with($routeName, 'shop_owner.erp.')) {
+            return $next($request);
+        }
+
         if (Auth::guard('shop_owner')->check()) {
             $shopOwner = Auth::guard('shop_owner')->user();
 
