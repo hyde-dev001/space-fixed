@@ -447,8 +447,10 @@ Route::prefix('api/logistics')->middleware(['auth:user,shop_owner'])->group(func
     Route::post('/batches/{batch}/restore', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'restore']);
     Route::get('/settings', [\App\Http\Controllers\Api\Logistics\LogisticsSettingController::class, 'show']);
     Route::put('/settings', [\App\Http\Controllers\Api\Logistics\LogisticsSettingController::class, 'update']);
-    Route::get('/shipments', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'index']);
-    Route::get('/shipments/{shipment}', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'show']);
+    Route::get('/shipments', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'index'])
+        ->name('logistics.api.shipments.index');
+    Route::get('/shipments/{shipment}', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'show'])
+        ->name('logistics.api.shipments.show');
     Route::post('/legs/{leg}/assign', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'assign']);
     Route::post('/legs/{leg}/accept', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'acceptOffer']);
     Route::post('/legs/{leg}/reject', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'rejectOffer']);
@@ -478,10 +480,15 @@ Route::prefix('api/logistics')->middleware(['auth:user,shop_owner'])->group(func
     Route::post('/legs/{leg}/return-to-shop', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'createReturn']);
     Route::post('/legs/{leg}/return-proofs/{proof}/handoff', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'confirmReturnHandoff']);
     Route::post('/legs/{leg}/return-proofs/{proof}/receipt', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'confirmReturnReceipt']);
-    Route::get('/riders', [\App\Http\Controllers\Api\Logistics\RiderProfileController::class, 'index']);
+    Route::get('/riders', [\App\Http\Controllers\Api\Logistics\RiderProfileController::class, 'index'])
+        ->name('logistics.api.riders.index');
     Route::post('/riders', [\App\Http\Controllers\Api\Logistics\RiderProfileController::class, 'store']);
     Route::patch('/riders/{rider}', [\App\Http\Controllers\Api\Logistics\RiderProfileController::class, 'update']);
 });
+
+Route::get('/api/logistics/dashboard-stats', [\App\Http\Controllers\Logistics\ErpLogisticsController::class, 'dashboardStats'])
+    ->middleware(['auth:user', 'check.suspension'])
+    ->name('logistics.api.dashboard-stats');
 
 // Customer Conversation Routes - Customer-side chat with shops
 Route::prefix('api/customer/conversations')->middleware(['auth:user', 'customer.account'])->group(function () {
@@ -1400,7 +1407,8 @@ Route::middleware(['auth:user', 'check.user.business.type:repair,both'])->prefix
 // Repairer API Routes (Phase 3 - Chat Integration)
 Route::middleware(['auth:user', 'check.user.business.type:repair,both'])->prefix('api/repairer')->group(function () {
     // Dashboard statistics
-    Route::get('/dashboard', [\App\Http\Controllers\Repairer\DashboardController::class, 'getDashboardData']);
+    Route::get('/dashboard', [\App\Http\Controllers\Repairer\DashboardController::class, 'getDashboardData'])
+        ->name('erp.staff.api.repair-dashboard');
 
     // Repair material stock + requests (repairer view)
     Route::get('/materials', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'repairStocksOverview'])
@@ -1821,13 +1829,9 @@ Route::middleware(['auth:user', 'check.suspension', 'permission:access-hr-dashbo
 })->name('erp.hr');
 
 // HR Audit Logs
-Route::get('/erp/hr/audit-logs', function () {
-    if (Auth::guard('user')->user()?->force_password_change) {
-        return redirect()->route('erp.profile');
-    }
-
-    return Inertia::render('ERP/HR/AuditLogs');
-})->middleware(['auth:user', 'permission:access-audit-logs'])->name('erp.hr.audit-logs');
+Route::get('/erp/hr/audit-logs', [\App\Http\Controllers\Erp\ReadPageController::class, 'hrAuditLogs'])
+    ->middleware(['auth:user', 'permission:access-audit-logs'])
+    ->name('erp.hr.audit-logs');
 
 Route::middleware(['auth:user', 'check.suspension'])->group(function () {
     Route::get('/erp/profile', [UserProfileController::class, 'show'])->name('erp.profile');
@@ -2055,13 +2059,9 @@ Route::prefix('finance')->name('finance.')->middleware(['auth:user', 'role_or_pe
 });
 
 // Finance Audit Logs
-Route::get('/erp/finance/audit-logs', function () {
-    if (Auth::guard('user')->user()?->force_password_change) {
-        return redirect()->route('erp.profile');
-    }
-
-    return Inertia::render('ERP/Finance/AuditLogs');
-})->middleware(['auth:user', 'permission:access-audit-logs'])->name('erp.finance.audit-logs');
+Route::get('/erp/finance/audit-logs', [\App\Http\Controllers\Erp\ReadPageController::class, 'financeAuditLogs'])
+    ->middleware(['auth:user', 'permission:access-audit-logs'])
+    ->name('erp.finance.audit-logs');
 
 // Approval Workflow page removed (frontend page deleted)
 
@@ -2149,13 +2149,8 @@ Route::prefix('erp/manager')->name('erp.manager.')->middleware([
 
         return Inertia::render('ERP/Manager/Dashboard', compact('initialPendingLeaves'));
     })->name('dashboard');
-    Route::get('/reports', function () {
-        if (Auth::guard('user')->user()?->force_password_change) {
-            return redirect()->route('erp.profile');
-        }
-
-        return Inertia::render('ERP/Manager/Reports');
-    })->name('reports');
+    Route::get('/reports', [\App\Http\Controllers\Erp\ReadPageController::class, 'managerReports'])
+        ->name('reports');
     Route::get('/suspend-approval', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
@@ -2235,13 +2230,8 @@ Route::prefix('erp/manager')->name('erp.manager.')->middleware([
 
         return Inertia::render('ERP/Manager/UserManagement');
     })->name('user-management');
-    Route::get('/audit-logs', function () {
-        if (Auth::guard('user')->user()?->force_password_change) {
-            return redirect()->route('erp.profile');
-        }
-
-        return Inertia::render('ERP/Manager/AuditLogs');
-    })->name('audit-logs');
+    Route::get('/audit-logs', [\App\Http\Controllers\Erp\ReadPageController::class, 'managerAuditLogs'])
+        ->name('audit-logs');
     // Repair rejection review: manager route limited to repair-capable businesses
     Route::get('/repair-rejection-review', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
@@ -2274,40 +2264,14 @@ Route::prefix('erp/inventory')->name('erp.inventory.')->middleware(['auth:user',
         return Inertia::render('ERP/inventory/UploadInventory', compact('initialData'));
     })->name('upload-stocks');
 
-    Route::get('/inventory-dashboard', function () {
-        if (Auth::guard('user')->user()?->force_password_change) {
-            return redirect()->route('erp.profile');
-        }
-        $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
-        $initialData = \App\Models\InventoryItem::with(['sizes', 'colorVariants', 'images'])
-            ->where('shop_owner_id', $shopOwnerId)->where('is_active', true)->orderBy('name')->paginate(200);
-        $initialMetrics = ['total_items' => \App\Models\InventoryItem::where('shop_owner_id', $shopOwnerId)->where('is_active', true)->count(), 'low_stock_count' => \App\Models\InventoryItem::where('shop_owner_id', $shopOwnerId)->lowStock()->count(), 'out_of_stock_count' => \App\Models\InventoryItem::where('shop_owner_id', $shopOwnerId)->outOfStock()->count()];
+    Route::get('/inventory-dashboard', [\App\Http\Controllers\Erp\ReadPageController::class, 'inventoryDashboard'])
+        ->name('inventory-dashboard');
 
-        return Inertia::render('ERP/inventory/InventoryDashboard', compact('initialData', 'initialMetrics'));
-    })->name('inventory-dashboard');
+    Route::get('/stock-movement', [\App\Http\Controllers\Erp\ReadPageController::class, 'stockMovement'])
+        ->name('stock-movement');
 
-    Route::get('/stock-movement', function () {
-        if (Auth::guard('user')->user()?->force_password_change) {
-            return redirect()->route('erp.profile');
-        }
-        $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
-        $initialData = \App\Models\StockMovement::with(['inventoryItem', 'performer'])
-            ->whereHas('inventoryItem', fn ($q) => $q->where('shop_owner_id', $shopOwnerId))
-            ->orderBy('performed_at', 'desc')->paginate(200);
-
-        return Inertia::render('ERP/inventory/StockMovement', compact('initialData'));
-    })->name('stock-movement');
-
-    Route::get('/product-inventory', function () {
-        if (Auth::guard('user')->user()?->force_password_change) {
-            return redirect()->route('erp.profile');
-        }
-        $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
-        $initialData = \App\Models\InventoryItem::with(['sizes', 'colorVariants', 'images'])
-            ->where('shop_owner_id', $shopOwnerId)->where('is_active', true)->orderBy('name')->paginate(200);
-
-        return Inertia::render('ERP/inventory/ProductInventory', compact('initialData'));
-    })->name('product-inventory');
+    Route::get('/product-inventory', [\App\Http\Controllers\Erp\ReadPageController::class, 'productInventory'])
+        ->name('product-inventory');
 
     Route::get('/stock-request', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
@@ -2386,15 +2350,9 @@ Route::prefix('erp/procurement')->name('erp.procurement.')->middleware('auth:use
         return Inertia::render('ERP/Procurement/StockRequestApproval', compact('initialData'));
     })->middleware('permission:view-procurement|access-stock-request-approval')->name('stock-request-approval');
 
-    Route::get('/suppliers-management', function () {
-        if (Auth::guard('user')->user()?->force_password_change) {
-            return redirect()->route('erp.profile');
-        }
-        $shopOwnerId = Auth::guard('user')->user()->shop_owner_id;
-        $initialData = \App\Models\Supplier::where('shop_owner_id', $shopOwnerId)->orderBy('name')->paginate(100);
-
-        return Inertia::render('ERP/Procurement/SuppliersManagement', compact('initialData'));
-    })->middleware('permission:view-procurement|access-suppliers-management')->name('suppliers-management');
+    Route::get('/suppliers-management', [\App\Http\Controllers\Erp\ReadPageController::class, 'procurementSuppliers'])
+        ->middleware('permission:view-procurement|access-suppliers-management')
+        ->name('suppliers-management');
 });
 
 // STAFF routes (both MANAGER and STAFF can access)
@@ -2490,20 +2448,9 @@ Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manage
         return Inertia::render('ERP/STAFF/JobOrders', compact('initialOrders'));
     })->middleware(['permission:access-staff-job-orders', 'check.user.business.type:retail,both'])->name('job-orders');
 
-    Route::get('/repair-dashboard', function () {
-        if (Auth::guard('user')->user()?->force_password_change) {
-            return redirect()->route('erp.profile');
-        }
-        try {
-            $controller = app(\App\Http\Controllers\Repairer\DashboardController::class);
-            $response = $controller->getDashboardData();
-            $initialDashboard = json_decode($response->getContent(), true);
-        } catch (\Exception $e) {
-            $initialDashboard = null;
-        }
-
-        return Inertia::render('ERP/repairer/dashboardRepair', compact('initialDashboard'));
-    })->middleware(['permission:access-repairer-dashboard', 'check.user.business.type:repair,both'])->name('repair-dashboard');
+    Route::get('/repair-dashboard', [\App\Http\Controllers\Erp\ReadPageController::class, 'repairDashboard'])
+        ->middleware(['permission:access-repairer-dashboard', 'check.user.business.type:repair,both'])
+        ->name('repair-dashboard');
 
     Route::get('/job-orders-repair', function () {
         if (Auth::guard('user')->user()?->force_password_change) {
@@ -2738,6 +2685,7 @@ Route::prefix('api/manager')->name('api.manager.')->middleware([
 ])->group(function () {
     Route::get('/dashboard/stats', [ManagerController::class, 'getDashboardStats'])->name('dashboard.stats');
     Route::get('/dss-insights', [\App\Http\Controllers\ShopOwner\DssController::class, 'getInsights'])->name('dss-insights');
+    Route::get('/audit-logs', [\App\Http\Controllers\ActivityLogController::class, 'index'])->name('audit-logs');
     Route::get('/staff-performance', [ManagerController::class, 'getStaffPerformance'])->name('staff-performance');
     Route::get('/analytics', [ManagerController::class, 'getAnalytics'])->name('analytics');
     Route::get('/inventory-overview', [ManagerController::class, 'getInventoryOverview'])->name('inventory-overview');

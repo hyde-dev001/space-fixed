@@ -6,6 +6,9 @@ use App\Data\ShopModuleAccessDecision;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\ShopModuleAccessService;
+use App\Services\ErpRouteCatalog;
+use App\Support\Erp\ErpAccessResponder;
+use App\Support\Erp\ErpActorContext;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -15,10 +18,17 @@ final class EnsureShopModuleEnabled
 {
     public function __construct(
         private readonly ShopModuleAccessService $access,
+        private readonly ErpRouteCatalog $catalog,
+        private readonly ErpAccessResponder $responder,
     ) {}
 
     public function handle(Request $request, Closure $next): Response
     {
+        $context = $request->attributes->get('erp.actor_context');
+        if ($context instanceof ErpActorContext) {
+            return $this->handleContext($request, $next, $context);
+        }
+
         if (! (bool) config('shop_modules.enforcement_enabled', false)) {
             return $next($request);
         }
@@ -38,7 +48,9 @@ final class EnsureShopModuleEnabled
 
         $moduleKeys = $this->stringList($entry['module_keys'] ?? null);
         $mode = $entry['mode'] ?? null;
-        $guards = $this->stringList($entry['actor_guards'] ?? null);
+        $guards = isset($entry['actor_guard'])
+            ? $this->stringList([$entry['actor_guard']])
+            : $this->stringList($entry['actor_guards'] ?? null);
         if ($moduleKeys === [] || ! is_string($mode) || ! in_array($mode, config('shop_modules.supported_gate_modes', []), true)
             || $guards === [] || array_diff($guards, ['shop_owner', 'user']) !== []) {
             return $this->deny($request, ShopModuleAccessDecision::deny(
@@ -88,6 +100,58 @@ final class EnsureShopModuleEnabled
         }
 
         return $this->deny($request, $decision, $selected['guard']);
+    }
+
+    private function handleContext(Request $request, Closure $next, ErpActorContext $context): Response
+    {
+        if (! $context->isOwnerMode()
+            && ! (bool) config('shop_modules.enforcement_enabled', false)) {
+            return $next($request);
+        }
+
+        $routeEntry = $this->catalog->entry($context->routeName());
+        $moduleKeys = $this->stringList($routeEntry['module_keys'] ?? null);
+        $mode = $routeEntry['mode'] ?? null;
+
+        if (($routeEntry['classification'] ?? null) !== 'module'
+            || $moduleKeys === []
+            || ! is_string($mode)
+            || ! in_array($mode, config('shop_modules.supported_gate_modes', []), true)) {
+            return $this->responder->deny(
+                $request,
+                'ERP_ROUTE_NOT_ALLOWED',
+                $moduleKeys,
+            );
+        }
+
+        $enforceState = $context->isOwnerMode()
+            ? (bool) config('shop_modules.enforcement_enabled', false)
+            : true;
+        $decision = $this->access->decideGate(
+            $context->tenantOwner(),
+            $mode,
+            $moduleKeys,
+            $enforceState,
+        );
+
+        if ($decision->allowed) {
+            $resolvedContext = $context->withDecision($decision);
+            $request->attributes->set('erp.actor_context', $resolvedContext);
+            app()->forgetInstance(ErpActorContext::class);
+
+            return $next($request);
+        }
+
+        if ($context->isOwnerMode()) {
+            return $this->responder->deny(
+                $request,
+                $decision->code ?? 'ERP_ROUTE_NOT_ALLOWED',
+                $decision->moduleKeys,
+                $decision->message,
+            );
+        }
+
+        return $this->deny($request, $decision, $context->guard());
     }
 
     /**

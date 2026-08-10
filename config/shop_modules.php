@@ -79,24 +79,52 @@ $modules = [
 ];
 
 $routeEntry = static function (
+    array $modules,
     string $classification,
-    string $mode,
+    ?string $mode,
     array $moduleKeys,
-    array $actorGuards,
-    bool $customerCapable,
+    array $methods,
+    string $audience,
+    ?string $actorGuard,
+    string $action,
+    string $ownerDenialReason,
+    ?string $navigationGroup,
+    bool $selfService,
 ): array {
+    $registrationTypes = [];
+    $businessTypes = [];
+
+    foreach ($moduleKeys as $moduleKey) {
+        $registrationTypes = array_merge($registrationTypes, $modules[$moduleKey]['registration_types'] ?? []);
+        $businessTypes = array_merge($businessTypes, $modules[$moduleKey]['business_types'] ?? []);
+    }
+
     return [
+        'methods' => array_values(array_unique(array_map('strtoupper', $methods))),
         'classification' => $classification,
+        'audience' => $audience,
+        'actor_guard' => $actorGuard,
+        'module_keys' => array_values(array_unique($moduleKeys)),
         'mode' => $mode,
-        'module_keys' => $moduleKeys,
-        'actor_guards' => $actorGuards,
-        'customer_capable' => $customerCapable,
+        'registration_types' => array_values(array_unique($registrationTypes)),
+        'business_types' => array_values(array_unique($businessTypes)),
+        'action' => $action,
+        'owner_access' => 'denied',
+        'owner_denial_reason' => $ownerDenialReason,
+        'domain_rule' => null,
+        'risk_tier' => 'normal',
+        'paired_route' => null,
+        'navigation_group' => $navigationGroup,
+        'self_service' => $selfService,
+        'supporting_routes' => [],
+        'actor_persistence' => 'not_applicable',
     ];
 };
 
 $routeBuckets = [
     'core' => [
         'api.manager.analytics',
+        'api.manager.audit-logs',
         'api.manager.dashboard.stats',
         'api.manager.dss-insights',
         'api.manager.reports.download',
@@ -104,10 +132,8 @@ $routeBuckets = [
         'api.manager.reports.index',
         'api.manager.reports.send',
         'api.manager.staff-performance',
-        'crm.dashboard',
         'erp.hr',
         'erp.hr.audit-logs',
-        'erp.logistics.dashboard',
         'erp.logistics.settings',
         'erp.manager.audit-logs',
         'erp.manager.dashboard',
@@ -261,6 +287,7 @@ $routeBuckets = [
         'shop_owner.promos.update-status',
     ],
     'repair_operations' => [
+        'erp.staff.api.repair-dashboard',
         'erp.manager.repair-rejection-review',
         'erp.manager.shoe-pricing',
         'erp.repairer.point-of-sale',
@@ -555,6 +582,12 @@ $routeBuckets = [
         'staff.payslips.my',
     ],
     'crm' => [
+        'crm.api.customers.index',
+        'crm.api.customers.show',
+        'crm.api.dashboard-stats',
+        'crm.api.reviews.index',
+        'erp.staff.api.customers',
+        'crm.dashboard',
         'crm.customer-reviews',
         'crm.customer-support',
         'crm.customers',
@@ -716,7 +749,12 @@ $routeBuckets = [
     'logistics' => [
         'api.logistics.attempts.file',
         'api.logistics.incidents.evidence',
+        'logistics.api.dashboard-stats',
+        'logistics.api.riders.index',
+        'logistics.api.shipments.index',
+        'logistics.api.shipments.show',
         'erp.logistics.batches',
+        'erp.logistics.dashboard',
         'erp.logistics.deliveries',
         'erp.logistics.riders',
         'erp.logistics.shipments',
@@ -724,7 +762,238 @@ $routeBuckets = [
         'shop-owner.logistics.shipments',
         'shop_owner.repairs.delivery-method',
     ],
+    'excluded' => [
+        'api.notifications.index',
+        'api.notifications.unread-count',
+        'api.notifications.recent',
+        'api.notifications.stats',
+        'api.notifications.mark-read',
+        'api.notifications.mark-all-read',
+        'api.notifications.destroy',
+        'api.notifications.preferences',
+        'api.notifications.update-preferences',
+        'api.notifications.bulk-mark-read',
+        'api.notifications.bulk-delete',
+        'api.notifications.bulk-archive',
+        'api.notifications.archive',
+        'api.notifications.grouped',
+        'api.notifications.export',
+        'api.activity_logs',
+        'api.shop_owner.dashboard.dss-insights',
+        'api.products.vouchers.claim',
+        'api.customer.repairs.warranty-claims',
+        'api.customer.repairs.warranty-claims.latest',
+        'api.shops.report',
+    ],
 ];
+
+$routeMethods = static function (string $routeName): array {
+    $overrides = [
+        'inventory.suppliers.update' => ['PATCH', 'PUT'],
+        'finance.expenses.update' => ['PATCH'],
+        'finance.invoices.update' => ['PATCH'],
+        'erp.password.update' => ['POST'],
+        'shop-owner.shop-profile.update' => ['POST'],
+        'shop-owner.shop-profile.password.update' => ['POST'],
+        'shop-owner.modules.update' => ['PATCH'],
+        'api.leave.cancel' => ['DELETE'],
+        'shop_owner.promos.update-status' => ['PATCH'],
+        'shop_owner.orders.update-status' => ['PATCH'],
+        'shop_owner.repairs.delivery-method' => ['PATCH'],
+        'shop_owner.premium.auto-renew' => ['PATCH'],
+        'shop-owner.employees.permissions.update' => ['POST'],
+        'hr.employees.permissions.update' => ['POST'],
+        'inventory.items.images.thumbnail' => ['PUT'],
+        'shop_owner.inventory.items.images.thumbnail' => ['PUT'],
+        'inventory.supplier-orders.status' => ['PUT'],
+        'api.notifications.bulk-delete' => ['DELETE'],
+        'staff.attendance.add_lateness_reason' => ['PATCH'],
+        'staff.attendance.add_early_reason' => ['PATCH'],
+        'staff.attendance.status' => ['GET'],
+        'hr.attendance.patch' => ['PATCH'],
+        'api.notifications.update-preferences' => ['PUT'],
+        'hr.notifications.update_preferences' => ['PUT'],
+        'erp.notifications.update-preferences' => ['PUT'],
+        'shop_owner.notifications.update-preferences' => ['PUT'],
+        'shop_owner.payslip_approval.batch_final_approve' => ['POST'],
+        'shop_owner.settings.policies.publish' => ['POST'],
+        'shop_owner.settings.paymongo-key' => ['POST'],
+        'shop_owner.settings.geofence' => ['POST'],
+        'api.products.vouchers.claim' => ['POST'],
+        'api.customer.repairs.warranty-claims' => ['POST'],
+        'shop_owner.repairs.approve-high-value' => ['POST'],
+        'shop_owner.repairs.reject-high-value' => ['POST'],
+        'inventory.products.update-quantity' => ['PUT'],
+        'inventory.products.bulk-update' => ['POST'],
+        'inventory.supplier-orders.receive' => ['POST'],
+        'inventory.supplier-orders.generate-po' => ['POST'],
+        'inventory.monitoring.receive' => ['POST'],
+        'permission-audit-logs.compliance-report' => ['POST'],
+        'finance.repair-price-changes.approve-final' => ['POST'],
+        'hr.notifications.clear_read' => ['DELETE'],
+    ];
+
+    if (isset($overrides[$routeName])) {
+        return $overrides[$routeName];
+    }
+
+    foreach (['destroy', 'delete', 'remove'] as $suffix) {
+        if (str_ends_with($routeName, '.'.$suffix)) {
+            return ['DELETE'];
+        }
+    }
+
+    if (str_ends_with($routeName, '.cancel')) {
+        return str_starts_with($routeName, 'staff.leave.') ? ['DELETE'] : ['POST'];
+    }
+
+    foreach ([
+        'store',
+        'approve',
+        'reject',
+        'restore',
+        'send',
+        'void',
+        'post',
+        'from_job',
+        'submit-finance',
+        'submit',
+        'update-status',
+        'send-supplier',
+        'accept',
+        'execute',
+        'final_approve',
+        'disburse',
+        'batch_preview',
+        'batch_approve',
+        'mark-read',
+        'mark-all-read',
+        'bulk-mark-read',
+        'bulk-archive',
+        'archive',
+        'suspend',
+        'activate',
+        'batch_final_approve',
+        'claim',
+        'warranty-claims',
+        'update-quantity',
+        'bulk-update',
+        'status',
+        'receive',
+        'calculate_preview',
+        'confirm_hours',
+        'assign',
+        'process',
+        'recalculate',
+        'batch.preview',
+        'batch.generate',
+        'batch.retry',
+        'batch.export',
+        'components.add',
+        'apply',
+        'release',
+        'mark_as_read',
+        'mark_all_as_read',
+        'publish',
+        'paymongo-key',
+        'geofence',
+        'request',
+        'upload',
+        'upload-image',
+        'thumbnail',
+        'reorder',
+        'sync',
+        'sync_ph',
+        'apply-template',
+        'reset_password',
+        'regenerate_invite',
+        'resend_invite',
+        'send_invitation_email',
+        'checkin',
+        'checkout',
+        'check_in',
+        'check_out',
+        'lunch_start',
+        'lunch_end',
+        'mark_paid',
+        'mark-received',
+        'mark-ready',
+        'mark-completed',
+        'mark-paid-in-shop',
+        'activate-pickup',
+        'activate-payment',
+        'start-work',
+        'resume-work',
+        'confirm-return-received',
+        'arrange-return-pickup',
+        'request-price-change',
+        'request-details',
+        'upgrade',
+        'downgrade',
+        'review',
+        'generate',
+        'report',
+        'ship',
+        'transfer',
+        'unarchive',
+        'send-code',
+        'verify-code',
+        'register',
+        'login',
+        'logout',
+        'verify',
+        'resend',
+        'upgrade.preview',
+        'upgrade.confirm',
+        'downgrade.schedule',
+    ] as $suffix) {
+        if (str_ends_with($routeName, '.'.$suffix)) {
+            return ['POST'];
+        }
+    }
+
+    foreach (['update', 'policies.draft'] as $suffix) {
+        if (str_ends_with($routeName, '.'.$suffix)) {
+            return ['PUT'];
+        }
+    }
+
+    return ['GET'];
+};
+
+$isOwnerRoute = static fn (string $routeName): bool => str_starts_with($routeName, 'shop-owner.')
+    || str_starts_with($routeName, 'shop_owner.')
+    || str_starts_with($routeName, 'shopOwner.')
+    || str_starts_with($routeName, 'api.shop_owner.');
+
+$isPublicRoute = static fn (string $routeName): bool => in_array($routeName, [
+    'shop-owner.email-verification.send-code',
+    'shop-owner.email-verification.verify-code',
+    'shop-owner.login',
+    'shop-owner.login.form',
+    'shop-owner.password.setup',
+    'shop-owner.password.setup.store',
+    'shop-owner.pending-approval.public',
+    'shop-owner.register',
+    'shop-owner.resubmission.form',
+    'shop-owner.resubmission.submit',
+    'shop-owner.two-factor.challenge',
+    'shop-owner.two-factor.resend',
+    'shop-owner.two-factor.verify',
+], true);
+
+$isSelfServiceRoute = static fn (string $routeName): bool => str_starts_with($routeName, 'staff.')
+    || in_array($routeName, ['erp.time-in', 'erp.my-payslips', 'erp.profile', 'erp.password.update'], true);
+
+$routeAction = static function (string $routeName): string {
+    foreach (['approve', 'reject', 'checkout', 'assign', 'upload', 'delete', 'update', 'create'] as $action) {
+        if (str_contains($routeName, $action)) {
+            return $action;
+        }
+    }
+
+    return 'view';
+};
 
 $routes = [];
 foreach ($routeBuckets as $bucket => $routeNames) {
@@ -732,29 +1001,194 @@ foreach ($routeBuckets as $bucket => $routeNames) {
         $classification = 'module';
         $moduleKeys = [$bucket];
 
-        if ($bucket === 'core') {
+        if ($bucket === 'core' || $bucket === 'excluded') {
             $classification = 'core';
             $moduleKeys = [];
         }
 
-        $actorGuards = str_starts_with($routeName, 'shop-owner.')
-            || str_starts_with($routeName, 'shop_owner.')
-            || str_starts_with($routeName, 'shopOwner.')
-            ? ['shop_owner']
-            : ['user'];
+        if ($bucket === 'excluded') {
+            $classification = 'excluded';
+        }
 
         $routes[$routeName] = $routeEntry(
+            modules: $modules,
             classification: $classification,
-            mode: 'single',
+            mode: $classification === 'module' ? 'single' : null,
             moduleKeys: $moduleKeys,
-            actorGuards: $actorGuards,
-            customerCapable: false,
+            methods: $routeMethods($routeName),
+            audience: $isPublicRoute($routeName)
+                ? 'public'
+                : ($isOwnerRoute($routeName) ? 'shop_owner' : 'user'),
+            actorGuard: $isPublicRoute($routeName)
+                ? null
+                : ($isOwnerRoute($routeName) ? 'shop_owner' : 'user'),
+            action: $routeAction($routeName),
+            ownerDenialReason: $classification === 'excluded'
+                ? 'not_an_erp_route'
+                : ($isSelfServiceRoute($routeName)
+                ? 'employee_subject_required'
+                : 'owner_operation_not_reviewed'),
+            navigationGroup: $classification === 'module' ? $bucket : null,
+            selfService: $isSelfServiceRoute($routeName),
         );
     }
 }
 
+$workspaceRoute = $routeEntry(
+    modules: $modules,
+    classification: 'core',
+    mode: null,
+    moduleKeys: [],
+    methods: ['GET'],
+    audience: 'shop_owner',
+    actorGuard: 'shop_owner',
+    action: 'view',
+    ownerDenialReason: 'owner_workspace_not_exposed',
+    navigationGroup: 'workspace',
+    selfService: false,
+);
+$workspaceRoute['registration_types'] = ['company'];
+$workspaceRoute['business_types'] = ['retail', 'repair', 'both'];
+$workspaceRoute['owner_access'] = 'allowed';
+$workspaceRoute['owner_denial_reason'] = null;
+$workspaceRoute['supporting_routes'] = ['shop-owner.erp.api.workspace'];
+$routes['shop-owner.erp.workspace'] = $workspaceRoute;
+
+$workspaceApiRoute = $workspaceRoute;
+$workspaceApiRoute['supporting_routes'] = ['shop-owner.erp.workspace'];
+$routes['shop-owner.erp.api.workspace'] = $workspaceApiRoute;
+
+$ownerReadPairs = [
+    'crm.dashboard' => [
+        'shop-owner.erp.crm.dashboard',
+        'shop-owner.erp.api.crm.dashboard-stats',
+    ],
+    'crm.customers' => [
+        'shop-owner.erp.crm.customers',
+        'shop-owner.erp.api.crm.customers.index',
+    ],
+    'crm.customer-reviews' => [
+        'shop-owner.erp.crm.customer-reviews',
+        'shop-owner.erp.api.crm.reviews.index',
+    ],
+    'erp.logistics.dashboard' => [
+        'shop-owner.erp.logistics.dashboard',
+        'shop-owner.erp.api.logistics.dashboard-stats',
+    ],
+    'erp.logistics.shipments' => [
+        'shop-owner.erp.logistics.shipments',
+        'shop-owner.erp.api.logistics.shipments.index',
+    ],
+    'erp.logistics.riders' => [
+        'shop-owner.erp.logistics.riders',
+        'shop-owner.erp.api.logistics.riders.index',
+    ],
+    'erp.hr.audit-logs' => [
+        'shop-owner.erp.hr.audit-logs',
+        'shop-owner.erp.api.hr.audit-logs',
+    ],
+    'erp.finance.audit-logs' => [
+        'shop-owner.erp.finance.audit-logs',
+        'shop-owner.erp.api.finance.audit-logs',
+    ],
+    'erp.manager.reports' => [
+        'shop-owner.erp.manager.reports',
+        'shop-owner.erp.api.manager.reports',
+    ],
+    'erp.manager.audit-logs' => [
+        'shop-owner.erp.manager.audit-logs',
+        'shop-owner.erp.api.manager.audit-logs',
+    ],
+    'erp.inventory.inventory-dashboard' => [
+        'shop-owner.erp.inventory.inventory-dashboard',
+        'shop-owner.erp.api.inventory.dashboard',
+    ],
+    'erp.inventory.product-inventory' => [
+        'shop-owner.erp.inventory.product-inventory',
+        'shop-owner.erp.api.inventory.products.index',
+    ],
+    'erp.inventory.stock-movement' => [
+        'shop-owner.erp.inventory.stock-movement',
+        'shop-owner.erp.api.inventory.movements.index',
+    ],
+    'erp.procurement.suppliers-management' => [
+        'shop-owner.erp.procurement.suppliers-management',
+        'shop-owner.erp.api.procurement.suppliers.index',
+    ],
+    'erp.staff.customers' => [
+        'shop-owner.erp.staff.customers',
+        'shop-owner.erp.api.staff.customers',
+    ],
+    'erp.staff.repair-dashboard' => [
+        'shop-owner.erp.staff.repair-dashboard',
+        'shop-owner.erp.api.staff.repair-dashboard',
+    ],
+];
+
+foreach ($ownerReadPairs as $employeeRouteName => [$ownerRouteName, $supportingRouteName]) {
+    if (! isset($routes[$employeeRouteName])) {
+        continue;
+    }
+
+    $employeeRoute = $routes[$employeeRouteName];
+    $employeeRoute['owner_access'] = 'allowed';
+    $employeeRoute['owner_denial_reason'] = null;
+    $employeeRoute['paired_route'] = $ownerRouteName;
+    $employeeRoute['supporting_routes'] = [$supportingRouteName];
+    $routes[$employeeRouteName] = $employeeRoute;
+
+    $ownerRoute = $employeeRoute;
+    $ownerRoute['audience'] = 'shop_owner';
+    $ownerRoute['actor_guard'] = 'shop_owner';
+    $ownerRoute['paired_route'] = $employeeRouteName;
+    $ownerRoute['supporting_routes'] = [$supportingRouteName];
+    $routes[$ownerRouteName] = $ownerRoute;
+}
+
+$ownerReadApiPairs = [
+    'hr.audit.index' => 'shop-owner.erp.api.hr.audit-logs',
+    'finance.audit.index' => 'shop-owner.erp.api.finance.audit-logs',
+    'api.manager.reports.index' => 'shop-owner.erp.api.manager.reports',
+    'api.manager.audit-logs' => 'shop-owner.erp.api.manager.audit-logs',
+    'inventory.dashboard' => 'shop-owner.erp.api.inventory.dashboard',
+    'inventory.products.index' => 'shop-owner.erp.api.inventory.products.index',
+    'inventory.movements.index' => 'shop-owner.erp.api.inventory.movements.index',
+    'procurement.suppliers.index' => 'shop-owner.erp.api.procurement.suppliers.index',
+    'erp.staff.api.customers' => 'shop-owner.erp.api.staff.customers',
+    'erp.staff.api.repair-dashboard' => 'shop-owner.erp.api.staff.repair-dashboard',
+    'crm.api.dashboard-stats' => 'shop-owner.erp.api.crm.dashboard-stats',
+    'crm.api.customers.index' => 'shop-owner.erp.api.crm.customers.index',
+    'crm.api.customers.show' => 'shop-owner.erp.api.crm.customers.show',
+    'crm.api.reviews.index' => 'shop-owner.erp.api.crm.reviews.index',
+    'logistics.api.dashboard-stats' => 'shop-owner.erp.api.logistics.dashboard-stats',
+    'logistics.api.shipments.index' => 'shop-owner.erp.api.logistics.shipments.index',
+    'logistics.api.shipments.show' => 'shop-owner.erp.api.logistics.shipments.show',
+    'logistics.api.riders.index' => 'shop-owner.erp.api.logistics.riders.index',
+];
+
+foreach ($ownerReadApiPairs as $employeeRouteName => $ownerRouteName) {
+    if (! isset($routes[$employeeRouteName])) {
+        continue;
+    }
+
+    $employeeRoute = $routes[$employeeRouteName];
+    $employeeRoute['owner_access'] = 'allowed';
+    $employeeRoute['owner_denial_reason'] = null;
+    $employeeRoute['paired_route'] = $ownerRouteName;
+    $employeeRoute['supporting_routes'] = [$ownerRouteName];
+    $routes[$employeeRouteName] = $employeeRoute;
+
+    $ownerRoute = $employeeRoute;
+    $ownerRoute['audience'] = 'shop_owner';
+    $ownerRoute['actor_guard'] = 'shop_owner';
+    $ownerRoute['paired_route'] = $employeeRouteName;
+    $ownerRoute['supporting_routes'] = [$employeeRouteName];
+    $routes[$ownerRouteName] = $ownerRoute;
+}
+
 return [
     'enforcement_enabled' => (bool) env('SHOP_MODULE_ENFORCEMENT_ENABLED', false),
+    'owner_erp_workspace_enabled' => (bool) env('SHOP_OWNER_ERP_WORKSPACE_ENABLED', false),
     'supported_gate_modes' => ['single', 'all_of', 'any_of'],
     'modules' => $modules,
     'routes' => $routes,

@@ -5,7 +5,6 @@ namespace Tests\Unit;
 use App\Models\InventoryItem;
 use App\Models\ShopOwner;
 use App\Models\User;
-use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -159,7 +158,7 @@ class InventoryItemTest extends TestCase
         try {
             $item->decrementStock(2, 'invalid_type', 'Invalid movement', $this->user->id);
             $this->fail('Expected movement insertion to fail.');
-        } catch (QueryException) {
+        } catch (\InvalidArgumentException) {
             $this->assertSame(5, $item->fresh()->available_quantity);
             $this->assertSame(0, $item->stockMovements()->count());
         }

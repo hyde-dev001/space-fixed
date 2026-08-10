@@ -137,6 +137,7 @@ export default function CustomersPage() {
   const itemsPerPage = 10;
 
   const { auth, initialCustomers = [], initialStats } = usePage().props as any;
+  const ownerMode = auth?.erpActor?.ownerMode === true;
   const userRole = String(auth?.user?.role || '').toUpperCase();
   const userRoles = Array.isArray(auth?.user?.roles)
     ? auth.user.roles.map((role: string) => String(role).toUpperCase())
@@ -146,6 +147,7 @@ export default function CustomersPage() {
     : [];
 
   const canAccessStaffModule =
+    ownerMode ||
     userPermissions.includes('access-staff-dashboard') ||
     userPermissions.includes('access-staff-customers') ||
     userRole === 'STAFF' ||

@@ -39,6 +39,14 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        if (app()->environment('production')
+            && (bool) config('shop_modules.owner_erp_workspace_enabled', false)
+            && ! (bool) config('shop_modules.enforcement_enabled', false)) {
+            throw new \RuntimeException(
+                'SHOP_OWNER_ERP_WORKSPACE_ENABLED requires SHOP_MODULE_ENFORCEMENT_ENABLED=true in production.',
+            );
+        }
+
         // In local/debug mode, exclude our development-only finance public endpoints
         // from CSRF verification so the front-end can POST without a session token.
         if (app()->environment('local') || config('app.debug')) {

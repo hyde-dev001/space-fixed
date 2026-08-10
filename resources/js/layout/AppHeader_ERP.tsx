@@ -4,11 +4,16 @@ import { useSidebar } from "../context/SidebarContext";
 import { ThemeToggleButton } from "../components/common/ThemeToggleButton";
 import UserDropdown from "../components/header/UserDropdown";
 import SuperAdminDropdown from "../components/header/SuperAdminDropdown";
+import ShopOwnerDropdown from "../components/header/ShopOwnerDropdown";
 import NotificationBell from "../components/common/NotificationBell";
+import type { ErpActor, ErpUrls } from "../types/erp";
 
 const AppHeader_ERP: React.FC = () => {
   const page = usePage();
   const { auth } = page.props as any;
+  const erpActor = auth?.erpActor as ErpActor | undefined;
+  const erpUrls = (page.props as any).erpUrls as Partial<ErpUrls> | undefined;
+  const ownerMode = erpActor?.type === "shop_owner" && erpActor.ownerMode === true;
   const [isApplicationMenuOpen, setApplicationMenuOpen] = useState(false);
 
   const { isMobileOpen, toggleSidebar, toggleMobileSidebar } = useSidebar();
@@ -22,7 +27,11 @@ const AppHeader_ERP: React.FC = () => {
   const isRepairerRole = userRole === 'REPAIRER' || userRoles.includes('REPAIRER');
   const isStaffRoute = String(page.url || '').includes('/erp/staff/');
   const isStaffScopedNotifications = isRepairerRole || isStaffRole || isStaffRoute;
-  const notificationBasePath = isStaffScopedNotifications ? '/api/staff/notifications' : '/api/hr/notifications';
+  const notificationBasePath = ownerMode
+    ? '/api/shop-owner/notifications'
+    : isStaffScopedNotifications
+      ? '/api/staff/notifications'
+      : '/api/hr/notifications';
 
   const handleToggle = () => {
     if (window.innerWidth >= 1024) {
@@ -170,13 +179,37 @@ const AppHeader_ERP: React.FC = () => {
         >
           {/* Right Side Actions */}
           <div className="flex items-center gap-2 2xsm:gap-3">
+            {ownerMode && erpActor && (
+              <div className="hidden items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 dark:border-blue-500/20 dark:bg-blue-500/10 sm:flex">
+                <span className="max-w-40 truncate text-sm font-semibold text-gray-800 dark:text-white">
+                  {erpActor.name}
+                </span>
+                <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[11px] font-semibold text-white">
+                  Owner mode
+                </span>
+              </div>
+            )}
+            {ownerMode && erpUrls?.portal && (
+              <Link
+                href={erpUrls.portal}
+                className="hidden min-h-11 items-center rounded-lg px-3 text-sm font-semibold text-gray-600 transition hover:bg-gray-100 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-blue-200 lg:inline-flex"
+              >
+                Back to Shop Owner Portal
+              </Link>
+            )}
             <NotificationBell 
               basePath={notificationBasePath}
               iconSize={24}
             />
             <ThemeToggleButton />
           </div>
-          {auth?.super_admin ? <SuperAdminDropdown /> : auth?.user ? <UserDropdown /> : null}
+          {ownerMode ? (
+            <ShopOwnerDropdown actor={erpActor} urls={erpUrls} />
+          ) : auth?.super_admin ? (
+            <SuperAdminDropdown />
+          ) : auth?.user ? (
+            <UserDropdown />
+          ) : null}
         </div>
       </div>
     </header>

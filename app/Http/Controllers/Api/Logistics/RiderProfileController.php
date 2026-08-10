@@ -7,6 +7,7 @@ use App\Models\Logistics\RiderProfile;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\Logistics\RiderProfileSyncService;
+use App\Support\Erp\ErpActorContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -18,7 +19,10 @@ class RiderProfileController extends Controller
     public function index(): JsonResponse
     {
         $shop = $this->authorizedShop('manage-logistics-riders');
-        app(RiderProfileSyncService::class)->syncShop((int) $shop->id);
+        $context = request()->attributes->get('erp.actor_context');
+        if (! ($context instanceof ErpActorContext && $context->isOwnerMode())) {
+            app(RiderProfileSyncService::class)->syncShop((int) $shop->id);
+        }
 
         return response()->json([
             'riders' => RiderProfile::query()

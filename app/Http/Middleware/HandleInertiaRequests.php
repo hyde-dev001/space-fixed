@@ -5,15 +5,22 @@ namespace App\Http\Middleware;
 use App\Models\CartItem;
 use App\Models\ConversationMessage;
 use App\Models\Notification;
+use App\Models\ShopOwner;
+use App\Models\User;
+use App\Services\ErpRouteCatalog;
 use App\Services\ShopModuleAccessService;
+use App\Support\Erp\ErpActorContext;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Route;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Route as RouteFacade;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
 {
     public function __construct(
         private readonly ShopModuleAccessService $shopModuleAccess,
+        private readonly ErpRouteCatalog $erpRouteCatalog,
     ) {}
 
     /**
@@ -44,11 +51,13 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        $erpContext = $request->attributes->get('erp.actor_context');
+        $erpContext = $erpContext instanceof ErpActorContext ? $erpContext : null;
         $user = Auth::guard('user')->user();
         $isCustomer = $user && empty($user->shop_owner_id);
-        $internalShopOwner = null;
+        $internalShopOwner = $erpContext?->tenantOwner();
 
-        if (! Auth::guard('super_admin')->check()) {
+        if ($internalShopOwner === null && ! Auth::guard('super_admin')->check()) {
             if (Auth::guard('shop_owner')->check()) {
                 $internalShopOwner = Auth::guard('shop_owner')->user();
             } elseif ($user && ! $isCustomer) {
@@ -58,6 +67,21 @@ class HandleInertiaRequests extends Middleware
                 }
             }
         }
+
+        $ownerMode = $erpContext?->isOwnerMode() ?? Auth::guard('shop_owner')->check();
+        $moduleEnforcementEnabled = (bool) config('shop_modules.enforcement_enabled', false);
+        $moduleStatesResolved = false;
+        $moduleStatesCache = [];
+        $moduleStates = function () use (&$moduleStatesResolved, &$moduleStatesCache, $internalShopOwner): array {
+            if (! $moduleStatesResolved) {
+                $moduleStatesCache = $internalShopOwner instanceof ShopOwner
+                    ? $this->shopModuleAccess->statesFor($internalShopOwner)
+                    : [];
+                $moduleStatesResolved = true;
+            }
+
+            return $moduleStatesCache;
+        };
 
         $orderStatusCount = 0;
         $repairStatusCount = 0;
@@ -116,6 +140,8 @@ class HandleInertiaRequests extends Middleware
                 ->sum('quantity');
         }
 
+        $permissions = $this->sharedPermissions($erpContext, $user);
+
         return [
             ...parent::share($request),
             // CSRF token
@@ -125,6 +151,15 @@ class HandleInertiaRequests extends Middleware
             'userIconCount' => $orderStatusCount + $repairStatusCount,
             'chatIconCount' => $chatIconCount,
             'cartIconCount' => $cartIconCount,
+            'ownerMode' => $ownerMode,
+            'moduleStates' => $moduleStates,
+            'shopModuleEnforcementEnabled' => $moduleEnforcementEnabled,
+            'erpCapabilities' => $this->erpCapabilities(
+                context: $erpContext,
+                tenantOwner: $internalShopOwner,
+                enforceState: $moduleEnforcementEnabled,
+            ),
+            'erpUrls' => $this->erpUrls($ownerMode),
 
             // Share session flash data
             'success' => fn() => $request->session()->get('success'),
@@ -194,19 +229,225 @@ class HandleInertiaRequests extends Middleware
                     ] : null,
                 ] : null,
 
+                'erpActor' => $erpContext === null ? null : $this->erpActor($erpContext),
+
+                'shopModuleEnforcementEnabled' => $moduleEnforcementEnabled,
+
                 // Share permissions for all guards
-                'permissions' => Auth::guard('user')->check()
-                    ? Auth::guard('user')->user()->getAllPermissions()->pluck('name')->toArray()
-                    : (Auth::guard('shop_owner')->check()
-                        ? ['*'] // Shop owner has full access
-                        : (Auth::guard('super_admin')->check()
-                            ? ['*'] // Super admin has full access
-                            : [])),
+                'permissions' => $permissions,
 
                 ...($internalShopOwner ? [
-                    'shopModules' => fn (): array => $this->shopModuleAccess->statesFor($internalShopOwner),
+                    'shopModules' => $moduleStates,
                 ] : []),
             ],
         ];
+    }
+
+    /**
+     * @return array{type: string, id: int, name: string, guard: string, ownerMode: bool, tenantOwnerId: int}
+     */
+    private function erpActor(ErpActorContext $context): array
+    {
+        $actor = $context->actor();
+        $name = $context->isOwnerMode() && $context->ownerActor() instanceof ShopOwner
+            ? (string) $context->ownerActor()->business_name
+            : ($context->employeeActor()?->name ?? trim((string) ($actor->first_name ?? '').' '.(string) ($actor->last_name ?? '')));
+
+        return [
+            'type' => $context->isOwnerMode() ? 'shop_owner' : 'employee',
+            'id' => (int) $actor->getAuthIdentifier(),
+            'name' => $name,
+            'guard' => $context->guard(),
+            'ownerMode' => $context->isOwnerMode(),
+            'tenantOwnerId' => (int) $context->tenantOwner()->getKey(),
+        ];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function sharedPermissions(?ErpActorContext $context, ?User $user): array
+    {
+        if ($context?->isOwnerMode()) {
+            return [];
+        }
+
+        if ($context !== null && $context->employeeActor() instanceof User) {
+            return $context->employeeActor()->getAllPermissions()->pluck('name')->toArray();
+        }
+
+        if ($user instanceof User) {
+            return $user->getAllPermissions()->pluck('name')->toArray();
+        }
+
+        return Auth::guard('super_admin')->check() ? ['*'] : [];
+    }
+
+    /**
+     * @return array<string, array{allowed: bool, method: string, routeName: string, url: string|null, reason: string|null}>
+     */
+    private function erpCapabilities(
+        ?ErpActorContext $context,
+        ?ShopOwner $tenantOwner,
+        bool $enforceState,
+    ): array {
+        if ($context === null || ! $tenantOwner instanceof ShopOwner) {
+            return [];
+        }
+
+        $capabilities = [];
+        $moduleStateLoaded = false;
+
+        foreach ($this->erpRouteCatalog->all() as $routeName => $entry) {
+            if (! is_array($entry) || ! in_array($entry['classification'] ?? null, ['core', 'module'], true)) {
+                continue;
+            }
+
+            $audience = $entry['audience'] ?? null;
+            if ($context->isOwnerMode()) {
+                if ($audience === 'user') {
+                    foreach ($entry['methods'] ?? [] as $method) {
+                        $exposure = $this->erpRouteCatalog->ownerExposure((string) $method, (string) $routeName);
+                        if ($exposure === null) {
+                            continue;
+                        }
+
+                        $ownerEntry = $this->erpRouteCatalog->entry($exposure['route_name']);
+                        if (($ownerEntry['owner_access'] ?? null) !== 'allowed') {
+                            continue;
+                        }
+
+                        $this->addErpCapability(
+                            capabilities: $capabilities,
+                            key: $this->erpRouteCatalog->canonicalClientKey((string) $method, (string) $routeName),
+                            method: (string) $method,
+                            routeName: $exposure['route_name'],
+                            entry: $ownerEntry,
+                            tenantOwner: $tenantOwner,
+                            enforceState: $enforceState,
+                            moduleStateLoaded: $moduleStateLoaded,
+                        );
+                    }
+
+                    continue;
+                }
+
+                if ($audience !== 'shop_owner' || ($entry['owner_access'] ?? null) !== 'allowed'
+                    || is_string($entry['paired_route'] ?? null)) {
+                    continue;
+                }
+            } elseif ($audience !== 'user') {
+                continue;
+            }
+
+            foreach ($entry['methods'] ?? [] as $method) {
+                $this->addErpCapability(
+                    capabilities: $capabilities,
+                    key: $this->erpRouteCatalog->canonicalClientKey((string) $method, (string) $routeName),
+                    method: (string) $method,
+                    routeName: (string) $routeName,
+                    entry: $entry,
+                    tenantOwner: $tenantOwner,
+                    enforceState: $enforceState,
+                    moduleStateLoaded: $moduleStateLoaded,
+                );
+            }
+        }
+
+        return $capabilities;
+    }
+
+    /**
+     * @param  array<string, array{allowed: bool, method: string, routeName: string, url: string|null, reason: string|null}>  $capabilities
+     * @param  array<string, mixed>  $entry
+     */
+    private function addErpCapability(
+        array &$capabilities,
+        string $key,
+        string $method,
+        string $routeName,
+        array $entry,
+        ShopOwner $tenantOwner,
+        bool $enforceState,
+        bool &$moduleStateLoaded,
+    ): void {
+        $decision = null;
+        if (($entry['classification'] ?? null) === 'module') {
+            if ($enforceState && ! $moduleStateLoaded) {
+                $tenantOwner->loadMissing('modules');
+                $moduleStateLoaded = true;
+            }
+
+            $mode = is_string($entry['mode'] ?? null) ? $entry['mode'] : '';
+            $moduleKeys = is_array($entry['module_keys'] ?? null) ? $entry['module_keys'] : [];
+            $decision = $this->shopModuleAccess->decideGate(
+                owner: $tenantOwner,
+                mode: $mode,
+                moduleKeys: array_values(array_map('strval', $moduleKeys)),
+                enforceState: $enforceState,
+            );
+        }
+
+        $allowed = $decision?->allowed ?? true;
+        $url = $this->routeUrl($routeName);
+        $capabilities[$key] = [
+            'allowed' => $allowed,
+            'method' => strtoupper($method),
+            'routeName' => $routeName,
+            'url' => $url,
+            'reason' => $allowed ? null : ($decision?->code ?? 'ERP_ROUTE_NOT_ALLOWED'),
+        ];
+    }
+
+    private function routeUrl(string $routeName): ?string
+    {
+        $route = RouteFacade::getRoutes()->getByName($routeName);
+        if (! $route instanceof Route) {
+            return null;
+        }
+
+        $parameters = [];
+        foreach ($route->parameterNames() as $parameterName) {
+            $parameters[$parameterName] = '__ERP_PARAM_'.$parameterName.'__';
+        }
+
+        return route($routeName, $parameters);
+    }
+
+    /**
+     * @return array{portal: string|null, settings: string|null, workspace: string|null, notifications: string|null, profile: string|null, logout: string|null, manageModules: string|null}
+     */
+    private function erpUrls(bool $ownerMode): array
+    {
+        if (! $ownerMode) {
+            return [
+                'portal' => null,
+                'settings' => null,
+                'workspace' => null,
+                'notifications' => null,
+                'profile' => null,
+                'logout' => null,
+                'manageModules' => null,
+            ];
+        }
+
+        $settings = $this->namedRouteUrl('shop-owner.settings');
+
+        return [
+            'portal' => $this->namedRouteUrl('shop-owner.dashboard'),
+            'settings' => $settings,
+            'workspace' => (bool) config('shop_modules.owner_erp_workspace_enabled', false)
+                ? $this->namedRouteUrl('shop-owner.erp.workspace')
+                : null,
+            'notifications' => $this->namedRouteUrl('shop-owner.notifications.index'),
+            'profile' => $this->namedRouteUrl('shop-owner.shop-profile'),
+            'logout' => $this->namedRouteUrl('shop-owner.logout'),
+            'manageModules' => $settings,
+        ];
+    }
+
+    private function namedRouteUrl(string $routeName): ?string
+    {
+        return RouteFacade::has($routeName) ? route($routeName) : null;
     }
 }

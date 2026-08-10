@@ -5,6 +5,7 @@ import type { ApexOptions } from "apexcharts";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import type { ComponentType } from "react";
 import axios from "axios";
+import { erpUrl } from "@/utils/erpCapabilities";
 
 type MetricColor = "success" | "warning" | "info" | "error";
 type ChangeType = "increase" | "decrease";
@@ -121,8 +122,8 @@ interface InteractionItem {
 }
 
 export default function CRMDashboard() {
-  const { initialStats, initialEngagement, initialInteractions } =
-    usePage<{ initialStats: DashboardStats; initialEngagement: EngagementItem[]; initialInteractions: InteractionItem[] }>().props;
+  const { initialStats, initialEngagement, initialInteractions, auth, erpCapabilities } = usePage().props as any;
+  const ownerMode = auth?.erpActor?.ownerMode === true;
 
   const defaultStats: DashboardStats = { activeCustomers: 0, openConversations: 0, pendingReviews: 0, averageRating: 0 };
 
@@ -135,7 +136,12 @@ export default function CRMDashboard() {
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      const { data } = await axios.get("/api/crm/dashboard-stats");
+      const dashboardUrl = erpUrl(erpCapabilities, "GET:crm.api.dashboard-stats")
+        ?? (ownerMode ? null : "/api/crm/dashboard-stats");
+
+      if (!dashboardUrl) return;
+
+      const { data } = await axios.get(dashboardUrl);
       setStats({
         activeCustomers:   data.active_customers   ?? 0,
         openConversations: data.open_conversations ?? 0,
@@ -150,7 +156,7 @@ export default function CRMDashboard() {
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [erpCapabilities, ownerMode]);
   const crmChartOptions: ApexOptions = {
     legend: { show: false },
     colors: ["#465FFF"],

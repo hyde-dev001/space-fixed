@@ -4,6 +4,15 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Http\Request;
+use Illuminate\Auth\AuthenticationException;
+use App\Http\Middleware\Authenticate;
+use App\Http\Middleware\EnsureErpAudience;
+use App\Http\Middleware\EnsureOwnerErpWorkspaceEnabled;
+use App\Http\Middleware\ResolveErpActorContext;
+use App\Http\Middleware\EnsureShopModuleEnabled;
+use App\Support\Erp\ErpAccessResponder;
+use App\Support\Erp\ErpActorContext;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -32,6 +41,33 @@ return Application::configure(basePath: dirname(__DIR__))
             Route::middleware('api')
                 ->group(base_path('routes/shop-owner-api.php'));
 
+            Route::middleware('web')
+                ->group(base_path('routes/shop-owner-erp.php'));
+
+            Route::middleware('web')
+                ->group(base_path('routes/shop-owner-erp-api.php'));
+
+            $isErpRoute = static function (string $routeName): bool {
+                foreach ([
+                    'api.manager.',
+                    'crm.',
+                    'erp.',
+                    'finance.',
+                    'hr.',
+                    'inventory.',
+                    'procurement.',
+                    'staff.',
+                    'shop-owner.erp.',
+                    'shop_owner.erp.',
+                ] as $prefix) {
+                    if (str_starts_with($routeName, $prefix)) {
+                        return true;
+                    }
+                }
+
+                return false;
+            };
+
             foreach (Route::getRoutes() as $route) {
                 $routeName = $route->getName();
                 $routeCatalog = config('shop_modules.routes', []);
@@ -39,12 +75,22 @@ return Application::configure(basePath: dirname(__DIR__))
                     ? ($routeCatalog[$routeName] ?? config("shop_modules.routes.{$routeName}"))
                     : null;
 
+                $actorGuard = is_array($entry)
+                    ? ($entry['actor_guard'] ?? ($entry['actor_guards'][0] ?? null))
+                    : null;
+
                 if (is_array($entry)
-                    && ($entry['classification'] ?? null) === 'module'
-                    && is_array($entry['actor_guards'] ?? null)
-                    && $entry['actor_guards'] !== []) {
-                    $actorGuard = (string) $entry['actor_guards'][0];
+                    && in_array(($entry['classification'] ?? null), ['core', 'module'], true)
+                    && is_string($actorGuard)
+                    && $actorGuard !== '') {
                     $declaredMiddleware = $route->middleware();
+                    $isOperationalErpRoute = is_string($routeName) && $isErpRoute($routeName);
+
+                    if ($isOperationalErpRoute
+                        && ! in_array(EnsureErpAudience::class, $declaredMiddleware, true)) {
+                        $route->middleware(EnsureErpAudience::class);
+                    }
+
                     $hasActorAuthentication = collect($declaredMiddleware)
                         ->contains(static fn (string $middleware): bool => str_contains($middleware, 'Authenticate:'.$actorGuard)
                             || $middleware === 'auth:'.$actorGuard);
@@ -53,13 +99,35 @@ return Application::configure(basePath: dirname(__DIR__))
                         $route->middleware('auth:'.$actorGuard);
                     }
 
-                    if (! in_array('shop.module', $route->middleware(), true)) {
+                    if ($isOperationalErpRoute
+                        && ! in_array(ResolveErpActorContext::class, $route->middleware(), true)) {
+                        $route->middleware(ResolveErpActorContext::class);
+                    }
+
+                    if (($entry['classification'] ?? null) === 'module'
+                        && ! in_array('shop.module', $route->middleware(), true)) {
                         $route->middleware('shop.module');
                     }
                 }
             }
         }
     )
+    ->withScopedSingletons([
+        ErpActorContext::class => static function (): ErpActorContext {
+            $context = app('request')->attributes->get('erp.actor_context');
+
+            if (! $context instanceof ErpActorContext) {
+                throw new \LogicException('An ERP actor context has not been resolved for this request.');
+            }
+
+            return $context;
+        },
+    ])
+    ->registered(function (Application $app): void {
+        $app->rebinding('request', static function (Application $app): void {
+            $app->forgetInstance(ErpActorContext::class);
+        });
+    })
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->web(append: [
             \App\Http\Middleware\HandleInertiaRequests::class,
@@ -95,8 +163,26 @@ return Application::configure(basePath: dirname(__DIR__))
             'check.registration.type' => \App\Http\Middleware\CheckRegistrationType::class,
             'has.active.retail.premium' => \App\Http\Middleware\HasActiveRetailPremium::class,
             'shop.module' => \App\Http\Middleware\EnsureShopModuleEnabled::class,
+            'auth' => Authenticate::class,
+            'erp.audience' => EnsureErpAudience::class,
+            'erp.actor' => ResolveErpActorContext::class,
+        ]);
+        $middleware->priority([
+            EnsureOwnerErpWorkspaceEnabled::class,
+            EnsureErpAudience::class,
+            Authenticate::class,
+            ResolveErpActorContext::class,
+            EnsureShopModuleEnabled::class,
+            \Illuminate\Routing\Middleware\SubstituteBindings::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        $exceptions->render(function (AuthenticationException $exception, Request $request) {
+            $responder = app(ErpAccessResponder::class);
+            if (! $responder->isOwnerErpRequest($request)) {
+                return null;
+            }
+
+            return $responder->deny($request, 'ERP_AUTH_REQUIRED', [], null, 401);
+        });
     })->create();

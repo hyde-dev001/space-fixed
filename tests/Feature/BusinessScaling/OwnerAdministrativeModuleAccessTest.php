@@ -25,7 +25,7 @@ final class OwnerAdministrativeModuleAccessTest extends TestCase
                 continue;
             }
 
-            $this->assertSame(['shop_owner'], $entry['actor_guards'], $routeName);
+            $this->assertSame('shop_owner', $entry['actor_guard'], $routeName);
             $route = Route::getRoutes()->getByName($routeName);
             $this->assertNotNull($route, $routeName);
             $middleware = $route->gatherMiddleware();
@@ -51,11 +51,11 @@ final class OwnerAdministrativeModuleAccessTest extends TestCase
                 continue;
             }
 
-            $this->assertSame(['user'], $entry['actor_guards'], $routeName);
+            $this->assertSame('user', $entry['actor_guard'], $routeName);
         }
 
         $routes = config('shop_modules.routes', []);
-        $this->assertNotEmpty($routes['staff.attendance.checkin']['actor_guards'] ?? null);
+        $this->assertSame('user', $routes['staff.attendance.checkin']['actor_guard'] ?? null);
     }
 
     public function test_business_owner_can_open_enabled_employee_module_pages_without_an_employee_session(): void
@@ -67,7 +67,7 @@ final class OwnerAdministrativeModuleAccessTest extends TestCase
             'business_type' => 'both',
         ]);
 
-        foreach (['hr_employees', 'finance', 'inventory', 'procurement', 'crm', 'logistics'] as $moduleKey) {
+        foreach (['retail_operations', 'repair_operations', 'hr_employees', 'finance', 'inventory', 'procurement', 'crm', 'logistics'] as $moduleKey) {
             ShopOwnerModule::factory()->create([
                 'shop_owner_id' => $owner->id,
                 'module_key' => $moduleKey,
@@ -86,6 +86,10 @@ final class OwnerAdministrativeModuleAccessTest extends TestCase
             'shop-owner.purchase-request-approval',
             'shop-owner.customers',
             'shop-owner.logistics.shipments',
+            'shop-owner.job-orders-retail',
+            'shop-owner.product-uploder',
+            'shop-owner.job-orders-repair',
+            'shop-owner.upload-services',
         ] as $routeName) {
             $this->get(route($routeName))->assertOk();
         }

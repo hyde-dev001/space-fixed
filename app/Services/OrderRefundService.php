@@ -329,33 +329,14 @@ class OrderRefundService
             reason: 'requested_by_customer',
         );
 
-        if (
-            !($gatewayResult['success'] ?? false)
-            && $this->shouldRetryWithCapturedAmount($gatewayResult, $amountInCentavos)
-        ) {
-            $capturedAmountInCentavos = $this->paymongoRefundService->getPaymentAmountInCentavos($secretKey, $paymentId);
-
-            if ($capturedAmountInCentavos !== null && $capturedAmountInCentavos > $amountInCentavos) {
-                Log::info('Retrying refund payout with captured amount due to PayMongo same-day partial restriction', [
-                    'refund_id' => (int) ($refund->id ?? 0),
-                    'order_id' => (int) ($order->id ?? 0),
-                    'requested_amount_in_centavos' => $amountInCentavos,
-                    'captured_amount_in_centavos' => $capturedAmountInCentavos,
-                ]);
-
-                $gatewayResult = $this->paymongoRefundService->createRefund(
-                    secretKey: $secretKey,
-                    paymentId: $paymentId,
-                    amountInCentavos: $capturedAmountInCentavos,
-                    reason: 'requested_by_customer',
-                );
-
-                if ($gatewayResult['success'] ?? false) {
-                    $amount = round($capturedAmountInCentavos / 100, 2);
-                    $refund->update(['amount' => $amount]);
-                }
-            }
-        }
+        $gatewayResult = $this->retryGatewayRefundWithCapturedAmount(
+            gatewayResult: $gatewayResult,
+            secretKey: $secretKey,
+            paymentId: $paymentId,
+            amountInCentavos: $amountInCentavos,
+            refund: $refund,
+            order: $order,
+        );
 
         if (!($gatewayResult['success'] ?? false)) {
             $refund->update([
@@ -1395,6 +1376,17 @@ class OrderRefundService
             reason: 'requested_by_customer',
         );
 
+        $gatewayResult = $this->retryGatewayRefundWithCapturedAmount(
+            gatewayResult: $gatewayResult,
+            secretKey: $secretKey,
+            paymentId: $paymentId,
+            amountInCentavos: $amountInCentavos,
+            refund: $refund,
+            order: $order,
+            allowCapturedAmount: (float) ($order->shipping_fee ?? 0) <= 0
+                || (string) ($refund->reason_code ?? '') === 'delivery_attempts_exhausted',
+        );
+
         if (!($gatewayResult['success'] ?? false)) {
             $refund->update([
                 'status' => 'failed',
@@ -1470,6 +1462,47 @@ class OrderRefundService
 
         return str_contains($message, 'cannot partially refund')
             && str_contains($message, 'same day');
+    }
+
+    private function retryGatewayRefundWithCapturedAmount(
+        array $gatewayResult,
+        string $secretKey,
+        string $paymentId,
+        int $amountInCentavos,
+        OrderRefund $refund,
+        Order $order,
+        bool $allowCapturedAmount = true,
+    ): array {
+        if (! $allowCapturedAmount
+            || ($gatewayResult['success'] ?? false)
+            || ! $this->shouldRetryWithCapturedAmount($gatewayResult, $amountInCentavos)) {
+            return $gatewayResult;
+        }
+
+        $capturedAmountInCentavos = $this->paymongoRefundService->getPaymentAmountInCentavos($secretKey, $paymentId);
+        if ($capturedAmountInCentavos === null || $capturedAmountInCentavos <= $amountInCentavos) {
+            return $gatewayResult;
+        }
+
+        Log::info('Retrying refund payout with captured amount due to PayMongo same-day partial restriction', [
+            'refund_id' => (int) ($refund->id ?? 0),
+            'order_id' => (int) ($order->id ?? 0),
+            'requested_amount_in_centavos' => $amountInCentavos,
+            'captured_amount_in_centavos' => $capturedAmountInCentavos,
+        ]);
+
+        $gatewayResult = $this->paymongoRefundService->createRefund(
+            secretKey: $secretKey,
+            paymentId: $paymentId,
+            amountInCentavos: $capturedAmountInCentavos,
+            reason: 'requested_by_customer',
+        );
+
+        if ($gatewayResult['success'] ?? false) {
+            $refund->update(['amount' => round($capturedAmountInCentavos / 100, 2)]);
+        }
+
+        return $gatewayResult;
     }
 
     private function resolveLineBasedRefundAmount(OrderRefund $refund): float

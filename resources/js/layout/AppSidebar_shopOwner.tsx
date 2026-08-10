@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, usePage } from "@inertiajs/react";
 import { route } from "ziggy-js";
 
@@ -390,6 +390,30 @@ const AppSidebar_shopOwner: React.FC = () => {
   const shopModules = auth?.shopModules;
   const moduleEnforcementEnabled = auth?.shopModuleEnforcementEnabled ?? Boolean(shopModules);
   const isIndividualAccount = shopOwner?.registration_type?.toLowerCase() === "individual";
+  const erpUrls = (props as any)?.erpUrls as { workspace?: string | null } | undefined;
+  const isCompanyAccount = shopOwner?.is_company === true
+    || shopOwner?.registration_type?.toLowerCase() === "company";
+  const ownerWorkspaceUrl = isCompanyAccount && typeof erpUrls?.workspace === "string"
+    ? erpUrls.workspace
+    : null;
+  const mainMenuItems = useMemo<NavItem[]>(() => ownerWorkspaceUrl
+    ? [
+        navItems[0],
+        {
+          icon: (
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="7" height="7" rx="1" />
+              <rect x="14" y="3" width="7" height="7" rx="1" />
+              <rect x="3" y="14" width="7" height="7" rx="1" />
+              <rect x="14" y="14" width="7" height="7" rx="1" />
+            </svg>
+          ),
+          name: "ERP Workspace",
+          path: ownerWorkspaceUrl,
+        },
+        ...navItems.slice(1),
+      ]
+    : navItems, [ownerWorkspaceUrl]);
   const rawBusinessType = shopOwner?.business_type?.toLowerCase();
   // Normalize business type - handle "both (retail & repair)" and "both"
   const businessType = rawBusinessType?.includes('both') ? 'both' : rawBusinessType;
@@ -418,12 +442,8 @@ const AppSidebar_shopOwner: React.FC = () => {
       return false;
     }
 
-    if (subItem.route !== 'shop-owner.repair-reject-approval') {
-      return true;
-    }
-
     if (!shopOwner) {
-      return false;
+      return subItem.route !== 'shop-owner.repair-reject-approval';
     }
 
     const rawSubItemBusinessType = String(shopOwner.business_type || '').toLowerCase();
@@ -431,8 +451,24 @@ const AppSidebar_shopOwner: React.FC = () => {
     const isCompanySubItem = shopOwner.is_company === true || shopOwner.registration_type?.toLowerCase() === 'company';
     const canManageStaffSubItem = shopOwner.can_manage_staff === true;
 
-    return (isCompanySubItem || canManageStaffSubItem)
-      && (subItemBusinessType === 'repair' || subItemBusinessType === 'both');
+    if (subItem.route === 'shop-owner.repair-reject-approval') {
+      return (isCompanySubItem || canManageStaffSubItem)
+        && (subItemBusinessType === 'repair' || subItemBusinessType === 'both');
+    }
+
+    if (subItem.route === 'shop-owner.warranty-queue' || subItem.route === 'shop-owner.upload-stock-materials') {
+      return !isCompanySubItem;
+    }
+
+    if (['shop-owner.job-orders-retail', 'shop-owner.product-uploder', 'shop-owner.point-of-sale'].includes(subItem.route)) {
+      return subItemBusinessType === 'retail' || subItemBusinessType === 'both';
+    }
+
+    if (['shop-owner.job-orders-repair', 'shop-owner.upload-services'].includes(subItem.route)) {
+      return subItemBusinessType === 'repair' || subItemBusinessType === 'both';
+    }
+
+    return true;
   }, [isModuleVisible, shopOwner]);
 
   const isMenuItemVisible = useCallback((menuItem: NavItem) => {
@@ -448,6 +484,14 @@ const AppSidebar_shopOwner: React.FC = () => {
     const itemBusinessType = rawBusinessType?.includes('both') ? 'both' : rawBusinessType;
     const isCompany = shopOwner.is_company === true;
     const canManageStaff = shopOwner.can_manage_staff === true;
+
+    if (menuItem.moduleKey === 'retail_operations') {
+      return itemBusinessType === 'retail' || itemBusinessType === 'both';
+    }
+
+    if (menuItem.moduleKey === 'repair_operations') {
+      return itemBusinessType === 'repair' || itemBusinessType === 'both';
+    }
 
     // DSS Insights - visible to ALL individual accounts (repair, retail, both) AND company accounts
     if (menuItem.route === 'shop-owner.dss-insights') {
@@ -478,8 +522,9 @@ const AppSidebar_shopOwner: React.FC = () => {
       return isCompany || canManageStaff;
     }
 
-    // Operational routes - only visible to individual accounts, NOT business accounts
-    // Business accounts have staff to handle these tasks
+    // Operational pages are available to business owners as well as
+    // employees. Keep the individual-only warranty/material pages hidden
+    // because their routes explicitly reject company registrations.
     const operationalRoutes = [
       'shop-owner.job-orders-retail',
       'shop-owner.job-orders-repair',
@@ -490,12 +535,15 @@ const AppSidebar_shopOwner: React.FC = () => {
     ];
 
     if (menuItem.route && operationalRoutes.includes(menuItem.route)) {
-      // Hide from business accounts - they manage staff who do these tasks
-      if (isCompany || canManageStaff) {
+      const individualOnlyOperationalRoutes = [
+        'shop-owner.warranty-queue',
+        'shop-owner.upload-stock-materials',
+      ];
+
+      if ((isCompany || canManageStaff) && individualOnlyOperationalRoutes.includes(menuItem.route)) {
         return false;
       }
 
-      // For individual accounts, show based on business type
       const retailRoutes = ['shop-owner.job-orders-retail', 'shop-owner.product-uploder'];
       const repairRoutes = ['shop-owner.job-orders-repair', 'shop-owner.warranty-queue', 'shop-owner.upload-services', 'shop-owner.upload-stock-materials'];
 
@@ -577,14 +625,16 @@ const AppSidebar_shopOwner: React.FC = () => {
     let submenuMatched = false;
     let matchedKey: string | null = null;
 
-    ["main", "approval", "product", "customer"].forEach((menuType) => {
+    ["main", "approval", "product", "customer", "business"].forEach((menuType) => {
       const items = menuType === "main"
-        ? navItems
+        ? mainMenuItems
         : menuType === "approval"
           ? approvalWorkflowItems
           : menuType === "product"
             ? productManagementItems
-            : customerManagementItems;
+            : menuType === "customer"
+              ? customerManagementItems
+              : businessModuleItems;
       items.forEach((nav, index) => {
         if (nav.subItems) {
           nav.subItems.forEach((subItem) => {
@@ -602,7 +652,7 @@ const AppSidebar_shopOwner: React.FC = () => {
     if (submenuMatched && matchedKey && openSubmenu !== matchedKey) {
       toggleSubmenu(matchedKey);
     }
-  }, [url, isActive]);
+  }, [url, isActive, mainMenuItems]);
 
   useEffect(() => {
     if (openSubmenu !== null) {
@@ -814,7 +864,7 @@ const AppSidebar_shopOwner: React.FC = () => {
                   <HorizontaLDots className="size-6" />
                 )}
               </h2>
-              {renderMenuItems(navItems, "main")}
+              {renderMenuItems(mainMenuItems, "main")}
             </div>
 
             <div>

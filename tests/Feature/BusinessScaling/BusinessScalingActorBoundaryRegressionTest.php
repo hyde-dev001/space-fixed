@@ -59,28 +59,28 @@ final class BusinessScalingActorBoundaryRegressionTest extends TestCase
     public function test_route_contract_preserves_actor_scope_and_operation_ownership(): void
     {
         $expected = [
-            'shop_owner.products.index' => ['retail_operations', ['shop_owner']],
-            'shop_owner.repair-services.index' => ['repair_operations', ['shop_owner']],
-            'hr.employees.index' => ['hr_employees', ['user']],
-            'hr.payroll.index' => ['hr_employees', ['user']],
-            'hr.documents.index' => ['hr_employees', ['user']],
-            'inventory.products.index' => ['inventory', ['user']],
-            'inventory.items.update' => ['inventory', ['user']],
-            'procurement.purchase-orders.store' => ['procurement', ['user']],
-            'erp.logistics.batches' => ['logistics', ['user']],
+            'shop_owner.products.index' => ['retail_operations', 'shop_owner'],
+            'shop_owner.repair-services.index' => ['repair_operations', 'shop_owner'],
+            'hr.employees.index' => ['hr_employees', 'user'],
+            'hr.payroll.index' => ['hr_employees', 'user'],
+            'hr.documents.index' => ['hr_employees', 'user'],
+            'inventory.products.index' => ['inventory', 'user'],
+            'inventory.items.update' => ['inventory', 'user'],
+            'procurement.purchase-orders.store' => ['procurement', 'user'],
+            'erp.logistics.batches' => ['logistics', 'user'],
         ];
 
-        foreach ($expected as $routeName => [$moduleKey, $actorGuards]) {
+        foreach ($expected as $routeName => [$moduleKey, $actorGuard]) {
             $entry = $this->routeEntry($routeName);
 
             $this->assertIsArray($entry, $routeName);
             $this->assertSame('module', $entry['classification'], $routeName);
             $this->assertSame([$moduleKey], $entry['module_keys'], $routeName);
-            $this->assertSame($actorGuards, $entry['actor_guards'], $routeName);
+            $this->assertSame($actorGuard, $entry['actor_guard'], $routeName);
         }
 
         $this->assertSame('core', $this->routeEntry('shop-owner.settings')['classification']);
-        $this->assertSame(['user'], $this->routeEntry('staff.attendance.checkin')['actor_guards']);
+        $this->assertSame('user', $this->routeEntry('staff.attendance.checkin')['actor_guard']);
         $this->assertSame(['inventory'], $this->routeEntry('inventory.products.index')['module_keys']);
         $this->assertNotContains('retail_operations', $this->routeEntry('inventory.products.index')['module_keys']);
         $this->assertNotContains('repair_operations', $this->routeEntry('inventory.products.index')['module_keys']);

@@ -96,8 +96,11 @@ class NominatimService
                     throw new RuntimeException('Address lookup is busy.', 429);
                 }
 
-                usleep((self::MINIMUM_INTERVAL_MS - ($now - $lastDispatch)) * 1000);
-                $now = now()->getTimestampMs();
+                do {
+                    $remainingMs = self::MINIMUM_INTERVAL_MS - ($now - $lastDispatch);
+                    usleep(max(1, $remainingMs) * 1000);
+                    $now = now()->getTimestampMs();
+                } while ($now - $lastDispatch < self::MINIMUM_INTERVAL_MS);
             }
 
             Cache::forever('nominatim:last-dispatch-ms', $now);

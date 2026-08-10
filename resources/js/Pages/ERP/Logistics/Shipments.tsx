@@ -8,6 +8,8 @@ import ArrivalSummary from './components/ArrivalSummary';
 import RetailOrderSummary from './components/RetailOrderSummary';
 import { riderResolutionInstruction } from './riderDeliveryPresentation';
 import { logisticsApi } from '@/services/logisticsApi';
+import { erpUrl } from '@/utils/erpCapabilities';
+import type { ErpCapabilities } from '@/types/erp';
 import {
   logisticsModuleForSourceType,
   logisticsModuleLabel,
@@ -110,7 +112,7 @@ const toast = (icon: 'success' | 'error' | 'warning', title: string) => Swal.fir
 });
 
 export default function Shipments({ children }: React.PropsWithChildren) {
-  const { shipments, filters, assignableRiders, canAssign, canUpdateStatus, canRecordProof, canApproveProof, riderMode, maxDeliveryAttempts = 2, availableModules = [], showModuleFilter = false, today } = usePage<{
+  const { shipments, filters, assignableRiders, canAssign: serverCanAssign, canUpdateStatus: serverCanUpdateStatus, canRecordProof: serverCanRecordProof, canApproveProof: serverCanApproveProof, riderMode, maxDeliveryAttempts = 2, availableModules = [], showModuleFilter = false, today, auth, erpCapabilities } = usePage<{
     shipments: PaginatedResponse<LogisticsShipment>;
     filters: ShipmentFilters;
     assignableRiders: Array<{ id: number; name: string; phone?: string | null }>;
@@ -123,7 +125,14 @@ export default function Shipments({ children }: React.PropsWithChildren) {
     availableModules?: LogisticsModule[];
     showModuleFilter?: boolean;
     today: string;
+    auth?: { erpActor?: { ownerMode?: boolean } };
+    erpCapabilities?: ErpCapabilities;
   }>().props;
+  const ownerMode = auth?.erpActor?.ownerMode === true;
+  const canAssign = !ownerMode && serverCanAssign;
+  const canUpdateStatus = !ownerMode && serverCanUpdateStatus;
+  const canRecordProof = !ownerMode && serverCanRecordProof;
+  const canApproveProof = !ownerMode && serverCanApproveProof;
   const [expandedShipmentId, setExpandedShipmentId] = useState<number | null>(null);
   const [selectedRiders, setSelectedRiders] = useState<Record<number, string>>({});
   const [deliverySchedules, setDeliverySchedules] = useState<Record<number, { date: string; window: string }>>({});
@@ -145,7 +154,15 @@ export default function Shipments({ children }: React.PropsWithChildren) {
       const purpose = purposeOptions.find(([option]) => option === filters.purpose);
       if (purpose && purpose[2] !== 'all' && purpose[2] !== value) next.purpose = 'all';
     }
-    router.get(riderMode ? '/erp/logistics/deliveries' : '/erp/logistics/shipments', next, {
+    const shipmentsUrl = erpUrl(erpCapabilities, 'GET:erp.logistics.shipments')
+      ?? (ownerMode ? null : '/erp/logistics/shipments');
+    const deliveriesUrl = erpUrl(erpCapabilities, 'GET:erp.logistics.deliveries')
+      ?? (ownerMode ? null : '/erp/logistics/deliveries');
+    const targetUrl = riderMode ? deliveriesUrl : shipmentsUrl;
+
+    if (!targetUrl) return;
+
+    router.get(targetUrl, next, {
       preserveScroll: true,
       preserveState: true,
     });
@@ -163,6 +180,8 @@ export default function Shipments({ children }: React.PropsWithChildren) {
     body?: FormData | Record<string, string>,
     issue = false,
   ) => {
+    if (ownerMode) return false;
+
     setActionError(null);
     try {
       await (typeof target === 'string'
@@ -573,7 +592,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                               && !hasReturnLeg
                               && Boolean(activeAssignment);
                             const returnProof = leg.proofs?.find((proof) => proof.handoff_type === 'receive');
-                            const canReportIssue = riderMode && !isReturnToShop && ['in_transit', 'delivery_attempted'].includes(leg.status);
+                            const canReportIssue = !ownerMode && riderMode && !isReturnToShop && ['in_transit', 'delivery_attempted'].includes(leg.status);
                             const canScheduleLeg = canAssign && !riderMode && !leg.scheduled_delivery_date && leg.delivery_batch_id == null && ['pending', 'assigned'].includes(leg.status);
                             const schedule = deliverySchedules[leg.id] ?? { date: '', window: 'morning' };
                             const issueForm = issueForms[leg.id] ?? { reason_code: '', notes: '' };
@@ -718,7 +737,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                   {showOutcomeChoice && <div role="group" aria-label="Choose delivery outcome" className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-900/40"><p className="mb-2 text-sm font-semibold text-gray-900 dark:text-white">What happened with this delivery?</p><div className="grid gap-2 sm:grid-cols-2"><button type="button" onClick={() => chooseDeliveryOutcome(leg.id, 'proof')} className={`rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${deliveryOutcome === 'proof' ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-300 bg-white text-gray-700 hover:border-blue-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200'}`}>Delivered successfully</button><button type="button" onClick={() => chooseDeliveryOutcome(leg.id, 'issue')} className={`rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${deliveryOutcome === 'issue' ? 'border-amber-600 bg-amber-600 text-white' : 'border-gray-300 bg-white text-gray-700 hover:border-amber-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200'}`}>Couldn't deliver</button></div></div>}
                                   {canSubmitProof && (!showOutcomeChoice || deliveryOutcome === 'proof') && <div className="space-y-3 rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950/30"><div><p className="text-sm font-semibold text-blue-950 dark:text-blue-100">Delivery proof</p><p className="text-xs text-blue-700 dark:text-blue-300">Upload a clear photo showing the successful handoff.</p></div><input type="file" accept="image/jpeg,image/png,image/webp" aria-label="Delivery proof photo" onChange={(event) => setProofFiles({ ...proofFiles, [leg.id]: event.target.files?.[0] ?? null })} className="block w-full text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-2 file:font-semibold file:text-blue-700 dark:text-gray-200 dark:file:bg-gray-800 dark:file:text-blue-300" /><div className="flex flex-wrap gap-2"><button type="button" onClick={() => submitProof(leg.id)} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">Submit proof</button>{proofFiles[leg.id] && <button type="button" onClick={(event) => { setProofFiles({ ...proofFiles, [leg.id]: null }); const input = event.currentTarget.closest('div.space-y-3')?.querySelector<HTMLInputElement>('input[type="file"]'); if (input) input.value = ''; }} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200">Clear photo</button>}</div></div>}
                                   {canSubmitReturnHandoff && <div className="space-y-3 rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950/30"><div><p className="text-sm font-semibold text-blue-950 dark:text-blue-100">Return handoff</p><p className="text-xs text-blue-700 dark:text-blue-300">At the shop, upload a clear photo of the parcel handoff. Staff will confirm physical receipt.</p></div><input type="file" accept="image/jpeg,image/png,image/webp" aria-label="Return handoff photo" onChange={(event) => setProofFiles({ ...proofFiles, [leg.id]: event.target.files?.[0] ?? null })} className="block w-full text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-2 file:font-semibold file:text-blue-700 dark:text-gray-200 dark:file:bg-gray-800 dark:file:text-blue-300" /><button type="button" disabled={!proofFiles[leg.id]} onClick={() => void submitReturnHandoff(leg.id)} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">Confirm return handoff</button></div>}
-                                  {riderMode && isReturnToShop && returnProof?.review_status === 'pending' && <button type="button" onClick={() => void confirmAct(`/api/logistics/legs/${leg.id}/return-proofs/${returnProof.id}/handoff`, 'Confirm return handoff?', 'Confirm that the parcel was handed to shop staff.')} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">Confirm return handoff</button>}
+                                  {!ownerMode && riderMode && isReturnToShop && returnProof?.review_status === 'pending' && <button type="button" onClick={() => void confirmAct(`/api/logistics/legs/${leg.id}/return-proofs/${returnProof.id}/handoff`, 'Confirm return handoff?', 'Confirm that the parcel was handed to shop staff.')} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">Confirm return handoff</button>}
                                   {riderMode && isReturnToShop && returnProof?.review_status === 'rider_confirmed' && <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">Awaiting shop receipt confirmation</p>}
                                   {!riderMode && leg.proofs?.filter((proof) => ['delivery', 'receive'].includes(proof.handoff_type)).map((proof) => (
                                     <div key={proof.id} className="flex items-center gap-2">

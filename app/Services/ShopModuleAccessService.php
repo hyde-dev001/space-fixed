@@ -15,7 +15,7 @@ final class ShopModuleAccessService
         private readonly BusinessAccessControlService $businessAccessControl,
     ) {}
 
-    public function decide(ShopOwner $owner, string $moduleKey): ShopModuleAccessDecision
+    public function decide(ShopOwner $owner, string $moduleKey, bool $enforceState = true): ShopModuleAccessDecision
     {
         $modules = config('shop_modules.modules', []);
         $module = $modules[$moduleKey] ?? null;
@@ -31,6 +31,10 @@ final class ShopModuleAccessService
         $eligibility = $this->eligibilityDecision($owner, $moduleKey, $module);
         if ($eligibility !== null) {
             return $eligibility;
+        }
+
+        if (! $enforceState) {
+            return ShopModuleAccessDecision::allow([$moduleKey]);
         }
 
         $moduleState = $this->findModuleState($owner, $moduleKey);
@@ -56,7 +60,12 @@ final class ShopModuleAccessService
     /**
      * @param  array<int, string>  $moduleKeys
      */
-    public function decideGate(ShopOwner $owner, string $mode, array $moduleKeys): ShopModuleAccessDecision
+    public function decideGate(
+        ShopOwner $owner,
+        string $mode,
+        array $moduleKeys,
+        bool $enforceState = true,
+    ): ShopModuleAccessDecision
     {
         $moduleKeys = array_values(array_unique(array_map('strval', $moduleKeys)));
 
@@ -86,7 +95,7 @@ final class ShopModuleAccessService
         }
 
         $decisions = array_map(
-            fn (string $moduleKey): ShopModuleAccessDecision => $this->decide($owner, $moduleKey),
+            fn (string $moduleKey): ShopModuleAccessDecision => $this->decide($owner, $moduleKey, $enforceState),
             $moduleKeys,
         );
 

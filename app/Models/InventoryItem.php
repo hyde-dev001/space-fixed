@@ -14,6 +14,17 @@ class InventoryItem extends Model
 {
     use HasFactory, SoftDeletes;
 
+    private const VALID_MOVEMENT_TYPES = [
+        'stock_in',
+        'stock_out',
+        'adjustment',
+        'return',
+        'repair_usage',
+        'transfer',
+        'damage',
+        'initial',
+    ];
+
     protected $fillable = [
         'product_id',
         'shop_owner_id',
@@ -204,6 +215,8 @@ class InventoryItem extends Model
      */
     public function incrementStock(int $quantity, string $type = 'stock_in', ?string $notes = null, ?int $userId = null): StockMovement
     {
+        $this->assertValidMovementType($type);
+
         $quantityBefore = $this->available_quantity;
         $this->available_quantity += $quantity;
         $this->save();
@@ -224,6 +237,8 @@ class InventoryItem extends Model
      */
     public function decrementStock(int $quantity, string $type = 'stock_out', ?string $notes = null, ?int $userId = null): StockMovement
     {
+        $this->assertValidMovementType($type);
+
         return DB::transaction(function () use ($quantity, $type, $notes, $userId) {
             $item = self::query()->lockForUpdate()->findOrFail($this->getKey());
 
@@ -253,6 +268,13 @@ class InventoryItem extends Model
 
             return $movement;
         });
+    }
+
+    private function assertValidMovementType(string $type): void
+    {
+        if (! in_array($type, self::VALID_MOVEMENT_TYPES, true)) {
+            throw new \InvalidArgumentException('Invalid stock movement type.');
+        }
     }
 
     /**

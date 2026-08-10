@@ -1,9 +1,10 @@
 import React, { useState } from "react";
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import Swal from "sweetalert2";
 import { useFilteredPagination } from "../../../hooks/useFilteredPagination";
 import { useActivityLogFormatters } from "../../../hooks/useActivityLogFormatters";
+import { erpUrl } from "@/utils/erpCapabilities";
 
 interface ActivityLog {
   id: number;
@@ -175,6 +176,8 @@ const MetricCard: React.FC<MetricData> = ({
 };
 
 export default function ManagerAuditLogs() {
+  const { auth, erpCapabilities } = usePage().props as any;
+  const ownerMode = auth?.erpActor?.ownerMode === true;
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [pagination, setPagination] = useState<PaginationData | null>(null);
@@ -209,7 +212,16 @@ export default function ManagerAuditLogs() {
       if (currentFilters.event) params.append('event', String(currentFilters.event));
       if (currentFilters.subject_type) params.append('subject_type', String(currentFilters.subject_type));
 
-      const response = await fetch(`/api/activity-logs?${params.toString()}`);
+      const logsUrl = erpUrl(erpCapabilities, "GET:api.manager.audit-logs")
+        ?? (ownerMode ? null : "/api/activity-logs");
+
+      if (!logsUrl) {
+        setLogs([]);
+        setPagination(null);
+        return;
+      }
+
+      const response = await fetch(`${logsUrl}?${params.toString()}`);
       if (!response.ok) throw new Error(`HTTP ${response.status}: Failed to fetch logs`);
       
       const data = await response.json();
@@ -678,7 +690,6 @@ export default function ManagerAuditLogs() {
     </AppLayoutERP>
   );
 }
-
 
 
 

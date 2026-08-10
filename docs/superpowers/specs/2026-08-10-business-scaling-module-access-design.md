@@ -2,13 +2,15 @@
 
 **Date:** 2026-08-10
 
-**Status:** Pending written-spec review
+**Status:** Approved; ready for implementation
+
+**Related design:** `2026-08-10-shop-owner-erp-workspace-design.md` is authoritative for owner ERP route exposure, actor selection, tenant isolation, actor persistence, frontend capabilities, and owner-operation auditing.
 
 ## Goal
 
 Allow an Individual shop owner to request a Business account upgrade and, when eligible, expand the shop from Retail or Repair capability to Both. After Super Admin approval, the shop owner can control which eligible modules are open for the shop from Shop Settings.
 
-Business shop owners can open every page inside an enabled module. Employees remain subject to their existing role and permission assignments, while the shop-level module switch acts as the master gate for everyone in that shop.
+Business shop owners can open explicitly owner-capable operations inside enabled modules through the owner ERP workspace. Employees remain subject to their existing role and permission assignments, while the shop-level module switch acts as the master gate for everyone in that shop.
 
 ## Current context
 
@@ -87,11 +89,13 @@ The shop-level switch is not an employee permission editor. Employee access rema
 
 Existing product and repair-service records remain attached to the same shop_owner_id throughout an upgrade. After Super Admin approval, authorized Inventory employees can access existing products when Retail Operations or Inventory is enabled, and authorized Repair employees can access existing repair services when Repair Operations is enabled. No re-upload or data migration is required. Pending or rejected upgrades do not grant new employee access.
 
-### Owner page access
+### Owner ERP access
 
-A Business shop owner can open every page belonging to an enabled module, including employee and HR pages. Owner actions execute as the shop owner against the selected shop/employee context; they do not create an employee session or impersonate an employee.
+A Business shop owner can open only the page and API operations explicitly classified as owner-capable in the Shop Owner ERP Workspace route catalog. Owner routes use an unambiguous owner namespace while reusing the operational controllers, services, payloads, and React components. Owner actions execute as the shop owner against the authenticated shop context; they do not create an employee session or impersonate an employee.
 
-Employee self-service actions remain identity-sensitive. For example, an employee check-in or personal leave submission must continue to use the authenticated employee's user identity. Owner-facing administrative actions should be used for owner changes to employee records, attendance, leave, payroll, documents, and permissions.
+The catalog separates owner policy from current code exposure. Each route declares `owner_access = allowed|denied`, `owner_denial_reason` when denied, descriptive `domain_rule`, review-only `risk_tier`, and an independent `actor_persistence` strategy. The generated matrix derives whether the owner pair is currently loaded; an allowed future policy does not mean the route is already exposed.
+
+Employee self-service actions remain identity-sensitive. For example, an employee check-in or personal leave submission must continue to use the authenticated employee's user identity. Owner-facing administrative actions may be enabled only when the route matrix defines the module gate, domain authorization, tenant scope, and durable owner attribution for the action.
 
 ## Proposed architecture
 
@@ -133,13 +137,15 @@ Use a single module catalog as the source of truth for:
 - navigation grouping;
 - route/API middleware key.
 
+The catalog is the only machine policy source. The generated owner ERP matrix is the only route-by-route review artifact; other architecture documents link to it and do not maintain duplicate route lists. Descriptive domain-rule and risk metadata guide review but never implement thresholds, workflow, or record authorization.
+
 Add a focused module-access service that:
 
-- resolves the current shop owner from the shop_owner or user guard;
+- evaluates eligibility and persisted state for the tenant owner supplied by the request-scoped ERP actor boundary;
 - checks account and business eligibility using the existing BusinessAccessControlService;
 - checks the persisted shop-level enabled state;
 - returns the reason for denied access;
-- resolves owner versus employee actor context.
+- does not select a guard or duplicate owner-versus-employee actor resolution.
 
 Keep account/business eligibility and module-enabled state separate. A module cannot be enabled when the account is not entitled to it.
 
@@ -149,7 +155,13 @@ Add module-aware middleware or an equivalent route guard to the existing owner a
 
 Owner-authenticated requests must be supported explicitly for pages and actions intended for the shop owner. Employee-authenticated requests must retain the current Spatie permission checks. Shared controllers/services may resolve a shop context, but must not treat a ShopOwner model as a User model or grant employee identity actions implicitly.
 
+Owner ERP routes are always registered so Laravel route caching is stable. `SHOP_OWNER_ERP_WORKSPACE_ENABLED` is enforced by fail-closed middleware that returns safe not-found behavior and hides navigation while disabled. Cached deployments refresh configuration after a flag change; they do not rebuild route cache merely to expose or hide the workspace.
+
+Owner-capable Form Requests preserve validation and payload compatibility but replace employee-only guard assumptions in `authorize()`, `$this->user()`, route access, and custom validation callbacks with the request-scoped ERP actor context or canonical domain policy. Missing owner authentication produces JSON `ERP_AUTH_REQUIRED` or the shop-owner login redirect rather than the generic employee flow.
+
 Every employee/module query and mutation must remain scoped to the authenticated shop_owner_id. A valid owner or employee from one shop must not read or change another shop's data.
+
+Owner endpoints derive tenant authority from `ErpActorContext::tenantOwner()` and never from a client-supplied shop or owner ID. A legacy field is ignored for authorization and normalized or rejected against the context tenant. Owner capability means route-level availability only; record state, tenant ownership, maker/checker, thresholds, and other domain policies remain server-authoritative.
 
 Disabled or ineligible modules should return:
 
@@ -177,6 +189,14 @@ Update shared auth/page props and the shop-owner and ERP sidebars to use the sam
 
 After a successful toggle, the UI should refresh its module state before enabling navigation. The backend remains authoritative for all route access.
 
+### Owner workspace rollout
+
+`SHOP_MODULE_ENFORCEMENT_ENABLED` and `SHOP_OWNER_ERP_WORKSPACE_ENABLED` remain separate. Production must enable module enforcement before owner workspace access. Owner routes are always cache-stably registered, but workspace middleware denies them while the workspace flag is false.
+
+Owner mutations are activated in bounded, separately reviewed domain waves ordered by generated risk tier: `normal`, then `sensitive`, then `financial`. A mutation is not exposed until domain policy, Form Request authorization, tenant isolation, actor persistence, explicit owner-operation audit, idempotency, external-effect behavior, and frontend endpoint coverage pass.
+
+Production flag changes refresh cached configuration with `php artisan config:cache`. Enabling, disabling, or rolling back the workspace does not require rebuilding the route cache.
+
 ## Error handling and safety
 
 - Duplicate pending upgrade requests are rejected without changing current access.
@@ -186,6 +206,9 @@ After a successful toggle, the UI should refresh its module state before enablin
 - Disabling a module never deletes employees, permissions, transactions, or historical records.
 - Approval and module changes are logged with actor, shop, old value, new value, and timestamp.
 - Sensitive employee and payroll actions remain subject to existing authorization and tenant-isolation rules.
+- Owner policy denial and actor persistence are independent catalog decisions; employee-subject actions stay owner-denied without misusing persistence metadata.
+- Paired owner/employee performer fields reject ambiguous both-set states and missing both-null states when attribution is required; database checks are added only after per-table legacy-data and SQLite/MariaDB compatibility review.
+- Exactly one explicit owner-operation activity is emitted for an owner action, while unrelated domain activity remains intact.
 
 ## Verification contract
 
@@ -207,7 +230,9 @@ After a successful toggle, the UI should refresh its module state before enablin
 - Re-enabling a module restores access without restoring or changing employee permissions.
 - Module toggle changes are atomic and auditable.
 - Employee access requires both an enabled shop module and the employee's existing permission.
-- Business shop owners can open every page in enabled modules through an explicit owner-authenticated path.
+- Business shop owners can open every cataloged owner-capable operation in enabled modules through the owner ERP workspace.
+- The generated matrix distinguishes allowed owner policy from derived current route exposure and verifies route-pair parameter/binding compatibility.
+- Owner routes remain in the cached route collection while disabled and fail closed through feature middleware.
 - Existing products and repair services remain available to authorized employees after approval without re-upload or migration.
 - Pending upgrades do not expose existing shop data to newly intended employee roles.
 - Cross-shop access is rejected for owners and employees.
@@ -220,6 +245,7 @@ After a successful toggle, the UI should refresh its module state before enablin
 - Existing shop settings, approval-page settings, payroll settings, and document behavior remain intact.
 - Frontend tests cover upgrade status, module toggle states, disabled navigation, and pending/rejected feedback.
 - Feature tests cover authorization, tenant isolation, approval transactions, and module middleware.
+- Owner ERP regression tests cover exact unauthenticated JSON/browser behavior, dual sessions, actor-aware Form Requests, client-supplied shop-ID rejection, actor-reference invariants, polling/refetch/WebSocket/export/download/print/preview URLs, and bounded mutation waves.
 
 ## Out of scope
 

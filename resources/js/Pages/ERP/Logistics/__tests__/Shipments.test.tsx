@@ -135,6 +135,36 @@ it('submits server-side search and resets pagination', () => {
   });
 });
 
+it('uses the owner shipment page capability for filters', () => {
+  mocks.props = defaultProps();
+  mocks.props.riderMode = false;
+  mocks.props.auth = { erpActor: { ownerMode: true } };
+  mocks.props.erpCapabilities = {
+    'GET:erp.logistics.shipments': {
+      allowed: true,
+      url: '/shop-owner/erp/logistics/shipments',
+    },
+  };
+
+  render(<Shipments />);
+  fireEvent.change(screen.getByLabelText('Search shipments'), { target: { value: 'Air Max' } });
+  fireEvent.submit(screen.getByRole('search'));
+
+  expect(mocks.get).toHaveBeenCalledWith('/shop-owner/erp/logistics/shipments', expect.any(Object), expect.any(Object));
+});
+
+it('does not navigate when an owner shipment capability is unavailable', () => {
+  mocks.props = defaultProps();
+  mocks.props.riderMode = false;
+  mocks.props.auth = { erpActor: { ownerMode: true } };
+
+  render(<Shipments />);
+  fireEvent.change(screen.getByLabelText('Search shipments'), { target: { value: 'Air Max' } });
+  fireEvent.submit(screen.getByRole('search'));
+
+  expect(mocks.get).not.toHaveBeenCalled();
+});
+
 it('shows readable schedules and operational indicators', () => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-07-21T00:00:00Z'));

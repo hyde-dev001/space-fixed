@@ -382,7 +382,8 @@ Route::post('/shipping/estimate', [\App\Http\Controllers\UserSide\ShippingEstima
  * Staff/Manager Customer Management API
  */
 Route::prefix('staff')->middleware(['web', 'auth:user'])->group(function () {
-    Route::get('/customers', [\App\Http\Controllers\Api\Staff\CustomerController::class, 'index']);
+    Route::get('/customers', [\App\Http\Controllers\Api\Staff\CustomerController::class, 'index'])
+        ->name('erp.staff.api.customers');
     Route::get('/customers/stats', [\App\Http\Controllers\Api\Staff\CustomerController::class, 'stats']);
 });
 
@@ -422,8 +423,10 @@ Route::prefix('crm/conversations')->middleware(['web', 'auth:user', 'permission:
  * CRM Customer Routes - Manage customer profiles, history and staff notes
  */
 Route::prefix('crm/customers')->middleware(['web', 'auth:user', 'permission:access-customer-support'])->group(function () {
-    Route::get('/',                  [\App\Http\Controllers\Api\CRM\CRMCustomerController::class, 'index']);
-    Route::get('/{id}',              [\App\Http\Controllers\Api\CRM\CRMCustomerController::class, 'show']);
+    Route::get('/',                  [\App\Http\Controllers\Api\CRM\CRMCustomerController::class, 'index'])
+        ->name('crm.api.customers.index');
+    Route::get('/{id}',              [\App\Http\Controllers\Api\CRM\CRMCustomerController::class, 'show'])
+        ->name('crm.api.customers.show');
     Route::put('/{id}',              [\App\Http\Controllers\Api\CRM\CRMCustomerController::class, 'update']);
     Route::post('/{id}/notes',       [\App\Http\Controllers\Api\CRM\CRMCustomerController::class, 'storeNote']);
 });
@@ -432,7 +435,8 @@ Route::prefix('crm/customers')->middleware(['web', 'auth:user', 'permission:acce
  * CRM Review Routes - Manage customer reviews and staff responses
  */
 Route::prefix('crm/reviews')->middleware(['web', 'auth:user', 'permission:access-customer-support'])->group(function () {
-    Route::get('/',                  [\App\Http\Controllers\Api\CRM\CRMReviewController::class, 'index']);
+    Route::get('/',                  [\App\Http\Controllers\Api\CRM\CRMReviewController::class, 'index'])
+        ->name('crm.api.reviews.index');
     Route::post('/report',           [\App\Http\Controllers\Api\CRM\CRMReviewController::class, 'reportReview']);
 });
 
@@ -440,7 +444,8 @@ Route::prefix('crm/reviews')->middleware(['web', 'auth:user', 'permission:access
  * CRM Dashboard Stats - Aggregate data for the CRM overview page
  */
 Route::get('crm/dashboard-stats', [\App\Http\Controllers\Api\CRM\CRMDashboardController::class, 'index'])
-    ->middleware(['web', 'auth:user', 'permission:access-customer-support']);
+    ->middleware(['web', 'auth:user', 'permission:access-customer-support'])
+    ->name('crm.api.dashboard-stats');
 
 /**
  * Repairer Conversation Routes - Repair technicians handling technical support
