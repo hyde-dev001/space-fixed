@@ -85,6 +85,8 @@ Module toggle updates are validated, persisted atomically, and audited with the 
 
 The shop-level switch is not an employee permission editor. Employee access remains the intersection of the shop module being enabled and the employee's existing role/direct permissions.
 
+Existing product and repair-service records remain attached to the same shop_owner_id throughout an upgrade. After Super Admin approval, authorized Inventory employees can access existing products when Retail Operations or Inventory is enabled, and authorized Repair employees can access existing repair services when Repair Operations is enabled. No re-upload or data migration is required. Pending or rejected upgrades do not grant new employee access.
+
 ### Owner page access
 
 A Business shop owner can open every page belonging to an enabled module, including employee and HR pages. Owner actions execute as the shop owner against the selected shop/employee context; they do not create an employee session or impersonate an employee.
@@ -206,6 +208,8 @@ After a successful toggle, the UI should refresh its module state before enablin
 - Module toggle changes are atomic and auditable.
 - Employee access requires both an enabled shop module and the employee's existing permission.
 - Business shop owners can open every page in enabled modules through an explicit owner-authenticated path.
+- Existing products and repair services remain available to authorized employees after approval without re-upload or migration.
+- Pending upgrades do not expose existing shop data to newly intended employee roles.
 - Cross-shop access is rejected for owners and employees.
 
 ### Regression coverage
