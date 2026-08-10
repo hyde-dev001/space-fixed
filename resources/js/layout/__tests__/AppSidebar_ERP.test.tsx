@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import AppSidebarERP from '../AppSidebar_ERP';
 
@@ -13,6 +13,13 @@ const state = vi.hoisted(() => ({
   moduleEnforcementEnabled: undefined as boolean | undefined,
   erpActor: null as null | { type: string; ownerMode: boolean },
   erpCapabilities: {} as Record<string, unknown>,
+  erpUrls: { workspace: null as string | null },
+  shopOwner: {
+    registration_type: 'company',
+    business_type: 'both',
+    is_company: true,
+    can_manage_staff: true,
+  },
 }));
 
 vi.mock('@inertiajs/react', () => ({
@@ -26,9 +33,11 @@ vi.mock('@inertiajs/react', () => ({
         shopModuleEnforcementEnabled: state.moduleEnforcementEnabled,
         erpActor: state.erpActor,
         erpCapabilities: state.erpCapabilities,
+        shop_owner: state.shopOwner,
       },
       moduleStates: state.moduleStates,
       shopModuleEnforcementEnabled: state.moduleEnforcementEnabled,
+      erpUrls: state.erpUrls,
     },
   }),
   Link: ({ href, children, ...props }: React.PropsWithChildren<{ href: string }>) => <a href={href} {...props}>{children}</a>,
@@ -37,6 +46,19 @@ vi.mock('@inertiajs/react', () => ({
 vi.mock('ziggy-js', () => ({
   route: (name: string) => {
     if (name === 'landing') return '/';
+    const ownerSubmenuPaths: Record<string, string> = {
+      'shop-owner.logistics.dashboard': '/shop-owner/logistics',
+      'shop-owner.logistics.shipments': '/shop-owner/logistics/shipments',
+      'shop-owner.logistics.riders': '/shop-owner/logistics/riders',
+      'shop-owner.refund-approvals': '/shop-owner/refund-approvals',
+      'shop-owner.price-approvals': '/shop-owner/price-approvals',
+      'shop-owner.payslip-approvals': '/shop-owner/payslip-approvals',
+      'shop-owner.salary-adjustment-approvals': '/shop-owner/salary-adjustment-approvals',
+      'shop-owner.purchase-request-approval': '/shop-owner/purchase-request-approval',
+      'shop-owner.expense-approvals': '/shop-owner/expense-approvals',
+      'shop-owner.repair-reject-approval': '/shop-owner/repair-reject-approval',
+    };
+    if (ownerSubmenuPaths[name]) return ownerSubmenuPaths[name];
     throw new Error('use sidebar fallback map');
   },
 }));
@@ -63,6 +85,13 @@ beforeEach(() => {
   state.moduleEnforcementEnabled = undefined;
   state.erpActor = null;
   state.erpCapabilities = {};
+  state.erpUrls = { workspace: null };
+  state.shopOwner = {
+    registration_type: 'company',
+    business_type: 'both',
+    is_company: true,
+    can_manage_staff: true,
+  };
   Object.defineProperty(window, 'localStorage', {
     configurable: true,
     value: { getItem: vi.fn(), removeItem: vi.fn() },
@@ -153,7 +182,7 @@ it('uses the top-level module state when the nested auth state is unavailable', 
   expect(screen.getByRole('link', { name: /^logistics$/i })).toBeInTheDocument();
 });
 
-it('uses owner capability URLs and excludes employee self-service navigation', () => {
+it('shows owner ERP pages and excludes employee self-service navigation', () => {
   state.url = '/shop-owner/erp/workspace';
   state.role = 'MANAGER';
   state.roles = ['MANAGER'];
@@ -168,6 +197,7 @@ it('uses owner capability URLs and excludes employee self-service navigation', (
       reason: null,
     },
   };
+  state.erpUrls = { workspace: '/shop-owner/erp/workspace' };
 
   render(<AppSidebarERP />);
 
@@ -176,7 +206,20 @@ it('uses owner capability URLs and excludes employee self-service navigation', (
     '/shop-owner/erp/workspace',
   );
   expect(screen.getByRole('link', { name: /ERP Workspace/i })).toHaveClass('menu-item-active');
+  expect(screen.getByRole('link', { name: /HR & Employees/i })).toHaveAttribute(
+    'href',
+    '/shopOwner/user-access-control',
+  );
+  expect(screen.getByRole('link', { name: /^Customers$/i })).toHaveAttribute(
+    'href',
+    '/shop-owner/customers',
+  );
+  fireEvent.click(screen.getByRole('button', { name: /Approval Pages/i }));
+  expect(screen.getByRole('link', { name: /Refund Approval/i })).toHaveAttribute(
+    'href',
+    '/shop-owner/refund-approvals',
+  );
   expect(screen.queryByRole('link', { name: /log attendance/i })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: /my payslips/i })).not.toBeInTheDocument();
-  expect(screen.queryByRole('link', { name: /employee/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /employee profile/i })).not.toBeInTheDocument();
 });
