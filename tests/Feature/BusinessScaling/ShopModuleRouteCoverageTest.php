@@ -60,4 +60,85 @@ final class ShopModuleRouteCoverageTest extends TestCase
             $this->assertNotContains('shop.module', $route->middleware(), $routeName);
         }
     }
+
+    public function test_loaded_internal_routes_are_catalogued_in_both_directions_and_methods_match(): void
+    {
+        $catalog = config('shop_modules.routes', []);
+        $errors = [];
+
+        foreach (RouteFacade::getRoutes() as $route) {
+            if (! $this->isInternalErpRoute($route)) {
+                continue;
+            }
+
+            $routeName = (string) $route->getName();
+            if ($routeName === '') {
+                $errors[] = "unnamed internal route {$route->uri()}";
+                continue;
+            }
+
+            if (! array_key_exists($routeName, $catalog)) {
+                $errors[] = "missing catalog entry {$routeName}";
+                continue;
+            }
+
+            $expectedMethods = array_values(array_diff($route->methods(), ['HEAD']));
+            $actualMethods = array_values(array_unique(array_map('strtoupper', $catalog[$routeName]['methods'] ?? [])));
+            sort($expectedMethods);
+            sort($actualMethods);
+
+            if ($actualMethods !== $expectedMethods) {
+                $errors[] = sprintf(
+                    '%s methods expected [%s], got [%s]',
+                    $routeName,
+                    implode(',', $expectedMethods),
+                    implode(',', $actualMethods),
+                );
+            }
+        }
+
+        $this->assertSame([], $errors, implode(PHP_EOL, $errors));
+    }
+
+    private function isInternalErpRoute(Route $route): bool
+    {
+        $name = (string) $route->getName();
+        $internalPrefixes = [
+            'api.manager.',
+            'api.leave.',
+            'api.logistics.',
+            'api.notifications.',
+            'api.activity_logs',
+            'api.shop_owner.',
+            'api.products.vouchers.',
+            'api.customer.repairs.warranty-claims',
+            'api.shops.report',
+            'erp.',
+            'hr.',
+            'inventory.',
+            'finance.',
+            'procurement.',
+            'crm.',
+            'staff.',
+            'permission-audit-logs.',
+            'shop-owner.',
+            'shop_owner.',
+            'shopOwner.',
+        ];
+
+        if ($name !== '' && collect($internalPrefixes)->contains(
+            fn (string $prefix): bool => str_starts_with($name, $prefix),
+        )) {
+            return true;
+        }
+
+        $middleware = $route->gatherMiddleware();
+        $uri = (string) $route->uri();
+
+        return $name === '' && (
+            str_contains($uri, 'erp')
+            || in_array('shop.module', $middleware, true)
+            || collect($middleware)->contains(fn (string $value): bool => str_contains($value, 'GateErpAccess'))
+        );
+    }
 }
