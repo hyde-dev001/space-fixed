@@ -2,6 +2,8 @@
 
 namespace App\Actions\ShopOwner;
 
+use App\Enums\NotificationType;
+use App\Models\Notification as AdminNotification;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerUpgradeRequest;
 use App\Models\SuperAdmin;
@@ -96,10 +98,33 @@ final class SubmitShopOwnerUpgradeRequest
             });
 
             DB::afterCommit(function () use ($upgradeRequest): void {
+                $requestSnapshot = $upgradeRequest->fresh('shopOwner');
+                $recipients = SuperAdmin::query()->active()->get();
+
                 try {
-                    $recipients = SuperAdmin::query()->active()->get();
-                    if ($recipients->isNotEmpty()) {
-                        Notification::send($recipients, new ShopOwnerUpgradeRequested($upgradeRequest->fresh('shopOwner')));
+                    if ($requestSnapshot) {
+                        $businessName = (string) ($requestSnapshot->shopOwner?->business_name ?? 'Shop owner');
+
+                        AdminNotification::notifyAllSuperAdmins(
+                            NotificationType::BUSINESS_UPGRADE_REQUEST_PENDING,
+                            'Business upgrade request',
+                            "{$businessName} submitted a business upgrade request for review.",
+                            '/admin/business-upgrade-requests?status=pending',
+                            [
+                                'upgrade_request_id' => $upgradeRequest->id,
+                                'shop_owner_id' => $upgradeRequest->shop_owner_id,
+                                'requested_registration_type' => $upgradeRequest->requested_registration_type,
+                                'requested_business_type' => $upgradeRequest->requested_business_type,
+                            ],
+                        );
+                    }
+                } catch (Throwable $exception) {
+                    report($exception);
+                }
+
+                try {
+                    if ($recipients->isNotEmpty() && $requestSnapshot) {
+                        Notification::send($recipients, new ShopOwnerUpgradeRequested($requestSnapshot));
                     }
                 } catch (Throwable $exception) {
                     report($exception);

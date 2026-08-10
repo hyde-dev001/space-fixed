@@ -29,6 +29,7 @@ const AppSidebar: React.FC = () => {
   const isSuperAdmin = auth?.superAdmin?.role === 'super_admin' || auth?.user?.role === 'super_admin';
 
   const routeFallbacks: Record<string, string> = {
+    'admin.business-upgrade-requests.index': '/admin/business-upgrade-requests',
     'admin.suspension-appeals': '/admin/appeals',
     landing: '/',
   };

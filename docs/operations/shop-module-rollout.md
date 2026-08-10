@@ -130,6 +130,10 @@ after the transaction commits. After a worker processes a review or submission:
 
 1. Confirm the expected notification/audit event exists and the recipient is
    the intended active SuperAdmin or shop owner.
+   For a new upgrade submission, the SuperAdmin bell should show an unread
+   `business_upgrade_request_pending` notification linking to
+   `/admin/business-upgrade-requests?status=pending`; this in-app row is
+   written after commit and does not depend on the mail queue.
 2. Confirm the related request and module state are committed before the
    notification is visible.
 3. Check the queue worker output and the failed-job count in the existing
@@ -141,6 +145,12 @@ after the transaction commits. After a worker processes a review or submission:
 
 Use the repository's existing worker/supervisor process and its configured
 `QUEUE_CONNECTION`; do not introduce a new queue backend for this rollout.
+
+If the Business Upgrade Requests sidebar item stays on the registration page,
+deploy the current `public/build` and confirm the generated route manifest
+contains `admin.business-upgrade-requests.index`. The sidebar includes a
+static path fallback for older manifests, but the server route must still be
+present in the deployed application code.
 
 ## Rollback signals
 
