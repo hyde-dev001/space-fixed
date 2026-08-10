@@ -6,15 +6,19 @@ use App\Http\Controllers\Controller;
 use App\Models\ShopOwner;
 use App\Notifications\ShopOwnerApproved;
 use App\Notifications\ShopOwnerRejected;
+use App\Services\ShopModuleProvisioningService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
-use Illuminate\Http\Request;
-use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Str;
-use Illuminate\Support\Facades\DB;
 
 class ShopOwnerRegistrationViewController extends Controller
 {
+    public function __construct(
+        private readonly ShopModuleProvisioningService $shopModuleProvisioning,
+    ) {}
+
     public function index(): Response
     {
         $shopOwners = ShopOwner::with('documents')
@@ -23,7 +27,7 @@ class ShopOwnerRegistrationViewController extends Controller
             ->map(function ($shopOwner) {
                 $documents = $shopOwner->documents->map(function ($doc) {
                     return [
-                        'url' => '/storage/' . $doc->file_path,
+                        'url' => '/storage/'.$doc->file_path,
                         'type' => $doc->document_type,
                     ];
                 })->values();
@@ -49,29 +53,36 @@ class ShopOwnerRegistrationViewController extends Controller
             ->toArray();
 
         return Inertia::render('superAdmin/Shops/ShopOwnerRegistrationView', [
-            'registrations' => $shopOwners
+            'registrations' => $shopOwners,
         ]);
     }
 
     public function approve(Request $request, $id)
     {
-        $shopOwner = ShopOwner::findOrFail($id);
-        
         // Generate a unique token for password setup
         $token = Str::random(64);
-        
-        // Update shop owner status and store the token
-        DB::table('password_reset_tokens')->updateOrInsert(
-            ['email' => $shopOwner->email],
-            [
-                'email' => $shopOwner->email,
-                'token' => hash('sha256', $token),
-                'created_at' => now()
-            ]
-        );
-        
-        $shopOwner->update(['status' => 'approved']);
-        
+
+        $shopOwner = DB::transaction(function () use ($id, $token): ShopOwner {
+            $shopOwner = ShopOwner::query()->lockForUpdate()->findOrFail($id);
+
+            DB::table('password_reset_tokens')->updateOrInsert(
+                ['email' => $shopOwner->email],
+                [
+                    'email' => $shopOwner->email,
+                    'token' => hash('sha256', $token),
+                    'created_at' => now(),
+                ]
+            );
+
+            $shopOwner->update(['status' => 'approved']);
+            $this->shopModuleProvisioning->initializeMissing(
+                $shopOwner,
+                $this->shopModuleProvisioning->eligibleKeysFor($shopOwner),
+            );
+
+            return $shopOwner->fresh();
+        });
+
         // Send approval notification with password setup link
         $shopOwner->notify(new ShopOwnerApproved($shopOwner, $token));
 
@@ -79,7 +90,7 @@ class ShopOwnerRegistrationViewController extends Controller
         if ($request->wantsJson()) {
             return response()->json([
                 'success' => true,
-                'message' => 'Shop owner registration approved successfully. Password setup email sent.'
+                'message' => 'Shop owner registration approved successfully. Password setup email sent.',
             ]);
         }
 
@@ -90,15 +101,15 @@ class ShopOwnerRegistrationViewController extends Controller
     public function reject(Request $request, $id)
     {
         $validated = $request->validate([
-            'rejection_reason' => 'nullable|string|max:500'
+            'rejection_reason' => 'nullable|string|max:500',
         ]);
 
         $shopOwner = ShopOwner::findOrFail($id);
         $shopOwner->update([
             'status' => 'rejected',
-            'rejection_reason' => $validated['rejection_reason'] ?? null
+            'rejection_reason' => $validated['rejection_reason'] ?? null,
         ]);
-        
+
         // Send rejection notification
         $shopOwner->notify(new ShopOwnerRejected($shopOwner, $validated['rejection_reason'] ?? null));
 
@@ -106,7 +117,7 @@ class ShopOwnerRegistrationViewController extends Controller
         if ($request->wantsJson()) {
             return response()->json([
                 'success' => true,
-                'message' => 'Shop owner registration rejected successfully. Notification email sent.'
+                'message' => 'Shop owner registration rejected successfully. Notification email sent.',
             ]);
         }
 
