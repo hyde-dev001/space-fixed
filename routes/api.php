@@ -382,7 +382,8 @@ Route::post('/shipping/estimate', [\App\Http\Controllers\UserSide\ShippingEstima
  * Staff/Manager Customer Management API
  */
 Route::prefix('staff')->middleware(['web', 'auth:user'])->group(function () {
-    Route::get('/customers', [\App\Http\Controllers\Api\Staff\CustomerController::class, 'index']);
+    Route::get('/customers', [\App\Http\Controllers\Api\Staff\CustomerController::class, 'index'])
+        ->name('erp.staff.api.customers');
     Route::get('/customers/stats', [\App\Http\Controllers\Api\Staff\CustomerController::class, 'stats']);
 });
 

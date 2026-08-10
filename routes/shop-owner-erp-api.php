@@ -17,6 +17,8 @@ use App\Http\Controllers\Erp\InventoryDashboardController;
 use App\Http\Controllers\Erp\ProductInventoryController;
 use App\Http\Controllers\Erp\StockMovementController;
 use App\Http\Controllers\Erp\SupplierController;
+use App\Http\Controllers\Api\Staff\CustomerController as StaffCustomerApiController;
+use App\Http\Controllers\Repairer\DashboardController as RepairerDashboardController;
 use App\Http\Middleware\EnsureOwnerErpWorkspaceEnabled;
 use Illuminate\Support\Facades\Route;
 
@@ -44,6 +46,11 @@ Route::middleware(EnsureOwnerErpWorkspaceEnabled::class)
             ->name('inventory.movements.index');
         Route::get('/procurement/suppliers', [SupplierController::class, 'index'])
             ->name('procurement.suppliers.index');
+
+        Route::get('/staff/customers', [StaffCustomerApiController::class, 'index'])
+            ->name('staff.customers');
+        Route::get('/staff/repair-dashboard', [RepairerDashboardController::class, 'getDashboardData'])
+            ->name('staff.repair-dashboard');
 
         Route::get('/crm/dashboard-stats', [CRMDashboardController::class, 'index'])
             ->name('crm.dashboard-stats');

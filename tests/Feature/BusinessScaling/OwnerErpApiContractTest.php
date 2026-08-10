@@ -147,4 +147,39 @@ final class OwnerErpApiContractTest extends TestCase
             ->assertOk()
             ->assertJsonStructure(['data', 'current_page']);
     }
+
+    public function test_fourth_read_api_wave_exposes_owner_retail_and_repair_get_contracts(): void
+    {
+        config([
+            'shop_modules.owner_erp_workspace_enabled' => true,
+            'shop_modules.enforcement_enabled' => true,
+        ]);
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+
+        foreach (['crm', 'repair_operations'] as $moduleKey) {
+            ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $owner->id,
+                'module_key' => $moduleKey,
+                'enabled' => true,
+            ]);
+        }
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/erp/staff/customers')
+            ->assertOk()
+            ->assertJsonStructure(['customers']);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/erp/staff/repair-dashboard')
+            ->assertOk()
+            ->assertJsonStructure([
+                'metricCards',
+                'requestedServices',
+                'revenueRows',
+                'recentRepairs',
+            ]);
+    }
 }

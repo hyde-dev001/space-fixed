@@ -8,6 +8,7 @@ use App\Models\InventoryItem;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Order;
+use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerModule;
 use App\Models\ShopReview;
@@ -99,7 +100,7 @@ final class OwnerErpTenantIsolationTest extends TestCase
         ]);
 
         foreach ([$owner, $otherOwner] as $shopOwner) {
-            foreach (['crm', 'logistics', 'hr_employees', 'finance', 'inventory', 'procurement'] as $moduleKey) {
+            foreach (['crm', 'logistics', 'hr_employees', 'finance', 'inventory', 'procurement', 'repair_operations'] as $moduleKey) {
                 ShopOwnerModule::factory()->create([
                     'shop_owner_id' => $shopOwner->id,
                     'module_key' => $moduleKey,
@@ -115,6 +116,10 @@ final class OwnerErpTenantIsolationTest extends TestCase
         Order::factory()->create([
             'shop_owner_id' => $otherOwner->id,
             'customer_id' => $otherCustomer->id,
+        ]);
+        RepairRequest::factory()->create([
+            'shop_owner_id' => $otherOwner->id,
+            'customer_name' => 'Other tenant repair customer',
         ]);
         $otherReview = ShopReview::create([
             'shop_owner_id' => $otherOwner->id,
@@ -213,6 +218,17 @@ final class OwnerErpTenantIsolationTest extends TestCase
             ->assertOk()
             ->assertJsonPath('total', 0)
             ->assertJsonMissing(['name' => 'Other tenant API supplier']);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/erp/staff/customers')
+            ->assertOk()
+            ->assertJsonMissing(['email' => $otherCustomer->email]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/erp/staff/repair-dashboard')
+            ->assertOk()
+            ->assertJsonPath('metricCards.0.value', 0)
+            ->assertJsonMissing(['customer' => 'Other tenant repair customer']);
 
         $this->actingAs($owner, 'shop_owner')
             ->getJson('/api/shop-owner/erp/logistics/dashboard-stats')

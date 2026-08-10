@@ -1407,7 +1407,8 @@ Route::middleware(['auth:user', 'check.user.business.type:repair,both'])->prefix
 // Repairer API Routes (Phase 3 - Chat Integration)
 Route::middleware(['auth:user', 'check.user.business.type:repair,both'])->prefix('api/repairer')->group(function () {
     // Dashboard statistics
-    Route::get('/dashboard', [\App\Http\Controllers\Repairer\DashboardController::class, 'getDashboardData']);
+    Route::get('/dashboard', [\App\Http\Controllers\Repairer\DashboardController::class, 'getDashboardData'])
+        ->name('erp.staff.api.repair-dashboard');
 
     // Repair material stock + requests (repairer view)
     Route::get('/materials', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'repairStocksOverview'])
