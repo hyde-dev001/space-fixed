@@ -154,6 +154,22 @@ contains `admin.business-upgrade-requests.index`. The sidebar includes a
 static path fallback for older manifests, but the server route must still be
 present in the deployed application code.
 
+When a deployment adds or changes an owner ERP route, refresh Laravel's route
+cache after the application files are updated, then verify the new module
+entry route before testing the owner workspace:
+
+```powershell
+php artisan optimize:clear
+php artisan config:cache
+php artisan route:cache
+php artisan route:list --name=shop-owner.erp.module
+php artisan erp:route-matrix
+```
+
+The workspace can render without module entry links when the deployed route
+cache predates `shop-owner.erp.module`; treat a missing route-list entry as a
+failed deployment check.
+
 ## Rollback signals
 
 Roll back the flag (without deleting data) when any of these persist after a

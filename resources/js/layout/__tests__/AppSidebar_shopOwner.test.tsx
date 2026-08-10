@@ -8,6 +8,10 @@ const state = vi.hoisted(() => ({
   moduleStates: {} as Record<string, unknown>,
   moduleEnforcementEnabled: undefined as boolean | undefined,
   erpUrls: { workspace: null as string | null },
+  activeModule: null as {
+    label: string;
+    pages: Array<{ label: string; routeName: string; url: string }>;
+  } | null,
   shopOwner: {
     registration_type: 'individual',
     business_type: 'both',
@@ -28,6 +32,7 @@ vi.mock('@inertiajs/react', () => ({
       moduleStates: state.moduleStates,
       shopModuleEnforcementEnabled: state.moduleEnforcementEnabled,
       erpUrls: state.erpUrls,
+      activeModule: state.activeModule,
     },
   }),
   Link: ({ href, children, ...props }: React.PropsWithChildren<{ href: string }>) => (
@@ -76,6 +81,7 @@ beforeEach(() => {
   state.moduleStates = state.shopModules;
   state.moduleEnforcementEnabled = undefined;
   state.erpUrls = { workspace: null };
+  state.activeModule = null;
 });
 
 it('hides disabled owner modules while keeping core dashboard visible', () => {
@@ -166,6 +172,31 @@ it('shows one capability-controlled ERP Workspace entry for a company owner', ()
   expect(screen.queryByRole('button', { name: 'Repair Operations' })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Job Orders Retail' })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Job Orders Repair' })).not.toBeInTheDocument();
+});
+
+it('does not keep a stale module scope on a normal shop owner portal page', () => {
+  state.shopOwner = {
+    registration_type: 'company',
+    business_type: 'both',
+    is_company: true,
+    can_manage_staff: true,
+  };
+  state.shopModules = accessible();
+  state.erpUrls = { workspace: '/shop-owner/erp/workspace' };
+  state.activeModule = {
+    label: 'Retail Operations',
+    pages: [{
+      label: 'Products',
+      routeName: 'shop-owner.erp.retail.products',
+      url: '/shop-owner/erp/retail/products',
+    }],
+  };
+
+  render(<AppSidebarShopOwner />);
+
+  expect(screen.getByRole('link', { name: /^Dashboard$/i })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Approval Pages' })).toBeInTheDocument();
+  expect(screen.queryByText('Retail Operations', { exact: true })).not.toBeInTheDocument();
 });
 
 it('hides disabled employee modules from a business shop owner', () => {

@@ -16,11 +16,46 @@ use Illuminate\Routing\Route;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 final class InertiaModuleStateShareTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_shop_owner_dashboard_shares_module_state_for_approval_navigation(): void
+    {
+        config([
+            'shop_modules.owner_erp_workspace_enabled' => true,
+            'shop_modules.enforcement_enabled' => true,
+        ]);
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+        ShopOwnerModule::factory()->create([
+            'shop_owner_id' => $owner->id,
+            'module_key' => 'finance',
+            'enabled' => true,
+        ]);
+        ShopOwnerModule::factory()->create([
+            'shop_owner_id' => $owner->id,
+            'module_key' => 'procurement',
+            'enabled' => true,
+        ]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get('/shop-owner/dashboard')
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('ShopOwner/Dashboard', false)
+                ->where('shopModuleEnforcementEnabled', true)
+                ->where('moduleStates.finance.accessible', true)
+                ->where('moduleStates.procurement.accessible', true)
+                ->where('auth.shopModules.finance.accessible', true)
+                ->where('auth.shopModules.procurement.accessible', true)
+                ->where('erpUrls.workspace', route('shop-owner.erp.workspace'))
+            );
+    }
 
     public function test_owner_and_employee_receive_authoritative_module_state_but_customers_and_super_admins_do_not(): void
     {
