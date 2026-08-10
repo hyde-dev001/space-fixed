@@ -801,8 +801,14 @@ const AppSidebar_ERP: React.FC = () => {
   const erpCapabilities = auth?.erpCapabilities ?? (props as any)?.erpCapabilities;
   const ownerMode = erpActor?.type === 'shop_owner' && erpActor?.ownerMode === true;
   const ownerWorkspaceUrl = erpUrl(erpCapabilities, 'GET:shop-owner.erp.workspace');
-  const shopModules = auth?.shopModules;
-  const moduleEnforcementEnabled = auth?.shopModuleEnforcementEnabled ?? Boolean(shopModules);
+  const authModuleStates = auth?.shopModules;
+  const sharedModuleStates = (props as any)?.moduleStates;
+  const shopModules = authModuleStates && typeof authModuleStates === 'object' && Object.keys(authModuleStates).length > 0
+    ? authModuleStates
+    : sharedModuleStates;
+  const moduleEnforcementEnabled = auth?.shopModuleEnforcementEnabled
+    ?? (props as any)?.shopModuleEnforcementEnabled
+    ?? Boolean(shopModules);
   const role = (props as any)?.auth?.user?.role;
   const roles = (props as any)?.auth?.user?.roles || [];
   const permissions = (props as any)?.auth?.permissions || [];

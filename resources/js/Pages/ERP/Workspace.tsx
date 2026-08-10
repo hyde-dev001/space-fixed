@@ -5,6 +5,7 @@ import AppLayoutERP from '../../layout/AppLayout_ERP';
 type ModuleSummary = {
   key: string;
   label: string;
+  url: string | null;
   eligible: boolean;
   enabled: boolean;
   accessible: boolean;
@@ -37,6 +38,41 @@ const ModuleGlyph = ({ muted = false }: { muted?: boolean }) => (
     </svg>
   </span>
 );
+
+const ModuleCard = ({ module }: { module: ModuleSummary }) => {
+  const content = (
+    <>
+      <ModuleGlyph />
+      <div className="min-w-0">
+        <h3 className="font-semibold text-gray-900 dark:text-white">{module.label}</h3>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Enabled for this company</p>
+        {module.url && (
+          <span className="mt-3 inline-flex items-center text-sm font-semibold text-blue-600 transition group-hover:text-blue-700 dark:text-blue-300 dark:group-hover:text-blue-200">
+            Open module <span aria-hidden="true" className="ml-1">→</span>
+          </span>
+        )}
+      </div>
+    </>
+  );
+
+  if (!module.url) {
+    return (
+      <article className="flex items-start gap-4 rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+        {content}
+      </article>
+    );
+  }
+
+  return (
+    <Link
+      href={module.url}
+      aria-label={`Open ${module.label} module`}
+      className="group flex items-start gap-4 rounded-xl border border-gray-200 bg-white p-5 transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-theme-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-blue-500"
+    >
+      {content}
+    </Link>
+  );
+};
 
 const Workspace: React.FC = () => {
   const { props } = usePage<WorkspaceProps>();
@@ -86,13 +122,7 @@ const Workspace: React.FC = () => {
           {enabledModules.length > 0 ? (
             <div className="grid gap-4 md:grid-cols-2">
               {enabledModules.map((module) => (
-                <article key={module.key} className="flex items-start gap-4 rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-                  <ModuleGlyph />
-                  <div>
-                    <h3 className="font-semibold text-gray-900 dark:text-white">{module.label}</h3>
-                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Enabled for this company</p>
-                  </div>
-                </article>
+                <ModuleCard key={module.key} module={module} />
               ))}
             </div>
           ) : (

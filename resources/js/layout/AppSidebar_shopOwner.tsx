@@ -211,7 +211,7 @@ const approvalWorkflowItems: NavItem[] = [
       { name: "Price Approvals", route: "shop-owner.price-approvals", moduleKey: "finance" },
       { name: "Payslip Approval", route: "shop-owner.payslip-approvals", moduleKey: "finance" },
       { name: "Salary Adjustment Approval", route: "shop-owner.salary-adjustment-approvals", moduleKey: "finance" },
-      { name: "Purchase Request Approval", route: "shop-owner.purchase-request-approval", moduleKey: "inventory" },
+      { name: "Purchase Request Approval", route: "shop-owner.purchase-request-approval", moduleKey: "procurement" },
       { name: "Expense Approvals", route: "shop-owner.expense-approvals", moduleKey: "finance" },
       { name: "Repair Reject Approval", route: "shop-owner.repair-reject-approval", moduleKey: "repair_operations" },
     ],
@@ -387,8 +387,14 @@ const AppSidebar_shopOwner: React.FC = () => {
   const { url, props } = usePage();
   const auth = (props as any).auth;
   const shopOwner = auth?.shop_owner || auth?.user?.shop_owner || (props as any)?.shop_owner;
-  const shopModules = auth?.shopModules;
-  const moduleEnforcementEnabled = auth?.shopModuleEnforcementEnabled ?? Boolean(shopModules);
+  const authModuleStates = auth?.shopModules;
+  const sharedModuleStates = (props as any)?.moduleStates;
+  const shopModules = authModuleStates && typeof authModuleStates === "object" && Object.keys(authModuleStates).length > 0
+    ? authModuleStates
+    : sharedModuleStates;
+  const moduleEnforcementEnabled = auth?.shopModuleEnforcementEnabled
+    ?? (props as any)?.shopModuleEnforcementEnabled
+    ?? Boolean(shopModules);
   const isIndividualAccount = shopOwner?.registration_type?.toLowerCase() === "individual";
   const erpUrls = (props as any)?.erpUrls as { workspace?: string | null } | undefined;
   const isCompanyAccount = shopOwner?.is_company === true

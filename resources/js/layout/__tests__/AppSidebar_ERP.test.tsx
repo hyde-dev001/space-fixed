@@ -8,7 +8,9 @@ const state = vi.hoisted(() => ({
   role: 'Logistics Dispatcher',
   roles: ['Logistics Dispatcher'] as string[],
   permissions: [] as string[],
-  shopModules: {} as Record<string, unknown>,
+  shopModules: {} as Record<string, unknown> | undefined,
+  moduleStates: {} as Record<string, unknown>,
+  moduleEnforcementEnabled: undefined as boolean | undefined,
   erpActor: null as null | { type: string; ownerMode: boolean },
   erpCapabilities: {} as Record<string, unknown>,
 }));
@@ -21,9 +23,12 @@ vi.mock('@inertiajs/react', () => ({
         user: { role: state.role, roles: state.roles },
         permissions: state.permissions,
         shopModules: state.shopModules,
+        shopModuleEnforcementEnabled: state.moduleEnforcementEnabled,
         erpActor: state.erpActor,
         erpCapabilities: state.erpCapabilities,
       },
+      moduleStates: state.moduleStates,
+      shopModuleEnforcementEnabled: state.moduleEnforcementEnabled,
     },
   }),
   Link: ({ href, children, ...props }: React.PropsWithChildren<{ href: string }>) => <a href={href} {...props}>{children}</a>,
@@ -54,6 +59,8 @@ beforeEach(() => {
   state.roles = ['Logistics Dispatcher'];
   state.permissions = [];
   state.shopModules = moduleStates();
+  state.moduleStates = state.shopModules;
+  state.moduleEnforcementEnabled = undefined;
   state.erpActor = null;
   state.erpCapabilities = {};
   Object.defineProperty(window, 'localStorage', {
@@ -99,7 +106,7 @@ it('shows logistics settings only with its permission', () => {
   expect(screen.getByRole('link', { name: /settings/i })).toHaveAttribute('href', '/erp/logistics/settings');
   unmount();
 
-  state.permissions = ['access-logistics-dashboard'];
+  state.permissions = ['access-logistics-dashboard', 'assign-logistics-deliveries'];
   render(<AppSidebarERP />);
   expect(screen.queryByRole('link', { name: /settings/i })).not.toBeInTheDocument();
 });
@@ -133,6 +140,17 @@ it('keeps employee permission filtering when an eligible module is enabled', () 
 
   expect(screen.getByRole('link', { name: /^logistics$/i })).toBeInTheDocument();
   expect(screen.queryByRole('link', { name: /settings/i })).not.toBeInTheDocument();
+});
+
+it('uses the top-level module state when the nested auth state is unavailable', () => {
+  state.shopModules = undefined;
+  state.moduleStates = moduleStates();
+  state.moduleEnforcementEnabled = true;
+  state.permissions = ['access-logistics-dashboard', 'assign-logistics-deliveries'];
+
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('link', { name: /^logistics$/i })).toBeInTheDocument();
 });
 
 it('uses owner capability URLs and excludes employee self-service navigation', () => {

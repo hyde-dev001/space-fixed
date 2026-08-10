@@ -14,6 +14,20 @@ use Inertia\Response as InertiaResponse;
 
 final class WorkspaceController extends Controller
 {
+    /**
+     * @var array<string, string>
+     */
+    private const MODULE_ENTRY_ROUTES = [
+        'retail_operations' => 'shop-owner.products',
+        'repair_operations' => 'shop-owner.erp.staff.repair-dashboard',
+        'hr_employees' => 'shop-owner.erp.hr.audit-logs',
+        'finance' => 'shop-owner.erp.finance.audit-logs',
+        'crm' => 'shop-owner.erp.crm.dashboard',
+        'inventory' => 'shop-owner.erp.inventory.inventory-dashboard',
+        'procurement' => 'shop-owner.erp.procurement.suppliers-management',
+        'logistics' => 'shop-owner.erp.logistics.dashboard',
+    ];
+
     public function __construct(
         private readonly ShopModuleAccessService $moduleAccess,
     ) {}
@@ -55,6 +69,7 @@ final class WorkspaceController extends Controller
             $item = [
                 'key' => $moduleKey,
                 'label' => $module['label'] ?? $moduleKey,
+                'url' => $this->moduleEntryUrl($moduleKey),
                 'eligible' => (bool) ($state['eligible'] ?? false),
                 'enabled' => (bool) ($state['enabled'] ?? false),
                 'accessible' => (bool) ($state['accessible'] ?? false),
@@ -93,5 +108,12 @@ final class WorkspaceController extends Controller
                 'workspace' => route('shop-owner.erp.workspace'),
             ],
         ];
+    }
+
+    private function moduleEntryUrl(string $moduleKey): ?string
+    {
+        $routeName = self::MODULE_ENTRY_ROUTES[$moduleKey] ?? null;
+
+        return $routeName === null ? null : route($routeName);
     }
 }
