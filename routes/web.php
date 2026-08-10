@@ -16,6 +16,7 @@ use App\Http\Controllers\superAdmin\DataReportAccessController;
 use App\Http\Controllers\superAdmin\FlaggedAccountsController;
 use App\Http\Controllers\superAdmin\NotificationCommunicationToolsController;
 use App\Http\Controllers\superAdmin\ShopOwnerRegistrationViewController;
+use App\Http\Controllers\superAdmin\ShopOwnerUpgradeRequestController as SuperAdminShopOwnerUpgradeRequestController;
 use App\Http\Controllers\superAdmin\SuperAdminUserManagementController;
 use App\Http\Controllers\superAdmin\SystemMonitoringDashboardController;
 use App\Http\Controllers\SuperAdminAuthController;
@@ -1709,6 +1710,12 @@ Route::middleware('super_admin.auth')->prefix('admin')->name('admin.')->group(fu
 
     // Shop management routes
     Route::get('/registered-shops', [SuperAdminController::class, 'showRegisteredShops'])->name('registered-shops');
+    Route::get('/business-upgrade-requests', [SuperAdminShopOwnerUpgradeRequestController::class, 'index'])
+        ->name('business-upgrade-requests.index');
+    Route::patch('/business-upgrade-requests/{upgradeRequest}', [SuperAdminShopOwnerUpgradeRequestController::class, 'update'])
+        ->name('business-upgrade-requests.update');
+    Route::get('/business-upgrade-requests/{upgradeRequest}/documents/{document}', [SuperAdminShopOwnerUpgradeRequestController::class, 'download'])
+        ->name('business-upgrade-requests.documents.download');
     Route::get('/shops/{id}/details', [SuperAdminController::class, 'shopDetails'])->name('shops.details');
     Route::get('/subscription-management', [SuperAdminController::class, 'showSubscriptionManagement'])->name('subscription-management');
     Route::post('/premium-plans', [SuperAdminController::class, 'storePremiumPlan'])->name('premium-plans.store');

@@ -133,6 +133,31 @@ final class ShopOwnerUpgradeSubmissionTest extends TestCase
         }
     }
 
+    public function test_account_only_and_capability_only_transitions_are_allowed_without_forcing_both_changes(): void
+    {
+        $accountOnly = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'individual',
+            'business_type' => 'retail',
+        ]);
+        $this->actingAs($accountOnly, 'shop_owner')
+            ->post(route('shop-owner.upgrade-requests.store'), $this->uploadPayload([
+                'requested_registration_type' => 'company',
+                'requested_business_type' => 'retail',
+            ]), ['Accept' => 'application/json'])
+            ->assertCreated();
+
+        $capabilityOnly = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'individual',
+            'business_type' => 'retail',
+        ]);
+        $this->actingAs($capabilityOnly, 'shop_owner')
+            ->post(route('shop-owner.upgrade-requests.store'), $this->uploadPayload([
+                'requested_registration_type' => 'individual',
+                'requested_business_type' => 'both',
+            ]), ['Accept' => 'application/json'])
+            ->assertCreated();
+    }
+
     /**
      * @param  array<string, mixed>  $overrides
      * @return array<string, mixed>

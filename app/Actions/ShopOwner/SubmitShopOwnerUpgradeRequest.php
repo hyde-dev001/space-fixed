@@ -4,9 +4,12 @@ namespace App\Actions\ShopOwner;
 
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerUpgradeRequest;
+use App\Models\SuperAdmin;
+use App\Notifications\ShopOwnerUpgradeRequested;
 use App\Services\ShopOwnerDocumentRequirementService;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -27,7 +30,7 @@ final class SubmitShopOwnerUpgradeRequest
         $requestKey = (string) Str::uuid();
 
         try {
-            return DB::transaction(function () use ($owner, $data, $requestKey, &$createdPaths): ShopOwnerUpgradeRequest {
+            $upgradeRequest = DB::transaction(function () use ($owner, $data, $requestKey, &$createdPaths): ShopOwnerUpgradeRequest {
                 $lockedOwner = ShopOwner::query()->lockForUpdate()->findOrFail($owner->getKey());
                 $this->assertApprovedOwner($lockedOwner);
 
@@ -91,6 +94,19 @@ final class SubmitShopOwnerUpgradeRequest
 
                 return $upgradeRequest->load('documents');
             });
+
+            DB::afterCommit(function () use ($upgradeRequest): void {
+                try {
+                    $recipients = SuperAdmin::query()->active()->get();
+                    if ($recipients->isNotEmpty()) {
+                        Notification::send($recipients, new ShopOwnerUpgradeRequested($upgradeRequest->fresh('shopOwner')));
+                    }
+                } catch (Throwable $exception) {
+                    report($exception);
+                }
+            });
+
+            return $upgradeRequest;
         } catch (Throwable $exception) {
             foreach ($createdPaths as $path) {
                 Storage::disk('local')->delete($path);
@@ -109,7 +125,7 @@ final class SubmitShopOwnerUpgradeRequest
         }
     }
 
-    private function assertTransition(
+    public function assertTransition(
         string $currentRegistrationType,
         string $currentBusinessType,
         string $requestedRegistrationType,
@@ -124,9 +140,8 @@ final class SubmitShopOwnerUpgradeRequest
             ]);
         }
 
-        $registrationAllowed = $currentRegistrationType === 'individual'
-            ? $requestedRegistrationType === 'company'
-            : $requestedRegistrationType === 'company';
+        $registrationAllowed = $requestedRegistrationType === $currentRegistrationType
+            || ($currentRegistrationType === 'individual' && $requestedRegistrationType === 'company');
         $businessAllowed = match ($currentBusinessType) {
             'retail' => in_array($requestedBusinessType, ['retail', 'both'], true),
             'repair' => in_array($requestedBusinessType, ['repair', 'both'], true),
