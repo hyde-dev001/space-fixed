@@ -67,6 +67,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'check.user.business.type' => \App\Http\Middleware\CheckUserBusinessType::class,
             'check.registration.type' => \App\Http\Middleware\CheckRegistrationType::class,
             'has.active.retail.premium' => \App\Http\Middleware\HasActiveRetailPremium::class,
+            'shop.module' => \App\Http\Middleware\EnsureShopModuleEnabled::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
