@@ -2,6 +2,8 @@ import { Head, Link, usePage } from "@inertiajs/react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import { useState, useEffect } from "react";
 import axios from "axios";
+import { erpUrl } from "@/utils/erpCapabilities";
+import type { ErpCapabilities } from "@/types/erp";
 
 type MetricColor = "success" | "error" | "warning" | "info";
 
@@ -167,7 +169,14 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
 };
 
 const DashboardRepair: React.FC = () => {
-	const { initialDashboard } = usePage().props as any;
+	const { initialDashboard, auth, erpCapabilities } = usePage().props as {
+		initialDashboard?: any;
+		auth?: { erpActor?: { ownerMode?: boolean } };
+		erpCapabilities?: ErpCapabilities;
+	};
+	const ownerMode = auth?.erpActor?.ownerMode === true;
+	const jobOrdersUrl = erpUrl(erpCapabilities, "GET:erp.staff.job-orders-repair")
+		?? (ownerMode ? null : "/erp/staff/job-orders-repair");
 
 	// Icon mapping
 	const iconMap = {
@@ -198,12 +207,14 @@ const DashboardRepair: React.FC = () => {
 	const [analytics, setAnalytics] = useState<PackageAnalytics | null>(null);
 
 	useEffect(() => {
+		if (ownerMode) return;
+
 		axios.get("/api/repair-packages/analytics")
 			.then((res) => {
 				if (res.data?.success) setAnalytics(res.data.data || null);
 			})
 			.catch(() => { /* silently skip if no permission */ });
-	}, []);
+	}, [ownerMode]);
 
 	return (
 		<AppLayoutERP>
@@ -328,12 +339,14 @@ const DashboardRepair: React.FC = () => {
 										<td className="px-6 py-4 font-semibold text-gray-900">{repair.amount}</td>
 										<td className="px-6 py-4 text-gray-500">{repair.createdAt}</td>
 										<td className="px-6 py-4 text-right">
-											<Link
-												href="/erp/staff/job-orders-repair"
-												className="text-sm font-semibold text-blue-600 hover:text-blue-700"
-											>
-												View
-											</Link>
+																	{jobOrdersUrl && (
+																		<Link
+																			href={jobOrdersUrl}
+																			className="text-sm font-semibold text-blue-600 hover:text-blue-700"
+																		>
+																			View
+																		</Link>
+																	)}
 										</td>
 									</tr>
 								))}
