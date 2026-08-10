@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Repairer;
 
 use App\Http\Controllers\Controller;
 use App\Models\RepairRequest;
+use App\Support\Erp\ErpActorContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -19,10 +20,7 @@ class DashboardController extends Controller
     public function getDashboardData(): JsonResponse
     {
         try {
-            $user = Auth::user();
-        
-        // Get shop_owner_id from authenticated user
-        $shopOwnerId = $user->shop_owner_id ?? $user->id;
+        $shopOwnerId = $this->shopOwnerId();
         
         if (!$shopOwnerId) {
             return response()->json(['error' => 'User not associated with a shop'], 403);
@@ -263,7 +261,7 @@ class DashboardController extends Controller
         
         } catch (\Exception $e) {
             Log::error('Repairer Dashboard Error: ' . $e->getMessage(), [
-                'user_id' => Auth::id(),
+                'user_id' => Auth::guard('user')->id(),
                 'trace' => $e->getTraceAsString()
             ]);
             
@@ -307,5 +305,17 @@ class DashboardController extends Controller
         $realizedRatio = min(1, $netCollected / $grossOrderTotal);
 
         return round($netOrderTotal * $realizedRatio, 2);
+    }
+
+    private function shopOwnerId(): ?int
+    {
+        $context = request()->attributes->get('erp.actor_context');
+        if ($context instanceof ErpActorContext) {
+            return (int) $context->tenantOwner()->getKey();
+        }
+
+        $user = Auth::guard('user')->user();
+
+        return $user ? (int) ($user->shop_owner_id ?? $user->id) : null;
     }
 }

@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\CRM\CRMDashboardController;
 use App\Http\Controllers\Api\CRM\CRMReviewController;
 use App\Http\Controllers\Erp\ReadPageController;
 use App\Http\Controllers\Logistics\ErpLogisticsController;
+use App\Http\Controllers\Staff\CustomerController;
 use App\Http\Middleware\EnsureOwnerErpWorkspaceEnabled;
 use Illuminate\Support\Facades\Route;
 
@@ -59,4 +60,11 @@ Route::middleware(EnsureOwnerErpWorkspaceEnabled::class)
 
         Route::get('/procurement/suppliers-management', [ReadPageController::class, 'procurementSuppliers'])
             ->name('procurement.suppliers-management');
+
+        Route::prefix('staff')->name('staff.')->group(function (): void {
+            Route::get('/customers', [CustomerController::class, 'index'])
+                ->name('customers');
+            Route::get('/repair-dashboard', [ReadPageController::class, 'repairDashboard'])
+                ->name('repair-dashboard');
+        });
     });

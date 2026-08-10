@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Erp;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Repairer\DashboardController;
 use App\Models\InventoryItem;
 use App\Models\StockMovement;
 use App\Models\Supplier;
@@ -97,6 +98,22 @@ final class ReadPageController extends Controller
             ->paginate(100);
 
         return Inertia::render('ERP/Procurement/SuppliersManagement', compact('initialData'));
+    }
+
+    public function repairDashboard(): Response|RedirectResponse
+    {
+        if ($redirect = $this->employeePasswordRedirect()) {
+            return $redirect;
+        }
+
+        try {
+            $response = app(DashboardController::class)->getDashboardData();
+            $initialDashboard = json_decode($response->getContent(), true);
+        } catch (\Throwable) {
+            $initialDashboard = null;
+        }
+
+        return Inertia::render('ERP/repairer/dashboardRepair', compact('initialDashboard'));
     }
 
     private function renderEmployeePage(string $component): Response|RedirectResponse

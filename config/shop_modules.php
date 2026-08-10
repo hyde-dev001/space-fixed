@@ -1084,6 +1084,14 @@ $ownerReadPairs = [
         'shop-owner.erp.procurement.suppliers-management',
         'shop-owner.erp.api.procurement.suppliers-management',
     ],
+    'erp.staff.customers' => [
+        'shop-owner.erp.staff.customers',
+        'shop-owner.erp.api.staff.customers',
+    ],
+    'erp.staff.repair-dashboard' => [
+        'shop-owner.erp.staff.repair-dashboard',
+        'shop-owner.erp.api.staff.repair-dashboard',
+    ],
 ];
 
 foreach ($ownerReadPairs as $employeeRouteName => [$ownerRouteName, $supportingRouteName]) {

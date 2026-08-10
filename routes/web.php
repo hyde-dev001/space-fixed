@@ -2440,20 +2440,9 @@ Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manage
         return Inertia::render('ERP/STAFF/JobOrders', compact('initialOrders'));
     })->middleware(['permission:access-staff-job-orders', 'check.user.business.type:retail,both'])->name('job-orders');
 
-    Route::get('/repair-dashboard', function () {
-        if (Auth::guard('user')->user()?->force_password_change) {
-            return redirect()->route('erp.profile');
-        }
-        try {
-            $controller = app(\App\Http\Controllers\Repairer\DashboardController::class);
-            $response = $controller->getDashboardData();
-            $initialDashboard = json_decode($response->getContent(), true);
-        } catch (\Exception $e) {
-            $initialDashboard = null;
-        }
-
-        return Inertia::render('ERP/repairer/dashboardRepair', compact('initialDashboard'));
-    })->middleware(['permission:access-repairer-dashboard', 'check.user.business.type:repair,both'])->name('repair-dashboard');
+    Route::get('/repair-dashboard', [\App\Http\Controllers\Erp\ReadPageController::class, 'repairDashboard'])
+        ->middleware(['permission:access-repairer-dashboard', 'check.user.business.type:repair,both'])
+        ->name('repair-dashboard');
 
     Route::get('/job-orders-repair', function () {
         if (Auth::guard('user')->user()?->force_password_change) {

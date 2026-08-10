@@ -143,4 +143,36 @@ final class OwnerErpPageContractTest extends TestCase
                 ->assertInertia(fn (Assert $page) => $page->component($component, false));
         }
     }
+
+    public function test_fourth_read_wave_exposes_owner_retail_customer_and_repair_dashboard_pages(): void
+    {
+        config([
+            'shop_modules.owner_erp_workspace_enabled' => true,
+            'shop_modules.enforcement_enabled' => true,
+        ]);
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+
+        foreach (['crm', 'repair_operations'] as $moduleKey) {
+            ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $owner->id,
+                'module_key' => $moduleKey,
+                'enabled' => true,
+            ]);
+        }
+
+        $pages = [
+            ['/shop-owner/erp/staff/customers', 'ERP/STAFF/Customers'],
+            ['/shop-owner/erp/staff/repair-dashboard', 'ERP/repairer/dashboardRepair'],
+        ];
+
+        foreach ($pages as [$uri, $component]) {
+            $this->actingAs($owner, 'shop_owner')
+                ->get($uri)
+                ->assertOk()
+                ->assertInertia(fn (Assert $page) => $page->component($component, false));
+        }
+    }
 }
