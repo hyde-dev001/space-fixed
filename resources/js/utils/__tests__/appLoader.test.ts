@@ -4,21 +4,32 @@ import { APP_LOADER_ENABLED_CLASS, dismissAppLoader } from "../appLoader";
 describe("app loader", () => {
 	afterEach(() => {
 		document.documentElement.classList.remove(APP_LOADER_ENABLED_CLASS);
+		document.documentElement.removeAttribute("data-solespace-loader-started-at");
 		document.body.innerHTML = "";
 		vi.useRealTimers();
 	});
 
-	it("fades out and removes the server-rendered loader on the first load", () => {
+	it("keeps the server-rendered loader visible for three seconds on the first load", () => {
 		vi.useFakeTimers();
 		document.documentElement.classList.add(APP_LOADER_ENABLED_CLASS);
+		document.documentElement.dataset.solespaceLoaderStartedAt = String(Date.now());
 		document.body.innerHTML = '<div id="solespace-app-loader"></div>';
 
 		dismissAppLoader();
 
 		const loader = document.getElementById("solespace-app-loader");
+		expect(loader).not.toHaveClass("is-leaving");
+
+		vi.advanceTimersByTime(3000 - 360 - 1);
+		expect(loader).not.toHaveClass("is-leaving");
+
+		vi.advanceTimersByTime(1);
 		expect(loader).toHaveClass("is-leaving");
 
-		vi.advanceTimersByTime(360);
+		vi.advanceTimersByTime(359);
+		expect(loader).toBeInTheDocument();
+
+		vi.advanceTimersByTime(1);
 
 		expect(document.getElementById("solespace-app-loader")).toBeNull();
 	});
