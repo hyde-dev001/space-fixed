@@ -1,4 +1,4 @@
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
 import Swal from "sweetalert2";
@@ -138,8 +138,14 @@ const MetricCard = ({ title, value, description, icon: Icon, color }: MetricCard
 };
 
 export default function RequestApproval() {
-	const [requests, setRequests] = useState<StockRequestApproval[]>([]);
-	const [loading, setLoading] = useState(false);
+	const { auth, initialData } = usePage().props as any;
+	const ownerMode = auth?.erpActor?.ownerMode === true;
+	const sanitizeRequests = (items: StockRequestApproval[] = []): StockRequestApproval[] => {
+		return items.map((request) => ({ ...request, sku_code: request.sku_code ?? "" }));
+	};
+	const seededRequests = sanitizeRequests(initialData?.data ?? []);
+	const [requests, setRequests] = useState<StockRequestApproval[]>(seededRequests);
+	const [loading, setLoading] = useState(!ownerMode && !initialData);
 	const [actionLoading, setActionLoading] = useState(false);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [statusFilter, setStatusFilter] = useState<"all" | RequestStatus>("all");
@@ -147,6 +153,8 @@ export default function RequestApproval() {
 	const [selectedRequest, setSelectedRequest] = useState<StockRequestApproval | null>(null);
 
 	const loadRequests = async () => {
+		if (ownerMode || initialData) return;
+
 		try {
 			setLoading(true);
 			const response = await requestMaterialApprovalApi.getAll({
@@ -168,8 +176,8 @@ export default function RequestApproval() {
 	};
 
 	useEffect(() => {
-		loadRequests();
-	}, []);
+		void loadRequests();
+	}, [ownerMode, initialData]);
 
 	const filteredRequests = useMemo(() => {
 		const query = searchQuery.trim().toLowerCase();
@@ -198,6 +206,8 @@ export default function RequestApproval() {
 	const paginatedRequests = filteredRequests.slice(startIndex, startIndex + itemsPerPage);
 
 	const handleApprove = async (request: StockRequestApproval) => {
+		if (ownerMode) return;
+
 		if (!( ["pending", "needs_details"] as const).includes(getWorkflowStatus(request))) {
 			await Swal.fire({
 				icon: "warning",
@@ -234,6 +244,8 @@ export default function RequestApproval() {
 	};
 
 	const handleReject = async (request: StockRequestApproval) => {
+		if (ownerMode) return;
+
 		if (!( ["pending", "needs_details"] as const).includes(getWorkflowStatus(request))) {
 			await Swal.fire({
 				icon: "warning",
@@ -290,6 +302,8 @@ export default function RequestApproval() {
 	};
 
 	const handleRequestDetails = async (request: StockRequestApproval) => {
+		if (ownerMode) return;
+
 		if (getWorkflowStatus(request) !== "pending") {
 			await Swal.fire({
 				icon: "warning",
@@ -581,20 +595,24 @@ export default function RequestApproval() {
 							>
 								Close
 							</button>
-							<button
-								onClick={() => handleReject(selectedRequest)}
-								disabled={actionLoading || !( ["pending", "needs_details"] as const).includes(getWorkflowStatus(selectedRequest))}
-								className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
-							>
-								{actionLoading ? "Processing..." : "Reject"}
-							</button>
-							<button
-								onClick={() => handleApprove(selectedRequest)}
-								disabled={actionLoading || !( ["pending", "needs_details"] as const).includes(getWorkflowStatus(selectedRequest))}
-								className="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
-							>
-								{actionLoading ? "Processing..." : "Approve"}
-							</button>
+							{!ownerMode && (
+								<>
+									<button
+										onClick={() => handleReject(selectedRequest)}
+										disabled={actionLoading || !( ["pending", "needs_details"] as const).includes(getWorkflowStatus(selectedRequest))}
+										className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
+									>
+										{actionLoading ? "Processing..." : "Reject"}
+									</button>
+									<button
+										onClick={() => handleApprove(selectedRequest)}
+										disabled={actionLoading || !( ["pending", "needs_details"] as const).includes(getWorkflowStatus(selectedRequest))}
+										className="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
+									>
+										{actionLoading ? "Processing..." : "Approve"}
+									</button>
+								</>
+							)}
 						</div>
 					</div>
 				</div>

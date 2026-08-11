@@ -224,6 +224,7 @@ const MetricCard = ({ title, value, description, icon: Icon, color }: MetricCard
 
 export default function StockRequest() {
 		const { auth, initialRequests, initialInventoryItems } = usePage().props as any;
+		const ownerMode = auth?.erpActor?.ownerMode === true;
 		const draftKey = scopedModalDraftKey(STOCK_REQUEST_DRAFT_KEY, auth?.user?.shop_owner_id, auth?.user?.id);
 	const [requests, setRequests] = useState<StockRequestApproval[]>(initialRequests?.data ?? []);
 	const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>(initialInventoryItems?.data ?? []);
@@ -394,6 +395,8 @@ export default function StockRequest() {
 	}, [formData.requestSize, sizeOptionsForSelectedColor]);
 
 	const refreshData = async () => {
+		if (ownerMode) return;
+
 		setIsLoading(true);
 		try {
 			const [requestsRes, itemsRes] = await Promise.all([
@@ -411,7 +414,7 @@ export default function StockRequest() {
 
 	useEffect(() => {
 		void refreshData();
-	}, []);
+	}, [ownerMode]);
 
 	const filteredData = useMemo(() => {
 		const query = searchQuery.trim().toLowerCase();
@@ -514,6 +517,8 @@ export default function StockRequest() {
 	};
 
 	const handleOpenCreateModal = async () => {
+		if (ownerMode) return;
+
 			const savedDraft = loadModalDraft<Partial<RequestFormState>>(draftKey);
 
 		if (!savedDraft) {
@@ -589,14 +594,16 @@ export default function StockRequest() {
 						<p className="text-gray-600 dark:text-gray-400">Create and track replenishment requests to Procurement for low or out-of-stock items</p>
 					</div>
 					<div className="flex flex-wrap items-center gap-2">
-						<button
-							onClick={() => {
-								void handleOpenCreateModal();
-							}}
-							className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
-						>
-							+ New Request
-						</button>
+						{!ownerMode && (
+							<button
+								onClick={() => {
+									void handleOpenCreateModal();
+								}}
+								className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+							>
+								+ New Request
+							</button>
+						)}
 					</div>
 				</div>
 

@@ -349,15 +349,20 @@ const cancellableStatuses: PurchaseOrderStatus[] = ["draft", "sent", "confirmed"
 
 export default function PurchaseOrders() {
 	const { initialData, initialApprovedPRs, auth } = usePage().props as any;
-	const canCreate = hasPermission(auth, "procurement.create_purchase_orders");
-	const canManage = hasPermission(auth, "procurement.manage_purchase_orders");
-	const canComplete = hasPermission(auth, "procurement.complete_purchase_orders");
-	const canCancel = hasPermission(auth, "procurement.cancel_purchase_orders");
-	const canVoid = hasPermission(auth, "procurement.void_purchase_order_receipts");
+	const ownerMode = auth?.erpActor?.ownerMode === true;
+	const canCreate = !ownerMode && hasPermission(auth, "procurement.create_purchase_orders");
+	const canManage = !ownerMode && hasPermission(auth, "procurement.manage_purchase_orders");
+	const canComplete = !ownerMode && hasPermission(auth, "procurement.complete_purchase_orders");
+	const canCancel = !ownerMode && hasPermission(auth, "procurement.cancel_purchase_orders");
+	const canVoid = !ownerMode && hasPermission(auth, "procurement.void_purchase_order_receipts");
 	const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderType[]>(initialData?.data ?? []);
 	const [approvedPRs, setApprovedPRs] = useState<PurchaseRequest[]>(initialApprovedPRs ?? []);
 	const [loading, setLoading] = useState(false);
-	const [metrics, setMetrics] = useState({ total_purchase_orders: 0, active_orders: 0, completed_orders: 0 });
+	const [metrics, setMetrics] = useState(() => ({
+		total_purchase_orders: initialData?.total ?? purchaseOrders.length,
+		active_orders: purchaseOrders.filter((order) => ["sent", "confirmed", "in_transit"].includes(order.status)).length,
+		completed_orders: purchaseOrders.filter((order) => order.status === "completed").length,
+	}));
 	const [searchQuery, setSearchQuery] = useState("");
 	const [statusFilter, setStatusFilter] = useState<"all" | PurchaseOrderStatus>("all");
 	const [currentPage, setCurrentPage] = useState(1);
@@ -374,6 +379,8 @@ export default function PurchaseOrders() {
 	const today = useMemo(() => normalizeDate(new Date()), []);
 
 	const fetchPurchaseOrders = async () => {
+		if (ownerMode) return;
+
 		try {
 			setLoading(true);
 			const response = await purchaseOrderApi.getAll();
@@ -387,6 +394,8 @@ export default function PurchaseOrders() {
 	};
 
 	const fetchApprovedPRs = async () => {
+		if (ownerMode) return;
+
 		try {
 			const response = await purchaseRequestApi.getApproved();
 			setApprovedPRs(response);
@@ -396,6 +405,8 @@ export default function PurchaseOrders() {
 	};
 
 	const fetchMetrics = async () => {
+		if (ownerMode) return;
+
 		try {
 			const data = await purchaseOrderApi.getMetrics();
 			setMetrics(data);
@@ -410,10 +421,12 @@ export default function PurchaseOrders() {
 	};
 
 	useEffect(() => {
+		if (ownerMode || initialData) return;
+
 		fetchPurchaseOrders();
 		fetchApprovedPRs();
 		fetchMetrics();
-	}, []);
+	}, [ownerMode, initialData]);
 
 	useEffect(() => {
 		if (!isDeliveryCalendarOpen) return;
