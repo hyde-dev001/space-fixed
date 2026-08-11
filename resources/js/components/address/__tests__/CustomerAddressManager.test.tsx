@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import CustomerAddressManager from '../CustomerAddressManager';
@@ -49,6 +49,45 @@ it('loads saved addresses and selects the default with an accessible control', a
   expect(select).toHaveAttribute('aria-pressed', 'true');
 });
 
+it('opens the add form in a modal only after the add trigger is clicked', async () => {
+  render(<CustomerAddressManager onSelect={vi.fn()} />);
+  await screen.findByText(/126 Ilang-ilang Street/);
+
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Add address' }));
+
+  expect(screen.getByRole('dialog', { name: 'Add delivery address' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Save address' })).toBeInTheDocument();
+
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+
+it('supports an add trigger placed outside the address summary', async () => {
+  const ControlledManager = () => {
+    const [isModalOpen, setIsModalOpen] = useState(false);
+
+    return (
+      <>
+        <button type="button" onClick={() => setIsModalOpen(true)}>Add address</button>
+        <CustomerAddressManager
+          onSelect={vi.fn()}
+          showAddTrigger={false}
+          isModalOpen={isModalOpen}
+          onModalOpenChange={setIsModalOpen}
+        />
+      </>
+    );
+  };
+
+  render(<ControlledManager />);
+  await screen.findByText(/126 Ilang-ilang Street/);
+
+  expect(screen.getAllByRole('button', { name: 'Add address' })).toHaveLength(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Add address' }));
+  await waitFor(() => expect(screen.getByRole('dialog', { name: 'Add delivery address' })).toBeInTheDocument());
+});
+
 it('requires a map pin before saving an address', async () => {
   render(<CustomerAddressManager onSelect={vi.fn()} />);
   await screen.findByText(/126 Ilang-ilang Street/);
@@ -95,7 +134,7 @@ it('opens an existing address for editing and shows server errors', async () => 
   await screen.findByText(/126 Ilang-ilang Street/);
 
   fireEvent.click(screen.getByRole('button', { name: /edit 126 ilang-ilang street/i }));
-  expect(screen.getByRole('heading', { name: 'Edit address' })).toBeInTheDocument();
+  expect(screen.getByRole('dialog', { name: 'Edit delivery address' })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
 
   expect(await screen.findByText('Unable to save.')).toBeInTheDocument();

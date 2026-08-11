@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CustomerAddressMapPicker from './CustomerAddressMapPicker';
 import {
   PHILIPPINE_LOCATIONS,
@@ -29,6 +29,9 @@ type Props = {
   disabled?: boolean;
   title?: string;
   description?: string;
+  showAddTrigger?: boolean;
+  isModalOpen?: boolean;
+  onModalOpenChange?: (open: boolean) => void;
 };
 
 type AddressForm = Omit<CustomerAddress, 'id'>;
@@ -48,6 +51,9 @@ export default function CustomerAddressManager({
   disabled = false,
   title = 'Delivery address',
   description = 'Choose where the rider should go. You can still use walk-in or your own courier.',
+  showAddTrigger = true,
+  isModalOpen: controlledModalOpen = false,
+  onModalOpenChange,
 }: Props) {
   const [addresses, setAddresses] = useState<CustomerAddress[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(initialAddressId);
@@ -57,7 +63,11 @@ export default function CustomerAddressManager({
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState('Loading saved addresses…');
   const [error, setError] = useState<string | null>(null);
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const cities = useMemo(() => getCityMunicipalityOptions(form.province), [form.province]);
+  const isModalControlled = onModalOpenChange !== undefined;
+  const modalOpen = isModalControlled ? controlledModalOpen : editingId !== undefined;
 
   useEffect(() => {
     let active = true;
@@ -96,6 +106,7 @@ export default function CustomerAddressManager({
     setEditingId(null);
     setForm(emptyForm());
     setError(null);
+    onModalOpenChange?.(true);
   };
 
   const openEdit = (address: CustomerAddress) => {
@@ -108,7 +119,73 @@ export default function CustomerAddressManager({
       city: normalizeCityMunicipalitySelection(province, address.city) || address.city,
     });
     setError(null);
+    onModalOpenChange?.(true);
   };
+
+  const closeModal = useCallback(() => {
+    setEditingId(undefined);
+    setError(null);
+    onModalOpenChange?.(false);
+  }, [onModalOpenChange]);
+
+  useEffect(() => {
+    if (!isModalControlled) return;
+
+    if (controlledModalOpen && editingId === undefined) {
+      setEditingId(null);
+      setForm(emptyForm());
+      setError(null);
+    }
+
+    if (!controlledModalOpen && editingId !== undefined) {
+      setEditingId(undefined);
+      setError(null);
+    }
+  }, [controlledModalOpen, editingId, isModalControlled]);
+
+  useEffect(() => {
+    if (!modalOpen) return;
+
+    const previousActiveElement = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    const focusTimer = window.setTimeout(() => closeButtonRef.current?.focus(), 0);
+
+    document.body.style.overflow = 'hidden';
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeModal();
+        return;
+      }
+
+      if (event.key !== 'Tab' || !modalRef.current) return;
+
+      const focusable = Array.from(modalRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+      ));
+      if (focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', handleKeyDown);
+      if (previousActiveElement && document.contains(previousActiveElement)) previousActiveElement.focus();
+    };
+  }, [closeModal, modalOpen]);
 
   const update = <K extends keyof AddressForm>(key: K, value: AddressForm[K]) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -149,6 +226,7 @@ export default function CustomerAddressManager({
         ? current.map((address) => address.id === saved.id ? saved : address)
         : [saved, ...current]);
       setEditingId(undefined);
+      onModalOpenChange?.(false);
       setSelectedId(saved.id);
       setStatus('Address saved and selected.');
       onSelect(saved);
@@ -166,9 +244,11 @@ export default function CustomerAddressManager({
           <h2 className="font-semibold text-gray-950">{title}</h2>
           <p className="text-sm text-gray-600">{description}</p>
         </div>
-        <button type="button" disabled={disabled} onClick={openAdd} className="min-h-11 shrink-0 rounded-lg border border-gray-300 px-3 text-sm font-semibold hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50">
-          Add address
-        </button>
+        {showAddTrigger && (
+          <button type="button" disabled={disabled} onClick={openAdd} className="min-h-11 shrink-0 px-1 text-sm font-semibold text-gray-900 underline underline-offset-4 transition-colors hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50">
+            Add address
+          </button>
+        )}
       </div>
 
       <p aria-live="polite" role="status" className="text-sm text-gray-600">{loading ? 'Loading saved addresses…' : status}</p>
@@ -200,12 +280,41 @@ export default function CustomerAddressManager({
         </div>
       )}
 
-      {editingId !== undefined && (
-        <div className="space-y-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-lg font-semibold text-gray-950">{editingId ? 'Edit address' : 'Add address'}</h3>
-            <button type="button" onClick={() => { setEditingId(undefined); setError(null); }} className="min-h-11 px-2 text-sm font-semibold text-gray-700 underline">Cancel</button>
-          </div>
+      {modalOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-3 backdrop-blur-[2px] sm:p-5"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeModal();
+          }}
+        >
+          <div
+            ref={modalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="customer-address-modal-title"
+            tabIndex={-1}
+            className="flex max-h-[min(92dvh,52rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-gray-200 px-4 py-4 sm:px-6">
+              <div>
+                <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-blue-700">Delivery address</p>
+                <h2 id="customer-address-modal-title" className="text-xl font-semibold text-gray-950">
+                  {editingId ? 'Edit delivery address' : 'Add delivery address'}
+                </h2>
+                <p className="mt-1 text-sm text-gray-600">Use a precise map pin so nearby repair shops can confirm coverage.</p>
+              </div>
+              <button
+                ref={closeButtonRef}
+                type="button"
+                aria-label="Close address modal"
+                onClick={closeModal}
+                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full text-2xl leading-none text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <span aria-hidden="true">×</span>
+              </button>
+            </div>
+            <div className="overflow-y-auto p-4 sm:p-6">
+              <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void save(); }}>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-sm font-medium text-gray-800">Full name<input required value={form.name} onChange={(event) => update('name', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3" /></label>
             <label className="text-sm font-medium text-gray-800">Phone<input required inputMode="numeric" value={form.phone} onChange={(event) => update('phone', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3" /></label>
@@ -236,7 +345,17 @@ export default function CustomerAddressManager({
           </div>
           <label className="block text-sm font-medium text-gray-800">Delivery instructions (optional)<textarea value={form.delivery_instructions ?? ''} onChange={(event) => update('delivery_instructions', event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" rows={2} /></label>
           {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
-          <button type="button" onClick={() => void save()} disabled={saving} className="min-h-11 w-full rounded-lg bg-gray-950 px-4 font-semibold text-white disabled:opacity-60">{saving ? 'Saving…' : editingId ? 'Save changes' : 'Save address'}</button>
+          <div className="flex flex-col-reverse gap-3 border-t border-gray-200 pt-4 sm:flex-row sm:justify-end">
+            <button type="button" onClick={closeModal} className="min-h-11 rounded-lg px-4 text-sm font-semibold text-gray-700 underline underline-offset-4 transition-colors hover:text-gray-950 focus:outline-none focus:ring-2 focus:ring-blue-500">
+              Cancel
+            </button>
+            <button type="submit" disabled={saving} className="min-h-11 rounded-lg bg-gray-950 px-5 text-sm font-semibold text-white transition-colors hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60">
+              {saving ? 'Saving…' : editingId ? 'Save changes' : 'Save address'}
+            </button>
+          </div>
+        </form>
+            </div>
+          </div>
         </div>
       )}
     </div>
