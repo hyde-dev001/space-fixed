@@ -25,7 +25,7 @@ export default function UserLogin() {
   const [errors, setErrors] = useState<FormErrors>({});
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const authInputClasses = 'h-12 rounded-xl !border-gray-200 !bg-[#f8fafc] !text-[13px] !text-gray-800 placeholder:!text-gray-400 shadow-none focus:!border-gray-300 focus:!ring-gray-200/70 dark:!border-gray-200 dark:!bg-[#f8fafc] dark:!text-gray-800 dark:placeholder:!text-gray-400 dark:focus:!border-gray-300 dark:focus:!ring-gray-200/70';
+  const authInputClasses = 'userside-auth-input h-12 rounded-xl !border-gray-200 !bg-[#f8fafc] !text-[13px] !text-gray-800 placeholder:!text-gray-400 shadow-none focus:!border-gray-300 focus:!ring-gray-200/70';
 
   // Show flash success message (e.g. after accepting invitation)
   useEffect(() => {
@@ -133,21 +133,21 @@ export default function UserLogin() {
           display: none;
         }
       `}</style>
-      <div className="min-h-screen bg-[radial-gradient(circle_at_top,#eef2f7_0%,#f7f9fc_45%,#ffffff_100%)] md:bg-white font-outfit antialiased">
+      <div className="userside-auth-page min-h-screen bg-[radial-gradient(circle_at_top,#eef2f7_0%,#f7f9fc_45%,#ffffff_100%)] md:bg-white font-outfit antialiased">
         <Navigation />
 
       <div className="max-w-480 mx-auto px-4 sm:px-6 lg:px-12 pt-50 sm:pt-24 lg:pt-32 pb-16 sm:pb-24">
         <div className="text-center mb-10 sm:mb-10 lg:mb-12">
-          <h1 className="text-[42px] leading-[1.02] sm:text-4xl lg:text-6xl font-bold text-gray-900 mb-4 sm:mb-5 tracking-tight">
+          <h1 className="userside-auth-title text-[42px] leading-[1.02] sm:text-4xl lg:text-6xl font-bold text-gray-900 mb-4 sm:mb-5 tracking-tight">
             SIGN IN
           </h1>
-          <p className="text-[18px] sm:text-lg lg:text-xl text-gray-600 max-w-[320px] sm:max-w-2xl mx-auto leading-snug font-light">
+          <p className="userside-auth-subtitle text-[18px] sm:text-lg lg:text-xl text-gray-600 max-w-[320px] sm:max-w-2xl mx-auto leading-snug font-light">
             Glad to see you again. Sign in to continue.
           </p>
         </div>
 
         <div className="max-w-92.5 sm:max-w-lg mx-auto mt-5 sm:mt-0">
-          <div className="bg-white rounded-[20px] sm:rounded-2xl border border-gray-100 shadow-[0_14px_32px_-20px_rgba(15,23,42,0.35)] p-5 sm:p-8">
+          <div className="userside-auth-card bg-white rounded-[20px] sm:rounded-2xl border border-gray-100 shadow-[0_14px_32px_-20px_rgba(15,23,42,0.35)] p-5 sm:p-8">
             <Form onSubmit={handleSubmit} className="space-y-5 sm:space-y-6">
               <div className="relative">
                 <Label htmlFor="email" className="text-[12px] font-medium text-gray-700 mb-1.5">Email</Label>
@@ -218,7 +218,7 @@ export default function UserLogin() {
                     Remember me
                   </label>
                 </div>
-                <Link href={route('password.request')} className="text-[12px] text-[#0e2f60] hover:text-[#133c7b] transition-colors">
+                <Link href={route('password.request')} className="userside-auth-link text-[12px] text-[#0e2f60] hover:text-[#133c7b] transition-colors">
                   Forgot password?
                 </Link>
               </div>
@@ -226,7 +226,7 @@ export default function UserLogin() {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full rounded-xl px-10 py-3.5 bg-black text-white font-semibold uppercase tracking-[0.2em] text-xs sm:text-sm hover:bg-black/85 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="userside-auth-primary w-full rounded-xl px-10 py-3.5 bg-black text-white font-semibold uppercase tracking-[0.2em] text-xs sm:text-sm hover:bg-black/85 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isLoading ? 'Signing in...' : 'Sign in'}
               </button>
@@ -237,7 +237,7 @@ export default function UserLogin() {
                 Don't have an account?{' '}
                 <Link
                   href={route("register")}
-                  className="text-black hover:text-black/80 font-semibold uppercase tracking-[0.15em] text-[12px] transition-colors"
+                  className="userside-auth-link text-black hover:text-black/80 font-semibold uppercase tracking-[0.15em] text-[12px] transition-colors"
                 >
                   Create account
                 </Link>

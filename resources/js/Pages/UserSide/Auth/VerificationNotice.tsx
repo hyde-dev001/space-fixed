@@ -57,13 +57,13 @@ export default function VerificationNotice({ status, email }: Props) {
   return (
     <>
       <Head title="Verify Your Email" />
-      <div className="min-h-screen bg-white font-outfit antialiased">
+      <div className="userside-auth-page min-h-screen bg-white font-outfit antialiased">
         <Navigation />
 
         <div className="max-w-[1920px] mx-auto px-6 lg:px-12 py-24">
           <div className="max-w-2xl mx-auto">
             {/* Main Card */}
-            <div className="bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
+            <div className="userside-auth-card bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
               {/* Icon */}
               <div className="flex justify-center mb-6">
                 <div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center">
@@ -75,7 +75,7 @@ export default function VerificationNotice({ status, email }: Props) {
 
               {/* Title & Description */}
               <div className="text-center mb-8">
-                <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4 tracking-tight">
+                <h1 className="userside-auth-title text-3xl lg:text-4xl font-bold text-gray-900 mb-4 tracking-tight">
                   Verify Your Email Address
                 </h1>
                 <p className="text-lg text-gray-600 leading-relaxed">
@@ -139,7 +139,7 @@ export default function VerificationNotice({ status, email }: Props) {
                   type="button"
                   onClick={handleResendEmail}
                   disabled={isResending || countdown > 0}
-                  className="w-full px-6 py-3 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="userside-auth-primary w-full px-6 py-3 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isResending ? (
                     <span className="flex items-center justify-center space-x-2">
@@ -160,7 +160,7 @@ export default function VerificationNotice({ status, email }: Props) {
                 <button
                   type="button"
                   onClick={handleGoToLogin}
-                  className="w-full px-6 py-3 bg-gray-100 text-gray-700 font-semibold uppercase tracking-wider text-sm hover:bg-gray-200 transition-colors"
+                  className="userside-auth-secondary w-full px-6 py-3 bg-gray-100 text-gray-700 font-semibold uppercase tracking-wider text-sm hover:bg-gray-200 transition-colors"
                 >
                   Back to Login
                 </button>

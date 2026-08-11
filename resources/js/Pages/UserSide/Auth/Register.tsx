@@ -58,7 +58,7 @@ export default function Register() {
   const leafletMapRef = useRef<any>(null);
   const markerRef = useRef<any>(null);
   const locationRequestRef = useRef(0);
-  const authInputClasses = 'h-12 rounded-xl !border-gray-200 !bg-[#f8fafc] !text-[13px] !text-gray-800 placeholder:!text-gray-400 shadow-none focus:!border-gray-300 focus:!ring-gray-200/70 dark:!border-gray-200 dark:!bg-[#f8fafc] dark:!text-gray-800 dark:placeholder:!text-gray-400 dark:focus:!border-gray-300 dark:focus:!ring-gray-200/70';
+  const authInputClasses = 'userside-auth-input h-12 rounded-xl !border-gray-200 !bg-[#f8fafc] !text-[13px] !text-gray-800 placeholder:!text-gray-400 shadow-none focus:!border-gray-300 focus:!ring-gray-200/70';
 
   useEffect(() => {
     return () => {
@@ -692,21 +692,21 @@ export default function Register() {
   return (
     <>
       <Head title="Register" />
-      <div className="min-h-screen bg-[radial-gradient(circle_at_top,#eef2f7_0%,#f7f9fc_45%,#ffffff_100%)] md:bg-white font-outfit antialiased">
+      <div className="userside-auth-page min-h-screen bg-[radial-gradient(circle_at_top,#eef2f7_0%,#f7f9fc_45%,#ffffff_100%)] md:bg-white font-outfit antialiased">
         <Navigation />
 
       <div className="max-w-480 mx-auto px-4 sm:px-6 lg:px-12 pt-16 sm:pt-20 lg:pt-28 pb-16 sm:pb-24">
         <div className="text-center mt-20 sm:mt-0 mb-7 sm:mb-10 lg:mb-12">
-          <h1 className="text-[34px] leading-[1.05] sm:text-4xl lg:text-6xl font-bold text-gray-900 mb-3 sm:mb-5 tracking-tight">
+          <h1 className="userside-auth-title text-[34px] leading-[1.05] sm:text-4xl lg:text-6xl font-bold text-gray-900 mb-3 sm:mb-5 tracking-tight">
             CREATE ACCOUNT
           </h1>
-          <p className="text-[15px] sm:text-lg lg:text-xl text-gray-600 max-w-sm sm:max-w-2xl mx-auto leading-relaxed font-light">
+          <p className="userside-auth-subtitle text-[15px] sm:text-lg lg:text-xl text-gray-600 max-w-sm sm:max-w-2xl mx-auto leading-relaxed font-light">
             Please fill in your details to create an account.
           </p>
         </div>
 
         <div className="max-w-92.5 sm:max-w-lg mx-auto">
-          <div className="bg-white rounded-[20px] sm:rounded-2xl border border-gray-100 shadow-[0_14px_32px_-20px_rgba(15,23,42,0.35)] p-5 sm:p-8">
+          <div className="userside-auth-card bg-white rounded-[20px] sm:rounded-2xl border border-gray-100 shadow-[0_14px_32px_-20px_rgba(15,23,42,0.35)] p-5 sm:p-8">
             <div className="mb-4 text-center">
               <p className="text-[11px] uppercase tracking-[0.18em] text-gray-500">Step {currentStep} of 3</p>
             </div>
@@ -835,7 +835,7 @@ export default function Register() {
                             }
                           }}
                           placeholder="e.g. 123 Rizal St, Makati"
-                          className="h-10 min-w-0 flex-1 rounded-xl border border-gray-200 bg-[#f8fafc] px-3 text-[12px] text-gray-800 outline-none focus:border-gray-300 focus:ring-2 focus:ring-gray-200/70"
+                          className="userside-auth-input h-10 min-w-0 flex-1 rounded-xl border border-gray-200 bg-[#f8fafc] px-3 text-[12px] text-gray-800 outline-none focus:border-gray-300 focus:ring-2 focus:ring-gray-200/70"
                         />
                         <button
                           type="button"
@@ -849,7 +849,7 @@ export default function Register() {
                           type="button"
                           onClick={handleUseMyGPS}
                           disabled={gettingGPS}
-                          className="h-10 rounded-xl border border-blue-600 px-3 text-[12px] font-semibold text-blue-600 transition hover:bg-blue-50 disabled:opacity-60"
+                          className="userside-auth-ghost h-10 rounded-xl border border-blue-600 px-3 text-[12px] font-semibold text-blue-600 transition hover:bg-blue-50 disabled:opacity-60"
                         >
                           {gettingGPS ? 'Locating...' : 'Use My GPS'}
                         </button>
@@ -961,7 +961,7 @@ export default function Register() {
                   <button
                     type="button"
                     onClick={handlePrev}
-                    className="w-full sm:w-auto rounded-xl px-6 py-3 bg-gray-100 text-gray-700 font-semibold uppercase tracking-[0.16em] text-xs sm:text-sm hover:bg-gray-200 transition-colors"
+                    className="userside-auth-secondary w-full sm:w-auto rounded-xl px-6 py-3 bg-gray-100 text-gray-700 font-semibold uppercase tracking-[0.16em] text-xs sm:text-sm hover:bg-gray-200 transition-colors"
                   >
                     Previous
                   </button>
@@ -970,7 +970,7 @@ export default function Register() {
                   <button
                     type="button"
                     onClick={handleNext}
-                    className="w-full sm:w-auto rounded-xl px-6 py-3 bg-black text-white font-semibold uppercase tracking-[0.16em] text-xs sm:text-sm hover:bg-black/85 transition-colors sm:ml-auto"
+                    className="userside-auth-primary w-full sm:w-auto rounded-xl px-6 py-3 bg-black text-white font-semibold uppercase tracking-[0.16em] text-xs sm:text-sm hover:bg-black/85 transition-colors sm:ml-auto"
                   >
                     Next
                   </button>
@@ -979,7 +979,7 @@ export default function Register() {
                     type="button"
                     onClick={handleRegisterClick}
                     disabled={isLoading}
-                    className="w-full sm:w-auto rounded-xl px-6 py-3 bg-black text-white font-semibold uppercase tracking-[0.16em] text-xs sm:text-sm hover:bg-black/85 transition-colors disabled:opacity-50 disabled:cursor-not-allowed sm:ml-auto"
+                    className="userside-auth-primary w-full sm:w-auto rounded-xl px-6 py-3 bg-black text-white font-semibold uppercase tracking-[0.16em] text-xs sm:text-sm hover:bg-black/85 transition-colors disabled:opacity-50 disabled:cursor-not-allowed sm:ml-auto"
                   >
                     {isLoading ? 'Creating account...' : 'Create account'}
                   </button>
@@ -992,7 +992,7 @@ export default function Register() {
                 Already have an account?{' '}
                 <a
                   href={route("login")}
-                  className="text-black hover:text-black/80 font-semibold uppercase tracking-[0.15em] text-[12px] transition-colors"
+                  className="userside-auth-link text-black hover:text-black/80 font-semibold uppercase tracking-[0.15em] text-[12px] transition-colors"
                 >
                   Sign in
                 </a>
