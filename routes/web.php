@@ -724,7 +724,7 @@ Route::prefix('superAdmin')->name('superAdmin.')->middleware('auth:super_admin')
     Route::post('/flagged-accounts/{id}/mark-reviewed', [FlaggedAccountsController::class, 'markReviewed'])->name('flagged-accounts.mark-reviewed');
     Route::post('/flagged-accounts/{id}/dismiss', [FlaggedAccountsController::class, 'dismiss'])->name('flagged-accounts.dismiss');
     Route::post('/flagged-accounts/{id}/ban', [FlaggedAccountsController::class, 'ban'])->name('flagged-accounts.ban');
-    Route::get('/shop-owner-registration-view', [ShopOwnerRegistrationViewController::class, 'index'])
+    Route::get('/shop-owner-registration-view', fn () => redirect()->route('admin.shop-owner-registration-view'))
         ->middleware('privileged.capability:review_registrations')
         ->name('shop-owner-registration-view');
     Route::get('/system-monitoring-dashboard', [SystemMonitoringDashboardController::class, 'index'])->name('system-monitoring-dashboard');

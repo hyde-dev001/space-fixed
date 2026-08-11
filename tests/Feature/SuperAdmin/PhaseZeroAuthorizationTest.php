@@ -2,10 +2,10 @@
 
 namespace Tests\Feature\SuperAdmin;
 
+use App\Enums\ShopOwnerStatus;
 use App\Models\ShopOwner;
 use App\Models\SuperAdmin;
 use App\Models\User;
-use App\Enums\ShopOwnerStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -151,6 +151,46 @@ class PhaseZeroAuthorizationTest extends TestCase
         $this->postJson("/superAdmin/shop-owner-registration/{$shopOwner->id}/reject", [
             'rejection_reason' => 'Not accepted',
         ])->assertStatus(404);
+
+        $this->assertSame(ShopOwnerStatus::PENDING, $shopOwner->fresh()->status);
+    }
+
+    public function test_registration_route_compatibility_is_get_only_and_redirects_to_admin(): void
+    {
+        $canonicalIndex = collect(Route::getRoutes())
+            ->filter(fn ($route) => $route->getName() === 'admin.shop-owner-registration-view');
+        $canonicalApproval = collect(Route::getRoutes())
+            ->filter(fn ($route) => $route->getName() === 'admin.shop-owner-approve');
+        $canonicalRejection = collect(Route::getRoutes())
+            ->filter(fn ($route) => $route->getName() === 'admin.shop-owner-reject');
+        $legacyCompatibility = collect(Route::getRoutes())
+            ->filter(fn ($route) => $route->uri() === 'superAdmin/shop-owner-registration-view');
+
+        $this->assertCount(1, $canonicalIndex);
+        $this->assertCount(1, $canonicalApproval);
+        $this->assertCount(1, $canonicalRejection);
+        $this->assertCount(1, $legacyCompatibility);
+        $this->assertSame(['GET', 'HEAD'], $legacyCompatibility->first()->methods());
+
+        $admin = SuperAdmin::factory()->admin()->create();
+        $this->actingAs($admin, 'super_admin')
+            ->get('/superAdmin/shop-owner-registration-view')
+            ->assertRedirect(route('admin.shop-owner-registration-view'));
+    }
+
+    public function test_legacy_registration_mutations_are_not_registered_for_authenticated_admins(): void
+    {
+        $admin = SuperAdmin::factory()->admin()->create();
+        $shopOwner = ShopOwner::factory()->create(['status' => ShopOwnerStatus::PENDING]);
+
+        foreach (['approve', 'reject'] as $decision) {
+            $response = $this->actingAs($admin, 'super_admin')
+                ->postJson("/superAdmin/shop-owner-registration/{$shopOwner->id}/{$decision}", [
+                    'rejection_reason' => 'Not accepted',
+                ]);
+
+            $this->assertContains($response->getStatusCode(), [404, 405]);
+        }
 
         $this->assertSame(ShopOwnerStatus::PENDING, $shopOwner->fresh()->status);
     }
