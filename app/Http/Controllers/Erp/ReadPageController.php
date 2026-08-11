@@ -86,6 +86,37 @@ final class ReadPageController extends Controller
         ]);
     }
 
+    public function hrEmployeeDirectory(): Response|RedirectResponse
+    {
+        if ($redirect = $this->employeePasswordRedirect()) {
+            return $redirect;
+        }
+
+        $initialEmployees = Employee::where('shop_owner_id', $this->shopOwnerId())
+            ->orderBy('name')
+            ->get()
+            ->map(static fn (Employee $employee): array => [
+                'id' => $employee->id,
+                'firstName' => $employee->first_name,
+                'lastName' => $employee->last_name,
+                'employeeId' => $employee->employee_id,
+                'email' => $employee->email,
+                'phone' => $employee->phone,
+                'department' => $employee->department,
+                'position' => $employee->position,
+                'status' => $employee->status,
+                'hiredAt' => optional($employee->hire_date)->toDateString(),
+                'lastActiveAt' => optional($employee->updated_at)->toISOString(),
+                'location' => $employee->location ?? $employee->address,
+            ])
+            ->values();
+
+        return Inertia::render('ERP/HR/HR', [
+            'initialEmployees' => $initialEmployees,
+            'initialSection' => 'employees',
+        ]);
+    }
+
     public function hrAttendance(): Response|RedirectResponse
     {
         if ($redirect = $this->employeePasswordRedirect()) {
@@ -135,6 +166,21 @@ final class ReadPageController extends Controller
             'initialOvertimeRequests' => $initialOvertimeRequests,
             'initialSection' => 'overtime',
         ]);
+    }
+
+    public function hrPayrollView(): Response|RedirectResponse
+    {
+        return $this->renderHrSection('payroll-view');
+    }
+
+    public function hrPayrollGenerate(): Response|RedirectResponse
+    {
+        return $this->renderHrSection('payroll-generate');
+    }
+
+    public function hrSalaryChanges(): Response|RedirectResponse
+    {
+        return $this->renderHrSection('salary-changes');
     }
 
     public function managerReports(): Response|RedirectResponse
@@ -349,6 +395,17 @@ final class ReadPageController extends Controller
     private function renderEmployeePage(string $component): Response|RedirectResponse
     {
         return $this->employeePasswordRedirect() ?? Inertia::render($component);
+    }
+
+    private function renderHrSection(string $section): Response|RedirectResponse
+    {
+        if ($redirect = $this->employeePasswordRedirect()) {
+            return $redirect;
+        }
+
+        return Inertia::render('ERP/HR/HR', [
+            'initialSection' => $section,
+        ]);
     }
 
     private function employeePasswordRedirect(): ?RedirectResponse

@@ -190,6 +190,7 @@ final class OwnerErpPageContractTest extends TestCase
                 'key' => 'retail_operations',
                 'slug' => 'retail',
                 'pages' => [
+                    'shop-owner.erp.retail.dashboard',
                     'shop-owner.erp.retail.products',
                     'shop-owner.erp.retail.orders',
                     'shop-owner.erp.retail.point-of-sale',
@@ -218,6 +219,9 @@ final class OwnerErpPageContractTest extends TestCase
                     'shop-owner.erp.hr.attendance',
                     'shop-owner.erp.hr.leave-approvals',
                     'shop-owner.erp.hr.overtime-approvals',
+                    'shop-owner.erp.hr.payroll-view',
+                    'shop-owner.erp.hr.payroll-generate',
+                    'shop-owner.erp.hr.salary-changes',
                     'shop-owner.erp.hr.suspend-accounts',
                     'shop-owner.erp.hr.audit-logs',
                 ],
@@ -379,6 +383,7 @@ final class OwnerErpPageContractTest extends TestCase
         ]);
 
         $pages = [
+            ['/shop-owner/erp/retail/dashboard', 'retail_operations', 'ShopOwner/Dashboard'],
             ['/shop-owner/erp/retail/products', 'retail_operations', 'ShopOwner/Products/product management/ProductManagementWithVariants'],
             ['/shop-owner/erp/staff/repair-dashboard', 'repair_operations', 'ERP/repairer/dashboardRepair'],
             ['/shop-owner/erp/hr/audit-logs', 'hr_employees', 'ERP/HR/AuditLogs'],
@@ -407,7 +412,7 @@ final class OwnerErpPageContractTest extends TestCase
                         ->where('activeModule.key', $moduleKey)
                         ->where('navigationMode', 'module');
 
-                    if ($uri === '/shop-owner/erp/retail/products') {
+                    if (in_array($uri, ['/shop-owner/erp/retail/dashboard', '/shop-owner/erp/retail/products'], true)) {
                         $page->where('erpMode', true);
                     }
 
@@ -440,6 +445,9 @@ final class OwnerErpPageContractTest extends TestCase
             ['/shop-owner/erp/hr/attendance', 'ERP/HR/HR'],
             ['/shop-owner/erp/hr/leave-approvals', 'ERP/HR/HR'],
             ['/shop-owner/erp/hr/overtime-approvals', 'ERP/HR/HR'],
+            ['/shop-owner/erp/hr/payroll-view', 'ERP/HR/HR'],
+            ['/shop-owner/erp/hr/payroll-generate', 'ERP/HR/HR'],
+            ['/shop-owner/erp/hr/salary-changes', 'ERP/HR/HR'],
             ['/shop-owner/erp/inventory/upload-stocks', 'ERP/inventory/UploadInventory'],
             ['/shop-owner/erp/inventory/stock-request', 'ERP/inventory/StockRequest'],
             ['/shop-owner/erp/inventory/request-material-approval', 'ERP/inventory/RequestApproval'],
@@ -703,7 +711,7 @@ final class OwnerErpPageContractTest extends TestCase
 
         $pages = [
             ['/shop-owner/erp/hr/audit-logs', 'ERP/HR/AuditLogs'],
-            ['/shop-owner/erp/hr/employee-directory', 'ShopOwner/TeamManagement/UserAccessControl'],
+            ['/shop-owner/erp/hr/employee-directory', 'ERP/HR/HR'],
             ['/shop-owner/erp/hr/suspend-accounts', 'ShopOwner/TeamManagement/suspendAccount'],
             ['/shop-owner/erp/finance/audit-logs', 'ERP/Finance/AuditLogs'],
             ['/shop-owner/erp/finance/expense-approvals', 'ShopOwner/Approvals/ExpenseApproval'],

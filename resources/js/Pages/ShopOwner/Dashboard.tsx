@@ -2,6 +2,7 @@ import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useState } from "react";
 import Swal from "sweetalert2";
 import AppLayoutShopOwner from "../../layout/AppLayout_shopOwner";
+import AppLayoutERP from "../../layout/AppLayout_ERP";
 import EcommerceMetrics from "../../components/ecommerce/EcommerceMetrics";
 import RecentOrders from "../../components/ecommerce/RecentOrders";
 import MonthlySalesChart from "../../components/ecommerce/MonthlySalesChart";
@@ -69,7 +70,8 @@ interface DashboardStats {
 }
 
 export default function Ecommerce() {
-  const { auth } = usePage().props as any;
+  const { auth, erpMode } = usePage().props as any;
+  const Layout = erpMode === true ? AppLayoutERP : AppLayoutShopOwner;
   const businessType = String(auth?.shop_owner?.business_type ?? "").toLowerCase();
   const registrationType = String(auth?.shop_owner?.registration_type ?? "").toLowerCase();
   const hideOrderMetrics = businessType === "repair" && registrationType === "individual";
@@ -112,7 +114,7 @@ export default function Ecommerce() {
 
   if (loading) {
     return (
-      <AppLayoutShopOwner>
+      <Layout>
         <Head title="Dashboard - Shop Owner" />
         <div className="flex items-center justify-center min-h-screen">
           <div className="text-center">
@@ -120,12 +122,12 @@ export default function Ecommerce() {
             <p className="mt-4 text-gray-600 dark:text-gray-400">Loading dashboard...</p>
           </div>
         </div>
-      </AppLayoutShopOwner>
+      </Layout>
     );
   }
 
   return (
-    <AppLayoutShopOwner>
+    <Layout>
       <Head title="Dashboard - Shop Owner" />
       <div className="space-y-6">
         <div>
@@ -156,6 +158,6 @@ export default function Ecommerce() {
 
       {!hideOrderMetrics && <RecentOrders orders={stats?.recent_orders || []} />}
       </div>
-    </AppLayoutShopOwner>
+    </Layout>
   );
 }

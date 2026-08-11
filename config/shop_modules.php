@@ -1289,6 +1289,11 @@ $ownerOperationalPageRoute = static function (
 };
 
 $retailOwnerPages = [
+    'shop-owner.erp.retail.dashboard' => [
+        'label' => 'Retail Dashboard',
+        'order' => 10,
+        'supporting_routes' => ['shop-owner.dashboard'],
+    ],
     'shop-owner.erp.retail.orders' => [
         'label' => 'Orders',
         'order' => 20,
@@ -1337,7 +1342,7 @@ $ownerModulePageGroups = [
             'supporting_routes' => ['erp.hr'],
         ],
         'shop-owner.erp.hr.employee-directory' => [
-            'label' => 'Employee Directory',
+            'label' => 'Employees',
             'order' => 20,
             'supporting_routes' => [
                 'shop-owner.employees.store',
@@ -1353,7 +1358,7 @@ $ownerModulePageGroups = [
             ],
         ],
         'shop-owner.erp.hr.attendance' => [
-            'label' => 'Attendance',
+            'label' => 'View Attendance',
             'order' => 30,
             'group' => 'attendance-monitoring',
             'group_label' => 'Attendance Monitoring',
@@ -1361,7 +1366,7 @@ $ownerModulePageGroups = [
             'supporting_routes' => ['hr.attendance.index'],
         ],
         'shop-owner.erp.hr.leave-approvals' => [
-            'label' => 'Leave Approvals',
+            'label' => 'Leave Requests',
             'order' => 40,
             'group' => 'attendance-monitoring',
             'group_label' => 'Attendance Monitoring',
@@ -1369,12 +1374,46 @@ $ownerModulePageGroups = [
             'supporting_routes' => ['api.leave.index'],
         ],
         'shop-owner.erp.hr.overtime-approvals' => [
-            'label' => 'Overtime Approvals',
+            'label' => 'Overtime Requests',
             'order' => 50,
             'group' => 'attendance-monitoring',
             'group_label' => 'Attendance Monitoring',
             'group_order' => 20,
             'supporting_routes' => ['hr.overtime.index'],
+        ],
+        'shop-owner.erp.hr.payroll-view' => [
+            'label' => 'View Slip',
+            'order' => 10,
+            'group' => 'payroll',
+            'group_label' => 'Payroll',
+            'group_order' => 30,
+            'supporting_routes' => ['hr.payroll.index'],
+        ],
+        'shop-owner.erp.hr.payroll-generate' => [
+            'label' => 'Generate Slip',
+            'order' => 20,
+            'group' => 'payroll',
+            'group_label' => 'Payroll',
+            'group_order' => 30,
+            'supporting_routes' => [
+                'hr.payroll.index',
+                'hr.payroll.store',
+                'hr.payroll.batch.preview',
+                'hr.payroll.batch.generate',
+            ],
+        ],
+        'shop-owner.erp.hr.salary-changes' => [
+            'label' => 'Salary Changes',
+            'order' => 30,
+            'group' => 'payroll',
+            'group_label' => 'Payroll',
+            'group_order' => 30,
+            'supporting_routes' => [
+                'hr.salary_changes.index',
+                'hr.salary_changes.store',
+                'hr.salary_changes.approve',
+                'hr.salary_changes.reject',
+            ],
         ],
         'shop-owner.erp.hr.suspend-accounts' => [
             'label' => 'Suspend Accounts',
