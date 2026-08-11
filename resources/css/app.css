@@ -362,7 +362,11 @@ html.userside-dark #app [class~="text-black/70"] {
 html.userside-dark #app [class~="border-gray-200"],
 html.userside-dark #app [class*="border-gray-200/"],
 html.userside-dark #app [class~="border-gray-300"],
-html.userside-dark #app [class*="border-gray-300/"] {
+html.userside-dark #app [class*="border-gray-300/"],
+html.userside-dark #app [class~="border-gray-100"],
+html.userside-dark #app [class~="border-white"],
+html.userside-dark #app [class*="border-white/"],
+html.userside-dark #app [class~="border-black"] {
   border-color: #334155;
 }
 
@@ -378,6 +382,15 @@ html.userside-dark #app [class~="hover:bg-white"]:hover {
 
 html.userside-dark #app [class~="hover:text-black"]:hover,
 html.userside-dark #app [class~="hover:text-gray-700"]:hover {
+  color: #f8fafc;
+}
+
+html.userside-dark #app .userside-order-date-header {
+  border-color: #334155;
+  background: linear-gradient(90deg, #111827 0%, #111827 58%, #0f172a 100%);
+}
+
+html.userside-dark #app .userside-order-date-header [class~="text-black"] {
   color: #f8fafc;
 }
 
@@ -452,7 +465,7 @@ html.userside-dark #app textarea::placeholder {
   position: relative;
   z-index: 1;
   display: flex;
-  width: min(18rem, calc(100vw - 3rem));
+  width: min(23rem, calc(100vw - 2rem));
   flex-direction: column;
   align-items: center;
   gap: 0.9rem;
@@ -470,6 +483,7 @@ html.userside-dark #app textarea::placeholder {
   font-weight: 700;
   letter-spacing: 0.08em;
   line-height: 1;
+  white-space: nowrap;
   text-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
 }
 
@@ -479,7 +493,7 @@ html.userside-dark #app textarea::placeholder {
   --loader-origin-x: 0rem;
   --loader-origin-y: 0rem;
   --loader-origin-rotate: 0deg;
-  animation: solespace-loader-letter 1.45s cubic-bezier(0.22, 1, 0.36, 1) 1 both;
+  animation: solespace-loader-letter 1.25s cubic-bezier(0.16, 1, 0.3, 1) 1 both;
   animation-fill-mode: both;
   backface-visibility: hidden;
   transform: translate3d(0, 0, 0);
@@ -488,57 +502,57 @@ html.userside-dark #app textarea::placeholder {
 }
 
 .solespace-app-loader__wordmark span:nth-child(1) {
-  --loader-origin-x: -7rem;
-  --loader-origin-y: -5rem;
-  --loader-origin-rotate: -32deg;
+  --loader-origin-x: -2.4rem;
+  --loader-origin-y: -1.6rem;
+  --loader-origin-rotate: -20deg;
 }
 
 .solespace-app-loader__wordmark span:nth-child(2) {
-  --loader-origin-x: -3rem;
-  --loader-origin-y: 6rem;
-  --loader-origin-rotate: 25deg;
+  --loader-origin-x: -1.1rem;
+  --loader-origin-y: 1.8rem;
+  --loader-origin-rotate: 14deg;
 }
 
 .solespace-app-loader__wordmark span:nth-child(3) {
-  --loader-origin-x: -1rem;
-  --loader-origin-y: -7rem;
-  --loader-origin-rotate: -18deg;
+  --loader-origin-x: -0.5rem;
+  --loader-origin-y: -2.1rem;
+  --loader-origin-rotate: -12deg;
 }
 
 .solespace-app-loader__wordmark span:nth-child(4) {
-  --loader-origin-x: -8rem;
-  --loader-origin-y: 1.6rem;
-  --loader-origin-rotate: 32deg;
+  --loader-origin-x: -2.6rem;
+  --loader-origin-y: 0.7rem;
+  --loader-origin-rotate: 18deg;
 }
 
 .solespace-app-loader__wordmark span:nth-child(5) {
-  --loader-origin-x: 5rem;
-  --loader-origin-y: -7rem;
-  --loader-origin-rotate: 20deg;
+  --loader-origin-x: 1.8rem;
+  --loader-origin-y: -2.1rem;
+  --loader-origin-rotate: 13deg;
 }
 
 .solespace-app-loader__wordmark span:nth-child(6) {
-  --loader-origin-x: 8rem;
-  --loader-origin-y: 1.4rem;
-  --loader-origin-rotate: -26deg;
+  --loader-origin-x: 2.5rem;
+  --loader-origin-y: 0.8rem;
+  --loader-origin-rotate: -16deg;
 }
 
 .solespace-app-loader__wordmark span:nth-child(7) {
-  --loader-origin-x: 4.5rem;
-  --loader-origin-y: 6.5rem;
-  --loader-origin-rotate: 28deg;
+  --loader-origin-x: 1.4rem;
+  --loader-origin-y: 1.9rem;
+  --loader-origin-rotate: 16deg;
 }
 
 .solespace-app-loader__wordmark span:nth-child(8) {
-  --loader-origin-x: 1.4rem;
-  --loader-origin-y: -5rem;
-  --loader-origin-rotate: -28deg;
+  --loader-origin-x: 0.5rem;
+  --loader-origin-y: -1.7rem;
+  --loader-origin-rotate: -14deg;
 }
 
 .solespace-app-loader__wordmark span:nth-child(9) {
-  --loader-origin-x: 7rem;
-  --loader-origin-y: 5rem;
-  --loader-origin-rotate: 22deg;
+  --loader-origin-x: 2.3rem;
+  --loader-origin-y: 1.6rem;
+  --loader-origin-rotate: 12deg;
 }
 
 .solespace-app-loader__wordmark span:nth-child(2) {
@@ -610,13 +624,13 @@ html.userside-dark #app textarea::placeholder {
 
 @keyframes solespace-loader-letter {
   0% {
-    opacity: 0;
-    transform: translate3d(var(--loader-origin-x), var(--loader-origin-y), 0) scale(0.82) rotate(var(--loader-origin-rotate));
+    opacity: 0.42;
+    transform: translate3d(var(--loader-origin-x), var(--loader-origin-y), 0) scale(0.96) rotate(var(--loader-origin-rotate));
   }
 
-  58% {
+  62% {
     opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1.02) rotate(0deg);
+    transform: translate3d(0, 0, 0) scale(1.015) rotate(0deg);
   }
 
   100% {

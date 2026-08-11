@@ -1654,7 +1654,7 @@ const MyOrders: React.FC = () => {
                     }`}
                   >
                     {/* Order Header */}
-                    <div className="border-b border-gray-100 bg-linear-to-r from-white via-white to-gray-50 px-3 py-3 sm:px-8 sm:py-5 xl:border-gray-200 xl:bg-white">
+                    <div className="userside-order-date-header border-b border-gray-100 bg-linear-to-r from-white via-white to-gray-50 px-3 py-3 sm:px-8 sm:py-5 xl:border-gray-200 xl:bg-white">
                       <div className="flex items-start justify-between gap-3 sm:items-center sm:gap-4">
                         <div className="flex min-w-0 flex-wrap items-center gap-3 sm:gap-8">
                           <div>
