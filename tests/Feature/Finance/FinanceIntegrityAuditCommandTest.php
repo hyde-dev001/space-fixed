@@ -38,4 +38,11 @@ class FinanceIntegrityAuditCommandTest extends TestCase
 
         $this->assertSame($before, User::query()->count());
     }
+
+    public function test_job_invoice_audit_reports_a_clean_unique_set(): void
+    {
+        $this->artisan('finance:audit-integrity', ['--section' => 'job-invoices'])
+            ->expectsOutput('section=job-invoices groups=0')
+            ->assertExitCode(0);
+    }
 }

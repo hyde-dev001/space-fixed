@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
+use Illuminate\Database\QueryException;
 
 class InvoiceController extends Controller
 {
@@ -448,128 +449,124 @@ class InvoiceController extends Controller
         ]);
         
         try {
-            $shopOwnerId = $this->shopOwnerId();
-            if (! $shopOwnerId) {
+            $user = Auth::guard('user')->user();
+            if (! $user) {
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
             
-            if (!$shopOwnerId) {
-                return response()->json(['error' => 'No shop association found'], 403);
-            }
-            
-            DB::beginTransaction();
-            
-            // Get job details with customer information
-            $job = DB::table('orders')
-                ->leftJoin('users as customers', 'orders.customer_id', '=', 'customers.id')
-                ->where('orders.id', $validated['job_id'])
-                ->where('orders.shop_owner_id', $shopOwnerId)
-                ->select([
-                    'orders.*',
-                    'customers.name as customer_name',
-                    'customers.email as customer_email'
-                ])
-                ->first();
-                
-            if (!$job) {
-                return response()->json(['error' => 'Job not found'], 404);
-            }
-            
-            // Check if invoice already exists
-            $existing = Invoice::where('job_order_id', $job->id)->first();
-            if ($existing) {
-                return response()->json([
-                    'error' => 'Invoice already exists for this job',
-                    'invoice' => $existing
-                ], 400);
-            }
-            
-            // Generate invoice reference
-            $reference = 'INV-' . now()->format('YmdHis');
-            
-            $itemSubtotal = isset($job->total_amount) ? max(0.0, floatval($job->total_amount)) : 0.0;
-            $shippingFee = isset($job->shipping_fee) ? max(0.0, floatval($job->shipping_fee)) : 0.0;
-            $vatAmount = isset($job->vat_amount) && $job->vat_amount !== null
-                ? max(0.0, floatval($job->vat_amount))
-                : round($itemSubtotal * 0.12, 2);
-            $total = $itemSubtotal + $shippingFee + $vatAmount;
-            
-            if ($total <= 0) {
-                return response()->json(['error' => 'Job must have a valid total amount'], 400);
-            }
-            
-            // Create invoice
-            $invoice = Invoice::create([
-                'reference' => $reference,
-                'job_order_id' => $job->id,
-                'job_reference' => $job->order_number,
-                'customer_name' => $job->customer_name ?? 'Unknown Customer',
-                'customer_email' => $job->customer_email ?? null,
-                'date' => now(),
-                'due_date' => now()->addDays(30),
-                'total' => $total,
-                'tax_amount' => $vatAmount,
-                'status' => 'draft',
-                'shop_id' => $shopOwnerId,
-                'notes' => 'Auto-generated from Job Order #' . $job->order_number,
-                'meta' => [
-                    'created_by' => $this->actorUserId(),
-                    'source' => 'job_order',
-                    'job_order_id' => $job->id,
-                    'subtotal_amount' => $itemSubtotal,
-                    'shipping_fee' => $shippingFee,
-                    'vat_amount' => $vatAmount,
-                    'grand_total' => $total,
-                ]
-            ]);
-            
-            InvoiceItem::create([
-                'invoice_id' => $invoice->id,
-                'description' => 'Order #' . $job->order_number . (isset($job->status) ? ' - ' . ucfirst($job->status) : ''),
-                'quantity' => 1,
-                'unit_price' => $itemSubtotal,
-                'tax_rate' => $itemSubtotal > 0 && $vatAmount > 0 ? round(($vatAmount / $itemSubtotal) * 100, 2) : 0,
-                'amount' => $itemSubtotal + $vatAmount,
-                'account_id' => null,
-            ]);
+            $shopOwnerId = $this->shopContext->id($request);
+            return DB::transaction(function () use ($validated, $user, $shopOwnerId): \Illuminate\Http\JsonResponse {
+                // Lock the tenant-scoped job before checking/creating its
+                // invoice. The database uniqueness constraint is the final
+                // guard for a concurrent request.
+                $job = DB::table('orders')
+                    ->leftJoin('users as customers', 'orders.customer_id', '=', 'customers.id')
+                    ->where('orders.id', $validated['job_id'])
+                    ->where('orders.shop_owner_id', $shopOwnerId)
+                    ->select([
+                        'orders.*',
+                        'customers.name as customer_name',
+                        'customers.email as customer_email',
+                    ])
+                    ->lockForUpdate()
+                    ->first();
 
-            if ($shippingFee > 0) {
+                if (! $job) {
+                    return response()->json(['error' => 'Job not found'], 404);
+                }
+
+                $existing = Invoice::withTrashed()
+                    ->where('shop_id', $shopOwnerId)
+                    ->where('job_order_id', $job->id)
+                    ->first();
+                if ($existing) {
+                    return response()->json($existing->load('items'), 200);
+                }
+
+                $reference = 'INV-' . now()->format('YmdHis');
+                $itemSubtotal = isset($job->total_amount) ? max(0.0, (float) $job->total_amount) : 0.0;
+                $shippingFee = isset($job->shipping_fee) ? max(0.0, (float) $job->shipping_fee) : 0.0;
+                $vatAmount = isset($job->vat_amount) && $job->vat_amount !== null
+                    ? max(0.0, (float) $job->vat_amount)
+                    : round($itemSubtotal * 0.12, 2);
+                $total = $itemSubtotal + $shippingFee + $vatAmount;
+
+                if ($total <= 0) {
+                    return response()->json(['error' => 'Job must have a valid total amount'], 400);
+                }
+
+                $invoice = Invoice::create([
+                    'reference' => $reference,
+                    'job_order_id' => $job->id,
+                    'job_reference' => $job->order_number,
+                    'customer_name' => $job->customer_name ?? 'Unknown Customer',
+                    'customer_email' => $job->customer_email ?? null,
+                    'date' => now(),
+                    'due_date' => now()->addDays(30),
+                    'total' => $total,
+                    'tax_amount' => $vatAmount,
+                    'status' => 'draft',
+                    'shop_id' => $shopOwnerId,
+                    'notes' => 'Auto-generated from Job Order #' . $job->order_number,
+                    'meta' => [
+                        'created_by' => $user->id,
+                        'source' => 'job_order',
+                        'job_order_id' => $job->id,
+                        'subtotal_amount' => $itemSubtotal,
+                        'shipping_fee' => $shippingFee,
+                        'vat_amount' => $vatAmount,
+                        'grand_total' => $total,
+                    ],
+                ]);
+
                 InvoiceItem::create([
                     'invoice_id' => $invoice->id,
-                    'description' => 'Shipping Fee',
+                    'description' => 'Order #' . $job->order_number . (isset($job->status) ? ' - ' . ucfirst($job->status) : ''),
                     'quantity' => 1,
-                    'unit_price' => $shippingFee,
-                    'tax_rate' => 0,
-                    'amount' => $shippingFee,
+                    'unit_price' => $itemSubtotal,
+                    'tax_rate' => $itemSubtotal > 0 && $vatAmount > 0 ? round(($vatAmount / $itemSubtotal) * 100, 2) : 0,
+                    'amount' => $itemSubtotal + $vatAmount,
                     'account_id' => null,
                 ]);
+
+                if ($shippingFee > 0) {
+                    InvoiceItem::create([
+                        'invoice_id' => $invoice->id,
+                        'description' => 'Shipping Fee',
+                        'quantity' => 1,
+                        'unit_price' => $shippingFee,
+                        'tax_rate' => 0,
+                        'amount' => $shippingFee,
+                        'account_id' => null,
+                    ]);
+                }
+
+                AuditLog::create([
+                    'shop_owner_id' => $shopOwnerId,
+                    'actor_user_id' => $user->id,
+                    'action' => 'create_invoice_from_job',
+                    'target_type' => 'invoice',
+                    'target_id' => $invoice->id,
+                    'metadata' => [
+                        'job_id' => $job->id,
+                        'order_number' => $job->order_number,
+                        'invoice_reference' => $reference,
+                        'auto_generated' => $validated['auto_generate'] ?? false,
+                    ],
+                ]);
+
+                return response()->json($invoice->load('items'), 201);
+            });
+        } catch (QueryException $e) {
+            $existing = Invoice::withTrashed()
+                ->where('shop_id', $shopOwnerId)
+                ->where('job_order_id', $validated['job_id'])
+                ->first();
+            if ($existing) {
+                return response()->json($existing->load('items'), 200);
             }
-            
-            // Note: orders table doesn't have invoice_generated or invoice_id columns
-            // If you want to track this, add migration to add these columns
-            // For now, skip the update
-            
-            // Audit log
-            AuditLog::create([
-                'shop_owner_id' => $shopOwnerId,
-                'actor_user_id' => $this->actorUserId(),
-                'action' => 'create_invoice_from_job',
-                'target_type' => 'invoice',
-                'target_id' => $invoice->id,
-                'metadata' => [
-                    'job_id' => $job->id,
-                    'order_number' => $job->order_number,
-                    'invoice_reference' => $reference,
-                    'auto_generated' => $validated['auto_generate'] ?? false
-                ]
-            ]);
-            
-            DB::commit();
-            
-            return response()->json($invoice->load('items'), 201);
-            
+            return FinanceErrorResponse::json($e, 'invoice.create_from_job');
         } catch (\Exception $e) {
-            DB::rollBack();
             return FinanceErrorResponse::json($e, 'invoice.create_from_job');
         }
     }
