@@ -348,6 +348,16 @@ describe('CustomerAddressMapPicker', () => {
     expect(getCurrentPosition).toHaveBeenCalledWith(expect.any(Function), expect.any(Function), { enableHighAccuracy: true });
   });
 
+  it('keeps the location action readable on the light address form', () => {
+    render(<CustomerAddressMapPicker value={null} onChange={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: 'Use My Location' })).toHaveClass(
+      'border-slate-300',
+      'bg-white',
+      'text-slate-900',
+    );
+  });
+
   it('reverse geocodes map clicks', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(addressResult)));
     const onChange = vi.fn();

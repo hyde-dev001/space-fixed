@@ -359,7 +359,7 @@ export default function CustomerAddressMapPicker({
           {searching ? 'Searching…' : 'Search'}
         </button>
         <button
-          className="min-h-11 rounded-lg border border-gray-300 px-4 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-11 rounded-lg border border-slate-300 bg-white px-4 font-medium text-slate-900 shadow-sm transition-colors hover:border-slate-400 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 disabled:opacity-100"
           disabled={disabled || locating}
           onClick={useMyLocation}
           type="button"
