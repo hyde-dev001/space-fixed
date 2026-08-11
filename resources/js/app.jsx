@@ -8,6 +8,7 @@ import { ThemeProvider } from './context/ThemeContext';
 import { SidebarProvider } from './context/SidebarContext';
 import { QueryProvider } from './providers/QueryProvider';
 import { CartProvider } from './contexts/CartContext';
+import { syncPageTheme } from './utils/pageTheme';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 const USER_SIDE_SCROLLBAR_CLASS = 'userside-hide-scrollbar';
@@ -16,6 +17,11 @@ const syncUserSideScrollbar = (componentName = '') => {
     const isUserSidePage = componentName.startsWith('UserSide/');
     document.documentElement.classList.toggle(USER_SIDE_SCROLLBAR_CLASS, isUserSidePage);
     document.body.classList.toggle(USER_SIDE_SCROLLBAR_CLASS, isUserSidePage);
+};
+
+const syncPagePresentation = (componentName = '') => {
+    syncUserSideScrollbar(componentName);
+    syncPageTheme(componentName);
 };
 
 // Update CSRF token after each Inertia navigation
@@ -29,7 +35,7 @@ router.on('navigate', (event) => {
         }
     }
 
-    syncUserSideScrollbar(page?.component ?? '');
+    syncPagePresentation(page?.component ?? '');
 });
 
 createInertiaApp({
@@ -66,7 +72,7 @@ createInertiaApp({
         
         // Check if the current page is a user-side page (should not have dark mode)
         const isUserSidePage = props.initialPage.component.startsWith('UserSide/');
-        syncUserSideScrollbar(props.initialPage.component ?? '');
+        syncPagePresentation(props.initialPage.component ?? '');
 
         // Always wrap with QueryProvider for global state management
         if (isUserSidePage) {

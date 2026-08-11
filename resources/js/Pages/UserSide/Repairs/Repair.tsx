@@ -86,6 +86,7 @@ const Repair: React.FC<Props> = ({ shops }) => {
   const meHref = isAuthenticated ? '/customer-profile' : '/user/login';
   const [sortBy, setSortBy] = useState('near_me');
   const [isSortOpen, setIsSortOpen] = useState(false);
+  const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
   const [mobileSearchQuery, setMobileSearchQuery] = useState('');
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [locating, setLocating] = useState(false);
@@ -412,49 +413,60 @@ const Repair: React.FC<Props> = ({ shops }) => {
 
         <div className="mx-auto w-full max-w-107.5 px-4 pb-24 pt-16 sm:max-w-170 md:max-w-225 lg:max-w-5xl xl:max-w-480 xl:px-6 xl:pt-32 xl:pb-20 2xl:px-12">
           {/* Header row */}
-          <div className="mb-4 flex items-center justify-between gap-3 sm:mb-5">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 sm:mb-5">
             <div className="text-[11px] sm:text-xs text-black/55 tracking-[0.18em] uppercase">Home / All Repair</div>
-            <div className="relative" ref={sortMenuRef}>
-              <button
-                type="button"
-                onClick={() => setIsSortOpen((prev) => !prev)}
-                className="flex items-center gap-1.5 text-xs font-medium text-black/80 sm:gap-2 sm:text-sm"
-              >
-                <span>
-                  <span className="font-semibold">Sort by:</span>{' '}
-                  <span>{currentSortLabel}</span>
-                </span>
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100">
-                  <svg
-                    className={`h-3.5 w-3.5 text-gray-700 transition-transform duration-200 ${isSortOpen ? 'rotate-180' : ''}`}
-                    viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"
-                  >
-                    <path d="M5 12L10 7L15 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </span>
-              </button>
-
-              {isSortOpen && (
-                <div className="absolute right-0 mt-3 z-20 w-[min(92vw,14.5rem)] rounded-2xl border border-gray-300 bg-white py-3 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.55)] xl:w-56" role="menu">
-                  {sortOptions.map((option) => {
-                    const isActive = sortBy === option.value;
-                    return (
-                      <button
-                        key={option.value}
-                        type="button"
-                        role="menuitem"
-                        onClick={() => handleSortSelect(option.value)}
-                        className="group w-full px-5 py-2.5 text-left text-sm"
-                      >
-                        <span className={`relative inline-block ${isActive ? 'text-black font-semibold' : 'text-black/75'}`}>
-                          {option.label}
-                          <span className={`absolute bottom-0 left-0 h-[1.5px] bg-black transition-all duration-300 ${isActive ? 'w-full' : 'w-0 group-hover:w-full'}`} />
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
+            <div className="flex items-center gap-3 sm:gap-4">
+              {isAuthenticated && (
+                <button
+                  type="button"
+                  onClick={() => setIsAddressModalOpen(true)}
+                  className="min-h-11 px-1 text-xs font-semibold text-[#16233b] underline underline-offset-4 transition-colors hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16233b]/40 sm:text-sm"
+                >
+                  Add address
+                </button>
               )}
+              <div className="relative" ref={sortMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsSortOpen((prev) => !prev)}
+                  className="flex items-center gap-1.5 text-xs font-medium text-black/80 sm:gap-2 sm:text-sm"
+                >
+                  <span>
+                    <span className="font-semibold">Sort by:</span>{' '}
+                    <span>{currentSortLabel}</span>
+                  </span>
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100">
+                    <svg
+                      className={`h-3.5 w-3.5 text-gray-700 transition-transform duration-200 ${isSortOpen ? 'rotate-180' : ''}`}
+                      viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"
+                    >
+                      <path d="M5 12L10 7L15 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </span>
+                </button>
+
+                {isSortOpen && (
+                  <div className="absolute right-0 z-20 mt-3 w-[min(92vw,14.5rem)] rounded-2xl border border-gray-300 bg-white py-3 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.55)] xl:w-56" role="menu">
+                    {sortOptions.map((option) => {
+                      const isActive = sortBy === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          role="menuitem"
+                          onClick={() => handleSortSelect(option.value)}
+                          className="group w-full px-5 py-2.5 text-left text-sm"
+                        >
+                          <span className={`relative inline-block ${isActive ? 'font-semibold text-black' : 'text-black/75'}`}>
+                            {option.label}
+                            <span className={`absolute bottom-0 left-0 h-[1.5px] bg-black transition-all duration-300 ${isActive ? 'w-full' : 'w-0 group-hover:w-full'}`} />
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -471,7 +483,13 @@ const Repair: React.FC<Props> = ({ shops }) => {
 
           {isAuthenticated && (
             <div className="mb-8">
-              <CustomerAddressManager onSelect={handleAddressSelect} initialAddressId={initialAddressId} />
+              <CustomerAddressManager
+                onSelect={handleAddressSelect}
+                initialAddressId={initialAddressId}
+                showAddTrigger={false}
+                isModalOpen={isAddressModalOpen}
+                onModalOpenChange={setIsAddressModalOpen}
+              />
             </div>
           )}
 
