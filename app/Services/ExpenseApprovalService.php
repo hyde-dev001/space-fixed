@@ -129,7 +129,8 @@ class ExpenseApprovalService
 
     /**
      * Create the smallest manual approval workflow for an expense.
-     * Finance (1) → Shop Owner (2) → Finance (3) → Finance Final (4)
+     * Low-value expenses require Finance review; high-value expenses then
+     * require the Shop Owner's final approval.
      */
     public function createExpenseApproval(Expense $expense, User $shopOwner): Approval
     {

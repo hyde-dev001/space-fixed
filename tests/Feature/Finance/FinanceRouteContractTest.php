@@ -3,8 +3,10 @@
 namespace Tests\Feature\Finance;
 
 use App\Models\Finance\Invoice;
+use App\Models\Approval;
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Enums\ApprovalStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Routing\Route as RoutingRoute;
 use Illuminate\Support\Facades\Route;
@@ -20,7 +22,7 @@ class FinanceRouteContractTest extends TestCase
     {
         parent::setUp();
         app(PermissionRegistrar::class)->forgetCachedPermissions();
-        foreach (['access-finance-invoices', 'access-finance-expenses', 'access-finance-dashboard', 'manage-finance-tax'] as $permission) {
+        foreach (['access-finance-invoices', 'access-finance-expenses', 'access-finance-dashboard', 'manage-finance-tax', 'access-approval-workflow'] as $permission) {
             Permission::findOrCreate($permission, 'user');
         }
     }
@@ -88,6 +90,57 @@ class FinanceRouteContractTest extends TestCase
         $this->actingAs($user, 'user')->postJson('/api/finance/session/expenses', [])
             ->assertStatus(410)
             ->assertJsonPath('code', 'FINANCE_ROUTE_MOVED');
+    }
+
+    public function test_pending_approvals_are_tenant_scoped(): void
+    {
+        $firstShop = ShopOwner::factory()->create();
+        $secondShop = ShopOwner::factory()->create();
+        $firstOwner = User::factory()->create(['id' => $firstShop->id, 'shop_owner_id' => $firstShop->id, 'role' => 'Shop Owner']);
+        $secondOwner = User::factory()->create(['id' => $secondShop->id, 'shop_owner_id' => $secondShop->id, 'role' => 'Shop Owner']);
+        $firstUser = User::factory()->create(['shop_owner_id' => $firstShop->id]);
+        $firstUser->givePermissionTo('access-approval-workflow');
+
+        foreach ([[$firstShop, $firstOwner, 'FIRST'], [$secondShop, $secondOwner, 'SECOND']] as [$shop, $owner, $suffix]) {
+            $invoice = Invoice::create([
+                'reference' => "APPROVAL-INVOICE-{$suffix}",
+                'customer_name' => 'Approval Contract',
+                'date' => now()->toDateString(),
+                'total' => '100.00',
+                'tax_amount' => '0.00',
+                'status' => 'draft',
+                'shop_id' => $shop->id,
+            ]);
+            Approval::create([
+                'shop_owner_id' => $owner->id,
+                'approvable_type' => Invoice::class,
+                'approvable_id' => $invoice->id,
+                'reference' => "APPROVAL-{$suffix}",
+                'description' => 'Tenant scope contract',
+                'amount' => 100,
+                'requested_by' => $firstUser->id,
+                'current_level' => 1,
+                'total_levels' => 1,
+                'status' => ApprovalStatus::PENDING,
+                'approval_roles' => ['1' => 'finance'],
+                'current_approver_role' => 'finance',
+                'level_reviewers' => [],
+            ]);
+        }
+
+        $this->actingAs($firstUser, 'user')
+            ->getJson('/api/finance/approvals/pending')
+            ->assertOk()
+            ->assertJsonCount(1, 'approvals')
+            ->assertJsonPath('approvals.0.reference', 'APPROVAL-FIRST');
+    }
+
+    public function test_shared_approval_errors_do_not_expose_exception_details(): void
+    {
+        $source = file_get_contents(base_path('app/Http/Controllers/ApprovalController.php'));
+
+        $this->assertIsString($source);
+        $this->assertStringNotContainsString("'message' => \$e->getMessage()", $source);
     }
 
     /** @param \Illuminate\Routing\RouteCollection $routes */

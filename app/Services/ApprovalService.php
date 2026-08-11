@@ -48,7 +48,9 @@ class ApprovalService
      */
     public function getPendingApprovalsForUser(User $user): \Illuminate\Database\Eloquent\Collection
     {
+        $shopOwnerId = (int) ($user->shop_owner_id ?? $user->id);
         $approvals = Approval::pending()
+            ->where('shop_owner_id', $shopOwnerId)
             ->where('status', ApprovalStatus::PENDING);
 
         // Filter by user's roles and permissions

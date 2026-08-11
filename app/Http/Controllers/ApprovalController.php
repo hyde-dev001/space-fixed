@@ -144,7 +144,8 @@ class ApprovalController extends Controller
 
             return response()->json(['approvals' => $approvals->values()->all()]);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to fetch pending approvals', 'message' => $e->getMessage()], 500);
+            report($e);
+            return response()->json(['error' => 'Failed to fetch pending approvals', 'message' => 'An internal error occurred.'], 500);
         }
     }
 
@@ -221,7 +222,8 @@ class ApprovalController extends Controller
 
             return response()->json(['approvals' => $approvals->sortByDesc('reviewed_at')->values()->all()]);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to fetch approval history', 'message' => $e->getMessage()], 500);
+            report($e);
+            return response()->json(['error' => 'Failed to fetch approval history', 'message' => 'An internal error occurred.'], 500);
         }
     }
 
@@ -266,7 +268,8 @@ class ApprovalController extends Controller
 
             return response()->json(['history' => $history]);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to fetch approval history', 'message' => $e->getMessage()], 500);
+            report($e);
+            return response()->json(['error' => 'Failed to fetch approval history', 'message' => 'An internal error occurred.'], 500);
         }
     }
 
@@ -390,7 +393,8 @@ class ApprovalController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['error' => 'Failed to approve request', 'message' => $e->getMessage()], 500);
+            report($e);
+            return response()->json(['error' => 'Failed to approve request', 'message' => 'An internal error occurred.'], 500);
         }
     }
 
@@ -516,7 +520,8 @@ class ApprovalController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['error' => 'Failed to reject request', 'message' => $e->getMessage()], 500);
+            report($e);
+            return response()->json(['error' => 'Failed to reject request', 'message' => 'An internal error occurred.'], 500);
         }
     }
 
@@ -620,7 +625,8 @@ class ApprovalController extends Controller
                 'delegation_id' => $delegationId
             ], 201);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to create delegation', 'message' => $e->getMessage()], 500);
+            report($e);
+            return response()->json(['error' => 'Failed to create delegation', 'message' => 'An internal error occurred.'], 500);
         }
     }
 
@@ -652,7 +658,8 @@ class ApprovalController extends Controller
 
             return response()->json(['delegations' => $delegations]);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to fetch delegations', 'message' => $e->getMessage()], 500);
+            report($e);
+            return response()->json(['error' => 'Failed to fetch delegations', 'message' => 'An internal error occurred.'], 500);
         }
     }
 
@@ -685,7 +692,8 @@ class ApprovalController extends Controller
 
             return response()->json(['message' => 'Delegation deactivated successfully']);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to deactivate delegation', 'message' => $e->getMessage()], 500);
+            report($e);
+            return response()->json(['error' => 'Failed to deactivate delegation', 'message' => 'An internal error occurred.'], 500);
         }
     }
 }
