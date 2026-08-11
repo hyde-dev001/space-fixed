@@ -54,6 +54,7 @@ export interface Expense {
   id: string;
   reference: string;
   date: string;
+  due_date?: string | null;
   vendor?: string | null;
   category: string;
   amount: number;
@@ -65,6 +66,25 @@ export interface Expense {
   approval_status?: string;
   approved_by?: string;
   approved_at?: string;
+  settlement_state?: {
+    approval_status: string;
+    paid_amount: string;
+    outstanding_balance: string;
+    status: 'unpaid' | 'partially_paid' | 'paid';
+    integrity_warnings: string[];
+    settlements: Array<{
+      id: number;
+      entry_type: 'settlement' | 'reversal';
+      amount: string;
+      payment_method: string;
+      reference?: string | null;
+      paid_at?: string | null;
+      source: string;
+      source_reference?: string | null;
+      reverses_settlement_id?: number | null;
+      reversal_reason?: string | null;
+    }>;
+  };
 }
 
 type ExpenseApprovalInput = {

@@ -87,14 +87,19 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'shop.isolation'])
         Route::delete('/{id}/receipt', [ExpenseController::class, 'deleteReceipt'])->whereNumber('id')->name('finance.expenses.receipt.delete');
         Route::get('/{id}', [ExpenseController::class, 'show'])->name('finance.expenses.show');
         Route::post('/', [ExpenseController::class, 'store'])->name('finance.expenses.store');
+        Route::get('/{id}/settlements', [ExpenseController::class, 'listSettlements'])->whereNumber('id')->name('finance.expenses.settlements.index');
+        Route::post('/{id}/settlements', [ExpenseController::class, 'recordSettlement'])->whereNumber('id')->name('finance.expenses.settlements.store');
+        Route::post('/{id}/settlements/{settlementId}/reverse', [ExpenseController::class, 'reverseSettlement'])->whereNumber(['id', 'settlementId'])->name('finance.expenses.settlements.reverse');
         Route::patch('/{id}', [ExpenseController::class, 'update'])->name('finance.expenses.update');
         Route::delete('/{id}', [ExpenseController::class, 'destroy'])->name('finance.expenses.destroy');
         Route::post('/{id}/restore', [ExpenseController::class, 'restore'])->name('finance.expenses.restore');
-        Route::middleware('permission:access-approval-workflow|approve-expenses')->group(function () {
-            Route::post('/{id}/approve', [ExpenseController::class, 'approve'])->name('finance.expenses.approve');
-            Route::post('/{id}/reject', [ExpenseController::class, 'reject'])->name('finance.expenses.reject');
-        });
-        
+    });
+
+    // Approval is a separate capability from viewing/recording expenses. A
+    // reviewer may approve or reject without gaining general expense access.
+    Route::prefix('expenses')->middleware('permission:access-approval-workflow|approve-expenses')->group(function () {
+        Route::post('/{id}/approve', [ExpenseController::class, 'approve'])->name('finance.expenses.approve');
+        Route::post('/{id}/reject', [ExpenseController::class, 'reject'])->name('finance.expenses.reject');
     });
 
 

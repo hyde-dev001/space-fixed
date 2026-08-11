@@ -3,6 +3,9 @@
 namespace Tests\Feature\Finance;
 
 use PHPUnit\Framework\Attributes\DataProvider;
+use App\Models\Finance\Expense;
+use App\Models\Finance\ExpenseSettlement;
+use App\Models\ShopOwner;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Permission;
@@ -154,6 +157,51 @@ class FinanceSummaryTest extends TestCase
             'INTEGRITY_WARNING:inconsistent_invoice_basis',
             'INTEGRITY_WARNING:insufficient_refund_allocation',
         ], $warnings);
+    }
+
+    public function test_paid_settlements_count_for_pending_or_rejected_expenses_and_reversals_reduce_cash(): void
+    {
+        $shop = ShopOwner::factory()->create();
+        $user = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $user->givePermissionTo('access-finance-dashboard');
+        $expense = Expense::create([
+            'reference' => 'EXP-SUMMARY-'.uniqid(),
+            'date' => now()->toDateString(),
+            'category' => 'Supplies',
+            'amount' => '30.00',
+            'tax_amount' => '0.00',
+            'status' => 'rejected',
+            'shop_id' => $shop->id,
+        ]);
+        $settlement = ExpenseSettlement::create([
+            'shop_owner_id' => $shop->id,
+            'expense_id' => $expense->id,
+            'entry_type' => ExpenseSettlement::ENTRY_SETTLEMENT,
+            'amount' => '30.00',
+            'payment_method' => 'cash',
+            'paid_at' => now(),
+            'recorded_by_user_id' => $user->id,
+            'idempotency_key' => 'summary-settlement-1',
+            'source' => ExpenseSettlement::SOURCE_MANUAL,
+        ]);
+        ExpenseSettlement::create([
+            'shop_owner_id' => $shop->id,
+            'expense_id' => $expense->id,
+            'entry_type' => ExpenseSettlement::ENTRY_REVERSAL,
+            'amount' => '10.00',
+            'payment_method' => 'cash',
+            'paid_at' => now(),
+            'recorded_by_user_id' => $user->id,
+            'reverses_settlement_id' => $settlement->id,
+            'reversal_reason' => 'Partial correction',
+            'source' => ExpenseSettlement::SOURCE_MANUAL,
+        ]);
+
+        $response = $this->actingAs($user, 'user')->getJson('/api/finance/dashboard');
+
+        $response->assertOk();
+        $this->assertSame('20.00', $response->json('supporting.paid_expenses'));
+        $this->assertTrue(collect($response->json('integrity_warnings'))->contains(fn (array $warning): bool => ($warning['reason'] ?? null) === 'paid_rejected_expense'));
     }
 
     private function moneyAdd(string ...$amounts): string

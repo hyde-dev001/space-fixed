@@ -251,19 +251,44 @@ final class FinanceSummaryService
             $this->addIncurred($row->date, $amount, $periodStart, $periodEnd, $totals, $trend);
         }
 
-        if (! Schema::hasTable('finance_expense_settlements')) {
-            return;
-        }
-
-        $settlements = DB::table('finance_expense_settlements')
-            ->where('shop_owner_id', $shopId)
-            ->whereNotNull('paid_at')
-            ->where('paid_at', '>=', $from)
-            ->where('paid_at', '<', $to)
-            ->get(['id', 'amount', 'paid_at']);
+        $settlements = DB::table('finance_expense_settlements as settlements')
+            ->join('finance_expenses as expenses', 'expenses.id', '=', 'settlements.expense_id')
+            ->where('settlements.shop_owner_id', $shopId)
+            ->whereNotNull('settlements.paid_at')
+            ->where('settlements.paid_at', '>=', $from)
+            ->where('settlements.paid_at', '<', $to)
+            ->get([
+                'settlements.id',
+                'settlements.expense_id',
+                'settlements.entry_type',
+                'settlements.amount',
+                'settlements.paid_at',
+                'expenses.amount as expense_amount',
+                'expenses.status as expense_status',
+            ]);
+        $settledByExpense = [];
         foreach ($settlements as $settlement) {
             $amount = $this->cents($settlement->amount);
-            $this->addPaidExpense($settlement->paid_at, $amount, $periodStart, $periodEnd, $totals, $trend);
+            if ($amount <= 0) {
+                $warnings[] = $this->warning('invalid_settlement_amount', 'expense-settlement', $settlement->id);
+                continue;
+            }
+
+            $signedAmount = (string) $settlement->entry_type === 'reversal' ? -$amount : $amount;
+            if (! in_array((string) $settlement->entry_type, ['settlement', 'reversal'], true)) {
+                $warnings[] = $this->warning('unknown_settlement_entry', 'expense-settlement', $settlement->id);
+                continue;
+            }
+
+            $expenseId = (int) $settlement->expense_id;
+            $settledByExpense[$expenseId] = ($settledByExpense[$expenseId] ?? 0) + $signedAmount;
+            if ($settledByExpense[$expenseId] > $this->cents($settlement->expense_amount)) {
+                $warnings[] = $this->warning('overpaid_expense_settlement', 'expense', $expenseId);
+            }
+            if ((string) $settlement->expense_status === 'rejected' && $settledByExpense[$expenseId] > 0) {
+                $warnings[] = $this->warning('paid_rejected_expense', 'expense', $expenseId);
+            }
+            $this->addPaidExpense($settlement->paid_at, $signedAmount, $periodStart, $periodEnd, $totals, $trend);
         }
     }
 

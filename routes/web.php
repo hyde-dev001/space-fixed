@@ -1593,6 +1593,9 @@ Route::middleware(['auth:user', 'shop.isolation'])->prefix('api/finance/session'
     Route::get('expenses', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'index']);
     Route::post('expenses', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'store']);
     Route::get('expenses/{id}', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'show']);
+    Route::get('expenses/{id}/settlements', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'listSettlements']);
+    Route::post('expenses/{id}/settlements', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'recordSettlement']);
+    Route::post('expenses/{id}/settlements/{settlementId}/reverse', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'reverseSettlement']);
     Route::put('expenses/{id}', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'update']);
     Route::patch('expenses/{id}', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'update']);
     Route::delete('expenses/{id}', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'destroy']);
@@ -1606,7 +1609,7 @@ Route::middleware(['auth:user', 'shop.isolation'])->prefix('api/finance/session'
     });
 
     // Expense approval (users with approval permission)
-    Route::middleware('permission:approve-expenses')->group(function () {
+    Route::middleware('permission:access-approval-workflow|approve-expenses')->group(function () {
         Route::post('expenses/{id}/approve', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'approve']);
         Route::post('expenses/{id}/reject', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'reject']);
     });
