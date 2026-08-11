@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-12
 
-**Status:** Final authoritative input for phase-level implementation planning
+**Status:** APPROVED / FROZEN DESIGN AUTHORITY — implementation proceeds phase-by-phase through dedicated TDD execution plans
 
 **Scope:** SME multi-shop platform administration, privileged security, operational correctness, and business-document renewal
 
@@ -314,10 +314,10 @@ Cancelled paid subscriptions retain entitlement through `ends_at`. Super Admin c
 | Entity | Routine operation | Irreversible deletion |
 |---|---|---|
 | Administrator | Suspend or deactivate | Not available |
-| User | Archive/restore | Not built without verified requirement |
-| Shop | Archive/restore | Not built without verified requirement |
+| User | Archive/restore | Separate exceptional process only if later justified |
+| Shop | Archive/restore | Separate exceptional process only if later justified |
 | Reports, appeals, payments, audits | Retain | Not available in routine UI |
-| Registration documents | Immutable versions; controlled retention later | Not part of routine workflow |
+| Registration documents | Immutable versions | Separate retention process only if later defined |
 
 Archive and restore require authorization, reason, recent reauthentication, transaction, and audit. Shop/user hard-delete routes and UI controls are removed.
 
@@ -554,12 +554,15 @@ Backfill logical slots and deterministic versions without guessing DTI versus SE
 12. Every committed local privileged state transition and success audit are atomic.
 13. Private documents are not served if access auditing fails.
 14. Notifications can be cleared without deleting audit history.
-15. At most one approved/current document exists per singleton logical slot.
-16. Historical documents are never silently overwritten.
-17. A pending/rejected renewal never replaces current evidence.
-18. Expiry reminders refer to the correct current version and expiration identity.
-19. Expiration never mutates shop status automatically.
-20. A preserved legacy DTI/SEC document continues satisfying an approved shop until classified or renewed.
+15. `expiration_mode = unknown` may exist only on reconciled legacy records and can never be submitted through current application flows.
+16. Verified expiration metadata cannot be edited directly by a Shop Owner.
+17. DTI and SEC are distinct document types but occupy the same `business_registration` logical slot.
+18. At most one row may carry the current-version marker for a singleton logical slot, and a current row must be approved.
+19. Historical documents are never silently overwritten.
+20. A pending/rejected renewal never replaces current evidence.
+21. Expiry reminders refer to the correct current version and expiration identity.
+22. Expiration never mutates shop status automatically.
+23. A preserved legacy DTI/SEC document continues satisfying an approved shop until classified or renewed.
 
 ## 20. Security Rules
 
@@ -702,7 +705,9 @@ Each phase runs focused tests first, then relevant Laravel/frontend suites, rout
 
 **Acceptance:** One current approved document per singleton slot; legacy evidence remains safe; renewal never overwrites history; reminders deduplicate; files remain private; expiration never suspends a shop.
 
-**Dependencies:** Phases 0–4. Phase 5 precedes it for priority but is not a technical dependency.
+**Technical dependencies:** Phases 0–4.
+
+**Execution dependency:** Phase 5 must also be complete because the approved roadmap executes sequentially.
 
 **Risk:** Medium–High due to historical ambiguity and concurrent promotion.
 
@@ -771,4 +776,3 @@ The design has no unresolved product decision. Phase-level planning must confirm
 ## 25. Planning Boundary
 
 This document is the design authority, not a file-level execution plan. Each phase receives its own TDD implementation plan immediately before execution. Plans must identify exact files, failing tests, narrow commands, migration/reconciliation steps, deployment order, rollback considerations, and phase-specific acceptance evidence.
-
