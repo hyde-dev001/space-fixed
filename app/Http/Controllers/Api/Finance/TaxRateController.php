@@ -6,13 +6,17 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Finance\TaxRate;
 use App\Models\AuditLog;
-use App\Support\Erp\ErpActorContext;
+use App\Support\Finance\FinanceShopContext;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class TaxRateController extends Controller
 {
+    public function __construct(private readonly FinanceShopContext $shopContext)
+    {
+    }
+
     /**
      * Get all tax rates
      */
@@ -274,23 +278,6 @@ class TaxRateController extends Controller
 
     private function shopOwnerId(): int
     {
-        $context = request()->attributes->get('erp.actor_context');
-        if ($context instanceof ErpActorContext) {
-            return (int) $context->tenantOwner()->getKey();
-        }
-
-        $shopOwnerId = Auth::guard('shop_owner')->id();
-        if ($shopOwnerId) {
-            return (int) $shopOwnerId;
-        }
-
-        $user = Auth::guard('user')->user();
-        if (! $user) {
-            abort(403);
-        }
-
-        return (int) ($user->role === 'shop_owner' || $user->hasRole('Shop Owner')
-            ? $user->id
-            : ($user->shop_owner_id ?? abort(403)));
+        return $this->shopContext->id(request());
     }
 }

@@ -11,7 +11,7 @@ use App\Models\AuditLog;
 use App\Models\User;
 use App\Services\NotificationService;
 use App\Services\ExpenseApprovalService;
-use App\Support\Erp\ErpActorContext;
+use App\Support\Finance\FinanceShopContext;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -23,14 +23,17 @@ class ExpenseController extends Controller
 {
     protected NotificationService $notificationService;
     protected ExpenseApprovalService $expenseApprovalService;
+    protected FinanceShopContext $shopContext;
 
     public function __construct(
         NotificationService $notificationService,
-        ExpenseApprovalService $expenseApprovalService
+        ExpenseApprovalService $expenseApprovalService,
+        FinanceShopContext $shopContext
     )
     {
         $this->notificationService = $notificationService;
         $this->expenseApprovalService = $expenseApprovalService;
+        $this->shopContext = $shopContext;
     }
     public function index(Request $request)
     {
@@ -757,24 +760,7 @@ class ExpenseController extends Controller
 
     private function shopOwnerId(): ?int
     {
-        $context = request()->attributes->get('erp.actor_context');
-        if ($context instanceof ErpActorContext) {
-            return (int) $context->tenantOwner()->getKey();
-        }
-
-        $shopOwnerId = Auth::guard('shop_owner')->id();
-        if ($shopOwnerId) {
-            return (int) $shopOwnerId;
-        }
-
-        $user = Auth::guard('user')->user();
-        if (! $user) {
-            return null;
-        }
-
-        return (int) ($user->role === 'shop_owner' || $user->hasRole('Shop Owner')
-            ? $user->id
-            : ($user->shop_owner_id ?? 0));
+        return $this->shopContext->id(request());
     }
 
     private function actorUserId(): ?int

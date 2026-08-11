@@ -2060,7 +2060,7 @@ Route::prefix('finance')->name('finance.')->middleware(['auth:user', 'role_or_pe
 
 // Finance Audit Logs
 Route::get('/erp/finance/audit-logs', [\App\Http\Controllers\Erp\ReadPageController::class, 'financeAuditLogs'])
-    ->middleware(['auth:user', 'permission:access-audit-logs'])
+    ->middleware(['auth:user', 'shop.isolation', 'permission:access-audit-logs'])
     ->name('erp.finance.audit-logs');
 
 // Approval Workflow page removed (frontend page deleted)

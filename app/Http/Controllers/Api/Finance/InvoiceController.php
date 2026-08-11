@@ -8,7 +8,7 @@ use App\Models\Finance\Invoice;
 use App\Models\Finance\InvoiceItem;
 use App\Models\AuditLog;
 use App\Services\NotificationService;
-use App\Support\Erp\ErpActorContext;
+use App\Support\Finance\FinanceShopContext;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -16,10 +16,12 @@ use Illuminate\Support\Facades\Log;
 class InvoiceController extends Controller
 {
     protected NotificationService $notificationService;
+    protected FinanceShopContext $shopContext;
 
-    public function __construct(NotificationService $notificationService)
+    public function __construct(NotificationService $notificationService, FinanceShopContext $shopContext)
     {
         $this->notificationService = $notificationService;
+        $this->shopContext = $shopContext;
     }
     /**
      * List invoices with filtering
@@ -724,24 +726,7 @@ class InvoiceController extends Controller
 
     private function shopOwnerId(): ?int
     {
-        $context = request()->attributes->get('erp.actor_context');
-        if ($context instanceof ErpActorContext) {
-            return (int) $context->tenantOwner()->getKey();
-        }
-
-        $shopOwnerId = Auth::guard('shop_owner')->id();
-        if ($shopOwnerId) {
-            return (int) $shopOwnerId;
-        }
-
-        $user = Auth::guard('user')->user();
-        if (! $user) {
-            return null;
-        }
-
-        return (int) ($user->role === 'shop_owner' || $user->hasRole('Shop Owner')
-            ? $user->id
-            : ($user->shop_owner_id ?? 0));
+        return $this->shopContext->id(request());
     }
 
     private function actorUserId(): ?int
