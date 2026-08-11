@@ -18,7 +18,9 @@ This follow-up also fixes the production failures found after deployment: the HR
 - Opening a module navigates to `/shop-owner/erp/{module}` or a scoped module page and replaces the portal navigation with that module's pages only.
 - The owner portal keeps only its core pages; the old portal Logistics and Employee Modules sections remain removed.
 - Module navigation is generated from the canonical module page catalog.
-- Related pages are grouped as collapsible sidebar sections when a module has more than one page group. HR uses:
+- The catalog supports an optional group key, group label, group order, and page order. Any module can use grouped navigation; the sidebar must not contain HR-specific grouping logic.
+- Related pages are grouped as collapsible sidebar sections when a module has more than one page group. The active page automatically expands its group, and the user may collapse or reopen groups without changing the current URL.
+- HR uses:
   - Attendance Monitoring: View Attendance, Leave Requests, Overtime Requests.
   - Payroll: View Slip, Generate Slip, Salary Changes.
 - Dashboard, Employees, and Audit Logs remain direct HR entries.
@@ -53,9 +55,27 @@ Expose and make owner-operable through owner-scoped routes and APIs:
 
 `Log Attendance` and personal payslips remain employee self-service and are not added to the owner navigation.
 
-### Finance, CRM, Inventory, Procurement, and Logistics
+### Finance
 
-Expose the existing company-operational pages already present under the ERP folders, using the same scoped catalog and owner authorization rules. Missing pages must be added only when their existing read/action behavior can be safely executed with a Shop Owner actor and tenant scope.
+The Finance module must expose the existing company-operational Finance pages instead of only the current approval aliases:
+
+- Dashboard
+- Invoices
+- Expenses
+- Approvals (collapsible group)
+  - Repair Pricing Approval
+  - Shoe Pricing Approval
+  - Purchase Request Review
+  - Refund Approval
+  - Payslip Approvals
+  - Salary Adjustments, when the existing owner-safe salary-adjustment page is available
+- Audit Logs
+
+Create Invoice remains part of the Invoices workflow and may be shown as a nested Invoices child only when its owner-scoped route and actions are fully supported. `My Payslips` remains employee self-service and is not added to the owner Finance navigation.
+
+### Repair Operations, CRM, Inventory, Procurement, and Logistics
+
+Expose the existing company-operational pages already present under the ERP folders, using the same scoped catalog and owner authorization rules. Each of these modules may use the same collapsible groups—for example, approval, stock, purchasing, shipment, or customer-operation groups—when that matches the existing module's page hierarchy. Missing pages must be added only when their existing read/action behavior can be safely executed with a Shop Owner actor and tenant scope.
 
 ## Required fixes
 
@@ -63,8 +83,9 @@ Expose the existing company-operational pages already present under the ERP fold
 2. Correct the Finance audit route/controller namespace casing so it resolves on case-sensitive production filesystems and returns the same owner-scoped audit contract as HR.
 3. Add the missing Retail Dashboard catalog/route mapping.
 4. Add missing HR payroll page routes/catalog entries and owner-safe data/action adapters where existing employee endpoints cannot accept a Shop Owner actor.
-5. Add Attendance Monitoring and Payroll sidebar groups with active-state and deep-link support.
-6. Audit the full enabled-module catalog for page/API mismatches, missing route pairs, employee-only URLs, and runtime import errors.
+5. Add catalog-driven grouped sidebar navigation for HR, Finance, and every other module that has nested operational pages, with active-state and deep-link support.
+6. Expand the Finance page catalog and scoped routes for Dashboard, Invoices, Expenses, the Approvals group, and Audit Logs, reusing existing ERP Finance components and owner-safe APIs.
+7. Audit the full enabled-module catalog for page/API mismatches, missing route pairs, employee-only URLs, and runtime import errors.
 
 ## Authorization and data boundaries
 
@@ -78,6 +99,8 @@ Expose the existing company-operational pages already present under the ERP fold
 
 - The Retail module opens the canonical Retail Dashboard and all four existing retail pages without duplicate legacy links.
 - The HR module shows the grouped Attendance Monitoring and Payroll sections and all nested pages open from both the sidebar and their direct scoped URLs.
+- The Finance module shows Dashboard, Invoices, Expenses, Audit Logs, and a grouped Approvals section containing the existing approval pages that are owner-operable.
+- Grouped navigation works consistently for every module that declares page groups; it is not special-cased to HR.
 - Clicking Attendance no longer throws `ReferenceError: usePage is not defined`.
 - HR and Finance Audit Logs load successfully for a valid Shop Owner; no production-only namespace casing failure remains.
 - Every page shown in an owner module sidebar can load with the owner session and does not call an employee-only endpoint without an owner-safe adapter.
