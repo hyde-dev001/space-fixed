@@ -490,7 +490,7 @@ export default function ExpenseApproval({ onModalStateChange }: ExpenseApprovalP
 								<div className="flex items-center justify-between text-sm pt-1">
 									<span className="text-gray-500 dark:text-gray-400">Receipt</span>
 									<a
-										href={`/api/finance/session/expenses/${viewing.id}/receipt/download`}
+										href={`${erpMode ? "/api/shop-owner/finance" : "/api/finance/session"}/expenses/${viewing.id}/receipt/download`}
 										target="_blank"
 										rel="noreferrer"
 										className="px-3 py-1 text-xs bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"

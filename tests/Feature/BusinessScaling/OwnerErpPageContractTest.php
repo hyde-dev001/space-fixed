@@ -6,6 +6,7 @@ namespace Tests\Feature\BusinessScaling;
 
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerModule;
+use App\Models\User;
 use App\Services\ErpWorkspaceNavigationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
@@ -112,6 +113,41 @@ final class OwnerErpPageContractTest extends TestCase
                     ->etc())
                 ->where('navigationMode', 'module')
                 ->where('urls.workspace', route('shop-owner.erp.workspace'))
+            );
+    }
+
+    public function test_owner_employee_directory_seeds_linked_user_ids_for_owner_actions(): void
+    {
+        config([
+            'shop_modules.owner_erp_workspace_enabled' => true,
+            'shop_modules.enforcement_enabled' => true,
+        ]);
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+        ShopOwnerModule::factory()->create([
+            'shop_owner_id' => $owner->id,
+            'module_key' => 'hr_employees',
+            'enabled' => true,
+        ]);
+        $employee = \App\Models\Employee::factory()->create([
+            'shop_owner_id' => $owner->id,
+            'email' => 'employee@example.test',
+            'status' => 'active',
+        ]);
+        $linkedUser = User::factory()->create([
+            'shop_owner_id' => $owner->id,
+            'email' => $employee->email,
+        ]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get('/shop-owner/erp/hr/employee-directory')
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('ERP/HR/HR', false)
+                ->where('initialSection', 'employees')
+                ->where('initialEmployees.0.id', $employee->id)
+                ->where('initialEmployees.0.linkedUser', $linkedUser->id)
             );
     }
 
@@ -230,9 +266,14 @@ final class OwnerErpPageContractTest extends TestCase
                 'key' => 'finance',
                 'slug' => 'finance',
                 'pages' => [
+                    'shop-owner.erp.finance.dashboard',
+                    'shop-owner.erp.finance.invoices',
+                    'shop-owner.erp.finance.expenses',
                     'shop-owner.erp.finance.expense-approvals',
+                    'shop-owner.erp.finance.repair-pricing',
+                    'shop-owner.erp.finance.shoe-pricing',
+                    'shop-owner.erp.finance.purchase-request-review',
                     'shop-owner.erp.finance.refund-approvals',
-                    'shop-owner.erp.finance.price-approvals',
                     'shop-owner.erp.finance.payslip-approvals',
                     'shop-owner.erp.finance.salary-adjustment-approvals',
                     'shop-owner.erp.finance.audit-logs',
@@ -325,8 +366,24 @@ final class OwnerErpPageContractTest extends TestCase
                 'shop-owner.erp.hr.attendance',
                 'shop-owner.erp.hr.leave-approvals',
                 'shop-owner.erp.hr.overtime-approvals',
+                'shop-owner.erp.hr.payroll-view',
+                'shop-owner.erp.hr.payroll-generate',
+                'shop-owner.erp.hr.salary-changes',
                 'shop-owner.erp.hr.suspend-accounts',
                 'shop-owner.erp.hr.audit-logs',
+            ],
+            'finance' => [
+                'shop-owner.erp.finance.dashboard',
+                'shop-owner.erp.finance.invoices',
+                'shop-owner.erp.finance.expenses',
+                'shop-owner.erp.finance.expense-approvals',
+                'shop-owner.erp.finance.repair-pricing',
+                'shop-owner.erp.finance.shoe-pricing',
+                'shop-owner.erp.finance.purchase-request-review',
+                'shop-owner.erp.finance.refund-approvals',
+                'shop-owner.erp.finance.payslip-approvals',
+                'shop-owner.erp.finance.salary-adjustment-approvals',
+                'shop-owner.erp.finance.audit-logs',
             ],
             'inventory' => [
                 'shop-owner.erp.inventory.inventory-dashboard',
@@ -416,6 +473,26 @@ final class OwnerErpPageContractTest extends TestCase
                         $page->where('erpMode', true);
                     }
 
+                    if ($uri === '/shop-owner/erp/finance/invoices') {
+                        $page->where('ownerMode', true)->where('initialSection', 'invoice-generation');
+                    }
+
+                    if ($uri === '/shop-owner/erp/finance/expenses') {
+                        $page->where('ownerMode', true)->where('initialSection', 'expense-tracking');
+                    }
+
+                    if ($uri === '/shop-owner/erp/finance/create-invoice') {
+                        $page->where('ownerMode', true)->where('initialSection', 'create-invoice');
+                    }
+
+                    if ($uri === '/shop-owner/erp/finance/repair-pricing') {
+                        $page->where('erpMode', true)->where('approvalType', 'repair');
+                    }
+
+                    if ($uri === '/shop-owner/erp/finance/shoe-pricing') {
+                        $page->where('erpMode', true)->where('approvalType', 'shoe');
+                    }
+
                     return $page;
                 });
         }
@@ -432,7 +509,7 @@ final class OwnerErpPageContractTest extends TestCase
             'business_type' => 'both',
         ]);
 
-        foreach (['hr_employees', 'inventory', 'procurement', 'logistics'] as $moduleKey) {
+        foreach (['hr_employees', 'finance', 'inventory', 'procurement', 'logistics'] as $moduleKey) {
             ShopOwnerModule::factory()->create([
                 'shop_owner_id' => $owner->id,
                 'module_key' => $moduleKey,
@@ -448,6 +525,13 @@ final class OwnerErpPageContractTest extends TestCase
             ['/shop-owner/erp/hr/payroll-view', 'ERP/HR/HR'],
             ['/shop-owner/erp/hr/payroll-generate', 'ERP/HR/HR'],
             ['/shop-owner/erp/hr/salary-changes', 'ERP/HR/HR'],
+            ['/shop-owner/erp/finance/dashboard', 'ERP/Finance/Dashboard'],
+            ['/shop-owner/erp/finance/invoices', 'ERP/Finance/Finance'],
+            ['/shop-owner/erp/finance/create-invoice', 'ERP/Finance/Finance'],
+            ['/shop-owner/erp/finance/expenses', 'ERP/Finance/Finance'],
+            ['/shop-owner/erp/finance/repair-pricing', 'ShopOwner/Approvals/PriceApprovals'],
+            ['/shop-owner/erp/finance/shoe-pricing', 'ShopOwner/Approvals/PriceApprovals'],
+            ['/shop-owner/erp/finance/purchase-request-review', 'ShopOwner/Approvals/PurchaseRequestApproval'],
             ['/shop-owner/erp/inventory/upload-stocks', 'ERP/inventory/UploadInventory'],
             ['/shop-owner/erp/inventory/stock-request', 'ERP/inventory/StockRequest'],
             ['/shop-owner/erp/inventory/request-material-approval', 'ERP/inventory/RequestApproval'],
@@ -494,6 +578,53 @@ final class OwnerErpPageContractTest extends TestCase
                 ->assertOk()
                 ->assertJsonPath('success', true);
         }
+    }
+
+    public function test_owner_finance_operations_use_owner_scoped_api_routes(): void
+    {
+        config([
+            'shop_modules.owner_erp_workspace_enabled' => true,
+            'shop_modules.enforcement_enabled' => true,
+        ]);
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+        ShopOwnerModule::factory()->create([
+            'shop_owner_id' => $owner->id,
+            'module_key' => 'finance',
+            'enabled' => true,
+        ]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/finance/invoices')
+            ->assertOk()
+            ->assertJsonPath('data', []);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/finance/expenses')
+            ->assertOk()
+            ->assertJsonPath('data', []);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/finance/tax-rates')
+            ->assertOk();
+
+        $this->actingAs($owner, 'shop_owner')
+            ->postJson('/api/shop-owner/finance/invoices', [
+                'reference' => 'OWNER-INV-'.uniqid(),
+                'customer_name' => 'ERP Owner Customer',
+                'customer_email' => 'customer@example.com',
+                'date' => now()->toDateString(),
+                'items' => [[
+                    'description' => 'Owner ERP invoice item',
+                    'quantity' => 1,
+                    'unit_price' => 100,
+                    'tax_rate' => 12,
+                ]],
+            ])
+            ->assertCreated()
+            ->assertJsonPath('shop_id', $owner->id);
     }
 
     public function test_disabled_module_landing_is_denied(): void
@@ -716,7 +847,9 @@ final class OwnerErpPageContractTest extends TestCase
             ['/shop-owner/erp/finance/audit-logs', 'ERP/Finance/AuditLogs'],
             ['/shop-owner/erp/finance/expense-approvals', 'ShopOwner/Approvals/ExpenseApproval'],
             ['/shop-owner/erp/finance/refund-approvals', 'ShopOwner/Approvals/refundApproval'],
-            ['/shop-owner/erp/finance/price-approvals', 'ShopOwner/Approvals/PriceApprovals'],
+            ['/shop-owner/erp/finance/repair-pricing', 'ShopOwner/Approvals/PriceApprovals'],
+            ['/shop-owner/erp/finance/shoe-pricing', 'ShopOwner/Approvals/PriceApprovals'],
+            ['/shop-owner/erp/finance/purchase-request-review', 'ShopOwner/Approvals/PurchaseRequestApproval'],
             ['/shop-owner/erp/finance/payslip-approvals', 'ShopOwner/Approvals/PayslipApproval'],
             ['/shop-owner/erp/finance/salary-adjustment-approvals', 'ShopOwner/Approvals/SalaryChangesApproval'],
             ['/shop-owner/erp/manager/reports', 'ERP/Manager/Reports'],

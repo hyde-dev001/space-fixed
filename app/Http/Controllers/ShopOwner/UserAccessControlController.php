@@ -275,11 +275,21 @@ class UserAccessControlController extends Controller
             $shopOwner = Auth::guard('shop_owner')->user();
             
             if (!$shopOwner) {
+                if ($request->wantsJson()) {
+                    return response()->json(['message' => 'Not authenticated as shop owner'], 401);
+                }
+
                 return back()->withErrors(['error' => 'Not authenticated as shop owner']);
             }
 
             // SECURITY: Check if shop owner can manage staff (company only)
             if (!$this->accessControl->canManageStaff($shopOwner)) {
+                if ($request->wantsJson()) {
+                    return response()->json([
+                        'message' => 'Staff management is only available for Business accounts.',
+                    ], 403);
+                }
+
                 return back()->withErrors([
                     'error' => 'Staff management is only available for Business accounts. Individual accounts cannot create employees.'
                 ])->with('upgrade_prompt', true);
@@ -334,6 +344,13 @@ class UserAccessControlController extends Controller
             // SECURITY: Validate role creation based on business type
             $roleValidation = $this->accessControl->validateRoleCreation($validated['role'], $shopOwner);
             if (!$roleValidation['allowed']) {
+                if ($request->wantsJson()) {
+                    return response()->json([
+                        'message' => $roleValidation['reason'],
+                        'errors' => ['role' => [$roleValidation['reason']]],
+                    ], 422);
+                }
+
                 return back()->withErrors([
                     'role' => $roleValidation['reason']
                 ])->withInput();
@@ -354,11 +371,25 @@ class UserAccessControlController extends Controller
 
             // Ensure email is free across employees and users before creating anything
             if (Employee::where('email', $validated['email'])->exists()) {
+                if ($request->wantsJson()) {
+                    return response()->json([
+                        'message' => 'This email is already registered as an employee',
+                        'errors' => ['email' => ['This email is already registered as an employee']],
+                    ], 422);
+                }
+
                 return back()->withErrors([
                     'email' => 'This email is already registered as an employee'
                 ]);
             }
             if (User::where('email', $validated['email'])->exists()) {
+                if ($request->wantsJson()) {
+                    return response()->json([
+                        'message' => 'User account already exists for this email',
+                        'errors' => ['email' => ['User account already exists for this email']],
+                    ], 422);
+                }
+
                 return back()->withErrors([
                     'email' => 'User account already exists for this email'
                 ]);
@@ -482,6 +513,18 @@ class UserAccessControlController extends Controller
             // Return back with success data - Inertia will automatically reload with fresh props
             // Use redirect()->back() to ensure flash data is properly set in session
             // Add timestamp to ensure uniqueness and trigger useEffect on each creation
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'message' => 'Employee created successfully. Share the invitation link with the employee.',
+                    'employee' => $this->employeePayload($employee, $user),
+                    'user_id' => $user->id,
+                    'invite_url' => $inviteUrl,
+                    'invite_expires_at' => $inviteExpiresAt->toISOString(),
+                    'email_sent' => false,
+                    'work_email' => $employee->email,
+                ], 201);
+            }
+
             return redirect()->back()->with([
                 'success' => true,
                 'employee' => [
@@ -497,8 +540,22 @@ class UserAccessControlController extends Controller
                 'timestamp' => now()->timestamp, // Unique identifier for each creation
             ]);
         } catch (ValidationException $e) {
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'message' => 'Validation failed',
+                    'errors' => $e->errors(),
+                ], 422);
+            }
+
             return back()->withErrors($e->errors());
         } catch (\Exception $e) {
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'message' => 'Error creating employee',
+                    'error' => $e->getMessage(),
+                ], 500);
+            }
+
             return back()->withErrors([
                 'error' => 'Error creating employee: ' . $e->getMessage()
             ]);
@@ -515,16 +572,32 @@ class UserAccessControlController extends Controller
             $shopOwner = Auth::guard('shop_owner')->user();
 
             if (!$shopOwner) {
+                if ($request->wantsJson()) {
+                    return response()->json(['message' => 'Not authenticated as shop owner'], 401);
+                }
+
                 return back()->withErrors(['error' => 'Not authenticated as shop owner']);
             }
 
             if (!$this->accessControl->canManageStaff($shopOwner)) {
+                if ($request->wantsJson()) {
+                    return response()->json([
+                        'message' => 'Staff management is only available for Business accounts.',
+                    ], 403);
+                }
+
                 return back()->withErrors([
                     'error' => 'Staff management is only available for Business accounts.'
                 ]);
             }
 
             if ((int) $employee->shop_owner_id !== (int) $shopOwner->id) {
+                if ($request->wantsJson()) {
+                    return response()->json([
+                        'message' => 'You cannot edit employees from another shop.',
+                    ], 403);
+                }
+
                 return back()->withErrors([
                     'error' => 'You cannot edit employees from another shop.'
                 ]);
@@ -606,6 +679,13 @@ class UserAccessControlController extends Controller
                 // Audit log is optional - don't fail the update if it errors
             }
 
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'message' => 'Employee updated successfully.',
+                    'employee' => $this->employeePayload($updatedEmployee, $updatedEmployee->user),
+                ]);
+            }
+
             return redirect()->back()->with([
                 'success' => true,
                 'employee' => [
@@ -616,8 +696,22 @@ class UserAccessControlController extends Controller
                 'timestamp' => now()->timestamp,
             ]);
         } catch (ValidationException $e) {
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'message' => 'Validation failed',
+                    'errors' => $e->errors(),
+                ], 422);
+            }
+
             return back()->withErrors($e->errors());
         } catch (\Exception $e) {
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'message' => 'Error updating employee',
+                    'error' => $e->getMessage(),
+                ], 500);
+            }
+
             return back()->withErrors([
                 'error' => 'Error updating employee: ' . $e->getMessage()
             ]);
@@ -1688,5 +1782,42 @@ class UserAccessControlController extends Controller
         } catch (\Exception $e) {
             return response()->json(['error' => 'Failed to fetch allowed roles: ' . $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function employeePayload(Employee $employee, ?User $linkedUser = null): array
+    {
+        $firstName = trim((string) $employee->first_name);
+        $lastName = trim((string) $employee->last_name);
+
+        if ($firstName === '' && $lastName === '') {
+            $nameParts = preg_split('/\s+/', trim((string) $employee->name)) ?: [];
+            $firstName = (string) ($nameParts[0] ?? '');
+            $lastName = count($nameParts) > 1 ? implode(' ', array_slice($nameParts, 1)) : '';
+        }
+
+        $status = $employee->status instanceof \BackedEnum
+            ? $employee->status->value
+            : (string) $employee->status;
+        $linkedUser ??= $employee->relationLoaded('user') ? $employee->user : null;
+
+        return [
+            'id' => $employee->id,
+            'name' => $employee->name ?: trim("{$firstName} {$lastName}"),
+            'first_name' => $firstName,
+            'last_name' => $lastName,
+            'email' => $employee->email,
+            'phone' => $employee->phone,
+            'address' => $employee->address,
+            'position' => $employee->position,
+            'department' => $employee->department,
+            'salary' => $employee->salary,
+            'hire_date' => optional($employee->hire_date)->toDateString(),
+            'status' => $status,
+            'linked_user' => $linkedUser?->id,
+            'updated_at' => optional($employee->updated_at)->toISOString(),
+        ];
     }
 }

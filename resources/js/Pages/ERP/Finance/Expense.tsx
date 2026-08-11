@@ -558,23 +558,11 @@ const Expense: React.FC = () => {
         formData.append('receipt', receiptFile);
       }
 
-      const response = await fetch('/api/finance/session/expenses', {
-        method: 'POST',
-        headers: {
-          'X-Requested-With': 'XMLHttpRequest',
-          'Accept': 'application/json',
-          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
-        },
-        body: formData,
-        credentials: 'include',
-      });
+      const response = await api.post('/api/finance/session/expenses', formData);
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to add expense');
+        throw new Error(response.error || 'Failed to add expense');
       }
-
-      await response.json();
       // React Query will automatically refetch on next render
       refetchExpenses();
       closeAddModal();
@@ -1042,7 +1030,7 @@ const Expense: React.FC = () => {
                       {activeExpense.receipt_original_name}
                     </span>
                     <button
-                      onClick={() => window.open(`/api/finance/session/expenses/${activeExpense.id}/receipt/download`, '_blank')}
+                      onClick={() => window.open(api.resolveUrl(`/api/finance/session/expenses/${activeExpense.id}/receipt/download`), '_blank')}
                       className="px-3 py-1 text-xs bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
                     >
                       Download

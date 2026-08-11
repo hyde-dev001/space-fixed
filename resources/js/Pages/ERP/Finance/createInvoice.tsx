@@ -1,4 +1,4 @@
-import { Head, router } from "@inertiajs/react";
+import { Head, router, usePage } from "@inertiajs/react";
 import React, { useMemo, useState, useEffect } from "react";
 import Swal from "sweetalert2";
 import { useTaxRates } from "../../../hooks/useFinanceQueries";
@@ -60,6 +60,9 @@ const paymentConditions = [
 ];
 
 export default function FinanceCreateInvoice() {
+	const { auth, ownerMode: pageOwnerMode } = usePage().props as any;
+	const ownerMode = pageOwnerMode === true || auth?.erpActor?.ownerMode === true;
+	const invoicesUrl = ownerMode ? '/shop-owner/erp/finance/invoices' : '/finance?section=invoice-generation';
 	const api = useFinanceApi();
 	const [rows, setRows] = useState<ProductRow[]>([]);
 	const [editingRow, setEditingRow] = useState<ProductRow | null>(null);
@@ -321,7 +324,7 @@ export default function FinanceCreateInvoice() {
 				confirmButtonColor: "#2563eb",
 			});
 
-		router.visit('/finance?section=invoice-generation');
+			router.visit(invoicesUrl);
 		} catch (error) {
 			await Swal.fire({
 				title: "Error",
@@ -341,7 +344,7 @@ export default function FinanceCreateInvoice() {
 				<div className="max-w-7xl mx-auto space-y-6 pb-20">
 					<div>
 						<a
-							href="/finance?section=invoice-generation"
+							href={invoicesUrl}
 							className="inline-flex items-center gap-2 text-sm font-semibold text-gray-600 hover:text-gray-700"
 						>
 							<ArrowLeftIcon className="w-4 h-4" />

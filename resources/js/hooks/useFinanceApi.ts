@@ -28,7 +28,14 @@ interface ApiResponse<T = any> {
 export function useFinanceApi() {
   const { auth } = usePage().props as any;
   const isAuthenticated = Boolean(auth && auth.user);
+  const ownerMode = auth?.erpActor?.type === 'shop_owner' && auth.erpActor.ownerMode === true;
   const csrfReady = useRef(false);
+
+  const resolveUrl = useCallback((url: string): string => {
+    if (!ownerMode) return url;
+
+    return url.replace(/^\/api\/finance(?:\/session)?(?=\/|$)/, '/api/shop-owner/finance');
+  }, [ownerMode]);
 
   /**
    * Ensure CSRF cookie is set
@@ -97,8 +104,9 @@ export function useFinanceApi() {
    */
   const getBaseUrl = useCallback((skipAuth: boolean = false): string => {
     if (skipAuth) return '/api/finance';
+    if (ownerMode) return '/api/shop-owner/finance';
     return isAuthenticated ? '/api/finance/session' : '/api/finance';
-  }, [isAuthenticated]);
+  }, [isAuthenticated, ownerMode]);
 
   /**
    * Core fetch wrapper with error handling
@@ -122,16 +130,18 @@ export function useFinanceApi() {
         ...(customHeaders as Record<string, string>),
       };
 
+      const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
+
       // Add Content-Type for body requests
-      if (body && !headers['Content-Type']) {
+      if (body && !isFormData && !headers['Content-Type']) {
         headers['Content-Type'] = 'application/json';
       }
 
-      const response = await fetch(url, {
+      const response = await fetch(resolveUrl(url), {
         method,
         headers,
         credentials: skipAuth ? 'omit' : 'include',
-        body: body ? JSON.stringify(body) : undefined,
+        body: body ? (isFormData ? body : JSON.stringify(body)) : undefined,
         ...restOptions,
       });
 
@@ -172,7 +182,7 @@ export function useFinanceApi() {
         error: error instanceof Error ? error.message : 'Network error',
       };
     }
-  }, [ensureCsrf, getAuthHeaders]);
+  }, [ensureCsrf, getAuthHeaders, resolveUrl]);
 
   /**
    * GET request
@@ -236,6 +246,8 @@ export function useFinanceApi() {
     ensureCsrf,
     getAuthHeaders,
     getBaseUrl,
+    resolveUrl,
     isAuthenticated,
+    ownerMode,
   };
 }

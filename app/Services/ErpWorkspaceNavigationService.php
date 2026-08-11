@@ -146,6 +146,7 @@ final class ErpWorkspaceNavigationService
                 || ($entry['audience'] ?? null) !== 'shop_owner'
                 || ($entry['owner_access'] ?? null) !== 'allowed'
                 || ($entry['navigation_group'] ?? null) !== $moduleKey
+                || ($entry['navigation_visible'] ?? true) === false
                 || ! str_starts_with($routeName, 'shop-owner.erp.')
                 || str_starts_with($routeName, 'shop-owner.erp.api.')
                 || ! Route::has($routeName)) {

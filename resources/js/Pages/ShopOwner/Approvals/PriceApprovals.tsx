@@ -82,6 +82,11 @@ interface PriceRequest {
 
 type MetricColor = "success" | "warning" | "info";
 type ChangeType = "increase" | "decrease";
+type ApprovalType = "all" | "shoe" | "repair";
+
+interface PriceApprovalProps {
+  approvalType?: ApprovalType;
+}
 
 interface MetricCardProps {
   title: string;
@@ -136,7 +141,7 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
   );
 };
 
-function PriceApprovalContent() {
+function PriceApprovalContent({ approvalType = "all" }: PriceApprovalProps) {
   const { auth } = usePage().props as any;
   const canReviewShoePriceChanges = canAccessProducts({
     businessType: auth?.shop_owner?.business_type || auth?.business_type || 'both',
@@ -155,14 +160,19 @@ function PriceApprovalContent() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("finance_approved");
   const [viewMode, setViewMode] = useState<"pending" | "recent">("pending"); // New: View toggle
-  const [typeFilter, setTypeFilter] = useState<"all" | "shoe" | "repair">("all"); // Type filter
+  const [typeFilter, setTypeFilter] = useState<ApprovalType>(approvalType); // Type filter
 
   // Fetch price change requests from API
   useEffect(() => {
     fetchRequests();
-  }, [canReviewShoePriceChanges, canReviewRepairPriceChanges]);
+  }, [approvalType, canReviewShoePriceChanges, canReviewRepairPriceChanges]);
 
   useEffect(() => {
+    if (approvalType !== 'all') {
+      setTypeFilter(approvalType);
+      return;
+    }
+
     if (!canReviewRepairPriceChanges && typeFilter === 'repair') {
       setTypeFilter(canReviewShoePriceChanges ? 'shoe' : 'all');
       return;
@@ -171,7 +181,7 @@ function PriceApprovalContent() {
     if (!canReviewShoePriceChanges && typeFilter === 'shoe') {
       setTypeFilter('all');
     }
-  }, [canReviewShoePriceChanges, canReviewRepairPriceChanges, typeFilter]);
+  }, [approvalType, canReviewShoePriceChanges, canReviewRepairPriceChanges, typeFilter]);
 
   const fetchRequests = async () => {
     try {
@@ -180,7 +190,7 @@ function PriceApprovalContent() {
 
       // Fetch only endpoints allowed for the current business type.
       let shoeResponse: Response | null = null;
-      if (canReviewShoePriceChanges) {
+      if (canReviewShoePriceChanges && approvalType !== 'repair') {
         shoeResponse = await fetch('/api/shop-owner/price-changes/all', {
           credentials: 'include',
           headers: {
@@ -191,7 +201,7 @@ function PriceApprovalContent() {
       }
 
       let repairResponse: Response | null = null;
-      if (canReviewRepairPriceChanges) {
+      if (canReviewRepairPriceChanges && approvalType !== 'shoe') {
         repairResponse = await fetch('/api/shop-owner/repair-price-changes/all', {
           credentials: 'include',
           headers: {
@@ -608,8 +618,8 @@ function PriceApprovalContent() {
                 className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm font-medium focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
               >
                 <option value="all">All Items</option>
-                {canReviewShoePriceChanges && <option value="shoe">Shoe Products</option>}
-                {canReviewRepairPriceChanges && <option value="repair">Repair Services</option>}
+                {approvalType === 'all' && canReviewShoePriceChanges && <option value="shoe">Shoe Products</option>}
+                {approvalType === 'all' && canReviewRepairPriceChanges && <option value="repair">Repair Services</option>}
               </select>
             </div>
           </div>
@@ -999,12 +1009,12 @@ function PriceApprovalContent() {
 }
 
 export default function PriceApproval() {
-	const erpMode = (usePage().props as any)?.erpMode === true;
+	const { erpMode, approvalType } = usePage().props as any;
 	const Layout = erpMode ? AppLayoutERP : AppLayout_shopOwner;
 
   return (
     <Layout>
-      <PriceApprovalContent />
+      <PriceApprovalContent approvalType={approvalType === 'shoe' || approvalType === 'repair' ? approvalType : 'all'} />
     </Layout>
   );
 }
