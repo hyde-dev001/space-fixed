@@ -143,4 +143,3 @@ Commit: `fix: preserve cancelled pickup schedule on retry`
 - [ ] **Step 2: Run the Finance, Procurement, approval, Inventory, Refund, HR, Repair, and Reports suites affected by the fixes**
 - [ ] **Step 3: Run PHP lint and `git diff --check`**
 - [ ] **Step 4: Confirm clean worktree and do not push or merge**
-
