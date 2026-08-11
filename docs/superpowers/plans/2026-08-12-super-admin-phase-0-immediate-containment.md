@@ -71,7 +71,7 @@ Phase 0 is complete only when all of the following are true:
 12. Routine hard-delete routes, controller methods, and visible controls for administrators, shops, and users are absent.
 13. Existing records remain intact when old DELETE URLs are requested.
 14. Canonical registration mutations exist once under `/admin`; duplicate `/superAdmin` mutations are removed in the first authorization task, the legacy registration GET redirects safely, and legacy mutation URLs do not mutate.
-15. Every new privileged audit record includes normalized actor, event, target, source, IP/context, and correlation metadata without secrets or unrestricted request data.
+15. Every new privileged audit record includes normalized actor, event, target, source, IP/context, and a server-generated authoritative correlation ID without secrets or unrestricted request data.
 16. No Phase 1+ feature is introduced.
 
 ## File Map
@@ -303,7 +303,8 @@ Verify that:
 - the causer is the `SuperAdmin` model;
 - actor type, guard, ID, role, event, target type, and target ID are present;
 - every record contains a UUID correlation ID and an explicit `source`;
-- HTTP events record `source=http` and the request IP, reuse a valid inbound `X-Correlation-ID` UUID, and generate a UUID when that header is absent or invalid;
+- HTTP events record `source=http` and the request IP, always use a server-generated UUID as the authoritative correlation ID, and reuse that UUID for every audit write on the same `Request` instance;
+- a client-supplied `X-Correlation-ID` never becomes the authoritative audit correlation ID and is ignored in Phase 0 rather than copied into audit metadata;
 - console events record `source=console`, use an operation UUID generated before mutation, and do not invent an HTTP request or IP address;
 - event-specific IDs are allowed;
 - passwords, TOTP values, recovery codes, tokens, raw filenames, paths, document bytes, and unrestricted request data are never accepted into properties.
@@ -348,7 +349,27 @@ private function write(
 }
 ```
 
-The private writer owns the fixed base schema so caller-supplied event metadata cannot override actor, event, target, source, correlation, or IP/context fields. HTTP methods validate an inbound correlation header as a UUID before reuse and otherwise generate one with `Str::uuid()`. Console callers generate one operation UUID before mutation, pass it to every audit write for that operation, and may print only that safe identifier for support correlation.
+The private writer owns the fixed base schema so caller-supplied event metadata cannot override actor, event, target, source, correlation, or IP/context fields. On the first audit operation for an HTTP request, generate a UUID with `Str::uuid()` and attach it to a private request attribute such as `privileged_audit_correlation_id`; subsequent audit writes on that same request reuse the attached server value. Never derive this value from headers or other client input. Tests must prove two writes on one request share the server UUID, a new request receives a different UUID, and a supplied `X-Correlation-ID` is not authoritative.
+
+Conceptual helper:
+
+```php
+private function correlationId(Request $request): string
+{
+    $existing = $request->attributes->get('privileged_audit_correlation_id');
+
+    if (is_string($existing) && Str::isUuid($existing)) {
+        return $existing;
+    }
+
+    $generated = (string) Str::uuid();
+    $request->attributes->set('privileged_audit_correlation_id', $generated);
+
+    return $generated;
+}
+```
+
+Console callers generate one operation UUID before mutation, pass it to every audit write for that operation, and may print only that safe identifier for support correlation.
 
 Keep the service concrete and injectable; do not add an interface with one implementation or a new global request-correlation subsystem in Phase 0. Do not catch storage/database exceptions inside the service. Callers that require mandatory audit must fail closed when this method throws.
 
@@ -497,6 +518,8 @@ Schema::table('users', function (Blueprint $table): void {
 
 Do not move files in a schema migration. Do not add checksum/version/expiration columns in Phase 0. Add raw storage paths to `$hidden`. If repository conventions require the disk fields in the existing explicit `$fillable` arrays, treat that only as an internal persistence detail: no Form Request, controller validation rule, DTO, or mass-assigned client payload may expose `disk` or `valid_id_disk`.
 
+**Deferred defense in depth:** Keep `public` as the Phase 0 database default because it truthfully identifies legacy rows during mixed-state migration. After migration reconciliation proves all legacy files private and all writers explicitly assign `local`, a later hardening phase may evaluate changing the defaults to `local`; this is not a Phase 0 schema change.
+
 - [ ] **Step 4: Run the schema/model tests**
 
 Run the command from Step 2.
@@ -562,13 +585,15 @@ Also assert:
 - registration, shop-details, user-management, and owner-resubmission payloads contain route URLs but no `file_path`, `valid_id_path`, `storage/app`, or `/storage/` value;
 - a missing file returns `404` and does not produce a success access audit;
 - a successful response creates the mandatory access audit before returning content;
-- replacing `PrivilegedAudit` in the container with a throwing test double results in `500` and no document bytes;
+- replacing `PrivilegedAudit` in the container with a throwing test double makes Admin/Super Admin document access return `500` with no document bytes;
+- replacing Spatie's underlying `ActivityLogger` container binding with a closure that throws makes authenticated Shop Owner document access return `500` with no document bytes;
+- the same throwing `ActivityLogger` binding makes valid signed-link document access return `500` with no document bytes;
 - headers include `Cache-Control: private, no-store` and `X-Content-Type-Options: nosniff`;
 - only server-side content inspection plus an allowlisted matching extension may classify a file as safe JPEG/PNG/PDF; client MIME and filenames are ignored;
 - HTML, SVG, executable-like, mismatched, or unknown content/extension combinations use `application/octet-stream` and attachment disposition;
 - filenames are generated from document type/record ID plus an allowlisted extension, never from stored path or client filename.
 
-Privileged access must use `PrivilegedAudit`. Authenticated Shop Owner and signed resubmission access must also write synchronously to Spatie `activity_log` with a fixed event schema appropriate to that actor/authority; do not force non-privileged actors into a fake Super Admin identity, and do not log signed-link parameters or tokens.
+Privileged access must use `PrivilegedAudit`. Authenticated Shop Owner and signed resubmission access must also write synchronously to Spatie `activity_log` with a fixed event schema appropriate to that actor/authority; do not force non-privileged actors into a fake Super Admin identity, and do not log signed-link parameters or tokens. Every authority follows the same fail-closed invariant: the required audit write completes before response creation, and any audit exception prevents all document bytes from being returned.
 
 - [ ] **Step 3: Run focused tests and verify failure**
 
