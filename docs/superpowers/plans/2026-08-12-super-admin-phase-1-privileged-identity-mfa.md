@@ -8,6 +8,8 @@
 
 **Tech Stack:** PHP 8.2, Laravel 12, Eloquent, database sessions in production, Inertia 2, React 18, TypeScript 5.7, PHPUnit 11, Vitest 3, `pragmarx/google2fa` 9.x, `bacon/bacon-qr-code` 3.1.x, pnpm.
 
+**Status:** APPROVED / FROZEN / READY FOR EXECUTION
+
 ---
 
 ## Design Authority and Scope Guard
@@ -128,6 +130,8 @@ MFA/recovery challenge succeeds
 → privileged session registry row created
 ```
 
+Before authentication, setup/reset bearer exchange may store only a short-lived, purpose-bound internal authorization containing token-row ID, subject ID, and authorization time. It never stores the raw token. Successful exchange regenerates the anonymous session; final password mutation consumes the referenced database token transactionally.
+
 Operational authorization requires all of:
 
 ```text
@@ -168,11 +172,24 @@ Rules:
 
 ### Token and recovery-code display
 
-Setup and password-reset URLs contain random 32-byte URL-safe tokens. Store only `hash('sha256', $rawToken)` with purpose, expiry, use time, subject, and creator. Lock the token row and target administrator during consumption, revalidate the target's current applicable state, and mark the token used in the same transaction as the protected mutation. A reset token issued while active is rejected generically if the target is no longer active at consumption; a setup token is accepted only while the target remains legitimately setup-required.
+Setup and password-reset links carry their random 32-byte URL-safe bearer only in the URL fragment:
 
-The setup/reset mailables implement both `ShouldQueue` and `ShouldBeEncrypted` and retain after-commit delivery. The raw bearer token may exist transiently in application memory and inside Laravel's encrypted queue command only. It must never appear in plaintext in `jobs.payload`, `failed_jobs.payload`, audit, logs, console output, or exception messages. Authoritative token persistence remains SHA-256 only.
+```text
+/admin/setup#token=<raw>
+/admin/reset-password#token=<raw>
+```
 
-Plaintext recovery codes are returned only in the immediate Inertia response that generated them. They are never stored in the session. The browser receives a separate random acknowledgement token whose SHA-256 hash is stored through `PrivilegedSecurityTokenService` with purpose `recovery_ack` and a 15-minute expiry. Consuming that token acknowledges the current code set. If the page is lost before acknowledgement, restart enrollment/regeneration, replace the complete code set, and invalidate the prior acknowledgement token.
+Fragments are not sent in the HTTP request URI. The standalone page reads the fragment into component memory, immediately replaces browser navigation state with the clean fragment-free URL, and POSTs the raw token once over HTTPS to the purpose-specific exchange endpoint. The server validates hash, purpose, expiry, subject, and current account state; regenerates the anonymous session; stores only a short-lived internal authorization containing token-row ID, subject ID, purpose, and authorization time; and returns generic no-store JSON without a redirect. The raw token must never appear in a request URI/query/route parameter, `Location` header, Inertia prop, Laravel session, browser history state, audit, or server log.
+
+Store only `hash('sha256', $rawToken)` in the token table with purpose, expiry, use time, subject, and creator. Exchange does not consume the token. The final password mutation reads the internal session authorization, locks the token row and target administrator, revalidates token/session binding and current applicable state, performs the mutation, and marks the token used in the same transaction. A reset token issued while active is rejected generically if the target is no longer active at final consumption; a setup token is accepted only while the target remains legitimately setup-required. Clear the internal authorization after success or any terminal failure.
+
+The setup/reset mailables implement both `ShouldQueue` and `ShouldBeEncrypted` and retain after-commit delivery. The permitted raw-token lifecycle is transient application memory, Laravel's encrypted queue command, the recipient's email URL fragment, browser component memory, and one HTTPS exchange body. It must never appear in plaintext server persistence, including `jobs.payload`, `failed_jobs.payload`, audit, logs, console output, or exception messages. Authoritative token persistence remains SHA-256 only.
+
+Plaintext recovery codes and the raw acknowledgement token are returned only in the immediate no-store JSON response from initial generation or regeneration. They are never flashed through an Inertia redirect or stored in the Laravel session, query parameters, browser history state, `localStorage`, or `sessionStorage`. The frontend holds them in component memory for copy, print, or an explicit user-controlled download, then POSTs the acknowledgement token and clears component state.
+
+The acknowledgement token's SHA-256 hash is stored through `PrivilegedSecurityTokenService` with purpose `recovery_ack` and a 15-minute expiry. Consuming that token acknowledges the current code set. If the response/page is lost before acknowledgement, restart generation, replace the complete code set, and invalidate the prior acknowledgement token; plaintext is never retrieved.
+
+Every successful password mutation updates `password_changed_at` in the same transaction as the password hash, remember-token rotation where applicable, `security_version` increment where applicable, and mandatory audit. This applies to initial setup, forgot/reset, and authenticated own-password change.
 
 ### Recent reauthentication
 
@@ -220,6 +237,8 @@ Phase 1 is complete only when:
 17. the Phase 0 focused suite remains green through a shared MFA-complete test helper;
 18. the forced-MFA deployment and rollback runbook preserves a recoverable path without restoring known credentials or disabling the new middleware.
 19. the final-Super-Admin invariant, operational middleware, administrator state, and UI all use the same canonical MFA-complete predicate, including valid empty recovery-code arrays.
+20. setup/reset bearer tokens appear only in email URL fragments and the one-time HTTPS exchange body; request URIs, redirects, Inertia props, sessions, and server-side observability contain no raw bearer.
+21. every successful password mutation updates `password_changed_at` atomically with the password/security/audit effects defined for that workflow.
 
 ## File Map
 
@@ -264,6 +283,7 @@ Phase 1 is complete only when:
 - Create: `app/Http/Controllers/PrivilegedReauthenticationController.php`
 - Modify: `app/Http/Controllers/SuperAdminController.php`
 - Create: `app/Http/Requests/Privileged/CompleteSetupPasswordRequest.php`
+- Create: `app/Http/Requests/Privileged/ExchangePrivilegedBearerRequest.php`
 - Create: `app/Http/Requests/Privileged/VerifyMfaCodeRequest.php`
 - Create: `app/Http/Requests/Privileged/ResetPrivilegedPasswordRequest.php`
 - Create: `app/Http/Requests/Privileged/ChangePrivilegedPasswordRequest.php`
@@ -472,6 +492,7 @@ return [
     'issuer' => config('app.name'),
     'setup_token_minutes' => 1440,
     'reset_token_minutes' => 60,
+    'token_authorization_minutes' => 15,
     'recovery_ack_minutes' => 15,
     'recent_reauthentication_minutes' => 15,
     'totp_window' => 1,
@@ -530,7 +551,9 @@ Prove:
 - issue returns raw token once but stores only SHA-256;
 - issuing a replacement invalidates prior unused tokens for that administrator and purpose;
 - expired, used, wrong-purpose, and wrong-subject tokens fail generically;
+- bearer authorization validates hash, purpose, expiry, subject, and current account state and returns only token-row ID, subject ID, purpose, and expiry; it does not consume the token or expose its hash;
 - consume locks both token and subject, allows the protected workflow to revalidate current subject state, and marks the token used atomically only when that mutation succeeds;
+- authorized consumption rejects a mismatched token-row ID, subject ID, purpose, expired authorization, expired/used token, or changed account state;
 - a stale-state rejection rolls back consumption so it cannot partially mutate the account or falsely mark the token used;
 - raw tokens never appear in model serialization or activity properties.
 
@@ -568,7 +591,9 @@ PrivilegedMfaService
 
 PrivilegedSecurityTokenService
   issue(SuperAdmin $admin, string $purpose, ?SuperAdmin $creator): array
+  authorize(string $rawToken, string $purpose): array
   consume(string $rawToken, string $purpose, Closure $mutation): mixed
+  consumeAuthorized(int $tokenId, int $subjectId, string $purpose, Closure $mutation): mixed
 
 PrivilegedSessionService
   establish(Request $request, SuperAdmin $admin): void
@@ -577,6 +602,8 @@ PrivilegedSessionService
   invalidateOthersAfterCommit(Request $request, SuperAdmin $admin): void
   forgetCurrent(Request $request): void
 ```
+
+Raw `consume()` is reserved for the body-delivered `recovery_ack` token. Setup/reset workflows must use fragment exchange plus `consumeAuthorized()` so the bearer is never retained for the final password request.
 
 Use constructor injection. Do not add interfaces. TOTP/recovery consumption methods require an already locked administrator row and save within the caller's transaction so the accepted step/code removal and mandatory audit commit together. Physical session deletion is after commit.
 
@@ -665,6 +692,8 @@ Iterate the route collection and require every operational route under:
 ```
 
 to declare authentication, active-account, and MFA-complete middleware, except an explicit allowlist of login/setup/MFA/reset/reauth routes with their stage-specific middleware. Also assert monitoring/report/flag/appeal/security routes carry their fixed capability.
+
+The public setup/reset GET routes are clean token-free page shells. `POST /admin/setup/exchange` and `POST /admin/reset-password/exchange` remain outside the operational group but require web CSRF protection, `ExchangePrivilegedBearerRequest`, named throttling, and no-store JSON responses; no route accepts a bearer as a path or query parameter.
 
 - [ ] **Step 4: Run tests and verify RED**
 
@@ -812,6 +841,7 @@ git commit -m "security: require MFA for privileged login"
 - Create: `app/Console/Commands/BootstrapFirstSuperAdmin.php`
 - Create: `app/Http/Controllers/PrivilegedSetupController.php`
 - Create: `app/Http/Requests/Privileged/CompleteSetupPasswordRequest.php`
+- Create: `app/Http/Requests/Privileged/ExchangePrivilegedBearerRequest.php`
 - Create: `app/Http/Requests/Privileged/InviteAdministratorRequest.php`
 - Create: `app/Mail/PrivilegedSetupLinkMail.php`
 - Create: `resources/views/mail/privileged/setup-link.blade.php`
@@ -829,6 +859,7 @@ Prove:
 - `bootstrap_marker` uniqueness prevents two different first accounts;
 - command queues an after-commit setup mail and prints only safe account/correlation information;
 - the queued setup mailable implements `ShouldQueue` and `ShouldBeEncrypted`; the raw setup token and full bearer URL are absent from plaintext `jobs.payload` and `failed_jobs.payload`;
+- rendered setup mail places the raw token only after `#token=`; the URL path and query are token-free;
 - mandatory audit failure rolls back account/token success state, while after-commit queue handoff failure leaves a resumable pending account and returns failure;
 - when the sole account is still `pending_setup` and no active account exists, an explicit interactive confirmation may replace the setup token and requeue mail without creating a second account;
 - once any bootstrap has completed or any other account exists, the command refuses ordinary execution.
@@ -841,8 +872,11 @@ Cover:
 - invite accepts identity/contact/role but no password;
 - account, setup token, and mandatory success audit commit atomically; queued mail is after commit;
 - mail delivery failure does not activate/delete the pending account; resend replaces the old token;
-- valid link renders no-store setup page; invalid/expired/used link is generic;
-- consuming a setup link locks and revalidates the account; it rejects generically if the target no longer has a legitimate setup-required state;
+- token-free setup GET renders the no-store standalone exchange page without token-bearing Inertia props;
+- the fragment token is POSTed once in the body of `POST /admin/setup/exchange` through `ExchangePrivilegedBearerRequest`; success regenerates the anonymous session, stores only token-row ID, subject ID, purpose, and authorization time, and returns no-store JSON without a token-bearing redirect;
+- request URI, query, route parameters, redirect `Location`, Inertia props, Laravel session, audit, and logs contain no raw token;
+- invalid/expired/used exchange is generic and leaves no internal authorization;
+- final setup-token consumption locks and revalidates the account; it rejects generically if the target no longer has a legitimate setup-required state;
 - password must satisfy the centralized 12-character mixed-case/number/symbol rule;
 - setup token is consumed atomically with password update, `password_changed_at`, and success audit; only after commit does the controller log in the guard, regenerate the session, and establish setup stage;
 - a consumed token cannot set the password twice;
@@ -856,7 +890,7 @@ php artisan test tests/Feature/SuperAdmin/PrivilegedBootstrapAndInvitationTest.p
 
 - [ ] **Step 4: Implement the command, queued Markdown mail, controller, and invitation endpoint**
 
-`PrivilegedSetupLinkMail` implements `ShouldQueue` and `ShouldBeEncrypted` and calls `afterCommit()`. Use the shared token service for bootstrap, invitation, resend, and consumption. Exercise the database queue in payload tests rather than relying only on a mail/queue fake. Do not put the raw token or full bearer URL into audit, console output, logs, plaintext queue payloads, or exception messages.
+`PrivilegedSetupLinkMail` implements `ShouldQueue` and `ShouldBeEncrypted` and calls `afterCommit()`. Its bearer link uses `/admin/setup#token=<raw>`. Use the shared token service for bootstrap, invitation, resend, exchange authorization, and final consumption. Exercise the database queue in payload tests rather than relying only on a mail/queue fake. Do not put the raw token into request URLs, Inertia props, sessions, redirects, audit, console output, logs, plaintext queue payloads, or exception messages.
 
 Change current administrator creation to invitation semantics. Keep the current route name for compatibility in Phase 1, but remove password fields from accepted validation and payload. The target begins `pending_setup`, never `active`.
 
@@ -865,7 +899,10 @@ Change current administrator creation to invitation semantics. Keep the current 
 Pending bootstrap/invitation setup sequence:
 
 ```text
-password setup succeeds
+token-free GET page reads and removes fragment
+→ POST raw token once over HTTPS
+→ server regenerates session and stores non-secret setup authorization
+→ password setup transaction locks and finally consumes token
 → encrypted unconfirmed TOTP secret generated
 → enrollment page shows internal QR + manual secret
 → newer TOTP verified under lock
@@ -897,7 +934,7 @@ Expected: PASS; no secret-bearing CLI argument exists.
 - [ ] **Step 7: Commit**
 
 ```powershell
-git add -- app/Console/Commands/BootstrapFirstSuperAdmin.php app/Http/Controllers/PrivilegedSetupController.php app/Http/Requests/Privileged/CompleteSetupPasswordRequest.php app/Http/Requests/Privileged/InviteAdministratorRequest.php app/Mail/PrivilegedSetupLinkMail.php resources/views/mail/privileged/setup-link.blade.php app/Http/Controllers/SuperAdminController.php app/Services/PrivilegedAudit.php routes/web.php tests/Feature/SuperAdmin/PrivilegedBootstrapAndInvitationTest.php
+git add -- app/Console/Commands/BootstrapFirstSuperAdmin.php app/Http/Controllers/PrivilegedSetupController.php app/Http/Requests/Privileged/CompleteSetupPasswordRequest.php app/Http/Requests/Privileged/ExchangePrivilegedBearerRequest.php app/Http/Requests/Privileged/InviteAdministratorRequest.php app/Mail/PrivilegedSetupLinkMail.php resources/views/mail/privileged/setup-link.blade.php app/Http/Controllers/SuperAdminController.php app/Services/PrivilegedAudit.php routes/web.php tests/Feature/SuperAdmin/PrivilegedBootstrapAndInvitationTest.php
 git commit -m "security: add privileged bootstrap and invitations"
 ```
 
@@ -922,10 +959,12 @@ Prove:
 - forgot endpoint always returns the same response for unknown, pending, suspended, inactive, and active emails;
 - only active accounts receive queued reset mail;
 - the queued reset mailable implements `ShouldQueue` and `ShouldBeEncrypted`; the raw reset token and full bearer URL are absent from plaintext `jobs.payload` and `failed_jobs.payload`;
+- rendered reset mail places the raw token only after `#token=`; no path/query, request URI, redirect, Inertia prop, session, audit, or log contains it;
 - limiter applies by normalized email/IP;
 - reset token is hashed, expires, is purpose-specific, and is one-time;
+- token-free reset GET plus `POST /admin/reset-password/exchange` through `ExchangePrivilegedBearerRequest` produces only a short-lived non-secret session authorization; malformed/expired/used exchange fails generically;
 - token consumption locks and revalidates the target; a token issued while active is rejected generically if the administrator is suspended, inactive, or moved into another inapplicable state before use;
-- reset applies strong password, rotates remember token, increments security version, writes success audit atomically, and invalidates all privileged sessions after commit;
+- reset applies strong password, sets `password_changed_at`, rotates remember token, increments security version, writes success audit atomically, clears token authorization, and invalidates all privileged sessions after commit;
 - MFA enrollment remains intact after password reset;
 - audit/session-cleanup failures cannot expose credentials or restore stale authority.
 
@@ -935,10 +974,12 @@ Cover:
 
 - both roles can view their own security state/count but never secret or hashes;
 - password change requires recent reauthentication and a new strong password/confirmation; do not ask for the current password a second time after the centralized password-plus-TOTP challenge;
-- successful change increments version, invalidates other sessions, and re-establishes current session;
+- successful change sets `password_changed_at`, rotates the remember token, increments version, writes the audit in the same transaction, invalidates other sessions, and re-establishes current session;
 - recovery-code regeneration requires recent reauthentication, replaces all hashes, invalidates other sessions, and displays plaintext only once;
 - regeneration requires the same short-lived hashed acknowledgement-token flow as initial enrollment; losing the page replaces the whole unacknowledged code set rather than retrieving plaintext;
-- recovery-code plaintext is never written to session storage, local storage, audit, or logs.
+- initial generation and regeneration return plaintext codes plus raw acknowledgement token in one no-store JSON response, never through an Inertia redirect/flash;
+- after generation, the Laravel session contains neither plaintext recovery codes nor the raw acknowledgement token;
+- recovery-code plaintext and acknowledgement token are never written to session storage, query parameters, history state, local storage, audit, or logs.
 
 - [ ] **Step 3: Run tests and verify RED**
 
@@ -948,7 +989,7 @@ php artisan test tests/Feature/SuperAdmin/PrivilegedPasswordRecoveryTest.php
 
 - [ ] **Step 4: Implement reset and own-security controllers**
 
-Use encrypted queued after-commit Markdown mail (`ShouldQueue` + `ShouldBeEncrypted`), the token/session/MFA services, explicit Form Requests, row locks, and `PrivilegedAudit`. Exercise the database queue in payload tests and inspect persisted payloads for bearer leakage. Generic public responses must not reveal account status or existence. Own MFA reset is intentionally implemented in Task 8 so it shares the final-Super-Admin invariant with platform-initiated resets.
+Use encrypted queued after-commit Markdown mail (`ShouldQueue` + `ShouldBeEncrypted`), fragment bearer links, token-free GET shells, purpose-specific exchange POSTs, the token/session/MFA services, explicit Form Requests, row locks, and `PrivilegedAudit`. Exercise the database queue in payload tests and inspect persisted payloads for bearer leakage. Generic public responses must not reveal account status or existence. Own MFA reset is intentionally implemented in Task 8 so it shares the final-Super-Admin invariant with platform-initiated resets.
 
 - [ ] **Step 5: Run focused authentication/security tests**
 
@@ -1083,9 +1124,11 @@ git commit -m "security: protect privileged identity changes"
 Assert real controls and accessibility:
 
 - login includes forgot-password link and submits only email/password/remember;
+- setup/reset pages read `#token=` only from `window.location.hash`, immediately replace navigation state with the clean URL, and POST the bearer in the exchange request body; they never put it in router props, query parameters, storage, logs, or later requests;
 - six-digit TOTP input has a label, numeric input mode, autocomplete `one-time-code`, error summary, and recovery-code alternative;
 - enrollment displays QR, manual secret, verification input, and no operational navigation;
 - recovery codes are copy/download/print friendly, individually readable, and require explicit acknowledgement;
+- recovery-code generation/regeneration consumes the focused no-store JSON response directly, keeps codes/acknowledgement token in component memory only, and clears both after acknowledgement or unmount;
 - setup/reset forms enforce the displayed 12-character policy but treat server validation as authoritative;
 - reauth clearly explains the 15-minute window and accepts password plus TOTP only;
 - Create Admin becomes Invite Administrator and has no password field;
@@ -1104,7 +1147,7 @@ pnpm run test:frontend -- resources/js/Pages/superAdmin/Auth/__tests__/Privilege
 
 - [ ] **Step 3: Implement the shared standalone auth shell and stage pages**
 
-Do not mount the operational `AppLayout` on setup/challenge/reset/recovery pages because its navigation/notification requests require a complete privileged session. Reuse existing Tailwind tokens and form/button patterns; no visual redesign or new component library.
+Do not mount the operational `AppLayout` on setup/challenge/reset/recovery pages because its navigation/notification requests require a complete privileged session. The setup/reset shell owns the fragment-to-POST exchange and clean-history replacement before rendering protected forms. Reuse existing Tailwind tokens and form/button patterns; no visual redesign or new component library.
 
 - [ ] **Step 4: Convert administrator creation and management controls**
 
@@ -1112,7 +1155,7 @@ Remove password fields and client validation from `CreateAdmin.tsx`; submit iden
 
 - [ ] **Step 5: Implement own-security page and profile link**
 
-Security actions use registered routes and display one-time recovery codes only from the immediate response. Never persist them in localStorage/sessionStorage or console output.
+Security actions use registered routes and display one-time recovery codes only from the immediate JSON response. Do not use an Inertia redirect or session flash for codes/acknowledgement tokens, and never persist them in localStorage/sessionStorage, history state, query parameters, or console output.
 
 - [ ] **Step 6: Run frontend tests and production build**
 
@@ -1159,7 +1202,9 @@ Require:
 migrate
 → run interactive super-admin:bootstrap
 → confirm one pending_setup account + queued setup mail
-→ consume setup link over HTTPS
+→ open fragment-bearing setup link over HTTPS
+→ verify the browser requests only the clean token-free setup URI
+→ exchange fragment bearer by POST and continue on the clean URL
 → set password + enroll TOTP + save/acknowledge recovery codes
 → verify active MFA-complete account
 → verify bootstrap command now refuses
@@ -1262,6 +1307,8 @@ php artisan route:list --path=superAdmin --except-vendor
 php artisan migrate:status
 rg -n "mfa_secret|mfa_recovery_codes|setup_token|reset_token|recovery_code|current_password|password" app/Services/PrivilegedAudit.php app/Http/Controllers app/Mail resources/views/mail
 rg -n "actingAs\([^\n]*super_admin" tests -g "*.php"
+rg -n '\{token\}|\?token=' routes app resources/js -g '*.php' -g '*.tsx' -g '*.ts'
+rg -n 'request.*token|query.*token' routes app resources/js -g '*.php' -g '*.tsx' -g '*.ts'
 ```
 
 Expected:
@@ -1269,6 +1316,8 @@ Expected:
 - only explicit public/stage routes lack the complete operational middleware stack;
 - no raw security material enters audit methods or logs;
 - database `jobs` and `failed_jobs` payloads for setup/reset mail contain encrypted job commands and do not contain raw tokens or full bearer URLs;
+- setup/reset route definitions and observed requests contain no bearer path/query parameter; session payloads, Inertia props, and redirect locations contain no raw bearer;
+- recovery generation/regeneration leaves no plaintext code or raw acknowledgement token in the Laravel session;
 - remaining direct `actingAs` calls are intentional authentication-stage tests, not operational bypasses;
 - no client-provided field can set MFA, security-version, token-hash, session ownership, or bootstrap metadata.
 
@@ -1299,6 +1348,7 @@ forgot/reset → all old sessions denied
 password change → current survives, other session denied
 Admin own security allowed; platform security denied
 Super Admin invitation → setup → active MFA login
+fragment setup/reset link → clean GET URI → one POST exchange → clean browser history
 recent reauth → administrator mutation → expiry requires reauth again
 suspended administrator cookie → next request denied
 final active enrolled Super Admin removal → denied
@@ -1316,7 +1366,7 @@ Record:
 4. **TypeScript clean-code review:** no new `any`, unsafe assertion, secret persistence, or duplicated form-state logic;
 5. **code splitting:** N/A unless measurement shows QR/security pages materially affect the operational bundle; do not split small forms speculatively;
 6. **gauge improvements:** record before/after counts for password-only operational routes, unprotected privileged routes, known bootstrap credentials, and invalidatable privileged sessions;
-7. **security review:** verify enumeration resistance, CSRF, throttling, encrypted/hashed material, encrypted secret-bearing queue payloads, token expiry/use/current-state revalidation, TOTP replay and clock synchronization, canonical MFA-complete semantics, session fixation/versioning, open redirects, self-management, final-Super-Admin concurrency, audit redaction, and no-store headers;
+7. **security review:** verify enumeration resistance, CSRF, throttling, encrypted/hashed material, encrypted secret-bearing queue payloads, fragment-only bearer delivery, token-free request/redirect/session/Inertia boundaries, token expiry/use/current-state revalidation, memory-only recovery display, TOTP replay and clock synchronization, canonical MFA-complete semantics, session fixation/versioning, open redirects, self-management, final-Super-Admin concurrency, audit redaction, and no-store headers;
 8. **reuse/dead-code:** remove only password-creation UI/code and legacy administrator audit writes made obsolete by this phase; preserve unrelated Phase 2–7 code;
 9. **verification-before-completion:** no pass/completion claim without fresh command output.
 
@@ -1335,6 +1385,8 @@ Attach to the handoff:
 - route inventory proving authentication + active + MFA middleware on every operational privileged route;
 - database evidence that TOTP secrets are encrypted and recovery/setup/reset values are hashed;
 - database queue/failed-job evidence that raw setup/reset tokens and full bearer URLs are not stored in plaintext;
+- browser/request/session evidence that setup/reset bearers travel from fragment to one HTTPS POST body without entering request URIs, redirects, Inertia props, session payloads, or browser persistence;
+- evidence that recovery plaintext/acknowledgement values use one no-store JSON response and are absent from Laravel/browser storage;
 - session-registry evidence for all/other invalidation and security-version fail-closed behavior;
 - bootstrap/invitation mail queue evidence without raw token disclosure;
 - concurrency evidence that the final active MFA-enrolled Super Admin survives competing changes;
