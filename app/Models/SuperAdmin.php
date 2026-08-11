@@ -38,6 +38,28 @@ class SuperAdmin extends Authenticatable
 {
     use HasFactory, Notifiable, HasRoles;
 
+    public const CAP_REVIEW_REGISTRATIONS = 'review_registrations';
+    public const CAP_INTERVENE_ACCOUNTS = 'intervene_accounts';
+    public const CAP_MANAGE_ADMINISTRATORS = 'manage_administrators';
+    public const CAP_RESOLVE_APPEALS = 'resolve_appeals';
+    public const CAP_MANAGE_PLANS = 'manage_plans';
+    public const CAP_INTERVENE_SUBSCRIPTIONS = 'intervene_subscriptions';
+
+    private const CAPABILITIES_BY_ROLE = [
+        'admin' => [
+            self::CAP_REVIEW_REGISTRATIONS,
+            self::CAP_INTERVENE_ACCOUNTS,
+        ],
+        'super_admin' => [
+            self::CAP_REVIEW_REGISTRATIONS,
+            self::CAP_INTERVENE_ACCOUNTS,
+            self::CAP_MANAGE_ADMINISTRATORS,
+            self::CAP_RESOLVE_APPEALS,
+            self::CAP_MANAGE_PLANS,
+            self::CAP_INTERVENE_SUBSCRIPTIONS,
+        ],
+    ];
+
     /**
      * The guard name for this model (for Spatie Permission)
      */
@@ -92,6 +114,11 @@ class SuperAdmin extends Authenticatable
         'last_login_at' => 'datetime',  // Auto convert to Carbon instance
         'password' => 'hashed',         // Auto hash on creation (Laravel 11+)
     ];
+
+    public function hasCapability(string $capability): bool
+    {
+        return in_array($capability, self::CAPABILITIES_BY_ROLE[$this->role] ?? [], true);
+    }
 
     /**
      * Check if the admin account is active

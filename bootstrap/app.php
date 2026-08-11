@@ -150,6 +150,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'super_admin.auth' => \App\Http\Middleware\SuperAdminAuth::class,
             'super_admin.role' => \App\Http\Middleware\CheckSuperAdminRole::class,
+            'privileged.capability' => \App\Http\Middleware\EnsurePrivilegedCapability::class,
             'shop.isolation' => \App\Http\Middleware\ShopIsolationMiddleware::class,
             'customer.account' => \App\Http\Middleware\EnsureCustomerAccount::class,
             'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,

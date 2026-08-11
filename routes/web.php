@@ -718,8 +718,6 @@ Route::prefix('superAdmin')->name('superAdmin.')->middleware('auth:super_admin')
     Route::post('/flagged-accounts/{id}/dismiss', [FlaggedAccountsController::class, 'dismiss'])->name('flagged-accounts.dismiss');
     Route::post('/flagged-accounts/{id}/ban', [FlaggedAccountsController::class, 'ban'])->name('flagged-accounts.ban');
     Route::get('/shop-owner-registration-view', [ShopOwnerRegistrationViewController::class, 'index'])->name('shop-owner-registration-view');
-    Route::post('/shop-owner-registration/{id}/approve', [ShopOwnerRegistrationViewController::class, 'approve'])->name('shop-owner-approve');
-    Route::post('/shop-owner-registration/{id}/reject', [ShopOwnerRegistrationViewController::class, 'reject'])->name('shop-owner-reject');
     Route::get('/system-monitoring-dashboard', [SystemMonitoringDashboardController::class, 'index'])->name('system-monitoring-dashboard');
     Route::get('/notification-communication-tools', [NotificationCommunicationToolsController::class, 'index'])->name('notification-communication-tools');
     Route::get('/data-report-access', [DataReportAccessController::class, 'index'])->name('data-report-access');
@@ -1640,38 +1638,91 @@ Route::middleware('super_admin.auth')->prefix('admin')->name('admin.')->group(fu
     Route::get('/system-monitoring', [SystemMonitoringDashboardController::class, 'index'])->name('system-monitoring');
 
     // Admin management routes
-    Route::get('/admin', [SuperAdminController::class, 'showAdminManagement'])->name('admin-management');
-    Route::get('/create-admin', [SuperAdminController::class, 'showCreateAdmin'])->name('create-admin');
-    Route::post('/create-admin', [SuperAdminController::class, 'storeAdmin'])->name('create-admin.store');
-    Route::post('/admins/{id}/suspend', [SuperAdminController::class, 'suspendAdmin'])->name('admins.suspend');
-    Route::post('/admins/{id}/activate', [SuperAdminController::class, 'activateAdmin'])->name('admins.activate');
+    Route::get('/admin', [SuperAdminController::class, 'showAdminManagement'])
+        ->middleware('privileged.capability:manage_administrators')
+        ->name('admin-management');
+    Route::get('/create-admin', [SuperAdminController::class, 'showCreateAdmin'])
+        ->middleware('privileged.capability:manage_administrators')
+        ->name('create-admin');
+    Route::post('/create-admin', [SuperAdminController::class, 'storeAdmin'])
+        ->middleware('privileged.capability:manage_administrators')
+        ->name('create-admin.store');
+    Route::post('/admins/{id}/suspend', [SuperAdminController::class, 'suspendAdmin'])
+        ->middleware('privileged.capability:manage_administrators')
+        ->name('admins.suspend');
+    Route::post('/admins/{id}/activate', [SuperAdminController::class, 'activateAdmin'])
+        ->middleware('privileged.capability:manage_administrators')
+        ->name('admins.activate');
+
+    Route::get('/shop-owner-registration-view', [ShopOwnerRegistrationViewController::class, 'index'])
+        ->middleware('privileged.capability:review_registrations')
+        ->name('shop-owner-registration-view');
+    Route::post('/shop-owner-registration/{id}/approve', [ShopOwnerRegistrationViewController::class, 'approve'])
+        ->middleware('privileged.capability:review_registrations')
+        ->name('shop-owner-approve');
+    Route::post('/shop-owner-registration/{id}/reject', [ShopOwnerRegistrationViewController::class, 'reject'])
+        ->middleware('privileged.capability:review_registrations')
+        ->name('shop-owner-reject');
     Route::delete('/admins/{id}', [SuperAdminController::class, 'deleteAdmin'])->name('admins.delete');
 
     // Shop management routes
-    Route::get('/registered-shops', [SuperAdminController::class, 'showRegisteredShops'])->name('registered-shops');
+    Route::get('/registered-shops', [SuperAdminController::class, 'showRegisteredShops'])
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('registered-shops');
     Route::get('/business-upgrade-requests', [SuperAdminShopOwnerUpgradeRequestController::class, 'index'])
+        ->middleware('privileged.capability:review_registrations')
         ->name('business-upgrade-requests.index');
     Route::patch('/business-upgrade-requests/{upgradeRequest}', [SuperAdminShopOwnerUpgradeRequestController::class, 'update'])
+        ->middleware('privileged.capability:review_registrations')
         ->name('business-upgrade-requests.update');
     Route::get('/business-upgrade-requests/{upgradeRequest}/documents/{document}', [SuperAdminShopOwnerUpgradeRequestController::class, 'download'])
+        ->middleware('privileged.capability:review_registrations')
         ->name('business-upgrade-requests.documents.download');
-    Route::get('/shops/{id}/details', [SuperAdminController::class, 'shopDetails'])->name('shops.details');
-    Route::get('/subscription-management', [SuperAdminController::class, 'showSubscriptionManagement'])->name('subscription-management');
-    Route::post('/premium-plans', [SuperAdminController::class, 'storePremiumPlan'])->name('premium-plans.store');
-    Route::put('/premium-plans/{premiumPlan}', [SuperAdminController::class, 'updatePremiumPlan'])->name('premium-plans.update');
-    Route::post('/premium-plans/{premiumPlan}/archive', [SuperAdminController::class, 'archivePremiumPlan'])->name('premium-plans.archive');
-    Route::post('/premium-plans/{premiumPlan}/reactivate', [SuperAdminController::class, 'reactivatePremiumPlan'])->name('premium-plans.reactivate');
-    Route::post('/subscriptions/{id}/cancel', [SuperAdminController::class, 'cancelSubscription'])->name('subscriptions.cancel');
-    Route::post('/subscriptions/{id}/upgrade', [SuperAdminController::class, 'upgradeSubscription'])->name('subscriptions.upgrade');
-    Route::post('/subscriptions/{id}/downgrade', [SuperAdminController::class, 'downgradeSubscription'])->name('subscriptions.downgrade');
-    Route::post('/shops/{id}/suspend', [SuperAdminController::class, 'suspendShop'])->name('shops.suspend');
-    Route::post('/shops/{id}/activate', [SuperAdminController::class, 'activateShop'])->name('shops.activate');
+    Route::get('/shops/{id}/details', [SuperAdminController::class, 'shopDetails'])
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('shops.details');
+    Route::get('/subscription-management', [SuperAdminController::class, 'showSubscriptionManagement'])
+        ->middleware('privileged.capability:manage_plans')
+        ->name('subscription-management');
+    Route::post('/premium-plans', [SuperAdminController::class, 'storePremiumPlan'])
+        ->middleware('privileged.capability:manage_plans')
+        ->name('premium-plans.store');
+    Route::put('/premium-plans/{premiumPlan}', [SuperAdminController::class, 'updatePremiumPlan'])
+        ->middleware('privileged.capability:manage_plans')
+        ->name('premium-plans.update');
+    Route::post('/premium-plans/{premiumPlan}/archive', [SuperAdminController::class, 'archivePremiumPlan'])
+        ->middleware('privileged.capability:manage_plans')
+        ->name('premium-plans.archive');
+    Route::post('/premium-plans/{premiumPlan}/reactivate', [SuperAdminController::class, 'reactivatePremiumPlan'])
+        ->middleware('privileged.capability:manage_plans')
+        ->name('premium-plans.reactivate');
+    Route::post('/subscriptions/{id}/cancel', [SuperAdminController::class, 'cancelSubscription'])
+        ->middleware('privileged.capability:intervene_subscriptions')
+        ->name('subscriptions.cancel');
+    Route::post('/subscriptions/{id}/upgrade', [SuperAdminController::class, 'upgradeSubscription'])
+        ->middleware('privileged.capability:intervene_subscriptions')
+        ->name('subscriptions.upgrade');
+    Route::post('/subscriptions/{id}/downgrade', [SuperAdminController::class, 'downgradeSubscription'])
+        ->middleware('privileged.capability:intervene_subscriptions')
+        ->name('subscriptions.downgrade');
+    Route::post('/shops/{id}/suspend', [SuperAdminController::class, 'suspendShop'])
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('shops.suspend');
+    Route::post('/shops/{id}/activate', [SuperAdminController::class, 'activateShop'])
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('shops.activate');
     Route::delete('/shops/{id}', [SuperAdminController::class, 'deleteShop'])->name('shops.delete');
 
     // User management routes
-    Route::get('/user-management', [SuperAdminController::class, 'showUserManagement'])->name('user-management');
-    Route::post('/users/{id}/suspend', [SuperAdminController::class, 'suspendUser'])->name('users.suspend');
-    Route::post('/users/{id}/activate', [SuperAdminController::class, 'activateUser'])->name('users.activate');
+    Route::get('/user-management', [SuperAdminController::class, 'showUserManagement'])
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('user-management');
+    Route::post('/users/{id}/suspend', [SuperAdminController::class, 'suspendUser'])
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('users.suspend');
+    Route::post('/users/{id}/activate', [SuperAdminController::class, 'activateUser'])
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('users.activate');
     Route::delete('/users/{id}', [SuperAdminController::class, 'deleteUser'])->name('users.delete');
 
     // Shop Reports routes
@@ -1680,8 +1731,12 @@ Route::middleware('super_admin.auth')->prefix('admin')->name('admin.')->group(fu
 
     // Suspension Appeals routes
     Route::get('/appeals', [\App\Http\Controllers\superAdmin\SuspensionAppealsController::class, 'index'])->name('suspension-appeals');
-    Route::post('/appeals/{id}/approve', [\App\Http\Controllers\superAdmin\SuspensionAppealsController::class, 'approve'])->name('appeals.approve');
-    Route::post('/appeals/{id}/reject', [\App\Http\Controllers\superAdmin\SuspensionAppealsController::class, 'reject'])->name('appeals.reject');
+    Route::post('/appeals/{id}/approve', [\App\Http\Controllers\superAdmin\SuspensionAppealsController::class, 'approve'])
+        ->middleware('privileged.capability:resolve_appeals')
+        ->name('appeals.approve');
+    Route::post('/appeals/{id}/reject', [\App\Http\Controllers\superAdmin\SuspensionAppealsController::class, 'reject'])
+        ->middleware('privileged.capability:resolve_appeals')
+        ->name('appeals.reject');
 
     // Additional admin routes
     Route::get('/notifications', function () {
@@ -2411,9 +2466,6 @@ Route::group([], function () {
 Route::prefix('superAdmin')->name('superAdmin.')->middleware('auth:super_admin')->group(function () {
     Route::get('/super-admin-user-management', [SuperAdminUserManagementController::class, 'index'])->name('super-admin-user-management');
     Route::get('/flagged-accounts', [FlaggedAccountsController::class, 'index'])->name('flagged-accounts');
-    Route::get('/shop-owner-registration-view', [ShopOwnerRegistrationViewController::class, 'index'])->name('shop-owner-registration-view');
-    Route::post('/shop-owner-registration/{id}/approve', [ShopOwnerRegistrationViewController::class, 'approve'])->name('shop-owner-approve');
-    Route::post('/shop-owner-registration/{id}/reject', [ShopOwnerRegistrationViewController::class, 'reject'])->name('shop-owner-reject');
     Route::get('/system-monitoring-dashboard', [SystemMonitoringDashboardController::class, 'index'])->name('system-monitoring-dashboard');
     Route::get('/notification-communication-tools', [NotificationCommunicationToolsController::class, 'index'])->name('notification-communication-tools');
     Route::get('/data-report-access', [DataReportAccessController::class, 'index'])->name('data-report-access');
