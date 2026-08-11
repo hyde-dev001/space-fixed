@@ -971,7 +971,15 @@ class PayrollController extends Controller
                 'result' => $result,
             ]);
         } catch (\Exception $e) {
-            return FinanceErrorResponse::json($e, 'payroll.thirteenth_month_release', 422, ['shop_id' => $user->shop_owner_id]);
+            report($e);
+
+            $error = $e->getMessage() === '13th-month release is restricted to December unless explicitly overridden.'
+                ? '13th-month release failed: ' . $e->getMessage()
+                : '13th-month release failed. Please try again.';
+
+            return response()->json([
+                'error' => $error,
+            ], 422);
         }
     }
 
