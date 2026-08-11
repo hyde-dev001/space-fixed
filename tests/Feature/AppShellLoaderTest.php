@@ -26,7 +26,9 @@ class AppShellLoaderTest extends TestCase
         self::assertStringContainsString('will-change: transform, opacity;', $styles);
         self::assertStringContainsString('backface-visibility: hidden;', $styles);
         self::assertStringContainsString('contain: layout paint;', $styles);
-        self::assertStringContainsString('animation: solespace-loader-letter 1.45s cubic-bezier(0.22, 1, 0.36, 1) 1 both;', $styles);
+        self::assertStringContainsString('animation: solespace-loader-letter 1.25s cubic-bezier(0.16, 1, 0.3, 1) 1 both;', $styles);
+        self::assertStringContainsString('white-space: nowrap;', $styles);
+        self::assertStringContainsString('opacity: 0.42;', $styles);
     }
 
     public function test_loader_uses_a_white_surface_with_readable_light_gray_text(): void
@@ -55,6 +57,23 @@ class AppShellLoaderTest extends TestCase
         self::assertStringContainsString('scrollbar-width: none;', $styles);
         self::assertStringContainsString('landing-primary-cta', $landing);
         self::assertStringContainsString('bg-[#ffffff] text-[#0f172a]', $landing);
+        self::assertStringContainsString('dark:bg-[#16233b]', $landing);
         self::assertStringContainsString('dark:text-white', $download);
+    }
+
+    public function test_customer_dark_mode_uses_subtle_surface_borders_and_order_date_headers(): void
+    {
+        $styles = file_get_contents(resource_path('css/app.css'));
+        $orders = file_get_contents(resource_path('js/Pages/UserSide/Orders/MyOrders.tsx'));
+        $repairs = file_get_contents(resource_path('js/Pages/UserSide/Repairs/myRepairs.tsx'));
+
+        self::assertIsString($styles);
+        self::assertIsString($orders);
+        self::assertIsString($repairs);
+        self::assertStringContainsString('[class~="border-gray-100"]', $styles);
+        self::assertStringContainsString('[class*="border-white/"]', $styles);
+        self::assertStringContainsString('userside-order-date-header', $styles);
+        self::assertStringContainsString('userside-order-date-header', $orders);
+        self::assertStringContainsString('userside-order-date-header', $repairs);
     }
 }
