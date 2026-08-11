@@ -32,6 +32,7 @@ type Props = {
   description?: string;
   showAddTrigger?: boolean;
   showAddressSummary?: boolean;
+  showSavedAddressesInModal?: boolean;
   modalMode?: 'add' | 'edit';
   isModalOpen?: boolean;
   onModalOpenChange?: (open: boolean) => void;
@@ -76,6 +77,7 @@ export default function CustomerAddressManager({
   description = 'Choose where the rider should go. You can still use walk-in or your own courier.',
   showAddTrigger = true,
   showAddressSummary = true,
+  showSavedAddressesInModal = false,
   modalMode = 'add',
   isModalOpen: controlledModalOpen = false,
   onModalOpenChange,
@@ -83,6 +85,7 @@ export default function CustomerAddressManager({
   const [addresses, setAddresses] = useState<CustomerAddress[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(initialAddressId);
   const [editingId, setEditingId] = useState<number | null | undefined>(undefined);
+  const [modalView, setModalView] = useState<'list' | 'form'>('form');
   const [form, setForm] = useState<AddressForm>(emptyForm);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -97,7 +100,12 @@ export default function CustomerAddressManager({
   const mountedRef = useRef(true);
   const cities = useMemo(() => getCityMunicipalityOptions(form.province), [form.province]);
   const isModalControlled = onModalOpenChange !== undefined;
-  const modalOpen = isModalControlled ? controlledModalOpen : editingId !== undefined;
+  const modalOpen = isModalControlled
+    ? controlledModalOpen
+    : editingId !== undefined || modalView === 'list';
+  const visibleModalView = isModalControlled && controlledModalOpen && showSavedAddressesInModal && editingId === undefined
+    ? 'list'
+    : modalView;
 
   useEffect(() => {
     onSelectRef.current = onSelect;
@@ -163,6 +171,7 @@ export default function CustomerAddressManager({
 
   const openAdd = () => {
     setEditingId(null);
+    setModalView('form');
     setForm(emptyForm());
     setError(null);
     onModalOpenChange?.(true);
@@ -170,13 +179,22 @@ export default function CustomerAddressManager({
 
   const openEdit = (address: CustomerAddress) => {
     setEditingId(address.id);
+    setModalView('form');
     setForm(addressToForm(address));
     setError(null);
     onModalOpenChange?.(true);
   };
 
+  const openSavedAddresses = () => {
+    setEditingId(undefined);
+    setModalView('list');
+    setForm(emptyForm());
+    setError(null);
+  };
+
   const closeModal = useCallback(() => {
     setEditingId(undefined);
+    setModalView('form');
     setError(null);
     onModalOpenChange?.(false);
   }, [onModalOpenChange]);
@@ -185,19 +203,26 @@ export default function CustomerAddressManager({
     if (!isModalControlled) return;
 
     if (controlledModalOpen && editingId === undefined) {
-      const addressToEdit = modalMode === 'edit'
-        ? addresses.find((address) => address.id === selectedId)
-        : undefined;
-      setEditingId(addressToEdit?.id ?? null);
-      setForm(addressToEdit ? addressToForm(addressToEdit) : emptyForm());
+      if (showSavedAddressesInModal) {
+        setModalView('list');
+        setForm(emptyForm());
+      } else {
+        const addressToEdit = modalMode === 'edit'
+          ? addresses.find((address) => address.id === selectedId)
+          : undefined;
+        setModalView('form');
+        setEditingId(addressToEdit?.id ?? null);
+        setForm(addressToEdit ? addressToForm(addressToEdit) : emptyForm());
+      }
       setError(null);
     }
 
     if (!controlledModalOpen && editingId !== undefined) {
       setEditingId(undefined);
+      setModalView('form');
       setError(null);
     }
-  }, [addresses, controlledModalOpen, editingId, isModalControlled, modalMode, selectedId]);
+  }, [addresses, controlledModalOpen, editingId, isModalControlled, modalMode, selectedId, showSavedAddressesInModal]);
 
   useEffect(() => {
     if (!modalOpen) return;
@@ -283,6 +308,7 @@ export default function CustomerAddressManager({
         ? current.map((address) => address.id === saved.id ? saved : address)
         : [saved, ...current.filter((address) => address.id !== saved.id)]);
       setEditingId(undefined);
+      setModalView('form');
       onModalOpenChange?.(false);
       selectedIdRef.current = saved.id;
       setSelectedId(saved.id);
@@ -351,6 +377,49 @@ export default function CustomerAddressManager({
     }
   };
 
+  const savedAddressCards = (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {addresses.map((address) => {
+        const isMutating = mutating?.id === address.id;
+
+        return (
+          <div key={address.id} aria-busy={isMutating} className={`rounded-xl border p-3 transition-colors ${selectedId === address.id ? 'border-blue-600 bg-blue-50' : 'border-gray-200 bg-white'}`}>
+            <button
+              type="button"
+              aria-label={`Use address at ${address.address_line}`}
+              aria-pressed={selectedId === address.id}
+              disabled={disabled}
+              onClick={() => select(address)}
+              className="min-h-11 w-full text-left focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <span className="flex flex-wrap items-center gap-2 font-semibold text-gray-950">
+                {address.name}
+                {address.is_default && <span className="rounded-full bg-gray-950 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white">Default</span>}
+              </span>
+              <span className="block text-sm text-gray-700">{fullAddress(address)}</span>
+              {address.latitude === null || address.longitude === null
+                ? <span className="mt-1 block text-xs font-semibold text-amber-700">Pin required</span>
+                : <span className="mt-1 block text-xs font-semibold text-green-700">Pinned address</span>}
+            </button>
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+              <button type="button" aria-label={`Edit ${address.address_line}`} disabled={disabled || isMutating} onClick={() => openEdit(address)} className="min-h-11 text-sm font-semibold text-blue-700 underline underline-offset-4 transition-colors hover:text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50">
+                Edit
+              </button>
+              {!address.is_default && (
+                <button type="button" aria-label={`Set as default ${address.address_line}`} disabled={disabled || isMutating} onClick={() => void setDefault(address)} className="min-h-11 text-sm font-semibold text-gray-900 underline underline-offset-4 transition-colors hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50">
+                  {isMutating && mutating?.action === 'default' ? 'Setting...' : 'Set as default'}
+                </button>
+              )}
+              <button type="button" aria-label={`Delete ${address.address_line}`} disabled={disabled || isMutating} onClick={() => void remove(address)} className="min-h-11 text-sm font-semibold text-red-700 underline underline-offset-4 transition-colors hover:text-red-900 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50">
+                {isMutating && mutating?.action === 'delete' ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+
   const addressSummary = (
     <div className="space-y-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
@@ -368,48 +437,7 @@ export default function CustomerAddressManager({
       <p aria-live="polite" role="status" className="text-sm text-gray-600">{loading ? 'Loading saved addresses…' : status}</p>
       {error && editingId === undefined && <p role="alert" className="text-sm text-red-700">{error}</p>}
 
-      {!loading && addresses.length > 0 && (
-        <div className="grid gap-2 sm:grid-cols-2">
-          {addresses.map((address) => {
-            const isMutating = mutating?.id === address.id;
-
-            return (
-            <div key={address.id} aria-busy={isMutating} className={`rounded-xl border p-3 transition-colors ${selectedId === address.id ? 'border-blue-600 bg-blue-50' : 'border-gray-200 bg-white'}`}>
-              <button
-                type="button"
-                aria-label={`Use address at ${address.address_line}`}
-                aria-pressed={selectedId === address.id}
-                disabled={disabled}
-                onClick={() => select(address)}
-                className="min-h-11 w-full text-left focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <span className="flex flex-wrap items-center gap-2 font-semibold text-gray-950">
-                  {address.name}
-                  {address.is_default && <span className="rounded-full bg-gray-950 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white">Default</span>}
-                </span>
-                <span className="block text-sm text-gray-700">{fullAddress(address)}</span>
-                {address.latitude === null || address.longitude === null
-                  ? <span className="mt-1 block text-xs font-semibold text-amber-700">Pin required</span>
-                  : <span className="mt-1 block text-xs font-semibold text-green-700">Pinned address</span>}
-              </button>
-              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-                <button type="button" aria-label={`Edit ${address.address_line}`} disabled={disabled || isMutating} onClick={() => openEdit(address)} className="min-h-11 text-sm font-semibold text-blue-700 underline underline-offset-4 transition-colors hover:text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50">
-                  Edit
-                </button>
-                {!address.is_default && (
-                  <button type="button" aria-label={`Set as default ${address.address_line}`} disabled={disabled || isMutating} onClick={() => void setDefault(address)} className="min-h-11 text-sm font-semibold text-gray-900 underline underline-offset-4 transition-colors hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50">
-                    {isMutating && mutating?.action === 'default' ? 'Setting…' : 'Set as default'}
-                  </button>
-                )}
-                <button type="button" aria-label={`Delete ${address.address_line}`} disabled={disabled || isMutating} onClick={() => void remove(address)} className="min-h-11 text-sm font-semibold text-red-700 underline underline-offset-4 transition-colors hover:text-red-900 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50">
-                  {isMutating && mutating?.action === 'delete' ? 'Deleting…' : 'Delete'}
-                </button>
-              </div>
-            </div>
-            );
-          })}
-        </div>
-      )}
+      {!loading && addresses.length > 0 && savedAddressCards}
     </div>
   );
 
@@ -441,12 +469,24 @@ export default function CustomerAddressManager({
               <div>
                 <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-blue-700">Delivery address</p>
                 <h2 id="customer-address-modal-title" className="text-xl font-semibold text-gray-950">
-                  {editingId ? 'Edit delivery address' : 'Add delivery address'}
+                  {visibleModalView === 'list' ? 'Saved delivery addresses' : editingId ? 'Edit delivery address' : 'Add delivery address'}
                 </h2>
-                <p className="mt-1 text-sm text-gray-600">Use a precise map pin so nearby repair shops can confirm coverage.</p>
+                <p className="mt-1 text-sm text-gray-600">
+                  {visibleModalView === 'list' ? 'Choose a saved address or add a new one.' : 'Use a precise map pin so nearby repair shops can confirm coverage.'}
+                </p>
               </div>
               <div className="flex shrink-0 items-center gap-1">
-                {editingId && (
+                {showSavedAddressesInModal && visibleModalView === 'list' && (
+                  <button type="button" onClick={openAdd} className="min-h-11 px-2 text-xs font-semibold text-blue-700 underline underline-offset-4 transition-colors hover:text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500 sm:text-sm">
+                    Add new address
+                  </button>
+                )}
+                {showSavedAddressesInModal && visibleModalView === 'form' && (
+                  <button type="button" onClick={openSavedAddresses} className="min-h-11 px-2 text-xs font-semibold text-blue-700 underline underline-offset-4 transition-colors hover:text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500 sm:text-sm">
+                    Saved addresses
+                  </button>
+                )}
+                {!showSavedAddressesInModal && editingId && (
                   <button type="button" onClick={openAdd} className="min-h-11 px-2 text-xs font-semibold text-blue-700 underline underline-offset-4 transition-colors hover:text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500 sm:text-sm">
                     Add new address
                   </button>
@@ -463,6 +503,20 @@ export default function CustomerAddressManager({
               </div>
             </div>
             <div className="overflow-y-auto p-4 sm:p-6">
+              {visibleModalView === 'list' ? (
+                <div className="space-y-4">
+                  <p className="text-sm font-semibold uppercase tracking-[0.12em] text-gray-500">Your saved addresses</p>
+                  {loading && <p role="status" className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">Loading saved addresses...</p>}
+                  {!loading && addresses.length > 0 && savedAddressCards}
+                  {!loading && addresses.length === 0 && (
+                    <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-6 text-center">
+                      <p className="font-semibold text-gray-950">No saved addresses yet</p>
+                      <p className="mt-1 text-sm text-gray-600">Add an address once and it will stay here for your next repair request.</p>
+                    </div>
+                  )}
+                  {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+                </div>
+              ) : (
               <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void save(); }}>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-sm font-medium text-gray-800">Full name<input required value={form.name} onChange={(event) => update('name', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3" /></label>
@@ -503,6 +557,7 @@ export default function CustomerAddressManager({
             </button>
           </div>
         </form>
+              )}
             </div>
           </div>
         </div>

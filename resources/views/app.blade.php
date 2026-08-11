@@ -19,10 +19,12 @@
             try {
                 if (!window.sessionStorage.getItem(loaderSeenKey)) {
                     document.documentElement.classList.add('solespace-first-load');
+                    document.documentElement.dataset.solespaceLoaderStartedAt = String(Date.now());
                     window.sessionStorage.setItem(loaderSeenKey, '1');
                 }
             } catch {
                 document.documentElement.classList.add('solespace-first-load');
+                document.documentElement.dataset.solespaceLoaderStartedAt = String(Date.now());
             }
         })();
     </script>

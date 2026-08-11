@@ -489,6 +489,7 @@ const Repair: React.FC<Props> = ({ shops }) => {
                 initialAddressId={initialAddressId}
                 showAddTrigger={false}
                 showAddressSummary={false}
+                showSavedAddressesInModal
                 modalMode={selectedAddress ? 'edit' : 'add'}
                 isModalOpen={isAddressModalOpen}
                 onModalOpenChange={setIsAddressModalOpen}
