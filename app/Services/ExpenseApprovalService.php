@@ -6,6 +6,7 @@ use App\Models\Approval;
 use App\Models\Finance\Expense;
 use App\Models\User;
 use App\Models\PurchaseOrderReceipt;
+use App\Models\ShopOwner;
 use App\Enums\ApprovalStatus;
 use App\Enums\NotificationType;
 use Illuminate\Support\Facades\DB;
@@ -113,17 +114,21 @@ class ExpenseApprovalService
     }
 
     /**
-     * Create a 4-step approval workflow for an expense
+     * Create the smallest manual approval workflow for an expense.
      * Finance (1) → Shop Owner (2) → Finance (3) → Finance Final (4)
      */
     public function createExpenseApproval(Expense $expense, User $shopOwner): Approval
     {
-        $approvalRoles = [
-            '1' => 'finance',           // Finance reviews first
-            '2' => 'shop_owner',        // Shop owner approves
-            '3' => 'finance',           // Finance reviews again
-            '4' => 'finance_final'      // Finance Final sign-off
-        ];
+        $source = is_array($expense->meta) ? (string) ($expense->meta['source'] ?? '') : '';
+        if ($expense->procurement_receipt_id || in_array($source, ['procurement_receipt', 'payroll'], true)) {
+            throw new \LogicException('Operational expenses are not routed through manual approval.');
+        }
+
+        $shop = ShopOwner::query()->find($shopOwner->id);
+        $threshold = (float) ($shop?->high_value_threshold ?? 5000.00);
+        $approvalRoles = (float) $expense->amount >= $threshold
+            ? ['1' => 'finance', '2' => 'shop_owner']
+            : ['1' => 'finance'];
 
         // Create polymorphic approval record
         $approval = $this->approvalService->createApproval(
@@ -156,63 +161,54 @@ class ExpenseApprovalService
     /**
      * Approve an expense at current approval level
      */
-    public function approveExpense(Expense $expense, User $approver, ?string $comments = null): array
+    public function approveExpense(Expense $expense, object $approver, ?string $comments = null): array
     {
-        if (!$expense->approval_id) {
-            return [
-                'success' => false,
-                'message' => 'No approval workflow found for this expense'
-            ];
-        }
+        $result = DB::transaction(function () use ($expense, $approver, $comments): array {
+            $lockedExpense = Expense::query()->whereKey($expense->getKey())->lockForUpdate()->first();
+            if (! $lockedExpense?->approval_id) {
+                return ['success' => false, 'code' => 'APPROVAL_STATE_CONFLICT', 'message' => 'No approval workflow found for this expense.'];
+            }
 
-        $approval = Approval::find($expense->approval_id);
-        if (!$approval) {
-            return [
-                'success' => false,
-                'message' => 'Approval record not found'
-            ];
-        }
+            $approval = Approval::query()->whereKey($lockedExpense->approval_id)->lockForUpdate()->first();
+            if (! $approval) {
+                return ['success' => false, 'code' => 'APPROVAL_STATE_CONFLICT', 'message' => 'Approval record not found.'];
+            }
+            if ($approval->status !== ApprovalStatus::PENDING || $lockedExpense->status !== 'submitted') {
+                return ['success' => false, 'code' => 'APPROVAL_STATE_CONFLICT', 'message' => 'This expense has already advanced or is no longer pending.', 'approval' => $approval];
+            }
 
-        $previousLevel = (int) $approval->current_level;
+            $previousLevel = (int) $approval->current_level;
+            $transition = $this->approvalService->approve($approval, $approver, $comments);
+            if (! ($transition['success'] ?? false)) {
+                return [...$transition, 'code' => 'APPROVAL_STATE_CONFLICT', 'approval' => $approval];
+            }
 
-        // Use ApprovalService to transition
-        $result = $this->approvalService->approve($approval, $approver, $comments);
-
-        if (!$result['success']) {
-            return $result;
-        }
-
-        // Keep intermediate states compatible with existing expense enum values
-        $statusMapping = [
-            1 => 'submitted',
-            2 => 'submitted',
-            3 => 'submitted',
-            4 => 'approved'
-        ];
-
-        if ($result['is_final'] ?? false) {
-            $expense->update([
-                'status' => 'approved',
-                'approved_by' => $approver->id,
-                'approved_at' => now(),
+            $isFinal = (bool) ($transition['is_final'] ?? false);
+            $lockedExpense->update([
+                'status' => $isFinal ? 'approved' : 'submitted',
+                'approved_by' => $isFinal ? ($approver->id ?? null) : $lockedExpense->approved_by,
+                'approved_at' => $isFinal ? now() : $lockedExpense->approved_at,
                 'approval_notes' => $comments,
-                'current_approval_level' => $approval->current_level
+                'current_approval_level' => $approval->current_level,
             ]);
-        } else {
-            $nextLevel = $approval->current_level;
-            $expense->update([
-                'current_approval_level' => $nextLevel,
-                'status' => $statusMapping[$nextLevel] ?? 'submitted'
-            ]);
-        }
 
-        $this->dispatchExpenseApprovalNotifications(
-            expense: $expense,
-            approval: $approval,
-            approver: $approver,
-            previousLevel: $previousLevel,
-            result: $result
-        );
+            return [
+                ...$transition,
+                'expense' => $lockedExpense->fresh(),
+                'approval' => $approval->fresh(),
+                'previous_level' => $previousLevel,
+            ];
+        }, 3);
+
+        if ($result['success'] ?? false) {
+            $this->dispatchExpenseApprovalNotifications(
+                expense: $result['expense'],
+                approval: $result['approval'],
+                approver: $approver,
+                previousLevel: (int) ($result['previous_level'] ?? 1),
+                result: $result
+            );
+        }
 
         return $result;
     }
@@ -220,38 +216,39 @@ class ExpenseApprovalService
     /**
      * Reject an expense at current approval level
      */
-    public function rejectExpense(Expense $expense, User $rejector, string $comments = ''): array
+    public function rejectExpense(Expense $expense, object $rejector, string $comments = ''): array
     {
-        if (!$expense->approval_id) {
-            return [
-                'success' => false,
-                'message' => 'No approval workflow found for this expense'
-            ];
+        $result = DB::transaction(function () use ($expense, $rejector, $comments): array {
+            $lockedExpense = Expense::query()->whereKey($expense->getKey())->lockForUpdate()->first();
+            if (! $lockedExpense?->approval_id) {
+                return ['success' => false, 'code' => 'APPROVAL_STATE_CONFLICT', 'message' => 'No approval workflow found for this expense.'];
+            }
+
+            $approval = Approval::query()->whereKey($lockedExpense->approval_id)->lockForUpdate()->first();
+            if (! $approval) {
+                return ['success' => false, 'code' => 'APPROVAL_STATE_CONFLICT', 'message' => 'Approval record not found.'];
+            }
+            if ($approval->status !== ApprovalStatus::PENDING || $lockedExpense->status !== 'submitted') {
+                return ['success' => false, 'code' => 'APPROVAL_STATE_CONFLICT', 'message' => 'This expense has already advanced or is no longer pending.', 'approval' => $approval];
+            }
+
+            $transition = $this->approvalService->reject($approval, $rejector, $comments);
+            if (! ($transition['success'] ?? false)) {
+                return [...$transition, 'code' => 'APPROVAL_STATE_CONFLICT', 'approval' => $approval];
+            }
+
+            $lockedExpense->update([
+                'status' => 'rejected',
+                'approval_notes' => $comments,
+                'current_approval_level' => $approval->current_level,
+            ]);
+
+            return [...$transition, 'expense' => $lockedExpense->fresh(), 'approval' => $approval->fresh()];
+        }, 3);
+
+        if ($result['success'] ?? false) {
+            $this->dispatchExpenseRejectionNotifications($result['expense'], $result['approval'], $comments);
         }
-
-        $approval = Approval::find($expense->approval_id);
-        if (!$approval) {
-            return [
-                'success' => false,
-                'message' => 'Approval record not found'
-            ];
-        }
-
-        // Use ApprovalService to reject
-        $result = $this->approvalService->reject($approval, $rejector, $comments);
-
-        if (!$result['success']) {
-            return $result;
-        }
-
-        // Update expense to rejected status
-        $expense->update([
-            'status' => 'rejected',
-            'approval_notes' => $comments,
-            'current_approval_level' => $approval->current_level
-        ]);
-
-        $this->dispatchExpenseRejectionNotifications($expense, $approval, $comments);
 
         return $result;
     }
@@ -259,7 +256,7 @@ class ExpenseApprovalService
     private function dispatchExpenseApprovalNotifications(
         Expense $expense,
         Approval $approval,
-        User $approver,
+        object $approver,
         int $previousLevel,
         array $result
     ): void {
@@ -334,7 +331,7 @@ class ExpenseApprovalService
         );
     }
 
-    private function buildExpenseNotificationData(Expense $expense, ?User $actor = null, ?string $reason = null): array
+    private function buildExpenseNotificationData(Expense $expense, ?object $actor = null, ?string $reason = null): array
     {
         $meta = is_array($expense->meta) ? $expense->meta : [];
 
@@ -413,7 +410,6 @@ class ExpenseApprovalService
         return match ($role) {
             'finance' => 'Finance Team',
             'shop_owner' => 'Shop Owner',
-            'finance_final' => 'Finance Manager (Final Approval)',
             default => 'Unknown'
         };
     }

@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use App\Enums\ApprovalStatus;
+use App\Models\Finance\Expense;
 
 class Approval extends Model
 {
@@ -160,13 +161,7 @@ class Approval extends Model
                     'Finance Manager',
                     'finance-manager',
                 ])
-                || $this->userHasAnyPermissionSafe($user, [
-                    'access-shoe-price-approval',
-                    'access-repair-price-approval',
-                    'approve-expenses',
-                    'access-approval-workflow',
-                    'access-shoe-pricing',
-                ]),
+                || $this->userHasAnyPermissionSafe($user, $this->financeApprovalPermissions()),
             'shop_owner' => $this->isExactShopOwnerIdentity($user)
                 || (
                     $this->isLinkedToApprovalShop($user)
@@ -183,13 +178,7 @@ class Approval extends Model
                     'finance',
                 ])
                 || $this->userHasPermissionSafe($user, 'access-approval-workflow')
-            ) && $this->userHasAnyPermissionSafe($user, [
-                'access-shoe-price-approval',
-                'access-repair-price-approval',
-                'approve-expenses',
-                'access-approval-workflow',
-                'access-shoe-pricing',
-            ]),
+            ) && $this->userHasAnyPermissionSafe($user, $this->financeApprovalPermissions()),
             default => false
         };
     }
@@ -201,6 +190,21 @@ class Approval extends Model
         } catch (\Throwable) {
             return false;
         }
+    }
+
+    private function financeApprovalPermissions(): array
+    {
+        if ($this->approvable_type === Expense::class) {
+            return ['approve-expenses', 'access-approval-workflow'];
+        }
+
+        return [
+            'access-shoe-price-approval',
+            'access-repair-price-approval',
+            'approve-expenses',
+            'access-approval-workflow',
+            'access-shoe-pricing',
+        ];
     }
 
     private function userHasAnyPermissionSafe($user, array $permissions): bool

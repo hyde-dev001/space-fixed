@@ -60,7 +60,7 @@ class ApprovalService
     /**
      * Approve an approval at current level and move to next
      */
-    public function approve(Approval $approval, User $user, ?string $comments = null): array
+    public function approve(Approval $approval, object $user, ?string $comments = null): array
     {
         if (!$approval->canApprove($user)) {
             return [
@@ -113,7 +113,7 @@ class ApprovalService
     /**
      * Reject an approval at current level
      */
-    public function reject(Approval $approval, User $user, string $comments = ''): array
+    public function reject(Approval $approval, object $user, string $comments = ''): array
     {
         if (!$approval->canApprove($user)) {
             return [

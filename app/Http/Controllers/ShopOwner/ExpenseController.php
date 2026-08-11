@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Finance\Expense;
 use App\Models\AuditLog;
 use App\Services\ExpenseApprovalService;
+use App\Services\Finance\ExpenseSettlementService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -13,7 +14,8 @@ use Illuminate\Support\Facades\Log;
 class ExpenseController extends Controller
 {
     public function __construct(
-        private ExpenseApprovalService $expenseApprovalService
+        private ExpenseApprovalService $expenseApprovalService,
+        private ExpenseSettlementService $expenseSettlementService
     ) {}
 
     private function shopOwner()
@@ -53,7 +55,7 @@ class ExpenseController extends Controller
     }
 
     /**
-     * Shop owner approves a submitted expense (uses 4-step workflow if available)
+     * Shop owner approves a submitted expense when high-value escalation is pending.
      */
     public function approve(Request $request, $id)
     {
@@ -61,8 +63,8 @@ class ExpenseController extends Controller
 
         $expense = Expense::where('shop_id', $shopOwner->id)->whereNull('procurement_receipt_id')->findOrFail($id);
 
-        // If expense has 4-step approval workflow, use it
-        if ($expense->approval_id && $expense->approval_workflow_version === 'v4_multi_level') {
+        // Approval rows own the current Finance/Shop Owner state.
+        if ($expense->approval_id) {
             // Convert shop_owner to user for the service
             $actor = Auth::guard('shop_owner')->user();
             
@@ -110,6 +112,7 @@ class ExpenseController extends Controller
             return response()->json([
                 'message' => $forwardingMessage,
                 'expense' => $expense,
+                'settlement_state' => $this->expenseSettlementService->state($expense, (int) $shopOwner->id),
                 'is_final' => $result['is_final'] ?? false,
                 'approval_level' => $expense->current_approval_level,
             ]);
@@ -165,6 +168,33 @@ class ExpenseController extends Controller
 
         $expense = Expense::where('shop_id', $shopOwner->id)->whereNull('procurement_receipt_id')->findOrFail($id);
 
+        $request->validate([
+            'rejection_reason' => 'required|string|max:1000',
+        ]);
+
+        if ($expense->approval_id) {
+            $result = $this->expenseApprovalService->rejectExpense(
+                $expense,
+                $shopOwner,
+                (string) $request->input('rejection_reason', '')
+            );
+
+            if (! ($result['success'] ?? false)) {
+                return response()->json([
+                    'message' => $result['message'] ?? 'Failed to reject expense',
+                    'details' => $result,
+                ], 422);
+            }
+
+            $expense->refresh();
+
+            return response()->json([
+                'message' => 'Expense rejected.',
+                'expense' => $expense,
+                'settlement_state' => $this->expenseSettlementService->state($expense, (int) $shopOwner->id),
+            ]);
+        }
+
         if ($expense->status !== 'submitted') {
             return response()->json([
                 'message' => 'Only submitted expenses can be rejected.',
@@ -172,13 +202,7 @@ class ExpenseController extends Controller
             ], 422);
         }
 
-        $request->validate([
-            'rejection_reason' => 'required_without:approval_notes|string|max:1000',
-            'approval_notes' => 'nullable|string|max:1000',
-        ]);
-
-        $rejectionReason = $request->input('rejection_reason') ?? $request->input('approval_notes');
-
+        $rejectionReason = (string) $request->input('rejection_reason', '');
         try {
             $expense->update([
                 'status'         => 'rejected',

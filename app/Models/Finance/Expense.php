@@ -41,7 +41,6 @@ class Expense extends Model
         'meta',
         'approval_id',
         'current_approval_level',
-        'approval_workflow_version',
     ];
 
     protected $casts = [

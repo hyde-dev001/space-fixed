@@ -315,7 +315,7 @@ class ExpenseController extends Controller
                 ]);
             }
 
-            // Create 4-step approval workflow for the expense
+            // Create the minimal manual approval workflow for the expense.
             $shopOwner = User::find($shopId);
             if ($shopOwner) {
                 try {
@@ -485,7 +485,7 @@ class ExpenseController extends Controller
             ], 422);
         }
 
-        // If expense has a 4-step approval workflow, use it
+        // Approval service owns the current Finance/Shop Owner transition.
         if ($expense->approval_id) {
             $result = $this->expenseApprovalService->approveExpense(
                 $expense,
@@ -596,7 +596,7 @@ class ExpenseController extends Controller
             ], 422);
         }
 
-        // If expense has a 4-step approval workflow, use it
+        // Approval service owns the current Finance/Shop Owner transition.
         if ($expense->approval_id) {
             $result = $this->expenseApprovalService->rejectExpense(
                 $expense,

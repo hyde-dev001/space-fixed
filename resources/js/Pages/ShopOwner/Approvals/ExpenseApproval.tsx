@@ -306,7 +306,7 @@ export default function ExpenseApproval({ onModalStateChange }: ExpenseApprovalP
 					<div>
 						<h1 className="text-2xl font-semibold mb-1">Expense Approvals</h1>
 						<p className="text-gray-600 dark:text-gray-400">
-							Review expenses submitted by Finance before they are settled
+							Review approval state separately from any cash settlement
 						</p>
 					</div>
 					<span className="px-3 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200 w-fit">
