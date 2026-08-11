@@ -1,7 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import Swal from '../Shared/UserModal';
+import RefundEligibilityTooltip from '@/components/common/RefundEligibilityTooltip';
+import ShipmentTrackingModal from '@/components/logistics/ShipmentTrackingModal';
 
 const MAX_REFUND_IMAGE_SIZE_BYTES = 20 * 1024 * 1024;
 const MAX_REFUND_VIDEO_SIZE_BYTES = 256 * 1024 * 1024;
@@ -181,6 +183,20 @@ const MyOrders: React.FC = () => {
   const [reasonDetailsOrder, setReasonDetailsOrder] = useState<Order | null>(null);
   const [showRefundRejectionModal, setShowRefundRejectionModal] = useState(false);
   const [refundRejectionOrder, setRefundRejectionOrder] = useState<Order | null>(null);
+  const [showTrackingModal, setShowTrackingModal] = useState(false);
+  const [trackingShipmentId, setTrackingShipmentId] = useState<number | null>(null);
+  const trackingTriggerRef = useRef<HTMLElement | null>(null);
+
+  const openTrackingModal = (shipmentId: number, trigger: HTMLElement) => {
+    trackingTriggerRef.current = trigger;
+    setTrackingShipmentId(shipmentId);
+    setShowTrackingModal(true);
+  };
+
+  const closeTrackingModal = () => {
+    setShowTrackingModal(false);
+    setTrackingShipmentId(null);
+  };
 
   const isOtherReason = (value?: string | null): boolean => String(value || '').trim().toLowerCase() === 'other';
 
@@ -1602,6 +1618,32 @@ const MyOrders: React.FC = () => {
                     && isOnlinePaymentOrder(order)
                     && isShopOwnerRejectedRefund(order)
                     && Boolean(String(order.refund_stage?.rejection_reason || order.refund_status_note || '').trim());
+                  const shipmentId = order.logistics_shipment_id;
+                  const returnShipmentId = order.refund_stage?.logistics_shipment_id;
+                  const refundButton = (
+                    <button
+                      type="button"
+                      disabled={!canRefund}
+                      onClick={() => {
+                        if (!canRefund) {
+                          return;
+                        }
+                        setRefundOrderId(order.id);
+                        setRefundStep(1);
+                        setRefundReason('');
+                        setRefundMedia([]);
+                        setRefundRequestType('full');
+                        initializeRefundLineQty(order.items || []);
+                        setRefundNote('');
+                        setRefundOtherReasonNote('');
+                        setShowRefundModal(true);
+                      }}
+                      title={canRefund ? 'Request refund' : undefined}
+                      className={`${actionButtonBaseClass} ${canRefund ? actionButtonSecondaryClass : `${actionButtonDisabledClass} pointer-events-none`}`}
+                    >
+                      REFUND
+                    </button>
+                  );
 
                   return (
                   <div
@@ -1975,21 +2017,23 @@ const MyOrders: React.FC = () => {
 
                       {/* Order Actions */}
                       <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-gray-200 pt-4 sm:mt-6 sm:pt-6 sm:gap-3">
-                        {order.logistics_shipment_id && (
-                          <Link
-                            href={`/tracking/shipments/${order.logistics_shipment_id}`}
+                        {shipmentId != null && (
+                          <button
+                            type="button"
+                            onClick={(event) => openTrackingModal(shipmentId, event.currentTarget)}
                             className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
                           >
                             Track Shipment
-                          </Link>
+                          </button>
                         )}
-                        {order.refund_stage?.logistics_shipment_id && (
-                          <Link
-                            href={`/tracking/shipments/${order.refund_stage.logistics_shipment_id}`}
+                        {returnShipmentId != null && (
+                          <button
+                            type="button"
+                            onClick={(event) => openTrackingModal(returnShipmentId, event.currentTarget)}
                             className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
                           >
                             Track Return
-                          </Link>
+                          </button>
                         )}
                         {order.status === 'pending' && (
                           <div className="w-full flex justify-end">
@@ -2041,27 +2085,11 @@ const MyOrders: React.FC = () => {
                         {['delivered', 'completed'].includes(order.status) && (
                           <>
                             {!order.refund_stage && !reviewSubmitted ? (
-                              <button
-                                disabled={!canRefund}
-                                onClick={() => {
-                                  if (!canRefund) {
-                                    return;
-                                  }
-                                  setRefundOrderId(order.id);
-                                  setRefundStep(1);
-                                  setRefundReason('');
-                                  setRefundMedia([]);
-                                  setRefundRequestType('full');
-                                  initializeRefundLineQty(order.items || []);
-                                  setRefundNote('');
-                                  setRefundOtherReasonNote('');
-                                  setShowRefundModal(true);
-                                }}
-                                title={canRefund ? 'Request refund' : getRefundIneligibilityMessage(order)}
-                                className={`${actionButtonBaseClass} ${canRefund ? actionButtonSecondaryClass : actionButtonDisabledClass}`}
-                              >
-                                REFUND
-                              </button>
+                              canRefund ? refundButton : (
+                                <RefundEligibilityTooltip message={getRefundIneligibilityMessage(order)}>
+                                  {refundButton}
+                                </RefundEligibilityTooltip>
+                              )
                             ) : null}
                             {!reviewSubmitted ? (
                               <button
@@ -2094,11 +2122,9 @@ const MyOrders: React.FC = () => {
                         </p>
                       )}
 
-                      {['delivered', 'completed'].includes(order.status) && !reviewSubmitted && (
-                        <p className={`mt-3 text-xs sm:text-right ${canRefund ? 'text-gray-500' : 'text-red-600 font-medium'}`}>
-                          {canRefund
-                            ? `You can request a refund until ${formatDeadline(order.cancellation_refund_deadline_at)}.`
-                            : getRefundIneligibilityMessage(order)}
+                      {['delivered', 'completed'].includes(order.status) && !reviewSubmitted && canRefund && (
+                        <p className="mt-3 text-xs text-gray-500 sm:text-right">
+                          You can request a refund until {formatDeadline(order.cancellation_refund_deadline_at)}.
                         </p>
                       )}
                     </div>
@@ -2713,6 +2739,12 @@ const MyOrders: React.FC = () => {
             </div>
           </div>
         )}
+        <ShipmentTrackingModal
+          shipmentId={trackingShipmentId}
+          isOpen={showTrackingModal}
+          onClose={closeTrackingModal}
+          returnFocusRef={trackingTriggerRef}
+        />
         </div>
       </main>
     </div>
