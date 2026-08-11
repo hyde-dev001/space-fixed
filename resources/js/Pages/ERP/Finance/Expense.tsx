@@ -28,7 +28,6 @@ type Expense = {
   status: "draft" | "submitted" | "approved" | "posted" | "rejected";
   reference?: string;
   tax_amount?: number | string;
-  journal_entry_id?: number;
   approval_notes?: string | null;
   receipt_path?: string | null;
   receipt_original_name?: string | null;

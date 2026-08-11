@@ -13,5 +13,7 @@ describe('Finance invoice payment caller', () => {
     expect(source).toContain('Mark as sent');
     expect(source).not.toContain('/send');
     expect(source).not.toContain("api.post(`/api/finance/invoices/${invoiceId}/mark-paid`");
+    expect(source).not.toContain('postToLedger');
+    expect(source).not.toContain('Ledger');
   });
 });

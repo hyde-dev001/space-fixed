@@ -575,6 +575,10 @@ const Invoice: React.FC = () => {
     return colors[status] || "bg-gray-100 text-gray-800";
   };
 
+  const getStatusLabel = (status: string) => status === "posted"
+    ? "Recorded"
+    : status.charAt(0).toUpperCase() + status.slice(1);
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString("en-US", {
@@ -1363,7 +1367,7 @@ const Invoice: React.FC = () => {
                     {selectedInvoice
                       ? (() => {
                           const status = getEffectiveInvoiceStatus(selectedInvoice);
-                          return status.charAt(0).toUpperCase() + status.slice(1);
+                          return getStatusLabel(status);
                         })()
                       : "Unknown"}
                   </span>

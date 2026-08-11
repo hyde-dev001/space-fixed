@@ -13,13 +13,9 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
-use App\Http\Controllers\FinancialReportController;
 use App\Http\Controllers\UserSide\AddressGeocodingController;
-// use App\Http\Controllers\Api\Finance\BudgetController;
-use App\Http\Controllers\Api\PriceChangeRequestController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Log;
 
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
@@ -265,15 +261,6 @@ Route::middleware(['web', 'auth:user,shop_owner'])->prefix('retail-pos')->group(
     Route::post('/refunds/{refund}/execute', [\App\Http\Controllers\Api\RetailPosController::class, 'executeRefund']);
 });
 
-/**
- * Price Change Requests - Staff endpoints
- * MOVED TO web.php for proper session handling
- * Using web.php ensures session persistence across navigation
- */
-// Route::middleware(['web', 'auth:user'])->prefix('price-change-requests')->group(function () {
-//     Route::get('/my-pending', [PriceChangeRequestController::class, 'myPending']);
-// });
-
 // Debug endpoint to check current user (disabled in production)
 if (!app()->environment('production')) {
     Route::get('/debug/me', function () {
@@ -291,87 +278,19 @@ if (!app()->environment('production')) {
 }
 
 /**
- * Legacy Finance Routes (to be migrated to finance-api.php)
- * These are kept for backward compatibility
- * TODO: Move to finance-api.php and update frontend to use new endpoints
+ * Finance approval review routes.
+ *
+ * Invoice, expense, tax, receipt, and payment routes live exclusively in
+ * routes/finance-api.php. These approval endpoints remain here because the
+ * shared ApprovalController also serves non-expense approval records.
  */
-Route::prefix('finance/public')->group(function () {
-    // Route::get('budgets', [BudgetController::class, 'index']);
-});
-
-/**
- * Legacy Finance Module Routes (for backward compatibility)
- * Protected by session-based authentication and role-based middleware
- * TODO: Migrate frontend to use routes/finance-api.php
- */
-Route::middleware(['web', 'auth:web,user', 'old_role:Finance Staff,Finance Manager,Manager,Staff', 'shop.isolation'])->prefix('finance')->group(function () {
-    // Financial Reports
-    Route::prefix('reports')->group(function () {
-        Route::get('balance-sheet', [FinancialReportController::class, 'balanceSheet']);
-        Route::get('profit-loss', [FinancialReportController::class, 'profitLoss']);
-        Route::get('trial-balance', [FinancialReportController::class, 'trialBalance']);
-        Route::get('ar-aging', [FinancialReportController::class, 'arAging']);
-        Route::get('ap-aging', [FinancialReportController::class, 'apAging']);
-    });
-
-    // Invoices
-    Route::middleware('permission:access-finance-invoices')->group(function () {
-    Route::get('invoices', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'index']);
-    Route::post('invoices', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'store']);
-    Route::get('invoices/{id}', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'show']);
-    Route::put('invoices/{id}', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'update']);
-    Route::delete('invoices/{id}', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'destroy']);
-    Route::post('invoices/{id}/restore', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'restore']);
-    Route::post('invoices/{id}/send', function (): \Illuminate\Http\JsonResponse {
-        Log::warning('Finance compatibility route used', ['route' => 'legacy-send']);
-
-        return response()->json([
-            'message' => 'Use the internal mark-sent endpoint instead.',
-            'code' => 'FINANCE_ROUTE_MOVED',
-            'replacement' => '/api/finance/invoices/{id}/mark-sent',
-        ], 410);
-    });
-    Route::post('invoices/{id}/void', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'void']);
-    });
-
-    // Expenses
-    Route::middleware('permission:access-finance-expenses')->group(function () {
-    Route::get('expenses', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'index']);
-    Route::post('expenses', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'store']);
-    Route::get('expenses/{id}', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'show']);
-    Route::put('expenses/{id}', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'update']);
-    Route::delete('expenses/{id}', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'destroy']);
-    Route::post('expenses/{id}/restore', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'restore']);
-
-    // Expense Receipt Management
-    Route::post('expenses/{id}/receipt', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'uploadReceipt']);
-    Route::get('expenses/{id}/receipt/download', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'downloadReceipt']);
-    Route::delete('expenses/{id}/receipt', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'deleteReceipt']);
-    });
-
-    // Tax Rates Management
-    Route::middleware('permission:manage-finance-tax')->group(function () {
-    Route::get('tax-rates', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'index']);
-    Route::post('tax-rates', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'store']);
-    Route::get('tax-rates/effective', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'effective']);
-    Route::get('tax-rates/default', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'getDefault']);
-    Route::post('tax-rates/calculate', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'calculate']);
-    Route::get('tax-rates/{id}', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'show']);
-    Route::put('tax-rates/{id}', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'update']);
-    Route::delete('tax-rates/{id}', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'destroy']);
-    });
-
-    // Approval Workflow routes
-    Route::prefix('approvals')->group(function () {
+Route::middleware(['web', 'auth:user', 'shop.isolation'])->prefix('finance/approvals')->group(function () {
+    Route::middleware('permission:access-approval-workflow|approve-expenses')->group(function () {
         Route::get('pending', [\App\Http\Controllers\ApprovalController::class, 'getPending']);
         Route::get('history', [\App\Http\Controllers\ApprovalController::class, 'getHistory']);
         Route::get('{id}/history', [\App\Http\Controllers\ApprovalController::class, 'getApprovalHistory']);
-
-        // Only users with approve-expenses permission can approve/reject transactions
-        Route::middleware('permission:access-approval-workflow|approve-expenses')->group(function () {
-            Route::post('{id}/approve', [\App\Http\Controllers\ApprovalController::class, 'approve']);
-            Route::post('{id}/reject', [\App\Http\Controllers\ApprovalController::class, 'reject']);
-        });
+        Route::post('{id}/approve', [\App\Http\Controllers\ApprovalController::class, 'approve']);
+        Route::post('{id}/reject', [\App\Http\Controllers\ApprovalController::class, 'reject']);
     });
 });
 

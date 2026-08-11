@@ -381,12 +381,6 @@ class ApprovalController extends Controller
                 ], 403);
             }
 
-            // TODO: Trigger the actual approval action (e.g., post journal entry, approve expense)
-            // This would depend on the approvable_type and approvable_id
-            if ($result['is_final'] ?? false) {
-                $this->executeApprovalAction($result['approval']);
-            }
-
             DB::commit();
 
             return response()->json([
@@ -532,39 +526,6 @@ class ApprovalController extends Controller
             && Expense::whereKey($approval->approvable_id)
                 ->whereNotNull('procurement_receipt_id')
                 ->exists();
-    }
-
-    /**
-     * Execute the actual approval action based on the approvable type
-     */
-    private function executeApprovalAction(Approval $approval)
-    {
-        // This method should handle the actual approval action
-        // For example:
-        // - If approvable_type is JournalEntry, post the entry
-        // - If approvable_type is Expense, mark as approved and process
-        // - If approvable_type is Invoice, finalize the invoice
-        // - etc.
-
-        // TODO: Implement based on your specific requirements
-        // Example structure:
-        /*
-        switch ($approval->approvable_type) {
-            case 'App\\Models\\JournalEntry':
-                $journalEntry = JournalEntry::find($approval->approvable_id);
-                if ($journalEntry) {
-                    $journalEntry->update(['status' => 'posted']);
-                }
-                break;
-            case 'App\\Models\\Expense':
-                $expense = Expense::find($approval->approvable_id);
-                if ($expense) {
-                    $expense->update(['status' => 'approved']);
-                }
-                break;
-            // Add more cases as needed
-        }
-        */
     }
 
     /**

@@ -3780,7 +3780,6 @@ class RepairRequestController extends Controller
             'unit_price' => $finalTotal,
             'tax_rate' => 0,
             'amount' => $finalTotal,
-            'account_id' => null,
         ]);
 
         foreach ([
@@ -3798,7 +3797,6 @@ class RepairRequestController extends Controller
                 'unit_price' => $fee,
                 'tax_rate' => 0,
                 'amount' => $fee,
-                'account_id' => null,
             ]);
         }
 

@@ -227,8 +227,6 @@ class ExpenseController extends Controller
             'description' => 'nullable|string',
             'amount' => 'required|numeric|min:0.01',
             'tax_amount' => 'nullable|numeric|min:0',
-            'expense_account_id' => 'nullable|integer',
-            'payment_account_id' => 'nullable|integer',
             'payment_mode' => ['nullable', Rule::in(['paid_now', 'pay_later'])],
             'paid_at' => 'nullable|date',
             'payment_method' => ['nullable', Rule::in(ExpenseSettlementService::PAYMENT_METHODS)],
@@ -291,8 +289,6 @@ class ExpenseController extends Controller
                 'amount' => $data['amount'],
                 'tax_amount' => $data['tax_amount'] ?? 0,
                 'status' => 'submitted',
-                'expense_account_id' => $data['expense_account_id'] ?? null,
-                'payment_account_id' => $data['payment_account_id'] ?? null,
                 'shop_id' => $shopId,
                 'meta' => [
                     'created_by' => $this->actorUserId(),
@@ -458,8 +454,6 @@ class ExpenseController extends Controller
             'description' => 'sometimes|nullable|string',
             'amount' => 'sometimes|numeric|min:0.01',
             'tax_amount' => 'sometimes|numeric|min:0',
-            'expense_account_id' => 'sometimes|nullable|integer',
-            'payment_account_id' => 'sometimes|nullable|integer',
         ]);
 
         $expense->update($data);

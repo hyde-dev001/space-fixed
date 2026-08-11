@@ -25,8 +25,6 @@ class Expense extends Model
         'amount',
         'tax_amount',
         'status',
-        'expense_account_id',
-        'payment_account_id',
         'approved_by',
         'approved_at',
         'approval_notes',

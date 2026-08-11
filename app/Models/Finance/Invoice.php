@@ -25,7 +25,6 @@ class Invoice extends Model
         'total',
         'tax_amount',
         'status',
-        'journal_entry_id',
         'payment_date',
         'payment_method',
         'job_order_id',
@@ -65,70 +64,6 @@ class Invoice extends Model
     public function jobOrder()
     {
         return $this->belongsTo(\App\Models\Order::class, 'job_order_id');
-    }
-
-    public function journalEntry()
-    {
-        return $this->belongsTo(JournalEntry::class, 'journal_entry_id');
-    }
-
-    /**
-     * Generate automatic journal entry for invoice posting
-     * Debit: Accounts Receivable (Asset)
-     * Credit: Revenue (single account for all items)
-     */
-    public function createJournalEntry()
-    {
-        if ($this->journal_entry_id) {
-            return $this->journalEntry;
-        }
-
-        // Create journal entry in draft status
-        $entry = JournalEntry::create([
-            'reference' => 'INV-' . $this->reference,
-            'date' => $this->date,
-            'description' => "Invoice #{$this->reference} from {$this->customer_name}",
-            'status' => 'draft',
-            'meta' => [
-                'source' => 'invoice',
-                'invoice_id' => $this->id,
-            ],
-        ]);
-
-        $this->journal_entry_id = $entry->id;
-        $this->save();
-
-        return $entry;
-    }
-
-    /**
-     * Post invoice to ledger (transitions status and posts journal entry)
-     */
-    public function postToLedger()
-    {
-        if ($this->status === 'posted') {
-            return response()->json(['message' => 'Invoice already posted'], 422);
-        }
-
-        // If no journal entry exists, create one
-        if (!$this->journal_entry_id) {
-            $this->createJournalEntry();
-        }
-
-        $entry = $this->journalEntry;
-
-        if ($entry) {
-            $entry->status = 'posted';
-            $entry->posted_at = now();
-            $entry->posted_by = (string) auth()->id();
-            $entry->save();
-        }
-
-        // Update invoice status
-        $this->status = 'posted';
-        $this->save();
-
-        return $entry;
     }
 
     /**

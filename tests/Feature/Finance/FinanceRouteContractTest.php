@@ -36,6 +36,9 @@ class FinanceRouteContractTest extends TestCase
         $this->assertTrue($this->hasRoute($routes, 'api/finance/invoices/{id}/mark-paid', 'Closure'));
         $this->assertTrue($this->hasRoute($routes, 'api/finance/invoices/{id}/post', 'Closure'));
         $this->assertTrue($this->hasRoute($routes, 'api/finance/session/{path?}', 'Closure'));
+        $this->assertTrue($this->hasRoute($routes, 'api/finance/approvals/pending', 'ApprovalController'));
+        $this->assertFalse($routes->contains(fn (RoutingRoute $route): bool => str_contains($route->uri(), 'api/finance/reports/')));
+        $this->assertFalse($routes->contains(fn (RoutingRoute $route): bool => str_contains($route->getActionName(), 'FinancialReportController')));
         $this->assertFalse($routes->contains(fn (RoutingRoute $route): bool => $route->uri() === 'api/finance/session/expenses'));
     }
 

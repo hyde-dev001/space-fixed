@@ -143,7 +143,7 @@ const statusLabel: Record<ExpenseStatus, string> = {
 	approved:  "Approved",
 	rejected:  "Rejected",
 	draft:     "Draft",
-	posted:    "Posted",
+	posted:    "Recorded",
 };
 
 // ---- Main component --------------------------------------------------------
@@ -342,7 +342,7 @@ export default function ExpenseApproval({ onModalStateChange }: ExpenseApprovalP
 							<option value="approved">Approved</option>
 							<option value="rejected">Rejected</option>
 							<option value="draft">Draft</option>
-							<option value="posted">Posted</option>
+							<option value="posted">Recorded</option>
 						</select>
 					</div>
 

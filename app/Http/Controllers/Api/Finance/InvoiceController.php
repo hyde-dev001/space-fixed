@@ -126,7 +126,6 @@ class InvoiceController extends Controller
             ->where('shop_id', $shopOwnerId)
             ->with([
                 'items', 
-                'journalEntry.lines',
                 'jobOrder' => function($query) {
                     $query->select('id', 'order_number', 'customer_id', 'status', 'payment_status', 'total_amount', 'shipping_fee', 'vat_amount', 'vat_rate', 'created_at', 'updated_at');
                 }
@@ -206,7 +205,6 @@ class InvoiceController extends Controller
                     'unit_price' => $item['unit_price'],
                     'tax_rate' => $item['tax_rate'] ?? 0,
                     'amount' => $itemAmount + $itemTax,
-                    'account_id' => null,
                 ]);
             }
 
@@ -295,7 +293,6 @@ class InvoiceController extends Controller
                         'unit_price' => $item['unit_price'],
                         'tax_rate' => $item['tax_rate'] ?? 0,
                         'amount' => $itemAmount + $itemTax,
-                        'account_id' => null,
                     ]);
                 }
 
@@ -479,7 +476,6 @@ class InvoiceController extends Controller
                     'unit_price' => $itemSubtotal,
                     'tax_rate' => $itemSubtotal > 0 && $vatAmount > 0 ? round(($vatAmount / $itemSubtotal) * 100, 2) : 0,
                     'amount' => $itemSubtotal + $vatAmount,
-                    'account_id' => null,
                 ]);
 
                 if ($shippingFee > 0) {
@@ -490,7 +486,6 @@ class InvoiceController extends Controller
                         'unit_price' => $shippingFee,
                         'tax_rate' => 0,
                         'amount' => $shippingFee,
-                        'account_id' => null,
                     ]);
                 }
 
