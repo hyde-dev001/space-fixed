@@ -1460,8 +1460,7 @@ class OrderRefundService
             return false;
         }
 
-        return str_contains($message, 'cannot partially refund')
-            && str_contains($message, 'same day');
+        return str_contains($message, 'cannot partially refund for payments done on the same day');
     }
 
     private function retryGatewayRefundWithCapturedAmount(
