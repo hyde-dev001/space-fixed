@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Services\NotificationService;
 use App\Services\ExpenseApprovalService;
 use App\Support\Finance\FinanceShopContext;
+use App\Support\Finance\FinanceErrorResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -289,8 +290,7 @@ class ExpenseController extends Controller
             return response()->json($expense, 201);
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Expense creation failed: ' . $e->getMessage(), ['exception' => $e]);
-            return response()->json(['message' => 'Failed to create expense', 'error' => $e->getMessage()], 500);
+            return FinanceErrorResponse::json($e, 'expense.create', 500, ['shop_id' => $shopId]);
         }
     }
 
@@ -696,8 +696,7 @@ class ExpenseController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Receipt upload failed: ' . $e->getMessage(), ['exception' => $e]);
-            return response()->json(['message' => 'Failed to upload receipt', 'error' => $e->getMessage()], 500);
+            return FinanceErrorResponse::json($e, 'expense.receipt_upload', 500, ['record_id' => $id, 'shop_id' => $shopId]);
         }
     }
 
@@ -778,8 +777,7 @@ class ExpenseController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Receipt deletion failed: ' . $e->getMessage(), ['exception' => $e]);
-            return response()->json(['message' => 'Failed to delete receipt', 'error' => $e->getMessage()], 500);
+            return FinanceErrorResponse::json($e, 'expense.receipt_delete', 500, ['record_id' => $id, 'shop_id' => $shopId]);
         }
     }
 

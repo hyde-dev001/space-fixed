@@ -9,6 +9,7 @@ use App\Models\Finance\InvoiceItem;
 use App\Models\AuditLog;
 use App\Services\NotificationService;
 use App\Support\Finance\FinanceShopContext;
+use App\Support\Finance\FinanceErrorResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -91,8 +92,7 @@ class InvoiceController extends Controller
 
         return response()->json($invoices);
         } catch (\Exception $e) {
-            Log::error('Error fetching invoices: ' . $e->getMessage());
-            return response()->json(['error' => 'Failed to load invoices', 'message' => $e->getMessage()], 500);
+            return FinanceErrorResponse::json($e, 'invoice.index');
         }
     }
 
@@ -219,8 +219,7 @@ class InvoiceController extends Controller
             return response()->json($invoice->load('items'), 201);
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Invoice creation failed: ' . $e->getMessage(), ['exception' => $e]);
-            return response()->json(['message' => 'Failed to create invoice', 'error' => $e->getMessage()], 500);
+            return FinanceErrorResponse::json($e, 'invoice.create', 500, ['shop_id' => $shopOwnerId ?? null]);
         }
     }
 
@@ -301,8 +300,7 @@ class InvoiceController extends Controller
             return response()->json($invoice->load('items'));
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Invoice update failed: ' . $e->getMessage(), ['exception' => $e]);
-            return response()->json(['message' => 'Failed to update invoice', 'error' => $e->getMessage()], 500);
+            return FinanceErrorResponse::json($e, 'invoice.update', 500, ['record_id' => $id]);
         }
     }
 
@@ -359,8 +357,7 @@ class InvoiceController extends Controller
             return response()->json($invoice->load('items'));
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Invoice posting failed: ' . $e->getMessage(), ['exception' => $e]);
-            return response()->json(['message' => 'Failed to post invoice', 'error' => $e->getMessage()], 500);
+            return FinanceErrorResponse::json($e, 'invoice.post', 500, ['record_id' => $id]);
         }
     }
 
@@ -556,14 +553,7 @@ class InvoiceController extends Controller
             
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Failed to create invoice from job: ' . $e->getMessage(), [
-                'exception' => $e,
-                'trace' => $e->getTraceAsString()
-            ]);
-            return response()->json([
-                'error' => 'Failed to create invoice',
-                'message' => $e->getMessage()
-            ], 500);
+            return FinanceErrorResponse::json($e, 'invoice.create_from_job');
         }
     }
 
@@ -608,11 +598,7 @@ class InvoiceController extends Controller
                 'invoice' => $invoice->fresh()
             ]);
         } catch (\Exception $e) {
-            Log::error('Failed to send invoice: ' . $e->getMessage());
-            return response()->json([
-                'error' => 'Failed to send invoice',
-                'message' => $e->getMessage()
-            ], 500);
+            return FinanceErrorResponse::json($e, 'invoice.send', 500, ['record_id' => $id]);
         }
     }
 
@@ -656,11 +642,7 @@ class InvoiceController extends Controller
                 'invoice' => $invoice->fresh(),
             ]);
         } catch (\Exception $e) {
-            Log::error('Failed to void invoice: ' . $e->getMessage());
-            return response()->json([
-                'error' => 'Failed to void invoice',
-                'message' => $e->getMessage(),
-            ], 500);
+            return FinanceErrorResponse::json($e, 'invoice.void', 500, ['record_id' => $id]);
         }
     }
 
@@ -716,11 +698,7 @@ class InvoiceController extends Controller
                 'invoice' => $invoice->fresh()
             ]);
         } catch (\Exception $e) {
-            Log::error('Failed to mark invoice as paid: ' . $e->getMessage());
-            return response()->json([
-                'error' => 'Failed to mark invoice as paid',
-                'message' => $e->getMessage()
-            ], 500);
+            return FinanceErrorResponse::json($e, 'invoice.mark_paid', 500, ['record_id' => $id]);
         }
     }
 

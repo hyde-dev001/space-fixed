@@ -12,6 +12,7 @@ use App\Models\ShopOwner;
 use App\Models\HR\AuditLog;
 use App\Services\HR\PayrollService;
 use App\Services\NotificationService;
+use App\Support\Finance\FinanceErrorResponse;
 use App\Traits\HR\LogsHRActivity;
 use App\Notifications\HR\PayslipGenerated;
 use Illuminate\Http\Request;
@@ -328,9 +329,7 @@ class PayrollController extends Controller
                 'error'       => $e->getMessage(),
             ]);
 
-            return response()->json([
-                'error' => 'Payroll generation failed: ' . $e->getMessage(),
-            ], 500);
+            return FinanceErrorResponse::json($e, 'payroll.create', 500, ['record_id' => $request->employee_id, 'shop_id' => $user->shop_owner_id]);
         }
     }
 
@@ -623,9 +622,21 @@ class PayrollController extends Controller
                     if (str_contains($e->getMessage(), 'already marked as paid')) {
                         $idempotencyConflicts++;
                     }
-                    $errors[] = $e->getMessage();
+                    \Log::error('Payroll disbursement item failed', [
+                        'payroll_id' => $payrollId,
+                        'shop_owner_id' => $user->shop_owner_id,
+                        'exception' => $e,
+                    ]);
+                    $errors[] = str_contains($e->getMessage(), 'already marked as paid')
+                        ? 'Payroll is already marked as paid.'
+                        : "Unable to disburse payroll ID {$payrollId}.";
                 } catch (\Throwable $e) {
-                    $errors[] = "Error processing payroll ID {$payrollId}: " . $e->getMessage();
+                    \Log::error('Payroll disbursement item failed', [
+                        'payroll_id' => $payrollId,
+                        'shop_owner_id' => $user->shop_owner_id,
+                        'exception' => $e,
+                    ]);
+                    $errors[] = "Unable to disburse payroll ID {$payrollId}.";
                 }
             }
 
@@ -853,9 +864,7 @@ class PayrollController extends Controller
                 'payroll' => $recalculated->load('components', 'employee'),
             ]);
         } catch (\Exception $e) {
-            return response()->json([
-                'error' => 'Recalculation failed: ' . $e->getMessage(),
-            ], 500);
+            return FinanceErrorResponse::json($e, 'payroll.recalculate', 500, ['record_id' => $id, 'shop_id' => $user->shop_owner_id]);
         }
     }
 
@@ -887,9 +896,7 @@ class PayrollController extends Controller
 
             return response()->json($summary);
         } catch (\Exception $e) {
-            return response()->json([
-                'error' => 'Summary generation failed: ' . $e->getMessage(),
-            ], 500);
+            return FinanceErrorResponse::json($e, 'payroll.summary', 500, ['shop_id' => $user->shop_owner_id]);
         }
     }
 
@@ -960,9 +967,7 @@ class PayrollController extends Controller
                 'result' => $result,
             ]);
         } catch (\Exception $e) {
-            return response()->json([
-                'error' => '13th-month release failed: ' . $e->getMessage(),
-            ], 422);
+            return FinanceErrorResponse::json($e, 'payroll.thirteenth_month_release', 422, ['shop_id' => $user->shop_owner_id]);
         }
     }
 
@@ -997,9 +1002,7 @@ class PayrollController extends Controller
 
             return response()->json($report);
         } catch (\Exception $e) {
-            return response()->json([
-                'error' => 'Reconciliation report generation failed: ' . $e->getMessage(),
-            ], 500);
+            return FinanceErrorResponse::json($e, 'payroll.thirteenth_month_reconciliation', 500, ['shop_id' => $user->shop_owner_id]);
         }
     }
 

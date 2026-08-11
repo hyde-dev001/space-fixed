@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use App\Models\Finance\TaxRate;
 use App\Models\AuditLog;
 use App\Support\Finance\FinanceShopContext;
+use App\Support\Finance\FinanceErrorResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -113,8 +114,7 @@ class TaxRateController extends Controller
             return response()->json($taxRate, 201);
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Tax rate creation failed: ' . $e->getMessage(), ['exception' => $e]);
-            return response()->json(['message' => 'Failed to create tax rate', 'error' => $e->getMessage()], 500);
+            return FinanceErrorResponse::json($e, 'tax_rate.create', 500, ['shop_id' => $shopId]);
         }
     }
 
@@ -161,8 +161,7 @@ class TaxRateController extends Controller
             return response()->json($taxRate);
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Tax rate update failed: ' . $e->getMessage(), ['exception' => $e]);
-            return response()->json(['message' => 'Failed to update tax rate', 'error' => $e->getMessage()], 500);
+            return FinanceErrorResponse::json($e, 'tax_rate.update', 500, ['record_id' => $id, 'shop_id' => $shopId]);
         }
     }
 
@@ -180,8 +179,7 @@ class TaxRateController extends Controller
 
             return response()->json(['message' => 'Tax rate deleted successfully']);
         } catch (\Exception $e) {
-            Log::error('Tax rate deletion failed: ' . $e->getMessage(), ['exception' => $e]);
-            return response()->json(['message' => 'Failed to delete tax rate', 'error' => $e->getMessage()], 500);
+            return FinanceErrorResponse::json($e, 'tax_rate.delete', 500, ['record_id' => $id, 'shop_id' => $shopId]);
         }
     }
 
