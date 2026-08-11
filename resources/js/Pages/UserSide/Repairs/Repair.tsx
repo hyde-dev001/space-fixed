@@ -485,6 +485,7 @@ const Repair: React.FC<Props> = ({ shops }) => {
             <div>
               <CustomerAddressManager
                 onSelect={handleAddressSelect}
+                onSelectionCleared={() => setSelectedAddress(null)}
                 initialAddressId={initialAddressId}
                 showAddTrigger={false}
                 showAddressSummary={false}

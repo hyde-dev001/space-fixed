@@ -1383,6 +1383,7 @@ const RepairProcess: React.FC = () => {
                         title="Pickup / courier address"
                         description="Choose or pin your address once. Coverage only affects the shop rider option."
                         onSelect={handleIntakeAddressSelect}
+                        onSelectionCleared={() => setIntakeAddress(null)}
                         initialAddressId={initialAddressId}
                       />
 
@@ -1432,6 +1433,7 @@ const RepairProcess: React.FC = () => {
                           title="Separate return address"
                           description="Choose a different pinned address for the repaired-shoe return."
                           onSelect={handleReturnAddressSelect}
+                          onSelectionCleared={() => setSeparateReturnAddress(null)}
                           initialAddressId={initialAddressId}
                         />
                       )}

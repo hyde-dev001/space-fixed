@@ -560,7 +560,11 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
           {isAuthenticated && (
             <section className="mb-8 space-y-3 xl:mb-10" aria-labelledby="repair-delivery-address-heading">
               <div className="sr-only" id="repair-delivery-address-heading">Repair delivery address</div>
-              <CustomerAddressManager onSelect={handleAddressSelect} initialAddressId={initialAddressId} />
+              <CustomerAddressManager
+                onSelect={handleAddressSelect}
+                onSelectionCleared={() => setSelectedAddress(null)}
+                initialAddressId={initialAddressId}
+              />
               {selectedAddress && (
                 <div className={`rounded-2xl border p-4 ${
                   coverageQuote.status === 'ready' && coverageQuote.available

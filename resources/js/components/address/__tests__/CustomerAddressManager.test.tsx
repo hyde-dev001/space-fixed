@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import CustomerAddressManager from '../CustomerAddressManager';
 
 vi.mock('../CustomerAddressMapPicker', () => ({
@@ -28,6 +28,13 @@ const address = {
   is_default: true,
 };
 
+const secondAddress = {
+  ...address,
+  id: 8,
+  address_line: '25 Sampaguita Avenue',
+  is_default: false,
+};
+
 const response = (body: unknown, ok = true, status = ok ? 200 : 422) => ({
   json: vi.fn().mockResolvedValue(body), ok, status,
 }) as unknown as Response;
@@ -35,6 +42,10 @@ const response = (body: unknown, ok = true, status = ok ? 200 : 422) => ({
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({ addresses: [address] })));
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 it('loads saved addresses and selects the default with an accessible control', async () => {
@@ -142,7 +153,8 @@ it('adds a pinned address and immediately selects it', async () => {
   const created = { ...address, id: 9, name: 'Ana Reyes', is_default: false };
   vi.mocked(fetch)
     .mockResolvedValueOnce(response({ addresses: [address] }))
-    .mockResolvedValueOnce(response({ address: created }, true, 201));
+    .mockResolvedValueOnce(response({ address: created }, true, 201))
+    .mockResolvedValueOnce(response({ addresses: [address, created] }));
   const onSelect = vi.fn();
   render(<CustomerAddressManager onSelect={onSelect} />);
   await screen.findByText(/126 Ilang-ilang Street/);
@@ -155,7 +167,7 @@ it('adds a pinned address and immediately selects it', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Save address' }));
 
   await waitFor(() => expect(onSelect).toHaveBeenLastCalledWith(created));
-  expect(fetch).toHaveBeenLastCalledWith('/api/user/addresses', expect.objectContaining({ method: 'POST' }));
+  expect(fetch).toHaveBeenLastCalledWith('/api/user/addresses', expect.objectContaining({ method: 'GET' }));
   expect(screen.getByText('Address saved and selected.')).toBeInTheDocument();
 });
 
@@ -171,4 +183,72 @@ it('opens an existing address for editing and shows server errors', async () => 
   fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
 
   expect(await screen.findByText('Unable to save.')).toBeInTheDocument();
+});
+
+it('keeps existing saved addresses after creating another address and reloads the server list', async () => {
+  const created = { ...secondAddress, id: 9, name: 'Ana Reyes' };
+  vi.mocked(fetch)
+    .mockResolvedValueOnce(response({ addresses: [address] }))
+    .mockResolvedValueOnce(response({ address: created }, true, 201))
+    .mockResolvedValueOnce(response({ addresses: [address, created] }));
+  const onSelect = vi.fn();
+
+  render(<CustomerAddressManager onSelect={onSelect} />);
+  await screen.findByText(/126 Ilang-ilang Street/);
+  fireEvent.click(screen.getByRole('button', { name: 'Add address' }));
+  fireEvent.change(screen.getByLabelText('Full name'), { target: { value: 'Ana Reyes' } });
+  fireEvent.change(screen.getByLabelText('Phone'), { target: { value: '09AB-987' } });
+  fireEvent.change(screen.getByLabelText('House no., street, subdivision or building'), { target: { value: '5 Test Street' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Choose map pin' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save address' }));
+
+  expect(await screen.findByText(/Ana Reyes/)).toBeInTheDocument();
+  expect(screen.getByText(/126 Ilang-ilang Street/)).toBeInTheDocument();
+  expect(fetch).toHaveBeenLastCalledWith('/api/user/addresses', expect.objectContaining({ method: 'GET' }));
+  expect(JSON.parse(String(vi.mocked(fetch).mock.calls[1][1]?.body))).toMatchObject({ phone: '09987' });
+});
+
+it('sanitizes the phone field to digits while preserving leading zeroes', async () => {
+  render(<CustomerAddressManager onSelect={vi.fn()} />);
+  await screen.findByText(/126 Ilang-ilang Street/);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Add address' }));
+  const phone = screen.getByLabelText('Phone');
+  fireEvent.change(phone, { target: { value: '09AB-987' } });
+
+  expect(phone).toHaveValue('09987');
+});
+
+it('sets another saved address as default and refreshes the list', async () => {
+  const defaultAddress = { ...secondAddress, is_default: true };
+  vi.mocked(fetch)
+    .mockResolvedValueOnce(response({ addresses: [address, secondAddress] }))
+    .mockResolvedValueOnce(response({ address: defaultAddress }))
+    .mockResolvedValueOnce(response({ addresses: [defaultAddress, { ...address, is_default: false }] }));
+
+  render(<CustomerAddressManager onSelect={vi.fn()} />);
+  await screen.findByText(/25 Sampaguita Avenue/);
+  fireEvent.click(screen.getByRole('button', { name: /set as default.*25 sampaguita avenue/i }));
+
+  await waitFor(() => expect(screen.getByText(/25 Sampaguita Avenue/).closest('div')).toHaveTextContent('Default'));
+  expect(fetch).toHaveBeenCalledWith('/api/user/addresses/8/set-default', expect.objectContaining({ method: 'POST' }));
+  expect(fetch).toHaveBeenLastCalledWith('/api/user/addresses', expect.objectContaining({ method: 'GET' }));
+});
+
+it('deletes a saved address and selects the next available address', async () => {
+  vi.stubGlobal('confirm', vi.fn(() => true));
+  const onSelect = vi.fn();
+  vi.mocked(fetch)
+    .mockResolvedValueOnce(response({ addresses: [address, secondAddress] }))
+    .mockResolvedValueOnce(response({ success: true }))
+    .mockResolvedValueOnce(response({ addresses: [secondAddress] }));
+
+  render(<CustomerAddressManager onSelect={onSelect} />);
+  await screen.findByText(/25 Sampaguita Avenue/);
+  fireEvent.click(screen.getByRole('button', { name: /delete.*126 ilang-ilang street/i }));
+
+  await waitFor(() => expect(screen.queryByText(/126 Ilang-ilang Street/)).not.toBeInTheDocument());
+  expect(screen.getByText(/25 Sampaguita Avenue/)).toBeInTheDocument();
+  expect(fetch).toHaveBeenCalledWith('/api/user/addresses/4', expect.objectContaining({ method: 'DELETE' }));
+  expect(onSelect).toHaveBeenLastCalledWith(secondAddress);
 });

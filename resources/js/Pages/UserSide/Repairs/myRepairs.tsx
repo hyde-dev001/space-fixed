@@ -701,6 +701,7 @@ const SponsoredIntakeReplanCard: React.FC<{
         <div className="mt-4">
           <CustomerAddressManager
             onSelect={handleAddressSelect}
+            onSelectionCleared={() => setSelectedAddress(null)}
             initialAddressId={currentAddressId}
             disabled={saving}
             title="Saved pickup address"
@@ -1155,6 +1156,7 @@ const ReturnDeliveryPlanCard: React.FC<{
         <div className="mt-4">
           <CustomerAddressManager
             onSelect={handleAddressSelect}
+            onSelectionCleared={() => setSelectedAddress(null)}
             initialAddressId={returnAddressId}
             disabled={locked || saving}
             title="Saved return address"

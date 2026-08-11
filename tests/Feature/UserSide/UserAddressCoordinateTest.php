@@ -73,6 +73,19 @@ class UserAddressCoordinateTest extends TestCase
         ]))->assertUnprocessable()->assertJsonValidationErrors(['latitude', 'longitude']);
     }
 
+    public function test_phone_values_must_contain_digits_only(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user, 'user')->postJson('/api/user/addresses', $this->payload([
+            'phone' => '09AB-987', 'latitude' => 14.5995, 'longitude' => 120.9842,
+        ]))->assertUnprocessable()->assertJsonValidationErrors('phone');
+
+        $this->postJson('/api/user/addresses', $this->payload([
+            'phone' => '09098765432', 'latitude' => 14.5995, 'longitude' => 120.9842,
+        ]))->assertCreated();
+    }
+
     public function test_missing_coordinates_are_geocoded_and_failure_keeps_them_null(): void
     {
         $user = User::factory()->create();

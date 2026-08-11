@@ -8,6 +8,7 @@ import { ThemeProvider } from './context/ThemeContext';
 import { SidebarProvider } from './context/SidebarContext';
 import { QueryProvider } from './providers/QueryProvider';
 import { CartProvider } from './contexts/CartContext';
+import { dismissAppLoader } from './utils/appLoader';
 import { syncPageTheme } from './utils/pageTheme';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
@@ -98,6 +99,8 @@ createInertiaApp({
                 </QueryProvider>
             );
         }
+
+        dismissAppLoader();
     },
     progress: {
         color: '#465fff',
