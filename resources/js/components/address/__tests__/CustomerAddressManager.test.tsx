@@ -60,6 +60,24 @@ it('loads saved addresses and selects the default with an accessible control', a
   expect(select).toHaveAttribute('aria-pressed', 'true');
 });
 
+it('renders saved address actions as accessible icon buttons', async () => {
+  vi.mocked(fetch).mockResolvedValueOnce(response({ addresses: [address, secondAddress] }));
+  render(<CustomerAddressManager onSelect={vi.fn()} />);
+
+  await screen.findByText(/25 Sampaguita Avenue/);
+
+  const edit = screen.getByRole('button', { name: /edit 126 ilang-ilang street/i });
+  const setDefault = screen.getByRole('button', { name: /set as default.*25 sampaguita avenue/i });
+  const remove = screen.getByRole('button', { name: /delete.*25 sampaguita avenue/i });
+
+  expect(edit).toHaveAttribute('title', 'Edit saved address');
+  expect(setDefault).toHaveAttribute('title', 'Set as default address');
+  expect(remove).toHaveAttribute('title', 'Delete saved address');
+  expect(edit.querySelector('svg')).toBeInTheDocument();
+  expect(setDefault.querySelector('svg')).toBeInTheDocument();
+  expect(remove.querySelector('svg')).toBeInTheDocument();
+});
+
 it('opens the add form in a modal only after the add trigger is clicked', async () => {
   render(<CustomerAddressManager onSelect={vi.fn()} />);
   await screen.findByText(/126 Ilang-ilang Street/);

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { LoaderCircle, Pencil, Star, Trash2 } from 'lucide-react';
 import CustomerAddressMapPicker from './CustomerAddressMapPicker';
 import {
   PHILIPPINE_LOCATIONS,
@@ -401,17 +402,42 @@ export default function CustomerAddressManager({
                 ? <span className="mt-1 block text-xs font-semibold text-amber-700">Pin required</span>
                 : <span className="mt-1 block text-xs font-semibold text-green-700">Pinned address</span>}
             </button>
-            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-              <button type="button" aria-label={`Edit ${address.address_line}`} disabled={disabled || isMutating} onClick={() => openEdit(address)} className="min-h-11 text-sm font-semibold text-blue-700 underline underline-offset-4 transition-colors hover:text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50">
-                Edit
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                aria-label={`Edit ${address.address_line}`}
+                title="Edit saved address"
+                disabled={disabled || isMutating}
+                onClick={() => openEdit(address)}
+                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-blue-200 bg-white text-blue-700 shadow-sm transition-colors hover:border-blue-400 hover:bg-blue-50 hover:text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Pencil aria-hidden="true" size={17} strokeWidth={2} />
               </button>
               {!address.is_default && (
-                <button type="button" aria-label={`Set as default ${address.address_line}`} disabled={disabled || isMutating} onClick={() => void setDefault(address)} className="min-h-11 text-sm font-semibold text-gray-900 underline underline-offset-4 transition-colors hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50">
-                  {isMutating && mutating?.action === 'default' ? 'Setting...' : 'Set as default'}
+                <button
+                  type="button"
+                  aria-label={`Set as default ${address.address_line}`}
+                  title={isMutating && mutating?.action === 'default' ? 'Setting as default address…' : 'Set as default address'}
+                  disabled={disabled || isMutating}
+                  onClick={() => void setDefault(address)}
+                  className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-800 shadow-sm transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isMutating && mutating?.action === 'default'
+                    ? <LoaderCircle aria-hidden="true" className="animate-spin" size={17} />
+                    : <Star aria-hidden="true" size={17} strokeWidth={2} />}
                 </button>
               )}
-              <button type="button" aria-label={`Delete ${address.address_line}`} disabled={disabled || isMutating} onClick={() => void remove(address)} className="min-h-11 text-sm font-semibold text-red-700 underline underline-offset-4 transition-colors hover:text-red-900 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50">
-                {isMutating && mutating?.action === 'delete' ? 'Deleting...' : 'Delete'}
+              <button
+                type="button"
+                aria-label={`Delete ${address.address_line}`}
+                title={isMutating && mutating?.action === 'delete' ? 'Deleting saved address…' : 'Delete saved address'}
+                disabled={disabled || isMutating}
+                onClick={() => void remove(address)}
+                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-red-200 bg-white text-red-700 shadow-sm transition-colors hover:border-red-400 hover:bg-red-50 hover:text-red-900 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isMutating && mutating?.action === 'delete'
+                  ? <LoaderCircle aria-hidden="true" className="animate-spin" size={17} />
+                  : <Trash2 aria-hidden="true" size={17} strokeWidth={2} />}
               </button>
             </div>
           </div>
