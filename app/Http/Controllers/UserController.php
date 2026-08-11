@@ -20,6 +20,7 @@ use Inertia\Inertia;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * UserController
@@ -260,7 +261,7 @@ class UserController extends Controller
             if ($request->hasFile('valid_id')) {
                 $file = $request->file('valid_id');
                 $fileName = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
-                $validIdPath = $file->storeAs('valid_ids', $fileName, 'public');
+                $validIdPath = $file->storeAs('valid_ids', $fileName, 'local');
             }
 
             $user = DB::transaction(function () use ($validated, $validIdPath) {
@@ -276,6 +277,8 @@ class UserController extends Controller
                     'status' => 'active',
                     'valid_id_path' => $validIdPath,
                 ]);
+                $user->valid_id_disk = 'local';
+                $user->save();
 
                 UserAddress::create([
                     'user_id' => $user->id,

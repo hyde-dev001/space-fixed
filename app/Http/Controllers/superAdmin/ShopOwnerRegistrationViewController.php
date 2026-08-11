@@ -25,9 +25,12 @@ class ShopOwnerRegistrationViewController extends Controller
             ->orderBy('created_at', 'desc')
             ->get()
             ->map(function ($shopOwner) {
-                $documents = $shopOwner->documents->map(function ($doc) {
+                $documents = $shopOwner->documents->map(function ($doc) use ($shopOwner) {
                     return [
-                        'url' => '/storage/'.$doc->file_path,
+                        'url' => route('admin.shop-documents.show', [
+                            'shopOwner' => $shopOwner->id,
+                            'document' => $doc->id,
+                        ]),
                         'type' => $doc->document_type,
                     ];
                 })->values();

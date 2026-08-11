@@ -59,7 +59,8 @@ class ShopOwnerAuthController extends Controller
         $limitReached = $remainingAttempts <= 0;
 
         $documents = $shopOwner->documents()->get()->groupBy('document_type');
-        $toDocumentPayload = static function ($document) {
+        $documentLinkExpiresAt = now()->addDays(14);
+        $toDocumentPayload = static function ($document) use ($shopOwner, $documentLinkExpiresAt) {
             if (!$document) {
                 return null;
             }
@@ -67,7 +68,11 @@ class ShopOwnerAuthController extends Controller
             return [
                 'id' => $document->id,
                 'type' => $document->document_type,
-                'url' => asset('storage/' . ltrim((string) $document->file_path, '/')),
+                'url' => URL::temporarySignedRoute(
+                    'shop-owner.resubmission.document',
+                    $documentLinkExpiresAt,
+                    ['shopOwner' => $shopOwner->id, 'document' => $document->id],
+                ),
                 'fileName' => basename((string) $document->file_path),
             ];
         };
@@ -76,7 +81,7 @@ class ShopOwnerAuthController extends Controller
             ? null
             : URL::temporarySignedRoute(
                 'shop-owner.resubmission.submit',
-                now()->addDays(14),
+                $documentLinkExpiresAt,
                 ['shopOwner' => $shopOwner->id]
             );
 
@@ -113,11 +118,15 @@ class ShopOwnerAuthController extends Controller
                         ->get('other_supporting_document', collect())
                         ->sortByDesc('id')
                         ->values()
-                        ->map(static function ($document) {
+                        ->map(static function ($document) use ($shopOwner, $documentLinkExpiresAt) {
                             return [
                                 'id' => $document->id,
                                 'type' => $document->document_type,
-                                'url' => asset('storage/' . ltrim((string) $document->file_path, '/')),
+                                'url' => URL::temporarySignedRoute(
+                                    'shop-owner.resubmission.document',
+                                    $documentLinkExpiresAt,
+                                    ['shopOwner' => $shopOwner->id, 'document' => $document->id],
+                                ),
                                 'fileName' => basename((string) $document->file_path),
                             ];
                         })
@@ -186,6 +195,10 @@ class ShopOwnerAuthController extends Controller
             'valid_id',
         ];
 
+        $createdLocalPaths = [];
+        $oldFilesToDelete = [];
+        $transactionStarted = false;
+
         try {
             $validated = $request->validate([
                 'first_name' => 'required|string|max:255|min:2',
@@ -238,6 +251,7 @@ class ShopOwnerAuthController extends Controller
             );
 
             DB::beginTransaction();
+            $transactionStarted = true;
 
             $shopOwner->update([
                 'first_name' => $validated['first_name'],
@@ -266,7 +280,11 @@ class ShopOwnerAuthController extends Controller
 
                     if ($file) {
                         $fileName = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
-                        $newPath = $file->storeAs('shop_documents', $fileName, 'public');
+                        $newPath = $file->storeAs('shop_documents', $fileName, 'local');
+                        if (! is_string($newPath) || ! Storage::disk('local')->exists($newPath)) {
+                            throw new \RuntimeException('The replacement document could not be stored.');
+                        }
+                        $createdLocalPaths[] = $newPath;
 
                         $latestDocument = $shopOwner
                             ->documents()
@@ -276,21 +294,24 @@ class ShopOwnerAuthController extends Controller
 
                         if ($latestDocument) {
                             $oldPath = (string) $latestDocument->file_path;
-                            $latestDocument->update([
-                                'file_path' => $newPath,
-                                'status' => 'pending',
-                            ]);
+                            $oldDisk = $this->documentDisk($latestDocument);
+                            $latestDocument->file_path = $newPath;
+                            $latestDocument->disk = 'local';
+                            $latestDocument->status = 'pending';
+                            $latestDocument->save();
 
-                            if ($oldPath !== '' && $oldPath !== $newPath) {
-                                Storage::disk('public')->delete($oldPath);
+                            if ($oldPath !== '') {
+                                $oldFilesToDelete[] = [$oldDisk, $oldPath];
                             }
                         } else {
-                            ShopDocument::create([
+                            $newDocument = ShopDocument::create([
                                 'shop_owner_id' => $shopOwner->id,
                                 'document_type' => $documentType,
                                 'file_path' => $newPath,
                                 'status' => 'pending',
                             ]);
+                            $newDocument->disk = 'local';
+                            $newDocument->save();
                         }
                     }
                 }
@@ -303,18 +324,26 @@ class ShopOwnerAuthController extends Controller
                     }
 
                     $fileName = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
-                    $filePath = $file->storeAs('shop_documents', $fileName, 'public');
+                    $filePath = $file->storeAs('shop_documents', $fileName, 'local');
+                    if (! is_string($filePath) || ! Storage::disk('local')->exists($filePath)) {
+                        throw new \RuntimeException('The supporting document could not be stored.');
+                    }
+                    $createdLocalPaths[] = $filePath;
 
-                    ShopDocument::create([
+                    $newDocument = ShopDocument::create([
                         'shop_owner_id' => $shopOwner->id,
                         'document_type' => 'other_supporting_document',
                         'file_path' => $filePath,
                         'status' => 'pending',
                     ]);
+                    $newDocument->disk = 'local';
+                    $newDocument->save();
                 }
             }
 
             DB::commit();
+            $transactionStarted = false;
+            $this->deleteDocumentFiles($oldFilesToDelete);
 
             Log::info('Shop owner application resubmitted successfully', [
                 'shop_owner_id' => $shopOwner->id,
@@ -332,7 +361,10 @@ class ShopOwnerAuthController extends Controller
 
             return redirect()->route('shop-owner-register')->with('success', 'Application resubmitted successfully. Please wait for admin review.');
         } catch (ValidationException $e) {
-            DB::rollBack();
+            if ($transactionStarted) {
+                DB::rollBack();
+            }
+            $this->deleteLocalFiles($createdLocalPaths);
 
             if ($request->expectsJson()) {
                 return response()->json([
@@ -346,7 +378,10 @@ class ShopOwnerAuthController extends Controller
 
             throw $e;
         } catch (\Throwable $e) {
-            DB::rollBack();
+            if ($transactionStarted) {
+                DB::rollBack();
+            }
+            $this->deleteLocalFiles($createdLocalPaths);
 
             Log::error('Error resubmitting shop owner application', [
                 'shop_owner_id' => $shopOwner->id,
@@ -517,6 +552,8 @@ class ShopOwnerAuthController extends Controller
     public function register(Request $request, CaviteLocationPolicyService $caviteLocationPolicy)
     {
         $transactionStarted = false;
+        $createdLocalPaths = [];
+        $oldFilesToDelete = [];
 
         try {
             // Validate registration data
@@ -658,7 +695,10 @@ class ShopOwnerAuthController extends Controller
                 $oldDocuments = $shopOwner->documents()->get();
                 foreach ($oldDocuments as $oldDocument) {
                     if (!empty($oldDocument->file_path)) {
-                        Storage::disk('public')->delete($oldDocument->file_path);
+                        $oldFilesToDelete[] = [
+                            $this->documentDisk($oldDocument),
+                            (string) $oldDocument->file_path,
+                        ];
                     }
                 }
                 $shopOwner->documents()->delete();
@@ -698,14 +738,20 @@ class ShopOwnerAuthController extends Controller
                 if ($request->hasFile($documentType)) {
                     $file = $request->file($documentType);
                     $fileName = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
-                    $filePath = $file->storeAs('shop_documents', $fileName, 'public');
+                    $filePath = $file->storeAs('shop_documents', $fileName, 'local');
+                    if (! is_string($filePath) || ! Storage::disk('local')->exists($filePath)) {
+                        throw new \RuntimeException('The registration document could not be stored.');
+                    }
+                    $createdLocalPaths[] = $filePath;
 
-                    ShopDocument::create([
+                    $newDocument = ShopDocument::create([
                         'shop_owner_id' => $shopOwner->id,
                         'document_type' => $documentType,
                         'file_path' => $filePath,
                         'status' => 'pending',
                     ]);
+                    $newDocument->disk = 'local';
+                    $newDocument->save();
                 }
             }
 
@@ -716,19 +762,26 @@ class ShopOwnerAuthController extends Controller
                     }
 
                     $fileName = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
-                    $filePath = $file->storeAs('shop_documents', $fileName, 'public');
+                    $filePath = $file->storeAs('shop_documents', $fileName, 'local');
+                    if (! is_string($filePath) || ! Storage::disk('local')->exists($filePath)) {
+                        throw new \RuntimeException('The supporting document could not be stored.');
+                    }
+                    $createdLocalPaths[] = $filePath;
 
-                    ShopDocument::create([
+                    $newDocument = ShopDocument::create([
                         'shop_owner_id' => $shopOwner->id,
                         'document_type' => 'other_supporting_document',
                         'file_path' => $filePath,
                         'status' => 'pending',
                     ]);
+                    $newDocument->disk = 'local';
+                    $newDocument->save();
                 }
             }
 
             DB::commit();
             $transactionStarted = false;
+            $this->deleteDocumentFiles($oldFilesToDelete);
             Cache::forget($this->registrationEmailOtpCacheKey($normalizedEmail));
 
             Log::info('Shop owner registered successfully', [
@@ -770,6 +823,7 @@ class ShopOwnerAuthController extends Controller
             if ($transactionStarted) {
                 DB::rollBack();
             }
+            $this->deleteLocalFiles($createdLocalPaths);
             Log::warning('Shop owner registration validation failed', ['errors' => $e->errors()]);
 
             if ($request->expectsJson()) {
@@ -787,6 +841,7 @@ class ShopOwnerAuthController extends Controller
             if ($transactionStarted) {
                 DB::rollBack();
             }
+            $this->deleteLocalFiles($createdLocalPaths);
             Log::error('Error registering shop owner', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
@@ -801,6 +856,37 @@ class ShopOwnerAuthController extends Controller
 
             return back()->withErrors(['message' => 'Registration failed. Please try again.'])->withInput();
         }
+    }
+
+    /**
+     * @param  array<int, array{0: string, 1: string}>  $files
+     */
+    private function deleteDocumentFiles(array $files): void
+    {
+        foreach ($files as [$disk, $path]) {
+            Storage::disk($disk)->delete($path);
+        }
+    }
+
+    /**
+     * @param  array<int, string>  $paths
+     */
+    private function deleteLocalFiles(array $paths): void
+    {
+        foreach ($paths as $path) {
+            Storage::disk('local')->delete($path);
+        }
+    }
+
+    private function documentDisk(ShopDocument $document): string
+    {
+        $disk = trim((string) $document->disk);
+
+        if (! in_array($disk, ['local', 'public'], true)) {
+            throw new \RuntimeException('The document storage disk is not supported.');
+        }
+
+        return $disk;
     }
 
     private function normalizeEmail(string $email): string

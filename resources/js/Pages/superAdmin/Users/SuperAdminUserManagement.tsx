@@ -72,7 +72,7 @@ interface User {
   status: 'pending' | 'approved' | 'rejected' | 'active' | 'deactivated' | 'suspended';
   createdAt: string;
   lastLogin?: string;
-  validIdPath?: string;
+  validIdUrl?: string;
   employee?: {
     id?: number;
     name?: string | null;
@@ -234,25 +234,6 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [expandedDocuments, setExpandedDocuments] = useState<Set<number>>(new Set());
   const [imageLoadErrors, setImageLoadErrors] = useState<Set<number>>(new Set());
-
-  // Build a browser-accessible URL for files stored on Laravel's public disk
-  // - Prefixes with "/storage/" when needed
-  // - Encodes spaces and special characters
-  // - Works with absolute URLs without modification
-  const buildDocumentUrl = (rawPath: string): string => {
-    if (!rawPath) return '';
-    const trimmed = rawPath.trim();
-    if (/^https?:\/\//i.test(trimmed)) return trimmed;
-    // Normalize separators and remove leading slashes
-    let p = trimmed.replace(/\\/g, '/').replace(/^\/+/, '');
-    // If path already includes storage/, keep it; otherwise prefix it
-    if (!p.toLowerCase().startsWith('storage/')) {
-      p = `storage/${p}`;
-    }
-    // Encode segments but keep slashes
-    const encoded = encodeURI(p);
-    return `${window.location.origin}/${encoded}`;
-  };
 
   const [filterStatus, setFilterStatus] = useState<'pending' | 'approved' | 'rejected' | 'active' | 'deactivated' | 'suspended'>('active');
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -1399,7 +1380,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
                     )}
 
                     {/* Document Information */}
-                    {selectedUser.validIdPath && (
+                    {selectedUser.validIdUrl && (
                       <div>
                         <h4 className="text-xl font-bold text-gray-900 dark:text-white mb-4 pb-3 border-b-2 border-gray-200 dark:border-gray-700">
                           Submitted Documents
@@ -1440,7 +1421,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
                                 <div className="bg-gray-100 dark:bg-gray-900 rounded border border-gray-300 dark:border-gray-600 flex items-center justify-center" style={{ minHeight: '200px' }}>
                                   {!imageLoadErrors.has(0) ? (
                                     <img
-                                      src={buildDocumentUrl(selectedUser.validIdPath || '')}
+                                      src={selectedUser.validIdUrl}
                                       alt="Valid ID Document"
                                       className="max-w-full max-h-96 rounded object-contain"
                                       onError={(e) => {

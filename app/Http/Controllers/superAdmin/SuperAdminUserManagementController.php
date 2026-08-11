@@ -94,7 +94,9 @@ class SuperAdminUserManagementController extends Controller
                     'age' => $user->age,
                     'address' => $user->address,
                     'status' => $user->status,
-                    'validIdPath' => $user->valid_id_path,
+                    'validIdUrl' => $user->valid_id_path
+                        ? route('admin.users.valid-id.show', ['user' => $user->id])
+                        : null,
                     'role' => $roleLabel,
                     'createdBy' => $createdBy,
                     // Include employee-specific HR fields when available

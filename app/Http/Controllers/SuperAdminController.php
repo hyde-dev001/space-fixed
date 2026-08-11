@@ -147,8 +147,11 @@ class SuperAdminController extends Controller
                 'suspension_reason' => $shopOwner->suspension_reason,
                 'created_at' => $shopOwner->created_at->format('Y-m-d H:i:s'),
                 'approved_at' => $shopOwner->updated_at->format('Y-m-d H:i:s'),
-                'documentUrls' => $shopOwner->documents->map(function ($doc) {
-                    return '/storage/' . $doc->file_path;
+                'documentUrls' => $shopOwner->documents->map(function ($doc) use ($shopOwner) {
+                    return route('admin.shop-documents.show', [
+                        'shopOwner' => $shopOwner->id,
+                        'document' => $doc->id,
+                    ]);
                 })->toArray(),
             ],
         ]);
@@ -587,6 +590,9 @@ class SuperAdminController extends Controller
                 'age' => $u->age ?? null,
                 'role' => $u->role ?? null,
                 'status' => $u->status ?? 'active',
+                'validIdUrl' => $u->valid_id_path
+                    ? route('admin.users.valid-id.show', ['user' => $u->id])
+                    : null,
                 'createdAt' => $u->created_at?->toDateTimeString(),
                 'lastLogin' => $u->last_login?->toDateTimeString() ?? null,
                 'employee' => $u->employee ? [

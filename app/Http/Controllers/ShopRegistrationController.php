@@ -363,14 +363,16 @@ class ShopRegistrationController extends Controller
 
         foreach ($documentMap as $field => $type) {
             if ($request->hasFile($field)) {
-                $path = $request->file($field)->store('shop_documents', 'public');
+                $path = $request->file($field)->store('shop_documents', 'local');
 
-                ShopDocument::create([
+                $document = ShopDocument::create([
                     'shop_owner_id' => $shopOwner->id,
                     'document_type' => $type,
                     'file_path' => $path,
                     'status' => 'pending',
                 ]);
+                $document->disk = 'local';
+                $document->save();
             }
         }
     }

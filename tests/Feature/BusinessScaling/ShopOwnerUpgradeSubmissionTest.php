@@ -82,6 +82,37 @@ final class ShopOwnerUpgradeSubmissionTest extends TestCase
         $this->assertSame('approved-source-bytes', Storage::disk('public')->get($sourcePath));
     }
 
+    public function test_approved_document_reuse_reads_the_recorded_local_source_disk(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'individual',
+            'business_type' => 'retail',
+        ]);
+        $sourcePath = 'shop_documents/approved-dti-local.png';
+        Storage::disk('local')->put($sourcePath, 'approved-local-source-bytes');
+        $source = ShopDocument::create([
+            'shop_owner_id' => $owner->id,
+            'document_type' => 'dti_registration',
+            'file_path' => $sourcePath,
+            'status' => 'approved',
+        ]);
+        $source->disk = 'local';
+        $source->save();
+
+        $payload = $this->uploadPayload();
+        unset($payload['documents']['dti_registration']);
+        $payload['reuse_document_ids'] = ['dti_registration' => $source->id];
+
+        $this->actingAs($owner, 'shop_owner')
+            ->post(route('shop-owner.upgrade-requests.store'), $payload, ['Accept' => 'application/json'])
+            ->assertCreated();
+
+        $snapshot = ShopOwnerUpgradeRequest::firstOrFail()->documents()->where('document_type', 'dti_registration')->firstOrFail();
+        $this->assertSame('approved-local-source-bytes', Storage::disk('local')->get($snapshot->path));
+        $this->assertSame('approved-local-source-bytes', Storage::disk('local')->get($sourcePath));
+        Storage::disk('public')->assertMissing($sourcePath);
+    }
+
     public function test_noop_invalid_transition_missing_evidence_and_duplicate_pending_requests_are_rejected(): void
     {
         $owner = ShopOwner::factory()->approved()->create([

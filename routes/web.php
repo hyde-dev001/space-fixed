@@ -10,6 +10,7 @@ use App\Http\Controllers\ShopOwner\ShopSettingsController;
 use App\Http\Controllers\ShopOwner\ShopOwnerUpgradeRequestController;
 use App\Http\Controllers\ShopOwner\ShopOwnerModuleController;
 use App\Http\Controllers\ShopOwner\UserAccessControlController;
+use App\Http\Controllers\PrivateSensitiveDocumentController;
 use App\Http\Controllers\ShopOwnerAuthController;
 use App\Http\Controllers\ShopOwnerPasswordSetupController;
 use App\Http\Controllers\ShopRegistrationController;
@@ -416,6 +417,10 @@ Route::get('/shop-owner/resubmit/{shopOwner}', [ShopOwnerAuthController::class, 
 Route::post('/shop-owner/resubmit/{shopOwner}', [ShopOwnerAuthController::class, 'resubmit'])
     ->middleware(['signed', 'throttle:10,1'])
     ->name('shop-owner.resubmission.submit');
+Route::get('/shop-owner/resubmit/{shopOwner}/documents/{document}', [PrivateSensitiveDocumentController::class, 'showForSignedResubmission'])
+    ->scopeBindings()
+    ->middleware('signed')
+    ->name('shop-owner.resubmission.document');
 
 // Employee Invitation Routes (Public - No Authentication Required)
 Route::get('/invite/{token}', [InvitationController::class, 'show'])->name('invitation.show');
@@ -712,12 +717,16 @@ Route::group([], function () {
 
 // Super Admin Routes
 Route::prefix('superAdmin')->name('superAdmin.')->middleware('auth:super_admin')->group(function () {
-    Route::get('/super-admin-user-management', [SuperAdminUserManagementController::class, 'index'])->name('super-admin-user-management');
+    Route::get('/super-admin-user-management', [SuperAdminUserManagementController::class, 'index'])
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('super-admin-user-management');
     Route::get('/flagged-accounts', [FlaggedAccountsController::class, 'index'])->name('flagged-accounts');
     Route::post('/flagged-accounts/{id}/mark-reviewed', [FlaggedAccountsController::class, 'markReviewed'])->name('flagged-accounts.mark-reviewed');
     Route::post('/flagged-accounts/{id}/dismiss', [FlaggedAccountsController::class, 'dismiss'])->name('flagged-accounts.dismiss');
     Route::post('/flagged-accounts/{id}/ban', [FlaggedAccountsController::class, 'ban'])->name('flagged-accounts.ban');
-    Route::get('/shop-owner-registration-view', [ShopOwnerRegistrationViewController::class, 'index'])->name('shop-owner-registration-view');
+    Route::get('/shop-owner-registration-view', [ShopOwnerRegistrationViewController::class, 'index'])
+        ->middleware('privileged.capability:review_registrations')
+        ->name('shop-owner-registration-view');
     Route::get('/system-monitoring-dashboard', [SystemMonitoringDashboardController::class, 'index'])->name('system-monitoring-dashboard');
     Route::get('/notification-communication-tools', [NotificationCommunicationToolsController::class, 'index'])->name('notification-communication-tools');
     Route::get('/data-report-access', [DataReportAccessController::class, 'index'])->name('data-report-access');
@@ -750,6 +759,10 @@ Route::middleware(['auth:shop_owner'])->get('/point-of-sale', function (\Illumin
 })->name('shop-owner.point-of-sale.legacy');
 
 Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')->group(function () {
+    Route::get('/{shopOwner}/documents/{document}', [PrivateSensitiveDocumentController::class, 'showForShopOwner'])
+        ->scopeBindings()
+        ->name('documents.show');
+
     // Dashboard - Available to ALL shop owners
     Route::get('/dashboard', function () {
         $shopOwner = Auth::guard('shop_owner')->user();
@@ -1657,6 +1670,13 @@ Route::middleware('super_admin.auth')->prefix('admin')->name('admin.')->group(fu
     Route::get('/shop-owner-registration-view', [ShopOwnerRegistrationViewController::class, 'index'])
         ->middleware('privileged.capability:review_registrations')
         ->name('shop-owner-registration-view');
+    Route::get('/shop-owners/{shopOwner}/documents/{document}', [PrivateSensitiveDocumentController::class, 'showForPrivileged'])
+        ->scopeBindings()
+        ->middleware('privileged.capability:review_registrations')
+        ->name('shop-documents.show');
+    Route::get('/users/{user}/valid-id', [PrivateSensitiveDocumentController::class, 'showCustomerValidId'])
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('users.valid-id.show');
     Route::post('/shop-owner-registration/{id}/approve', [ShopOwnerRegistrationViewController::class, 'approve'])
         ->middleware('privileged.capability:review_registrations')
         ->name('shop-owner-approve');
@@ -2464,7 +2484,9 @@ Route::group([], function () {
 
 // Super Admin Routes
 Route::prefix('superAdmin')->name('superAdmin.')->middleware('auth:super_admin')->group(function () {
-    Route::get('/super-admin-user-management', [SuperAdminUserManagementController::class, 'index'])->name('super-admin-user-management');
+    Route::get('/super-admin-user-management', [SuperAdminUserManagementController::class, 'index'])
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('super-admin-user-management');
     Route::get('/flagged-accounts', [FlaggedAccountsController::class, 'index'])->name('flagged-accounts');
     Route::get('/system-monitoring-dashboard', [SystemMonitoringDashboardController::class, 'index'])->name('system-monitoring-dashboard');
     Route::get('/notification-communication-tools', [NotificationCommunicationToolsController::class, 'index'])->name('notification-communication-tools');

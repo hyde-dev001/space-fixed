@@ -77,7 +77,12 @@ final class ShopOwnerDocumentRequirementService
                 'status' => $document?->status ?? 'missing',
                 'is_uploaded' => (bool) $document,
                 'is_image' => in_array($extension, ['jpg', 'jpeg', 'png', 'gif', 'webp'], true),
-                'file_url' => $filePath ? asset('storage/'.ltrim($filePath, '/')) : null,
+                'file_url' => $document
+                    ? route('shop-owner.documents.show', [
+                        'shopOwner' => $document->shop_owner_id,
+                        'document' => $document->id,
+                    ])
+                    : null,
             ];
         }
 

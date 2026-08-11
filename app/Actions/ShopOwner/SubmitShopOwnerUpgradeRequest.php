@@ -306,13 +306,21 @@ final class SubmitShopOwnerUpgradeRequest
         }
 
         $sourcePath = (string) $source->file_path;
-        if ($sourcePath === '' || ! Storage::disk('public')->exists($sourcePath)) {
+        $sourceDisk = trim((string) $source->disk);
+        if (! in_array($sourceDisk, ['local', 'public'], true)) {
+            throw ValidationException::withMessages([
+                "reuse_document_ids.{$documentType}" => 'The selected approved document uses an unsupported storage disk.',
+            ]);
+        }
+
+        $sourceStorage = Storage::disk($sourceDisk);
+        if ($sourcePath === '' || ! $sourceStorage->exists($sourcePath)) {
             throw ValidationException::withMessages([
                 "reuse_document_ids.{$documentType}" => 'The selected approved document is no longer available.',
             ]);
         }
 
-        $bytes = Storage::disk('public')->get($sourcePath);
+        $bytes = $sourceStorage->get($sourcePath);
         $extension = strtolower(pathinfo($sourcePath, PATHINFO_EXTENSION)) ?: 'bin';
         $path = "shop-owner-upgrade-evidence/{$requestKey}/{$documentType}-".Str::uuid().".{$extension}";
         $this->putPrivateEvidence($path, $bytes, $createdPaths, $documentType);
@@ -323,7 +331,7 @@ final class SubmitShopOwnerUpgradeRequest
             'disk' => 'local',
             'path' => $path,
             'checksum_sha256' => hash('sha256', $bytes),
-            'mime_type' => (string) (Storage::disk('public')->mimeType($sourcePath) ?: 'application/octet-stream'),
+            'mime_type' => (string) ($sourceStorage->mimeType($sourcePath) ?: 'application/octet-stream'),
             'size' => strlen($bytes),
             'source_status' => (string) $source->status,
         ]);
