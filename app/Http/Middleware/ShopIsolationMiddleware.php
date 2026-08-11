@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use App\Support\Finance\FinanceShopContext;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -37,11 +38,18 @@ class ShopIsolationMiddleware
             return $next($request);
         }
 
-        // Finance routes use the user guard. Other shop-isolated routes may use
-        // the dedicated shop_owner guard, whose own id is its tenant id.
-        $currentShopId = $user
-            ? $this->financeShopContext->id($request)
-            : $shopOwner?->getKey();
+        // Resolve the tenant from the guard selected by the route's auth
+        // middleware. A request can retain another authenticated guard (for
+        // example, a customer user while a shop-owner endpoint is called),
+        // so the presence of a user-guard session must not override the
+        // active shop-owner route context.
+        $currentShopId = match (Auth::getDefaultDriver()) {
+            'shop_owner' => $shopOwner?->getKey(),
+            'user' => $user ? $this->financeShopContext->id($request) : null,
+            default => $user
+                ? $this->financeShopContext->id($request)
+                : $shopOwner?->getKey(),
+        };
 
         if (! is_numeric($currentShopId) || (int) $currentShopId < 1) {
             return response()->json([
