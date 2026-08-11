@@ -18,6 +18,13 @@ class SuspensionAppealFlowTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        SuperAdmin::factory()->superAdmin()->create();
+    }
+
     private function postWithCsrf(string $uri, array $payload = [], array $headers = [])
     {
         $token = 'test-csrf-token';
