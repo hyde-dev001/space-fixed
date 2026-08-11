@@ -9,6 +9,7 @@ import { X, Bell, CheckCheck } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { useRecentNotifications, useMarkAsRead, useMarkAllAsRead } from '../../hooks/useNotifications';
 import NotificationItem from './NotificationItem';
+import { ThemeToggleButton } from './ThemeToggleButton';
 
 interface NotificationDropdownProps {
   basePath: string;
@@ -289,13 +290,13 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
   return (
     <div
       ref={dropdownRef}
-      className={`fixed left-2 right-2 top-16 z-70 flex max-h-[calc(100vh-5rem)] flex-col rounded-xl border border-gray-200 bg-white shadow-xl sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-96 sm:max-h-150 ${isCustomerView ? '' : 'dark:bg-gray-900 dark:border-gray-700'}`}
+      className="fixed left-2 right-2 top-16 z-70 flex max-h-[calc(100vh-5rem)] flex-col rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-900 sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-96 sm:max-h-150"
     >
       {/* Header */}
-      <div className={`flex items-center justify-between border-b border-gray-200 p-4 ${isCustomerView ? '' : 'dark:border-gray-700'}`}>
+      <div className="flex items-center justify-between border-b border-gray-200 p-4 dark:border-gray-700">
         <div className="flex items-center gap-2">
-          <Bell size={20} className={isCustomerView ? 'text-gray-700' : 'text-gray-600 dark:text-gray-300'} />
-          <h3 className={isCustomerView ? 'text-lg font-semibold text-gray-900' : 'text-lg font-semibold text-gray-900 dark:text-white'}>
+          <Bell size={20} className="text-gray-700 dark:text-gray-300" />
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
             Notifications
           </h3>
           {unreadCount > 0 && (
@@ -309,14 +310,17 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
           <button
             onClick={handleMarkAllAsRead}
             disabled={unreadCount === 0 || markAllAsRead.isPending}
-            className={`rounded p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${isCustomerView ? '' : 'dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-blue-400'}`}
+            className="rounded p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-blue-400"
+            aria-label="Mark all as read"
             title="Mark all as read"
           >
             <CheckCheck size={18} />
           </button>
+          {isCustomerView && <ThemeToggleButton />}
           <button
             onClick={onClose}
-            className={`rounded p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${isCustomerView ? '' : 'dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200'}`}
+            className="rounded p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+            aria-label="Close notifications"
             title="Close notifications"
           >
             <X size={18} />
@@ -331,12 +335,12 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
           </div>
         ) : sortedNotifications.length === 0 ? (
-          <div className={isCustomerView ? 'flex flex-col items-center justify-center py-12 text-gray-500' : 'flex flex-col items-center justify-center py-12 text-gray-500 dark:text-gray-400'}>
-            <Bell size={48} className={isCustomerView ? 'mb-4 text-gray-300' : 'mb-4 text-gray-300 dark:text-gray-600'} />
+          <div className="flex flex-col items-center justify-center py-12 text-gray-500 dark:text-gray-400">
+            <Bell size={48} className="mb-4 text-gray-300 dark:text-gray-600" />
             <p className="text-sm">No notifications yet</p>
           </div>
         ) : (
-          <div className={isCustomerView ? 'divide-y divide-gray-100' : 'divide-y divide-gray-100 dark:divide-gray-700'}>
+          <div className="divide-y divide-gray-100 dark:divide-gray-700">
             {sortedNotifications.map((notification) => (
               <NotificationItem
                 key={notification.id}
@@ -354,16 +358,16 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
 
       {/* Footer */}
       {sortedNotifications.length > 0 && (
-        <div className={`border-t border-gray-200 p-3 ${isCustomerView ? '' : 'dark:border-gray-700'}`}>
+        <div className="border-t border-gray-200 p-3 dark:border-gray-700">
           <div className="flex items-center justify-between gap-2">
             <Link
               href={basePath.includes('shop-owner') ? '/shop-owner/notifications/settings' : (basePath.includes('staff') || basePath.includes('hr')) ? '/erp/notifications/settings' : '/notifications/settings'}
-              className={isCustomerView ? 'flex-1 text-center text-sm font-medium text-gray-600 transition-colors hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500' : 'flex-1 text-center text-sm font-medium text-gray-600 transition-colors hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-gray-300 dark:hover:text-white'}
+              className="flex-1 text-center text-sm font-medium text-gray-600 transition-colors hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-gray-300 dark:hover:text-white"
               onClick={onClose}
             >
               Settings
             </Link>
-            <span className={isCustomerView ? 'text-gray-300' : 'text-gray-300 dark:text-gray-600'}>|</span>
+            <span className="text-gray-300 dark:text-gray-600">|</span>
             <Link
               href={notificationsListHref}
               className="flex-1 text-center text-sm font-medium text-blue-600 transition-colors hover:text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { isLightOnlyComponent, syncPageTheme } from '../pageTheme';
+import { isLightOnlyComponent, isUserSideComponent, syncPageTheme } from '../pageTheme';
 
 describe('page theme scope', () => {
   beforeEach(() => {
@@ -7,19 +7,34 @@ describe('page theme scope', () => {
     localStorage.clear();
   });
 
-  it('identifies registration and customer notifications as light-only pages', () => {
+  it('keeps only shop owner registration light-only while enabling customer pages', () => {
     expect(isLightOnlyComponent('UserSide/Auth/ShopOwnerRegistration')).toBe(true);
-    expect(isLightOnlyComponent('Notifications/CustomerNotifications')).toBe(true);
+    expect(isLightOnlyComponent('Notifications/CustomerNotifications')).toBe(false);
     expect(isLightOnlyComponent('Notifications/ShopOwnerNotifications')).toBe(false);
+    expect(isUserSideComponent('UserSide/Products/LandingPage')).toBe(true);
+    expect(isUserSideComponent('Notifications/CustomerNotifications')).toBe(true);
+    expect(isUserSideComponent('ERP/Workspace')).toBe(false);
   });
 
-  it('removes dark mode from light-only pages even when dark is saved', () => {
+  it('keeps shop owner registration light-only even when dark is saved', () => {
+    localStorage.setItem('theme', 'dark');
+
+    syncPageTheme('UserSide/Auth/ShopOwnerRegistration');
+
+    expect(document.documentElement).toHaveClass('light-page');
+    expect(document.documentElement).not.toHaveClass('dark');
+    expect(document.documentElement).not.toHaveClass('userside-dark');
+  });
+
+  it('applies the saved dark theme to customer notifications and user-side pages', () => {
     localStorage.setItem('theme', 'dark');
 
     syncPageTheme('Notifications/CustomerNotifications');
 
-    expect(document.documentElement).toHaveClass('light-page');
-    expect(document.documentElement).not.toHaveClass('dark');
+    expect(document.documentElement).not.toHaveClass('light-page');
+    expect(document.documentElement).toHaveClass('dark');
+    expect(document.documentElement).toHaveClass('userside-theme');
+    expect(document.documentElement).toHaveClass('userside-dark');
   });
 
   it('restores the saved dark theme on dark-enabled pages', () => {

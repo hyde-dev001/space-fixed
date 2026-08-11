@@ -48,13 +48,13 @@ vi.mock('../../../components/Notifications/ExportModal', () => ({
 }));
 
 describe('CustomerNotifications', () => {
-  it('keeps the customer notification page light even when dark mode is active elsewhere', () => {
+  it('keeps the customer notification page dark-aware for the shared user theme', () => {
     const { container } = render(<CustomerNotifications />);
     const page = container.querySelector('.min-h-screen');
 
     expect(page).toHaveClass('bg-gray-50');
-    expect(page).not.toHaveClass('dark:bg-gray-950');
-    expect(page?.querySelectorAll('[class*="dark:"]')).toHaveLength(0);
+    expect(page).toHaveClass('dark:bg-gray-950');
+    expect(page?.querySelectorAll('[class*="dark:"]')).not.toHaveLength(0);
   });
 
   it('keeps dark-aware styling for shop-owner notification pages', () => {

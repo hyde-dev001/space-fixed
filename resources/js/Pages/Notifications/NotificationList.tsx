@@ -35,9 +35,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
   const isShopOwnerView = basePath.includes('shop-owner');
   const isErpView = basePath.includes('hr') || basePath.includes('staff');
   const isCustomerView = !isShopOwnerView && !isErpView;
-  const themeClasses = (lightClasses: string, darkClasses: string) => (
-    isCustomerView ? lightClasses : `${lightClasses} ${darkClasses}`
-  );
+  const themeClasses = (lightClasses: string, darkClasses: string) => `${lightClasses} ${darkClasses}`;
   const highlightedIdFromUrl = useMemo(() => {
     const queryString = page.url.includes('?') ? page.url.split('?')[1] : '';
     const highlightParam = new URLSearchParams(queryString).get('highlight');

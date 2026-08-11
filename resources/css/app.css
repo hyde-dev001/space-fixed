@@ -310,6 +310,87 @@ body {
   color: inherit;
 }
 
+/* Customer-facing pages share one scoped dark surface. ERP and shop-owner pages
+   keep their existing theme rules because this class is only set for UserSide. */
+html.userside-dark {
+  color-scheme: dark;
+}
+
+html.userside-dark body,
+html.userside-dark #app,
+html.userside-dark #app > div {
+  background-color: #0b1220;
+  color: #f8fafc;
+}
+
+html.userside-dark #app [class~="bg-white"],
+html.userside-dark #app [class*="bg-white/"] {
+  background-color: #111827;
+}
+
+html.userside-dark #app [class~="bg-gray-50"],
+html.userside-dark #app [class*="bg-gray-50/"],
+html.userside-dark #app [class~="bg-[#f3f4f6]"] {
+  background-color: #0f172a;
+}
+
+html.userside-dark #app [class~="bg-gray-100"] {
+  background-color: #1f2937;
+}
+
+html.userside-dark #app [class~="text-black"],
+html.userside-dark #app [class~="text-gray-900"],
+html.userside-dark #app [class~="text-[#16233b]"] {
+  color: #f8fafc;
+}
+
+html.userside-dark #app [class~="text-gray-700"] {
+  color: #e5e7eb;
+}
+
+html.userside-dark #app [class~="text-gray-600"],
+html.userside-dark #app [class~="text-gray-500"],
+html.userside-dark #app [class~="text-black/55"],
+html.userside-dark #app [class~="text-black/60"],
+html.userside-dark #app [class~="text-black/70"] {
+  color: #cbd5e1;
+}
+
+html.userside-dark #app [class~="border-gray-200"],
+html.userside-dark #app [class*="border-gray-200/"],
+html.userside-dark #app [class~="border-gray-300"],
+html.userside-dark #app [class*="border-gray-300/"] {
+  border-color: #334155;
+}
+
+html.userside-dark #app [class~="divide-gray-100"] {
+  --tw-divide-color: #1e293b;
+}
+
+html.userside-dark #app [class~="hover:bg-gray-50"]:hover,
+html.userside-dark #app [class~="hover:bg-gray-100"]:hover,
+html.userside-dark #app [class~="hover:bg-white"]:hover {
+  background-color: #1f2937;
+}
+
+html.userside-dark #app [class~="hover:text-black"]:hover,
+html.userside-dark #app [class~="hover:text-gray-700"]:hover {
+  color: #f8fafc;
+}
+
+html.userside-dark #app input,
+html.userside-dark #app select,
+html.userside-dark #app textarea {
+  border-color: #334155;
+  background-color: #111827;
+  color: #f8fafc;
+}
+
+html.userside-dark #app input::placeholder,
+html.userside-dark #app textarea::placeholder {
+  color: #94a3b8;
+}
+
 /* Server-rendered first-open experience. React removes it after its first render. */
 .solespace-app-loader {
   position: fixed;
@@ -393,8 +474,10 @@ body {
   --loader-origin-x: 0rem;
   --loader-origin-y: 0rem;
   --loader-origin-rotate: 0deg;
-  animation: solespace-loader-letter 2.75s cubic-bezier(0.22, 0.61, 0.36, 1) infinite;
+  animation: solespace-loader-letter 2.2s cubic-bezier(0.16, 1, 0.3, 1) 1 both;
   animation-fill-mode: both;
+  backface-visibility: hidden;
+  will-change: transform, opacity;
 }
 
 .solespace-app-loader__wordmark span:nth-child(1) {
