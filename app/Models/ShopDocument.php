@@ -26,6 +26,10 @@ class ShopDocument extends Model
 {
     use HasFactory;
 
+    protected $hidden = [
+        'file_path',
+    ];
+
     /**
      * The attributes that are mass assignable.
      * 
