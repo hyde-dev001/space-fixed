@@ -16,6 +16,7 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\Finance\InvoiceController;
 use App\Http\Controllers\Api\Finance\ExpenseController;
+use App\Http\Controllers\Api\Finance\TaxRateController;
 use App\Http\Controllers\Api\Finance\PayslipApprovalController as FinancePayslipApprovalController;
 use App\Http\Controllers\ERP\HR\AuditLogController;
 use App\Http\Controllers\Erp\HR\PayrollController;
@@ -41,15 +42,31 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access
 });
 
 /**
+ * Finance tax operations are independently capability-protected.
+ */
+Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:manage-finance-tax', 'shop.isolation'])->group(function () {
+    Route::prefix('tax-rates')->group(function () {
+        Route::get('/', [TaxRateController::class, 'index'])->name('finance.tax-rates.index');
+        Route::post('/', [TaxRateController::class, 'store'])->name('finance.tax-rates.store');
+        Route::get('/effective', [TaxRateController::class, 'effective'])->name('finance.tax-rates.effective');
+        Route::get('/default', [TaxRateController::class, 'getDefault'])->name('finance.tax-rates.default');
+        Route::post('/calculate', [TaxRateController::class, 'calculate'])->name('finance.tax-rates.calculate');
+        Route::get('/{id}', [TaxRateController::class, 'show'])->whereNumber('id')->name('finance.tax-rates.show');
+        Route::put('/{id}', [TaxRateController::class, 'update'])->whereNumber('id')->name('finance.tax-rates.update');
+        Route::delete('/{id}', [TaxRateController::class, 'destroy'])->whereNumber('id')->name('finance.tax-rates.destroy');
+    });
+});
+
+/**
  * Finance Module Routes - General Operations
  * Accessible by users with any Finance permissions (including pricing approvals)
  */
-Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access-finance-dashboard|access-finance-expenses|access-finance-invoices|access-repair-price-approval|access-shoe-price-approval|access-refund-approval|access-approval-workflow|access-purchase-request-approval', 'shop.isolation'])->group(function () {
+Route::prefix('api/finance')->middleware(['web', 'auth:user', 'shop.isolation'])->group(function () {
 
     // ============================================
     // PURCHASE REQUEST FINANCE REVIEW
     // ============================================
-    Route::prefix('purchase-requests')->group(function () {
+    Route::prefix('purchase-requests')->middleware('permission:access-purchase-request-approval')->group(function () {
         Route::get('/', [ErpPurchaseRequestController::class, 'index'])->name('finance.purchase-requests.index');
         Route::post('/{id}/approve', [ErpPurchaseRequestController::class, 'approve'])->name('finance.purchase-requests.approve');
         Route::post('/{id}/reject', [ErpPurchaseRequestController::class, 'reject'])->name('finance.purchase-requests.reject');
@@ -58,7 +75,7 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access
     // ============================================
     // EXPENSES
     // ============================================
-    Route::prefix('expenses')->group(function () {
+    Route::prefix('expenses')->middleware('permission:access-finance-expenses')->group(function () {
         Route::get('/', [ExpenseController::class, 'index'])->name('finance.expenses.index');
         Route::get('/{id}', [ExpenseController::class, 'show'])->name('finance.expenses.show');
         Route::post('/', [ExpenseController::class, 'store'])->name('finance.expenses.store');
@@ -76,7 +93,7 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access
     // ============================================
     // INVOICES
     // ============================================
-    Route::prefix('invoices')->group(function () {
+    Route::prefix('invoices')->middleware('permission:access-finance-invoices')->group(function () {
         Route::get('/', [InvoiceController::class, 'index'])->name('finance.invoices.index');
         Route::get('/{id}', [InvoiceController::class, 'show'])->name('finance.invoices.show');
         Route::post('/', [InvoiceController::class, 'store'])->name('finance.invoices.store');
@@ -95,7 +112,7 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access
     // ============================================
     // PRICE CHANGE REQUESTS
     // ============================================
-    Route::prefix('price-changes')->group(function () {
+    Route::prefix('price-changes')->middleware('permission:access-shoe-price-approval')->group(function () {
         // View all price change requests
         Route::get('/', [PriceChangeRequestController::class, 'index'])->name('finance.price-changes.index');
         
@@ -107,7 +124,7 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access
     // ============================================
     // REPAIR SERVICE PRICE CHANGE REQUESTS
     // ============================================
-    Route::prefix('repair-price-changes')->group(function () {
+    Route::prefix('repair-price-changes')->middleware('permission:access-repair-price-approval')->group(function () {
         // View all repair service price change requests
         Route::get('/', [RepairServiceController::class, 'financePending'])->name('finance.repair-price-changes.index');
         
@@ -120,7 +137,7 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access
     // ============================================
     // REFUND APPROVALS
     // ============================================
-    Route::prefix('refunds')->group(function () {
+    Route::prefix('refunds')->middleware('permission:access-refund-approval')->group(function () {
         Route::get('/', [RefundApprovalController::class, 'financeIndex'])->name('finance.refunds.index');
         Route::post('/{id}/approve', [RefundApprovalController::class, 'financeApprove'])->name('finance.refunds.approve');
         Route::post('/{id}/reject', [RefundApprovalController::class, 'financeReject'])->name('finance.refunds.reject');
@@ -135,14 +152,17 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access
  * Access: Shop Owner role OR Finance approval permissions
  */
 Route::prefix('api/finance/payslip-approvals')->middleware(['web', 'auth:user', 'shop.isolation'])->group(function () {
+    Route::middleware('permission:access-payslip-approval')->group(function () {
     Route::get('/', [FinancePayslipApprovalController::class, 'getPayslipsForApproval'])->name('finance.payslip_approval.index');
     Route::get('/{id}', [FinancePayslipApprovalController::class, 'getPayslipForApproval'])->whereNumber('id')->name('finance.payslip_approval.show');
     Route::post('/{id}/approve', [FinancePayslipApprovalController::class, 'approvePayslip'])->whereNumber('id')->name('finance.payslip_approval.approve');
     Route::post('/{id}/reject', [FinancePayslipApprovalController::class, 'rejectPayslip'])->whereNumber('id')->name('finance.payslip_approval.reject');
     Route::post('/{id}/final-approve', [FinancePayslipApprovalController::class, 'finalApprovePayslip'])->whereNumber('id')->name('finance.payslip_approval.final_approve');
-    Route::post('/disburse', [PayrollController::class, 'process'])->name('finance.payslip_approval.disburse');
     Route::post('/batch/preview', [FinancePayslipApprovalController::class, 'batchApprovalPreview'])->name('finance.payslip_approval.batch_preview');
     Route::post('/batch/approve', [FinancePayslipApprovalController::class, 'batchApprove'])->name('finance.payslip_approval.batch_approve');
+    });
+    // Payroll disbursement keeps its existing controller authorization until Task 13.
+    Route::post('/disburse', [PayrollController::class, 'process'])->name('finance.payslip_approval.disburse');
 });
 
 // Session-based /api/finance/session aliases removed.

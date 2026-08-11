@@ -314,6 +314,7 @@ Route::middleware(['web', 'auth:web,user', 'old_role:Finance Staff,Finance Manag
     });
 
     // Invoices
+    Route::middleware('permission:access-finance-invoices')->group(function () {
     Route::get('invoices', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'index']);
     Route::post('invoices', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'store']);
     Route::get('invoices/{id}', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'show']);
@@ -322,8 +323,10 @@ Route::middleware(['web', 'auth:web,user', 'old_role:Finance Staff,Finance Manag
     Route::post('invoices/{id}/restore', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'restore']);
     Route::post('invoices/{id}/send', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'send']);
     Route::post('invoices/{id}/void', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'void']);
+    });
 
     // Expenses
+    Route::middleware('permission:access-finance-expenses')->group(function () {
     Route::get('expenses', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'index']);
     Route::post('expenses', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'store']);
     Route::get('expenses/{id}', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'show']);
@@ -335,8 +338,10 @@ Route::middleware(['web', 'auth:web,user', 'old_role:Finance Staff,Finance Manag
     Route::post('expenses/{id}/receipt', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'uploadReceipt']);
     Route::get('expenses/{id}/receipt/download', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'downloadReceipt']);
     Route::delete('expenses/{id}/receipt', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'deleteReceipt']);
+    });
 
     // Tax Rates Management
+    Route::middleware('permission:manage-finance-tax')->group(function () {
     Route::get('tax-rates', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'index']);
     Route::post('tax-rates', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'store']);
     Route::get('tax-rates/effective', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'effective']);
@@ -345,6 +350,7 @@ Route::middleware(['web', 'auth:web,user', 'old_role:Finance Staff,Finance Manag
     Route::get('tax-rates/{id}', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'show']);
     Route::put('tax-rates/{id}', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'update']);
     Route::delete('tax-rates/{id}', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'destroy']);
+    });
 
     // Approval Workflow routes
     Route::prefix('approvals')->group(function () {
@@ -353,7 +359,7 @@ Route::middleware(['web', 'auth:web,user', 'old_role:Finance Staff,Finance Manag
         Route::get('{id}/history', [\App\Http\Controllers\ApprovalController::class, 'getApprovalHistory']);
 
         // Only users with approve-expenses permission can approve/reject transactions
-        Route::middleware('permission:approve-expenses')->group(function () {
+        Route::middleware('permission:access-approval-workflow|approve-expenses')->group(function () {
             Route::post('{id}/approve', [\App\Http\Controllers\ApprovalController::class, 'approve']);
             Route::post('{id}/reject', [\App\Http\Controllers\ApprovalController::class, 'reject']);
         });

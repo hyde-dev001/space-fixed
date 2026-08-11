@@ -67,6 +67,8 @@ class UserAccessControlController extends Controller
         }
 
         $financePermissions = [
+            'manage-finance-tax',
+            'disburse-payroll',
             'access-purchase-request-approval',
             'access-approval-workflow',
             'access-payslip-approval',
@@ -765,6 +767,7 @@ class UserAccessControlController extends Controller
         foreach ($allPermissions as $permission) {
             // Finance Module: access-finance-* permissions
             if (str_starts_with($permission, 'access-finance-') ||
+                in_array($permission, ['manage-finance-tax', 'disburse-payroll'], true) ||
                 str_contains($permission, 'payslip-approval') ||
                 str_contains($permission, 'refund-approval') ||
                 str_contains($permission, 'repair-price-approval') ||

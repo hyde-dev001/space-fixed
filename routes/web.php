@@ -1581,7 +1581,7 @@ Route::get('/storage/reviews/{filename}', function ($filename) {
 
 // Session-backed API endpoints for finance
 // CONSOLIDATED: All finance routes under /api/finance/session with finance access permissions
-Route::middleware(['auth:user', 'permission:access-finance-dashboard|access-finance-expenses|access-finance-invoices', 'shop.isolation'])->prefix('api/finance/session')->group(function () {
+Route::middleware(['auth:user', 'shop.isolation'])->prefix('api/finance/session')->group(function () {
     // Chart of Accounts - Commented out due to missing controller
     // Route::get('accounts', [\App\Http\Controllers\Api\Finance\AccountController::class, 'index']);
     // Route::post('accounts', [\App\Http\Controllers\Api\Finance\AccountController::class, 'store']);
@@ -1589,6 +1589,7 @@ Route::middleware(['auth:user', 'permission:access-finance-dashboard|access-fina
     // Route::get('accounts/{id}/ledger', [\App\Http\Controllers\Api\Finance\AccountController::class, 'ledger']);
 
     // Expenses
+    Route::middleware('permission:access-finance-expenses')->group(function () {
     Route::get('expenses', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'index']);
     Route::post('expenses', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'store']);
     Route::get('expenses/{id}', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'show']);
@@ -1602,6 +1603,8 @@ Route::middleware(['auth:user', 'permission:access-finance-dashboard|access-fina
     Route::get('expenses/{id}/receipt/download', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'downloadReceipt']);
     Route::delete('expenses/{id}/receipt', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'deleteReceipt']);
 
+    });
+
     // Expense approval (users with approval permission)
     Route::middleware('permission:approve-expenses')->group(function () {
         Route::post('expenses/{id}/approve', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'approve']);
@@ -1609,6 +1612,7 @@ Route::middleware(['auth:user', 'permission:access-finance-dashboard|access-fina
     });
 
     // Invoices
+    Route::middleware('permission:access-finance-invoices')->group(function () {
     Route::get('invoices', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'index']);
     Route::post('invoices', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'store']);
     Route::post('invoices/from-job', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'createFromJob']);
@@ -1620,6 +1624,8 @@ Route::middleware(['auth:user', 'permission:access-finance-dashboard|access-fina
     Route::post('invoices/{id}/send', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'send']);
     Route::post('invoices/{id}/void', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'void']);
     Route::post('invoices/{id}/mark-paid', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'markAsPaid']);
+
+    });
 
     // Post to ledger (requires invoice finance access permission)
     Route::middleware('permission:access-finance-invoices')->group(function () {
@@ -1645,10 +1651,12 @@ Route::middleware(['auth:user', 'permission:access-finance-dashboard|access-fina
     // });
 
     // Tax Rates
+    Route::middleware('permission:manage-finance-tax')->group(function () {
     Route::get('tax-rates', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'index']);
     Route::post('tax-rates', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'store']);
     Route::put('tax-rates/{id}', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'update']);
     Route::delete('tax-rates/{id}', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'destroy']);
+    });
 
     // Approval Workflow routes
     Route::prefix('approvals')->group(function () {
