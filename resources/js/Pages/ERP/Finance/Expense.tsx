@@ -1030,7 +1030,7 @@ const Expense: React.FC = () => {
                       {activeExpense.receipt_original_name}
                     </span>
                     <button
-                      onClick={() => window.open(api.resolveUrl(`/api/finance/session/expenses/${activeExpense.id}/receipt/download`), '_blank')}
+                      onClick={() => window.open(`/api/finance/expenses/${activeExpense.id}/receipt`, '_blank')}
                       className="px-3 py-1 text-xs bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
                     >
                       Download

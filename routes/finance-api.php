@@ -77,6 +77,9 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'shop.isolation'])
     // ============================================
     Route::prefix('expenses')->middleware('permission:access-finance-expenses')->group(function () {
         Route::get('/', [ExpenseController::class, 'index'])->name('finance.expenses.index');
+        Route::post('/{id}/receipt', [ExpenseController::class, 'uploadReceipt'])->whereNumber('id')->name('finance.expenses.receipt.upload');
+        Route::get('/{id}/receipt', [ExpenseController::class, 'downloadReceipt'])->whereNumber('id')->name('finance.expenses.receipt.download');
+        Route::delete('/{id}/receipt', [ExpenseController::class, 'deleteReceipt'])->whereNumber('id')->name('finance.expenses.receipt.delete');
         Route::get('/{id}', [ExpenseController::class, 'show'])->name('finance.expenses.show');
         Route::post('/', [ExpenseController::class, 'store'])->name('finance.expenses.store');
         Route::patch('/{id}', [ExpenseController::class, 'update'])->name('finance.expenses.update');

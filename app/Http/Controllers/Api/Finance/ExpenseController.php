@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Spatie\QueryBuilder\QueryBuilder;
 use Spatie\QueryBuilder\AllowedFilter;
 
@@ -240,19 +241,20 @@ class ExpenseController extends Controller
                 ],
             ];
 
-            // Handle receipt upload
+            $expense = Expense::create($expenseData);
+
+            // Receipts are private, server-named objects. The original name is
+            // metadata only and is never used as a path component.
             if ($request->hasFile('receipt')) {
                 $file = $request->file('receipt');
-                $fileName = time() . '_' . $reference . '_' . $file->getClientOriginalName();
-                $path = $file->storeAs('receipts', $fileName, 'public');
-                
-                $expenseData['receipt_path'] = $path;
-                $expenseData['receipt_original_name'] = $file->getClientOriginalName();
-                $expenseData['receipt_mime_type'] = $file->getMimeType();
-                $expenseData['receipt_size'] = $file->getSize();
+                $path = $this->storePrivateReceipt($file, (int) $shopId, (int) $expense->id);
+                $expense->update([
+                    'receipt_path' => $path,
+                    'receipt_original_name' => $file->getClientOriginalName(),
+                    'receipt_mime_type' => $file->getMimeType(),
+                    'receipt_size' => $file->getSize(),
+                ]);
             }
-
-            $expense = Expense::create($expenseData);
 
             // Create 4-step approval workflow for the expense
             $shopOwner = User::find($shopId);
@@ -632,6 +634,19 @@ class ExpenseController extends Controller
         ]);
     }
 
+    private function storePrivateReceipt($file, int $shopId, int $expenseId): string
+    {
+        $extension = Str::lower((string) ($file->extension() ?: 'bin'));
+        $directory = "finance/shops/{$shopId}/expenses/{$expenseId}/receipts";
+        $path = $file->storeAs($directory, Str::uuid()->toString().'.'.$extension, 'local');
+
+        if (! $path) {
+            throw new \RuntimeException('Receipt storage failed.');
+        }
+
+        return $path;
+    }
+
     /**
      * Upload or replace receipt for an existing expense
      */
@@ -651,15 +666,10 @@ class ExpenseController extends Controller
         try {
             DB::beginTransaction();
 
-            // Delete old receipt if exists
-            if ($expense->receipt_path) {
-                Storage::disk('public')->delete($expense->receipt_path);
-            }
-
             // Upload new receipt
             $file = $request->file('receipt');
-            $fileName = time() . '_' . $expense->reference . '_' . $file->getClientOriginalName();
-            $path = $file->storeAs('receipts', $fileName, 'public');
+            $oldPath = $expense->receipt_path;
+            $path = $this->storePrivateReceipt($file, (int) $shopId, (int) $expense->id);
 
             $expense->update([
                 'receipt_path' => $path,
@@ -674,6 +684,11 @@ class ExpenseController extends Controller
             ]);
 
             DB::commit();
+
+            if ($oldPath) {
+                Storage::disk('local')->delete($oldPath);
+                Storage::disk('public')->delete($oldPath);
+            }
 
             return response()->json([
                 'message' => 'Receipt uploaded successfully',
@@ -702,25 +717,30 @@ class ExpenseController extends Controller
             return response()->json(['message' => 'No receipt attached to this expense'], 404);
         }
 
-        $filePath = storage_path('app/public/' . $expense->receipt_path);
+        $disk = Storage::disk('local');
+        $path = $expense->receipt_path;
 
-        if (!file_exists($filePath)) {
+        // Legacy public paths remain readable only through this authorized
+        // endpoint until the migration command has copied them privately.
+        if (! $disk->exists($path)) {
+            $disk = Storage::disk('public');
+        }
+
+        if (! $disk->exists($path)) {
             return response()->json(['message' => 'Receipt file not found'], 404);
         }
 
-        return response()->download($filePath, $expense->receipt_original_name);
+        $downloadName = preg_replace('/[\r\n]+/', '', basename((string) $expense->receipt_original_name)) ?: 'receipt';
+
+        return $disk->download($path, $downloadName);
     }
 
     /**
      * Delete receipt file
      */
-    public function deleteReceipt($id)
+    public function deleteReceipt(Request $request, $id)
     {
-        $shopId = $this->shopOwnerId();
-        if (! $shopId) {
-            return response()->json(['message' => 'No shop association found for this account.'], 403);
-        }
-
+        $shopId = $this->shopContext->id($request);
         $expense = Expense::where('shop_id', $shopId)->findOrFail($id);
 
         if (!$expense->receipt_path) {
@@ -730,8 +750,12 @@ class ExpenseController extends Controller
         try {
             DB::beginTransaction();
 
-            // Delete file from storage
-            Storage::disk('public')->delete($expense->receipt_path);
+            $receiptPath = $expense->receipt_path;
+            $receiptName = $expense->receipt_original_name;
+
+            // Delete file from either private or legacy storage.
+            Storage::disk('local')->delete($receiptPath);
+            Storage::disk('public')->delete($receiptPath);
 
             // Update expense record
             $expense->update([
@@ -742,7 +766,8 @@ class ExpenseController extends Controller
             ]);
 
             $this->audit('delete_receipt', $expense->id, [
-                'deleted_receipt' => $expense->receipt_original_name,
+                'deleted_receipt' => $receiptName,
+                'receipt_path' => $receiptPath,
             ]);
 
             DB::commit();
