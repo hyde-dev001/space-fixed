@@ -88,6 +88,39 @@ it('supports an add trigger placed outside the address summary', async () => {
   await waitFor(() => expect(screen.getByRole('dialog', { name: 'Add delivery address' })).toBeInTheDocument());
 });
 
+it('keeps the address summary inside a modal-only flow and supports adding another address', async () => {
+  const ControlledManager = () => {
+    const [isModalOpen, setIsModalOpen] = useState(false);
+
+    return (
+      <>
+        <button type="button" onClick={() => setIsModalOpen(true)}>Edit address</button>
+        <CustomerAddressManager
+          onSelect={vi.fn()}
+          showAddTrigger={false}
+          showAddressSummary={false}
+          modalMode="edit"
+          isModalOpen={isModalOpen}
+          onModalOpenChange={setIsModalOpen}
+        />
+      </>
+    );
+  };
+
+  render(<ControlledManager />);
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/user/addresses', expect.any(Object)));
+
+  expect(screen.queryByText(/126 Ilang-ilang Street/)).not.toBeInTheDocument();
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Edit address' }));
+  expect(await screen.findByRole('dialog', { name: 'Edit delivery address' })).toBeInTheDocument();
+  expect(screen.getByLabelText('Full name')).toHaveValue(address.name);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Add new address' }));
+  expect(screen.getByRole('dialog', { name: 'Add delivery address' })).toBeInTheDocument();
+});
+
 it('requires a map pin before saving an address', async () => {
   render(<CustomerAddressManager onSelect={vi.fn()} />);
   await screen.findByText(/126 Ilang-ilang Street/);
