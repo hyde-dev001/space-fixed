@@ -49,6 +49,16 @@ class Invoice extends Model
         return $this->hasMany(InvoiceItem::class, 'invoice_id');
     }
 
+    public function payments()
+    {
+        return $this->hasMany(InvoicePayment::class, 'invoice_id');
+    }
+
+    public function validPaidAmount(): string
+    {
+        return InvoicePayment::validPaidAmountForInvoice((int) $this->getKey());
+    }
+
     /**
      * Relationship to the Job Order (Staff module)
      */

@@ -18,6 +18,7 @@ class Expense extends Model
     protected $fillable = [
         'reference',
         'date',
+        'due_date',
         'category',
         'vendor',
         'description',
@@ -45,6 +46,7 @@ class Expense extends Model
 
     protected $casts = [
         'date' => 'date',
+        'due_date' => 'date',
         'amount' => 'decimal:2',
         'tax_amount' => 'decimal:2',
         'approved_at' => 'datetime',
@@ -72,6 +74,16 @@ class Expense extends Model
     public function approval()
     {
         return $this->morphOne(\App\Models\Approval::class, 'approvable');
+    }
+
+    public function settlements()
+    {
+        return $this->hasMany(ExpenseSettlement::class, 'expense_id');
+    }
+
+    public function validSettledAmount(): string
+    {
+        return ExpenseSettlement::validSettledAmountForExpense((int) $this->getKey());
     }
 
     /**
