@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\Feature\BusinessScaling;
 
+use App\Http\Controllers\Erp\HR\AuditLogController;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerModule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
 
 final class OwnerErpApiContractTest extends TestCase
@@ -106,6 +108,16 @@ final class OwnerErpApiContractTest extends TestCase
             ->getJson('/api/shop-owner/erp/manager/audit-logs')
             ->assertOk()
             ->assertJsonStructure(['logs', 'stats']);
+    }
+
+    public function test_hr_and_finance_audit_routes_use_the_case_correct_owner_controller(): void
+    {
+        foreach (['hr', 'finance'] as $module) {
+            $route = Route::getRoutes()->getByName("shop-owner.erp.api.{$module}.audit-logs");
+
+            $this->assertNotNull($route, $module);
+            $this->assertSame(AuditLogController::class.'@index', $route->getAction('uses'), $module);
+        }
     }
 
     public function test_third_read_api_wave_exposes_owner_inventory_and_procurement_get_contracts(): void

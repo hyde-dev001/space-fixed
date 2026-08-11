@@ -4,13 +4,22 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import AppSidebarShopOwner from '../AppSidebar_shopOwner';
 
 const state = vi.hoisted(() => ({
+  url: '/shop-owner/dashboard',
   shopModules: {} as Record<string, unknown> | undefined,
   moduleStates: {} as Record<string, unknown>,
   moduleEnforcementEnabled: undefined as boolean | undefined,
   erpUrls: { workspace: null as string | null },
   activeModule: null as {
     label: string;
-    pages: Array<{ label: string; routeName: string; url: string }>;
+    pages: Array<{
+      label: string;
+      routeName: string;
+      url: string;
+      groupKey?: string | null;
+      groupLabel?: string | null;
+      groupOrder?: number | null;
+      pageOrder?: number | null;
+    }>;
   } | null,
   shopOwner: {
     registration_type: 'individual',
@@ -22,7 +31,7 @@ const state = vi.hoisted(() => ({
 
 vi.mock('@inertiajs/react', () => ({
   usePage: () => ({
-    url: '/shop-owner/dashboard',
+    url: state.url,
     props: {
       auth: {
         shop_owner: state.shopOwner,
@@ -71,6 +80,7 @@ const accessible = (overrides: Record<string, boolean> = {}) => Object.fromEntri
 );
 
 beforeEach(() => {
+  state.url = '/shop-owner/dashboard';
   state.shopOwner = {
     registration_type: 'individual',
     business_type: 'both',
@@ -172,6 +182,62 @@ it('shows one capability-controlled ERP Workspace entry for a company owner', ()
   expect(screen.queryByRole('button', { name: 'Repair Operations' })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Job Orders Retail' })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Job Orders Repair' })).not.toBeInTheDocument();
+});
+
+it('renders owner module page groups as collapsible navigation without grouping direct pages', () => {
+  state.shopOwner = {
+    registration_type: 'company',
+    business_type: 'both',
+    is_company: true,
+    can_manage_staff: true,
+  };
+  state.shopModules = accessible();
+  state.erpUrls = { workspace: '/shop-owner/erp/workspace' };
+  state.activeModule = {
+    label: 'Finance',
+    pages: [
+      {
+        label: 'Dashboard',
+        routeName: 'shop-owner.erp.finance.dashboard',
+        url: '/shop-owner/erp/finance/dashboard',
+      },
+      {
+        label: 'Expense Approvals',
+        routeName: 'shop-owner.erp.finance.expense-approvals',
+        url: '/shop-owner/erp/finance/expense-approvals',
+        groupKey: 'approvals',
+        groupLabel: 'Approvals',
+        groupOrder: 20,
+        pageOrder: 10,
+      },
+      {
+        label: 'Refund Approvals',
+        routeName: 'shop-owner.erp.finance.refund-approvals',
+        url: '/shop-owner/erp/finance/refund-approvals',
+        groupKey: 'approvals',
+        groupLabel: 'Approvals',
+        groupOrder: 20,
+        pageOrder: 20,
+      },
+    ],
+  };
+  state.url = '/shop-owner/erp/finance/expense-approvals';
+
+  render(<AppSidebarShopOwner />);
+
+  expect(screen.getByRole('link', { name: /^Dashboard$/i })).toHaveAttribute(
+    'href',
+    '/shop-owner/erp/finance/dashboard',
+  );
+  expect(screen.getByRole('button', { name: 'Approvals' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Expense Approvals' })).toHaveAttribute(
+    'href',
+    '/shop-owner/erp/finance/expense-approvals',
+  );
+  expect(screen.getByRole('link', { name: 'Refund Approvals' })).toHaveAttribute(
+    'href',
+    '/shop-owner/erp/finance/refund-approvals',
+  );
 });
 
 it('does not keep a stale module scope on a normal shop owner portal page', () => {

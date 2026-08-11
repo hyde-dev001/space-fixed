@@ -124,6 +124,56 @@ final class OwnerErpPageContractTest extends TestCase
         $this->assertNotContains('shop-owner.erp.api.crm.dashboard-stats', $routeNames);
     }
 
+    public function test_owner_catalog_declares_the_approved_retail_hr_and_finance_navigation_contract(): void
+    {
+        $navigation = app(ErpWorkspaceNavigationService::class);
+
+        $retailPages = $navigation->forKey('retail_operations')['pages'];
+        $retailDashboard = collect($retailPages)->firstWhere('routeName', 'shop-owner.erp.retail.dashboard');
+
+        $this->assertNotNull($retailDashboard);
+        $this->assertSame('Retail Dashboard', $retailDashboard['label']);
+
+        $hrPages = collect($navigation->forKey('hr_employees')['pages'])->keyBy('routeName');
+        foreach ([
+            'shop-owner.erp.hr.payroll-view',
+            'shop-owner.erp.hr.payroll-generate',
+            'shop-owner.erp.hr.salary-changes',
+        ] as $routeName) {
+            $this->assertArrayHasKey($routeName, $hrPages->all());
+            $this->assertSame('payroll', $hrPages[$routeName]['groupKey']);
+            $this->assertSame('Payroll', $hrPages[$routeName]['groupLabel']);
+        }
+
+        $this->assertSame('attendance-monitoring', $hrPages['shop-owner.erp.hr.attendance']['groupKey']);
+        $this->assertSame('Attendance Monitoring', $hrPages['shop-owner.erp.hr.attendance']['groupLabel']);
+
+        $financePages = collect($navigation->forKey('finance')['pages'])->keyBy('routeName');
+        foreach ([
+            'shop-owner.erp.finance.expense-approvals',
+            'shop-owner.erp.finance.repair-pricing',
+            'shop-owner.erp.finance.shoe-pricing',
+            'shop-owner.erp.finance.purchase-request-review',
+            'shop-owner.erp.finance.refund-approvals',
+            'shop-owner.erp.finance.payslip-approvals',
+            'shop-owner.erp.finance.salary-adjustment-approvals',
+        ] as $routeName) {
+            $this->assertArrayHasKey($routeName, $financePages->all());
+            $this->assertSame('approvals', $financePages[$routeName]['groupKey']);
+            $this->assertSame('Approvals', $financePages[$routeName]['groupLabel']);
+        }
+
+        foreach ([
+            'shop-owner.erp.finance.dashboard',
+            'shop-owner.erp.finance.invoices',
+            'shop-owner.erp.finance.expenses',
+            'shop-owner.erp.finance.audit-logs',
+        ] as $routeName) {
+            $this->assertArrayHasKey($routeName, $financePages->all());
+            $this->assertNull($financePages[$routeName]['groupKey']);
+        }
+    }
+
     public function test_every_enabled_module_landing_exposes_only_its_related_pages(): void
     {
         config([
