@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
+import { usePage } from "@inertiajs/react";
 import Swal from "sweetalert2";
 
 // Icon Components

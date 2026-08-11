@@ -9,7 +9,7 @@ use App\Http\Controllers\Api\CRM\CRMReviewController;
 use App\Http\Controllers\Api\ManagerController;
 use App\Http\Controllers\ActivityLogController;
 use App\Http\Controllers\Erp\HR\AuditLogController as HRAuditLogController;
-use App\Http\Controllers\ERP\HR\AuditLogController as FinanceAuditLogController;
+use App\Http\Controllers\Erp\HR\AuditLogController as FinanceAuditLogController;
 use App\Http\Controllers\Api\Logistics\RiderProfileController;
 use App\Http\Controllers\Api\Logistics\ShipmentController;
 use App\Http\Controllers\Logistics\ErpLogisticsController;
