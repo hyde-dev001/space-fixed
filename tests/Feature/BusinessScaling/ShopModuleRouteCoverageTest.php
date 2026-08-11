@@ -159,6 +159,8 @@ final class ShopModuleRouteCoverageTest extends TestCase
             'staff.',
             'shop-owner.erp.',
             'shop_owner.erp.',
+            'shop_owner.finance.',
+            'shop_owner.hr.',
         ] as $prefix) {
             if (str_starts_with($routeName, $prefix)) {
                 return true;

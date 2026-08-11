@@ -29,7 +29,11 @@ class FinanceSummaryTest extends TestCase
 
     public function test_dashboard_contract_is_server_owned_and_decimal_string_based(): void
     {
-        $user = User::factory()->create(['shop_owner_id' => 1]);
+        $shop = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+        $user = User::factory()->create(['shop_owner_id' => $shop->id]);
         $user->givePermissionTo('access-finance-dashboard');
 
         $response = $this->actingAs($user, 'user')->getJson('/api/finance/dashboard');
