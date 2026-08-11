@@ -20,6 +20,11 @@ This follow-up also fixes the production failures found after deployment: the HR
 - Module navigation is generated from the canonical module page catalog.
 - The catalog supports an optional group key, group label, group order, and page order. Any module can use grouped navigation; the sidebar must not contain HR-specific grouping logic.
 - Related pages are grouped as collapsible sidebar sections when a module has more than one page group. The active page automatically expands its group, and the user may collapse or reopen groups without changing the current URL.
+- The existing ERP sidebar has three verified nested groups that the owner catalog must account for:
+  - HR Attendance Monitoring
+  - HR Payroll
+  - Finance Approvals
+- The existing Shop Owner portal also has a core `Approval Pages` group. It is separate from the ERP module shell and remains available as a core portal group; it must not be silently duplicated as unrelated module links.
 - HR uses:
   - Attendance Monitoring: View Attendance, Leave Requests, Overtime Requests.
   - Payroll: View Slip, Generate Slip, Salary Changes.
@@ -63,12 +68,13 @@ The Finance module must expose the existing company-operational Finance pages in
 - Invoices
 - Expenses
 - Approvals (collapsible group)
+  - Expense Approvals
   - Repair Pricing Approval
   - Shoe Pricing Approval
   - Purchase Request Review
   - Refund Approval
   - Payslip Approvals
-  - Salary Adjustments, when the existing owner-safe salary-adjustment page is available
+  - Salary Adjustments
 - Audit Logs
 
 Create Invoice remains part of the Invoices workflow and may be shown as a nested Invoices child only when its owner-scoped route and actions are fully supported. `My Payslips` remains employee self-service and is not added to the owner Finance navigation.
@@ -100,7 +106,7 @@ Expose the existing company-operational pages already present under the ERP fold
 - The Retail module opens the canonical Retail Dashboard and all four existing retail pages without duplicate legacy links.
 - The HR module shows the grouped Attendance Monitoring and Payroll sections and all nested pages open from both the sidebar and their direct scoped URLs.
 - The Finance module shows Dashboard, Invoices, Expenses, Audit Logs, and a grouped Approvals section containing the existing approval pages that are owner-operable.
-- Grouped navigation works consistently for every module that declares page groups; it is not special-cased to HR.
+- Grouped navigation works consistently for every module that declares page groups; it is not special-cased to HR. The initial verified groups are HR Attendance Monitoring, HR Payroll, and Finance Approvals. Inventory, Procurement, Logistics, CRM, and Repair are currently flat in the existing ERP sidebar; they may gain groups only where the module page catalog defines a real page hierarchy.
 - Clicking Attendance no longer throws `ReferenceError: usePage is not defined`.
 - HR and Finance Audit Logs load successfully for a valid Shop Owner; no production-only namespace casing failure remains.
 - Every page shown in an owner module sidebar can load with the owner session and does not call an employee-only endpoint without an owner-safe adapter.
