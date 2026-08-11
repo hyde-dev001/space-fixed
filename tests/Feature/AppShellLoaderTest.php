@@ -20,12 +20,13 @@ class AppShellLoaderTest extends TestCase
         $styles = file_get_contents(resource_path('css/app.css'));
 
         self::assertIsString($styles);
-        self::assertStringContainsString('solespace-loader-stars', $styles);
         self::assertStringContainsString('solespace-loader-letter', $styles);
         self::assertStringContainsString('--loader-origin-x', $styles);
         self::assertStringContainsString('radial-gradient', $styles);
         self::assertStringContainsString('will-change: transform, opacity;', $styles);
         self::assertStringContainsString('backface-visibility: hidden;', $styles);
+        self::assertStringContainsString('contain: layout paint;', $styles);
+        self::assertStringContainsString('animation: solespace-loader-letter 1.45s cubic-bezier(0.22, 1, 0.36, 1) 1 both;', $styles);
     }
 
     public function test_loader_uses_a_white_surface_with_readable_light_gray_text(): void
@@ -40,5 +41,20 @@ class AppShellLoaderTest extends TestCase
         self::assertIsInt($loaderEnd);
         self::assertStringContainsString('background: #ffffff;', $loaderStyles);
         self::assertStringContainsString('color: #667085;', $loaderStyles);
+    }
+
+    public function test_customer_landing_and_download_surfaces_keep_dark_mode_content_readable(): void
+    {
+        $styles = file_get_contents(resource_path('css/app.css'));
+        $landing = file_get_contents(resource_path('js/Pages/UserSide/Products/LandingPage.tsx'));
+        $download = file_get_contents(resource_path('js/Pages/UserSide/app/apk.tsx'));
+
+        self::assertIsString($styles);
+        self::assertIsString($landing);
+        self::assertIsString($download);
+        self::assertStringContainsString('scrollbar-width: none;', $styles);
+        self::assertStringContainsString('landing-primary-cta', $landing);
+        self::assertStringContainsString('bg-[#ffffff] text-[#0f172a]', $landing);
+        self::assertStringContainsString('dark:text-white', $download);
     }
 }

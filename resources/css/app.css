@@ -7,11 +7,14 @@ layer(base);
 @import 'flatpickr/dist/flatpickr.min.css';
 
 /* Hide viewport scrollbar UI on UserSide pages while keeping scroll behavior */
-.userside-hide-scrollbar {
+html.userside-hide-scrollbar,
+body.userside-hide-scrollbar {
   -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
-.userside-hide-scrollbar::-webkit-scrollbar {
+html.userside-hide-scrollbar::-webkit-scrollbar,
+body.userside-hide-scrollbar::-webkit-scrollbar {
   display: none;
   width: 0;
   height: 0;
@@ -400,6 +403,7 @@ html.userside-dark #app textarea::placeholder {
   place-items: center;
   overflow: hidden;
   isolation: isolate;
+  contain: layout paint;
   background: #ffffff;
   color: #667085;
   opacity: 1;
@@ -424,7 +428,7 @@ html.userside-dark #app textarea::placeholder {
     radial-gradient(circle at 74% 88%, rgba(22, 35, 59, 0.2) 0 1px, transparent 1.7px),
     radial-gradient(circle at 7% 86%, rgba(22, 35, 59, 0.18) 0 1px, transparent 1.7px),
     radial-gradient(circle at 50% 43%, rgba(22, 35, 59, 0.07), transparent 28rem);
-  animation: solespace-loader-stars 7s ease-in-out infinite alternate;
+  animation: none;
   content: "";
   pointer-events: none;
 }
@@ -433,7 +437,7 @@ html.userside-dark #app textarea::placeholder {
   position: absolute;
   inset: -15%;
   background: radial-gradient(ellipse at center, rgba(22, 35, 59, 0.08) 0%, rgba(22, 35, 59, 0.025) 24%, transparent 68%);
-  animation: solespace-loader-nebula 5s ease-in-out infinite alternate;
+  animation: none;
   content: "";
   pointer-events: none;
 }
@@ -452,6 +456,7 @@ html.userside-dark #app textarea::placeholder {
   flex-direction: column;
   align-items: center;
   gap: 0.9rem;
+  contain: layout paint;
 }
 
 .solespace-app-loader__wordmark {
@@ -474,9 +479,11 @@ html.userside-dark #app textarea::placeholder {
   --loader-origin-x: 0rem;
   --loader-origin-y: 0rem;
   --loader-origin-rotate: 0deg;
-  animation: solespace-loader-letter 2.2s cubic-bezier(0.16, 1, 0.3, 1) 1 both;
+  animation: solespace-loader-letter 1.45s cubic-bezier(0.22, 1, 0.36, 1) 1 both;
   animation-fill-mode: both;
   backface-visibility: hidden;
+  transform: translate3d(0, 0, 0);
+  transform-origin: center;
   will-change: transform, opacity;
 }
 
@@ -535,35 +542,35 @@ html.userside-dark #app textarea::placeholder {
 }
 
 .solespace-app-loader__wordmark span:nth-child(2) {
-  animation-delay: 70ms;
+  animation-delay: 48ms;
 }
 
 .solespace-app-loader__wordmark span:nth-child(3) {
-  animation-delay: 140ms;
+  animation-delay: 96ms;
 }
 
 .solespace-app-loader__wordmark span:nth-child(4) {
-  animation-delay: 210ms;
+  animation-delay: 144ms;
 }
 
 .solespace-app-loader__wordmark span:nth-child(5) {
-  animation-delay: 280ms;
+  animation-delay: 192ms;
 }
 
 .solespace-app-loader__wordmark span:nth-child(6) {
-  animation-delay: 350ms;
+  animation-delay: 240ms;
 }
 
 .solespace-app-loader__wordmark span:nth-child(7) {
-  animation-delay: 420ms;
+  animation-delay: 288ms;
 }
 
 .solespace-app-loader__wordmark span:nth-child(8) {
-  animation-delay: 490ms;
+  animation-delay: 336ms;
 }
 
 .solespace-app-loader__wordmark span:nth-child(9) {
-  animation-delay: 560ms;
+  animation-delay: 384ms;
 }
 
 .solespace-app-loader__line {
@@ -604,51 +611,17 @@ html.userside-dark #app textarea::placeholder {
 @keyframes solespace-loader-letter {
   0% {
     opacity: 0;
-    transform: translate3d(var(--loader-origin-x), var(--loader-origin-y), 0) scale(0.15) rotate(var(--loader-origin-rotate));
+    transform: translate3d(var(--loader-origin-x), var(--loader-origin-y), 0) scale(0.82) rotate(var(--loader-origin-rotate));
   }
 
-  18% {
+  58% {
     opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1.14) rotate(0deg);
+    transform: translate3d(0, 0, 0) scale(1.02) rotate(0deg);
   }
 
-  30%, 72% {
+  100% {
     opacity: 1;
     transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
-  }
-
-  84% {
-    opacity: 0.84;
-    transform: translate3d(0, -0.08rem, 0) scale(1.015) rotate(0deg);
-  }
-
-  100% {
-    opacity: 0.96;
-    transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
-  }
-}
-
-@keyframes solespace-loader-stars {
-  0% {
-    opacity: 0.42;
-    transform: scale(1);
-  }
-
-  100% {
-    opacity: 0.64;
-    transform: scale(1.02);
-  }
-}
-
-@keyframes solespace-loader-nebula {
-  0% {
-    opacity: 0.55;
-    transform: scale(0.98);
-  }
-
-  100% {
-    opacity: 0.9;
-    transform: scale(1.04);
   }
 }
 

@@ -280,7 +280,7 @@ const LandingPage: React.FC<Props> = ({ products = [], stats }) => {
   const buttonBaseClass =
     'group inline-flex w-full max-w-full items-center justify-center gap-3 rounded-full px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 sm:w-auto sm:px-10 sm:py-4 sm:text-sm sm:tracking-[0.18em]';
   const buttonLightClass =
-    'border border-white/60 bg-white/78 text-slate-900 backdrop-blur-md shadow-[0_18px_35px_-18px_rgba(0,0,0,0.55)] hover:-translate-y-0.5 hover:border-[#16233b] hover:bg-[#16233b] hover:text-white hover:shadow-[0_24px_38px_-18px_rgba(0,0,0,0.55)] focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black';
+    'landing-primary-cta border border-white bg-[#ffffff] text-[#0f172a] backdrop-blur-md shadow-[0_18px_35px_-18px_rgba(0,0,0,0.55)] hover:-translate-y-0.5 hover:border-[#f8fafc] hover:bg-[#f8fafc] hover:text-[#0f172a] hover:shadow-[0_24px_38px_-18px_rgba(0,0,0,0.55)] focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black';
   const buttonDarkClass =
     'border border-white/55 bg-black/45 text-white backdrop-blur-sm shadow-[0_14px_28px_-18px_rgba(0,0,0,0.95)] hover:-translate-y-0.5 hover:border-[#16233b] hover:bg-[#16233b] hover:text-white hover:shadow-[0_22px_40px_-18px_rgba(0,0,0,0.95)] focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black';
   const sectionContainerClass = 'mx-auto w-full max-w-screen-2xl px-4 sm:px-6 lg:px-12';
