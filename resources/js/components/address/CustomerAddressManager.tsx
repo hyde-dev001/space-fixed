@@ -30,6 +30,8 @@ type Props = {
   title?: string;
   description?: string;
   showAddTrigger?: boolean;
+  showAddressSummary?: boolean;
+  modalMode?: 'add' | 'edit';
   isModalOpen?: boolean;
   onModalOpenChange?: (open: boolean) => void;
 };
@@ -45,6 +47,25 @@ const fullAddress = (address: CustomerAddress) => [
   address.address_line, address.barangay, address.city, address.province, address.postal_code,
 ].filter(Boolean).join(', ');
 
+const addressToForm = (address: CustomerAddress): AddressForm => {
+  const province = normalizeProvinceSelection(address.province || address.region) || address.province;
+
+  return {
+    name: address.name,
+    phone: address.phone,
+    address_line: address.address_line,
+    barangay: address.barangay,
+    city: normalizeCityMunicipalitySelection(province, address.city) || address.city,
+    province,
+    region: address.region || province,
+    postal_code: address.postal_code,
+    latitude: address.latitude,
+    longitude: address.longitude,
+    delivery_instructions: address.delivery_instructions || '',
+    is_default: address.is_default,
+  };
+};
+
 export default function CustomerAddressManager({
   onSelect,
   initialAddressId = null,
@@ -52,6 +73,8 @@ export default function CustomerAddressManager({
   title = 'Delivery address',
   description = 'Choose where the rider should go. You can still use walk-in or your own courier.',
   showAddTrigger = true,
+  showAddressSummary = true,
+  modalMode = 'add',
   isModalOpen: controlledModalOpen = false,
   onModalOpenChange,
 }: Props) {
@@ -110,14 +133,8 @@ export default function CustomerAddressManager({
   };
 
   const openEdit = (address: CustomerAddress) => {
-    const province = normalizeProvinceSelection(address.province || address.region) || address.province;
     setEditingId(address.id);
-    setForm({
-      ...address,
-      province,
-      region: address.region || province,
-      city: normalizeCityMunicipalitySelection(province, address.city) || address.city,
-    });
+    setForm(addressToForm(address));
     setError(null);
     onModalOpenChange?.(true);
   };
@@ -132,8 +149,11 @@ export default function CustomerAddressManager({
     if (!isModalControlled) return;
 
     if (controlledModalOpen && editingId === undefined) {
-      setEditingId(null);
-      setForm(emptyForm());
+      const addressToEdit = modalMode === 'edit'
+        ? addresses.find((address) => address.id === selectedId)
+        : undefined;
+      setEditingId(addressToEdit?.id ?? null);
+      setForm(addressToEdit ? addressToForm(addressToEdit) : emptyForm());
       setError(null);
     }
 
@@ -141,7 +161,7 @@ export default function CustomerAddressManager({
       setEditingId(undefined);
       setError(null);
     }
-  }, [controlledModalOpen, editingId, isModalControlled]);
+  }, [addresses, controlledModalOpen, editingId, isModalControlled, modalMode, selectedId]);
 
   useEffect(() => {
     if (!modalOpen) return;
@@ -237,7 +257,7 @@ export default function CustomerAddressManager({
     }
   };
 
-  return (
+  const addressSummary = (
     <div className="space-y-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -279,6 +299,17 @@ export default function CustomerAddressManager({
           ))}
         </div>
       )}
+    </div>
+  );
+
+  return (
+    <>
+      {showAddressSummary ? addressSummary : (
+        <div className="sr-only">
+          <p aria-live="polite" role="status">{loading ? 'Loading saved addresses...' : status}</p>
+          {error && editingId === undefined && <p role="alert">{error}</p>}
+        </div>
+      )}
 
       {modalOpen && (
         <div
@@ -303,7 +334,13 @@ export default function CustomerAddressManager({
                 </h2>
                 <p className="mt-1 text-sm text-gray-600">Use a precise map pin so nearby repair shops can confirm coverage.</p>
               </div>
-              <button
+              <div className="flex shrink-0 items-center gap-1">
+                {editingId && (
+                  <button type="button" onClick={openAdd} className="min-h-11 px-2 text-xs font-semibold text-blue-700 underline underline-offset-4 transition-colors hover:text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500 sm:text-sm">
+                    Add new address
+                  </button>
+                )}
+                <button
                 ref={closeButtonRef}
                 type="button"
                 aria-label="Close address modal"
@@ -311,7 +348,8 @@ export default function CustomerAddressManager({
                 className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full text-2xl leading-none text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <span aria-hidden="true">×</span>
-              </button>
+                </button>
+              </div>
             </div>
             <div className="overflow-y-auto p-4 sm:p-6">
               <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void save(); }}>
@@ -358,6 +396,6 @@ export default function CustomerAddressManager({
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

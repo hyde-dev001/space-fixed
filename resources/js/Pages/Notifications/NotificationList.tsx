@@ -35,6 +35,9 @@ const NotificationList: React.FC<NotificationListProps> = ({
   const isShopOwnerView = basePath.includes('shop-owner');
   const isErpView = basePath.includes('hr') || basePath.includes('staff');
   const isCustomerView = !isShopOwnerView && !isErpView;
+  const themeClasses = (lightClasses: string, darkClasses: string) => (
+    isCustomerView ? lightClasses : `${lightClasses} ${darkClasses}`
+  );
   const highlightedIdFromUrl = useMemo(() => {
     const queryString = page.url.includes('?') ? page.url.split('?')[1] : '';
     const highlightParam = new URLSearchParams(queryString).get('highlight');
@@ -752,8 +755,8 @@ const NotificationList: React.FC<NotificationListProps> = ({
       key={notification.id}
       className={`relative group transition-all duration-150 ${
         highlightedNotificationId === notification.id
-          ? 'bg-blue-50 ring-2 ring-blue-500 ring-inset dark:bg-blue-900/20'
-          : 'hover:bg-gray-50 dark:hover:bg-gray-800/70'
+          ? themeClasses('bg-blue-50 ring-2 ring-blue-500 ring-inset', 'dark:bg-blue-900/20')
+          : themeClasses('hover:bg-gray-50', 'dark:hover:bg-gray-800/70')
       } ${!bulkActionMode ? 'cursor-pointer' : ''} ${!notification.is_read ? 'border-l-4 border-l-blue-500' : 'border-l-4 border-l-transparent'}`}
       onClick={() => handleNotificationNavigate(notification)}
     >
@@ -783,7 +786,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
                   target.src = '/images/user/owner.jpg';
                 }
               }}
-              className="w-10 h-10 rounded-full object-cover border border-gray-200 dark:border-gray-700"
+              className={themeClasses('w-10 h-10 rounded-full object-cover border border-gray-200', 'dark:border-gray-700')}
             />
           ) : (
             <div className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-gray-700 dark:text-gray-200">
@@ -797,22 +800,28 @@ const NotificationList: React.FC<NotificationListProps> = ({
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-1">
                 {notification.priority && getPriorityBadge(notification.priority)}
-                <h3 className={`text-base font-semibold ${notification.is_read ? 'text-gray-600 dark:text-gray-400' : 'text-gray-900 dark:text-white'}`}>
+                <h3 className={`text-base font-semibold ${notification.is_read
+                  ? themeClasses('text-gray-600', 'dark:text-gray-400')
+                  : themeClasses('text-gray-900', 'dark:text-white')}`}>
                   {notification.title}
                 </h3>
               </div>
 
-              <p className={`text-sm ${notification.is_read ? 'text-gray-500 dark:text-gray-500' : 'text-gray-700 dark:text-gray-200'} mb-2`}>
+              <p className={`text-sm ${notification.is_read
+                ? themeClasses('text-gray-500', 'dark:text-gray-500')
+                : themeClasses('text-gray-700', 'dark:text-gray-200')} mb-2`}>
                 {getDisplayMessageWithCustomer(notification)}
               </p>
               {shoeName && (
-                <p className="text-xs text-gray-500 mb-2 dark:text-gray-400">
+                <p className={themeClasses('text-xs text-gray-500 mb-2', 'dark:text-gray-400')}>
                   Shoe: {shoeName}
                 </p>
               )}
 
-              <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
-                <span className={`${notification.is_read ? 'text-gray-500 dark:text-gray-400' : 'text-blue-600 dark:text-blue-400'} font-medium`}>
+              <div className={themeClasses('flex items-center gap-3 text-xs text-gray-500', 'dark:text-gray-400')}>
+                <span className={`${notification.is_read
+                  ? themeClasses('text-gray-500', 'dark:text-gray-400')
+                  : themeClasses('text-blue-600', 'dark:text-blue-400')} font-medium`}>
                   {isCustomerView ? formatTimeAgo(notification.created_at) : new Date(notification.created_at).toLocaleString()}
                 </span>
                 {notification.requires_action && (
@@ -838,7 +847,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
                         e.stopPropagation();
                         handleUnarchive(notification.id);
                       }}
-                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-full transition-colors dark:hover:bg-blue-900/20"
+                      className={themeClasses('p-2 text-blue-600 hover:bg-blue-50 rounded-full transition-colors', 'dark:hover:bg-blue-900/20')}
                       title="Unarchive notification"
                     >
                       <ArchiveRestore size={16} />
@@ -848,7 +857,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
                         e.stopPropagation();
                         handleDelete(notification.id);
                       }}
-                      className="p-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-full transition-colors dark:hover:bg-red-900/20 dark:text-red-500"
+                      className={themeClasses('p-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-full transition-colors', 'dark:hover:bg-red-900/20 dark:text-red-500')}
                       title="Delete permanently"
                     >
                       <Trash2 size={16} />
@@ -873,7 +882,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
                         e.stopPropagation();
                         handleDelete(notification.id);
                       }}
-                      className="p-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-full transition-colors dark:text-red-500"
+                      className={themeClasses('p-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-full transition-colors', 'dark:text-red-500')}
                       title="Archive notification"
                     >
                       <Trash2 size={16} />
@@ -894,12 +903,15 @@ const NotificationList: React.FC<NotificationListProps> = ({
     <>
       <Head title={title} />
 
-      <div className="min-h-screen px-4 sm:px-6 lg:px-8 py-8 bg-gray-50 dark:bg-gray-950">
+      <div className={themeClasses('min-h-screen px-4 sm:px-6 lg:px-8 py-8 bg-gray-50', 'dark:bg-gray-950')}>
         <div className="mb-4">
           <button
             type="button"
             onClick={() => window.history.back()}
-            className="inline-flex items-center rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-white"
+            className={themeClasses(
+              'inline-flex items-center rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 hover:text-gray-900',
+              'dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-white',
+            )}
           >
             Back
           </button>
@@ -911,11 +923,11 @@ const NotificationList: React.FC<NotificationListProps> = ({
         <div className="mb-8">
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div className="flex items-center gap-3">
-              <Bell size={32} className="text-gray-700 dark:text-gray-200" />
+              <Bell size={32} className={themeClasses('text-gray-700', 'dark:text-gray-200')} />
               <div>
-                <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{showArchived ? 'Archives' : title}</h1>
+                <h1 className={themeClasses('text-3xl font-bold text-gray-900', 'dark:text-white')}>{showArchived ? 'Archives' : title}</h1>
                 {data && (
-                  <p className="text-gray-600 mt-1 dark:text-gray-400">
+                  <p className={themeClasses('text-gray-600 mt-1', 'dark:text-gray-400')}>
                     {unreadCount > 0 ? (
                       <>
                         <span className="font-semibold text-blue-600">{unreadCount}</span> unread
@@ -939,7 +951,10 @@ const NotificationList: React.FC<NotificationListProps> = ({
                 className={`flex items-center gap-2 px-4 py-2 border rounded-lg transition-colors ${
                   bulkActionMode
                     ? 'bg-blue-600 text-white border-blue-600'
-                    : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-200 dark:border-gray-700 dark:hover:bg-gray-800'
+                    : themeClasses(
+                      'text-gray-700 bg-white border-gray-300 hover:bg-gray-50',
+                      'dark:bg-gray-900 dark:text-gray-200 dark:border-gray-700 dark:hover:bg-gray-800',
+                    )
                 }`}
               >
                 <CheckSquare size={18} />
@@ -956,7 +971,10 @@ const NotificationList: React.FC<NotificationListProps> = ({
                 className={`flex items-center gap-2 px-4 py-2 border rounded-lg transition-colors ${
                   showArchived
                     ? 'bg-gray-600 text-white border-gray-600'
-                    : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-200 dark:border-gray-700 dark:hover:bg-gray-800'
+                    : themeClasses(
+                      'text-gray-700 bg-white border-gray-300 hover:bg-gray-50',
+                      'dark:bg-gray-900 dark:text-gray-200 dark:border-gray-700 dark:hover:bg-gray-800',
+                    )
                 }`}
               >
                 <Archive size={18} />
@@ -966,7 +984,10 @@ const NotificationList: React.FC<NotificationListProps> = ({
               {/* Export Button */}
               <button
                 onClick={() => setShowExportModal(true)}
-                className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors dark:bg-gray-900 dark:text-gray-200 dark:border-gray-700 dark:hover:bg-gray-800"
+                className={themeClasses(
+                  'flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors',
+                  'dark:bg-gray-900 dark:text-gray-200 dark:border-gray-700 dark:hover:bg-gray-800',
+                )}
               >
                 <Download size={18} />
                 Export
@@ -975,7 +996,10 @@ const NotificationList: React.FC<NotificationListProps> = ({
               {/* Settings Link */}
               <Link
                 href={basePath.includes('shop-owner') ? '/shop-owner/notifications/settings' : basePath.includes('hr') ? '/erp/notifications/settings' : '/notifications/settings'}
-                className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors dark:bg-gray-900 dark:text-gray-200 dark:border-gray-700 dark:hover:bg-gray-800"
+                className={themeClasses(
+                  'flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors',
+                  'dark:bg-gray-900 dark:text-gray-200 dark:border-gray-700 dark:hover:bg-gray-800',
+                )}
               >
                 <Settings size={18} />
                 Settings
@@ -998,11 +1022,11 @@ const NotificationList: React.FC<NotificationListProps> = ({
 
         {/* Bulk Action Bar */}
         {bulkActionMode && selectedIds.length > 0 && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 dark:bg-blue-900/20 dark:border-blue-800">
+          <div className={themeClasses('bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6', 'dark:bg-blue-900/20 dark:border-blue-800')}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <CheckSquare size={20} className="text-blue-600" />
-                <span className="font-medium text-blue-900 dark:text-blue-300">
+                <span className={themeClasses('font-medium text-blue-900', 'dark:text-blue-300')}>
                   {selectedIds.length} selected
                 </span>
               </div>
@@ -1036,43 +1060,49 @@ const NotificationList: React.FC<NotificationListProps> = ({
         )}
 
         {/* Advanced Filters */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6 overflow-hidden dark:bg-gray-900 dark:border-gray-700">
+        <div className={themeClasses('bg-white rounded-lg shadow-sm border border-gray-200 mb-6 overflow-hidden', 'dark:bg-gray-900 dark:border-gray-700')}>
           <button
             onClick={() => setShowFilters(!showFilters)}
-            className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
+            className={themeClasses('w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors', 'dark:hover:bg-gray-800')}
           >
             <div className="flex items-center gap-2">
-              <Filter size={20} className="text-gray-600 dark:text-gray-300" />
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Advanced Filters</h2>
+              <Filter size={20} className={themeClasses('text-gray-600', 'dark:text-gray-300')} />
+              <h2 className={themeClasses('text-lg font-semibold text-gray-900', 'dark:text-white')}>Advanced Filters</h2>
             </div>
             <ChevronDown
               size={20}
-              className={`text-gray-600 dark:text-gray-300 transition-transform ${showFilters ? 'rotate-180' : ''}`}
+              className={`${themeClasses('text-gray-600', 'dark:text-gray-300')} transition-transform ${showFilters ? 'rotate-180' : ''}`}
             />
           </button>
 
           {showFilters && (
-            <div className="p-4 border-t border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/70">
+            <div className={themeClasses('p-4 border-t border-gray-200 bg-gray-50', 'dark:border-gray-700 dark:bg-gray-800/70')}>
               {/* Search Bar */}
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
+                <label className={themeClasses('block text-sm font-medium text-gray-700 mb-2', 'dark:text-gray-300')}>
                   Search
                 </label>
                 <div className="relative">
-                  <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500" />
+                  <Search size={18} className={themeClasses('absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400', 'dark:text-gray-500')} />
                   <input
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search in title or message..."
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-900 dark:border-gray-600 dark:text-white"
+                    className={themeClasses(
+                      'w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500',
+                      'dark:bg-gray-900 dark:border-gray-600 dark:text-white',
+                    )}
                   />
                   {searchQuery && (
                     <button
                       onClick={() => setSearchQuery('')}
                       title="Clear search"
                       aria-label="Clear search"
-                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+                      className={themeClasses(
+                        'absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600',
+                        'dark:text-gray-500 dark:hover:text-gray-300',
+                      )}
                     >
                       <X size={18} />
                     </button>
@@ -1083,7 +1113,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* Category Filter */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
+                  <label className={themeClasses('block text-sm font-medium text-gray-700 mb-2', 'dark:text-gray-300')}>
                     Category
                   </label>
                   <select
@@ -1091,7 +1121,10 @@ const NotificationList: React.FC<NotificationListProps> = ({
                     onChange={(e) => handleFilterChange('category', e.target.value || undefined)}
                     title="Filter by category"
                     aria-label="Filter by category"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-900 dark:border-gray-600 dark:text-white"
+                    className={themeClasses(
+                      'w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500',
+                      'dark:bg-gray-900 dark:border-gray-600 dark:text-white',
+                    )}
                   >
                     {categories.map(cat => (
                       <option key={cat.value} value={cat.value}>{cat.label}</option>
@@ -1101,7 +1134,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
 
                 {/* Priority Filter */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
+                  <label className={themeClasses('block text-sm font-medium text-gray-700 mb-2', 'dark:text-gray-300')}>
                     Priority Level
                   </label>
                   <select
@@ -1109,7 +1142,10 @@ const NotificationList: React.FC<NotificationListProps> = ({
                     onChange={(e) => handleFilterChange('priority', e.target.value || undefined)}
                     title="Filter by priority"
                     aria-label="Filter by priority"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-900 dark:border-gray-600 dark:text-white"
+                    className={themeClasses(
+                      'w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500',
+                      'dark:bg-gray-900 dark:border-gray-600 dark:text-white',
+                    )}
                   >
                     {priorities.map(pri => (
                       <option key={pri.value} value={pri.value}>{pri.label}</option>
@@ -1119,43 +1155,49 @@ const NotificationList: React.FC<NotificationListProps> = ({
 
                 {/* Start Date */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
+                  <label className={themeClasses('block text-sm font-medium text-gray-700 mb-2', 'dark:text-gray-300')}>
                     From Date
                   </label>
                   <div className="relative">
-                    <Calendar size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500" />
+                    <Calendar size={18} className={themeClasses('absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400', 'dark:text-gray-500')} />
                     <input
                       type="date"
                       value={filters.start_date || ''}
                       onChange={(e) => handleFilterChange('start_date', e.target.value || undefined)}
                       title="Filter notifications from date"
                       aria-label="Filter notifications from date"
-                      className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-900 dark:border-gray-600 dark:text-white"
+                      className={themeClasses(
+                        'w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500',
+                        'dark:bg-gray-900 dark:border-gray-600 dark:text-white',
+                      )}
                     />
                   </div>
                 </div>
 
                 {/* End Date */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
+                  <label className={themeClasses('block text-sm font-medium text-gray-700 mb-2', 'dark:text-gray-300')}>
                     To Date
                   </label>
                   <div className="relative">
-                    <Calendar size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500" />
+                    <Calendar size={18} className={themeClasses('absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400', 'dark:text-gray-500')} />
                     <input
                       type="date"
                       value={filters.end_date || ''}
                       onChange={(e) => handleFilterChange('end_date', e.target.value || undefined)}
                       title="Filter notifications to date"
                       aria-label="Filter notifications to date"
-                      className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-900 dark:border-gray-600 dark:text-white"
+                      className={themeClasses(
+                        'w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500',
+                        'dark:bg-gray-900 dark:border-gray-600 dark:text-white',
+                      )}
                     />
                   </div>
                 </div>
               </div>
 
               {/* Quick Filters */}
-              <div className="flex flex-wrap gap-3 mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <div className={themeClasses('flex flex-wrap gap-3 mt-4 pt-4 border-t border-gray-200', 'dark:border-gray-700')}>
                 <label className="flex items-center cursor-pointer">
                   <input
                     type="checkbox"
@@ -1165,7 +1207,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
                     aria-label="Show unread notifications only"
                     className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
                   />
-                  <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">Unread only</span>
+                  <span className={themeClasses('ml-2 text-sm text-gray-700', 'dark:text-gray-300')}>Unread only</span>
                 </label>
 
                 <label className="flex items-center cursor-pointer">
@@ -1177,7 +1219,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
                     aria-label="Show action required notifications only"
                     className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
                   />
-                  <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">Action required</span>
+                  <span className={themeClasses('ml-2 text-sm text-gray-700', 'dark:text-gray-300')}>Action required</span>
                 </label>
 
                 {/* Clear Filters Button */}
@@ -1207,22 +1249,22 @@ const NotificationList: React.FC<NotificationListProps> = ({
         </div>
 
         {/* Notifications List */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden dark:bg-gray-900 dark:border-gray-700">
+        <div className={themeClasses('bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden', 'dark:bg-gray-900 dark:border-gray-700')}>
           {isLoading ? (
             <div className="flex items-center justify-center py-20">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
             </div>
           ) : error ? (
-            <div className="flex flex-col items-center justify-center py-20 text-red-600 dark:text-red-400">
+            <div className={themeClasses('flex flex-col items-center justify-center py-20 text-red-600', 'dark:text-red-400')}>
               <AlertCircle size={48} className="mb-4" />
               <p className="text-lg font-medium">Failed to load notifications</p>
-              <p className="text-sm text-gray-600 mt-2 dark:text-gray-400">Please try again later</p>
+              <p className={themeClasses('text-sm text-gray-600 mt-2', 'dark:text-gray-400')}>Please try again later</p>
             </div>
           ) : notifications.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-gray-500 dark:text-gray-400">
-              <Bell size={64} className="mb-4 text-gray-300 dark:text-gray-600" />
-              <p className="text-lg font-medium dark:text-white">No notifications found</p>
-              <p className="text-sm text-gray-600 mt-2 dark:text-gray-400">
+            <div className={themeClasses('flex flex-col items-center justify-center py-20 text-gray-500', 'dark:text-gray-400')}>
+              <Bell size={64} className={themeClasses('mb-4 text-gray-300', 'dark:text-gray-600')} />
+              <p className={themeClasses('text-lg font-medium', 'dark:text-white')}>No notifications found</p>
+              <p className={themeClasses('text-sm text-gray-600 mt-2', 'dark:text-gray-400')}>
                 {filters.unread_only || filters.action_required || filters.category || filters.priority || searchQuery
                   ? 'Try adjusting your filters'
                   : showArchived
@@ -1234,7 +1276,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
             <>
               {/* Select All Checkbox */}
               {bulkActionMode && (
-                <div className="px-6 py-3 bg-gray-50 border-b border-gray-200 dark:bg-gray-800 dark:border-gray-700">
+                <div className={themeClasses('px-6 py-3 bg-gray-50 border-b border-gray-200', 'dark:bg-gray-800 dark:border-gray-700')}>
                   <label className="flex items-center cursor-pointer">
                     <input
                       type="checkbox"
@@ -1242,20 +1284,20 @@ const NotificationList: React.FC<NotificationListProps> = ({
                       onChange={handleSelectAll}
                       className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
                     />
-                    <span className="ml-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <span className={themeClasses('ml-2 text-sm font-medium text-gray-700', 'dark:text-gray-300')}>
                       Select all ({notifications.length})
                     </span>
                   </label>
                 </div>
               )}
 
-              <div className="divide-y divide-gray-100 dark:divide-gray-700">
+              <div className={themeClasses('divide-y divide-gray-100', 'dark:divide-gray-700')}>
                 {isCustomerView ? (
                   customerCategorySections.map((section) => (
                     section.notifications.length > 0 ? (
-                      <div key={section.key} className="border-b border-gray-100 dark:border-gray-700 last:border-b-0">
-                        <div className="px-6 pt-5 pb-2 bg-gray-50/80 dark:bg-gray-800/40">
-                          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 tracking-wide uppercase">
+                      <div key={section.key} className={themeClasses('border-b border-gray-100 last:border-b-0', 'dark:border-gray-700')}>
+                        <div className={themeClasses('px-6 pt-5 pb-2 bg-gray-50/80', 'dark:bg-gray-800/40')}>
+                          <h3 className={themeClasses('text-sm font-semibold text-gray-700 tracking-wide uppercase', 'dark:text-gray-300')}>
                             {section.label}
                           </h3>
                         </div>
@@ -1271,8 +1313,8 @@ const NotificationList: React.FC<NotificationListProps> = ({
 
               {/* Pagination */}
               {lastPage > 1 && (
-                <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800">
-                  <div className="text-sm text-gray-600 dark:text-gray-400">
+                <div className={themeClasses('flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50', 'dark:border-gray-700 dark:bg-gray-800')}>
+                  <div className={themeClasses('text-sm text-gray-600', 'dark:text-gray-400')}>
                     Showing <span className="font-medium">{from}</span> to{' '}
                     <span className="font-medium">{to}</span> of{' '}
                     <span className="font-medium">{totalNotifications}</span> notifications
@@ -1282,7 +1324,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
                     <button
                       onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                       disabled={currentPage === 1}
-                      className="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-100 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      className={themeClasses('px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors', 'dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700')}
                     >
                       Previous
                     </button>
@@ -1307,7 +1349,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
                             className={`px-3 py-1 border rounded-lg transition-colors ${
                               currentPage === pageNum
                                 ? 'bg-blue-600 text-white border-blue-600'
-                                : 'border-gray-300 hover:bg-gray-100 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700'
+                                : themeClasses('border-gray-300 hover:bg-gray-100', 'dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700')
                             }`}
                           >
                             {pageNum}
@@ -1319,7 +1361,7 @@ const NotificationList: React.FC<NotificationListProps> = ({
                     <button
                       onClick={() => setCurrentPage(prev => Math.min(lastPage, prev + 1))}
                       disabled={currentPage === lastPage}
-                      className="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-100 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      className={themeClasses('px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors', 'dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700')}
                     >
                       Next
                     </button>

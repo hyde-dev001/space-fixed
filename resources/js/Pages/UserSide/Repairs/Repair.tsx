@@ -422,7 +422,7 @@ const Repair: React.FC<Props> = ({ shops }) => {
                   onClick={() => setIsAddressModalOpen(true)}
                   className="min-h-11 px-1 text-xs font-semibold text-[#16233b] underline underline-offset-4 transition-colors hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16233b]/40 sm:text-sm"
                 >
-                  Add address
+                  {selectedAddress ? 'Edit address' : 'Add address'}
                 </button>
               )}
               <div className="relative" ref={sortMenuRef}>
@@ -482,11 +482,13 @@ const Repair: React.FC<Props> = ({ shops }) => {
           </p>
 
           {isAuthenticated && (
-            <div className="mb-8">
+            <div>
               <CustomerAddressManager
                 onSelect={handleAddressSelect}
                 initialAddressId={initialAddressId}
                 showAddTrigger={false}
+                showAddressSummary={false}
+                modalMode={selectedAddress ? 'edit' : 'add'}
                 isModalOpen={isAddressModalOpen}
                 onModalOpenChange={setIsAddressModalOpen}
               />

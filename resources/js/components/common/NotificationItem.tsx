@@ -14,6 +14,7 @@ interface NotificationItemProps {
   onArchive?: (id: number) => void;
   onClick?: () => void;
   linkHref?: string;
+  isCustomerView?: boolean;
 }
 
 const NotificationItem: React.FC<NotificationItemProps> = ({ 
@@ -21,7 +22,8 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
   onMarkAsRead,
   onArchive,
   onClick,
-  linkHref
+  linkHref,
+  isCustomerView = false,
 }) => {
   const { auth } = (usePage().props as any) || {};
   const isShopOwnerView = Boolean(auth?.shop_owner && !auth?.user);
@@ -56,7 +58,9 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
   };
 
   const getCategoryColor = (type: string) => {
-    return 'bg-white text-black border border-gray-200 dark:bg-black dark:text-white dark:border-gray-700';
+    return isCustomerView
+      ? 'border border-gray-200 bg-white text-[#16233b]'
+      : 'border border-gray-200 bg-white text-black dark:border-gray-700 dark:bg-black dark:text-white';
   };
 
   const formatTimeAgo = (dateString: string) => {
@@ -119,8 +123,12 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
     <div
       className={`group flex gap-3 p-4 transition-colors ${
         !notification.is_read
-          ? 'bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/30'
-          : 'hover:bg-gray-50 dark:hover:bg-gray-800/70'
+          ? isCustomerView
+            ? 'bg-blue-50 hover:bg-blue-100'
+            : 'bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/30'
+          : isCustomerView
+            ? 'hover:bg-gray-50'
+            : 'hover:bg-gray-50 dark:hover:bg-gray-800/70'
       }`}
     >
       {isShopOwnerView ? (
@@ -144,7 +152,10 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
 
       <div className="flex-1 min-w-0">
         <div className="flex items-start justify-between gap-2">
-          <h4 className={`text-sm font-medium ${!notification.is_read ? 'text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300'}`}>
+          <h4 className={`text-sm font-medium ${!notification.is_read
+            ? isCustomerView ? 'text-gray-900' : 'text-gray-900 dark:text-white'
+            : isCustomerView ? 'text-gray-700' : 'text-gray-700 dark:text-gray-300'}`}
+          >
             {notification.title}
           </h4>
           <div className="flex items-center gap-2">
@@ -165,12 +176,12 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
           </div>
         </div>
 
-        <p className="text-sm text-gray-600 mt-1 line-clamp-2 dark:text-gray-400">
+        <p className={isCustomerView ? 'mt-1 line-clamp-2 text-sm text-gray-600' : 'mt-1 line-clamp-2 text-sm text-gray-600 dark:text-gray-400'}>
           {getDisplayMessage()}
         </p>
 
         <div className="flex items-center gap-3 mt-2">
-          <span className="text-xs text-gray-500 flex items-center gap-1 dark:text-gray-400">
+          <span className={isCustomerView ? 'flex items-center gap-1 text-xs text-gray-500' : 'flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400'}>
             <Clock size={12} />
             {formatTimeAgo(notification.created_at)}
           </span>
