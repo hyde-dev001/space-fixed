@@ -24,12 +24,14 @@ class ExpenseApprovalService
         float $amount
     ): Expense {
         $purchaseOrder = $receipt->purchaseOrder()->with('supplier')->firstOrFail();
+        $dueDate = $this->deriveSupplierDueDate($purchaseOrder->payment_terms, $receipt->received_at);
 
         $expense = Expense::firstOrCreate(
             ['procurement_receipt_id' => $receipt->id],
             [
                 'reference' => "PROC-RCV-{$receipt->id}",
                 'date' => $receipt->received_at->toDateString(),
+                'due_date' => $dueDate,
                 'category' => 'Procurement',
                 'vendor' => $purchaseOrder->supplier?->name,
                 'description' => "Receipt for purchase order {$purchaseOrder->po_number}",
@@ -63,6 +65,18 @@ class ExpenseApprovalService
         }
 
         return $expense->fresh();
+    }
+
+    private function deriveSupplierDueDate(?string $paymentTerms, $receivedAt): ?string
+    {
+        $terms = trim((string) $paymentTerms);
+        if ($terms === '' || ! preg_match('/^Net\s+([1-9]\d{0,2})$/i', $terms, $matches)) {
+            return null;
+        }
+
+        return \Illuminate\Support\Carbon::parse($receivedAt)
+            ->addDays((int) $matches[1])
+            ->toDateString();
     }
 
     /**

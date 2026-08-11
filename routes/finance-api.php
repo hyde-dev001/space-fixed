@@ -177,7 +177,7 @@ Route::prefix('api/finance/payslip-approvals')->middleware(['web', 'auth:user', 
     Route::post('/batch/preview', [FinancePayslipApprovalController::class, 'batchApprovalPreview'])->name('finance.payslip_approval.batch_preview');
     Route::post('/batch/approve', [FinancePayslipApprovalController::class, 'batchApprove'])->name('finance.payslip_approval.batch_approve');
     });
-    // Payroll disbursement keeps its existing controller authorization until Task 13.
+    // Controller enforces Shop Owner or the dedicated disburse-payroll capability.
     Route::post('/disburse', [PayrollController::class, 'process'])->name('finance.payslip_approval.disburse');
 });
 

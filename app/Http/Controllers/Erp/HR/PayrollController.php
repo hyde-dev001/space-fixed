@@ -9,8 +9,10 @@ use App\Models\HR\BranchPayrollSetting;
 use App\Models\Finance\Expense;
 use App\Models\Employee;
 use App\Models\ShopOwner;
+use App\Models\User;
 use App\Models\HR\AuditLog;
 use App\Services\HR\PayrollService;
+use App\Services\Finance\ExpenseSettlementService;
 use App\Services\NotificationService;
 use App\Support\Finance\FinanceErrorResponse;
 use App\Traits\HR\LogsHRActivity;
@@ -39,11 +41,13 @@ class PayrollController extends Controller
 
     protected PayrollService $payrollService;
     protected NotificationService $notificationService;
+    protected ExpenseSettlementService $expenseSettlementService;
 
-    public function __construct(PayrollService $payrollService, NotificationService $notificationService)
+    public function __construct(PayrollService $payrollService, NotificationService $notificationService, ExpenseSettlementService $expenseSettlementService)
     {
         $this->payrollService = $payrollService;
         $this->notificationService = $notificationService;
+        $this->expenseSettlementService = $expenseSettlementService;
     }
 
     // ============================================================
@@ -91,8 +95,7 @@ class PayrollController extends Controller
 
         try {
             return $user->hasRole('Shop Owner')
-                || $user->can('access-payslip-approval')
-                || $user->can('access-approval-workflow');
+                || $user->can('disburse-payroll');
         } catch (\Throwable $e) {
             // Defensive fallback: if role metadata is stale/missing in production,
             // still allow explicit permission checks to decide disbursement access.
@@ -102,8 +105,7 @@ class PayrollController extends Controller
                 'error' => $e->getMessage(),
             ]);
 
-            return $user->can('access-payslip-approval')
-                || $user->can('access-approval-workflow');
+            return $user->can('disburse-payroll');
         }
     }
 
@@ -520,7 +522,7 @@ class PayrollController extends Controller
 
             if (! $this->canDisbursePayroll($user)) {
                 return response()->json([
-                    'error' => 'Unauthorized. Payroll disbursement requires payroll or approval workflow access.',
+                    'error' => 'Unauthorized. Payroll disbursement requires Shop Owner access or the disburse-payroll capability.',
                 ], 403);
             }
 
@@ -604,17 +606,9 @@ class PayrollController extends Controller
 
                         $payroll->markAsPaid($paymentDate, $disbursementDetails);
 
-                        // Expense sync is best-effort only. Do not block disbursement if
-                        // finance expense schema/config differs in production.
-                        try {
-                            $this->createExpenseFromPaidPayroll($payroll, (int) $user->id, $paymentDate);
-                        } catch (\Throwable $expenseError) {
-                            \Log::warning('Payroll disbursement expense sync skipped', [
-                                'payroll_id' => $payroll->id,
-                                'shop_owner_id' => $payroll->shop_owner_id,
-                                'error' => $expenseError->getMessage(),
-                            ]);
-                        }
+                        // Payroll state, its Finance expense, and the linked
+                        // settlement commit or roll back as one transaction.
+                        $this->createExpenseFromPaidPayroll($payroll, $user, $paymentDate);
                     });
 
                     $processedCount++;
@@ -687,11 +681,11 @@ class PayrollController extends Controller
     /**
      * Auto-create Finance expense from paid payroll disbursement.
      */
-    private function createExpenseFromPaidPayroll(Payroll $payroll, int $userId, string $paymentDate): void
+    private function createExpenseFromPaidPayroll(Payroll $payroll, User $actor, string $paymentDate): void
     {
         $amount = (float) ($payroll->net_salary ?? 0);
         if ($amount <= 0) {
-            return;
+            throw new \RuntimeException('Payroll net salary must be greater than zero before disbursement.');
         }
 
         $template = config('finance_expense_templates.payroll', []);
@@ -720,7 +714,7 @@ class PayrollController extends Controller
 
         $expenseDate = \Illuminate\Support\Carbon::parse($paymentDate)->toDateString();
 
-        Expense::firstOrCreate(
+        $expense = Expense::firstOrCreate(
             ['reference' => $reference],
             [
                 'date' => $expenseDate,
@@ -736,7 +730,7 @@ class PayrollController extends Controller
                     'payroll_id' => $payroll->id,
                     'employee_id' => $payroll->employee_id,
                     'payroll_period' => $payroll->payroll_period,
-                    'created_by' => $userId,
+                    'created_by' => $actor->id ?? null,
                     'payment_method' => $payroll->payment_method,
                     'payout_reference' => $payroll->payout_reference,
                     'payout_proof_type' => $payroll->payout_proof_type,
@@ -744,6 +738,16 @@ class PayrollController extends Controller
                 ],
             ]
         );
+
+        $this->expenseSettlementService->record($expense, $actor, [
+            'amount' => number_format($amount, 2, '.', ''),
+            'payment_method' => (string) ($payroll->payment_method ?: 'bank_transfer'),
+            'reference' => (string) ($payroll->payout_reference ?: $reference),
+            'paid_at' => $paymentDate,
+            'idempotency_key' => 'payroll:'.$payroll->id,
+            'source' => \App\Models\Finance\ExpenseSettlement::SOURCE_PAYROLL,
+            'source_reference' => 'payroll:'.$payroll->id,
+        ]);
     }
 
     // ============================================================

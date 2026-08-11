@@ -36,6 +36,8 @@ final class ExpenseSettlementService
         $amount = $this->normalizeAmount($data['amount'] ?? null);
         $paymentMethod = strtolower(trim((string) ($data['payment_method'] ?? '')));
         $reference = trim((string) ($data['reference'] ?? ''));
+        $source = strtolower(trim((string) ($data['source'] ?? ExpenseSettlement::SOURCE_MANUAL)));
+        $sourceReference = trim((string) ($data['source_reference'] ?? ''));
         $paidAtInput = $data['paid_at'] ?? null;
         $paidAt = $paidAtInput !== null && $paidAtInput !== ''
             ? CarbonImmutable::parse($paidAtInput)->toDateTimeString()
@@ -45,8 +47,19 @@ final class ExpenseSettlementService
         if (! in_array($paymentMethod, self::PAYMENT_METHODS, true)) {
             throw new FinanceDomainException('Payment method is not supported.', 'INVALID_STATE', 422);
         }
+        if (! in_array($source, [
+            ExpenseSettlement::SOURCE_MANUAL,
+            ExpenseSettlement::SOURCE_PROCUREMENT,
+            ExpenseSettlement::SOURCE_PAYROLL,
+            ExpenseSettlement::SOURCE_LEGACY_MIGRATION,
+        ], true)) {
+            throw new FinanceDomainException('Settlement source is not supported.', 'INVALID_STATE', 422);
+        }
+        if ($source !== ExpenseSettlement::SOURCE_MANUAL && $sourceReference === '') {
+            throw new FinanceDomainException('An integration settlement requires a source reference.', 'INVALID_STATE', 422);
+        }
 
-        return DB::transaction(function () use ($expense, $actor, $shopId, $amount, $paymentMethod, $reference, $paidAt, $idempotencyKey, $allowPending): array {
+        return DB::transaction(function () use ($expense, $actor, $shopId, $amount, $paymentMethod, $reference, $source, $sourceReference, $paidAt, $idempotencyKey, $allowPending): array {
             $lockedExpense = Expense::query()
                 ->whereKey($expense->getKey())
                 ->lockForUpdate()
@@ -68,7 +81,7 @@ final class ExpenseSettlementService
                 ->first();
 
             if ($existing) {
-                if (! $this->sameRequest($existing, $lockedExpense, $amount, $paymentMethod, $reference, $paidAt)) {
+                if (! $this->sameRequest($existing, $lockedExpense, $amount, $paymentMethod, $reference, $source, $sourceReference, $paidAt)) {
                     throw new FinanceDomainException(
                         'The settlement request key was already used with different payment details.',
                         'DUPLICATE_SUBMISSION',
@@ -124,7 +137,8 @@ final class ExpenseSettlementService
                 'paid_at' => $paidAt ?? now()->toDateTimeString(),
                 'recorded_by_user_id' => $actor->id,
                 'idempotency_key' => $idempotencyKey,
-                'source' => ExpenseSettlement::SOURCE_MANUAL,
+                'source' => $source,
+                'source_reference' => $sourceReference !== '' ? $sourceReference : null,
             ]);
 
             return [
@@ -234,12 +248,14 @@ final class ExpenseSettlementService
         ];
     }
 
-    private function sameRequest(ExpenseSettlement $existing, Expense $expense, string $amount, string $method, string $reference, ?string $paidAt): bool
+    private function sameRequest(ExpenseSettlement $existing, Expense $expense, string $amount, string $method, string $reference, string $source, string $sourceReference, ?string $paidAt): bool
     {
         return (int) $existing->expense_id === (int) $expense->id
             && $this->toCents($existing->amount) === $this->toCents($amount)
             && strtolower((string) $existing->payment_method) === $method
             && (string) ($existing->reference ?? '') === ($reference !== '' ? $reference : '')
+            && (string) $existing->source === $source
+            && (string) ($existing->source_reference ?? '') === $sourceReference
             && ($paidAt === null || optional($existing->paid_at)->toDateTimeString() === $paidAt);
     }
 
