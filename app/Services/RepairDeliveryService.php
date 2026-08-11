@@ -435,7 +435,10 @@ final class RepairDeliveryService
 
             if ($existing) {
                 $recovery = $this->activePickupRecovery($lockedRepair, 'paid');
-                $previousLeg = $existing->legs()->orderByDesc('sequence')->first();
+                $previousLeg = $existing->legs()
+                    ->where('status', 'cancelled')
+                    ->latest('sequence')
+                    ->first();
                 $address = is_array($lockedRepair->intake_address) ? $lockedRepair->intake_address : [];
                 $leg = $existing->legs()->create([
                     'sequence' => ((int) $existing->legs()->max('sequence')) + 1,
