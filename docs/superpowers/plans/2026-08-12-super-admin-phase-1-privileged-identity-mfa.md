@@ -4,7 +4,7 @@
 
 **Goal:** Require every Admin and Super Admin to pass active-account and MFA checks, provide safe bootstrap/invitation/password/recovery flows, support targeted privileged-session invalidation, and prevent removal of the final active MFA-enrolled Super Admin.
 
-**Architecture:** Keep the existing `super_admin` guard and Phase 0 fixed-capability/audit foundations. Add explicit password-verified, setup, MFA-challenge, and complete session stages; encrypted TOTP secrets; hashed single-use recovery codes and setup/reset tokens; and a small privileged-session registry keyed by Laravel session ID so security-version enforcement is immediate and database-backed sessions can be removed selectively. Focused controllers orchestrate setup and self-service security, while small concrete services own MFA, token, session, and administrator-lifecycle invariants.
+**Architecture:** Keep the existing `super_admin` guard and Phase 0 fixed-capability/audit foundations. Add explicit password-verified, setup, MFA-challenge, and complete session stages; encrypted TOTP secrets; hashed single-use recovery codes and setup/reset tokens; encrypted secret-bearing queued mail; and a small privileged-session registry keyed by Laravel session ID so security-version enforcement is immediate and database-backed sessions can be removed selectively. A canonical model predicate defines MFA setup completion for middleware, lifecycle protection, and UI state. Focused controllers orchestrate setup and self-service security, while small concrete services own MFA, token, session-cleanup, and administrator-lifecycle invariants.
 
 **Tech Stack:** PHP 8.2, Laravel 12, Eloquent, database sessions in production, Inertia 2, React 18, TypeScript 5.7, PHPUnit 11, Vitest 3, `pragmarx/google2fa` 9.x, `bacon/bacon-qr-code` 3.1.x, pnpm.
 
@@ -81,9 +81,38 @@ status = active
 + mfa_confirmed_at set
 ```
 
-Existing active administrators keep their current password but have no confirmed MFA after migration. Their next valid password login enters setup stage; no operational route is available until enrollment and recovery-code acknowledgement complete.
+Existing active administrators keep their current password but have no confirmed MFA after migration. Their next valid password login enters setup stage directly; they do not need a setup token and are not forced to change their current password. No operational route is available until enrollment and recovery-code acknowledgement complete.
 
-MFA setup-required is derived from missing `mfa_confirmed_at`, missing encrypted secret, or missing recovery-code hashes. An MFA reset does not rewrite business status; it clears the MFA condition, increments `security_version`, and invalidates privileged sessions.
+Use one canonical `SuperAdmin::hasCompletedMfaSetup()` predicate everywhere:
+
+```text
+mfa_confirmed_at IS NOT NULL
++ mfa_secret IS NOT NULL
++ mfa_recovery_codes IS NOT NULL
+= MFA setup complete
+```
+
+Recovery-code state has three distinct meanings:
+
+```text
+NULL  = recovery-code setup was never completed; MFA setup incomplete
+[...]= recovery codes are established and available; MFA setup complete
+[]    = all recovery codes were consumed; MFA remains complete
+```
+
+Never require the recovery-code array to be non-empty. Middleware, final-Super-Admin qualification, administrator-management state, and UI state all use this same predicate. An MFA reset does not rewrite business status; it clears the MFA condition, increments `security_version`, and invalidates privileged sessions.
+
+There are two explicit enrollment entry paths:
+
+```text
+existing active administrator without MFA
+password login -> stage=setup -> TOTP enrollment -> recovery acknowledgement
+status remains active -> complete session
+
+pending bootstrap/invited administrator
+setup token -> choose initial password -> stage=setup -> TOTP enrollment
+-> recovery acknowledgement -> status pending_setup to active -> complete session
+```
 
 ### Session stages
 
@@ -139,7 +168,9 @@ Rules:
 
 ### Token and recovery-code display
 
-Setup and password-reset URLs contain random 32-byte URL-safe tokens. Store only `hash('sha256', $rawToken)` with purpose, expiry, use time, subject, and creator. Lock the token row during consumption and mark it used in the same transaction as the protected mutation.
+Setup and password-reset URLs contain random 32-byte URL-safe tokens. Store only `hash('sha256', $rawToken)` with purpose, expiry, use time, subject, and creator. Lock the token row and target administrator during consumption, revalidate the target's current applicable state, and mark the token used in the same transaction as the protected mutation. A reset token issued while active is rejected generically if the target is no longer active at consumption; a setup token is accepted only while the target remains legitimately setup-required.
+
+The setup/reset mailables implement both `ShouldQueue` and `ShouldBeEncrypted` and retain after-commit delivery. The raw bearer token may exist transiently in application memory and inside Laravel's encrypted queue command only. It must never appear in plaintext in `jobs.payload`, `failed_jobs.payload`, audit, logs, console output, or exception messages. Authoritative token persistence remains SHA-256 only.
 
 Plaintext recovery codes are returned only in the immediate Inertia response that generated them. They are never stored in the session. The browser receives a separate random acknowledgement token whose SHA-256 hash is stored through `PrivilegedSecurityTokenService` with purpose `recovery_ack` and a 15-minute expiry. Consuming that token acknowledges the current code set. If the page is lost before acknowledgement, restart enrollment/regeneration, replace the complete code set, and invalidate the prior acknowledgement token.
 
@@ -161,10 +192,10 @@ After any active MFA-enrolled Super Admin exists, every transaction that could r
 ```text
 role = super_admin
 status = active
-mfa_confirmed_at IS NOT NULL
+SuperAdmin::hasCompletedMfaSetup() = true
 ```
 
-This covers suspension, deactivation, role demotion, and MFA reset. Management endpoints reject self-targeting. Own-security endpoints also reject an MFA reset that would remove the final active enrolled Super Admin.
+The lifecycle service evaluates the same canonical predicate used by operational middleware; it must not duplicate a weaker timestamp-only SQL condition. This covers suspension, deactivation, role demotion, and MFA reset. Management endpoints reject self-targeting. Own-security endpoints also reject an MFA reset that would remove the final active enrolled Super Admin.
 
 ## Acceptance Criteria
 
@@ -177,17 +208,18 @@ Phase 1 is complete only when:
 5. fresh installation creates no administrator until the one-time interactive bootstrap command runs;
 6. bootstrap and invitations create `pending_setup` accounts with unknown random hashes and expiring single-use setup links, never operator-selected passwords;
 7. setup tokens and reset tokens are stored only as SHA-256 hashes and cannot be reused or used after expiry;
-8. TOTP secrets are encrypted at rest, accepted codes cannot be replayed, and recovery codes are hashed and individually single-use;
+8. TOTP secrets are encrypted at rest, accepted codes cannot be replayed, and recovery codes are hashed and individually single-use; exhausting all established recovery codes does not make otherwise-valid TOTP MFA incomplete;
 9. recovery-code plaintext appears once and never enters session storage, audit, logs, or later props;
 10. password reset/MFA reset invalidate all privileged sessions; password change/recovery regeneration invalidate other sessions while preserving a recently reauthenticated current session;
 11. database status/security changes deny the next request even when physical session cleanup is delayed or forced to fail;
 12. Admin and Super Admin retain the approved fixed capability boundary, including own-security versus platform-security administration;
 13. no actor can manage their own account through administrator-management endpoints;
 14. concurrent administrator changes cannot eliminate the final active MFA-enrolled Super Admin;
-15. every committed identity/security mutation and its mandatory success audit are atomic; delivery occurs after commit;
-16. no sensitive value is present in audit properties, exception messages, console output, mail logs, or serialized models;
+15. every committed identity/security mutation, its `security_version` increment when required, and its mandatory success audit are atomic; delivery and physical session cleanup occur after commit;
+16. no sensitive value is present in audit properties, exception messages, console output, mail logs, serialized models, or plaintext queue/failed-job payloads;
 17. the Phase 0 focused suite remains green through a shared MFA-complete test helper;
 18. the forced-MFA deployment and rollback runbook preserves a recoverable path without restoring known credentials or disabling the new middleware.
+19. the final-Super-Admin invariant, operational middleware, administrator state, and UI all use the same canonical MFA-complete predicate, including valid empty recovery-code arrays.
 
 ## File Map
 
@@ -374,6 +406,7 @@ Assert:
 - `mfa_secret`, `mfa_recovery_codes`, `mfa_confirmed_at`, `mfa_last_used_timestep`, `security_version`, `password_changed_at`, and nullable unique `bootstrap_marker` exist;
 - raw database `mfa_secret` differs from the model value;
 - password, remember token, TOTP secret, recovery hashes, and bootstrap marker never serialize;
+- `hasCompletedMfaSetup()` is false for missing confirmation, missing secret, or `NULL` recovery-code state; it is true for both a non-empty established recovery-code array and an empty exhausted array;
 - `security_version` defaults to `1` in schema and model attributes;
 - token rows contain only SHA-256 token hashes, purpose, expiry/use times, subject, and optional creator;
 - session registry rows use the actual session ID as primary key and index `super_admin_id`;
@@ -487,6 +520,7 @@ Cover:
 - `verifyKeyNewer()` returns the accepted newer timestep and rejects replay;
 - eight recovery codes have sufficient entropy and normalized display grouping;
 - stored values are password hashes and each code is consumed once;
+- consuming the final established recovery code leaves `mfa_recovery_codes = []` and does not make `hasCompletedMfaSetup()` false;
 - code-set regeneration invalidates every previous hash.
 
 - [ ] **Step 2: Write failing token-service tests**
@@ -496,7 +530,8 @@ Prove:
 - issue returns raw token once but stores only SHA-256;
 - issuing a replacement invalidates prior unused tokens for that administrator and purpose;
 - expired, used, wrong-purpose, and wrong-subject tokens fail generically;
-- consume locks and marks the token used atomically;
+- consume locks both token and subject, allows the protected workflow to revalidate current subject state, and marks the token used atomically only when that mutation succeeds;
+- a stale-state rejection rolls back consumption so it cannot partially mutate the account or falsely mark the token used;
 - raw tokens never appear in model serialization or activity properties.
 
 - [ ] **Step 3: Write failing session-service tests**
@@ -505,7 +540,7 @@ Prove:
 
 - establish records the current Laravel session ID and security version;
 - validate rejects wrong administrator, wrong version, and missing registry rows;
-- invalidate-all increments authority separately from physical cleanup and removes all mapped rows;
+- invalidate-all performs registry/physical cleanup only and removes all mapped rows; it never increments `security_version` or mutates account authority;
 - invalidate-others preserves exactly the current registry/session;
 - with database sessions, only mapped privileged session IDs are deleted and ordinary user sessions remain;
 - with a non-database test store or forced physical-cleanup exception, a security-version mismatch still denies the next request;
@@ -544,6 +579,8 @@ PrivilegedSessionService
 ```
 
 Use constructor injection. Do not add interfaces. TOTP/recovery consumption methods require an already locked administrator row and save within the caller's transaction so the accepted step/code removal and mandatory audit commit together. Physical session deletion is after commit.
+
+`security_version` belongs to the protected business workflow: mutate account/security state, increment the version, and write the mandatory audit in one transaction. `PrivilegedSessionService` receives the already-committed version and owns cleanup hygiene only. If cleanup fails, the committed version mismatch still denies every stale cookie on its next request.
 
 - [ ] **Step 6: Run focused tests and dependency audit**
 
@@ -606,6 +643,8 @@ Cover HTML and JSON behavior for:
 - unauthenticated;
 - pending setup;
 - active without MFA;
+- active with confirmation but malformed missing secret or `NULL` recovery-code setup state;
+- active with valid TOTP and an empty exhausted recovery-code array, which remains MFA-complete;
 - suspended/inactive with a previously valid cookie;
 - complete session with current security version and registry row;
 - complete session with stale DB version;
@@ -694,6 +733,7 @@ Prove:
 - unknown email, wrong password, suspended, inactive, and pending-setup standard login return the same outward error;
 - login throttles on normalized email plus IP without exposing account existence;
 - valid password for active/no-MFA account regenerates session and enters setup stage only;
+- that existing active account reaches enrollment without a setup token or forced password change and remains active after enrollment completes;
 - valid password for active/MFA account regenerates session, ignores remember-me until MFA succeeds, and enters challenge stage;
 - challenge-stage sessions cannot reach any operation;
 - valid newer TOTP completes authentication, regenerates session again, records actual session ID/version, honors remember-me, and updates last login time/IP;
@@ -788,6 +828,7 @@ Prove:
 - zero-account execution prompts for identity data and creates exactly one `super_admin`, `pending_setup` account with `bootstrap_marker=platform`, a random unknown password hash, and one hashed setup token;
 - `bootstrap_marker` uniqueness prevents two different first accounts;
 - command queues an after-commit setup mail and prints only safe account/correlation information;
+- the queued setup mailable implements `ShouldQueue` and `ShouldBeEncrypted`; the raw setup token and full bearer URL are absent from plaintext `jobs.payload` and `failed_jobs.payload`;
 - mandatory audit failure rolls back account/token success state, while after-commit queue handoff failure leaves a resumable pending account and returns failure;
 - when the sole account is still `pending_setup` and no active account exists, an explicit interactive confirmation may replace the setup token and requeue mail without creating a second account;
 - once any bootstrap has completed or any other account exists, the command refuses ordinary execution.
@@ -801,6 +842,7 @@ Cover:
 - account, setup token, and mandatory success audit commit atomically; queued mail is after commit;
 - mail delivery failure does not activate/delete the pending account; resend replaces the old token;
 - valid link renders no-store setup page; invalid/expired/used link is generic;
+- consuming a setup link locks and revalidates the account; it rejects generically if the target no longer has a legitimate setup-required state;
 - password must satisfy the centralized 12-character mixed-case/number/symbol rule;
 - setup token is consumed atomically with password update, `password_changed_at`, and success audit; only after commit does the controller log in the guard, regenerate the session, and establish setup stage;
 - a consumed token cannot set the password twice;
@@ -814,13 +856,13 @@ php artisan test tests/Feature/SuperAdmin/PrivilegedBootstrapAndInvitationTest.p
 
 - [ ] **Step 4: Implement the command, queued Markdown mail, controller, and invitation endpoint**
 
-`PrivilegedSetupLinkMail` implements `ShouldQueue` and calls `afterCommit()`. Use the shared token service for bootstrap, invitation, resend, and consumption. Do not put the raw token into audit or console output.
+`PrivilegedSetupLinkMail` implements `ShouldQueue` and `ShouldBeEncrypted` and calls `afterCommit()`. Use the shared token service for bootstrap, invitation, resend, and consumption. Exercise the database queue in payload tests rather than relying only on a mail/queue fake. Do not put the raw token or full bearer URL into audit, console output, logs, plaintext queue payloads, or exception messages.
 
 Change current administrator creation to invitation semantics. Keep the current route name for compatibility in Phase 1, but remove password fields from accepted validation and payload. The target begins `pending_setup`, never `active`.
 
 - [ ] **Step 5: Implement enrollment and one-time recovery-code acknowledgement**
 
-Setup sequence:
+Pending bootstrap/invitation setup sequence:
 
 ```text
 password setup succeeds
@@ -839,6 +881,8 @@ password setup succeeds
 If acknowledgement is lost, restart the code-generation portion and replace all hashes. Never store plaintext codes in Laravel session payload.
 
 Generating or replacing an unconfirmed secret resets `mfa_last_used_timestep`; the acknowledgement token is hashed, purpose-bound, short-lived, and replaced whenever the recovery-code set changes.
+
+Existing active/no-MFA enrollment begins after a valid current-password login has already established `stage=setup`. It skips setup-token consumption and password creation, then follows the same TOTP verification and recovery acknowledgement steps; its status remains `active`.
 
 - [ ] **Step 6: Run focused tests, inspect command signature, and inspect queued mail**
 
@@ -877,8 +921,10 @@ Prove:
 
 - forgot endpoint always returns the same response for unknown, pending, suspended, inactive, and active emails;
 - only active accounts receive queued reset mail;
+- the queued reset mailable implements `ShouldQueue` and `ShouldBeEncrypted`; the raw reset token and full bearer URL are absent from plaintext `jobs.payload` and `failed_jobs.payload`;
 - limiter applies by normalized email/IP;
 - reset token is hashed, expires, is purpose-specific, and is one-time;
+- token consumption locks and revalidates the target; a token issued while active is rejected generically if the administrator is suspended, inactive, or moved into another inapplicable state before use;
 - reset applies strong password, rotates remember token, increments security version, writes success audit atomically, and invalidates all privileged sessions after commit;
 - MFA enrollment remains intact after password reset;
 - audit/session-cleanup failures cannot expose credentials or restore stale authority.
@@ -902,7 +948,7 @@ php artisan test tests/Feature/SuperAdmin/PrivilegedPasswordRecoveryTest.php
 
 - [ ] **Step 4: Implement reset and own-security controllers**
 
-Use queued after-commit Markdown mail, the token/session/MFA services, explicit Form Requests, row locks, and `PrivilegedAudit`. Generic public responses must not reveal account status or existence. Own MFA reset is intentionally implemented in Task 8 so it shares the final-Super-Admin invariant with platform-initiated resets.
+Use encrypted queued after-commit Markdown mail (`ShouldQueue` + `ShouldBeEncrypted`), the token/session/MFA services, explicit Form Requests, row locks, and `PrivilegedAudit`. Exercise the database queue in payload tests and inspect persisted payloads for bearer leakage. Generic public responses must not reveal account status or existence. Own MFA reset is intentionally implemented in Task 8 so it shares the final-Super-Admin invariant with platform-initiated resets.
 
 - [ ] **Step 5: Run focused authentication/security tests**
 
@@ -953,6 +999,7 @@ Cover:
 - suspended target may activate; inactive target returns to `pending_setup` through a fresh setup link rather than direct activation;
 - role updates are allowlisted to `admin|super_admin`;
 - another administrator's MFA reset preserves business status but enters setup-required condition and invalidates all sessions;
+- final-Super-Admin qualification calls the canonical model predicate and rejects malformed confirmation-only accounts while accepting an otherwise-valid account whose established recovery-code array is empty;
 - own MFA reset uses the same service, invalidates all old sessions, creates one fresh setup-only session after commit, and is rejected when it would remove the final active MFA-enrolled Super Admin;
 - success mutation and audit commit together; physical session cleanup runs after commit;
 - audit failure rolls back state/version changes;
@@ -1043,7 +1090,9 @@ Assert real controls and accessibility:
 - reauth clearly explains the 15-minute window and accepts password plus TOTP only;
 - Create Admin becomes Invite Administrator and has no password field;
 - management shows status, role, MFA/setup state and only backend-supported actions;
+- management/security pages consume the server-provided canonical MFA-complete boolean and recovery-code count; they never reconstruct setup completion from partial client-visible fields;
 - security page shows MFA status and recovery-code count, never secret/hashes;
+- exhausted recovery codes display a zero count and regeneration action without labeling MFA itself incomplete;
 - loading and error handling prevent duplicate submissions;
 - no UI presents bypass, disable-MFA-without-setup, hard-delete, or fake success controls.
 
@@ -1099,9 +1148,10 @@ Require:
 - database session driver/table confirmed for physical cleanup;
 - SMTP and queue worker verified with failed-job visibility;
 - `iconv`, `openssl`, and `xmlwriter` extensions available;
+- production host/container clock synchronization verified healthy and materially correct through the platform's NTP/time-sync tooling before TOTP enrollment or challenge traffic is enabled;
 - at least one recoverable current Super Admin password before rollout;
 - maintenance window and named operator;
-- stop on missing APP_KEY, failed mail/queue test, unsupported status migration, no recoverable account, or failing security tests.
+- stop on missing APP_KEY, failed mail/queue encryption/delivery test, unhealthy or materially incorrect system time, unsupported status migration, no recoverable account, or failing security tests.
 
 - [ ] **Step 2: Document fresh-install bootstrap**
 
@@ -1218,6 +1268,7 @@ Expected:
 
 - only explicit public/stage routes lack the complete operational middleware stack;
 - no raw security material enters audit methods or logs;
+- database `jobs` and `failed_jobs` payloads for setup/reset mail contain encrypted job commands and do not contain raw tokens or full bearer URLs;
 - remaining direct `actingAs` calls are intentional authentication-stage tests, not operational bypasses;
 - no client-provided field can set MFA, security-version, token-hash, session ownership, or bootstrap metadata.
 
@@ -1265,7 +1316,7 @@ Record:
 4. **TypeScript clean-code review:** no new `any`, unsafe assertion, secret persistence, or duplicated form-state logic;
 5. **code splitting:** N/A unless measurement shows QR/security pages materially affect the operational bundle; do not split small forms speculatively;
 6. **gauge improvements:** record before/after counts for password-only operational routes, unprotected privileged routes, known bootstrap credentials, and invalidatable privileged sessions;
-7. **security review:** verify enumeration resistance, CSRF, throttling, encrypted/hashed material, token expiry/use, TOTP replay, session fixation/versioning, open redirects, self-management, final-Super-Admin concurrency, audit redaction, and no-store headers;
+7. **security review:** verify enumeration resistance, CSRF, throttling, encrypted/hashed material, encrypted secret-bearing queue payloads, token expiry/use/current-state revalidation, TOTP replay and clock synchronization, canonical MFA-complete semantics, session fixation/versioning, open redirects, self-management, final-Super-Admin concurrency, audit redaction, and no-store headers;
 8. **reuse/dead-code:** remove only password-creation UI/code and legacy administrator audit writes made obsolete by this phase; preserve unrelated Phase 2–7 code;
 9. **verification-before-completion:** no pass/completion claim without fresh command output.
 
@@ -1283,6 +1334,7 @@ Attach to the handoff:
 - exact focused/full test, build, audit, route, migration, and browser results;
 - route inventory proving authentication + active + MFA middleware on every operational privileged route;
 - database evidence that TOTP secrets are encrypted and recovery/setup/reset values are hashed;
+- database queue/failed-job evidence that raw setup/reset tokens and full bearer URLs are not stored in plaintext;
 - session-registry evidence for all/other invalidation and security-version fail-closed behavior;
 - bootstrap/invitation mail queue evidence without raw token disclosure;
 - concurrency evidence that the final active MFA-enrolled Super Admin survives competing changes;
