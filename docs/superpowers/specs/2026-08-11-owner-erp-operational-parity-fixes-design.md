@@ -4,7 +4,7 @@
 
 **Status:** Proposed for implementation
 
-**Related plan:** `docs/superpowers/plans/2026-08-11-shop-owner-erp-operational-parity.md`
+**Related plan:** `docs/superpowers/plans/2026-08-11-owner-erp-operational-parity-fixes.md`
 
 ## Goal
 
