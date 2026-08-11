@@ -61,17 +61,18 @@ Phase 0 is complete only when all of the following are true:
 2. Both privileged roles retain the approved Phase 0 operational capabilities for registration review and account intervention.
 3. Critical authorization is represented by deterministic code capabilities, not Spatie permission rows or a configurable permission UI.
 4. Fresh migrations create no privileged account or known privileged password.
-5. The deployed seeded account can be rotated interactively without command-line password arguments, logged credentials, account deletion, or loss of the only recoverable Super Admin.
-6. New shop documents and customer Valid IDs are stored on the private `local` disk.
+5. The deployed seeded account can be rotated interactively without command-line password arguments, logged credentials, account deletion, or loss of the only recoverable Super Admin; the maintenance operation invalidates every database-backed session because the current session rows cannot reliably identify the `super_admin` guard.
+6. New shop documents and customer Valid IDs are stored on the private `local` disk, and their disk fields are server-owned metadata that request payloads cannot select or override.
 7. Existing public sensitive files can be dry-run, migrated in chunks, checksum-verified, reconciled, rerun, and safely restored for application rollback.
 8. No privileged/shop-owner payload exposes a private disk path or `/storage/*` URL for these documents.
-9. Document delivery enforces authentication or signed-link authority, object relationship, capability/scope, storage existence, and mandatory access audit before response creation.
+9. Document delivery enforces authentication or signed-link authority, object relationship, capability/scope, storage existence, and mandatory access audit before response creation; an authenticated actor requesting an out-of-scope object receives `404`.
 10. Audit failure prevents document bytes from being returned.
 11. Sensitive responses use `private, no-store`, `nosniff`, sanitized filenames, safe MIME handling, and attachment disposition for unknown/risky types.
 12. Routine hard-delete routes, controller methods, and visible controls for administrators, shops, and users are absent.
 13. Existing records remain intact when old DELETE URLs are requested.
-14. Canonical registration mutations exist once under `/admin`; legacy registration GET redirects safely and legacy mutation URLs do not mutate.
-15. No Phase 1+ feature is introduced.
+14. Canonical registration mutations exist once under `/admin`; duplicate `/superAdmin` mutations are removed in the first authorization task, the legacy registration GET redirects safely, and legacy mutation URLs do not mutate.
+15. Every new privileged audit record includes normalized actor, event, target, source, IP/context, and correlation metadata without secrets or unrestricted request data.
+16. No Phase 1+ feature is introduced.
 
 ## File Map
 
@@ -218,7 +219,9 @@ Test representative requests and route middleware inventory:
 - regular Admin gets `403` for administrator management, plan mutation, subscription intervention, and appeal decision;
 - regular Admin can load the canonical registration queue and reach account-intervention endpoints with valid fixtures;
 - Super Admin is not denied by any of the six capability middleware entries;
-- every restricted named route declares the expected `privileged.capability:<name>` middleware.
+- every restricted named route declares the expected `privileged.capability:<name>` middleware;
+- the route collection contains exactly one canonical registration approval route and one canonical rejection route;
+- both legacy `/superAdmin` registration mutation URLs return `404`/`405` and leave registration state unchanged.
 
 For mutation tests, assert both the response and unchanged database state when denied. Do not treat a hidden frontend control as authorization evidence.
 
@@ -262,7 +265,7 @@ Apply the matrix:
 | Subscription cancel/upgrade/downgrade endpoints | `intervene_subscriptions` |
 | Appeal approval/rejection | `resolve_appeals` |
 
-Add the canonical registration list/approve/reject routes under the protected `/admin` group in this task so capability behavior is testable. Leave the existing legacy declarations reachable only until Task 8 removes duplicate mutations and reduces compatibility to one GET redirect.
+Add the canonical registration list/approve/reject routes under the protected `/admin` group in this task. Remove both duplicate `/superAdmin` approval/rejection declarations immediately; no legacy mutation bypass may remain between tasks. Keep at most one safe legacy registration GET temporarily, protected by the existing privileged authentication boundary. Task 8 will reduce that GET compatibility path to one redirect and perform only non-security cleanup.
 
 The appeal queue GET remains available without `resolve_appeals`; only decisions require it. Platform monitoring remains available to both roles.
 
@@ -273,9 +276,10 @@ Run:
 ```powershell
 php artisan test tests/Unit/Models/SuperAdminCapabilityTest.php tests/Feature/SuperAdmin/PhaseZeroAuthorizationTest.php
 php artisan route:list --path=admin --except-vendor
+php artisan route:list --path=superAdmin/shop-owner-registration --except-vendor
 ```
 
-Expected: tests PASS; route output shows the capability middleware on each restricted route.
+Expected: tests PASS; route output shows the capability middleware on each restricted route, exactly one canonical approval/rejection pair, and no legacy registration mutation.
 
 - [ ] **Step 9: Commit**
 
@@ -298,15 +302,18 @@ Verify that:
 - the log name is `privileged`;
 - the causer is the `SuperAdmin` model;
 - actor type, guard, ID, role, event, target type, and target ID are present;
+- every record contains a UUID correlation ID and an explicit `source`;
+- HTTP events record `source=http` and the request IP, reuse a valid inbound `X-Correlation-ID` UUID, and generate a UUID when that header is absent or invalid;
+- console events record `source=console`, use an operation UUID generated before mutation, and do not invent an HTTP request or IP address;
 - event-specific IDs are allowed;
 - passwords, TOTP values, recovery codes, tokens, raw filenames, paths, document bytes, and unrestricted request data are never accepted into properties.
 
 Use specialized public methods for Phase 0 rather than a caller-supplied arbitrary property bag:
 
 ```php
-$audit->documentAccessInitiated($admin, $document, $shopOwner, $mime, $disposition);
-$audit->customerValidIdAccessInitiated($admin, $user, $mime, $disposition);
-$audit->credentialRotatedByConsole($admin);
+$audit->documentAccessInitiated($request, $admin, $document, $shopOwner, $mime, $disposition);
+$audit->customerValidIdAccessInitiated($request, $admin, $user, $mime, $disposition);
+$audit->credentialRotatedByConsole($admin, $operationId);
 ```
 
 - [ ] **Step 2: Run the audit test and verify it fails**
@@ -326,6 +333,9 @@ private function write(
     string $event,
     ?SuperAdmin $actor,
     Model $subject,
+    string $source,
+    string $correlationId,
+    ?string $ipAddress,
     array $properties,
 ): void {
     $logger = activity('privileged')->performedOn($subject);
@@ -338,7 +348,9 @@ private function write(
 }
 ```
 
-Keep the service concrete and injectable; do not add an interface with one implementation. Do not catch storage/database exceptions inside the service. Callers that require mandatory audit must fail closed when this method throws.
+The private writer owns the fixed base schema so caller-supplied event metadata cannot override actor, event, target, source, correlation, or IP/context fields. HTTP methods validate an inbound correlation header as a UUID before reuse and otherwise generate one with `Str::uuid()`. Console callers generate one operation UUID before mutation, pass it to every audit write for that operation, and may print only that safe identifier for support correlation.
+
+Keep the service concrete and injectable; do not add an interface with one implementation or a new global request-correlation subsystem in Phase 0. Do not catch storage/database exceptions inside the service. Callers that require mandatory audit must fail closed when this method throws.
 
 - [ ] **Step 4: Run the audit test and verify it passes**
 
@@ -370,9 +382,11 @@ Tests must prove:
 2. the command accepts only a non-secret email argument; it has no password option;
 3. current and replacement passwords are requested through hidden interactive prompts;
 4. an incorrect current password makes no change and emits no success audit;
-5. a valid current password rotates the hash, keeps the account ID/role/status, replaces the remember token, invalidates database sessions, and writes `super_admin_credential_rotated` without credential data;
-6. audit failure rolls back the password/session mutation;
-7. the only active Super Admin is rotated in place, never disabled or deleted.
+5. a valid current password rotates the hash, keeps the account ID/role/status, replaces the remember token, clears every row from the configured database session table, and writes `super_admin_credential_rotated` without credential data;
+6. the command does not target `sessions.user_id`, because the current `DatabaseSessionHandler` obtains that value from the default `web` guard and therefore cannot reliably distinguish Super Admin sessions;
+7. the console output and audit row share the same generated operation UUID and record `source=console` without a fabricated IP address;
+8. audit failure rolls back the password/session mutation;
+9. the only active Super Admin is rotated in place, never disabled or deleted.
 
 Use a synthetic test password, not the historical production value:
 
@@ -417,10 +431,12 @@ Rules:
 - reject reuse of the current password;
 - wrap password, remember-token, database-session invalidation, and mandatory audit in one local transaction;
 - never print, log, audit, or pass passwords through command arguments/environment variables;
-- report only account ID/email and generic success/failure;
+- generate one UUID before mutation, pass it to the audit service, and report only account ID/email, that safe correlation ID, and generic success/failure;
 - preserve status and role.
 
-Because the repository's production default is database sessions, invalidate the `sessions` table inside the transaction. If the deployed session driver is not `database`, stop before mutation and require the runbook's verified external session-store invalidation procedure; do not claim sessions were invalidated.
+Before prompting for credentials, require the configured session driver to be `database` and verify that its configured table exists and is writable; otherwise stop before mutation. The current Laravel database session handler derives `user_id` from the default `web` guard, so `sessions.user_id` is not a trustworthy Super Admin identifier. Never issue a targeted `where user_id = $admin->id()` deletion.
+
+While the application is in maintenance mode, delete every row from the configured database session table inside the same local transaction as credential rotation and mandatory audit, then assert the table is empty before success. This deliberately logs out all database-backed users. If the deployment uses a non-database session store, stop and require a separately verified store-specific invalidation procedure; do not claim sessions were invalidated.
 
 - [ ] **Step 5: Run the credential tests and inspect the command signature**
 
@@ -453,7 +469,7 @@ Assert:
 
 - `shop_documents.disk` exists, is non-null, and defaults to `public` for legacy/new rows until writers switch;
 - `users.valid_id_disk` exists, is non-null, and defaults to `public`;
-- both values are fillable only through explicit application code;
+- both values persist correctly when assigned explicitly by trusted application code;
 - `ShopDocument::toArray()` excludes `file_path`;
 - `User::toArray()` excludes `valid_id_path`.
 
@@ -479,7 +495,7 @@ Schema::table('users', function (Blueprint $table): void {
 });
 ```
 
-Do not move files in a schema migration. Do not add checksum/version/expiration columns in Phase 0. Add raw storage paths to `$hidden`; add disk fields to the existing explicit `$fillable` arrays.
+Do not move files in a schema migration. Do not add checksum/version/expiration columns in Phase 0. Add raw storage paths to `$hidden`. If repository conventions require the disk fields in the existing explicit `$fillable` arrays, treat that only as an internal persistence detail: no Form Request, controller validation rule, DTO, or mass-assigned client payload may expose `disk` or `valid_id_disk`.
 
 - [ ] **Step 4: Run the schema/model tests**
 
@@ -516,7 +532,9 @@ git commit -m "security: track sensitive document storage disks"
 With `Storage::fake('local')` and `Storage::fake('public')`, prove:
 
 - new full shop registration writes each `ShopDocument` to `local` and stores `disk=local`;
-- rejected-shop resubmission writes replacement files to the authoritative disk and deletes old files from their recorded disk only;
+- malicious `disk` and `valid_id_disk` request values cannot change the trusted server-selected `local` disk;
+- rejected-shop resubmission stores and verifies the new local file, commits the database reference change, and only then deletes the old file from its recorded disk;
+- a resubmission database failure preserves the old row and old file and removes only the newly stored orphan;
 - new customer registration writes the Valid ID to `local` and stores `valid_id_disk=local`;
 - upgrade-request reuse reads the source document from `$source->disk`, not a hard-coded public disk.
 
@@ -530,7 +548,7 @@ Cover these paths:
 |---|---|---|
 | Unauthenticated | Any private route | Login redirect/401 |
 | Admin | Pending/rejected registration document | 200 |
-| Admin | Approved registered-shop document | 403 |
+| Admin | Approved registered-shop document outside operational scope | 404 |
 | Super Admin | Approved registered-shop document | 200 |
 | Privileged actor | Document under a different `{shopOwner}` | 404 |
 | Admin/Super Admin | Customer Valid ID within account scope | 200 |
@@ -546,7 +564,8 @@ Also assert:
 - a successful response creates the mandatory access audit before returning content;
 - replacing `PrivilegedAudit` in the container with a throwing test double results in `500` and no document bytes;
 - headers include `Cache-Control: private, no-store` and `X-Content-Type-Options: nosniff`;
-- safe JPEG/PNG/PDF types may use inline disposition; HTML, SVG, executable-like, mismatched, or unknown types use `application/octet-stream` and attachment disposition;
+- only server-side content inspection plus an allowlisted matching extension may classify a file as safe JPEG/PNG/PDF; client MIME and filenames are ignored;
+- HTML, SVG, executable-like, mismatched, or unknown content/extension combinations use `application/octet-stream` and attachment disposition;
 - filenames are generated from document type/record ID plus an allowlisted extension, never from stored path or client filename.
 
 Privileged access must use `PrivilegedAudit`. Authenticated Shop Owner and signed resubmission access must also write synchronously to Spatie `activity_log` with a fixed event schema appropriate to that actor/authority; do not force non-privileged actors into a fake Super Admin identity, and do not log signed-link parameters or tokens.
@@ -573,7 +592,9 @@ ShopDocument::create([
 ]);
 ```
 
-For customer IDs, write to `local` and persist `valid_id_disk=local`. Every replacement/delete/read in `ShopOwnerAuthController` must use the row's recorded disk. `SubmitShopOwnerUpgradeRequest` must use `Storage::disk($source->disk)` and reject unsupported disk names.
+For customer IDs, write to `local` and persist `valid_id_disk=local`. Assign both disk values from trusted application code after validation; never read them from request input. During mixed-state rollout, readers accept only the explicit `local` and `public` disk allowlist and fail closed for unsupported stored values.
+
+Every replacement/delete/read in `ShopOwnerAuthController` must use the row's recorded disk. Resubmission ordering is mandatory: store and verify the new local file, perform the database reference mutation in a transaction, commit, then delete the old file from its recorded disk. If the database mutation fails, the old reference and old file remain authoritative and only the new orphan may be removed. `SubmitShopOwnerUpgradeRequest` must use `Storage::disk($source->disk)` and reject unsupported disk names.
 
 Never call `Storage::url()` for these records.
 
@@ -603,12 +624,14 @@ resolve actor/authority
 → verify capability and operational scope
 → verify parent/document relationship
 → validate supported recorded disk and file existence
-→ determine safe server-side MIME/disposition/filename
+→ inspect file content and determine safe MIME/disposition/filename
 → synchronously write access audit
 → create filesystem response
 ```
 
-For regular Admin, operational scope is a registration case (`pending` or `rejected`). Super Admin may additionally access approved/suspended registered-shop documents for legitimate administration. Do not infer scope from a client parameter.
+Derive MIME from server-side content inspection (for example, filesystem/Fileinfo-backed detection), never from the client MIME, filename, or stored extension alone. Compare that result with an allowlisted extension derived from known document metadata. Any unknown, risky, or mismatched content/extension combination returns `application/octet-stream` with attachment disposition.
+
+For regular Admin, operational scope is a registration case (`pending` or `rejected`). Super Admin may additionally access approved/suspended registered-shop documents for legitimate administration. Do not infer scope from a client parameter. Use `403` for a missing capability and `404` for an authenticated actor requesting a document outside their authorized object scope, without a success access audit.
 
 - [ ] **Step 7: Replace exposed paths with route URLs**
 
@@ -769,7 +792,7 @@ git add -- routes/web.php app/Http/Controllers/SuperAdminController.php resource
 git commit -m "security: remove routine privileged hard deletes"
 ```
 
-## Task 8: Canonicalize Registration Mutations and Keep GET-Only Compatibility
+## Task 8: Finalize GET-Only Registration Compatibility
 
 **Files:**
 
@@ -777,7 +800,7 @@ git commit -m "security: remove routine privileged hard deletes"
 - Modify: `routes/web.php`
 - Modify only if route URL props require it: `resources/js/Pages/superAdmin/Shops/ShopOwnerRegistrationView.tsx`
 
-- [ ] **Step 1: Write failing route ownership tests**
+- [ ] **Step 1: Extend route ownership regression tests**
 
 Assert:
 
@@ -785,7 +808,8 @@ Assert:
 - `/superAdmin/shop-owner-registration-view` is GET-only and redirects to the canonical index;
 - old `/superAdmin/shop-owner-registration/{id}/approve` and `/reject` POSTs return `404`/`405` and do not change state;
 - route collection contains exactly one mutation route for each registration decision;
-- both canonical mutations require `review_registrations`.
+- both canonical mutations require `review_registrations`;
+- no legacy method other than the single GET compatibility route is registered.
 
 - [ ] **Step 2: Run the route tests and verify failure**
 
@@ -793,11 +817,11 @@ Assert:
 php artisan test tests/Feature/SuperAdmin/PhaseZeroAuthorizationTest.php --filter=registration_route
 ```
 
-Expected: FAIL because duplicate `/superAdmin` mutations still exist and the canonical `/admin` registration routes are incomplete.
+Expected: authorization and mutation-ownership assertions from Task 1 remain PASS. New compatibility assertions may FAIL because duplicate legacy GET declarations have not yet been reduced to one redirect. If a legacy mutation exists, stop and repair the Task 1 containment regression before continuing.
 
-- [ ] **Step 3: Move mutation ownership and add one safe redirect**
+- [ ] **Step 3: Consolidate legacy GET compatibility**
 
-Define the canonical routes in the protected `/admin` group. Remove registration mutation declarations from both duplicate `/superAdmin` groups. Define one named legacy GET redirect; do not proxy POST/PUT/PATCH/DELETE.
+Keep the canonical `/admin` mutation ownership established in Task 1 unchanged. Remove duplicate legacy registration GET declarations and define one named, authenticated redirect to the canonical index; do not proxy POST/PUT/PATCH/DELETE. Treat any reintroduced legacy mutation as a security regression, not deferred cleanup.
 
 Do not perform broad route/controller cleanup here. Remaining harmless duplicate GET structure belongs to Phase 7.
 
@@ -814,7 +838,7 @@ Expected: PASS; one canonical approval and one canonical rejection mutation appe
 
 ```powershell
 git add -- routes/web.php tests/Feature/SuperAdmin/PhaseZeroAuthorizationTest.php resources/js/Pages/superAdmin/Shops/ShopOwnerRegistrationView.tsx
-git commit -m "security: canonicalize registration decisions"
+git commit -m "refactor: finalize registration GET compatibility"
 ```
 
 Only add the TSX file if it actually changed.
@@ -831,10 +855,11 @@ Include:
 
 - verified database and public/private storage backups;
 - confirmed console access by an authorized operator;
-- confirmed production session driver and session invalidation method;
+- confirmed production session driver, configured session table, and permission to clear all database-backed sessions;
+- verified from the deployed framework/application behavior that session rows cannot reliably identify the `super_admin` guard; do not target `sessions.user_id`;
 - count of active Super Admins and identification of the recoverable account;
 - counts of `ShopDocument` and `User` Valid ID records by disk/path presence;
-- maintenance window because public-file removal and credential/session rotation are security-sensitive;
+- maintenance window because public-file removal, credential rotation, and the deliberate global database-session logout are security-sensitive;
 - stop on missing/conflicting files, failed audit writes, unsupported session driver, no recoverable Super Admin, or failed focused tests.
 
 - [ ] **Step 2: Document the exact forward sequence**
@@ -844,8 +869,8 @@ Include:
 2. Back up DB and both storage roots.
 3. Deploy additive disk metadata + mixed-disk readers + private writers.
 4. Run database migrations.
-5. Rotate the compromised seeded credential interactively.
-6. Confirm old credential fails and the replacement succeeds.
+5. Rotate the compromised seeded credential interactively; this clears all database sessions.
+6. Confirm the old credential fails, the replacement succeeds, the configured session table is empty, and the command/audit correlation IDs match.
 7. Run sensitive-document migration with --dry-run.
 8. Resolve every missing/conflict result; do not guess.
 9. Run the real migration in bounded chunks.
@@ -866,7 +891,8 @@ Rollback order:
 4. keep private copies until rollback validation completes;
 5. never restore the known password, hard-delete routes, or missing capability checks;
 6. treat credential rotation as forward-only;
-7. if rollback would reintroduce public exposure or destructive routes, stop and roll forward with a corrective patch instead.
+7. do not restore cleared sessions; affected users must authenticate again after maintenance;
+8. if rollback would reintroduce public exposure or destructive routes, stop and roll forward with a corrective patch instead.
 
 - [ ] **Step 4: Verify runbook command names against Artisan**
 
