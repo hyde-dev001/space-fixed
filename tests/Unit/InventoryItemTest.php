@@ -157,7 +157,7 @@ class InventoryItemTest extends TestCase
 
         try {
             $item->decrementStock(2, 'invalid_type', 'Invalid movement', $this->user->id);
-            $this->fail('Expected movement insertion to fail.');
+            $this->fail('Expected invalid movement type to be rejected.');
         } catch (\InvalidArgumentException) {
             $this->assertSame(5, $item->fresh()->available_quantity);
             $this->assertSame(0, $item->stockMovements()->count());
