@@ -58,7 +58,7 @@ final class ErpWorkspaceNavigationService
     public function __construct(private readonly ErpRouteCatalog $catalog) {}
 
     /**
-     * @return array<string, array{slug: string, label: string, description: string, pages: array<int, array{label: string, routeName: string, url: string}>}>
+     * @return array<string, array{slug: string, label: string, description: string, pages: array<int, array{label: string, routeName: string, url: string, groupKey: string|null, groupLabel: string|null, groupOrder: int|null, pageOrder: int}>}>
      */
     public function definitions(): array
     {
@@ -84,7 +84,7 @@ final class ErpWorkspaceNavigationService
     }
 
     /**
-     * @return array{key: string, slug: string, label: string, description: string, pages: array<int, array{label: string, routeName: string, url: string}>}|null
+     * @return array{key: string, slug: string, label: string, description: string, pages: array<int, array{label: string, routeName: string, url: string, groupKey: string|null, groupLabel: string|null, groupOrder: int|null, pageOrder: int}>}|null
      */
     public function forKey(string $moduleKey): ?array
     {
@@ -94,7 +94,7 @@ final class ErpWorkspaceNavigationService
     }
 
     /**
-     * @return array{key: string, slug: string, label: string, description: string, pages: array<int, array{label: string, routeName: string, url: string}>}|null
+     * @return array{key: string, slug: string, label: string, description: string, pages: array<int, array{label: string, routeName: string, url: string, groupKey: string|null, groupLabel: string|null, groupOrder: int|null, pageOrder: int}>}|null
      */
     public function forSlug(string $slug): ?array
     {
@@ -120,7 +120,7 @@ final class ErpWorkspaceNavigationService
 
     /**
      * @param  array{slug: string, label: string, description: string}  $definition
-     * @return array{key: string, slug: string, label: string, description: string, pages: array<int, array{label: string, routeName: string, url: string}>}
+     * @return array{key: string, slug: string, label: string, description: string, pages: array<int, array{label: string, routeName: string, url: string, groupKey: string|null, groupLabel: string|null, groupOrder: int|null, pageOrder: int}>}
      */
     private function payload(string $moduleKey, array $definition): array
     {
@@ -134,7 +134,7 @@ final class ErpWorkspaceNavigationService
     }
 
     /**
-     * @return array<int, array{label: string, routeName: string, url: string}>
+     * @return array<int, array{label: string, routeName: string, url: string, groupKey: string|null, groupLabel: string|null, groupOrder: int|null, pageOrder: int}>
      */
     private function pagesForKey(string $moduleKey): array
     {
@@ -159,6 +159,16 @@ final class ErpWorkspaceNavigationService
                 'label' => (string) $label,
                 'routeName' => $routeName,
                 'url' => route($routeName),
+                'groupKey' => isset($entry['navigation_page_group'])
+                    ? (string) $entry['navigation_page_group']
+                    : null,
+                'groupLabel' => isset($entry['navigation_page_group_label'])
+                    ? (string) $entry['navigation_page_group_label']
+                    : null,
+                'groupOrder' => isset($entry['navigation_page_group_order'])
+                    ? (int) $entry['navigation_page_group_order']
+                    : null,
+                'pageOrder' => (int) ($entry['navigation_order'] ?? 1000),
                 '_order' => (int) ($entry['navigation_order'] ?? 1000),
                 '_index' => count($pages),
             ];

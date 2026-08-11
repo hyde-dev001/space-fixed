@@ -28,6 +28,10 @@ type OwnerErpPage = {
   label: string;
   routeName: string;
   url: string;
+  groupKey?: string | null;
+  groupLabel?: string | null;
+  groupOrder?: number | null;
+  pageOrder?: number | null;
 };
 
 type OwnerErpModule = {
@@ -190,6 +194,7 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
     {}
   );
   const subMenuRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [openModuleGroup, setOpenModuleGroup] = useState<string | null>(null);
 
   // Check if menu item should be visible based on shop owner's registration and business type
   const isModuleVisible = useCallback((menuItem: { moduleKey?: ShopModuleKey }) => {
@@ -313,6 +318,55 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
     return currentPath === pagePath || currentPath.startsWith(`${pagePath}/`);
   }, [url]);
 
+  const scopedModuleNavigation = useMemo(() => {
+    const directPages: OwnerErpPage[] = [];
+    const groups = new Map<string, {
+      key: string;
+      label: string;
+      order: number;
+      pages: OwnerErpPage[];
+    }>();
+
+    activeModule?.pages.forEach((page) => {
+      if (!page.groupKey) {
+        directPages.push(page);
+        return;
+      }
+
+      const existing = groups.get(page.groupKey);
+      if (existing) {
+        existing.pages.push(page);
+        return;
+      }
+
+      groups.set(page.groupKey, {
+        key: page.groupKey,
+        label: page.groupLabel || page.groupKey,
+        order: page.groupOrder ?? Number.MAX_SAFE_INTEGER,
+        pages: [page],
+      });
+    });
+
+    const sortPages = (pages: OwnerErpPage[]) => pages.sort((left, right) => (
+      (left.pageOrder ?? Number.MAX_SAFE_INTEGER) - (right.pageOrder ?? Number.MAX_SAFE_INTEGER)
+    ));
+
+    sortPages(directPages);
+    const groupedPages = Array.from(groups.values())
+      .map((group) => ({ ...group, pages: sortPages(group.pages) }))
+      .sort((left, right) => left.order - right.order);
+
+    return { directPages, groupedPages };
+  }, [activeModule]);
+
+  useEffect(() => {
+    const activeGroup = scopedModuleNavigation.groupedPages.find((group) => (
+      group.pages.some((page) => isScopedPageActive(page.url))
+    ));
+
+    setOpenModuleGroup(activeGroup?.key ?? null);
+  }, [isScopedPageActive, scopedModuleNavigation]);
+
   const renderScopedModuleItems = () => {
     if (!activeModule) {
       return null;
@@ -333,7 +387,7 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
           )}
         </h2>
         <ul className="flex flex-col gap-4">
-          {activeModule.pages.map((page) => {
+          {scopedModuleNavigation.directPages.map((page) => {
             const active = isScopedPageActive(page.url);
 
             return (
@@ -351,6 +405,64 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
                     <span className="menu-item-text">{page.label}</span>
                   )}
                 </Link>
+              </li>
+            );
+          })}
+          {scopedModuleNavigation.groupedPages.map((group) => {
+            const isOpen = openModuleGroup === group.key;
+
+            return (
+              <li key={group.key}>
+                <button
+                  type="button"
+                  aria-expanded={isOpen}
+                  onClick={() => setOpenModuleGroup((current) => current === group.key ? null : group.key)}
+                  className={`menu-item group ${isOpen ? "menu-item-active" : "menu-item-inactive"} cursor-pointer ${!isExpanded && !isHovered
+                      ? "lg:justify-center"
+                      : "lg:justify-start"
+                    }`}
+                >
+                  <span className={`menu-item-icon-size w-6 h-6 ${isOpen ? "menu-item-icon-active" : "menu-item-icon-inactive"}`}>
+                    <BoxIcon className="w-5 h-5" />
+                  </span>
+                  {(isExpanded || isHovered || isMobileOpen) && (
+                    <span className="menu-item-text">{group.label}</span>
+                  )}
+                  {(isExpanded || isHovered || isMobileOpen) && (
+                    <svg
+                      className={`ml-auto w-5 h-5 transition-transform duration-200 ${isOpen ? "rotate-180 text-brand-500" : ""}`}
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M6 9l6 6 6-6" />
+                    </svg>
+                  )}
+                </button>
+                {isOpen && (isExpanded || isHovered || isMobileOpen) && (
+                  <ul className="mt-2 space-y-1 ml-9">
+                    {group.pages.map((page) => {
+                      const active = isScopedPageActive(page.url);
+
+                      return (
+                        <li key={page.routeName}>
+                          <Link
+                            href={page.url}
+                            prefetch={SIDEBAR_PREFETCH}
+                            cacheFor={SIDEBAR_PREFETCH_CACHE}
+                            className={`menu-dropdown-item ${active ? "menu-dropdown-item-active" : "menu-dropdown-item-inactive"}`}
+                          >
+                            {page.label}
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
               </li>
             );
           })}
