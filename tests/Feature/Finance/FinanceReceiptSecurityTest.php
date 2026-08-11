@@ -69,6 +69,16 @@ class FinanceReceiptSecurityTest extends TestCase
             ->assertOk();
     }
 
+    public function test_owner_finance_dashboard_endpoint_resolves_erp_tenant_context(): void
+    {
+        $shop = $this->shop();
+
+        $this->actingAs($shop, 'shop_owner')
+            ->getJson('/api/shop-owner/finance/dashboard')
+            ->assertOk()
+            ->assertJsonStructure(['period', 'primary', 'supporting', 'trend', 'definitions', 'integrity_warnings']);
+    }
+
     private function expense(int $shopId, ?string $path = null): Expense
     {
         return Expense::create([
