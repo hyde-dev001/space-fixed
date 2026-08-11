@@ -624,6 +624,7 @@ $routeBuckets = [
         'shop_owner.finance.expenses.receipt.upload',
         'shop_owner.finance.expenses.receipt.download',
         'shop_owner.finance.expenses.receipt.delete',
+        'shop_owner.finance.dashboard.summary',
         'shop_owner.finance.tax-rates.index',
         'shop_owner.payslip_approval.batch_final_approve',
         'shop_owner.payslip_approval.final_approve',
@@ -1863,8 +1864,11 @@ $ownerOperationalApiRouteGroups = [
     [
         'page_route' => 'shop-owner.erp.finance.dashboard',
         'risk_tier' => 'financial',
-        'domain_rule' => 'Owner tax-rate reads remain scoped to the authenticated company and Finance tax policy checks.',
-        'routes' => ['shop_owner.finance.tax-rates.index'],
+        'domain_rule' => 'Owner Finance dashboard and tax-rate reads remain scoped to the authenticated company and Finance policy checks.',
+        'routes' => [
+            'shop_owner.finance.dashboard.summary',
+            'shop_owner.finance.tax-rates.index',
+        ],
     ],
     [
         'page_route' => 'shop-owner.erp.hr.attendance',

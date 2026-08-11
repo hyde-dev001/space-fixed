@@ -27,6 +27,7 @@ use App\Http\Controllers\Api\RefundApprovalController;
 use App\Http\Controllers\Erp\UploadInventoryController;
 use App\Http\Controllers\Api\Finance\ExpenseController as FinanceExpenseController;
 use App\Http\Controllers\Api\Finance\InvoiceController as FinanceInvoiceController;
+use App\Http\Controllers\Api\Finance\FinanceSummaryController;
 use App\Http\Controllers\Api\Finance\TaxRateController as FinanceTaxRateController;
 use App\Http\Controllers\Erp\HR\AttendanceController as HrAttendanceController;
 use App\Http\Controllers\Erp\HR\PayrollBatchController as HrPayrollBatchController;
@@ -69,6 +70,9 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
     // FINANCE OPERATIONS (ERP owner mode)
     // ============================================
     Route::prefix('finance')->group(function () {
+        Route::get('/dashboard', FinanceSummaryController::class)
+            ->name('shop_owner.finance.dashboard.summary');
+
         Route::prefix('invoices')->group(function () {
             Route::get('/', [FinanceInvoiceController::class, 'index'])->name('shop_owner.finance.invoices.index');
             Route::get('/{id}', [FinanceInvoiceController::class, 'show'])->name('shop_owner.finance.invoices.show');
