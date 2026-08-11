@@ -619,12 +619,12 @@ export function useTaxRates() {
   return useQuery({
     queryKey: queryKeys.taxRates,
     queryFn: async () => {
-      const response = await api.get('/api/finance/session/tax-rates');
+      const response = await api.get('/api/finance/tax-rates');
       if (!response.ok) {
-        // Tax rates are optional - return empty array on error
-        return [];
+        throw new Error(response.error || 'Failed to load tax rates');
       }
-      return response.data || [];
+      const data = response.data?.data || response.data;
+      return Array.isArray(data) ? data : [];
     },
   });
 }

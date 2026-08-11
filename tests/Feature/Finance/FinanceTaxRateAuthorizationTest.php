@@ -3,6 +3,7 @@
 namespace Tests\Feature\Finance;
 
 use App\Models\User;
+use App\Models\Finance\TaxRate;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\PermissionRegistrar;
@@ -61,5 +62,23 @@ class FinanceTaxRateAuthorizationTest extends TestCase
         $this->getJson('/api/finance/tax-rates')->assertOk();
         $this->getJson('/api/finance/invoices')->assertForbidden();
         $this->getJson('/api/finance/expenses')->assertForbidden();
+    }
+
+    public function test_tax_rate_reads_are_tenant_scoped(): void
+    {
+        $user = User::factory()->create(['shop_owner_id' => 1]);
+        $user->givePermissionTo('manage-finance-tax');
+        $otherShopRate = TaxRate::create([
+            'shop_id' => 2,
+            'name' => 'Other Shop VAT',
+            'code' => 'OTHER-VAT',
+            'rate' => 12,
+            'type' => 'percentage',
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($user, 'user')
+            ->getJson('/api/finance/tax-rates/'.$otherShopRate->id)
+            ->assertNotFound();
     }
 }

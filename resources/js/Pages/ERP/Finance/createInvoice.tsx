@@ -76,7 +76,7 @@ export default function FinanceCreateInvoice() {
 	const [loading, setLoading] = useState(false);
 
 	// React Query hooks - automatically handle loading, caching, refetching
-	const { data: taxRates = [], isLoading: isLoadingTaxRates } = useTaxRates();
+	const { data: taxRates = [], isLoading: isLoadingTaxRates, isError: isTaxRatesError } = useTaxRates();
 
 	const [invoiceNumber, setInvoiceNumber] = useState("INV-" + Date.now());
 	const [customerName, setCustomerName] = useState("");
@@ -583,6 +583,9 @@ export default function FinanceCreateInvoice() {
 								</div>
 							</div>
 
+							{isTaxRatesError && (
+								<p className="text-xs text-red-600 dark:text-red-400">Tax rates could not be loaded. Check your Finance tax access.</p>
+							)}
 							{taxRates.length > 0 && (
 								<div className="col-span-full mt-3">
 									<label className="text-xs text-gray-600 dark:text-gray-400">Tax Rate</label>
