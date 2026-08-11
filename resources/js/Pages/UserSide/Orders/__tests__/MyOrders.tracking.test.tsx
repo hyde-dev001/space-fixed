@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import MyOrders from '../MyOrders';
 
@@ -36,6 +36,28 @@ const order: any = {
   delivery_window: 'morning',
 };
 
+const trackingPayload = {
+  shipment: {
+    id: 12,
+    purpose: 'retail_delivery',
+    status: 'active',
+    source_type: 'order',
+    legs: [{
+      id: 22,
+      sequence: 1,
+      leg_type: 'outbound',
+      status: 'in_transit',
+      scheduled_delivery_date: '2026-07-18',
+      delivery_window: 'morning',
+      origin_snapshot: { name: 'Urban Kicks Store', address: 'Cavite' },
+      destination_snapshot: { name: 'Mia Santos', address: 'Cavite' },
+    }],
+    events: [],
+  },
+};
+
+const fetchMock = vi.fn();
+
 vi.mock('@inertiajs/react', () => ({
   Head: () => null,
   Link: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => <a href={href} {...props}>{children}</a>,
@@ -48,6 +70,10 @@ vi.mock('../../Shared/UserModal', () => ({ default: { fire: vi.fn() } }));
 describe('MyOrders delivery tracking', () => {
   beforeEach(() => {
     Object.assign(order, {
+      status: 'processing',
+      payment_method: 'cash_on_delivery',
+      refund_stage: null,
+      review_submitted: false,
       carrier_company: 'Shop-owned logistics',
       is_shop_owned_delivery: true,
       delivery_has_failed_attempt: false,
@@ -55,22 +81,61 @@ describe('MyOrders delivery tracking', () => {
       delivery_window: 'morning',
       eta: null,
     });
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(trackingPayload),
+    });
+    vi.stubGlobal('fetch', fetchMock);
     Object.defineProperty(window, 'localStorage', {
       configurable: true,
       value: { getItem: vi.fn(() => null), setItem: vi.fn() },
     });
   });
 
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    vi.clearAllMocks();
+    vi.unstubAllGlobals();
+  });
 
-  it('shows shop-owned delivery status, rider, and tracking action even before the order status is shipped', () => {
+  it('opens outbound tracking in a modal without navigating away', async () => {
     render(<MyOrders />);
 
     expect(screen.getByText('In Transit')).toBeInTheDocument();
     expect(screen.getByText('Marco Santos')).toBeInTheDocument();
     expect(screen.getByText('09053338826')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Track Shipment' })).toHaveAttribute('href', '/tracking/shipments/12');
+    fireEvent.click(screen.getByRole('button', { name: 'Track Shipment' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Shipment tracking' })).toBeInTheDocument();
+    expect(screen.getByText('SHP-12')).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/tracking/shipments/12',
+      expect.objectContaining({
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' },
+      }),
+    );
     expect(screen.getByText(/July 18, 2026.*Morning/)).toBeInTheDocument();
+  });
+
+  it('opens return tracking in the same modal with the return shipment id', async () => {
+    order.status = 'delivered';
+    order.refund_stage = {
+      id: 5,
+      logistics_shipment_id: 18,
+      status: 'requested',
+      shop_owner_status: 'pending',
+      finance_status: 'pending',
+      return_status: 'awaiting_approval',
+    };
+
+    render(<MyOrders />);
+    fireEvent.click(screen.getByRole('button', { name: 'Track Return' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Shipment tracking' })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/tracking/shipments/18',
+      expect.objectContaining({ headers: { Accept: 'application/json' } }),
+    );
   });
 
   it('flags a failed attempt and links to its shipment details', () => {
@@ -98,5 +163,27 @@ describe('MyOrders delivery tracking', () => {
 
     expect(screen.getByText('Courier ETA')).toBeInTheDocument();
     expect(screen.queryByText(/July 18, 2026/)).not.toBeInTheDocument();
+  });
+
+  it('reveals the online-payment refund explanation on keyboard focus', () => {
+    order.status = 'completed';
+
+    render(<MyOrders />);
+
+    const eligibilityTrigger = screen.getByRole('group', { name: 'Refund eligibility information' });
+    fireEvent.focus(eligibilityTrigger);
+
+    expect(screen.getByRole('tooltip')).toHaveTextContent(
+      'Only online-paid orders are eligible for refund requests.',
+    );
+
+    fireEvent.blur(eligibilityTrigger, { relatedTarget: document.body });
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+    fireEvent.mouseEnter(eligibilityTrigger);
+    expect(screen.getByRole('tooltip')).toHaveTextContent(
+      'Only online-paid orders are eligible for refund requests.',
+    );
+    fireEvent.mouseLeave(eligibilityTrigger);
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
   });
 });
