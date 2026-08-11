@@ -29,6 +29,7 @@ const sourceLabel = (leg: TrackingShipmentLeg) => logisticsSourceLabel(leg.shipm
 
 export default function Batches() {
   const {
+    auth,
     batches,
     pool,
     unscheduled = [],
@@ -37,7 +38,9 @@ export default function Batches() {
     filters = {},
     availableModules = [],
     showModuleFilter = false,
-  } = usePage<DeliveryBatchPageProps>().props;
+  } = usePage<DeliveryBatchPageProps & { auth?: any }>().props;
+  const ownerMode = (auth as any)?.erpActor?.ownerMode === true;
+  const batchesPath = ownerMode ? '/shop-owner/erp/logistics/batches' : '/erp/logistics/batches';
   const [building, setBuilding] = useState(false);
   const [selectedBatchId, setSelectedBatchId] = useState<number>();
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -122,7 +125,7 @@ export default function Batches() {
     }
     setDate(nextDate);
     setWindow(nextWindow);
-    router.get('/erp/logistics/batches', { module, date: nextDate || undefined, window: nextWindow }, {
+    router.get(batchesPath, { module, date: nextDate || undefined, window: nextWindow }, {
       only: ['batches', 'pool', 'unscheduled', 'filters'],
       preserveScroll: true,
       preserveState: true,
@@ -132,7 +135,7 @@ export default function Batches() {
     setModule(nextModule);
     setSelectedIds([]);
     setScheduledThisAttempt([]);
-    router.get('/erp/logistics/batches', { module: nextModule, date: date || undefined, window }, {
+    router.get(batchesPath, { module: nextModule, date: date || undefined, window }, {
       only: ['batches', 'pool', 'unscheduled', 'filters'],
       preserveScroll: true,
       preserveState: true,

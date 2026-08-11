@@ -111,11 +111,23 @@ Route::middleware(EnsureOwnerErpWorkspaceEnabled::class)
                 ->name('shipments');
             Route::get('/riders', [ErpLogisticsController::class, 'riders'])
                 ->name('riders');
+            Route::get('/batches', [ErpLogisticsController::class, 'batches'])
+                ->name('batches');
+            Route::get('/settings', [ErpLogisticsController::class, 'settings'])
+                ->name('settings');
         });
 
         Route::prefix('hr')->name('hr.')->group(function (): void {
+            Route::get('/dashboard', [ReadPageController::class, 'hrDashboard'])
+                ->name('dashboard');
             Route::get('/employee-directory', [UserAccessControlController::class, 'index'])
                 ->name('employee-directory');
+            Route::get('/attendance', [ReadPageController::class, 'hrAttendance'])
+                ->name('attendance');
+            Route::get('/leave-approvals', [ReadPageController::class, 'hrLeaveApprovals'])
+                ->name('leave-approvals');
+            Route::get('/overtime-approvals', [ReadPageController::class, 'hrOvertimeApprovals'])
+                ->name('overtime-approvals');
             Route::get('/suspend-accounts', function (): \Inertia\Response {
                 return Inertia::render('ShopOwner/TeamManagement/suspendAccount', [
                     'erpMode' => true,
@@ -170,13 +182,27 @@ Route::middleware(EnsureOwnerErpWorkspaceEnabled::class)
             })->name('overview');
             Route::get('/inventory-dashboard', [ReadPageController::class, 'inventoryDashboard'])
                 ->name('inventory-dashboard');
+            Route::get('/upload-stocks', [ReadPageController::class, 'uploadInventory'])
+                ->name('upload-stocks');
             Route::get('/product-inventory', [ReadPageController::class, 'productInventory'])
                 ->name('product-inventory');
             Route::get('/stock-movement', [ReadPageController::class, 'stockMovement'])
                 ->name('stock-movement');
+            Route::get('/stock-request', [ReadPageController::class, 'inventoryStockRequest'])
+                ->name('stock-request');
+            Route::get('/request-material-approval', [ReadPageController::class, 'requestMaterialApproval'])
+                ->name('request-material-approval');
+            Route::get('/supplier-order-monitoring', [ReadPageController::class, 'supplierOrderMonitoring'])
+                ->name('supplier-order-monitoring');
         });
 
         Route::prefix('procurement')->name('procurement.')->group(function (): void {
+            Route::get('/purchase-request', [ReadPageController::class, 'purchaseRequest'])
+                ->name('purchase-request');
+            Route::get('/purchase-orders', [ReadPageController::class, 'purchaseOrders'])
+                ->name('purchase-orders');
+            Route::get('/stock-request-approval', [ReadPageController::class, 'procurementStockRequestApproval'])
+                ->name('stock-request-approval');
             Route::get('/suppliers-management', [ReadPageController::class, 'procurementSuppliers'])
                 ->name('suppliers-management');
             Route::get('/purchase-request-approval', function (): \Inertia\Response {

@@ -171,13 +171,20 @@ const MetricCard = ({ title, value, description, icon: Icon, color }: MetricCard
 };
 
 export default function StockRequest() {
-	const { initialData } = usePage().props as any;
+	const { auth, initialData } = usePage().props as any;
+	const ownerMode = auth?.erpActor?.ownerMode === true;
 	const sanitizeRequests = (items: StockRequestApproval[] = []): StockRequestApproval[] => {
 		return items.map((request) => ({ ...request, sku_code: "" }));
 	};
-	const [requests, setRequests] = useState<StockRequestApproval[]>(sanitizeRequests(initialData?.data ?? []));
-	const [loading, setLoading] = useState(false);
-	const [metrics, setMetrics] = useState<StockRequestMetrics>({ total: 0, pending: 0, accepted: 0, rejected: 0 });
+	const seededRequests = sanitizeRequests(initialData?.data ?? []);
+	const [requests, setRequests] = useState<StockRequestApproval[]>(seededRequests);
+	const [loading, setLoading] = useState(!ownerMode && !initialData);
+	const [metrics, setMetrics] = useState<StockRequestMetrics>(() => ({
+		total: seededRequests.length,
+		pending: seededRequests.filter((request) => request.status === "pending").length,
+		accepted: seededRequests.filter((request) => request.status === "accepted").length,
+		rejected: seededRequests.filter((request) => request.status === "rejected").length,
+	}));
 	const [searchQuery, setSearchQuery] = useState("");
 	const [statusFilter, setStatusFilter] = useState<"All" | StockRequestApproval["status"]>("All");
 	const [priorityFilter, setPriorityFilter] = useState<"All" | StockRequestApproval["priority"]>("All");
@@ -186,6 +193,8 @@ export default function StockRequest() {
 	const [isActionProcessing, setIsActionProcessing] = useState(false);
 
 	const fetchRequests = async () => {
+		if (ownerMode || initialData) return;
+
 		try {
 			setLoading(true);
 			const response = await stockRequestApi.getAll({ per_page: 100 });
@@ -203,6 +212,8 @@ export default function StockRequest() {
 	};
 
 	const fetchMetrics = async () => {
+		if (ownerMode || initialData) return;
+
 		try {
 			const data: any = await stockRequestApi.getMetrics();
 			setMetrics({
@@ -217,9 +228,9 @@ export default function StockRequest() {
 	};
 
 	useEffect(() => {
-		fetchRequests();
-		fetchMetrics();
-	}, []);
+		void fetchRequests();
+		void fetchMetrics();
+	}, [ownerMode, initialData]);
 
 	const filteredData = useMemo(() => {
 		const query = searchQuery.trim().toLowerCase();
@@ -341,6 +352,8 @@ export default function StockRequest() {
 	};
 
 	const handleAccept = async (request: StockRequestApproval) => {
+		if (ownerMode) return;
+
 		if (!["pending", "needs_details"].includes(request.status)) {
 			await workflowFeedback.warning("Cannot approve", "Only pending or needs-details requests can be approved.");
 			return;
@@ -373,6 +386,8 @@ export default function StockRequest() {
 	};
 
 	const handleReject = async (request: StockRequestApproval) => {
+		if (ownerMode) return;
+
 		if (!["pending", "needs_details"].includes(request.status)) {
 			await workflowFeedback.warning("Cannot reject", "Only pending or needs-details requests can be rejected.");
 			return;
@@ -731,7 +746,7 @@ export default function StockRequest() {
 								>
 									Close
 								</button>
-								<div className="flex w-full gap-3 sm:w-auto">
+								{!ownerMode && <div className="flex w-full gap-3 sm:w-auto">
 									<button
 										onClick={() => handleReject(viewingRequest)}
 										disabled={!(["pending", "needs_details"] as const).includes(viewingRequest.status) || isActionProcessing}
@@ -746,7 +761,7 @@ export default function StockRequest() {
 									>
 										Approve
 									</button>
-								</div>
+								</div>}
 							</div>
 						</div>
 					</div>

@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect } from "react";
+import { usePage } from "@inertiajs/react";
 import { createPortal } from "react-dom";
 import Swal from "sweetalert2";
 
@@ -167,8 +168,11 @@ const transformLeaveFromApi = (apiLeave: any): LeaveRequest => {
 };
 
 export function LeaveRequests() {
-  const [leaveRequestsState, setLeaveRequestsState] = useState<LeaveRequest[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { auth, initialLeaveRequests } = usePage().props as any;
+  const ownerMode = auth?.erpActor?.ownerMode === true;
+  const seededRequests = initialLeaveRequests?.data?.map(transformLeaveFromApi) ?? [];
+  const [leaveRequestsState, setLeaveRequestsState] = useState<LeaveRequest[]>(seededRequests);
+  const [isLoading, setIsLoading] = useState(!ownerMode && !initialLeaveRequests);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<LeaveStatus | "">("");
   const [selectedLeaveType, setSelectedLeaveType] = useState<LeaveType | "">("");
@@ -185,6 +189,8 @@ export function LeaveRequests() {
 
   // Fetch leave requests from API
   useEffect(() => {
+    if (ownerMode || initialLeaveRequests) return;
+
     const fetchLeaveRequests = async () => {
       setIsLoading(true);
       try {
@@ -240,7 +246,7 @@ export function LeaveRequests() {
     };
 
     fetchLeaveRequests();
-  }, [searchTerm, selectedStatus, selectedLeaveType, currentPage, itemsPerPage]);
+  }, [searchTerm, selectedStatus, selectedLeaveType, currentPage, itemsPerPage, ownerMode, initialLeaveRequests]);
 
   // Reset to page 1 when filters change (prevents viewing a stale page after narrowing results)
   useEffect(() => {
@@ -289,6 +295,8 @@ export function LeaveRequests() {
   };
 
   const handleApprove = async (request: LeaveRequest) => {
+    if (ownerMode) return;
+
     const result = await Swal.fire({
       title: "Approve Leave Request?",
       text: `Approve ${request.noOfDays}-day ${request.leaveType} leave for ${request.employeeName}?`,
@@ -350,6 +358,8 @@ export function LeaveRequests() {
   };
 
   const handleReject = (request: LeaveRequest) => {
+    if (ownerMode) return;
+
     setRequestToReject(request);
     setRejectionReason("");
     setOtherRejectionReason("");
@@ -650,7 +660,7 @@ export function LeaveRequests() {
                       >
                         <EyeIcon className="size-5 text-blue-600 dark:text-blue-400" />
                       </button>
-                      {request.status === "pending" && (
+                      {!ownerMode && request.status === "pending" && (
                         <>
                           <button
                             onClick={() => handleApprove(request)}

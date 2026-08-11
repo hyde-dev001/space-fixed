@@ -1325,9 +1325,14 @@ foreach ($retailOwnerPages as $routeName => $page) {
 
 $ownerModulePageGroups = [
     'hr_employees' => [
+        'shop-owner.erp.hr.dashboard' => [
+            'label' => 'Dashboard',
+            'order' => 10,
+            'supporting_routes' => ['erp.hr'],
+        ],
         'shop-owner.erp.hr.employee-directory' => [
             'label' => 'Employee Directory',
-            'order' => 10,
+            'order' => 20,
             'supporting_routes' => [
                 'shop-owner.employees.store',
                 'shop-owner.employees.update',
@@ -1341,9 +1346,24 @@ $ownerModulePageGroups = [
                 'shop-owner.employees.apply-template',
             ],
         ],
+        'shop-owner.erp.hr.attendance' => [
+            'label' => 'Attendance',
+            'order' => 30,
+            'supporting_routes' => ['hr.attendance.index'],
+        ],
+        'shop-owner.erp.hr.leave-approvals' => [
+            'label' => 'Leave Approvals',
+            'order' => 40,
+            'supporting_routes' => ['api.leave.index'],
+        ],
+        'shop-owner.erp.hr.overtime-approvals' => [
+            'label' => 'Overtime Approvals',
+            'order' => 50,
+            'supporting_routes' => ['hr.overtime.index'],
+        ],
         'shop-owner.erp.hr.suspend-accounts' => [
             'label' => 'Suspend Accounts',
-            'order' => 20,
+            'order' => 60,
             'supporting_routes' => [
                 'shop_owner.suspension_requests.index',
                 'shop_owner.suspension_requests.show',
@@ -1420,21 +1440,68 @@ $ownerModulePageGroups = [
         ],
     ],
     'inventory' => [
+        'shop-owner.erp.inventory.upload-stocks' => [
+            'label' => 'Upload Stocks',
+            'order' => 20,
+            'supporting_routes' => ['erp.inventory.upload-stocks'],
+        ],
+        'shop-owner.erp.inventory.stock-request' => [
+            'label' => 'Stock Requests',
+            'order' => 50,
+            'supporting_routes' => ['erp.inventory.stock-request'],
+        ],
+        'shop-owner.erp.inventory.request-material-approval' => [
+            'label' => 'Request Material Approval',
+            'order' => 60,
+            'supporting_routes' => ['erp.inventory.request-material-approval'],
+        ],
+        'shop-owner.erp.inventory.supplier-order-monitoring' => [
+            'label' => 'Supplier Order Monitoring',
+            'order' => 70,
+            'supporting_routes' => ['erp.inventory.supplier-order-monitoring'],
+        ],
         'shop-owner.erp.inventory.overview' => [
             'label' => 'Inventory Overview',
-            'order' => 40,
+            'order' => 80,
             'supporting_routes' => ['shop_owner.inventory.overview'],
         ],
     ],
     'procurement' => [
+        'shop-owner.erp.procurement.purchase-request' => [
+            'label' => 'Purchase Requests',
+            'order' => 10,
+            'supporting_routes' => ['erp.procurement.purchase-request'],
+        ],
+        'shop-owner.erp.procurement.purchase-orders' => [
+            'label' => 'Purchase Orders',
+            'order' => 20,
+            'supporting_routes' => ['erp.procurement.purchase-orders'],
+        ],
+        'shop-owner.erp.procurement.stock-request-approval' => [
+            'label' => 'Stock Request Approval',
+            'order' => 30,
+            'supporting_routes' => ['erp.procurement.stock-request-approval'],
+        ],
         'shop-owner.erp.procurement.purchase-request-approval' => [
             'label' => 'Purchase Request Approval',
-            'order' => 20,
+            'order' => 50,
             'supporting_routes' => [
                 'shop_owner.purchase-requests.index',
                 'shop_owner.purchase-requests.approve',
                 'shop_owner.purchase-requests.reject',
             ],
+        ],
+    ],
+    'logistics' => [
+        'shop-owner.erp.logistics.batches' => [
+            'label' => 'Batches',
+            'order' => 30,
+            'supporting_routes' => ['erp.logistics.batches'],
+        ],
+        'shop-owner.erp.logistics.settings' => [
+            'label' => 'Settings',
+            'order' => 50,
+            'supporting_routes' => ['erp.logistics.settings'],
         ],
     ],
 ];
@@ -1456,15 +1523,15 @@ $existingOwnerPageMetadata = [
     'shop-owner.erp.crm.customer-reviews' => ['label' => 'Customer Reviews', 'order' => 30],
     'shop-owner.erp.staff.customers' => ['label' => 'Customer Directory', 'order' => 40],
     'shop-owner.erp.inventory.inventory-dashboard' => ['label' => 'Dashboard', 'order' => 10],
-    'shop-owner.erp.inventory.product-inventory' => ['label' => 'Product Inventory', 'order' => 20],
-    'shop-owner.erp.inventory.stock-movement' => ['label' => 'Stock Movement', 'order' => 30],
-    'shop-owner.erp.inventory.overview' => ['label' => 'Inventory Overview', 'order' => 40],
-    'shop-owner.erp.procurement.suppliers-management' => ['label' => 'Suppliers Management', 'order' => 10],
-    'shop-owner.erp.hr.audit-logs' => ['label' => 'Audit Logs', 'order' => 30],
+    'shop-owner.erp.inventory.product-inventory' => ['label' => 'Product Inventory', 'order' => 30],
+    'shop-owner.erp.inventory.stock-movement' => ['label' => 'Stock Movement', 'order' => 40],
+    'shop-owner.erp.inventory.overview' => ['label' => 'Inventory Overview', 'order' => 80],
+    'shop-owner.erp.procurement.suppliers-management' => ['label' => 'Suppliers Management', 'order' => 40],
+    'shop-owner.erp.hr.audit-logs' => ['label' => 'Audit Logs', 'order' => 70],
     'shop-owner.erp.finance.audit-logs' => ['label' => 'Audit Logs', 'order' => 60],
     'shop-owner.erp.logistics.dashboard' => ['label' => 'Dashboard', 'order' => 10],
     'shop-owner.erp.logistics.shipments' => ['label' => 'Shipments', 'order' => 20],
-    'shop-owner.erp.logistics.riders' => ['label' => 'Riders', 'order' => 30],
+    'shop-owner.erp.logistics.riders' => ['label' => 'Riders', 'order' => 40],
     'shop-owner.erp.staff.repair-dashboard' => ['label' => 'Repair Dashboard', 'order' => 10],
 ];
 

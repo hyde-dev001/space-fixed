@@ -280,6 +280,7 @@ const currency = new Intl.NumberFormat("en-PH", {
 
 export default function PurchaseRequest() {
 	const { auth, initialData, initialSuppliers, initialAcceptedRequests } = usePage().props as any;
+	const ownerMode = auth?.erpActor?.ownerMode === true;
 	const draftKey = scopedModalDraftKey(PURCHASE_REQUEST_DRAFT_KEY, auth?.user?.shop_owner_id, auth?.user?.id);
 	const [purchaseRequests, setPurchaseRequests] = useState<PurchaseRequestType[]>(initialData?.data ?? []);
 	const [suppliers, setSuppliers] = useState<Supplier[]>(initialSuppliers ?? []);
@@ -296,7 +297,11 @@ export default function PurchaseRequest() {
 		if (id > 0) setViewingRequest(purchaseRequests.find((request) => request.id === id) ?? null);
 	}, [purchaseRequests]);
 	const [formData, setFormData] = useState<PurchaseRequestFormState>(initialFormState);
-	const [metrics, setMetrics] = useState({ total_requests: 0, pending_finance: 0, approved: 0 });
+	const [metrics, setMetrics] = useState(() => ({
+		total_requests: initialData?.total ?? purchaseRequests.length,
+		pending_finance: purchaseRequests.filter((request) => request.status === "pending_finance").length,
+		approved: purchaseRequests.filter((request) => request.status === "approved").length,
+	}));
 	const isCreateFormDirty = useMemo(
 		() =>
 			formData.stockRequestId !== initialFormState.stockRequestId ||
@@ -341,6 +346,8 @@ export default function PurchaseRequest() {
 
 	// Fetch accepted stock requests — only these may become a PR
 	const fetchAcceptedStockRequests = async (): Promise<StockRequestApproval[]> => {
+		if (ownerMode) return acceptedStockRequests;
+
 		try {
 			const response = await stockRequestApi.getAll({ status: 'accepted', available_for_purchase_request: true, per_page: 200 });
 			const data = (response as any).data ?? response ?? [];
@@ -368,11 +375,13 @@ export default function PurchaseRequest() {
 	};
 
 	useEffect(() => {
+		if (ownerMode || initialData) return;
+
 		fetchPurchaseRequests();
 		fetchSuppliers();
 		fetchAcceptedStockRequests();
 		fetchMetrics();
-	}, []);
+	}, [ownerMode, initialData]);
 
 	useEffect(() => {
 		clearModalDraft(PURCHASE_REQUEST_DRAFT_KEY);
@@ -400,6 +409,8 @@ export default function PurchaseRequest() {
 	}, [isCreateFormDirty, isCreateModalOpen]);
 
 	const handleOpenCreateModal = async () => {
+		if (ownerMode) return;
+
 		const currentRequests = await fetchAcceptedStockRequests();
 
 		const savedDraft = loadModalDraft<Partial<PurchaseRequestFormState>>(draftKey);
@@ -580,12 +591,14 @@ export default function PurchaseRequest() {
 						<h1 className="text-2xl font-semibold mb-1">Purchase Request (Replenishment)</h1>
 						<p className="text-gray-600 dark:text-gray-400">Build PR from approved replenishment requests, then submit to Finance</p>
 					</div>
-					<button
-						onClick={handleOpenCreateModal}
-						className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors whitespace-nowrap"
-					>
-						+ New PR
-					</button>
+					{!ownerMode && (
+						<button
+							onClick={handleOpenCreateModal}
+							className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors whitespace-nowrap"
+						>
+							+ New PR
+						</button>
+					)}
 				</div>
 
 				<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

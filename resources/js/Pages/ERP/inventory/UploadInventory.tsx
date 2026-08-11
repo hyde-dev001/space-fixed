@@ -295,6 +295,7 @@ const mapApiItemToStock = (item: ApiInventoryItem): StockItem | null => {
 
 export default function UploadInventory() {
   const { initialData, auth } = usePage().props as any;
+  const ownerMode = auth?.erpActor?.ownerMode === true;
   const allowedInventoryImageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif'];
   const allowedInventoryImageMimeTypes = [
     'image/jpeg',
@@ -429,6 +430,8 @@ export default function UploadInventory() {
   });
 
   const fetchStocks = async (archived = showArchived) => {
+    if (ownerMode) return;
+
     setLoadingStocks(true);
     try {
       const res = await inventoryItemAPI.getAll({ per_page: 50, archived });
@@ -636,7 +639,7 @@ export default function UploadInventory() {
     setCategoryFilter('all');
     setTablePage(1);
     void fetchStocks(showArchived);
-  }, [showArchived]);
+  }, [showArchived, ownerMode]);
 
   const resetForm = () => {
     setFormData({
@@ -660,6 +663,8 @@ export default function UploadInventory() {
   };
 
   const handleOpenModal = (stock?: StockItem) => {
+    if (ownerMode) return;
+
     if (stock) {
       setEditingStock(stock);
       setFormData({
@@ -687,6 +692,8 @@ export default function UploadInventory() {
   };
 
   const handleArchive = async (id: number, productName: string) => {
+    if (ownerMode) return;
+
     const confirmation = await Swal.fire({
       title: 'Archive Product?',
       html: `You are about to archive <strong>${productName}</strong>.<br/>It will be removed from the active list.`,
@@ -721,6 +728,8 @@ export default function UploadInventory() {
   };
 
   const handleRestore = async (id: number, productName: string) => {
+    if (ownerMode) return;
+
     const confirmation = await Swal.fire({
       title: 'Restore Product?',
       html: `You are about to restore <strong>${productName}</strong>.<br/>It will return to the active list.`,
@@ -957,37 +966,39 @@ export default function UploadInventory() {
                   : 'Manage stock uploads for shoes and repair materials'}
               </p>
             </div>
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowArchived((prev) => !prev);
-                }}
-                className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
-                  showArchived
-                    ? 'border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100 dark:border-purple-700 dark:bg-purple-900/20 dark:text-purple-300'
-                    : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'
-                }`}
-              >
-                {showArchived ? (
-                  <>
-                    <ArchiveRestoreIcon className="size-5" />
-                    Show Active
-                  </>
-                ) : (
-                  <>
-                    <ArchiveBoxIcon className="size-5" />
-                    Show Archived
-                  </>
-                )}
-              </button>
-              <button
-                onClick={() => handleOpenModal()}
-                className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-              >
-                + Add Stock Entry
-              </button>
-            </div>
+            {!ownerMode && (
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowArchived((prev) => !prev);
+                  }}
+                  className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
+                    showArchived
+                      ? 'border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100 dark:border-purple-700 dark:bg-purple-900/20 dark:text-purple-300'
+                      : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  {showArchived ? (
+                    <>
+                      <ArchiveRestoreIcon className="size-5" />
+                      Show Active
+                    </>
+                  ) : (
+                    <>
+                      <ArchiveBoxIcon className="size-5" />
+                      Show Archived
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => handleOpenModal()}
+                  className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                >
+                  + Add Stock Entry
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -1091,7 +1102,7 @@ export default function UploadInventory() {
                         </td>
                         <td className="px-6 py-4 text-gray-900 dark:text-white whitespace-nowrap">{formatUploadDate(stock.createdAt)}</td>
                         <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
-                          {!showArchived ? (
+                          {!ownerMode && (!showArchived ? (
                             <>
                               <button
                                 onClick={() => handleOpenModal(stock)}
@@ -1118,7 +1129,7 @@ export default function UploadInventory() {
                             >
                               <ArchiveRestoreIcon className="w-5 h-5" />
                             </button>
-                          )}
+                          ))}
                         </td>
                       </tr>
                     );

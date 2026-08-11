@@ -163,7 +163,11 @@ final class OwnerErpPageContractTest extends TestCase
                 'key' => 'hr_employees',
                 'slug' => 'hr',
                 'pages' => [
+                    'shop-owner.erp.hr.dashboard',
                     'shop-owner.erp.hr.employee-directory',
+                    'shop-owner.erp.hr.attendance',
+                    'shop-owner.erp.hr.leave-approvals',
+                    'shop-owner.erp.hr.overtime-approvals',
                     'shop-owner.erp.hr.suspend-accounts',
                     'shop-owner.erp.hr.audit-logs',
                 ],
@@ -196,8 +200,12 @@ final class OwnerErpPageContractTest extends TestCase
                 'slug' => 'inventory',
                 'pages' => [
                     'shop-owner.erp.inventory.inventory-dashboard',
+                    'shop-owner.erp.inventory.upload-stocks',
                     'shop-owner.erp.inventory.product-inventory',
                     'shop-owner.erp.inventory.stock-movement',
+                    'shop-owner.erp.inventory.stock-request',
+                    'shop-owner.erp.inventory.request-material-approval',
+                    'shop-owner.erp.inventory.supplier-order-monitoring',
                     'shop-owner.erp.inventory.overview',
                 ],
             ],
@@ -205,6 +213,9 @@ final class OwnerErpPageContractTest extends TestCase
                 'key' => 'procurement',
                 'slug' => 'procurement',
                 'pages' => [
+                    'shop-owner.erp.procurement.purchase-request',
+                    'shop-owner.erp.procurement.purchase-orders',
+                    'shop-owner.erp.procurement.stock-request-approval',
                     'shop-owner.erp.procurement.suppliers-management',
                     'shop-owner.erp.procurement.purchase-request-approval',
                 ],
@@ -215,7 +226,9 @@ final class OwnerErpPageContractTest extends TestCase
                 'pages' => [
                     'shop-owner.erp.logistics.dashboard',
                     'shop-owner.erp.logistics.shipments',
+                    'shop-owner.erp.logistics.batches',
                     'shop-owner.erp.logistics.riders',
+                    'shop-owner.erp.logistics.settings',
                 ],
             ],
         ];
@@ -247,6 +260,61 @@ final class OwnerErpPageContractTest extends TestCase
                     return $page;
                 });
         }
+    }
+
+    public function test_owner_module_catalog_includes_the_existing_operational_erp_pages(): void
+    {
+        $expectedPages = [
+            'hr_employees' => [
+                'shop-owner.erp.hr.dashboard',
+                'shop-owner.erp.hr.employee-directory',
+                'shop-owner.erp.hr.attendance',
+                'shop-owner.erp.hr.leave-approvals',
+                'shop-owner.erp.hr.overtime-approvals',
+                'shop-owner.erp.hr.suspend-accounts',
+                'shop-owner.erp.hr.audit-logs',
+            ],
+            'inventory' => [
+                'shop-owner.erp.inventory.inventory-dashboard',
+                'shop-owner.erp.inventory.upload-stocks',
+                'shop-owner.erp.inventory.product-inventory',
+                'shop-owner.erp.inventory.stock-movement',
+                'shop-owner.erp.inventory.stock-request',
+                'shop-owner.erp.inventory.request-material-approval',
+                'shop-owner.erp.inventory.supplier-order-monitoring',
+                'shop-owner.erp.inventory.overview',
+            ],
+            'procurement' => [
+                'shop-owner.erp.procurement.purchase-request',
+                'shop-owner.erp.procurement.purchase-orders',
+                'shop-owner.erp.procurement.stock-request-approval',
+                'shop-owner.erp.procurement.suppliers-management',
+                'shop-owner.erp.procurement.purchase-request-approval',
+            ],
+            'logistics' => [
+                'shop-owner.erp.logistics.dashboard',
+                'shop-owner.erp.logistics.shipments',
+                'shop-owner.erp.logistics.batches',
+                'shop-owner.erp.logistics.riders',
+                'shop-owner.erp.logistics.settings',
+            ],
+        ];
+
+        foreach ($expectedPages as $moduleKey => $routeNames) {
+            $actualRouteNames = array_column(
+                app(ErpWorkspaceNavigationService::class)->forKey($moduleKey)['pages'],
+                'routeName',
+            );
+
+            $this->assertSame($routeNames, $actualRouteNames, $moduleKey);
+            foreach ($routeNames as $routeName) {
+                $this->assertTrue(\Illuminate\Support\Facades\Route::has($routeName), $routeName);
+                $this->assertStringStartsWith('/shop-owner/erp/', route($routeName, [], false));
+            }
+        }
+
+        $this->assertFileExists(base_path('resources/js/Pages/ERP/HR/AuditLogs.tsx'));
+        $this->assertFileExists(base_path('resources/js/Pages/ERP/Finance/AuditLogs.tsx'));
     }
 
     public function test_owner_module_pages_resolve_their_server_module_scope_on_refresh(): void
@@ -295,6 +363,78 @@ final class OwnerErpPageContractTest extends TestCase
 
                     return $page;
                 });
+        }
+    }
+
+    public function test_new_owner_operational_pages_render_their_scoped_components(): void
+    {
+        config([
+            'shop_modules.owner_erp_workspace_enabled' => true,
+            'shop_modules.enforcement_enabled' => true,
+        ]);
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+
+        foreach (['hr_employees', 'inventory', 'procurement', 'logistics'] as $moduleKey) {
+            ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $owner->id,
+                'module_key' => $moduleKey,
+                'enabled' => true,
+            ]);
+        }
+
+        $pages = [
+            ['/shop-owner/erp/hr/dashboard', 'ERP/HR/HR'],
+            ['/shop-owner/erp/hr/attendance', 'ERP/HR/HR'],
+            ['/shop-owner/erp/hr/leave-approvals', 'ERP/HR/HR'],
+            ['/shop-owner/erp/hr/overtime-approvals', 'ERP/HR/HR'],
+            ['/shop-owner/erp/inventory/upload-stocks', 'ERP/inventory/UploadInventory'],
+            ['/shop-owner/erp/inventory/stock-request', 'ERP/inventory/StockRequest'],
+            ['/shop-owner/erp/inventory/request-material-approval', 'ERP/inventory/RequestApproval'],
+            ['/shop-owner/erp/inventory/supplier-order-monitoring', 'ERP/inventory/SupplierOrderMonitoring'],
+            ['/shop-owner/erp/procurement/purchase-request', 'ERP/Procurement/PurchaseRequest'],
+            ['/shop-owner/erp/procurement/purchase-orders', 'ERP/Procurement/PurchaseOrders'],
+            ['/shop-owner/erp/procurement/stock-request-approval', 'ERP/Procurement/StockRequestApproval'],
+            ['/shop-owner/erp/logistics/batches', 'ERP/Logistics/Batches'],
+            ['/shop-owner/erp/logistics/settings', 'ERP/Logistics/Settings'],
+        ];
+
+        foreach ($pages as [$uri, $component]) {
+            $this->actingAs($owner, 'shop_owner')
+                ->get($uri)
+                ->assertOk()
+                ->assertInertia(fn (Assert $page) => $page
+                    ->component($component, false)
+                    ->where('navigationMode', 'module'));
+        }
+    }
+
+    public function test_owner_can_load_hr_and_finance_audit_logs_through_scoped_api_routes(): void
+    {
+        config([
+            'shop_modules.owner_erp_workspace_enabled' => true,
+            'shop_modules.enforcement_enabled' => true,
+        ]);
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+
+        foreach (['hr_employees', 'finance'] as $moduleKey) {
+            ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $owner->id,
+                'module_key' => $moduleKey,
+                'enabled' => true,
+            ]);
+        }
+
+        foreach (['hr', 'finance'] as $module) {
+            $this->actingAs($owner, 'shop_owner')
+                ->getJson("/api/shop-owner/erp/{$module}/audit-logs")
+                ->assertOk()
+                ->assertJsonPath('success', true);
         }
     }
 

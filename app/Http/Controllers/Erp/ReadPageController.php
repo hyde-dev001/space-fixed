@@ -6,8 +6,16 @@ namespace App\Http\Controllers\Erp;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Repairer\DashboardController;
+use App\Models\Employee;
 use App\Models\InventoryItem;
+use App\Models\HR\AttendanceRecord;
+use App\Models\HR\Department;
+use App\Models\HR\LeaveRequest;
+use App\Models\HR\OvertimeRequest;
+use App\Models\PurchaseOrder;
+use App\Models\PurchaseRequest;
 use App\Models\StockMovement;
+use App\Models\StockRequestApproval;
 use App\Models\Supplier;
 use App\Support\Erp\ErpActorContext;
 use Illuminate\Http\RedirectResponse;
@@ -25,6 +33,108 @@ final class ReadPageController extends Controller
     public function financeAuditLogs(): Response|RedirectResponse
     {
         return $this->renderEmployeePage('ERP/Finance/AuditLogs');
+    }
+
+    public function hrDashboard(): Response|RedirectResponse
+    {
+        if ($redirect = $this->employeePasswordRedirect()) {
+            return $redirect;
+        }
+
+        $shopOwnerId = $this->shopOwnerId();
+        $employees = Employee::where('shop_owner_id', $shopOwnerId)->get(['department', 'status', 'branch']);
+        $activeEmployees = $employees->where('status', 'active')->count();
+        $byDepartment = $employees->where('status', 'active')
+            ->groupBy(fn (Employee $employee) => $employee->department ?: 'Unassigned')
+            ->map(fn ($group, $department) => [
+                'department' => $department,
+                'count' => $group->count(),
+            ])->values();
+        $byStatus = $employees->groupBy('status')
+            ->map(fn ($group, $status) => ['status' => $status, 'count' => $group->count()])
+            ->values();
+
+        $initialHrDashboard = [
+            'headcount' => [
+                'current_headcount' => $activeEmployees,
+                'by_department' => $byDepartment,
+                'by_location' => [],
+                'by_status' => $byStatus,
+                'monthly_trend' => [],
+            ],
+            'turnover' => [],
+            'attendance' => [],
+            'payroll' => [],
+            'performance' => [],
+            'summary' => [
+                'total_employees' => $employees->count(),
+                'active_employees' => $activeEmployees,
+                'current_on_leave' => $employees->where('status', 'on_leave')->count(),
+                'total_departments' => Department::where('shop_owner_id', $shopOwnerId)->count(),
+                'pending_leave_requests' => LeaveRequest::where('shop_owner_id', $shopOwnerId)->where('status', 'pending')->count(),
+                'this_month_payroll' => 0,
+            ],
+            'period' => [
+                'start_date' => now()->subYear()->toISOString(),
+                'end_date' => now()->toISOString(),
+            ],
+        ];
+
+        return Inertia::render('ERP/HR/HR', [
+            'initialHrDashboard' => $initialHrDashboard,
+            'initialSection' => 'dashboard',
+        ]);
+    }
+
+    public function hrAttendance(): Response|RedirectResponse
+    {
+        if ($redirect = $this->employeePasswordRedirect()) {
+            return $redirect;
+        }
+
+        $initialAttendance = AttendanceRecord::with('employee:id,first_name,last_name,name,email,department,position,shop_owner_id')
+            ->where('shop_owner_id', $this->shopOwnerId())
+            ->orderByDesc('date')
+            ->paginate(200);
+
+        return Inertia::render('ERP/HR/HR', [
+            'initialAttendance' => $initialAttendance,
+            'initialSection' => 'attendance',
+        ]);
+    }
+
+    public function hrLeaveApprovals(): Response|RedirectResponse
+    {
+        if ($redirect = $this->employeePasswordRedirect()) {
+            return $redirect;
+        }
+
+        $initialLeaveRequests = LeaveRequest::with('employee:id,first_name,last_name,name,department,position,shop_owner_id')
+            ->where('shop_owner_id', $this->shopOwnerId())
+            ->orderByDesc('created_at')
+            ->paginate(200);
+
+        return Inertia::render('ERP/HR/HR', [
+            'initialLeaveRequests' => $initialLeaveRequests,
+            'initialSection' => 'leaves',
+        ]);
+    }
+
+    public function hrOvertimeApprovals(): Response|RedirectResponse
+    {
+        if ($redirect = $this->employeePasswordRedirect()) {
+            return $redirect;
+        }
+
+        $initialOvertimeRequests = OvertimeRequest::with('employee:id,first_name,last_name,name,department,position,shop_owner_id')
+            ->where('shop_owner_id', $this->shopOwnerId())
+            ->orderByDesc('created_at')
+            ->paginate(200);
+
+        return Inertia::render('ERP/HR/HR', [
+            'initialOvertimeRequests' => $initialOvertimeRequests,
+            'initialSection' => 'overtime',
+        ]);
     }
 
     public function managerReports(): Response|RedirectResponse
@@ -87,6 +197,69 @@ final class ReadPageController extends Controller
         return Inertia::render('ERP/inventory/StockMovement', compact('initialData'));
     }
 
+    public function uploadInventory(): Response|RedirectResponse
+    {
+        if ($redirect = $this->employeePasswordRedirect()) {
+            return $redirect;
+        }
+
+        $initialData = InventoryItem::with(['sizes', 'colorVariants.images', 'colorVariants.sizes', 'images'])
+            ->where('shop_owner_id', $this->shopOwnerId())
+            ->orderByDesc('created_at')
+            ->paginate(50);
+
+        return Inertia::render('ERP/inventory/UploadInventory', compact('initialData'));
+    }
+
+    public function inventoryStockRequest(): Response|RedirectResponse
+    {
+        if ($redirect = $this->employeePasswordRedirect()) {
+            return $redirect;
+        }
+
+        $shopOwnerId = $this->shopOwnerId();
+        $initialRequests = StockRequestApproval::with(['inventoryItem.sizes', 'inventoryItem.colorVariants.sizes', 'requester'])
+            ->where('shop_owner_id', $shopOwnerId)
+            ->orderByDesc('requested_date')
+            ->paginate(200);
+        $initialInventoryItems = InventoryItem::with(['sizes', 'colorVariants', 'images'])
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->paginate(200);
+
+        return Inertia::render('ERP/inventory/StockRequest', compact('initialRequests', 'initialInventoryItems'));
+    }
+
+    public function requestMaterialApproval(): Response|RedirectResponse
+    {
+        if ($redirect = $this->employeePasswordRedirect()) {
+            return $redirect;
+        }
+
+        $initialData = StockRequestApproval::with(['shopOwner', 'inventoryItem.sizes', 'inventoryItem.colorVariants.sizes', 'requester', 'approver'])
+            ->where('shop_owner_id', $this->shopOwnerId())
+            ->where('request_source', 'repair')
+            ->orderByDesc('requested_date')
+            ->paginate(200);
+
+        return Inertia::render('ERP/inventory/RequestApproval', compact('initialData'));
+    }
+
+    public function supplierOrderMonitoring(): Response|RedirectResponse
+    {
+        if ($redirect = $this->employeePasswordRedirect()) {
+            return $redirect;
+        }
+
+        $initialData = PurchaseOrder::with(['supplier', 'items.inventoryItem.sizes', 'receipts.items'])
+            ->where('shop_owner_id', $this->shopOwnerId())
+            ->orderByDesc('ordered_date')
+            ->paginate(200);
+
+        return Inertia::render('ERP/inventory/SupplierOrderMonitoring', compact('initialData'));
+    }
+
     public function procurementSuppliers(): Response|RedirectResponse
     {
         if ($redirect = $this->employeePasswordRedirect()) {
@@ -98,6 +271,63 @@ final class ReadPageController extends Controller
             ->paginate(100);
 
         return Inertia::render('ERP/Procurement/SuppliersManagement', compact('initialData'));
+    }
+
+    public function purchaseRequest(): Response|RedirectResponse
+    {
+        if ($redirect = $this->employeePasswordRedirect()) {
+            return $redirect;
+        }
+
+        $shopOwnerId = $this->shopOwnerId();
+        $initialData = PurchaseRequest::with(['shopOwner', 'supplier', 'inventoryItem', 'requester', 'reviewer', 'approver'])
+            ->where('shop_owner_id', $shopOwnerId)
+            ->orderByDesc('requested_date')
+            ->paginate(100);
+        $initialSuppliers = Supplier::where('shop_owner_id', $shopOwnerId)->orderBy('name')->get();
+        $initialAcceptedRequests = StockRequestApproval::with(['inventoryItem', 'requester'])
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where('status', 'accepted')
+            ->whereDoesntHave('purchaseRequest')
+            ->orderByDesc('requested_date')
+            ->paginate(200);
+
+        return Inertia::render('ERP/Procurement/PurchaseRequest', compact('initialData', 'initialSuppliers', 'initialAcceptedRequests'));
+    }
+
+    public function purchaseOrders(): Response|RedirectResponse
+    {
+        if ($redirect = $this->employeePasswordRedirect()) {
+            return $redirect;
+        }
+
+        $shopOwnerId = $this->shopOwnerId();
+        $initialData = PurchaseOrder::with(['purchaseRequest', 'shopOwner', 'supplier', 'inventoryItem', 'orderer'])
+            ->where('shop_owner_id', $shopOwnerId)
+            ->orderByDesc('ordered_date')
+            ->paginate(100);
+        $initialApprovedPRs = PurchaseRequest::with(['supplier', 'inventoryItem', 'requester'])
+            ->where('shop_owner_id', $shopOwnerId)
+            ->approved()
+            ->whereDoesntHave('purchaseOrders', fn ($query) => $query->whereNotIn('status', ['cancelled']))
+            ->orderByDesc('approved_date')
+            ->get();
+
+        return Inertia::render('ERP/Procurement/PurchaseOrders', compact('initialData', 'initialApprovedPRs'));
+    }
+
+    public function procurementStockRequestApproval(): Response|RedirectResponse
+    {
+        if ($redirect = $this->employeePasswordRedirect()) {
+            return $redirect;
+        }
+
+        $initialData = StockRequestApproval::with(['shopOwner', 'inventoryItem.sizes', 'inventoryItem.colorVariants.sizes', 'requester', 'approver'])
+            ->where('shop_owner_id', $this->shopOwnerId())
+            ->orderByDesc('requested_date')
+            ->paginate(100);
+
+        return Inertia::render('ERP/Procurement/StockRequestApproval', compact('initialData'));
     }
 
     public function repairDashboard(): Response|RedirectResponse
