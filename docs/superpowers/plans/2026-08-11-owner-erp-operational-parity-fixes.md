@@ -113,7 +113,7 @@ git commit -m "feat: render grouped owner ERP navigation"
 - Modify: focused Attendance frontend test from Task 1
 
 - [ ] **Step 1: Add the missing Inertia import.** Import `usePage` from `@inertiajs/react` in `AttendanceRecords.tsx`, preserving the existing props and component exports.
-- [ ] **Step 2: Correct namespace casing.** Use `AppHttpControllersErpHRAuditLogController` consistently for both HR and Finance route imports so Linux/Hostinger autoloading resolves the class.
+- [ ] **Step 2: Correct namespace casing.** Use `App\\Http\\Controllers\\Erp\\HR\\AuditLogController` consistently for both HR and Finance route imports so Linux/Hostinger autoloading resolves the class.
 - [ ] **Step 3: Verify owner context.** Confirm the audit controller still derives the tenant from `erp.actor_context`, keeps owner mode permission behavior, and does not fall back to a client-supplied shop ID.
 - [ ] **Step 4: Run the focused regressions.**
 
