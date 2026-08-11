@@ -322,61 +322,14 @@ class InvoiceController extends Controller
         }
     }
 
-    /**
-     * Post invoice to ledger (creates journal entry and transitions status)
-     */
+    /** Compatibility endpoint retained during the Finance API consolidation. */
     public function post(Request $request, $id)
     {
-        $shopOwnerId = $this->shopOwnerId();
-        if (! $shopOwnerId) {
-            return response()->json(['error' => 'No shop association found'], 403);
-        }
-
-        $invoice = Invoice::where('shop_id', $shopOwnerId)->findOrFail($id);
-
-        if ($invoice->status === 'posted') {
-            return response()->json(['message' => 'Invoice already posted'], 422);
-        }
-
-        try {
-            DB::beginTransaction();
-
-            // Lightweight posting: mark invoice as posted without account/journal dependency
-            try {
-                $invoice->update(['status' => 'posted']);
-            } catch (\Throwable $statusError) {
-                // Backward-compat: some DBs may not include `posted` in enum yet
-                $meta = is_array($invoice->meta) ? $invoice->meta : [];
-                $meta['ledger_posted'] = true;
-                $meta['ledger_posted_at'] = now()->toDateTimeString();
-                $meta['ledger_posted_by'] = $this->actorUserId();
-                DB::table('finance_invoices')
-                    ->where('id', $invoice->id)
-                    ->update([
-                        'meta' => json_encode($meta),
-                        'updated_at' => now(),
-                    ]);
-                $invoice->refresh();
-            }
-
-            // Audit log
-            $actorUserId = $this->actorUserId();
-            AuditLog::create([
-                'shop_owner_id' => $shopOwnerId,
-                'actor_user_id' => $actorUserId,
-                'action' => 'post_invoice',
-                'target_type' => 'invoice',
-                'target_id' => $invoice->id,
-                'metadata' => ['status' => 'posted'],
-            ]);
-
-            DB::commit();
-
-            return response()->json($invoice->load('items'));
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return FinanceErrorResponse::json($e, 'invoice.post', 500, ['record_id' => $id]);
-        }
+        return response()->json([
+            'message' => 'Ledger posting is not part of the SME Finance workflow.',
+            'code' => 'FINANCE_ROUTE_MOVED',
+            'replacement' => '/api/finance/invoices/{id}',
+        ], 410);
     }
 
     /**
@@ -572,23 +525,25 @@ class InvoiceController extends Controller
     }
 
     /**
-     * Send invoice (change status from draft to sent)
+     * Record an internal lifecycle transition from draft to sent.
+     * This does not send email or notify the customer.
      */
-    public function send($id)
+    public function markSent($id)
     {
         try {
-            $shopOwnerId = $this->shopOwnerId();
-
-            if (!$shopOwnerId) {
+            $user = Auth::guard('user')->user();
+            if (! $user) {
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
+
+            $shopOwnerId = $this->shopContext->id(request());
             
             $invoice = Invoice::where('shop_id', $shopOwnerId)
                 ->where('id', $id)
                 ->firstOrFail();
 
             if ($invoice->status !== 'draft') {
-                return response()->json(['error' => 'Only draft invoices can be sent'], 422);
+                return response()->json(['error' => 'Only draft invoices can be marked as sent'], 422);
             }
 
             $invoice->update(['status' => 'sent']);
@@ -596,23 +551,22 @@ class InvoiceController extends Controller
             // Audit log
             AuditLog::create([
                 'shop_owner_id' => $shopOwnerId,
-                'actor_user_id' => $this->actorUserId(),
-                'action' => 'send_invoice',
+                'actor_user_id' => $user->id,
+                'action' => 'mark_invoice_sent',
                 'target_type' => 'invoice',
                 'target_id' => $invoice->id,
                 'metadata' => [
                     'reference' => $invoice->reference,
-                    'customer' => $invoice->customer_name,
-                    'amount' => $invoice->total
+                    'status' => 'sent',
                 ]
             ]);
 
             return response()->json([
-                'message' => 'Invoice sent successfully',
+                'message' => 'Invoice marked as sent.',
                 'invoice' => $invoice->fresh()
             ]);
         } catch (\Exception $e) {
-            return FinanceErrorResponse::json($e, 'invoice.send', 500, ['record_id' => $id]);
+            return FinanceErrorResponse::json($e, 'invoice.mark_sent', 500, ['record_id' => $id]);
         }
     }
 

@@ -258,7 +258,7 @@ export function useCreateInvoice() {
   
   return useMutation({
     mutationFn: async (data: Partial<Invoice>) => {
-      const response = await api.post('/api/finance/session/invoices', data);
+      const response = await api.post('/api/finance/invoices', data);
       if (!response.ok) {
         throw new Error(response.error || 'Failed to create invoice');
       }
@@ -356,7 +356,7 @@ export function useCreateExpense() {
   
   return useMutation({
     mutationFn: async (data: Partial<Expense>) => {
-      const response = await api.post('/api/finance/session/expenses', data);
+      const response = await api.post('/api/finance/expenses', data);
       if (!response.ok) {
         throw new Error(response.error || 'Failed to create expense');
       }

@@ -584,7 +584,7 @@ const Expense: React.FC = () => {
         formData.append('receipt', receiptFile);
       }
 
-      const response = await api.post('/api/finance/session/expenses', formData);
+      const response = await api.post('/api/finance/expenses', formData);
 
       if (!response.ok) {
         throw new Error(response.error || 'Failed to add expense');
@@ -631,7 +631,7 @@ const Expense: React.FC = () => {
       if (result.isConfirmed) {
         (async () => {
           try {
-            const response = await api.delete(`/api/finance/session/expenses/${id}`);
+            const response = await api.delete(`/api/finance/expenses/${id}`);
             if (!response.ok) throw new Error(response.error || 'Failed to archive expense');
             // React Query will automatically refetch
             refetchExpenses();
@@ -668,7 +668,7 @@ const Expense: React.FC = () => {
       if (result.isConfirmed) {
         (async () => {
           try {
-            const response = await api.post(`/api/finance/session/expenses/${id}/restore`);
+            const response = await api.post(`/api/finance/expenses/${id}/restore`);
             if (!response.ok) throw new Error(response.error || 'Failed to restore expense');
             refetchExpenses();
             Swal.fire({

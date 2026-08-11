@@ -2,7 +2,7 @@ import React, { useState, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { usePage, router } from '@inertiajs/react';
 import { useFinanceApi } from "../../../hooks/useFinanceApi";
-import { useInvoices, usePostInvoice } from "../../../hooks/useFinanceQueries";
+import { useInvoices } from "../../../hooks/useFinanceQueries";
 import { getApprovalStatusBadge } from "./InlineApprovalUtils";
 import Swal from "sweetalert2";
 
@@ -307,19 +307,19 @@ const Invoice: React.FC = () => {
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [showArchived, setShowArchived] = useState(false);
-  const [sendingInvoiceId, setSendingInvoiceId] = useState<string | null>(null);
+  const [markingSentId, setMarkingSentId] = useState<string | null>(null);
   const [markingPaidId, setMarkingPaidId] = useState<string | null>(null);
   const [jobStatusFilter, setJobStatusFilter] = useState<string>("");
   const [hasJobFilter, setHasJobFilter] = useState<string>("all");
   const itemsPerPage = 10;
 
-  const handleSendInvoice = async (invoiceId: string) => {
+  const handleMarkInvoiceSent = async (invoiceId: string) => {
     const result = await Swal.fire({
-      title: 'Send Invoice?',
-      text: 'This will mark the invoice as sent to the customer.',
+      title: 'Mark invoice as sent?',
+      text: 'This records an internal status change only. It does not send email or notify the customer.',
       icon: 'question',
       showCancelButton: true,
-      confirmButtonText: 'Yes, send it',
+      confirmButtonText: 'Mark as sent',
       cancelButtonText: 'Cancel',
       confirmButtonColor: '#2563eb',
       reverseButtons: true,
@@ -327,20 +327,20 @@ const Invoice: React.FC = () => {
 
     if (!result.isConfirmed) return;
 
-    setSendingInvoiceId(invoiceId);
+    setMarkingSentId(invoiceId);
     try {
-      const response = await api.post(`/api/finance/invoices/${invoiceId}/send`);
+      const response = await api.post(`/api/finance/invoices/${invoiceId}/mark-sent`);
 
       if (!response.ok) {
-        throw new Error(response.error || 'Failed to send invoice');
+        throw new Error(response.error || 'Failed to mark invoice as sent');
       }
 
       refetchInvoices();
-      await Swal.fire('Sent!', 'Invoice has been sent to customer.', 'success');
+      await Swal.fire('Marked as sent', 'The invoice status was updated internally.', 'success');
     } catch (error) {
-      await Swal.fire('Error', error instanceof Error ? error.message : 'Failed to send invoice', 'error');
+      await Swal.fire('Error', error instanceof Error ? error.message : 'Failed to mark invoice as sent', 'error');
     } finally {
-      setSendingInvoiceId(null);
+      setMarkingSentId(null);
     }
   };
 
@@ -423,8 +423,6 @@ const Invoice: React.FC = () => {
 
   // React Query hooks - automatically handle loading, caching, refetching
   const { data: invoices = [], isLoading: loading, refetch: refetchInvoices } = useInvoices({ archived: showArchived });
-  const postInvoiceMutation = usePostInvoice();
-
   // Filter invoices based on tab and search
   const filteredInvoices = useMemo(() => {
     return invoices.filter((invoice) => {
@@ -869,14 +867,14 @@ const Invoice: React.FC = () => {
     printWindow.print();
   };
 
-  const handleModalSendEmail = async (invoice: Invoice) => {
+  const handleModalMarkSent = async (invoice: Invoice) => {
     const status = getEffectiveInvoiceStatus(invoice);
     if (status !== 'draft') {
       await Swal.fire('Already Processed', 'This invoice has already been sent or finalized.', 'info');
       return;
     }
 
-    await handleSendInvoice(invoice.id);
+    await handleMarkInvoiceSent(invoice.id);
   };
 
   const handleCreateInvoice = () => {
@@ -1198,12 +1196,12 @@ const Invoice: React.FC = () => {
                         </button>
                         {effectiveStatus === 'draft' && (
                           <button 
-                            onClick={() => handleSendInvoice(invoice.id)}
-                            disabled={sendingInvoiceId === invoice.id}
+                            onClick={() => handleMarkInvoiceSent(invoice.id)}
+                            disabled={markingSentId === invoice.id}
                             className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            title={sendingInvoiceId === invoice.id ? "Sending..." : "Send Invoice"}
+                            title={markingSentId === invoice.id ? "Marking as sent..." : "Mark as sent"}
                           >
-                            {sendingInvoiceId === invoice.id ? (
+                            {markingSentId === invoice.id ? (
                               <div className="size-5 relative">
                                 <div className="absolute inset-0 rounded-full border-2 border-gray-300"></div>
                                 <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-blue-600 animate-spin"></div>
@@ -1488,13 +1486,13 @@ const Invoice: React.FC = () => {
                     </button>
                   )}
                   <button
-                    onClick={() => handleModalSendEmail(selectedInvoice)}
+                    onClick={() => handleModalMarkSent(selectedInvoice)}
                     className="flex-1 px-3 py-2.5 border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
                   >
                     <svg className="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                     </svg>
-                    Send Email
+                    Mark as sent
                   </button>
                   <button
                     onClick={() => setIsViewModalOpen(false)}

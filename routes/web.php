@@ -31,6 +31,7 @@ use App\Http\Controllers\UserSide\LandingPageController;
 use App\Http\Controllers\UserSide\OrderController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -1579,108 +1580,20 @@ Route::get('/storage/reviews/{filename}', function ($filename) {
     return response()->file($path);
 })->where('filename', '.*');
 
-// Session-backed API endpoints for finance
-// CONSOLIDATED: All finance routes under /api/finance/session with finance access permissions
-Route::middleware(['auth:user', 'shop.isolation'])->prefix('api/finance/session')->group(function () {
-    // Chart of Accounts - Commented out due to missing controller
-    // Route::get('accounts', [\App\Http\Controllers\Api\Finance\AccountController::class, 'index']);
-    // Route::post('accounts', [\App\Http\Controllers\Api\Finance\AccountController::class, 'store']);
-    // Route::get('accounts/{id}', [\App\Http\Controllers\Api\Finance\AccountController::class, 'show']);
-    // Route::get('accounts/{id}/ledger', [\App\Http\Controllers\Api\Finance\AccountController::class, 'ledger']);
+// Retired Finance session aliases. They are deliberately not proxied: a
+// compatibility write must never create a second money-history path.
+Route::middleware(['auth:user', 'shop.isolation'])->any('api/finance/session/{path?}', function (Request $request): \Illuminate\Http\JsonResponse {
+    Log::warning('Finance compatibility route used', [
+        'route' => 'session-alias',
+        'path' => $request->path(),
+    ]);
 
-    // Expenses
-    Route::middleware('permission:access-finance-expenses')->group(function () {
-    Route::get('expenses', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'index']);
-    Route::post('expenses', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'store']);
-    Route::get('expenses/{id}', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'show']);
-    Route::get('expenses/{id}/settlements', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'listSettlements']);
-    Route::post('expenses/{id}/settlements', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'recordSettlement']);
-    Route::post('expenses/{id}/settlements/{settlementId}/reverse', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'reverseSettlement']);
-    Route::put('expenses/{id}', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'update']);
-    Route::patch('expenses/{id}', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'update']);
-    Route::delete('expenses/{id}', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'destroy']);
-    Route::post('expenses/{id}/restore', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'restore']);
-
-    // Expense Receipt Management
-    Route::post('expenses/{id}/receipt', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'uploadReceipt']);
-    Route::get('expenses/{id}/receipt/download', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'downloadReceipt']);
-    Route::delete('expenses/{id}/receipt', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'deleteReceipt']);
-
-    });
-
-    // Expense approval (users with approval permission)
-    Route::middleware('permission:access-approval-workflow|approve-expenses')->group(function () {
-        Route::post('expenses/{id}/approve', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'approve']);
-        Route::post('expenses/{id}/reject', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'reject']);
-    });
-
-    // Invoices
-    Route::middleware('permission:access-finance-invoices')->group(function () {
-    Route::get('invoices', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'index']);
-    Route::post('invoices', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'store']);
-    Route::post('invoices/from-job', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'createFromJob']);
-    Route::get('invoices/{id}', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'show']);
-    Route::put('invoices/{id}', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'update']);
-    Route::patch('invoices/{id}', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'update']);
-    Route::delete('invoices/{id}', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'destroy']);
-    Route::post('invoices/{id}/restore', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'restore']);
-    Route::post('invoices/{id}/send', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'send']);
-    Route::post('invoices/{id}/void', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'void']);
-    Route::post('invoices/{id}/mark-paid', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'markAsPaid']);
-
-    });
-
-    // Post to ledger (requires invoice finance access permission)
-    Route::middleware('permission:access-finance-invoices')->group(function () {
-        Route::post('invoices/{id}/post', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'post']);
-    });
-
-    // REMOVED: Journal Entries - Invoices/expenses auto-post behind the scenes for SMEs
-    // Route::get('journal-entries', [FinanceJournalEntryController::class, 'index']);
-    // Route::post('journal-entries', [FinanceJournalEntryController::class, 'store']);
-    // Route::get('journal-entries/{id}', [FinanceJournalEntryController::class, 'show']);
-    // Route::put('journal-entries/{id}', [FinanceJournalEntryController::class, 'update']);
-    // Route::patch('journal-entries/{id}', [FinanceJournalEntryController::class, 'update']);
-    // Route::delete('journal-entries/{id}', [FinanceJournalEntryController::class, 'destroy']);
-    // Route::post('journal-entries/{id}/post', [FinanceJournalEntryController::class, 'post']);
-    // Route::post('journal-entries/{id}/reverse', [FinanceJournalEntryController::class, 'reverse']);
-
-    // REMOVED: Bank Reconciliation - Too complex for SMEs
-    // Route::prefix('reconciliation')->group(function () {
-    //     Route::get('transactions', [\App\Http\Controllers\ReconciliationController::class, 'getTransactions']);
-    //     Route::post('/', [\App\Http\Controllers\ReconciliationController::class, 'store']);
-    //     Route::get('history', [\App\Http\Controllers\ReconciliationController::class, 'history']);
-    //     Route::delete('{id}/unmatch', [\App\Http\Controllers\ReconciliationController::class, 'unmatch']);
-    // });
-
-    // Tax Rates
-    Route::middleware('permission:manage-finance-tax')->group(function () {
-    Route::get('tax-rates', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'index']);
-    Route::post('tax-rates', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'store']);
-    Route::put('tax-rates/{id}', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'update']);
-    Route::delete('tax-rates/{id}', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'destroy']);
-    });
-
-    // Approval Workflow routes
-    Route::prefix('approvals')->group(function () {
-        Route::get('pending', [\App\Http\Controllers\ApprovalController::class, 'getPending']);
-        Route::get('history', [\App\Http\Controllers\ApprovalController::class, 'getHistory']);
-        Route::get('{id}/history', [\App\Http\Controllers\ApprovalController::class, 'getApprovalHistory']);
-
-        // Only users with approval permission can approve/reject transactions
-        Route::middleware('permission:approve-expenses')->group(function () {
-            Route::post('{id}/approve', [\App\Http\Controllers\ApprovalController::class, 'approve']);
-            Route::post('{id}/reject', [\App\Http\Controllers\ApprovalController::class, 'reject']);
-        });
-
-        // Delegation routes (managers only)
-        Route::middleware('role:Manager')->group(function () {
-            Route::get('delegations', [\App\Http\Controllers\ApprovalController::class, 'getDelegations']);
-            Route::post('delegations', [\App\Http\Controllers\ApprovalController::class, 'createDelegation']);
-            Route::post('delegations/{id}/deactivate', [\App\Http\Controllers\ApprovalController::class, 'deactivateDelegation']);
-        });
-    });
-});
+    return response()->json([
+        'message' => 'The Finance session route family has moved to /api/finance.',
+        'code' => 'FINANCE_ROUTE_MOVED',
+        'replacement' => '/api/finance',
+    ], 410);
+})->where('path', '.*');
 
 // Search routes
 Route::middleware(['auth:user', 'check.suspension'])->group(function () {

@@ -19,6 +19,7 @@ use App\Http\Controllers\UserSide\AddressGeocodingController;
 use App\Http\Controllers\Api\PriceChangeRequestController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
@@ -321,7 +322,15 @@ Route::middleware(['web', 'auth:web,user', 'old_role:Finance Staff,Finance Manag
     Route::put('invoices/{id}', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'update']);
     Route::delete('invoices/{id}', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'destroy']);
     Route::post('invoices/{id}/restore', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'restore']);
-    Route::post('invoices/{id}/send', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'send']);
+    Route::post('invoices/{id}/send', function (): \Illuminate\Http\JsonResponse {
+        Log::warning('Finance compatibility route used', ['route' => 'legacy-send']);
+
+        return response()->json([
+            'message' => 'Use the internal mark-sent endpoint instead.',
+            'code' => 'FINANCE_ROUTE_MOVED',
+            'replacement' => '/api/finance/invoices/{id}/mark-sent',
+        ], 410);
+    });
     Route::post('invoices/{id}/void', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'void']);
     });
 

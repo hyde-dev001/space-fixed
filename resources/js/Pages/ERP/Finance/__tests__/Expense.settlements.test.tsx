@@ -16,6 +16,7 @@ describe("Finance expense settlement contract", () => {
   it("renders backend settlement state and reconciliation warnings", () => {
     expect(source).toContain("settlement_state");
     expect(source).toContain("integrity_warnings");
-    expect(source).toContain("/api/finance/session/expenses");
+    expect(source).toContain("/api/finance/expenses");
+    expect(source).not.toContain("/api/finance/session/");
   });
 });

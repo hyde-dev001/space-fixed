@@ -312,7 +312,7 @@ export default function FinanceCreateInvoice() {
 				items: items,
 			};
 
-			const response = await api.post("/api/finance/session/invoices", invoiceData);
+			const response = await api.post("/api/finance/invoices", invoiceData);
 			if (!response.ok) {
 				throw new Error(response.error || "Failed to create invoice");
 			}

@@ -14,6 +14,7 @@
  */
 
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\Api\Finance\InvoiceController;
 use App\Http\Controllers\Api\Finance\ExpenseController;
 use App\Http\Controllers\Api\Finance\TaxRateController;
@@ -114,15 +115,40 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'shop.isolation'])
         Route::patch('/{id}', [InvoiceController::class, 'update'])->name('finance.invoices.update');
         Route::delete('/{id}', [InvoiceController::class, 'destroy'])->name('finance.invoices.destroy');
         Route::post('/{id}/restore', [InvoiceController::class, 'restore'])->name('finance.invoices.restore');
-        Route::post('/{id}/send', [InvoiceController::class, 'send'])->name('finance.invoices.send');
+        Route::post('/{id}/mark-sent', [InvoiceController::class, 'markSent'])->name('finance.invoices.mark_sent');
         Route::post('/{id}/void', [InvoiceController::class, 'void'])->name('finance.invoices.void');
         Route::get('/{id}/payments', [InvoiceController::class, 'listPayments'])->name('finance.invoices.payments.index');
         Route::post('/{id}/payments', [InvoiceController::class, 'recordPayment'])->name('finance.invoices.payments.store');
         Route::post('/{id}/payments/{paymentId}/reverse', [InvoiceController::class, 'reversePayment'])->name('finance.invoices.payments.reverse');
-        Route::post('/{id}/mark-paid', [InvoiceController::class, 'markAsPaid'])->name('finance.invoices.mark_paid');
-        
-        // Post to ledger (requires access-finance-invoices permission)
-        Route::middleware('permission:access-finance-invoices')->post('/{id}/post', [InvoiceController::class, 'post'])->name('finance.invoices.post');
+        // Retired writes return 410 so clients cannot accidentally create a
+        // second lifecycle or money-history path.
+        Route::post('/{id}/mark-paid', function (): \Illuminate\Http\JsonResponse {
+            Log::warning('Finance compatibility route used', ['route' => 'mark-paid']);
+
+            return response()->json([
+                'message' => 'Use the record payment endpoint instead.',
+                'code' => 'PAYMENT_ROUTE_MOVED',
+                'replacement' => '/api/finance/invoices/{id}/payments',
+            ], 410);
+        })->name('finance.invoices.mark_paid_compatibility');
+        Route::post('/{id}/send', function (): \Illuminate\Http\JsonResponse {
+            Log::warning('Finance compatibility route used', ['route' => 'send']);
+
+            return response()->json([
+                'message' => 'Use the internal mark-sent endpoint instead.',
+                'code' => 'FINANCE_ROUTE_MOVED',
+                'replacement' => '/api/finance/invoices/{id}/mark-sent',
+            ], 410);
+        })->name('finance.invoices.send_compatibility');
+        Route::post('/{id}/post', function (): \Illuminate\Http\JsonResponse {
+            Log::warning('Finance compatibility route used', ['route' => 'post']);
+
+            return response()->json([
+                'message' => 'Ledger posting is not part of the SME Finance workflow.',
+                'code' => 'FINANCE_ROUTE_MOVED',
+                'replacement' => '/api/finance/invoices/{id}',
+            ], 410);
+        })->name('finance.invoices.post_compatibility');
     });
 
     // ============================================
