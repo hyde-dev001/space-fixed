@@ -169,6 +169,58 @@ final class FinanceSummaryService
             }
             $this->addRevenue($row->payment_date, $basis, $total, $periodStart, $periodEnd, $totals, $trend);
         }
+
+        $this->addLinkedLegacyFallbacks($shopId, $from, $to, $periodStart, $periodEnd, $totals, $trend, $warnings);
+    }
+
+    /** @param array<string,int> $totals @param array<string,array<string,mixed>> $trend @param array<int,array<string,mixed>> $warnings */
+    private function addLinkedLegacyFallbacks(int $shopId, CarbonImmutable $from, CarbonImmutable $to, CarbonImmutable $periodStart, CarbonImmutable $periodEnd, array &$totals, array &$trend, array &$warnings): void
+    {
+        if (! Schema::hasTable('finance_invoice_payments') || ! Schema::hasTable('orders')) {
+            return;
+        }
+
+        $rows = DB::table('finance_invoice_payments as payments')
+            ->join('finance_invoices as invoices', 'invoices.id', '=', 'payments.invoice_id')
+            ->leftJoin('orders', 'orders.id', '=', 'invoices.job_order_id')
+            ->where('payments.shop_owner_id', $shopId)
+            ->where('payments.entry_type', 'payment')
+            ->where('payments.source', 'legacy_migration')
+            ->whereNotNull('invoices.job_order_id')
+            ->whereNull('orders.id')
+            ->whereNotExists(function ($query): void {
+                $query->selectRaw('1')
+                    ->from('finance_invoice_payments as reversals')
+                    ->whereColumn('reversals.reverses_payment_id', 'payments.id');
+            })
+            ->where('payments.received_at', '>=', $from)
+            ->where('payments.received_at', '<', $to)
+            ->get([
+                'payments.id',
+                'payments.amount',
+                'payments.received_at',
+                'invoices.id as invoice_id',
+                'invoices.total',
+                'invoices.tax_amount',
+            ]);
+
+        foreach ($rows as $row) {
+            $total = $this->cents($row->total);
+            $tax = $this->cents($row->tax_amount);
+            $cash = $this->cents($row->amount);
+            $basis = $total - $tax;
+            if ($total <= 0 || $basis < 0 || $tax > $total || $cash <= 0) {
+                $warnings[] = $this->warning('legacy_source_missing', 'invoice', (int) $row->invoice_id);
+                continue;
+            }
+
+            if ($cash > $total) {
+                $warnings[] = $this->warning('overpaid_invoice_payment', 'invoice', (int) $row->invoice_id);
+            }
+            $revenue = min($basis, intdiv($cash * $basis, $total));
+            $warnings[] = $this->warning('legacy_source_missing', 'invoice', (int) $row->invoice_id);
+            $this->addRevenue($row->received_at, $revenue, $cash, $periodStart, $periodEnd, $totals, $trend);
+        }
     }
 
     /** @param array<string,int> $totals @param array<string,array<string,mixed>> $trend @param array<int,array<string,mixed>> $warnings */
