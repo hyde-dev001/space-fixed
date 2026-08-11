@@ -249,13 +249,13 @@ export default function VerifyEmail({ status, message }: Props) {
   return (
     <>
       <Head title="Email Verification" />
-      <div className="min-h-screen bg-white font-outfit antialiased">
+      <div className="userside-auth-page min-h-screen bg-white font-outfit antialiased">
         <Navigation />
 
         <div className="max-w-[1920px] mx-auto px-6 lg:px-12 py-24">
           <div className="max-w-2xl mx-auto">
             {/* Main Card */}
-            <div className="bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
+            <div className="userside-auth-card bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
               {/* Icon */}
               <div className="flex justify-center mb-6">
                 {renderIcon()}

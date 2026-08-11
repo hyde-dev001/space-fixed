@@ -407,6 +407,111 @@ html.userside-dark #app textarea::placeholder {
   color: #94a3b8;
 }
 
+/* User authentication pages use a dedicated dark surface so their light-mode
+   form utilities cannot leak a white canvas into customer dark mode. */
+.userside-auth-page {
+  color: #0f172a;
+}
+
+.userside-auth-card {
+  border: 1px solid #e2e8f0;
+}
+
+.userside-auth-input {
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+html.userside-dark #app .userside-auth-page {
+  background: radial-gradient(circle at top, #18243a 0%, #0b1220 52%, #080e19 100%) !important;
+  color: #f8fafc;
+}
+
+html.userside-dark #app .userside-auth-title {
+  color: #f8fafc !important;
+}
+
+html.userside-dark #app .userside-auth-subtitle {
+  color: #a8b6ca !important;
+}
+
+html.userside-dark #app .userside-auth-card {
+  background: #111827 !important;
+  border-style: solid !important;
+  border-color: #334155 !important;
+  box-shadow: 0 22px 50px -28px rgba(0, 0, 0, 0.9) !important;
+}
+
+html.userside-dark #app .userside-auth-page label {
+  color: #e2e8f0 !important;
+}
+
+html.userside-dark #app .userside-auth-page input:not([type="checkbox"]),
+html.userside-dark #app .userside-auth-page select,
+html.userside-dark #app .userside-auth-page textarea,
+html.userside-dark #app .userside-auth-input {
+  background: #1b273d !important;
+  border-color: #41516a !important;
+  color: #f8fafc !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.025) !important;
+}
+
+html.userside-dark #app .userside-auth-page input:not([type="checkbox"])::placeholder,
+html.userside-dark #app .userside-auth-page textarea::placeholder,
+html.userside-dark #app .userside-auth-input::placeholder {
+  color: #94a3b8 !important;
+}
+
+html.userside-dark #app .userside-auth-page input:not([type="checkbox"]):focus,
+html.userside-dark #app .userside-auth-page select:focus,
+html.userside-dark #app .userside-auth-page textarea:focus,
+html.userside-dark #app .userside-auth-input:focus {
+  border-color: #8aa8ff !important;
+  box-shadow: 0 0 0 3px rgba(70, 95, 255, 0.2) !important;
+}
+
+html.userside-dark #app .userside-auth-page input[type="checkbox"] {
+  accent-color: #6d8dff;
+}
+
+html.userside-dark #app .userside-auth-link {
+  color: #a9c1ff !important;
+}
+
+html.userside-dark #app .userside-auth-link:hover {
+  color: #d5e0ff !important;
+}
+
+html.userside-dark #app .userside-auth-primary {
+  background: #f8fafc !important;
+  color: #0b1220 !important;
+  border-color: #f8fafc !important;
+}
+
+html.userside-dark #app .userside-auth-primary:hover {
+  background: #dbe5f5 !important;
+  color: #0b1220 !important;
+}
+
+html.userside-dark #app .userside-auth-secondary {
+  background: #1f2937 !important;
+  border-color: #475569 !important;
+  color: #e2e8f0 !important;
+}
+
+html.userside-dark #app .userside-auth-secondary:hover {
+  background: #27364d !important;
+}
+
+html.userside-dark #app .userside-auth-ghost {
+  border-color: #8aa8ff !important;
+  color: #b8cdff !important;
+}
+
+html.userside-dark #app .userside-auth-ghost:hover {
+  background: #1e3a8a !important;
+  color: #ffffff !important;
+}
+
 /* Server-rendered first-open experience. React removes it after its first render. */
 .solespace-app-loader {
   position: fixed;
@@ -484,7 +589,7 @@ html.userside-dark #app textarea::placeholder {
   letter-spacing: 0.08em;
   line-height: 1;
   white-space: nowrap;
-  text-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
+  text-shadow: none;
 }
 
 .solespace-app-loader__wordmark span {
@@ -493,98 +598,65 @@ html.userside-dark #app textarea::placeholder {
   --loader-origin-x: 0rem;
   --loader-origin-y: 0rem;
   --loader-origin-rotate: 0deg;
-  animation: solespace-loader-letter 1.25s cubic-bezier(0.16, 1, 0.3, 1) 1 both;
-  animation-fill-mode: both;
+  animation: solespace-loader-letter 840ms linear 1 both;
   backface-visibility: hidden;
   transform: translate3d(0, 0, 0);
   transform-origin: center;
-  will-change: transform, opacity;
+  will-change: transform;
 }
 
 .solespace-app-loader__wordmark span:nth-child(1) {
-  --loader-origin-x: -2.4rem;
-  --loader-origin-y: -1.6rem;
-  --loader-origin-rotate: -20deg;
-}
-
-.solespace-app-loader__wordmark span:nth-child(2) {
-  --loader-origin-x: -1.1rem;
-  --loader-origin-y: 1.8rem;
-  --loader-origin-rotate: 14deg;
-}
-
-.solespace-app-loader__wordmark span:nth-child(3) {
-  --loader-origin-x: -0.5rem;
-  --loader-origin-y: -2.1rem;
-  --loader-origin-rotate: -12deg;
-}
-
-.solespace-app-loader__wordmark span:nth-child(4) {
-  --loader-origin-x: -2.6rem;
-  --loader-origin-y: 0.7rem;
-  --loader-origin-rotate: 18deg;
-}
-
-.solespace-app-loader__wordmark span:nth-child(5) {
-  --loader-origin-x: 1.8rem;
-  --loader-origin-y: -2.1rem;
-  --loader-origin-rotate: 13deg;
-}
-
-.solespace-app-loader__wordmark span:nth-child(6) {
-  --loader-origin-x: 2.5rem;
-  --loader-origin-y: 0.8rem;
+  --loader-origin-x: -1.8rem;
+  --loader-origin-y: -1.2rem;
   --loader-origin-rotate: -16deg;
 }
 
-.solespace-app-loader__wordmark span:nth-child(7) {
-  --loader-origin-x: 1.4rem;
-  --loader-origin-y: 1.9rem;
-  --loader-origin-rotate: 16deg;
-}
-
-.solespace-app-loader__wordmark span:nth-child(8) {
-  --loader-origin-x: 0.5rem;
-  --loader-origin-y: -1.7rem;
-  --loader-origin-rotate: -14deg;
-}
-
-.solespace-app-loader__wordmark span:nth-child(9) {
-  --loader-origin-x: 2.3rem;
-  --loader-origin-y: 1.6rem;
+.solespace-app-loader__wordmark span:nth-child(2) {
+  --loader-origin-x: -0.8rem;
+  --loader-origin-y: 1.3rem;
   --loader-origin-rotate: 12deg;
 }
 
-.solespace-app-loader__wordmark span:nth-child(2) {
-  animation-delay: 48ms;
-}
-
 .solespace-app-loader__wordmark span:nth-child(3) {
-  animation-delay: 96ms;
+  --loader-origin-x: -0.4rem;
+  --loader-origin-y: -1.5rem;
+  --loader-origin-rotate: -10deg;
 }
 
 .solespace-app-loader__wordmark span:nth-child(4) {
-  animation-delay: 144ms;
+  --loader-origin-x: -1.9rem;
+  --loader-origin-y: 0.5rem;
+  --loader-origin-rotate: 14deg;
 }
 
 .solespace-app-loader__wordmark span:nth-child(5) {
-  animation-delay: 192ms;
+  --loader-origin-x: 1.4rem;
+  --loader-origin-y: -1.5rem;
+  --loader-origin-rotate: 11deg;
 }
 
 .solespace-app-loader__wordmark span:nth-child(6) {
-  animation-delay: 240ms;
+  --loader-origin-x: 1.9rem;
+  --loader-origin-y: 0.6rem;
+  --loader-origin-rotate: -13deg;
 }
 
 .solespace-app-loader__wordmark span:nth-child(7) {
-  animation-delay: 288ms;
+  --loader-origin-x: 1rem;
+  --loader-origin-y: 1.3rem;
+  --loader-origin-rotate: 13deg;
 }
 
 .solespace-app-loader__wordmark span:nth-child(8) {
-  animation-delay: 336ms;
+  --loader-origin-x: 0.4rem;
+  --loader-origin-y: -1.2rem;
+  --loader-origin-rotate: -12deg;
 }
 
 .solespace-app-loader__wordmark span:nth-child(9) {
-  animation-delay: 384ms;
+  --loader-origin-x: 1.7rem;
+  --loader-origin-y: 1.1rem;
+  --loader-origin-rotate: 10deg;
 }
 
 .solespace-app-loader__line {
@@ -624,13 +696,8 @@ html.userside-dark #app textarea::placeholder {
 
 @keyframes solespace-loader-letter {
   0% {
-    opacity: 0.42;
-    transform: translate3d(var(--loader-origin-x), var(--loader-origin-y), 0) scale(0.96) rotate(var(--loader-origin-rotate));
-  }
-
-  62% {
-    opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1.015) rotate(0deg);
+    opacity: 0.55;
+    transform: translate3d(var(--loader-origin-x), var(--loader-origin-y), 0) scale(0.985) rotate(var(--loader-origin-rotate));
   }
 
   100% {

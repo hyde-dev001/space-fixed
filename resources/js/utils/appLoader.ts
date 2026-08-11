@@ -1,4 +1,5 @@
 export const APP_LOADER_ENABLED_CLASS = "solespace-first-load";
+export const APP_LOADER_READY_CLASS = "solespace-app-ready";
 export const APP_LOADER_DURATION_MS = 3000;
 export const APP_LOADER_FADE_MS = 360;
 
@@ -7,13 +8,20 @@ const LEAVING_CLASS = "is-leaving";
 const STARTED_AT_ATTRIBUTE = "solespaceLoaderStartedAt";
 const DISMISS_SCHEDULED_ATTRIBUTE = "dismissScheduled";
 
+const markAppLoaderReady = (): void => {
+	document.documentElement.classList.add(APP_LOADER_READY_CLASS);
+};
+
 export function dismissAppLoader(): void {
 	const loader = document.getElementById(APP_LOADER_ID);
 
+	if (!loader || !document.documentElement.classList.contains(APP_LOADER_ENABLED_CLASS)) {
+		markAppLoaderReady();
+		return;
+	}
+
 	if (
-		!loader
-		|| !document.documentElement.classList.contains(APP_LOADER_ENABLED_CLASS)
-		|| loader.classList.contains(LEAVING_CLASS)
+		loader.classList.contains(LEAVING_CLASS)
 		|| loader.dataset[DISMISS_SCHEDULED_ATTRIBUTE] === "true"
 	) {
 		return;
@@ -26,9 +34,17 @@ export function dismissAppLoader(): void {
 
 	window.setTimeout(() => {
 		const currentLoader = document.getElementById(APP_LOADER_ID);
-		if (!currentLoader || currentLoader.classList.contains(LEAVING_CLASS)) return;
+		if (!currentLoader) {
+			markAppLoaderReady();
+			return;
+		}
+
+		if (currentLoader.classList.contains(LEAVING_CLASS)) return;
 
 		currentLoader.classList.add(LEAVING_CLASS);
-		window.setTimeout(() => currentLoader.remove(), APP_LOADER_FADE_MS);
+		window.setTimeout(() => {
+			currentLoader.remove();
+			markAppLoaderReady();
+		}, APP_LOADER_FADE_MS);
 	}, leaveDelay);
 }
