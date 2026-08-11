@@ -71,7 +71,7 @@ createInertiaApp({
     setup({ el, App, props }) {
         const root = createRoot(el);
         
-        // Check if the current page is a user-side page (should not have dark mode)
+        // UserSide pages use the customer navigation and cart providers.
         const isUserSidePage = props.initialPage.component.startsWith('UserSide/');
         syncPagePresentation(props.initialPage.component ?? '');
 

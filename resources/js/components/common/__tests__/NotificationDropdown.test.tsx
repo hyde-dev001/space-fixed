@@ -28,16 +28,22 @@ vi.mock('../NotificationItem', () => ({
   default: () => <div data-testid="notification-item" />,
 }));
 
+vi.mock('../ThemeToggleButton', () => ({
+  ThemeToggleButton: () => <button type="button" aria-label="Toggle theme" data-testid="customer-theme-toggle" />,
+}));
+
 describe('NotificationDropdown customer palette', () => {
-  it('keeps customer notifications light while preserving dark shop-owner styling', () => {
-    const { container, unmount } = render(
+  it('offers customer dark mode beside the mark-all-read action', () => {
+    const { container, getByRole, unmount } = render(
       <NotificationDropdown basePath="/api/notifications" onClose={vi.fn()} />,
     );
     const customerPanel = container.firstElementChild as HTMLElement;
 
     expect(customerPanel).toHaveClass('bg-white');
-    expect(customerPanel).not.toHaveClass('dark:bg-gray-900');
-    expect(customerPanel).not.toHaveClass('dark:border-gray-700');
+    expect(customerPanel).toHaveClass('dark:bg-gray-900');
+    expect(customerPanel).toHaveClass('dark:border-gray-700');
+    expect(getByRole('button', { name: 'Toggle theme' })).toBeInTheDocument();
+    expect(getByRole('button', { name: 'Mark all as read' })).toBeInTheDocument();
 
     unmount();
 
@@ -48,5 +54,6 @@ describe('NotificationDropdown customer palette', () => {
 
     expect(shopOwnerPanel).toHaveClass('dark:bg-gray-900');
     expect(shopOwnerPanel).toHaveClass('dark:border-gray-700');
+    expect(shopOwnerPanel.querySelector('[aria-label="Toggle theme"]')).toBeNull();
   });
 });

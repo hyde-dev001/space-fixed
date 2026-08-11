@@ -24,6 +24,8 @@ class AppShellLoaderTest extends TestCase
         self::assertStringContainsString('solespace-loader-letter', $styles);
         self::assertStringContainsString('--loader-origin-x', $styles);
         self::assertStringContainsString('radial-gradient', $styles);
+        self::assertStringContainsString('will-change: transform, opacity;', $styles);
+        self::assertStringContainsString('backface-visibility: hidden;', $styles);
     }
 
     public function test_loader_uses_a_white_surface_with_readable_light_gray_text(): void

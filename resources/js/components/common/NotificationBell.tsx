@@ -22,14 +22,13 @@ const NotificationBell: React.FC<NotificationBellProps> = ({
   badgeClassName = ''
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const isCustomerView = basePath.replace(/\/$/, '') === '/api/notifications';
   const { data: unreadCount = 0, isLoading } = useUnreadCount(basePath);
 
   return (
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`relative inline-flex h-10 w-10 shrink-0 items-center justify-center p-0 leading-none transition-opacity hover:opacity-70 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${isCustomerView ? 'text-black' : 'text-black dark:text-gray-200'} ${className}`}
+        className={`relative inline-flex h-10 w-10 shrink-0 items-center justify-center p-0 leading-none text-black transition-opacity hover:opacity-70 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-gray-200 ${className}`}
         aria-label="Notifications"
       >
         <Bell size={iconSize} className="block h-5 w-5 shrink-0" />
