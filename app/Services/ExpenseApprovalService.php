@@ -310,25 +310,6 @@ class ExpenseApprovalService
             return;
         }
 
-        if (in_array($previousLevel, [2, 3], true)) {
-            $title = $previousLevel === 2
-                ? 'Expense Returned To Finance'
-                : 'Expense Awaiting Final Finance Approval';
-            $message = $previousLevel === 2
-                ? "Expense {$expenseData['reference']} was approved by shop owner and is back to Finance for review."
-                : "Expense {$expenseData['reference']} passed Finance review and needs final Finance approval.";
-
-            $this->notificationService->sendToErpRole(
-                roleName: 'Finance',
-                shopId: $shopOwnerId,
-                type: NotificationType::EXPENSE_REQUEST_PENDING,
-                title: $title,
-                message: $message,
-                data: $expenseData,
-                actionUrl: $financeActionUrl,
-                priority: 'medium'
-            );
-        }
     }
 
     private function dispatchExpenseRejectionNotifications(Expense $expense, Approval $approval, string $comments): void

@@ -108,13 +108,12 @@ class ApprovalWorkflowServicesTest extends TestCase
     {
         $service = app(ExpenseApprovalService::class);
         $expense = $this->createExpense();
+        $expense->update(['amount' => 6000]);
 
         $approval = $service->createExpenseApproval($expense, $this->requester);
 
         $service->approveExpense($expense->fresh(), $this->financeUser, 'ok');
-        $service->approveExpense($expense->fresh(), $this->shopOwnerUser, 'ok');
-        $service->approveExpense($expense->fresh(), $this->financeSecondUser, 'ok');
-        $result = $service->approveExpense($expense->fresh(), $this->financeFinalUser, 'final ok');
+        $result = $service->approveExpense($expense->fresh(), $this->shopOwnerUser, 'final ok');
 
         $this->assertTrue($result['success']);
         $this->assertTrue($result['is_final']);

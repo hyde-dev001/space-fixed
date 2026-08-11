@@ -9,7 +9,6 @@ use App\Services\ExpenseApprovalService;
 use App\Services\Finance\ExpenseSettlementService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Log;
 
 class ExpenseController extends Controller
 {
@@ -106,8 +105,8 @@ class ExpenseController extends Controller
             ]);
 
             $forwardingMessage = ($result['is_final'] ?? false)
-                ? 'Expense approved and forwarded to Finance for final approval'
-                : 'Expense forwarded to Finance for next level review';
+                ? 'Expense approved.'
+                : 'Expense moved to the next approval stage.';
 
             return response()->json([
                 'message' => $forwardingMessage,
@@ -118,45 +117,10 @@ class ExpenseController extends Controller
             ]);
         }
 
-        // Legacy 2-step workflow (backward compatibility)
-        if ($expense->status !== 'submitted') {
-            return response()->json([
-                'message' => 'Only submitted expenses can be approved.',
-                'current_status' => $expense->status,
-            ], 422);
-        }
-
-        $request->validate([
-            'approval_notes' => 'nullable|string|max:1000',
-        ]);
-
-        try {
-            $expense->update([
-                'status'         => 'approved',
-                'approved_by'    => $shopOwner->id,
-                'approved_at'    => now(),
-                'approval_notes' => $request->approval_notes,
-                'meta'           => array_merge((array) $expense->meta, [
-                    'approved_by_type' => 'shop_owner',
-                    'approved_by_name' => $shopOwner->business_name ?? $shopOwner->name ?? 'Shop Owner',
-                ]),
-            ]);
-
-            $this->audit('approve_expense', $shopOwner->id, $expense->id, [
-                'reference'      => $expense->reference,
-                'category'       => $expense->category,
-                'amount'         => $expense->amount,
-                'approval_notes' => $request->approval_notes,
-            ]);
-
-            return response()->json([
-                'message' => 'Expense approved successfully.',
-                'expense' => $expense->fresh(),
-            ]);
-        } catch (\Exception $e) {
-            Log::error('ShopOwner expense approval failed: ' . $e->getMessage(), ['exception' => $e]);
-            return response()->json(['message' => 'Failed to approve expense.', 'error' => $e->getMessage()], 500);
-        }
+        return response()->json([
+            'message' => 'This expense has no active approval workflow and requires Finance review.',
+            'code' => 'APPROVAL_WORKFLOW_REQUIRED',
+        ], 409);
     }
 
     /**
@@ -195,42 +159,10 @@ class ExpenseController extends Controller
             ]);
         }
 
-        if ($expense->status !== 'submitted') {
-            return response()->json([
-                'message' => 'Only submitted expenses can be rejected.',
-                'current_status' => $expense->status,
-            ], 422);
-        }
-
-        $rejectionReason = (string) $request->input('rejection_reason', '');
-        try {
-            $expense->update([
-                'status'         => 'rejected',
-                'approved_by'    => $shopOwner->id,
-                'approved_at'    => now(),
-                'approval_notes' => $rejectionReason,
-                'meta'           => array_merge((array) $expense->meta, [
-                    'approved_by_type' => 'shop_owner',
-                    'approved_by_name' => $shopOwner->business_name ?? $shopOwner->name ?? 'Shop Owner',
-                    'rejection_reason' => $rejectionReason,
-                ]),
-            ]);
-
-            $this->audit('reject_expense', $shopOwner->id, $expense->id, [
-                'reference'        => $expense->reference,
-                'category'         => $expense->category,
-                'amount'           => $expense->amount,
-                'rejection_reason' => $rejectionReason,
-            ]);
-
-            return response()->json([
-                'message' => 'Expense rejected.',
-                'expense' => $expense->fresh(),
-            ]);
-        } catch (\Exception $e) {
-            Log::error('ShopOwner expense rejection failed: ' . $e->getMessage(), ['exception' => $e]);
-            return response()->json(['message' => 'Failed to reject expense.', 'error' => $e->getMessage()], 500);
-        }
+        return response()->json([
+            'message' => 'This expense has no active approval workflow and requires Finance review.',
+            'code' => 'APPROVAL_WORKFLOW_REQUIRED',
+        ], 409);
     }
 
     private function audit(string $action, int $shopOwnerId, int $targetId, array $metadata = []): void
