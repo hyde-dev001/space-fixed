@@ -1869,6 +1869,10 @@ Route::prefix('finance')->name('finance.')->middleware(['auth:user', 'role_or_pe
     })->name('index');
 
     Route::get('/dashboard', function () {
+        return Inertia::render('ERP/Finance/Dashboard');
+
+        /* Legacy dashboard calculation retained only as a temporary source
+         * reference while callers move to /api/finance/dashboard.
         if (Auth::guard('user')->user()?->force_password_change) {
             return redirect()->route('erp.profile');
         }
@@ -2052,6 +2056,7 @@ Route::prefix('finance')->name('finance.')->middleware(['auth:user', 'role_or_pe
             'refunds' => $refundPayload,
             'refundedRevenue' => $refundedRevenue,
         ]);
+        */
     })->name('dashboard');
 
     Route::get('/purchase-request-approval', function () {

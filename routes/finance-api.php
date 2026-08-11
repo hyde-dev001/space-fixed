@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\Finance\InvoiceController;
 use App\Http\Controllers\Api\Finance\ExpenseController;
 use App\Http\Controllers\Api\Finance\TaxRateController;
+use App\Http\Controllers\Api\Finance\FinanceSummaryController;
 use App\Http\Controllers\Api\Finance\PayslipApprovalController as FinancePayslipApprovalController;
 use App\Http\Controllers\ERP\HR\AuditLogController;
 use App\Http\Controllers\Erp\HR\PayrollController;
@@ -55,6 +56,10 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:manage
         Route::put('/{id}', [TaxRateController::class, 'update'])->whereNumber('id')->name('finance.tax-rates.update');
         Route::delete('/{id}', [TaxRateController::class, 'destroy'])->whereNumber('id')->name('finance.tax-rates.destroy');
     });
+});
+
+Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access-finance-dashboard', 'shop.isolation'])->group(function () {
+    Route::get('/dashboard', FinanceSummaryController::class)->name('finance.dashboard.summary');
 });
 
 /**

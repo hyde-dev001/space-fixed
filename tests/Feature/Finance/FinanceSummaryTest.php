@@ -2,8 +2,12 @@
 
 namespace Tests\Feature\Finance;
 
-use PHPUnit\Framework\TestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\PermissionRegistrar;
+use Tests\TestCase;
 
 /**
  * Fixed, decimal-safe source fixtures. These intentionally describe the
@@ -11,6 +15,35 @@ use PHPUnit\Framework\Attributes\DataProvider;
  */
 class FinanceSummaryTest extends TestCase
 {
+    use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        Permission::findOrCreate('access-finance-dashboard', 'user');
+    }
+
+    public function test_dashboard_contract_is_server_owned_and_decimal_string_based(): void
+    {
+        $user = User::factory()->create(['shop_owner_id' => 1]);
+        $user->givePermissionTo('access-finance-dashboard');
+
+        $response = $this->actingAs($user, 'user')->getJson('/api/finance/dashboard');
+
+        $response->assertOk()
+            ->assertJsonStructure([
+                'period',
+                'primary' => ['net_revenue', 'incurred_expenses', 'net_operating_result', 'net_cash_movement'],
+                'supporting' => ['gross_revenue', 'executed_refunds', 'paid_expenses'],
+                'trend',
+                'definitions',
+                'integrity_warnings',
+            ]);
+        $this->assertSame('0.00', $response->json('primary.net_revenue'));
+        $this->assertCount(6, $response->json('trend'));
+    }
+
     /** @return array<string,array<string,mixed>> */
     public static function sourceFixtures(): array
     {
