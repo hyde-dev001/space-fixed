@@ -25,6 +25,12 @@ use App\Http\Controllers\ShopOwner\PremiumCheckoutController;
 use App\Http\Controllers\ShopOwner\PromoCampaignController;
 use App\Http\Controllers\Api\RefundApprovalController;
 use App\Http\Controllers\Erp\UploadInventoryController;
+use App\Http\Controllers\Api\Finance\ExpenseController as FinanceExpenseController;
+use App\Http\Controllers\Api\Finance\InvoiceController as FinanceInvoiceController;
+use App\Http\Controllers\Api\Finance\TaxRateController as FinanceTaxRateController;
+use App\Http\Controllers\Erp\HR\AttendanceController as HrAttendanceController;
+use App\Http\Controllers\Erp\HR\PayrollBatchController as HrPayrollBatchController;
+use App\Http\Controllers\Erp\HR\PayrollController as HrPayrollController;
 
 /**
  * Shop Owner Routes
@@ -60,6 +66,41 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
     });
 
     // ============================================
+    // FINANCE OPERATIONS (ERP owner mode)
+    // ============================================
+    Route::prefix('finance')->group(function () {
+        Route::prefix('invoices')->group(function () {
+            Route::get('/', [FinanceInvoiceController::class, 'index'])->name('shop_owner.finance.invoices.index');
+            Route::get('/{id}', [FinanceInvoiceController::class, 'show'])->name('shop_owner.finance.invoices.show');
+            Route::post('/', [FinanceInvoiceController::class, 'store'])->name('shop_owner.finance.invoices.store');
+            Route::post('/from-job', [FinanceInvoiceController::class, 'createFromJob'])->name('shop_owner.finance.invoices.from_job');
+            Route::patch('/{id}', [FinanceInvoiceController::class, 'update'])->name('shop_owner.finance.invoices.update');
+            Route::delete('/{id}', [FinanceInvoiceController::class, 'destroy'])->name('shop_owner.finance.invoices.destroy');
+            Route::post('/{id}/restore', [FinanceInvoiceController::class, 'restore'])->name('shop_owner.finance.invoices.restore');
+            Route::post('/{id}/send', [FinanceInvoiceController::class, 'send'])->name('shop_owner.finance.invoices.send');
+            Route::post('/{id}/void', [FinanceInvoiceController::class, 'void'])->name('shop_owner.finance.invoices.void');
+            Route::post('/{id}/mark-paid', [FinanceInvoiceController::class, 'markAsPaid'])->name('shop_owner.finance.invoices.mark_paid');
+            Route::post('/{id}/post', [FinanceInvoiceController::class, 'post'])->name('shop_owner.finance.invoices.post');
+        });
+
+        Route::prefix('expenses')->group(function () {
+            Route::get('/', [FinanceExpenseController::class, 'index'])->name('shop_owner.finance.expenses.index');
+            Route::get('/{id}', [FinanceExpenseController::class, 'show'])->name('shop_owner.finance.expenses.show');
+            Route::post('/', [FinanceExpenseController::class, 'store'])->name('shop_owner.finance.expenses.store');
+            Route::patch('/{id}', [FinanceExpenseController::class, 'update'])->name('shop_owner.finance.expenses.update');
+            Route::delete('/{id}', [FinanceExpenseController::class, 'destroy'])->name('shop_owner.finance.expenses.destroy');
+            Route::post('/{id}/restore', [FinanceExpenseController::class, 'restore'])->name('shop_owner.finance.expenses.restore');
+            Route::post('/{id}/approve', [ShopOwnerExpenseController::class, 'approve'])->name('shop_owner.finance.expenses.approve');
+            Route::post('/{id}/reject', [ShopOwnerExpenseController::class, 'reject'])->name('shop_owner.finance.expenses.reject');
+            Route::post('/{id}/receipt', [FinanceExpenseController::class, 'uploadReceipt'])->name('shop_owner.finance.expenses.receipt.upload');
+            Route::get('/{id}/receipt/download', [FinanceExpenseController::class, 'downloadReceipt'])->name('shop_owner.finance.expenses.receipt.download');
+            Route::delete('/{id}/receipt', [FinanceExpenseController::class, 'deleteReceipt'])->name('shop_owner.finance.expenses.receipt.delete');
+        });
+
+        Route::get('/tax-rates', [FinanceTaxRateController::class, 'index'])->name('shop_owner.finance.tax-rates.index');
+    });
+
+    // ============================================
     // SALARY CHANGE APPROVALS (Shop Owner Final Approval)
     // ============================================
     Route::prefix('salary-changes')->middleware('check.registration.type:company')->group(function () {
@@ -67,6 +108,38 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
         Route::get('/{id}', [\App\Http\Controllers\Erp\HR\SalaryChangeController::class, 'show'])->name('shop_owner.salary-changes.show');
         Route::post('/{id}/approve', [\App\Http\Controllers\Erp\HR\SalaryChangeController::class, 'approve'])->name('shop_owner.salary-changes.approve');
         Route::post('/{id}/reject', [\App\Http\Controllers\Erp\HR\SalaryChangeController::class, 'reject'])->name('shop_owner.salary-changes.reject');
+    });
+
+    // ============================================
+    // HR PAYROLL OPERATIONS (ERP owner mode)
+    // ============================================
+    Route::prefix('hr')->group(function () {
+        Route::get('/attendance/employee/{employeeId}', [HrAttendanceController::class, 'getByEmployee'])
+            ->name('shop_owner.hr.attendance.by_employee');
+
+        Route::prefix('payroll')->group(function () {
+            Route::get('/periods', [HrPayrollController::class, 'payrollPeriods'])
+                ->name('shop_owner.hr.payroll.periods');
+            Route::get('/', [HrPayrollController::class, 'index'])
+                ->name('shop_owner.hr.payroll.index');
+            Route::post('/', [HrPayrollController::class, 'store'])
+                ->name('shop_owner.hr.payroll.store');
+            Route::post('/calculate-preview', [HrPayrollController::class, 'calculatePreview'])
+                ->name('shop_owner.hr.payroll.calculate_preview');
+            Route::get('/{id}', [HrPayrollController::class, 'show'])
+                ->name('shop_owner.hr.payroll.show');
+
+            Route::prefix('batch')->group(function () {
+                Route::post('/preview', [HrPayrollBatchController::class, 'previewBatch'])
+                    ->name('shop_owner.hr.payroll.batch.preview');
+                Route::post('/generate', [HrPayrollBatchController::class, 'generateBatch'])
+                    ->name('shop_owner.hr.payroll.batch.generate');
+                Route::post('/retry', [HrPayrollBatchController::class, 'retryBatch'])
+                    ->name('shop_owner.hr.payroll.batch.retry');
+                Route::post('/export', [HrPayrollBatchController::class, 'exportBatch'])
+                    ->name('shop_owner.hr.payroll.batch.export');
+            });
+        });
     });
 
     // ============================================

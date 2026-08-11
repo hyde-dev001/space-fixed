@@ -173,19 +173,22 @@ class ExpenseController extends Controller
         }
 
         $request->validate([
-            'rejection_reason' => 'required|string|max:1000',
+            'rejection_reason' => 'required_without:approval_notes|string|max:1000',
+            'approval_notes' => 'nullable|string|max:1000',
         ]);
+
+        $rejectionReason = $request->input('rejection_reason') ?? $request->input('approval_notes');
 
         try {
             $expense->update([
                 'status'         => 'rejected',
                 'approved_by'    => $shopOwner->id,
                 'approved_at'    => now(),
-                'approval_notes' => $request->rejection_reason,
+                'approval_notes' => $rejectionReason,
                 'meta'           => array_merge((array) $expense->meta, [
                     'approved_by_type' => 'shop_owner',
                     'approved_by_name' => $shopOwner->business_name ?? $shopOwner->name ?? 'Shop Owner',
-                    'rejection_reason' => $request->rejection_reason,
+                    'rejection_reason' => $rejectionReason,
                 ]),
             ]);
 
@@ -193,7 +196,7 @@ class ExpenseController extends Controller
                 'reference'        => $expense->reference,
                 'category'         => $expense->category,
                 'amount'           => $expense->amount,
-                'rejection_reason' => $request->rejection_reason,
+                'rejection_reason' => $rejectionReason,
             ]);
 
             return response()->json([

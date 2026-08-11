@@ -241,11 +241,13 @@ const normalizeEmployee = (raw: any): Employee => ({
 
 const SalaryChanges: React.FC = () => {
   const { auth } = usePage().props as any;
+  const ownerMode = auth?.erpActor?.ownerMode === true;
+  const salaryChangesEndpoint = ownerMode ? "/api/shop-owner/salary-changes" : "/api/hr/salary-changes";
   const permissions: string[] = auth?.permissions ?? [];
   const currentUserId: number = auth?.user?.id ?? 0;
 
-  const canManage = permissions.includes("manage-salary-changes");
-  const canApprove = permissions.includes("approve-salary-change");
+  const canManage = !ownerMode && permissions.includes("manage-salary-changes");
+  const canApprove = ownerMode || permissions.includes("approve-salary-change");
   const canOverrideRetroactive = permissions.includes("override-salary-retroactive");
 
   // ─── State ──────────────────────────────────────────────────────────────────
@@ -274,7 +276,7 @@ const SalaryChanges: React.FC = () => {
     try {
       const params = new URLSearchParams();
       if (statusFilter !== "All") params.set("status", statusFilter);
-      const res = await fetch(`/api/hr/salary-changes?${params.toString()}`, {
+      const res = await fetch(salaryChangesEndpoint + "?" + params.toString(), {
         headers: { Accept: "application/json", "X-CSRF-TOKEN": getCsrfToken() },
         credentials: "same-origin",
       });
@@ -291,6 +293,11 @@ const SalaryChanges: React.FC = () => {
   };
 
   const fetchEmployees = async () => {
+    if (ownerMode) {
+      setEmployees([]);
+      return;
+    }
+
     try {
       const res = await fetch("/api/hr/employees?per_page=200", {
         headers: { Accept: "application/json", "X-CSRF-TOKEN": getCsrfToken() },
@@ -307,11 +314,11 @@ const SalaryChanges: React.FC = () => {
 
   useEffect(() => {
     fetchChanges();
-  }, [statusFilter]);
+  }, [statusFilter, ownerMode]);
 
   useEffect(() => {
     fetchEmployees();
-  }, []);
+  }, [ownerMode]);
 
   // ─── Filtered Rows ───────────────────────────────────────────────────────────
 
@@ -375,7 +382,7 @@ const SalaryChanges: React.FC = () => {
     setIsSubmittingNewChange(true);
 
     try {
-      const res = await fetch("/api/hr/salary-changes", {
+      const res = await fetch(salaryChangesEndpoint, {
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/json", "X-CSRF-TOKEN": getCsrfToken() },
         credentials: "same-origin",
@@ -435,7 +442,7 @@ const SalaryChanges: React.FC = () => {
 
     setIsActionProcessing(true);
     try {
-      const res = await fetch(`/api/hr/salary-changes/${change.id}/approve`, {
+      const res = await fetch(salaryChangesEndpoint + "/" + change.id + "/approve", {
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/json", "X-CSRF-TOKEN": getCsrfToken() },
         credentials: "same-origin",
@@ -475,7 +482,7 @@ const SalaryChanges: React.FC = () => {
 
     setIsActionProcessing(true);
     try {
-      const res = await fetch(`/api/hr/salary-changes/${change.id}/reject`, {
+      const res = await fetch(salaryChangesEndpoint + "/" + change.id + "/reject", {
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/json", "X-CSRF-TOKEN": getCsrfToken() },
         credentials: "same-origin",
@@ -494,6 +501,8 @@ const SalaryChanges: React.FC = () => {
   };
 
   const handleApply = async (change: SalaryChange) => {
+    if (ownerMode) return;
+
     const confirm = await Swal.fire({
       title: "Apply Salary Change?",
       text: `This will immediately update ${change.employee?.name}'s salary to ${fmtCurrency(change.new_salary)}.`,
@@ -506,7 +515,7 @@ const SalaryChanges: React.FC = () => {
 
     setIsActionProcessing(true);
     try {
-      const res = await fetch(`/api/hr/salary-changes/${change.id}/apply`, {
+      const res = await fetch(salaryChangesEndpoint + "/" + change.id + "/apply", {
         method: "POST",
         headers: { Accept: "application/json", "X-CSRF-TOKEN": getCsrfToken() },
         credentials: "same-origin",
@@ -525,6 +534,8 @@ const SalaryChanges: React.FC = () => {
   };
 
   const handleCancel = async (change: SalaryChange) => {
+    if (ownerMode) return;
+
     const confirm = await Swal.fire({
       title: "Cancel Salary Change?",
       text: "This will cancel the pending proposal. This cannot be undone.",
@@ -537,7 +548,7 @@ const SalaryChanges: React.FC = () => {
 
     setIsActionProcessing(true);
     try {
-      const res = await fetch(`/api/hr/salary-changes/${change.id}/cancel`, {
+      const res = await fetch(salaryChangesEndpoint + "/" + change.id + "/cancel", {
         method: "POST",
         headers: { Accept: "application/json", "X-CSRF-TOKEN": getCsrfToken() },
         credentials: "same-origin",
@@ -717,7 +728,7 @@ const SalaryChanges: React.FC = () => {
                   Apply Now
                 </button>
               )}
-              {change.status === "pending" && (change.proposed_by === currentUserId || canManage || canApprove) && (
+              {!ownerMode && change.status === "pending" && (change.proposed_by === currentUserId || canManage || canApprove) && (
                 <button
                   onClick={() => handleCancel(change)}
                   disabled={isActionProcessing}

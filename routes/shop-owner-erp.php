@@ -8,7 +8,6 @@ use App\Http\Controllers\Api\CRM\CRMDashboardController;
 use App\Http\Controllers\Api\CRM\CRMReviewController;
 use App\Http\Controllers\Erp\ReadPageController;
 use App\Http\Controllers\Logistics\ErpLogisticsController;
-use App\Http\Controllers\ShopOwner\UserAccessControlController;
 use App\Http\Controllers\Staff\CustomerController;
 use App\Http\Middleware\EnsureOwnerErpWorkspaceEnabled;
 use App\Services\ErpWorkspaceNavigationService;
@@ -25,6 +24,12 @@ Route::middleware(EnsureOwnerErpWorkspaceEnabled::class)
         Route::get('/{module}', [WorkspaceController::class, 'module'])
             ->whereIn('module', ErpWorkspaceNavigationService::slugs())
             ->name('module');
+
+        Route::get('/retail/dashboard', function (): \Inertia\Response {
+            return Inertia::render('ShopOwner/Dashboard', [
+                'erpMode' => true,
+            ]);
+        })->name('retail.dashboard');
 
         Route::get('/retail/products', function (): \Inertia\Response {
             return Inertia::render('ShopOwner/Products/product management/ProductManagementWithVariants', [
@@ -120,7 +125,7 @@ Route::middleware(EnsureOwnerErpWorkspaceEnabled::class)
         Route::prefix('hr')->name('hr.')->group(function (): void {
             Route::get('/dashboard', [ReadPageController::class, 'hrDashboard'])
                 ->name('dashboard');
-            Route::get('/employee-directory', [UserAccessControlController::class, 'index'])
+            Route::get('/employee-directory', [ReadPageController::class, 'hrEmployeeDirectory'])
                 ->name('employee-directory');
             Route::get('/attendance', [ReadPageController::class, 'hrAttendance'])
                 ->name('attendance');
@@ -128,6 +133,12 @@ Route::middleware(EnsureOwnerErpWorkspaceEnabled::class)
                 ->name('leave-approvals');
             Route::get('/overtime-approvals', [ReadPageController::class, 'hrOvertimeApprovals'])
                 ->name('overtime-approvals');
+            Route::get('/payroll-view', [ReadPageController::class, 'hrPayrollView'])
+                ->name('payroll-view');
+            Route::get('/payroll-generate', [ReadPageController::class, 'hrPayrollGenerate'])
+                ->name('payroll-generate');
+            Route::get('/salary-changes', [ReadPageController::class, 'hrSalaryChanges'])
+                ->name('salary-changes');
             Route::get('/suspend-accounts', function (): \Inertia\Response {
                 return Inertia::render('ShopOwner/TeamManagement/suspendAccount', [
                     'erpMode' => true,
@@ -138,21 +149,41 @@ Route::middleware(EnsureOwnerErpWorkspaceEnabled::class)
         });
 
         Route::prefix('finance')->name('finance.')->group(function (): void {
+            Route::get('/dashboard', [ReadPageController::class, 'financeDashboard'])
+                ->name('dashboard');
+            Route::get('/invoices', [ReadPageController::class, 'financeInvoices'])
+                ->name('invoices');
+            Route::get('/create-invoice', [ReadPageController::class, 'financeCreateInvoice'])
+                ->name('create-invoice');
+            Route::get('/expenses', [ReadPageController::class, 'financeExpenses'])
+                ->name('expenses');
             Route::get('/expense-approvals', function (): \Inertia\Response {
                 return Inertia::render('ShopOwner/Approvals/ExpenseApproval', [
                     'erpMode' => true,
                 ]);
             })->name('expense-approvals');
+            Route::get('/repair-pricing', function (): \Inertia\Response {
+                return Inertia::render('ShopOwner/Approvals/PriceApprovals', [
+                    'erpMode' => true,
+                    'approvalType' => 'repair',
+                ]);
+            })->name('repair-pricing');
+            Route::get('/shoe-pricing', function (): \Inertia\Response {
+                return Inertia::render('ShopOwner/Approvals/PriceApprovals', [
+                    'erpMode' => true,
+                    'approvalType' => 'shoe',
+                ]);
+            })->name('shoe-pricing');
+            Route::get('/purchase-request-review', function (): \Inertia\Response {
+                return Inertia::render('ShopOwner/Approvals/PurchaseRequestApproval', [
+                    'erpMode' => true,
+                ]);
+            })->name('purchase-request-review');
             Route::get('/refund-approvals', function (): \Inertia\Response {
                 return Inertia::render('ShopOwner/Approvals/refundApproval', [
                     'erpMode' => true,
                 ]);
             })->name('refund-approvals');
-            Route::get('/price-approvals', function (): \Inertia\Response {
-                return Inertia::render('ShopOwner/Approvals/PriceApprovals', [
-                    'erpMode' => true,
-                ]);
-            })->name('price-approvals');
             Route::get('/payslip-approvals', function (): \Inertia\Response {
                 return Inertia::render('ShopOwner/Approvals/PayslipApproval', [
                     'erpMode' => true,

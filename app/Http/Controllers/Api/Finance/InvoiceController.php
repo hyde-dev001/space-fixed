@@ -8,6 +8,7 @@ use App\Models\Finance\Invoice;
 use App\Models\Finance\InvoiceItem;
 use App\Models\AuditLog;
 use App\Services\NotificationService;
+use App\Support\Erp\ErpActorContext;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -26,13 +27,11 @@ class InvoiceController extends Controller
     public function index(Request $request)
     {
         try {
-            $user = Auth::guard('user')->user();
-            
-            if (!$user) {
+            $shopOwnerId = $this->shopOwnerId();
+
+            if (!$shopOwnerId) {
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
-            
-            $shopOwnerId = $user->role === 'shop_owner' ? $user->id : $user->shop_owner_id;
             
             if (!$shopOwnerId) {
                 return response()->json(['error' => 'No shop association found'], 403);
@@ -100,8 +99,10 @@ class InvoiceController extends Controller
      */
     public function show($id)
     {
-        $user = Auth::guard('user')->user();
-        $shopOwnerId = $user->hasRole('Shop Owner') ? $user->id : $user->shop_owner_id;
+        $shopOwnerId = $this->shopOwnerId();
+        if (! $shopOwnerId) {
+            return response()->json(['error' => 'Unauthorized'], 401);
+        }
         
         // Include job order data when fetching single invoice
         $invoice = Invoice::withTrashed()
@@ -137,8 +138,7 @@ class InvoiceController extends Controller
         ]);
 
         try {
-            $user = Auth::guard('user')->user();
-            $shopOwnerId = $user->hasRole('Shop Owner') ? $user->id : $user->shop_owner_id;
+            $shopOwnerId = $this->shopOwnerId();
             
             if (!$shopOwnerId) {
                 return response()->json(['error' => 'No shop association found'], 403);
@@ -170,7 +170,7 @@ class InvoiceController extends Controller
                 'notes' => $data['notes'] ?? null,
                 'shop_id' => $shopOwnerId,
                 'meta' => [
-                    'created_by' => $user->id,
+                    'created_by' => $this->actorUserId(),
                 ],
             ]);
 
@@ -191,7 +191,7 @@ class InvoiceController extends Controller
             }
 
             // Audit log
-            $actorUserId = Auth::guard('user')->id() ?? Auth::id();
+            $actorUserId = $this->actorUserId();
             AuditLog::create([
                 'shop_owner_id' => $shopOwnerId,
                 'actor_user_id' => $actorUserId,
@@ -227,8 +227,7 @@ class InvoiceController extends Controller
      */
     public function update(Request $request, $id)
     {
-        $user = Auth::guard('user')->user();
-        $shopOwnerId = $user->hasRole('Shop Owner') ? $user->id : $user->shop_owner_id;
+        $shopOwnerId = $this->shopOwnerId();
         if (! $shopOwnerId) {
             return response()->json(['error' => 'No shop association found'], 403);
         }
@@ -285,7 +284,7 @@ class InvoiceController extends Controller
             }
 
             // Audit log
-            $actorUserId = Auth::guard('user')->id() ?? Auth::id();
+            $actorUserId = $this->actorUserId();
             AuditLog::create([
                 'shop_owner_id' => $shopOwnerId,
                 'actor_user_id' => $actorUserId,
@@ -310,8 +309,7 @@ class InvoiceController extends Controller
      */
     public function post(Request $request, $id)
     {
-        $user = Auth::guard('user')->user();
-        $shopOwnerId = $user->hasRole('Shop Owner') ? $user->id : $user->shop_owner_id;
+        $shopOwnerId = $this->shopOwnerId();
         if (! $shopOwnerId) {
             return response()->json(['error' => 'No shop association found'], 403);
         }
@@ -333,7 +331,7 @@ class InvoiceController extends Controller
                 $meta = is_array($invoice->meta) ? $invoice->meta : [];
                 $meta['ledger_posted'] = true;
                 $meta['ledger_posted_at'] = now()->toDateTimeString();
-                $meta['ledger_posted_by'] = Auth::id();
+                $meta['ledger_posted_by'] = $this->actorUserId();
                 DB::table('finance_invoices')
                     ->where('id', $invoice->id)
                     ->update([
@@ -344,7 +342,7 @@ class InvoiceController extends Controller
             }
 
             // Audit log
-            $actorUserId = Auth::guard('user')->id() ?? Auth::id();
+            $actorUserId = $this->actorUserId();
             AuditLog::create([
                 'shop_owner_id' => $shopOwnerId,
                 'actor_user_id' => $actorUserId,
@@ -369,8 +367,7 @@ class InvoiceController extends Controller
      */
     public function destroy($id)
     {
-        $user = Auth::guard('user')->user();
-        $shopOwnerId = $user->hasRole('Shop Owner') ? $user->id : $user->shop_owner_id;
+        $shopOwnerId = $this->shopOwnerId();
         if (! $shopOwnerId) {
             return response()->json(['error' => 'No shop association found'], 403);
         }
@@ -378,7 +375,7 @@ class InvoiceController extends Controller
         $invoice = Invoice::where('shop_id', $shopOwnerId)->findOrFail($id);
 
         // Audit log
-        $actorUserId = Auth::guard('user')->id() ?? Auth::id();
+        $actorUserId = $this->actorUserId();
         AuditLog::create([
             'shop_owner_id' => $shopOwnerId,
             'actor_user_id' => $actorUserId,
@@ -397,8 +394,7 @@ class InvoiceController extends Controller
      */
     public function restore($id)
     {
-        $user = Auth::guard('user')->user();
-        $shopOwnerId = $user->hasRole('Shop Owner') ? $user->id : $user->shop_owner_id;
+        $shopOwnerId = $this->shopOwnerId();
         if (! $shopOwnerId) {
             return response()->json(['error' => 'No shop association found'], 403);
         }
@@ -410,7 +406,7 @@ class InvoiceController extends Controller
 
         $invoice->restore();
 
-        $actorUserId = Auth::guard('user')->id() ?? Auth::id();
+        $actorUserId = $this->actorUserId();
         AuditLog::create([
             'shop_owner_id' => $shopOwnerId,
             'actor_user_id' => $actorUserId,
@@ -436,13 +432,10 @@ class InvoiceController extends Controller
         ]);
         
         try {
-            $user = Auth::guard('user')->user();
-            
-            if (!$user) {
+            $shopOwnerId = $this->shopOwnerId();
+            if (! $shopOwnerId) {
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
-            
-            $shopOwnerId = $user->hasRole('Shop Owner') ? $user->id : $user->shop_owner_id;
             
             if (!$shopOwnerId) {
                 return response()->json(['error' => 'No shop association found'], 403);
@@ -504,7 +497,7 @@ class InvoiceController extends Controller
                 'shop_id' => $shopOwnerId,
                 'notes' => 'Auto-generated from Job Order #' . $job->order_number,
                 'meta' => [
-                    'created_by' => $user->id,
+                    'created_by' => $this->actorUserId(),
                     'source' => 'job_order',
                     'job_order_id' => $job->id,
                     'subtotal_amount' => $itemSubtotal,
@@ -543,7 +536,7 @@ class InvoiceController extends Controller
             // Audit log
             AuditLog::create([
                 'shop_owner_id' => $shopOwnerId,
-                'actor_user_id' => $user->id,
+                'actor_user_id' => $this->actorUserId(),
                 'action' => 'create_invoice_from_job',
                 'target_type' => 'invoice',
                 'target_id' => $invoice->id,
@@ -578,13 +571,11 @@ class InvoiceController extends Controller
     public function send($id)
     {
         try {
-            $user = Auth::guard('user')->user();
-            
-            if (!$user) {
+            $shopOwnerId = $this->shopOwnerId();
+
+            if (!$shopOwnerId) {
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
-            
-            $shopOwnerId = $user->role === 'shop_owner' ? $user->id : $user->shop_owner_id;
             
             $invoice = Invoice::where('shop_id', $shopOwnerId)
                 ->where('id', $id)
@@ -599,7 +590,7 @@ class InvoiceController extends Controller
             // Audit log
             AuditLog::create([
                 'shop_owner_id' => $shopOwnerId,
-                'actor_user_id' => $user->id,
+                'actor_user_id' => $this->actorUserId(),
                 'action' => 'send_invoice',
                 'target_type' => 'invoice',
                 'target_id' => $invoice->id,
@@ -629,13 +620,11 @@ class InvoiceController extends Controller
     public function void($id)
     {
         try {
-            $user = Auth::guard('user')->user();
+            $shopOwnerId = $this->shopOwnerId();
 
-            if (!$user) {
+            if (!$shopOwnerId) {
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
-
-            $shopOwnerId = $user->role === 'shop_owner' ? $user->id : $user->shop_owner_id;
 
             $invoice = Invoice::where('shop_id', $shopOwnerId)
                 ->where('id', $id)
@@ -650,7 +639,7 @@ class InvoiceController extends Controller
 
             AuditLog::create([
                 'shop_owner_id' => $shopOwnerId,
-                'actor_user_id' => $user->id,
+                'actor_user_id' => $this->actorUserId(),
                 'action' => 'void_invoice',
                 'target_type' => 'invoice',
                 'target_id' => $invoice->id,
@@ -684,13 +673,11 @@ class InvoiceController extends Controller
         ]);
 
         try {
-            $user = Auth::guard('user')->user();
-            
-            if (!$user) {
+            $shopOwnerId = $this->shopOwnerId();
+
+            if (!$shopOwnerId) {
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
-            
-            $shopOwnerId = $user->role === 'shop_owner' ? $user->id : $user->shop_owner_id;
             
             $invoice = Invoice::where('shop_id', $shopOwnerId)
                 ->where('id', $id)
@@ -709,7 +696,7 @@ class InvoiceController extends Controller
             // Audit log
             AuditLog::create([
                 'shop_owner_id' => $shopOwnerId,
-                'actor_user_id' => $user->id,
+                'actor_user_id' => $this->actorUserId(),
                 'action' => 'mark_invoice_paid',
                 'target_type' => 'invoice',
                 'target_id' => $invoice->id,
@@ -733,5 +720,32 @@ class InvoiceController extends Controller
                 'message' => $e->getMessage()
             ], 500);
         }
+    }
+
+    private function shopOwnerId(): ?int
+    {
+        $context = request()->attributes->get('erp.actor_context');
+        if ($context instanceof ErpActorContext) {
+            return (int) $context->tenantOwner()->getKey();
+        }
+
+        $shopOwnerId = Auth::guard('shop_owner')->id();
+        if ($shopOwnerId) {
+            return (int) $shopOwnerId;
+        }
+
+        $user = Auth::guard('user')->user();
+        if (! $user) {
+            return null;
+        }
+
+        return (int) ($user->role === 'shop_owner' || $user->hasRole('Shop Owner')
+            ? $user->id
+            : ($user->shop_owner_id ?? 0));
+    }
+
+    private function actorUserId(): ?int
+    {
+        return Auth::guard('user')->id();
     }
 }

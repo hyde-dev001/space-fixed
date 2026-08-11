@@ -21,7 +21,7 @@ type Employee = {
   location?: string;
   // optional metadata supplied by the backend
   createdBy?: string;
-  linkedUser?: string; // username or id of linked user account
+  linkedUser?: string | number; // username or id of linked user account
 };
 
 type EmployeeSummaryStats = {
@@ -85,12 +85,6 @@ const LockIcon: React.FC<{ className?: string }> = ({ className }) => (
 const InfoIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-  </svg>
-);
-
-const TrashBinIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
   </svg>
 );
 
@@ -309,7 +303,7 @@ const formatDate = (value?: string) => {
 
 const buildName = (employee: Employee) => `${employee.firstName} ${employee.lastName}`;
 
-const parseLinkedUserId = (linkedUser?: string) => {
+const parseLinkedUserId = (linkedUser?: string | number) => {
   const numericValue = Number(linkedUser ?? 0);
   return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : null;
 };
@@ -366,6 +360,9 @@ export const EmployeeManagement: React.FC<{
   
   // Get shop owner data from auth for business type filtering
   const auth = pageProps.auth;
+  const ownerMode = auth?.erpActor?.ownerMode === true;
+  const employeeApiBase = ownerMode ? '/shop-owner/employees' : '/api/hr/employees';
+  const invitationApiBase = ownerMode ? '/api/shop-owner/employees' : '/api/hr/employees';
   const shopOwner = auth?.shop_owner || auth?.user?.shop_owner || pageProps?.shop_owner;
   const rawBusinessType = String(
     shopOwner?.business_type
@@ -454,6 +451,8 @@ export const EmployeeManagement: React.FC<{
 
   // Fetch employees from API when component mounts or filters change
   useEffect(() => {
+    if (ownerMode) return;
+
     const fetchEmployees = async () => {
       setIsLoadingData(true);
       try {
@@ -515,7 +514,7 @@ export const EmployeeManagement: React.FC<{
     if (!employees || (Array.isArray(employees) && employees.length === 0)) {
       fetchEmployees();
     }
-  }, [searchTerm, filterStatus, currentPage, itemsPerPage]);
+  }, [searchTerm, filterStatus, currentPage, itemsPerPage, ownerMode]);
 
   // keep component in sync when parent provides new employees (server or client)
   useEffect(() => {
@@ -710,7 +709,11 @@ export const EmployeeManagement: React.FC<{
   };
 
   const sendInvitationToPersonalEmail = async () => {
-    if (!invitationModal.employeeId && !invitationModal.employeeUserId) {
+    const invitationTargetId = ownerMode
+      ? invitationModal.employeeUserId
+      : invitationModal.employeeId;
+
+    if (!invitationTargetId) {
       Swal.fire({ icon: 'error', title: 'Missing Employee', text: 'Employee identifier is not available.' });
       return;
     }
@@ -745,21 +748,12 @@ export const EmployeeManagement: React.FC<{
         'X-CSRF-TOKEN': csrf || ''
       };
 
-      let emailResponse = await fetch(`/api/hr/employees/${invitationModal.employeeId}/send-invitation-email`, {
+      const emailResponse = await fetch(`${invitationApiBase}/${invitationTargetId}/send-invitation-email`, {
         method: 'POST',
         headers: requestHeaders,
         credentials: 'include',
         body: requestBody,
       });
-
-      if (!emailResponse.ok && [404, 405].includes(emailResponse.status) && invitationModal.employeeUserId) {
-        emailResponse = await fetch(`/api/shop-owner/employees/${invitationModal.employeeUserId}/send-invitation-email`, {
-          method: 'POST',
-          headers: requestHeaders,
-          credentials: 'include',
-          body: requestBody,
-        });
-      }
 
       if (!emailResponse.ok) {
         const errorData = await emailResponse.json().catch(() => ({}));
@@ -809,25 +803,16 @@ export const EmployeeManagement: React.FC<{
   useEffect(() => {
     const fetchPositionTemplates = async () => {
       try {
-        // Try API route first (accessible to managers)
-        let response = await fetch('/api/hr/position-templates', {
+        const response = await fetch(
+          ownerMode ? '/shop-owner/position-templates' : '/api/hr/position-templates',
+          {
           headers: {
             'Accept': 'application/json',
             'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
           },
           credentials: 'include'
-        });
-        
-        // Fallback to shop-owner route only when HR endpoint is unavailable
-        if (!response.ok && [404, 405].includes(response.status)) {
-          response = await fetch('/shop-owner/position-templates', {
-            headers: {
-              'Accept': 'application/json',
-              'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
-            },
-            credentials: 'include'
-          });
-        }
+          },
+        );
         
         if (response.ok) {
           const data = await response.json();
@@ -840,25 +825,16 @@ export const EmployeeManagement: React.FC<{
     
     const fetchPermissions = async () => {
       try {
-        // Try API route first (accessible to managers)
-        let response = await fetch('/api/hr/permissions/available', {
+        const response = await fetch(
+          ownerMode ? '/shop-owner/permissions/available' : '/api/hr/permissions/available',
+          {
           headers: {
             'Accept': 'application/json',
             'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
           },
           credentials: 'include'
-        });
-        
-        // Fallback to shop-owner route only when HR endpoint is unavailable
-        if (!response.ok && [404, 405].includes(response.status)) {
-          response = await fetch('/shop-owner/permissions/available', {
-            headers: {
-              'Accept': 'application/json',
-              'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
-            },
-            credentials: 'include'
-          });
-        }
+          },
+        );
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
@@ -918,7 +894,7 @@ export const EmployeeManagement: React.FC<{
     
     fetchPositionTemplates();
     fetchPermissions();
-  }, []);
+  }, [ownerMode]);
 
   // Check for flash data with employee invitation after successful creation
   useEffect(() => {
@@ -1019,7 +995,7 @@ export const EmployeeManagement: React.FC<{
               setApiError(null);
               
               const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-              const response = await fetch(`/api/hr/employees/${employeeId}/activate`, {
+              const response = await fetch(`${employeeApiBase}/${employeeId}/activate`, {
                 method: 'POST',
                 headers: {
                   'Accept': 'application/json',
@@ -1037,7 +1013,7 @@ export const EmployeeManagement: React.FC<{
               }
               
               const apiResponse = await response.json();
-              const updatedEmployee = transformEmployeeFromApi(apiResponse.employee || apiResponse);
+              const updatedEmployee = transformEmployeeFromApi(apiResponse.employee || apiResponse.data || apiResponse);
               setRows((prev) => prev.map((row) => (row.id === employeeId ? updatedEmployee : row)));
               Swal.fire({ title: "Reactivated", text: `${name} is now active.`, icon: "success", timer: 1400, showConfirmButton: false });
               setIsViewModalOpen(false);
@@ -1050,101 +1026,6 @@ export const EmployeeManagement: React.FC<{
             }
           })();
         }
-    });
-  };
-
-  const confirmAndUpdateStatus = (employee: Employee, nextStatus: EmployeeStatus, message: string) => {
-    Swal.fire({
-      title: message,
-      text: buildName(employee),
-      icon: "question",
-      showCancelButton: true,
-      confirmButtonColor: "#2563eb",
-      cancelButtonColor: "#6b7280",
-      confirmButtonText: "Yes, continue",
-    }).then((result) => {
-      if (result.isConfirmed) {
-        (async () => {
-          try {
-            setIsProcessingId(employee.id);
-            setApiError(null);
-            
-            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-            const response = await fetch(`/api/hr/employees/${employee.id}`, {
-              method: 'PATCH',
-              headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest',
-                ...(csrfToken && { 'X-CSRF-TOKEN': csrfToken }),
-              },
-              credentials: 'include',
-              body: JSON.stringify({ status: nextStatus }),
-            });
-            
-            if (!response.ok) {
-              const errorData = await response.json().catch(() => ({ message: 'Failed to update status' }));
-              throw new Error(errorData.message || 'Failed to update status');
-            }
-            
-            const apiResponse = await response.json();
-            const updatedEmployee = transformEmployeeFromApi(apiResponse.employee || apiResponse);
-            setRows((prev) => prev.map((row) => (row.id === employee.id ? updatedEmployee : row)));
-            Swal.fire({ title: "Updated", text: `${buildName(employee)} is now ${statusLabel[nextStatus]}.`, icon: "success", timer: 1400, showConfirmButton: false });
-          } catch (e: any) {
-            setApiError(e?.message || "Failed to update status.");
-            Swal.fire({ title: "Error", text: e?.message || "Failed to update status.", icon: "error" });
-          } finally {
-            setIsProcessingId(null);
-          }
-        })();
-      }
-    });
-  };
-
-  const handleDeleteEmployee = (employee: Employee) => {
-    Swal.fire({
-      title: "Delete Employee?",
-      html: `Permanently remove <strong>${buildName(employee)}</strong>?<br/><span class="text-red-600">This action cannot be undone.</span>`,
-      icon: "warning",
-      showCancelButton: true,
-      confirmButtonColor: "#dc2626",
-      cancelButtonColor: "#6b7280",
-      confirmButtonText: "Delete",
-    }).then((result) => {
-      if (result.isConfirmed) {
-        (async () => {
-          try {
-            setIsProcessingId(employee.id);
-            setApiError(null);
-            
-            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-            const response = await fetch(`/api/hr/employees/${employee.id}`, {
-              method: 'DELETE',
-              headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest',
-                ...(csrfToken && { 'X-CSRF-TOKEN': csrfToken }),
-              },
-              credentials: 'include',
-            });
-            
-            if (!response.ok) {
-              const errorData = await response.json().catch(() => ({ message: 'Failed to delete employee' }));
-              throw new Error(errorData.message || 'Failed to delete employee');
-            }
-            
-            setRows((prev) => prev.filter((row) => row.id !== employee.id));
-            Swal.fire({ title: "Deleted", text: `${buildName(employee)} has been removed.`, icon: "success", timer: 1400, showConfirmButton: false });
-          } catch (e: any) {
-            setApiError(e?.message || "Failed to delete employee.");
-            Swal.fire({ title: "Error", text: e?.message || "Failed to delete employee.", icon: "error" });
-          } finally {
-            setIsProcessingId(null);
-          }
-        })();
-      }
     });
   };
 
@@ -1194,7 +1075,9 @@ export const EmployeeManagement: React.FC<{
       setApiError(null);
 
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-      const response = await fetch('/api/hr/suspension-requests', {
+      const response = await fetch(
+        ownerMode ? `${employeeApiBase}/${employeeToSuspend.id}/suspend` : '/api/hr/suspension-requests',
+        {
         method: 'POST',
         headers: {
           'Accept': 'application/json',
@@ -1203,12 +1086,15 @@ export const EmployeeManagement: React.FC<{
           ...(csrfToken && { 'X-CSRF-TOKEN': csrfToken }),
         },
         credentials: 'include',
-        body: JSON.stringify({
-          employee_id: employeeToSuspend.id,
-          reason: suspensionRequestForm.reason.trim(),
-          evidence: suspensionRequestForm.evidence.trim() || null,
-        }),
-      });
+        body: JSON.stringify(ownerMode
+          ? { suspension_reason: suspensionRequestForm.reason.trim() }
+          : {
+              employee_id: employeeToSuspend.id,
+              reason: suspensionRequestForm.reason.trim(),
+              evidence: suspensionRequestForm.evidence.trim() || null,
+            }),
+        },
+      );
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ message: 'Failed to submit suspension request' }));
@@ -1250,8 +1136,10 @@ export const EmployeeManagement: React.FC<{
 
       Swal.fire({
         icon: 'success',
-        title: 'Suspension Request Submitted',
-        html: `<p>${data.message || 'Request submitted successfully.'}</p><p class="text-sm text-gray-600 mt-2">The request will be reviewed by the manager, then forwarded to the shop owner for final approval.</p>`,
+        title: ownerMode ? 'Employee Suspended' : 'Suspension Request Submitted',
+        html: ownerMode
+          ? `<p>${data.message || 'Employee suspended successfully.'}</p>`
+          : `<p>${data.message || 'Request submitted successfully.'}</p><p class="text-sm text-gray-600 mt-2">The request will be reviewed by the manager, then forwarded to the shop owner for final approval.</p>`,
         confirmButtonColor: '#10b981',
       });
     } catch (e: any) {
@@ -1394,15 +1282,29 @@ export const EmployeeManagement: React.FC<{
 
   // Permission Management Functions
   const openPermissionModal = async (employee: Employee) => {
-    // Fetch employee user ID from backend
+    const linkedUserId = parseLinkedUserId(employee.linkedUser);
+    if (ownerMode && !linkedUserId) {
+      await Swal.fire({
+        icon: 'error',
+        title: 'No User Account',
+        text: 'This employee does not have a linked user account yet.',
+      });
+      return;
+    }
+
     try {
-      const response = await fetch(`/api/hr/employees/${employee.id}`, {
+      const response = await fetch(
+        ownerMode
+          ? `${employeeApiBase}/${linkedUserId}/permissions`
+          : `${employeeApiBase}/${employee.id}`,
+        {
         headers: {
           'Accept': 'application/json',
           'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
         },
         credentials: 'include'
-      });
+        },
+      );
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -1420,13 +1322,14 @@ export const EmployeeManagement: React.FC<{
       }
 
       const data = await response.json();
+      const userId = ownerMode ? data.userId : data.user_id;
       
       const employeeWithUser = {
         ...employee,
-        userId: data.user_id,
-        permissions: data.permissions || [],
-        directPermissions: data.direct_permissions || [],
-        rolePermissions: data.role_permissions || []
+        userId,
+        permissions: data.permissions || data.allPermissions || [],
+        directPermissions: data.direct_permissions || data.directPermissions || [],
+        rolePermissions: data.role_permissions || data.rolePermissions || [],
       };
 
       if (!employeeWithUser.userId) {
@@ -1440,8 +1343,8 @@ export const EmployeeManagement: React.FC<{
       }
 
       setSelectedEmployeeForPermissions(employeeWithUser);
-      setSelectedPermissions(data.direct_permissions || []);
-      setSelectedAdditionalRoles(data.additional_roles || []);
+      setSelectedPermissions(data.direct_permissions || data.directPermissions || []);
+      setSelectedAdditionalRoles(data.additional_roles || data.additionalRoles || []);
       setIsPermissionModalOpen(true);
     } catch (error: any) {
       console.error('Failed to open permission modal:', error);
@@ -1551,9 +1454,15 @@ export const EmployeeManagement: React.FC<{
 
     try {
       setIsProcessingId(employee.id);
+      const invitationTargetId = ownerMode ? linkedUserId : employee.id;
+      if (!invitationTargetId) {
+        throw new Error('This employee does not have a linked user account.');
+      }
 
       const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-      const response = await fetch(`/api/hr/employees/${employee.id}/reset-password`, {
+      const response = await fetch(
+        `${invitationApiBase}/${invitationTargetId}/${ownerMode ? 'regenerate-invite' : 'reset-password'}`,
+        {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1561,7 +1470,8 @@ export const EmployeeManagement: React.FC<{
           'X-CSRF-TOKEN': csrf || ''
         },
         credentials: 'include'
-      });
+        },
+      );
 
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -1628,8 +1538,13 @@ export const EmployeeManagement: React.FC<{
     }
 
     try {
+      const invitationTargetId = ownerMode ? linkedUserId : employee.id;
+      if (!invitationTargetId) {
+        throw new Error('This employee does not have a linked user account.');
+      }
+
       const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-      const response = await fetch(`/api/hr/employees/${employee.id}/regenerate-invite`, {
+      const response = await fetch(`${invitationApiBase}/${invitationTargetId}/regenerate-invite`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1658,7 +1573,7 @@ export const EmployeeManagement: React.FC<{
       Swal.fire({
         icon: 'error',
         title: 'Error',
-        text: 'Failed to get invitation link. Please try again.',
+        text: error instanceof Error ? error.message : 'Failed to get invitation link. Please try again.',
       });
     }
   };
@@ -1714,8 +1629,8 @@ export const EmployeeManagement: React.FC<{
       let permissionsToSync = normalizePermissions(selectedPermissions);
       
       const postSyncPermissions = async (permissionsPayload: string[]) => {
-        // Try API route first (accessible to managers)
-        let response = await fetch(`/api/hr/employees/${(selectedEmployeeForPermissions as any).userId}/permissions/sync`, {
+        const syncUrl = `${employeeApiBase}/${(selectedEmployeeForPermissions as any).userId}/permissions/sync`;
+        return fetch(syncUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1727,24 +1642,6 @@ export const EmployeeManagement: React.FC<{
             permissions: permissionsPayload
           })
         });
-
-        // Fallback to shop-owner route only when HR endpoint is unavailable
-        if (!response.ok && [404, 405].includes(response.status)) {
-          response = await fetch(`/shop-owner/employees/${(selectedEmployeeForPermissions as any).userId}/permissions/sync`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-              'X-CSRF-TOKEN': csrf || ''
-            },
-            credentials: 'include',
-            body: JSON.stringify({
-              permissions: permissionsPayload
-            })
-          });
-        }
-
-        return response;
       };
 
       let response = await postSyncPermissions(permissionsToSync);
@@ -2011,10 +1908,9 @@ export const EmployeeManagement: React.FC<{
       if (result.isConfirmed) {
         setIsAdding(true);
         
-        // Use HR API endpoint with user guard authentication
         try {
           const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-          const response = await fetch('/api/hr/employees', {
+          const response = await fetch(employeeApiBase, {
             method: 'POST',
             headers: {
               'Accept': 'application/json',
@@ -2023,18 +1919,31 @@ export const EmployeeManagement: React.FC<{
               ...(csrfToken && { 'X-CSRF-TOKEN': csrfToken }),
             },
             credentials: 'include',
-            body: JSON.stringify({
-              firstName: addEmployeeForm.firstName,
-              lastName: addEmployeeForm.lastName,
-              email: trimmedEmail,
-              phone: normalizedPhone,
-              position: addEmployeeForm.position || 'General Staff',
-              department: addEmployeeForm.department || 'General',
-              role: addEmployeeForm.department || 'Staff',
-              salary: parseFloat(addEmployeeForm.salary) || 0,
-              hireDate: addEmployeeForm.hiredAt || new Date().toISOString().split('T')[0],
-              location: addEmployeeForm.location,
-            }),
+            body: JSON.stringify(ownerMode
+              ? {
+                  name: `${addEmployeeForm.firstName} ${addEmployeeForm.lastName}`.trim(),
+                  email: trimmedEmail,
+                  phone: normalizedPhone,
+                  address: addEmployeeForm.location,
+                  position: addEmployeeForm.position || 'General Staff',
+                  department: addEmployeeForm.department || 'General',
+                  role: addEmployeeForm.department || 'Staff',
+                  salary: parseFloat(addEmployeeForm.salary) || 0,
+                  hire_date: addEmployeeForm.hiredAt || new Date().toISOString().split('T')[0],
+                  status: 'active',
+                }
+              : {
+                  firstName: addEmployeeForm.firstName,
+                  lastName: addEmployeeForm.lastName,
+                  email: trimmedEmail,
+                  phone: normalizedPhone,
+                  position: addEmployeeForm.position || 'General Staff',
+                  department: addEmployeeForm.department || 'General',
+                  role: addEmployeeForm.department || 'Staff',
+                  salary: parseFloat(addEmployeeForm.salary) || 0,
+                  hireDate: addEmployeeForm.hiredAt || new Date().toISOString().split('T')[0],
+                  location: addEmployeeForm.location,
+                }),
           });
 
           if (!response.ok) {
@@ -2470,12 +2379,14 @@ export const EmployeeManagement: React.FC<{
                           >
                             <LockIcon className="h-5 w-5" />
                           </button>
-                          {employee.status !== "suspended" && (
+                          {!['inactive', 'suspended'].includes(employee.status) && (
                             <>
                               <button
                                 onClick={() => handleSuspendClick(employee)}
                                 className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-orange-600 hover:text-orange-800 dark:text-orange-400 dark:hover:text-orange-300 transition-colors ${(isProcessingId === employee.id || isSelfEmployeeAccount(employee)) ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                title={isSelfEmployeeAccount(employee) ? 'You cannot file a suspension request for your own account' : 'File Suspension Request'}
+                                title={isSelfEmployeeAccount(employee)
+                                  ? 'You cannot suspend your own account'
+                                  : ownerMode ? 'Suspend Employee' : 'File Suspension Request'}
                                 disabled={isProcessingId === employee.id || isSelfEmployeeAccount(employee)}
                               >
                                 <AlertIcon className="h-5 w-5" />
@@ -2613,7 +2524,7 @@ export const EmployeeManagement: React.FC<{
                   </div>
                     <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
                       <div className="flex justify-end gap-2">
-                        {selectedEmployee.status === "suspended" && (
+                        {['inactive', 'suspended'].includes(selectedEmployee.status) && (
                           <Button variant="success" onClick={() => handleActivate(selectedEmployee.id, buildName(selectedEmployee))} className="mr-2" disabled={isProcessingId === selectedEmployee.id}>
                             {isProcessingId === selectedEmployee.id ? 'Processing...' : 'Activate'}
                           </Button>
@@ -2637,7 +2548,7 @@ export const EmployeeManagement: React.FC<{
               <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-xl w-full">
                 <div className="p-6">
                   <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-                    File Suspension Request
+                    {ownerMode ? 'Suspend Employee' : 'File Suspension Request'}
                   </h3>
 
                   <div className="mb-4">
@@ -2684,8 +2595,7 @@ export const EmployeeManagement: React.FC<{
                     />
                   </div>
 
-                  {/* Info Box */}
-                  <div className="mb-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                  {!ownerMode && <div className="mb-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
                     <div className="flex items-start gap-2">
                       <InfoIcon className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
                       <div>
@@ -2697,7 +2607,7 @@ export const EmployeeManagement: React.FC<{
                         </p>
                       </div>
                     </div>
-                  </div>
+                  </div>}
 
                   <div className="flex justify-end gap-3">
                     <button
@@ -2719,7 +2629,9 @@ export const EmployeeManagement: React.FC<{
                           : ''
                       }`}
                     >
-                      {isProcessingId === employeeToSuspend?.id ? 'Submitting...' : 'Submit Request'}
+                      {isProcessingId === employeeToSuspend?.id
+                        ? ownerMode ? 'Suspending...' : 'Submitting...'
+                        : ownerMode ? 'Suspend Employee' : 'Submit Request'}
                     </button>
                   </div>
               </div>

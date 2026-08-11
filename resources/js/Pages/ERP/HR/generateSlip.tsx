@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
+import { usePage } from "@inertiajs/react";
 import Swal from "sweetalert2";
 
 // ==================== Type Definitions ====================
@@ -376,6 +377,9 @@ const normalizeBatchPreviewResponse = (payload: any): BatchPreviewResponse => ({
 });
 
 export default function GenerateSlip() {
+	const { auth, initialPayrollEmployees } = usePage().props as any;
+	const ownerMode = auth?.erpActor?.ownerMode === true;
+	const hrApiBase = ownerMode ? "/api/shop-owner/hr" : "/api/hr";
 	const [employeeData, setEmployeeData] = useState<Employee[]>([]);
 	const [isLoadingEmployees, setIsLoadingEmployees] = useState(true);
 	const [payrollPeriods, setPayrollPeriods] = useState<PayrollPeriod[]>([]);
@@ -463,7 +467,7 @@ export default function GenerateSlip() {
 			setIsLoadingPeriods(true);
 			try {
 				const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-				const response = await fetch('/api/hr/payroll/periods', {
+				const response = await fetch(hrApiBase + '/payroll/periods', {
 					method: 'GET',
 					headers: {
 						'Content-Type': 'application/json',
@@ -487,10 +491,19 @@ export default function GenerateSlip() {
 			}
 		};
 		fetchPeriods();
-	}, []);
+	}, [hrApiBase]);
 
 	// Fetch employees from API
 	useEffect(() => {
+		if (ownerMode) {
+			const ownerEmployees = Array.isArray(initialPayrollEmployees)
+				? initialPayrollEmployees.map(transformEmployeeFromApi)
+				: [];
+			setEmployeeData(ownerEmployees);
+			setIsLoadingEmployees(false);
+			return;
+		}
+
 		const fetchEmployees = async () => {
 			setIsLoadingEmployees(true);
 			try {
@@ -535,7 +548,7 @@ export default function GenerateSlip() {
 		};
 
 		fetchEmployees();
-	}, []);
+	}, [ownerMode, initialPayrollEmployees]);
 
 	useEffect(() => {
 		if (!isPeriodModalOpen) return;
@@ -572,7 +585,7 @@ export default function GenerateSlip() {
 				params.append('period', payrollPeriodKey);
 				params.append('per_page', '500');
 
-				const response = await fetch(`/api/hr/payroll?${params.toString()}`, {
+				const response = await fetch(hrApiBase + '/payroll?' + params.toString(), {
 					method: 'GET',
 					headers: {
 						'Content-Type': 'application/json',
@@ -709,7 +722,7 @@ export default function GenerateSlip() {
 		};
 
 		fetchGovernanceReadiness();
-	}, [payrollPeriodKey]);
+	}, [hrApiBase, payrollPeriodKey]);
 
 	const departments = useMemo(
 		() => Array.from(new Set(employeeData.map((e) => e.department))),
@@ -850,7 +863,7 @@ export default function GenerateSlip() {
 			params.append('start_date', selectedPeriod.startDate);
 			params.append('end_date', selectedPeriod.endDate);
 			
-			const response = await fetch(`/api/hr/attendance/employee/${employee.id}?${params.toString()}`, {
+			const response = await fetch(hrApiBase + '/attendance/employee/' + employee.id + '?' + params.toString(), {
 				method: 'GET',
 				headers: {
 					'Content-Type': 'application/json',
@@ -928,7 +941,7 @@ export default function GenerateSlip() {
 		try {
 			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
 			
-			const response = await fetch('/api/hr/payroll/batch/preview', {
+			const response = await fetch(hrApiBase + '/payroll/batch/preview', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -1033,14 +1046,14 @@ export default function GenerateSlip() {
 							<li><strong>Total Net:</strong> ${formatPHP(batchPreviewData.summary.total_net)}</li>
 						</ul>
 					</div>
-					
+
 					<div class="bg-green-50 border border-green-200 rounded-lg p-4">
 						<label class="flex items-center gap-2 text-sm cursor-pointer">
 							<input type="checkbox" id="sendNotifications" checked class="rounded text-green-600" />
 							<span class="text-green-800">📧 Send email notifications to employees</span>
 						</label>
 					</div>
-					
+
 					<p class="text-xs text-gray-600">
 						This will create payslips and lock the data. You can export to CSV after generation.
 					</p>
@@ -1071,7 +1084,7 @@ export default function GenerateSlip() {
 		try {
 			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
 			
-			const response = await fetch('/api/hr/payroll/batch/generate', {
+			const response = await fetch(hrApiBase + '/payroll/batch/generate', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -1132,7 +1145,7 @@ export default function GenerateSlip() {
 								✅ <strong>${batchResult.created}</strong> payslips generated successfully
 							</p>
 						</div>
-						
+
 						${hasErrors ? `
 							<div class="bg-red-50 border border-red-200 rounded-lg p-3">
 								<p class="text-sm text-red-800 mb-2">
@@ -1146,13 +1159,13 @@ export default function GenerateSlip() {
 								</ul>
 							</div>
 						` : ''}
-						
+
 						<div class="bg-blue-50 border border-blue-200 rounded-lg p-3">
 							<p class="text-sm text-blue-800">
 								<strong>Total Net Payout:</strong> ${formatPHP(batchResult.summary.total_net)}
 							</p>
 						</div>
-						
+
 						${result.value.sendNotifications ? `
 							<p class="text-xs text-gray-600">
 								📧 Email notifications sent to employees
@@ -1198,7 +1211,7 @@ export default function GenerateSlip() {
 		try {
 			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
 			
-			const response = await fetch('/api/hr/payroll/batch/export', {
+			const response = await fetch(hrApiBase + '/payroll/batch/export', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -1255,7 +1268,7 @@ export default function GenerateSlip() {
 		try {
 			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
 			
-			const response = await fetch('/api/hr/payroll/batch/retry', {
+			const response = await fetch(hrApiBase + '/payroll/batch/retry', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -1326,7 +1339,7 @@ export default function GenerateSlip() {
 		try {
 			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
 
-			const response = await fetch('/api/hr/payroll/calculate-preview', {
+			const response = await fetch(hrApiBase + '/payroll/calculate-preview', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -1441,7 +1454,7 @@ export default function GenerateSlip() {
 				notes: `Generated payslip for period ${selectedPeriod.month}. Regular: ${totalRegularHours}h, OT: ${totalOvertimeHours}h, Special Holiday: ${specialHolidayHours}h, Regular Holiday: ${regularHolidayHours}h, Undertime: ${totalUndertimeHours}h, Absent: ${absentDays} day(s)`,
 			};
 
-			const response = await fetch('/api/hr/payroll', {
+			const response = await fetch(hrApiBase + '/payroll', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -1526,6 +1539,16 @@ export default function GenerateSlip() {
 	const thirteenthYearOptions = [currentYear - 1, currentYear, currentYear + 1];
 
 	const handleReleaseThirteenthMonth = async () => {
+		if (ownerMode) {
+			await Swal.fire({
+				icon: "info",
+				title: "Owner review only",
+				text: "13th-month release is completed through the Finance approval workflow.",
+				confirmButtonColor: "#3b82f6",
+			});
+			return;
+		}
+
 		const controlledReleaseDate = `${thirteenthYear}-12-31`;
 
 		const result = await Swal.fire({
@@ -1554,7 +1577,7 @@ export default function GenerateSlip() {
 		setIsProcessingThirteenth(true);
 		try {
 			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-			const response = await fetch('/api/hr/payroll/13th-month/release', {
+			const response = await fetch(hrApiBase + '/payroll/13th-month/release', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -1629,10 +1652,10 @@ export default function GenerateSlip() {
 						</select>
 						<button
 							onClick={handleReleaseThirteenthMonth}
-							disabled={isProcessingThirteenth}
+							disabled={ownerMode || isProcessingThirteenth}
 							className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
 						>
-							{isProcessingThirteenth ? 'Processing…' : 'Run 13th-Month Release'}
+							{ownerMode ? 'Finance workflow required' : isProcessingThirteenth ? 'Processing…' : 'Run 13th-Month Release'}
 						</button>
 					</div>
 				</div>

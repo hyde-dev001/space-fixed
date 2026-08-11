@@ -51,6 +51,11 @@ class PayrollController extends Controller
 
     private function authorizeUser(): ?\Illuminate\Contracts\Auth\Authenticatable
     {
+        $shopOwner = Auth::guard('shop_owner')->user();
+        if ($shopOwner) {
+            return $shopOwner;
+        }
+
         $user = Auth::guard('user')->user();
 
         if (! $user) {
@@ -70,6 +75,13 @@ class PayrollController extends Controller
         return $user;
     }
 
+    private function shopOwnerId(\Illuminate\Contracts\Auth\Authenticatable $actor): int
+    {
+        return $actor instanceof ShopOwner
+            ? (int) $actor->getKey()
+            : (int) ($actor->shop_owner_id ?? 0);
+    }
+
     private function canDisbursePayroll($user): bool
     {
         if (! $user) {
@@ -85,7 +97,7 @@ class PayrollController extends Controller
             // still allow explicit permission checks to decide disbursement access.
             \Log::warning('Payroll disbursement role check fallback applied', [
                 'user_id' => $user->id ?? null,
-                'shop_owner_id' => $user->shop_owner_id ?? null,
+                'shop_owner_id' => $user instanceof ShopOwner ? $user->getKey() : ($user->shop_owner_id ?? null),
                 'error' => $e->getMessage(),
             ]);
 
@@ -108,7 +120,7 @@ class PayrollController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        $query = Payroll::forShopOwner($user->shop_owner_id)
+        $query = Payroll::forShopOwner($this->shopOwnerId($user))
             ->with('employee:id,first_name,last_name,department');
 
         if ($request->filled('search')) {
@@ -216,7 +228,7 @@ class PayrollController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $employee = Employee::forShopOwner($user->shop_owner_id)
+        $employee = Employee::forShopOwner($this->shopOwnerId($user))
             ->where('status', 'active')
             ->findOrFail($request->employee_id);
 
@@ -332,7 +344,7 @@ class PayrollController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        $payroll = Payroll::forShopOwner($user->shop_owner_id)
+        $payroll = Payroll::forShopOwner($this->shopOwnerId($user))
             ->with('employee')
             ->findOrFail($id);
 
@@ -352,7 +364,7 @@ class PayrollController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        $payroll = Payroll::forShopOwner($user->shop_owner_id)->findOrFail($id);
+        $payroll = Payroll::forShopOwner($this->shopOwnerId($user))->findOrFail($id);
 
         if ($payroll->status !== 'pending') {
             return response()->json(['error' => 'Cannot update payroll that is not pending'], 422);
@@ -423,7 +435,7 @@ class PayrollController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        $payroll = Payroll::forShopOwner($user->shop_owner_id)->findOrFail($id);
+        $payroll = Payroll::forShopOwner($this->shopOwnerId($user))->findOrFail($id);
 
         if ($payroll->status !== 'pending') {
             return response()->json(['error' => 'Cannot delete payroll that is not pending'], 422);
@@ -545,7 +557,7 @@ class PayrollController extends Controller
             foreach ($payrollIds as $payrollId) {
                 try {
                     DB::transaction(function () use ($user, $payrollId, $request, $paymentDate) {
-                        $payroll = Payroll::forShopOwner($user->shop_owner_id)
+                        $payroll = Payroll::forShopOwner($this->shopOwnerId($user))
                             ->with('employee')
                             ->whereKey($payrollId)
                             ->lockForUpdate()
@@ -738,7 +750,7 @@ class PayrollController extends Controller
         }
 
         $period = $request->get('period');
-        $query  = Payroll::forShopOwner($user->shop_owner_id);
+        $query  = Payroll::forShopOwner($this->shopOwnerId($user));
 
         if ($period) {
             $query->forPeriod($period);
@@ -782,7 +794,7 @@ class PayrollController extends Controller
             ], 403);
         }
 
-        $payroll = Payroll::forShopOwner($user->shop_owner_id)
+        $payroll = Payroll::forShopOwner($this->shopOwnerId($user))
             ->with('employee')
             ->findOrFail($id);
 
@@ -814,7 +826,7 @@ class PayrollController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        $payroll = Payroll::forShopOwner($user->shop_owner_id)->findOrFail($id);
+        $payroll = Payroll::forShopOwner($this->shopOwnerId($user))->findOrFail($id);
 
         if ($payroll->status !== 'pending') {
             return response()->json(['error' => 'Cannot recalculate non-pending payroll'], 422);
@@ -868,7 +880,7 @@ class PayrollController extends Controller
 
         try {
             $summary = $this->payrollService->getPayrollSummary(
-                $user->shop_owner_id,
+                $this->shopOwnerId($user),
                 $request->period_start,
                 $request->period_end
             );
@@ -920,7 +932,7 @@ class PayrollController extends Controller
 
         try {
             $result = $this->payrollService->releaseThirteenthMonth(
-                (int) $user->shop_owner_id,
+                $this->shopOwnerId($user),
                 (int) $request->year,
                 (int) $user->id,
                 $request->input('employee_ids', []),
@@ -976,7 +988,7 @@ class PayrollController extends Controller
 
         try {
             $report = $this->payrollService->getThirteenthMonthReconciliationReport(
-                (int) $user->shop_owner_id,
+                $this->shopOwnerId($user),
                 (int) $request->year,
                 [
                     'employee_ids' => $request->input('employee_ids', []),
@@ -1025,7 +1037,7 @@ class PayrollController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $employee = Employee::forShopOwner($user->shop_owner_id)->findOrFail($request->employee_id);
+        $employee = Employee::forShopOwner($this->shopOwnerId($user))->findOrFail($request->employee_id);
 
         $regularHours = (float) $request->regular_hours;
         $attendanceDays = $request->filled('attendance_days')
@@ -1149,11 +1161,11 @@ class PayrollController extends Controller
 
         $payCycle = 'monthly';
         $payDayFirst = 15;
-        $shopOwner = ShopOwner::find((int) $user->shop_owner_id);
+        $shopOwner = ShopOwner::find($this->shopOwnerId($user));
 
         if (Schema::hasTable('hr_branch_payroll_settings')) {
             $setting = BranchPayrollSetting::query()
-                ->forShopOwner((int) $user->shop_owner_id)
+                ->forShopOwner($this->shopOwnerId($user))
                 ->active()
                 ->orderBy('id')
                 ->first();
@@ -1162,7 +1174,7 @@ class PayrollController extends Controller
                 $rawPayCycle = (string) ($setting->pay_cycle ?: 'monthly');
                 if (! in_array($rawPayCycle, ['monthly', 'semi_monthly'], true)) {
                     \Log::warning('Unexpected pay_cycle detected in hr_branch_payroll_settings; defaulting to monthly', [
-                        'shop_owner_id' => (int) $user->shop_owner_id,
+                        'shop_owner_id' => $this->shopOwnerId($user),
                         'raw_pay_cycle' => $rawPayCycle,
                     ]);
                     $rawPayCycle = 'monthly';
@@ -1397,7 +1409,7 @@ class PayrollController extends Controller
         $user = Auth::guard('user')->user();
 
         // Resolve the employee record by matching the logged-in user's e-mail
-        $employee = Employee::where('shop_owner_id', $user->shop_owner_id)
+        $employee = Employee::where('shop_owner_id', $this->shopOwnerId($user))
             ->where('email', $user->email)
             ->first();
 
@@ -1405,7 +1417,7 @@ class PayrollController extends Controller
             return response()->json(['data' => [], 'message' => 'No employee record found'], 200);
         }
 
-        $query = Payroll::forShopOwner($user->shop_owner_id)
+        $query = Payroll::forShopOwner($this->shopOwnerId($user))
             ->where('employee_id', $employee->id)
             ->where(function ($q) {
                 $q->where('status', 'approved')

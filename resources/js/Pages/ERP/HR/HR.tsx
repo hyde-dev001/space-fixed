@@ -15,7 +15,7 @@ const Placeholder: React.FC<{ title: string; description?: string }> = ({ title,
 
 export default function HRPage() {
   const [error, setError] = useState<string | null>(null);
-  const { auth, url, initialSection } = usePage().props as any;
+  const { auth, url, initialSection, initialEmployees } = usePage().props as any;
   const ownerMode = auth?.erpActor?.ownerMode === true;
   const permissions = auth?.permissions || [];
 
@@ -67,7 +67,7 @@ export default function HRPage() {
     try {
       switch (section) {
         case "employees":
-          return <EmployeeDirectory />;
+          return <EmployeeDirectory employees={initialEmployees} />;
         case "attendance":
           return <AttendanceRecords />;
         case "leaves":

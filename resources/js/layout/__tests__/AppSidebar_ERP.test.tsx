@@ -233,6 +233,33 @@ it('shows core-only navigation in the owner ERP picker', () => {
   expect(screen.queryByRole('link', { name: /employee profile/i })).not.toBeInTheDocument();
 });
 
+it('preserves the employee HR attendance and payroll groups', () => {
+  state.url = '/erp/hr?section=attendance';
+  state.role = 'HR';
+  state.roles = ['HR'];
+  state.permissions = [
+    'access-hr-dashboard',
+    'access-employee-directory',
+    'access-attendance-records',
+    'access-leave-approvals',
+    'access-overtime-approvals',
+    'access-payslip-generation',
+    'access-view-payslip',
+    'manage-salary-changes',
+  ];
+
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('button', { name: 'Attendance Monitoring' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'View Attendance' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Leave Requests' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Overtime Requests' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Payroll' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'View Slip' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Generate Slip' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Salary Changes' })).toBeInTheDocument();
+});
+
 it('shows only the active owner module pages inside the ERP shell', () => {
   state.url = '/shop-owner/erp/logistics/shipments';
   state.erpActor = { type: 'shop_owner', ownerMode: true };

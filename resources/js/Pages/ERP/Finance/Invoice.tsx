@@ -290,6 +290,7 @@ const Invoice: React.FC = () => {
   const page = usePage();
   const user = page.props.auth?.user as any;
   const auth = page.props.auth as any;
+  const ownerMode = page.props.ownerMode === true || auth?.erpActor?.ownerMode === true;
   const api = useFinanceApi();
   
   const [selectedTab, setSelectedTab] = useState<TabFilter>("all");
@@ -858,7 +859,7 @@ const Invoice: React.FC = () => {
   };
 
   const handleCreateInvoice = () => {
-    router.visit('/finance?section=create-invoice');
+    router.visit(ownerMode ? '/shop-owner/erp/finance/create-invoice' : '/finance?section=create-invoice');
   };
 
   return (

@@ -1246,7 +1246,7 @@ $retailProductsRoute['supporting_routes'] = [
     'shop_owner.products.showroom-entitlement',
 ];
 $retailProductsRoute['navigation_label'] = 'Products';
-$retailProductsRoute['navigation_order'] = 10;
+$retailProductsRoute['navigation_order'] = 20;
 $routes['shop-owner.erp.retail.products'] = $retailProductsRoute;
 
 if (isset($routes['shop-owner.erp.staff.repair-dashboard'])) {
@@ -1259,6 +1259,10 @@ $ownerOperationalPageRoute = static function (
     string $navigationLabel,
     int $navigationOrder,
     array $supportingRoutes = [],
+    ?string $navigationPageGroup = null,
+    ?string $navigationPageGroupLabel = null,
+    ?int $navigationPageGroupOrder = null,
+    bool $navigationVisible = true,
 ) use ($routeEntry, $modules): array {
     $route = $routeEntry(
         modules: $modules,
@@ -1277,12 +1281,21 @@ $ownerOperationalPageRoute = static function (
     $route['owner_denial_reason'] = null;
     $route['navigation_label'] = $navigationLabel;
     $route['navigation_order'] = $navigationOrder;
+    $route['navigation_page_group'] = $navigationPageGroup;
+    $route['navigation_page_group_label'] = $navigationPageGroupLabel;
+    $route['navigation_page_group_order'] = $navigationPageGroupOrder;
+    $route['navigation_visible'] = $navigationVisible;
     $route['supporting_routes'] = $supportingRoutes;
 
     return $route;
 };
 
 $retailOwnerPages = [
+    'shop-owner.erp.retail.dashboard' => [
+        'label' => 'Retail Dashboard',
+        'order' => 10,
+        'supporting_routes' => ['shop-owner.dashboard'],
+    ],
     'shop-owner.erp.retail.orders' => [
         'label' => 'Orders',
         'order' => 20,
@@ -1331,7 +1344,7 @@ $ownerModulePageGroups = [
             'supporting_routes' => ['erp.hr'],
         ],
         'shop-owner.erp.hr.employee-directory' => [
-            'label' => 'Employee Directory',
+            'label' => 'Employees',
             'order' => 20,
             'supporting_routes' => [
                 'shop-owner.employees.store',
@@ -1347,23 +1360,66 @@ $ownerModulePageGroups = [
             ],
         ],
         'shop-owner.erp.hr.attendance' => [
-            'label' => 'Attendance',
+            'label' => 'View Attendance',
             'order' => 30,
+            'group' => 'attendance-monitoring',
+            'group_label' => 'Attendance Monitoring',
+            'group_order' => 20,
             'supporting_routes' => ['hr.attendance.index'],
         ],
         'shop-owner.erp.hr.leave-approvals' => [
-            'label' => 'Leave Approvals',
+            'label' => 'Leave Requests',
             'order' => 40,
+            'group' => 'attendance-monitoring',
+            'group_label' => 'Attendance Monitoring',
+            'group_order' => 20,
             'supporting_routes' => ['api.leave.index'],
         ],
         'shop-owner.erp.hr.overtime-approvals' => [
-            'label' => 'Overtime Approvals',
+            'label' => 'Overtime Requests',
             'order' => 50,
+            'group' => 'attendance-monitoring',
+            'group_label' => 'Attendance Monitoring',
+            'group_order' => 20,
             'supporting_routes' => ['hr.overtime.index'],
+        ],
+        'shop-owner.erp.hr.payroll-view' => [
+            'label' => 'View Slip',
+            'order' => 60,
+            'group' => 'payroll',
+            'group_label' => 'Payroll',
+            'group_order' => 30,
+            'supporting_routes' => ['hr.payroll.index'],
+        ],
+        'shop-owner.erp.hr.payroll-generate' => [
+            'label' => 'Generate Slip',
+            'order' => 70,
+            'group' => 'payroll',
+            'group_label' => 'Payroll',
+            'group_order' => 30,
+            'supporting_routes' => [
+                'hr.payroll.index',
+                'hr.payroll.store',
+                'hr.payroll.batch.preview',
+                'hr.payroll.batch.generate',
+            ],
+        ],
+        'shop-owner.erp.hr.salary-changes' => [
+            'label' => 'Salary Changes',
+            'order' => 80,
+            'group' => 'payroll',
+            'group_label' => 'Payroll',
+            'group_order' => 30,
+            'supporting_routes' => [
+                'hr.salary_changes.index',
+                'hr.salary_changes.store',
+                'hr.salary_changes.approve',
+                'hr.salary_changes.reject',
+            ],
         ],
         'shop-owner.erp.hr.suspend-accounts' => [
             'label' => 'Suspend Accounts',
-            'order' => 60,
+            'order' => 90,
             'supporting_routes' => [
                 'shop_owner.suspension_requests.index',
                 'shop_owner.suspension_requests.show',
@@ -1372,18 +1428,102 @@ $ownerModulePageGroups = [
         ],
     ],
     'finance' => [
+        'shop-owner.erp.finance.dashboard' => [
+            'label' => 'Dashboard',
+            'order' => 10,
+            'supporting_routes' => ['finance.dashboard'],
+        ],
+        'shop-owner.erp.finance.invoices' => [
+            'label' => 'Invoices',
+            'order' => 20,
+            'supporting_routes' => [
+                'finance.invoices.index',
+                'finance.invoices.show',
+                'finance.invoices.store',
+                'finance.invoices.update',
+                'finance.invoices.destroy',
+                'finance.invoices.restore',
+                'finance.invoices.send',
+                'finance.invoices.void',
+                'finance.invoices.mark_paid',
+                'finance.invoices.post',
+            ],
+        ],
+        'shop-owner.erp.finance.create-invoice' => [
+            'label' => 'Create Invoice',
+            'order' => 25,
+            'visible' => false,
+            'supporting_routes' => [
+                'finance.create-invoice',
+                'finance.invoices.store',
+            ],
+        ],
+        'shop-owner.erp.finance.expenses' => [
+            'label' => 'Expenses',
+            'order' => 30,
+            'supporting_routes' => [
+                'finance.expenses.index',
+                'finance.expenses.show',
+                'finance.expenses.store',
+                'finance.expenses.update',
+                'finance.expenses.destroy',
+                'finance.expenses.restore',
+            ],
+        ],
         'shop-owner.erp.finance.expense-approvals' => [
             'label' => 'Expense Approvals',
-            'order' => 10,
+            'order' => 40,
+            'group' => 'approvals',
+            'group_label' => 'Approvals',
+            'group_order' => 40,
             'supporting_routes' => [
                 'shop_owner.expenses.index',
                 'shop_owner.expenses.approve',
                 'shop_owner.expenses.reject',
             ],
         ],
+        'shop-owner.erp.finance.repair-pricing' => [
+            'label' => 'Repair Pricing Approval',
+            'order' => 50,
+            'group' => 'approvals',
+            'group_label' => 'Approvals',
+            'group_order' => 40,
+            'supporting_routes' => [
+                'shop_owner.repair-price-changes.all',
+                'shop_owner.repair-price-changes.approve',
+                'shop_owner.repair-price-changes.reject',
+            ],
+        ],
+        'shop-owner.erp.finance.shoe-pricing' => [
+            'label' => 'Shoe Pricing Approval',
+            'order' => 60,
+            'group' => 'approvals',
+            'group_label' => 'Approvals',
+            'group_order' => 40,
+            'supporting_routes' => [
+                'shop_owner.price-changes.all',
+                'shop_owner.price-changes.approve',
+                'shop_owner.price-changes.reject',
+            ],
+        ],
+        'shop-owner.erp.finance.purchase-request-review' => [
+            'label' => 'Purchase Request Review',
+            'order' => 70,
+            'group' => 'approvals',
+            'group_label' => 'Approvals',
+            'group_order' => 40,
+            'supporting_routes' => [
+                'shop_owner.purchase-requests.index',
+                'shop_owner.purchase-requests.approve',
+                'shop_owner.purchase-requests.reject',
+            ],
+        ],
         'shop-owner.erp.finance.refund-approvals' => [
             'label' => 'Refund Approvals',
-            'order' => 20,
+            'order' => 80,
+            'group' => 'approvals',
+            'group_label' => 'Approvals',
+            'group_order' => 40,
             'supporting_routes' => [
                 'shop_owner.refunds.index',
                 'shop_owner.refunds.approve',
@@ -1395,21 +1535,12 @@ $ownerModulePageGroups = [
                 'shop_owner.repair-refunds.execute',
             ],
         ],
-        'shop-owner.erp.finance.price-approvals' => [
-            'label' => 'Price Approvals',
-            'order' => 30,
-            'supporting_routes' => [
-                'shop_owner.price-changes.all',
-                'shop_owner.price-changes.approve',
-                'shop_owner.price-changes.reject',
-                'shop_owner.repair-price-changes.all',
-                'shop_owner.repair-price-changes.approve',
-                'shop_owner.repair-price-changes.reject',
-            ],
-        ],
         'shop-owner.erp.finance.payslip-approvals' => [
             'label' => 'Payslip Approvals',
-            'order' => 40,
+            'order' => 90,
+            'group' => 'approvals',
+            'group_label' => 'Approvals',
+            'group_order' => 40,
             'supporting_routes' => [
                 'shop_owner.payslip_approval.index',
                 'shop_owner.payslip_approval.show',
@@ -1419,7 +1550,10 @@ $ownerModulePageGroups = [
         ],
         'shop-owner.erp.finance.salary-adjustment-approvals' => [
             'label' => 'Salary Adjustments',
-            'order' => 50,
+            'order' => 100,
+            'group' => 'approvals',
+            'group_label' => 'Approvals',
+            'group_order' => 40,
             'supporting_routes' => [
                 'shop_owner.salary-changes.index',
                 'shop_owner.salary-changes.approve',
@@ -1513,6 +1647,10 @@ foreach ($ownerModulePageGroups as $moduleKey => $pages) {
             navigationLabel: $page['label'],
             navigationOrder: $page['order'],
             supportingRoutes: $page['supporting_routes'],
+            navigationPageGroup: $page['group'] ?? null,
+            navigationPageGroupLabel: $page['group_label'] ?? null,
+            navigationPageGroupOrder: $page['group_order'] ?? null,
+            navigationVisible: $page['visible'] ?? true,
         );
     }
 }
@@ -1527,8 +1665,8 @@ $existingOwnerPageMetadata = [
     'shop-owner.erp.inventory.stock-movement' => ['label' => 'Stock Movement', 'order' => 40],
     'shop-owner.erp.inventory.overview' => ['label' => 'Inventory Overview', 'order' => 80],
     'shop-owner.erp.procurement.suppliers-management' => ['label' => 'Suppliers Management', 'order' => 40],
-    'shop-owner.erp.hr.audit-logs' => ['label' => 'Audit Logs', 'order' => 70],
-    'shop-owner.erp.finance.audit-logs' => ['label' => 'Audit Logs', 'order' => 60],
+    'shop-owner.erp.hr.audit-logs' => ['label' => 'Audit Logs', 'order' => 100],
+    'shop-owner.erp.finance.audit-logs' => ['label' => 'Audit Logs', 'order' => 110],
     'shop-owner.erp.logistics.dashboard' => ['label' => 'Dashboard', 'order' => 10],
     'shop-owner.erp.logistics.shipments' => ['label' => 'Shipments', 'order' => 20],
     'shop-owner.erp.logistics.riders' => ['label' => 'Riders', 'order' => 40],

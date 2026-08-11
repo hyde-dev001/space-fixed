@@ -7,11 +7,14 @@ namespace App\Http\Controllers\Erp;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Repairer\DashboardController;
 use App\Models\Employee;
+use App\Models\Finance\Expense as FinanceExpense;
+use App\Models\Finance\Invoice;
 use App\Models\InventoryItem;
 use App\Models\HR\AttendanceRecord;
 use App\Models\HR\Department;
 use App\Models\HR\LeaveRequest;
 use App\Models\HR\OvertimeRequest;
+use App\Models\OrderRefund;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseRequest;
 use App\Models\StockMovement;
@@ -33,6 +36,87 @@ final class ReadPageController extends Controller
     public function financeAuditLogs(): Response|RedirectResponse
     {
         return $this->renderEmployeePage('ERP/Finance/AuditLogs');
+    }
+
+    public function financeDashboard(): Response|RedirectResponse
+    {
+        if ($redirect = $this->employeePasswordRedirect()) {
+            return $redirect;
+        }
+
+        $shopOwnerId = $this->shopOwnerId();
+        $yearStart = now()->startOfYear();
+        $yearEnd = now()->endOfYear();
+
+        $invoices = Invoice::where('shop_id', $shopOwnerId)
+            ->whereBetween('date', [$yearStart->toDateString(), $yearEnd->toDateString()])
+            ->with(['jobOrder:id,payment_status'])
+            ->select(['id', 'reference', 'status', 'total', 'tax_amount', 'meta', 'date', 'job_order_id'])
+            ->orderByDesc('date')
+            ->get()
+            ->map(static function (Invoice $invoice): array {
+                $paymentStatus = strtolower((string) ($invoice->jobOrder?->payment_status ?? ''));
+                $effectiveStatus = $paymentStatus === 'refunded'
+                    ? 'refunded'
+                    : (string) $invoice->status;
+
+                return [
+                    'id' => $invoice->id,
+                    'reference' => $invoice->reference,
+                    'status' => $invoice->status,
+                    'effective_status' => $effectiveStatus,
+                    'total' => $invoice->total,
+                    'tax_amount' => $invoice->tax_amount,
+                    'meta' => $invoice->meta,
+                    'date' => optional($invoice->date)->toDateString(),
+                ];
+            })
+            ->values();
+
+        $expenses = FinanceExpense::where('shop_id', $shopOwnerId)
+            ->whereBetween('date', [$yearStart->toDateString(), $yearEnd->toDateString()])
+            ->select(['id', 'reference', 'status', 'amount', 'date'])
+            ->orderByDesc('date')
+            ->get();
+
+        $refunds = OrderRefund::where('shop_owner_id', $shopOwnerId)
+            ->whereYear('refunded_at', now()->year)
+            ->whereNotNull('refunded_at')
+            ->where('status', 'succeeded')
+            ->select(['id', 'order_id', 'amount', 'status', 'refunded_at', 'requested_at'])
+            ->orderByDesc('refunded_at')
+            ->get()
+            ->map(static fn (OrderRefund $refund): array => [
+                'id' => $refund->id,
+                'order_id' => $refund->order_id,
+                'amount' => round(max(0.0, (float) ($refund->amount ?? 0)), 2),
+                'status' => $refund->status,
+                'refunded_at' => optional($refund->refunded_at)->toDateTimeString(),
+                'requested_at' => optional($refund->requested_at)->toDateTimeString(),
+            ])
+            ->values();
+
+        return Inertia::render('ERP/Finance/Dashboard', [
+            'invoices' => $invoices,
+            'expenses' => $expenses,
+            'refunds' => $refunds,
+            'refundedRevenue' => $refunds->sum('amount'),
+        ]);
+    }
+
+    public function financeInvoices(): Response|RedirectResponse
+    {
+        return $this->renderFinanceSection('invoice-generation');
+    }
+
+    public function financeCreateInvoice(): Response|RedirectResponse
+    {
+        return $this->renderFinanceSection('create-invoice');
+    }
+
+    public function financeExpenses(): Response|RedirectResponse
+    {
+        return $this->renderFinanceSection('expense-tracking');
     }
 
     public function hrDashboard(): Response|RedirectResponse
@@ -86,6 +170,39 @@ final class ReadPageController extends Controller
         ]);
     }
 
+    public function hrEmployeeDirectory(): Response|RedirectResponse
+    {
+        if ($redirect = $this->employeePasswordRedirect()) {
+            return $redirect;
+        }
+
+        $initialEmployees = Employee::with('user:id,email')
+            ->where('shop_owner_id', $this->shopOwnerId())
+            ->orderBy('name')
+            ->get()
+            ->map(static fn (Employee $employee): array => [
+                'id' => $employee->id,
+                'firstName' => $employee->first_name,
+                'lastName' => $employee->last_name,
+                'employeeId' => $employee->employee_id,
+                'email' => $employee->email,
+                'phone' => $employee->phone,
+                'department' => $employee->department,
+                'position' => $employee->position,
+                'status' => $employee->status,
+                'hiredAt' => optional($employee->hire_date)->toDateString(),
+                'lastActiveAt' => optional($employee->updated_at)->toISOString(),
+                'location' => $employee->location ?? $employee->address,
+                'linkedUser' => $employee->user?->id,
+            ])
+            ->values();
+
+        return Inertia::render('ERP/HR/HR', [
+            'initialEmployees' => $initialEmployees,
+            'initialSection' => 'employees',
+        ]);
+    }
+
     public function hrAttendance(): Response|RedirectResponse
     {
         if ($redirect = $this->employeePasswordRedirect()) {
@@ -135,6 +252,34 @@ final class ReadPageController extends Controller
             'initialOvertimeRequests' => $initialOvertimeRequests,
             'initialSection' => 'overtime',
         ]);
+    }
+
+    public function hrPayrollView(): Response|RedirectResponse
+    {
+        return $this->renderHrSection('payroll-view');
+    }
+
+    public function hrPayrollGenerate(): Response|RedirectResponse
+    {
+        if ($redirect = $this->employeePasswordRedirect()) {
+            return $redirect;
+        }
+
+        $initialPayrollEmployees = Employee::forShopOwner($this->shopOwnerId())
+            ->where('status', 'active')
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->get();
+
+        return Inertia::render('ERP/HR/HR', [
+            'initialPayrollEmployees' => $initialPayrollEmployees,
+            'initialSection' => 'payroll-generate',
+        ]);
+    }
+
+    public function hrSalaryChanges(): Response|RedirectResponse
+    {
+        return $this->renderHrSection('salary-changes');
     }
 
     public function managerReports(): Response|RedirectResponse
@@ -349,6 +494,30 @@ final class ReadPageController extends Controller
     private function renderEmployeePage(string $component): Response|RedirectResponse
     {
         return $this->employeePasswordRedirect() ?? Inertia::render($component);
+    }
+
+    private function renderHrSection(string $section): Response|RedirectResponse
+    {
+        if ($redirect = $this->employeePasswordRedirect()) {
+            return $redirect;
+        }
+
+        return Inertia::render('ERP/HR/HR', [
+            'initialSection' => $section,
+        ]);
+    }
+
+    private function renderFinanceSection(string $section): Response|RedirectResponse
+    {
+        if ($redirect = $this->employeePasswordRedirect()) {
+            return $redirect;
+        }
+
+        return Inertia::render('ERP/Finance/Finance', [
+            'ownerMode' => true,
+            'initialSection' => $section,
+            'purchaseRequests' => [],
+        ]);
     }
 
     private function employeePasswordRedirect(): ?RedirectResponse

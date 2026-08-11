@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
+import { usePage } from "@inertiajs/react";
 
 type SlipStatus = "processed" | "pending" | "approved" | "paid" | "rejected";
 
@@ -194,6 +195,9 @@ const getInitials = (name: string) =>
         .toUpperCase();
 
 export default function ViewSlip() {
+    const { auth } = usePage().props as any;
+    const ownerMode = auth?.erpActor?.ownerMode === true;
+    const payrollEndpoint = ownerMode ? "/api/shop-owner/hr/payroll" : "/api/hr/payroll";
     const [slipData, setSlipData] = useState<SlipRecord[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [search, setSearch] = useState("");
@@ -219,7 +223,7 @@ export default function ViewSlip() {
                 params.append('page', page.toString());
                 params.append('per_page', pageSize.toString());
 
-                const response = await fetch(`/api/hr/payroll?${params.toString()}`, {
+                const response = await fetch(payrollEndpoint + "?" + params.toString(), {
                     method: 'GET',
                     headers: {
                         'Content-Type': 'application/json',
@@ -261,7 +265,7 @@ export default function ViewSlip() {
         };
 
         fetchPayrolls();
-    }, [search, status, month, page]);
+    }, [search, status, month, page, payrollEndpoint]);
 
     const months = useMemo(
         () => Array.from(new Set(slipData.map((s) => s.month))),
@@ -309,7 +313,7 @@ export default function ViewSlip() {
 
         try {
             const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-            const response = await fetch(`/api/hr/payroll/${slip.payrollId}`, {
+            const response = await fetch(payrollEndpoint + "/" + slip.payrollId, {
                 method: 'GET',
                 headers: {
                     'Content-Type': 'application/json',

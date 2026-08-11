@@ -11,6 +11,7 @@ use App\Models\AuditLog;
 use App\Models\User;
 use App\Services\NotificationService;
 use App\Services\ExpenseApprovalService;
+use App\Support\Erp\ErpActorContext;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -33,7 +34,7 @@ class ExpenseController extends Controller
     }
     public function index(Request $request)
     {
-        $shopId = auth()->user()?->shop_owner_id;
+        $shopId = $this->shopOwnerId();
         if (! $shopId) {
             return response()->json(['message' => 'No shop association found for this account.'], 403);
         }
@@ -64,7 +65,7 @@ class ExpenseController extends Controller
 
     public function show($id)
     {
-        $shopId = auth()->user()?->shop_owner_id;
+        $shopId = $this->shopOwnerId();
         if (! $shopId) {
             return response()->json(['message' => 'No shop association found for this account.'], 403);
         }
@@ -196,7 +197,7 @@ class ExpenseController extends Controller
 
     public function store(Request $request)
     {
-        $shopId = auth()->user()?->shop_owner_id;
+        $shopId = $this->shopOwnerId();
         if (! $shopId) {
             return response()->json(['message' => 'No shop association found for this account.'], 403);
         }
@@ -232,7 +233,7 @@ class ExpenseController extends Controller
                 'payment_account_id' => $data['payment_account_id'] ?? null,
                 'shop_id' => $shopId,
                 'meta' => [
-                    'created_by' => auth()->id(),
+                    'created_by' => $this->actorUserId(),
                 ],
             ];
 
@@ -290,7 +291,7 @@ class ExpenseController extends Controller
 
     public function update(Request $request, $id)
     {
-        $shopId = auth()->user()?->shop_owner_id;
+        $shopId = $this->shopOwnerId();
         if (! $shopId) {
             return response()->json(['message' => 'No shop association found for this account.'], 403);
         }
@@ -320,7 +321,7 @@ class ExpenseController extends Controller
 
     public function approve(Request $request, $id)
     {
-        $shopId = auth()->user()?->shop_owner_id;
+        $shopId = $this->shopOwnerId();
         if (! $shopId) {
             return response()->json(['message' => 'No shop association found for this account.'], 403);
         }
@@ -427,7 +428,7 @@ class ExpenseController extends Controller
 
     public function reject(Request $request, $id)
     {
-        $shopId = auth()->user()?->shop_owner_id;
+        $shopId = $this->shopOwnerId();
         if (! $shopId) {
             return response()->json(['message' => 'No shop association found for this account.'], 403);
         }
@@ -537,7 +538,7 @@ class ExpenseController extends Controller
 
     public function destroy($id)
     {
-        $shopId = auth()->user()?->shop_owner_id;
+        $shopId = $this->shopOwnerId();
         if (! $shopId) {
             return response()->json(['message' => 'No shop association found for this account.'], 403);
         }
@@ -576,7 +577,7 @@ class ExpenseController extends Controller
      */
     public function restore($id)
     {
-        $shopId = auth()->user()?->shop_owner_id;
+        $shopId = $this->shopOwnerId();
         if (! $shopId) {
             return response()->json(['message' => 'No shop association found for this account.'], 403);
         }
@@ -613,8 +614,8 @@ class ExpenseController extends Controller
 
     private function audit(string $action, int $targetId, array $metadata = []): void
     {
-        $actorUserId = Auth::guard('user')->id() ?? Auth::id();
-        $shopOwnerId = Auth::user()?->shop_owner_id;
+        $actorUserId = $this->actorUserId();
+        $shopOwnerId = $this->shopOwnerId();
         if (! $shopOwnerId) {
             return; // No shop context — skip audit rather than writing to shop #1
         }
@@ -633,7 +634,12 @@ class ExpenseController extends Controller
      */
     public function uploadReceipt(Request $request, $id)
     {
-        $expense = Expense::findOrFail($id);
+        $shopId = $this->shopOwnerId();
+        if (! $shopId) {
+            return response()->json(['message' => 'No shop association found for this account.'], 403);
+        }
+
+        $expense = Expense::where('shop_id', $shopId)->findOrFail($id);
 
         $request->validate([
             'receipt' => 'required|file|mimes:jpg,jpeg,png,pdf|max:10240', // 10MB max
@@ -682,7 +688,12 @@ class ExpenseController extends Controller
      */
     public function downloadReceipt($id)
     {
-        $expense = Expense::findOrFail($id);
+        $shopId = $this->shopOwnerId();
+        if (! $shopId) {
+            return response()->json(['message' => 'No shop association found for this account.'], 403);
+        }
+
+        $expense = Expense::where('shop_id', $shopId)->findOrFail($id);
 
         if (!$expense->receipt_path) {
             return response()->json(['message' => 'No receipt attached to this expense'], 404);
@@ -702,7 +713,12 @@ class ExpenseController extends Controller
      */
     public function deleteReceipt($id)
     {
-        $expense = Expense::findOrFail($id);
+        $shopId = $this->shopOwnerId();
+        if (! $shopId) {
+            return response()->json(['message' => 'No shop association found for this account.'], 403);
+        }
+
+        $expense = Expense::where('shop_id', $shopId)->findOrFail($id);
 
         if (!$expense->receipt_path) {
             return response()->json(['message' => 'No receipt to delete'], 404);
@@ -737,5 +753,32 @@ class ExpenseController extends Controller
             Log::error('Receipt deletion failed: ' . $e->getMessage(), ['exception' => $e]);
             return response()->json(['message' => 'Failed to delete receipt', 'error' => $e->getMessage()], 500);
         }
+    }
+
+    private function shopOwnerId(): ?int
+    {
+        $context = request()->attributes->get('erp.actor_context');
+        if ($context instanceof ErpActorContext) {
+            return (int) $context->tenantOwner()->getKey();
+        }
+
+        $shopOwnerId = Auth::guard('shop_owner')->id();
+        if ($shopOwnerId) {
+            return (int) $shopOwnerId;
+        }
+
+        $user = Auth::guard('user')->user();
+        if (! $user) {
+            return null;
+        }
+
+        return (int) ($user->role === 'shop_owner' || $user->hasRole('Shop Owner')
+            ? $user->id
+            : ($user->shop_owner_id ?? 0));
+    }
+
+    private function actorUserId(): ?int
+    {
+        return Auth::guard('user')->id();
     }
 }
