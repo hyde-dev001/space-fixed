@@ -12,6 +12,7 @@ use App\Enums\PriceChangeStatus;
 use App\Services\NotificationService;
 use App\Services\PriceChangeApprovalService;
 use App\Services\ShopOwnerApprovalPolicyService;
+use App\Support\Finance\FinanceErrorResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -259,12 +260,7 @@ class PriceChangeRequestController extends Controller
             ], 201);
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Error creating/updating price change request: ' . $e->getMessage());
-            
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to submit price change request',
-            ], 500);
+            return FinanceErrorResponse::json($e, 'price_change.create', 500, ['record_id' => $productId, 'shop_id' => $shopOwnerId]);
         }
     }
 
@@ -511,11 +507,7 @@ class PriceChangeRequestController extends Controller
                 ]);
             } catch (\Throwable $e) {
                 DB::rollBack();
-
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Failed to apply final approved price: ' . $e->getMessage(),
-                ], 500);
+                return FinanceErrorResponse::json($e, 'price_change.finance_approve', 500, ['record_id' => $id, 'shop_id' => $priceChangeRequest->shop_owner_id]);
             }
         }
 
@@ -794,10 +786,7 @@ class PriceChangeRequestController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to apply price change: ' . $e->getMessage(),
-            ], 500);
+            return FinanceErrorResponse::json($e, 'price_change.owner_approve', 500, ['record_id' => $id, 'shop_id' => $shopOwner->id]);
         }
     }
 

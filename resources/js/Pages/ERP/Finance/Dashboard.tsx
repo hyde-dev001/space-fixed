@@ -1,342 +1,137 @@
-import type { ComponentType } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Head, usePage } from '@inertiajs/react';
 import AppLayoutERP from '../../../layout/AppLayout_ERP';
-import Chart from "react-apexcharts";
-import { ApexOptions } from "apexcharts";
+import { useFinanceApi } from '../../../hooks/useFinanceApi';
+import Chart from 'react-apexcharts';
+import type { ApexOptions } from 'apexcharts';
 
-interface FinanceDashboardStats {
-    totalRevenue: number;
-    refundedRevenue: number;
-    totalExpenses: number;
-    pendingInvoices: number;
-    netProfit: number;
-}
+type Money = string;
 
-const parseAmount = (value: unknown): number => {
-    const numericValue = Number(value);
-    return Number.isFinite(numericValue) ? numericValue : 0;
-};
-
-const resolveInvoiceNetRevenue = (invoice: any): number => {
-    const metaSubtotal = parseAmount(invoice?.meta?.subtotal_amount);
-    if (metaSubtotal > 0) {
-        return metaSubtotal;
-    }
-
-    const grossTotal = parseAmount(invoice?.total);
-    const vatAmount = parseAmount(invoice?.meta?.vat_amount ?? invoice?.tax_amount);
-    const fallbackNet = grossTotal - vatAmount;
-
-    return fallbackNet > 0 ? fallbackNet : grossTotal;
-};
-
-type MetricColor = 'success' | 'error' | 'warning' | 'info';
-type ChangeType = 'increase' | 'decrease';
-
-const ArrowUpIcon = ({ className }: { className?: string }) => (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-    </svg>
-);
-
-const ArrowDownIcon = ({ className }: { className?: string }) => (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-    </svg>
-);
-
-const TaskIconSvg = ({ className }: { className?: string }) => (
-    <svg className={className} fill="currentColor" viewBox="0 0 24 24">
-        <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-    </svg>
-);
-
-const AlertIconSvg = ({ className }: { className?: string }) => (
-    <svg className={className} fill="currentColor" viewBox="0 0 24 24">
-        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
-    </svg>
-);
-
-const DollarIconSvg = ({ className }: { className?: string }) => (
-    <svg className={className} fill="currentColor" viewBox="0 0 24 24">
-        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z" />
-    </svg>
-);
-
-const UserIconSvg = ({ className }: { className?: string }) => (
-    <svg className={className} fill="currentColor" viewBox="0 0 24 24">
-        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
-    </svg>
-);
-
-interface MetricCardProps {
-    title: string;
-    value: number | string;
-    change: number;
-    changeType: ChangeType;
-    icon: ComponentType<{ className?: string }>;
-    color: MetricColor;
-    description: string;
-}
-
-const MetricCard = ({
-    title,
-    value,
-    change,
-    changeType,
-    icon: Icon,
-    color,
-    description,
-}: MetricCardProps) => {
-    const getColorClasses = () => {
-        switch (color) {
-            case 'success': return 'from-green-500 to-emerald-600';
-            case 'error': return 'from-red-500 to-rose-600';
-            case 'warning': return 'from-yellow-500 to-orange-600';
-            case 'info': return 'from-blue-500 to-indigo-600';
-            default: return 'from-gray-500 to-gray-600';
-        }
+interface FinanceSummary {
+    period: { type: string; start: string; end: string; timezone: string };
+    primary: {
+        net_revenue: Money;
+        incurred_expenses: Money;
+        net_operating_result: Money;
+        net_cash_movement: Money;
     };
+    supporting: {
+        gross_revenue: Money;
+        executed_refunds: Money;
+        paid_expenses: Money;
+    };
+    trend: Array<{
+        month: string;
+        net_revenue: Money;
+        incurred_expenses: Money;
+        net_cash_movement: Money;
+    }>;
+    definitions: Record<string, string>;
+    integrity_warnings: Array<{ code: string; source?: string; reason?: string }>;
+}
 
-    const displayValue = typeof value === 'number' ? value.toLocaleString() : value;
+class FinanceSummaryError extends Error {
+    constructor(public readonly status: number, message: string) {
+        super(message);
+    }
+}
 
-    return (
-        <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-700">
-            <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
+const formatMoney = (value: Money | undefined): string => `₱${value ?? '0.00'}`;
 
-            <div className="relative">
-                <div className="flex items-center justify-between mb-4">
-                    <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
-                        <Icon className="text-white size-7 drop-shadow-sm" />
-                    </div>
-
-                    <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-                        changeType === 'increase'
-                            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                            : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                    }`}>
-                        {changeType === 'increase' ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-                        {Math.abs(change)}%
-                    </div>
-                </div>
-
-                <div className="space-y-2">
-                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                        {title}
-                    </p>
-                    <h3 className="text-3xl font-bold text-gray-900 dark:text-white transition-colors duration-300">
-                        {displayValue}
-                    </h3>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                        {description}
-                    </p>
-                </div>
-            </div>
-        </div>
-    );
-};
+const MetricCard = ({ title, value, description }: { title: string; value: Money; description: string }) => (
+    <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
+        <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{title}</p>
+        <h2 className="mt-3 text-3xl font-bold text-gray-900 dark:text-white">{formatMoney(value)}</h2>
+        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{description}</p>
+    </div>
+);
 
 export default function FinanceDashboard() {
-    const { auth, invoices = [], expenses = [], refunds = [], refundedRevenue: refundedRevenueProp = 0 } = usePage().props as any;
-
-    const getInvoiceStatus = (invoice: any): string => {
-        return String(invoice.effective_status || invoice.status || '').toLowerCase();
-    };
-
-    // Calculate stats from real data - count paid revenue records (invoices + POS payload entries).
-    const refundedRevenue = typeof refundedRevenueProp === 'number'
-        ? refundedRevenueProp
-        : refunds.reduce((sum: number, refund: any) => {
-            const amount = typeof refund.amount === 'string' ? parseFloat(refund.amount) : refund.amount;
-            return sum + (isNaN(amount) ? 0 : amount);
-        }, 0);
-
-    const stats: FinanceDashboardStats = {
-        totalRevenue: invoices
-            .filter((inv: any) => getInvoiceStatus(inv) === 'paid')
-            .reduce((sum: number, inv: any) => sum + resolveInvoiceNetRevenue(inv), 0),
-        refundedRevenue,
-        totalExpenses: expenses.reduce((sum: number, exp: any) => {
-            const amount = typeof exp.amount === 'string' ? parseFloat(exp.amount) : exp.amount;
-            return sum + (isNaN(amount) ? 0 : amount);
-        }, 0),
-        pendingInvoices: invoices.filter((inv: any) => {
-            const status = getInvoiceStatus(inv);
-            return status === 'draft' || status === 'sent';
-        }).length,
-        netProfit: 0,
-    };
-    
-    stats.netProfit = stats.totalRevenue - stats.refundedRevenue - stats.totalExpenses;
-
-    const metrics: MetricCardProps[] = [
-        {
-            title: 'Net Revenue (Excl. VAT)',
-            value: `₱${stats.totalRevenue.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-            change: 15,
-            changeType: 'increase',
-            icon: DollarIconSvg,
-            color: 'success',
-            description: `From ${invoices.filter((inv: any) => getInvoiceStatus(inv) === 'paid').length} paid records before VAT`,
+    const api = useFinanceApi();
+    const { auth } = usePage().props as { auth?: { user?: { name?: string } } };
+    const summaryQuery = useQuery<FinanceSummary, FinanceSummaryError>({
+        queryKey: ['finance', 'dashboard'],
+        queryFn: async () => {
+            const response = await api.get<FinanceSummary>('/api/finance/dashboard');
+            if (!response.ok || !response.data) {
+                throw new FinanceSummaryError(response.status, response.error || 'Finance summary unavailable');
+            }
+            return response.data;
         },
-        {
-            title: 'Refunded Revenue',
-            value: `₱${stats.refundedRevenue.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-            change: 4,
-            changeType: stats.refundedRevenue > 0 ? 'decrease' : 'increase',
-            icon: AlertIconSvg,
-            color: 'warning',
-            description: `${refunds.length} refunded transactions settled this year`,
-        },
-        {
-            title: 'Total Expenses',
-            value: `₱${stats.totalExpenses.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-            change: 8,
-            changeType: 'increase',
-            icon: AlertIconSvg,
-            color: 'error',
-            description: `${expenses.length} expense records`,
-        },
-        {
-            title: 'Pending Invoices',
-            value: stats.pendingInvoices,
-            change: 3,
-            changeType: 'decrease',
-            icon: TaskIconSvg,
-            color: 'warning',
-            description: 'Awaiting payment or processing',
-        },
-        {
-            title: 'Net Profit',
-            value: `₱${stats.netProfit.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-            change: 12,
-            changeType: stats.netProfit >= 0 ? 'increase' : 'decrease',
-            icon: DollarIconSvg,
-            color: stats.netProfit >= 0 ? 'success' : 'error',
-            description: 'Revenue minus refunds and expenses',
-        },
-    ];
+    });
 
-    // Chart data — last 6 calendar months, revenue from paid records before VAT.
-    const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const now = new Date();
-    const chartMonths: string[] = [];
-    const chartRevenue: number[] = [];
-    const chartRefunds: number[] = [];
-    for (let i = 5; i >= 0; i--) {
-        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-        chartMonths.push(MONTH_NAMES[d.getMonth()]);
-        const monthTotal = invoices
-            .filter((inv: any) => {
-                const invDate = new Date(inv.date);
-                return getInvoiceStatus(inv) === 'paid' &&
-                    invDate.getFullYear() === d.getFullYear() &&
-                    invDate.getMonth() === d.getMonth();
-            })
-            .reduce((sum: number, inv: any) => sum + resolveInvoiceNetRevenue(inv), 0);
-        chartRevenue.push(monthTotal);
-
-        const monthRefundTotal = refunds
-            .filter((refund: any) => {
-                const refundDate = new Date(refund.refunded_at);
-                return refundDate.getFullYear() === d.getFullYear() && refundDate.getMonth() === d.getMonth();
-            })
-            .reduce((sum: number, refund: any) => sum + (parseFloat(String(refund.amount)) || 0), 0);
-        chartRefunds.push(monthRefundTotal);
-    }
-
-    const revenueChartOptions: ApexOptions = {
-        chart: {
-            type: 'area',
-            toolbar: { show: false },
-            zoom: { enabled: false },
-        },
+    const summary = summaryQuery.data;
+    const chartOptions: ApexOptions = {
+        chart: { type: 'area', toolbar: { show: false }, zoom: { enabled: false } },
         dataLabels: { enabled: false },
         stroke: { curve: 'smooth', width: 2 },
-        fill: {
-            type: 'gradient',
-            gradient: {
-                shadeIntensity: 1,
-                opacityFrom: 0.4,
-                opacityTo: 0.1,
-            },
-        },
-        colors: ['#10b981'],
-        xaxis: {
-            categories: chartMonths,
-        },
-        yaxis: {
-            labels: {
-                formatter: (val) => `₱${val.toLocaleString()}`,
-            },
-        },
-        tooltip: {
-            y: {
-                formatter: (val) => `₱${val.toLocaleString()}`,
-            },
-        },
-        legend: {
-            position: 'top',
-        },
+        colors: ['#10b981', '#f59e0b', '#3b82f6'],
+        xaxis: { categories: summary?.trend.map((month) => month.month) ?? [] },
+        yaxis: { labels: { formatter: (value) => `₱${value.toLocaleString()}` } },
+        tooltip: { y: { formatter: (value) => `₱${value.toLocaleString()}` } },
+        legend: { position: 'top' },
     };
-
-    const revenueChartSeries = [
-        {
-            name: 'Net Revenue (Excl. VAT)',
-            data: chartRevenue,
-        },
-        {
-            name: 'Refunded Revenue',
-            data: chartRefunds,
-        },
+    const chartSeries = [
+        { name: 'Net revenue', data: summary?.trend.map((month) => Number(month.net_revenue)) ?? [] },
+        { name: 'Incurred expenses', data: summary?.trend.map((month) => Number(month.incurred_expenses)) ?? [] },
+        { name: 'Net cash movement', data: summary?.trend.map((month) => Number(month.net_cash_movement)) ?? [] },
     ];
 
     return (
         <AppLayoutERP>
             <Head title="Finance Dashboard - Solespace ERP" />
-
-            <div className="py-8 px-6">
-                {/* Header */}
+            <div className="px-6 py-8">
                 <div className="mb-8">
-                    <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-                        Finance Dashboard
-                    </h1>
-                    <p className="text-gray-600 dark:text-gray-400">
-                        Hello, {auth?.user?.name}! Here's your financial overview.
-                    </p>
+                    <h1 className="mb-2 text-3xl font-bold text-gray-900 dark:text-white">Finance Dashboard</h1>
+                    <p className="text-gray-600 dark:text-gray-400">Hello, {auth?.user?.name ?? 'there'}! Here is your financial overview.</p>
                 </div>
 
-                {/* Metrics */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                    {metrics.map((metric) => (
-                        <MetricCard
-                            key={metric.title}
-                            title={metric.title}
-                            value={metric.value}
-                            change={metric.change}
-                            changeType={metric.changeType}
-                            icon={metric.icon}
-                            color={metric.color}
-                            description={metric.description}
-                        />
-                    ))}
-                </div>
+                {summaryQuery.isLoading && <div className="rounded-xl border border-gray-200 bg-white p-8 text-gray-600 dark:border-gray-800 dark:bg-white/[0.03]">Loading Finance summary…</div>}
+                {summaryQuery.isError && summaryQuery.error.status === 403 && <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-amber-800">You do not have access to the Finance dashboard.</div>}
+                {summaryQuery.isError && summaryQuery.error.status !== 403 && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-800">Finance summary is temporarily unavailable. Please try again.</div>}
+                {!summaryQuery.isLoading && !summaryQuery.isError && !summary && <div className="rounded-xl border border-gray-200 bg-white p-8 text-gray-600 dark:border-gray-800 dark:bg-white/[0.03]">No Finance data is available for this period.</div>}
 
-                {/* Charts Section */}
-                <div className="grid grid-cols-1 gap-6">
-                    {/* Revenue Trend */}
-                    <div className="bg-white dark:bg-white/[0.03] border border-gray-200 dark:border-gray-800 rounded-2xl shadow-sm overflow-hidden p-6">
-                        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
-                            Revenue Trend
-                        </h3>
-                        <Chart
-                            options={revenueChartOptions}
-                            series={revenueChartSeries}
-                            type="area"
-                            height={300}
-                        />
-                    </div>
-                </div>
+                {summary && (
+                    <>
+                        <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">{summary.period.start} – {summary.period.end}</p>
+                        <div className="mb-8 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+                            <MetricCard title="Net revenue" value={summary.primary.net_revenue} description="Gross revenue less executed refunds" />
+                            <MetricCard title="Incurred expenses" value={summary.primary.incurred_expenses} description="Approved and operationally valid expenses" />
+                            <MetricCard title="Net operating result" value={summary.primary.net_operating_result} description="Net revenue less incurred expenses" />
+                            <MetricCard title="Net cash movement" value={summary.primary.net_cash_movement} description="Cash receipts, refunds, and paid expenses" />
+                        </div>
+
+                        <div className="mb-8 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
+                            <h3 className="mb-4 text-lg font-bold text-gray-900 dark:text-white">Supporting financial detail</h3>
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                                <div><p className="text-sm text-gray-500">Gross revenue</p><p className="text-xl font-semibold">{formatMoney(summary.supporting.gross_revenue)}</p></div>
+                                <div><p className="text-sm text-gray-500">Executed refunds</p><p className="text-xl font-semibold">{formatMoney(summary.supporting.executed_refunds)}</p></div>
+                                <div><p className="text-sm text-gray-500">Paid expenses</p><p className="text-xl font-semibold">{formatMoney(summary.supporting.paid_expenses)}</p></div>
+                            </div>
+                            <details className="mt-4 text-sm text-gray-500">
+                                <summary className="cursor-pointer font-medium">Metric definitions</summary>
+                                <dl className="mt-3 space-y-2">
+                                    {Object.entries(summary.definitions).map(([key, definition]) => <div key={key}><dt className="font-medium text-gray-700 dark:text-gray-300">{key.replace(/_/g, ' ')}</dt><dd>{definition}</dd></div>)}
+                                </dl>
+                            </details>
+                        </div>
+
+                        <div className="mb-8 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
+                            <h3 className="mb-4 text-lg font-bold text-gray-900 dark:text-white">Six-month trend</h3>
+                            <Chart options={chartOptions} series={chartSeries} type="area" height={300} />
+                        </div>
+
+                        {summary.integrity_warnings.length > 0 && (
+                            <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-amber-900">
+                                <h3 className="font-semibold">Some Finance records need review</h3>
+                                <p className="mt-1 text-sm">Affected source records were excluded from the relevant authoritative metric.</p>
+                                <ul className="mt-3 list-disc pl-5 text-sm">
+                                    {summary.integrity_warnings.map((warning, index) => <li key={`${warning.code}-${warning.source ?? 'record'}-${index}`}>{warning.code}{warning.source ? ` · ${warning.source}` : ''}</li>)}
+                                </ul>
+                            </div>
+                        )}
+                    </>
+                )}
             </div>
         </AppLayoutERP>
     );

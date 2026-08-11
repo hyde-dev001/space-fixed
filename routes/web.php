@@ -31,6 +31,7 @@ use App\Http\Controllers\UserSide\LandingPageController;
 use App\Http\Controllers\UserSide\OrderController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -1579,97 +1580,20 @@ Route::get('/storage/reviews/{filename}', function ($filename) {
     return response()->file($path);
 })->where('filename', '.*');
 
-// Session-backed API endpoints for finance
-// CONSOLIDATED: All finance routes under /api/finance/session with finance access permissions
-Route::middleware(['auth:user', 'permission:access-finance-dashboard|access-finance-expenses|access-finance-invoices', 'shop.isolation'])->prefix('api/finance/session')->group(function () {
-    // Chart of Accounts - Commented out due to missing controller
-    // Route::get('accounts', [\App\Http\Controllers\Api\Finance\AccountController::class, 'index']);
-    // Route::post('accounts', [\App\Http\Controllers\Api\Finance\AccountController::class, 'store']);
-    // Route::get('accounts/{id}', [\App\Http\Controllers\Api\Finance\AccountController::class, 'show']);
-    // Route::get('accounts/{id}/ledger', [\App\Http\Controllers\Api\Finance\AccountController::class, 'ledger']);
+// Retired Finance session aliases. They are deliberately not proxied: a
+// compatibility write must never create a second money-history path.
+Route::middleware(['auth:user', 'shop.isolation'])->any('api/finance/session/{path?}', function (Request $request): \Illuminate\Http\JsonResponse {
+    Log::warning('Finance compatibility route used', [
+        'route' => 'session-alias',
+        'path' => $request->path(),
+    ]);
 
-    // Expenses
-    Route::get('expenses', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'index']);
-    Route::post('expenses', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'store']);
-    Route::get('expenses/{id}', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'show']);
-    Route::put('expenses/{id}', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'update']);
-    Route::patch('expenses/{id}', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'update']);
-    Route::delete('expenses/{id}', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'destroy']);
-    Route::post('expenses/{id}/restore', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'restore']);
-
-    // Expense Receipt Management
-    Route::post('expenses/{id}/receipt', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'uploadReceipt']);
-    Route::get('expenses/{id}/receipt/download', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'downloadReceipt']);
-    Route::delete('expenses/{id}/receipt', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'deleteReceipt']);
-
-    // Expense approval (users with approval permission)
-    Route::middleware('permission:approve-expenses')->group(function () {
-        Route::post('expenses/{id}/approve', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'approve']);
-        Route::post('expenses/{id}/reject', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'reject']);
-    });
-
-    // Invoices
-    Route::get('invoices', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'index']);
-    Route::post('invoices', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'store']);
-    Route::post('invoices/from-job', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'createFromJob']);
-    Route::get('invoices/{id}', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'show']);
-    Route::put('invoices/{id}', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'update']);
-    Route::patch('invoices/{id}', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'update']);
-    Route::delete('invoices/{id}', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'destroy']);
-    Route::post('invoices/{id}/restore', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'restore']);
-    Route::post('invoices/{id}/send', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'send']);
-    Route::post('invoices/{id}/void', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'void']);
-    Route::post('invoices/{id}/mark-paid', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'markAsPaid']);
-
-    // Post to ledger (requires invoice finance access permission)
-    Route::middleware('permission:access-finance-invoices')->group(function () {
-        Route::post('invoices/{id}/post', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'post']);
-    });
-
-    // REMOVED: Journal Entries - Invoices/expenses auto-post behind the scenes for SMEs
-    // Route::get('journal-entries', [FinanceJournalEntryController::class, 'index']);
-    // Route::post('journal-entries', [FinanceJournalEntryController::class, 'store']);
-    // Route::get('journal-entries/{id}', [FinanceJournalEntryController::class, 'show']);
-    // Route::put('journal-entries/{id}', [FinanceJournalEntryController::class, 'update']);
-    // Route::patch('journal-entries/{id}', [FinanceJournalEntryController::class, 'update']);
-    // Route::delete('journal-entries/{id}', [FinanceJournalEntryController::class, 'destroy']);
-    // Route::post('journal-entries/{id}/post', [FinanceJournalEntryController::class, 'post']);
-    // Route::post('journal-entries/{id}/reverse', [FinanceJournalEntryController::class, 'reverse']);
-
-    // REMOVED: Bank Reconciliation - Too complex for SMEs
-    // Route::prefix('reconciliation')->group(function () {
-    //     Route::get('transactions', [\App\Http\Controllers\ReconciliationController::class, 'getTransactions']);
-    //     Route::post('/', [\App\Http\Controllers\ReconciliationController::class, 'store']);
-    //     Route::get('history', [\App\Http\Controllers\ReconciliationController::class, 'history']);
-    //     Route::delete('{id}/unmatch', [\App\Http\Controllers\ReconciliationController::class, 'unmatch']);
-    // });
-
-    // Tax Rates
-    Route::get('tax-rates', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'index']);
-    Route::post('tax-rates', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'store']);
-    Route::put('tax-rates/{id}', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'update']);
-    Route::delete('tax-rates/{id}', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'destroy']);
-
-    // Approval Workflow routes
-    Route::prefix('approvals')->group(function () {
-        Route::get('pending', [\App\Http\Controllers\ApprovalController::class, 'getPending']);
-        Route::get('history', [\App\Http\Controllers\ApprovalController::class, 'getHistory']);
-        Route::get('{id}/history', [\App\Http\Controllers\ApprovalController::class, 'getApprovalHistory']);
-
-        // Only users with approval permission can approve/reject transactions
-        Route::middleware('permission:approve-expenses')->group(function () {
-            Route::post('{id}/approve', [\App\Http\Controllers\ApprovalController::class, 'approve']);
-            Route::post('{id}/reject', [\App\Http\Controllers\ApprovalController::class, 'reject']);
-        });
-
-        // Delegation routes (managers only)
-        Route::middleware('role:Manager')->group(function () {
-            Route::get('delegations', [\App\Http\Controllers\ApprovalController::class, 'getDelegations']);
-            Route::post('delegations', [\App\Http\Controllers\ApprovalController::class, 'createDelegation']);
-            Route::post('delegations/{id}/deactivate', [\App\Http\Controllers\ApprovalController::class, 'deactivateDelegation']);
-        });
-    });
-});
+    return response()->json([
+        'message' => 'The Finance session route family has moved to /api/finance.',
+        'code' => 'FINANCE_ROUTE_MOVED',
+        'replacement' => '/api/finance',
+    ], 410);
+})->where('path', '.*');
 
 // Search routes
 Route::middleware(['auth:user', 'check.suspension'])->group(function () {
@@ -1861,189 +1785,8 @@ Route::prefix('finance')->name('finance.')->middleware(['auth:user', 'role_or_pe
     })->name('index');
 
     Route::get('/dashboard', function () {
-        if (Auth::guard('user')->user()?->force_password_change) {
-            return redirect()->route('erp.profile');
-        }
-        $shopId = Auth::user()->shop_owner_id;
-        $year = now()->year;
-        $yearStart = now()->copy()->startOfYear();
-        $yearEnd = now()->copy()->endOfYear();
+        return Inertia::render('ERP/Finance/Dashboard');
 
-        $invoices = \App\Models\Finance\Invoice::where('shop_id', $shopId)
-            ->whereBetween('date', [$yearStart->toDateString(), $yearEnd->toDateString()])
-            ->with(['jobOrder' => function ($query) {
-                $query->select(['id', 'payment_status']);
-            }])
-            ->select(['id', 'reference', 'status', 'total', 'tax_amount', 'meta', 'date', 'job_order_id'])
-            ->orderBy('date', 'desc')
-            ->get();
-
-        $invoicePayload = $invoices->map(function ($invoice) {
-            $paymentStatus = strtolower((string) ($invoice->jobOrder->payment_status ?? ''));
-            $effectiveStatus = $paymentStatus === 'refunded'
-                ? 'refunded'
-                : (string) $invoice->status;
-
-            return [
-                'id' => $invoice->id,
-                'reference' => $invoice->reference,
-                'status' => $invoice->status,
-                'effective_status' => $effectiveStatus,
-                'total' => $invoice->total,
-                'tax_amount' => $invoice->tax_amount,
-                'meta' => $invoice->meta,
-                'date' => optional($invoice->date)->toDateString(),
-            ];
-        })->values();
-
-        $posTransactions = \App\Models\PosTransaction::query()
-            ->where('shop_owner_id', $shopId)
-            ->whereBetween(\Illuminate\Support\Facades\DB::raw('COALESCE(paid_at, created_at)'), [
-                $yearStart->toDateTimeString(),
-                $yearEnd->toDateTimeString(),
-            ])
-            ->whereIn('status', ['paid', 'partially_refunded', 'refunded'])
-            ->select(['id', 'transaction_no', 'status', 'total_amount', 'tax_amount', 'paid_at', 'created_at'])
-            ->orderByDesc(\Illuminate\Support\Facades\DB::raw('COALESCE(paid_at, created_at)'))
-            ->get();
-
-        $posRefundByTransaction = [];
-        if ($posTransactions->isNotEmpty()) {
-            $posRefundRows = \App\Models\PosRefund::query()
-                ->select('source_transaction_id')
-                ->selectRaw('SUM(COALESCE(approved_amount, requested_amount, 0)) as total_refunded')
-                ->where('status', 'succeeded')
-                ->whereIn('source_transaction_id', $posTransactions->pluck('id')->all())
-                ->groupBy('source_transaction_id')
-                ->get();
-
-            foreach ($posRefundRows as $row) {
-                $transactionId = (int) ($row->source_transaction_id ?? 0);
-                if ($transactionId <= 0) {
-                    continue;
-                }
-                $posRefundByTransaction[$transactionId] = (float) ($row->total_refunded ?? 0.0);
-            }
-        }
-
-        $posRevenuePayload = $posTransactions->map(function ($transaction) use ($posRefundByTransaction) {
-            $transactionStatus = strtolower((string) ($transaction->status ?? ''));
-            $grossTotal = max(0.0, (float) ($transaction->total_amount ?? 0.0));
-            $vatAmount = max(0.0, (float) ($transaction->tax_amount ?? 0.0));
-            $preRefundNet = max(0.0, ($grossTotal - $vatAmount) > 0 ? ($grossTotal - $vatAmount) : $grossTotal);
-
-            $refundAmount = max(0.0, (float) ($posRefundByTransaction[$transaction->id] ?? 0.0));
-            if ($refundAmount <= 0 && $transactionStatus === 'refunded') {
-                $refundAmount = $preRefundNet;
-            }
-
-            $netRevenue = max(0.0, $preRefundNet - min($preRefundNet, $refundAmount));
-            $effectiveStatus = ($transactionStatus === 'refunded' && $netRevenue <= 0)
-                ? 'refunded'
-                : 'paid';
-
-            return [
-                'id' => 'pos-'.$transaction->id,
-                'reference' => $transaction->transaction_no,
-                'status' => $transactionStatus,
-                'effective_status' => $effectiveStatus,
-                'total' => $grossTotal,
-                'tax_amount' => $vatAmount,
-                'meta' => [
-                    'subtotal_amount' => round($netRevenue, 2),
-                ],
-                'date' => optional($transaction->paid_at ?? $transaction->created_at)->toDateString(),
-            ];
-        })->values();
-
-        $invoicePayload = $invoicePayload
-            ->concat($posRevenuePayload)
-            ->sortByDesc('date')
-            ->values();
-
-        $expenses = \App\Models\Finance\Expense::where('shop_id', $shopId)
-            ->whereBetween('date', [$yearStart->toDateString(), $yearEnd->toDateString()])
-            ->select(['id', 'reference', 'status', 'amount', 'date'])
-            ->orderBy('date', 'desc')
-            ->get();
-
-        $orderRefunds = \App\Models\OrderRefund::query()
-            ->where('shop_owner_id', $shopId)
-            ->whereYear('refunded_at', $year)
-            ->whereNotNull('refunded_at')
-            ->where('status', 'succeeded')
-            ->select(['id', 'order_id', 'amount', 'status', 'refunded_at', 'requested_at'])
-            ->orderByDesc('refunded_at')
-            ->get();
-
-        $orderRefundLineById = collect();
-        if (
-            $orderRefunds->isNotEmpty()
-            && \Illuminate\Support\Facades\Schema::hasTable('order_refund_items')
-        ) {
-            $orderRefundLineById = \Illuminate\Support\Facades\DB::table('order_refund_items')
-                ->select('order_refund_id', \Illuminate\Support\Facades\DB::raw('SUM(COALESCE(line_amount, 0)) as line_total'))
-                ->whereIn('order_refund_id', $orderRefunds->pluck('id')->all())
-                ->groupBy('order_refund_id')
-                ->pluck('line_total', 'order_refund_id');
-        }
-
-        $orderRefundPayload = $orderRefunds->map(function ($refund) use ($orderRefundLineById) {
-            $lineAmount = (float) ($orderRefundLineById[$refund->id] ?? 0.0);
-            $effectiveAmount = $lineAmount > 0
-                ? $lineAmount
-                : (float) ($refund->amount ?? 0.0);
-
-            return [
-                'id' => $refund->id,
-                'order_id' => $refund->order_id,
-                'amount' => round(max(0.0, $effectiveAmount), 2),
-                'status' => $refund->status,
-                'refunded_at' => optional($refund->refunded_at)->toDateTimeString(),
-                'requested_at' => optional($refund->requested_at)->toDateTimeString(),
-            ];
-        })->values();
-
-        $posRefunds = \App\Models\PosRefund::query()
-            ->where('shop_owner_id', $shopId)
-            ->where('status', 'succeeded')
-            ->whereYear('executed_at', $year)
-            ->whereNotNull('executed_at')
-            ->select(['id', 'source_transaction_id', 'approved_amount', 'requested_amount', 'executed_at'])
-            ->orderByDesc('executed_at')
-            ->get();
-
-        $posRefundPayload = $posRefunds->map(function ($refund) {
-            $effectiveAmount = (float) ($refund->approved_amount ?? 0.0);
-            if ($effectiveAmount <= 0) {
-                $effectiveAmount = (float) ($refund->requested_amount ?? 0.0);
-            }
-
-            return [
-                'id' => 'pos-'.$refund->id,
-                'order_id' => null,
-                'amount' => round(max(0.0, $effectiveAmount), 2),
-                'status' => 'succeeded',
-                'refunded_at' => optional($refund->executed_at)->toDateTimeString(),
-                'requested_at' => optional($refund->executed_at)->toDateTimeString(),
-            ];
-        })->values();
-
-        $refundPayload = $orderRefundPayload
-            ->concat($posRefundPayload)
-            ->sortByDesc('refunded_at')
-            ->values();
-
-        $refundedRevenue = $refundPayload->sum(function ($refund) {
-            return (float) ($refund['amount'] ?? 0.0);
-        });
-
-        return Inertia::render('ERP/Finance/Dashboard', [
-            'invoices' => $invoicePayload,
-            'expenses' => $expenses,
-            'refunds' => $refundPayload,
-            'refundedRevenue' => $refundedRevenue,
-        ]);
     })->name('dashboard');
 
     Route::get('/purchase-request-approval', function () {
@@ -2060,7 +1803,7 @@ Route::prefix('finance')->name('finance.')->middleware(['auth:user', 'role_or_pe
 
 // Finance Audit Logs
 Route::get('/erp/finance/audit-logs', [\App\Http\Controllers\Erp\ReadPageController::class, 'financeAuditLogs'])
-    ->middleware(['auth:user', 'permission:access-audit-logs'])
+    ->middleware(['auth:user', 'shop.isolation', 'permission:access-audit-logs'])
     ->name('erp.finance.audit-logs');
 
 // Approval Workflow page removed (frontend page deleted)

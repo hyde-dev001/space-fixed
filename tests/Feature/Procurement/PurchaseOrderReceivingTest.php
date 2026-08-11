@@ -49,6 +49,7 @@ class PurchaseOrderReceivingTest extends TestCase
             Role::firstOrCreate(['name' => 'Finance Staff', 'guard_name' => 'user']),
         ]);
         [$po, $item, $inventory] = $this->poItem(5, 100);
+        $po->update(['payment_terms' => 'Net 30']);
         $payload = $this->payload('receive-1', $item->id, 3, 1);
 
         $response = $this->actingAs($this->receiver, 'user')
@@ -72,6 +73,7 @@ class PurchaseOrderReceivingTest extends TestCase
             ->count());
         $this->assertSame($this->receiver->id, $expense->created_by);
         $this->assertSame('200.00', $expense->amount);
+        $this->assertSame(now()->addDays(30)->toDateString(), $expense->due_date->toDateString());
         $this->assertSame($response->json('data.id'), $expense->procurement_receipt_id);
         $this->assertDatabaseHas('notifications', [
             'user_id' => $finance->id,
@@ -149,6 +151,18 @@ class PurchaseOrderReceivingTest extends TestCase
         $this->assertSame('submitted', $expense->fresh()->status);
         $this->assertNull($expense->fresh()->approval_id);
         $this->assertSame(ApprovalStatus::CANCELLED, $legacyApproval->fresh()->status);
+    }
+
+    public function test_cod_or_unrecognized_supplier_terms_leave_due_date_empty(): void
+    {
+        [$po, $item] = $this->poItem(2, 100);
+        $po->update(['payment_terms' => 'COD']);
+
+        $this->actingAs($this->receiver, 'user')
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts", $this->payload('cod-terms', $item->id, 2, 0))
+            ->assertCreated();
+
+        $this->assertNull(Expense::sole()->due_date);
     }
 
     public function test_existing_procurement_expense_workflow_is_blocked_for_finance_rejection(): void

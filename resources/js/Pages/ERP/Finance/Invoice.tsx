@@ -2,7 +2,7 @@ import React, { useState, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { usePage, router } from '@inertiajs/react';
 import { useFinanceApi } from "../../../hooks/useFinanceApi";
-import { useInvoices, usePostInvoice } from "../../../hooks/useFinanceQueries";
+import { useInvoices } from "../../../hooks/useFinanceQueries";
 import { getApprovalStatusBadge } from "./InlineApprovalUtils";
 import Swal from "sweetalert2";
 
@@ -221,6 +221,13 @@ interface Invoice {
   status: "draft" | "sent" | "paid" | "overdue" | "cancelled" | "refunded";
   payment_date?: string | null;
   payment_method?: string | null;
+  payment_state?: {
+    paid_amount: string;
+    remaining_balance: string;
+    status: "unpaid" | "partially_paid" | "paid";
+    source_owner: "finance" | "operational";
+    integrity_warnings: string[];
+  };
   job_order_id?: number | null;
   job_reference?: string | null;
   tax_amount?: number | string | null;
@@ -300,19 +307,19 @@ const Invoice: React.FC = () => {
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [showArchived, setShowArchived] = useState(false);
-  const [sendingInvoiceId, setSendingInvoiceId] = useState<string | null>(null);
+  const [markingSentId, setMarkingSentId] = useState<string | null>(null);
   const [markingPaidId, setMarkingPaidId] = useState<string | null>(null);
   const [jobStatusFilter, setJobStatusFilter] = useState<string>("");
   const [hasJobFilter, setHasJobFilter] = useState<string>("all");
   const itemsPerPage = 10;
 
-  const handleSendInvoice = async (invoiceId: string) => {
+  const handleMarkInvoiceSent = async (invoiceId: string) => {
     const result = await Swal.fire({
-      title: 'Send Invoice?',
-      text: 'This will mark the invoice as sent to the customer.',
+      title: 'Mark invoice as sent?',
+      text: 'This records an internal status change only. It does not send email or notify the customer.',
       icon: 'question',
       showCancelButton: true,
-      confirmButtonText: 'Yes, send it',
+      confirmButtonText: 'Mark as sent',
       cancelButtonText: 'Cancel',
       confirmButtonColor: '#2563eb',
       reverseButtons: true,
@@ -320,30 +327,36 @@ const Invoice: React.FC = () => {
 
     if (!result.isConfirmed) return;
 
-    setSendingInvoiceId(invoiceId);
+    setMarkingSentId(invoiceId);
     try {
-      const response = await api.post(`/api/finance/invoices/${invoiceId}/send`);
+      const response = await api.post(`/api/finance/invoices/${invoiceId}/mark-sent`);
 
       if (!response.ok) {
-        throw new Error(response.error || 'Failed to send invoice');
+        throw new Error(response.error || 'Failed to mark invoice as sent');
       }
 
       refetchInvoices();
-      await Swal.fire('Sent!', 'Invoice has been sent to customer.', 'success');
+      await Swal.fire('Marked as sent', 'The invoice status was updated internally.', 'success');
     } catch (error) {
-      await Swal.fire('Error', error instanceof Error ? error.message : 'Failed to send invoice', 'error');
+      await Swal.fire('Error', error instanceof Error ? error.message : 'Failed to mark invoice as sent', 'error');
     } finally {
-      setSendingInvoiceId(null);
+      setMarkingSentId(null);
     }
   };
 
   const handleMarkAsPaid = async (invoiceId: string) => {
+    const currentInvoice = invoices.find((invoice) => String(invoice.id) === String(invoiceId));
+    const defaultAmount = currentInvoice?.payment_state?.remaining_balance ?? currentInvoice?.total ?? 0;
     const { value: formValues } = await Swal.fire({
-      title: 'Mark as Paid',
+      title: 'Record Payment',
       html: `
         <div class="space-y-4">
           <div class="text-left">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Payment Date</label>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Amount</label>
+            <input id="payment-amount" type="number" min="0.01" step="0.01" class="swal2-input w-full" value="${defaultAmount}" style="margin: 0; width: 100%;" />
+          </div>
+          <div class="text-left">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Received Date</label>
             <input id="payment-date" type="date" class="swal2-input w-full" value="${new Date().toISOString().split('T')[0]}" style="margin: 0; width: 100%;" />
           </div>
           <div class="text-left">
@@ -361,22 +374,30 @@ const Invoice: React.FC = () => {
         </div>
       `,
       showCancelButton: true,
-      confirmButtonText: 'Mark as Paid',
+      confirmButtonText: 'Record Payment',
       cancelButtonText: 'Cancel',
       confirmButtonColor: '#10b981',
       reverseButtons: true,
       preConfirm: () => {
         const paymentDate = (document.getElementById('payment-date') as HTMLInputElement)?.value;
         const paymentMethod = (document.getElementById('payment-method') as HTMLSelectElement)?.value;
+        const paymentAmount = (document.getElementById('payment-amount') as HTMLInputElement)?.value;
         
         if (!paymentDate) {
           Swal.showValidationMessage('Please select a payment date');
           return false;
         }
+
+        if (!paymentAmount || Number(paymentAmount) <= 0) {
+          Swal.showValidationMessage('Please enter a payment amount greater than zero');
+          return false;
+        }
         
         return {
-          payment_date: paymentDate,
+          amount: paymentAmount,
+          received_at: paymentDate,
           payment_method: paymentMethod,
+          idempotency_key: `${invoiceId}-${Date.now()}`,
         };
       }
     });
@@ -384,16 +405,16 @@ const Invoice: React.FC = () => {
     if (formValues) {
       setMarkingPaidId(invoiceId);
       try {
-        const response = await api.post(`/api/finance/invoices/${invoiceId}/mark-paid`, formValues);
+        const response = await api.post(`/api/finance/invoices/${invoiceId}/payments`, formValues);
 
         if (!response.ok) {
-          throw new Error(response.error || 'Failed to mark invoice as paid');
+          throw new Error(response.error || 'Failed to record payment');
         }
 
         refetchInvoices();
-        await Swal.fire('Success!', 'Invoice marked as paid.', 'success');
+        await Swal.fire('Success!', 'Payment recorded.', 'success');
       } catch (error) {
-        await Swal.fire('Error', error instanceof Error ? error.message : 'Failed to mark invoice as paid', 'error');
+        await Swal.fire('Error', error instanceof Error ? error.message : 'Failed to record payment', 'error');
       } finally {
         setMarkingPaidId(null);
       }
@@ -402,8 +423,6 @@ const Invoice: React.FC = () => {
 
   // React Query hooks - automatically handle loading, caching, refetching
   const { data: invoices = [], isLoading: loading, refetch: refetchInvoices } = useInvoices({ archived: showArchived });
-  const postInvoiceMutation = usePostInvoice();
-
   // Filter invoices based on tab and search
   const filteredInvoices = useMemo(() => {
     return invoices.filter((invoice) => {
@@ -555,6 +574,10 @@ const Invoice: React.FC = () => {
     };
     return colors[status] || "bg-gray-100 text-gray-800";
   };
+
+  const getStatusLabel = (status: string) => status === "posted"
+    ? "Recorded"
+    : status.charAt(0).toUpperCase() + status.slice(1);
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -848,14 +871,14 @@ const Invoice: React.FC = () => {
     printWindow.print();
   };
 
-  const handleModalSendEmail = async (invoice: Invoice) => {
+  const handleModalMarkSent = async (invoice: Invoice) => {
     const status = getEffectiveInvoiceStatus(invoice);
     if (status !== 'draft') {
       await Swal.fire('Already Processed', 'This invoice has already been sent or finalized.', 'info');
       return;
     }
 
-    await handleSendInvoice(invoice.id);
+    await handleMarkInvoiceSent(invoice.id);
   };
 
   const handleCreateInvoice = () => {
@@ -1177,12 +1200,12 @@ const Invoice: React.FC = () => {
                         </button>
                         {effectiveStatus === 'draft' && (
                           <button 
-                            onClick={() => handleSendInvoice(invoice.id)}
-                            disabled={sendingInvoiceId === invoice.id}
+                            onClick={() => handleMarkInvoiceSent(invoice.id)}
+                            disabled={markingSentId === invoice.id}
                             className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            title={sendingInvoiceId === invoice.id ? "Sending..." : "Send Invoice"}
+                            title={markingSentId === invoice.id ? "Marking as sent..." : "Mark as sent"}
                           >
-                            {sendingInvoiceId === invoice.id ? (
+                            {markingSentId === invoice.id ? (
                               <div className="size-5 relative">
                                 <div className="absolute inset-0 rounded-full border-2 border-gray-300"></div>
                                 <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-blue-600 animate-spin"></div>
@@ -1194,12 +1217,12 @@ const Invoice: React.FC = () => {
                             )}
                           </button>
                         )}
-                        {(effectiveStatus === 'sent' || effectiveStatus === 'overdue') && (
+                        {(effectiveStatus === 'sent' || effectiveStatus === 'overdue') && !invoice.job_order_id && (
                           <button 
                             onClick={() => handleMarkAsPaid(invoice.id)}
                             disabled={markingPaidId === invoice.id}
                             className="p-2 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            title={markingPaidId === invoice.id ? "Processing..." : "Mark as Paid"}
+                            title={markingPaidId === invoice.id ? "Processing..." : "Record Payment"}
                           >
                             {markingPaidId === invoice.id ? (
                               <div className="size-5 relative">
@@ -1344,7 +1367,7 @@ const Invoice: React.FC = () => {
                     {selectedInvoice
                       ? (() => {
                           const status = getEffectiveInvoiceStatus(selectedInvoice);
-                          return status.charAt(0).toUpperCase() + status.slice(1);
+                          return getStatusLabel(status);
                         })()
                       : "Unknown"}
                   </span>
@@ -1467,13 +1490,13 @@ const Invoice: React.FC = () => {
                     </button>
                   )}
                   <button
-                    onClick={() => handleModalSendEmail(selectedInvoice)}
+                    onClick={() => handleModalMarkSent(selectedInvoice)}
                     className="flex-1 px-3 py-2.5 border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
                   >
                     <svg className="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                     </svg>
-                    Send Email
+                    Mark as sent
                   </button>
                   <button
                     onClick={() => setIsViewModalOpen(false)}

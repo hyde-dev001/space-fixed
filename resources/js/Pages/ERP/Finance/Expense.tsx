@@ -20,6 +20,7 @@ const LoadingSpinner: React.FC<{ message?: string }> = ({ message = "Loading exp
 type Expense = {
   id: string;
   date: string;
+  due_date?: string | null;
   category: string;
   description: string;
   amount: number | string;
@@ -27,7 +28,6 @@ type Expense = {
   status: "draft" | "submitted" | "approved" | "posted" | "rejected";
   reference?: string;
   tax_amount?: number | string;
-  journal_entry_id?: number;
   approval_notes?: string | null;
   receipt_path?: string | null;
   receipt_original_name?: string | null;
@@ -48,6 +48,14 @@ type Expense = {
     expected_delivery_date?: string | null;
     actual_delivery_date?: string | null;
   } | null;
+  settlement_state?: {
+    approval_status: string;
+    paid_amount: string;
+    outstanding_balance: string;
+    status: "unpaid" | "partially_paid" | "paid";
+    integrity_warnings: string[];
+    settlements: Array<{ id: number; entry_type: "settlement" | "reversal"; amount: string; payment_method: string; reference?: string | null; paid_at?: string | null }>;
+  };
 };
 
 type MetricCardProps = {
@@ -251,11 +259,16 @@ const Expense: React.FC = () => {
   const [activeExpense, setActiveExpense] = useState<Expense | null>(null);
   const [addForm, setAddForm] = useState({
     date: "",
+    due_date: "",
     category: "",
     description: "",
     amount: 0,
     tax_rate_id: "",
     tax_amount: 0,
+    payment_mode: "paid_now" as "paid_now" | "pay_later",
+    payment_method: "cash",
+    payment_reference: "",
+    idempotency_key: "",
   });
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
@@ -478,11 +491,16 @@ const Expense: React.FC = () => {
   const openAddModal = () => {
     setAddForm({
       date: "",
+      due_date: "",
       category: "",
       description: "",
       amount: 0,
       tax_rate_id: "",
       tax_amount: 0,
+      payment_mode: "paid_now",
+      payment_method: "cash",
+      payment_reference: "",
+      idempotency_key: typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : "",
     });
     setReceiptFile(null);
     setReceiptPreview(null);
@@ -548,17 +566,24 @@ const Expense: React.FC = () => {
     try {
       const formData = new FormData();
       formData.append('date', addForm.date);
+      formData.append('payment_mode', addForm.payment_mode);
+      if (addForm.due_date) formData.append('due_date', addForm.due_date);
       formData.append('category', addForm.category);
       formData.append('description', addForm.description);
       formData.append('amount', addForm.amount.toString());
       formData.append('tax_amount', addForm.tax_amount.toString());
       formData.append('status', 'submitted');
+      if (addForm.payment_mode === 'paid_now') {
+        formData.append('payment_method', addForm.payment_method);
+        if (addForm.payment_reference) formData.append('payment_reference', addForm.payment_reference);
+        if (addForm.idempotency_key) formData.append('idempotency_key', addForm.idempotency_key);
+      }
       
       if (receiptFile) {
         formData.append('receipt', receiptFile);
       }
 
-      const response = await api.post('/api/finance/session/expenses', formData);
+      const response = await api.post('/api/finance/expenses', formData);
 
       if (!response.ok) {
         throw new Error(response.error || 'Failed to add expense');
@@ -583,7 +608,12 @@ const Expense: React.FC = () => {
   };
 
   const isAddFormValid = React.useMemo(() => {
-    return Boolean(addForm.date && addForm.category.trim() && addForm.amount > 0);
+    return Boolean(
+      addForm.date
+      && addForm.category.trim()
+      && addForm.amount > 0
+      && (addForm.payment_mode === "paid_now" || addForm.due_date)
+    );
   }, [addForm]);
 
   const handleArchiveExpense = (id: string) => {
@@ -600,7 +630,7 @@ const Expense: React.FC = () => {
       if (result.isConfirmed) {
         (async () => {
           try {
-            const response = await api.delete(`/api/finance/session/expenses/${id}`);
+            const response = await api.delete(`/api/finance/expenses/${id}`);
             if (!response.ok) throw new Error(response.error || 'Failed to archive expense');
             // React Query will automatically refetch
             refetchExpenses();
@@ -637,7 +667,7 @@ const Expense: React.FC = () => {
       if (result.isConfirmed) {
         (async () => {
           try {
-            const response = await api.post(`/api/finance/session/expenses/${id}/restore`);
+            const response = await api.post(`/api/finance/expenses/${id}/restore`);
             if (!response.ok) throw new Error(response.error || 'Failed to restore expense');
             refetchExpenses();
             Swal.fire({
@@ -1021,6 +1051,23 @@ const Expense: React.FC = () => {
                     : activeExpense.status.charAt(0).toUpperCase() + activeExpense.status.slice(1)}
                 </span>
               </div>
+              {activeExpense.settlement_state && (
+                <div className="space-y-2 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                  <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
+                    <span className="text-gray-500 dark:text-gray-400">Settlement</span>
+                    <span className="font-semibold capitalize">{activeExpense.settlement_state.status.replace("_", " ")}</span>
+                  </div>
+                  <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
+                    <span className="text-gray-500 dark:text-gray-400">Paid</span>
+                    <span className="font-semibold">{formatCurrency(activeExpense.settlement_state.paid_amount)}</span>
+                  </div>
+                  {activeExpense.settlement_state.integrity_warnings.length > 0 && (
+                    <p className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                      Requires reconciliation: {activeExpense.settlement_state.integrity_warnings.join(", ")}
+                    </p>
+                  )}
+                </div>
+              )}
               
               {activeExpense.receipt_path && (
                 <div className="flex flex-col gap-2 text-sm text-gray-700 dark:text-gray-300">
@@ -1030,7 +1077,7 @@ const Expense: React.FC = () => {
                       {activeExpense.receipt_original_name}
                     </span>
                     <button
-                      onClick={() => window.open(api.resolveUrl(`/api/finance/session/expenses/${activeExpense.id}/receipt/download`), '_blank')}
+                      onClick={() => window.open(`/api/finance/expenses/${activeExpense.id}/receipt`, '_blank')}
                       className="px-3 py-1 text-xs bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
                     >
                       Download
@@ -1099,6 +1146,57 @@ const Expense: React.FC = () => {
                   className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
                 />
               </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Settlement</label>
+                <select
+                  value={addForm.payment_mode}
+                  onChange={(e) => setAddForm({ ...addForm, payment_mode: e.target.value as "paid_now" | "pay_later" })}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
+                >
+                  <option value="paid_now">Paid now</option>
+                  <option value="pay_later">Pay later</option>
+                </select>
+              </div>
+              {addForm.payment_mode === "pay_later" ? (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Due date</label>
+                  <input
+                    type="date"
+                    value={addForm.due_date}
+                    onChange={(e) => setAddForm({ ...addForm, due_date: e.target.value })}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
+                  />
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Payment method</label>
+                    <select
+                      value={addForm.payment_method}
+                      onChange={(e) => setAddForm({ ...addForm, payment_method: e.target.value })}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
+                    >
+                      <option value="cash">Cash</option>
+                      <option value="bank_transfer">Bank transfer</option>
+                      <option value="check">Check</option>
+                      <option value="gcash">GCash</option>
+                      <option value="maya">Maya</option>
+                      <option value="paypal">PayPal</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Payment reference (optional)</label>
+                    <input
+                      type="text"
+                      value={addForm.payment_reference}
+                      onChange={(e) => setAddForm({ ...addForm, payment_reference: e.target.value })}
+                      placeholder="Receipt or transfer reference"
+                      className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
+                    />
+                  </div>
+                </>
+              )}
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Category</label>
                 <input

@@ -6,13 +6,18 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Finance\TaxRate;
 use App\Models\AuditLog;
-use App\Support\Erp\ErpActorContext;
+use App\Support\Finance\FinanceShopContext;
+use App\Support\Finance\FinanceErrorResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class TaxRateController extends Controller
 {
+    public function __construct(private readonly FinanceShopContext $shopContext)
+    {
+    }
+
     /**
      * Get all tax rates
      */
@@ -109,8 +114,7 @@ class TaxRateController extends Controller
             return response()->json($taxRate, 201);
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Tax rate creation failed: ' . $e->getMessage(), ['exception' => $e]);
-            return response()->json(['message' => 'Failed to create tax rate', 'error' => $e->getMessage()], 500);
+            return FinanceErrorResponse::json($e, 'tax_rate.create', 500, ['shop_id' => $shopId]);
         }
     }
 
@@ -157,8 +161,7 @@ class TaxRateController extends Controller
             return response()->json($taxRate);
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Tax rate update failed: ' . $e->getMessage(), ['exception' => $e]);
-            return response()->json(['message' => 'Failed to update tax rate', 'error' => $e->getMessage()], 500);
+            return FinanceErrorResponse::json($e, 'tax_rate.update', 500, ['record_id' => $id, 'shop_id' => $shopId]);
         }
     }
 
@@ -176,8 +179,7 @@ class TaxRateController extends Controller
 
             return response()->json(['message' => 'Tax rate deleted successfully']);
         } catch (\Exception $e) {
-            Log::error('Tax rate deletion failed: ' . $e->getMessage(), ['exception' => $e]);
-            return response()->json(['message' => 'Failed to delete tax rate', 'error' => $e->getMessage()], 500);
+            return FinanceErrorResponse::json($e, 'tax_rate.delete', 500, ['record_id' => $id, 'shop_id' => $shopId]);
         }
     }
 
@@ -274,23 +276,6 @@ class TaxRateController extends Controller
 
     private function shopOwnerId(): int
     {
-        $context = request()->attributes->get('erp.actor_context');
-        if ($context instanceof ErpActorContext) {
-            return (int) $context->tenantOwner()->getKey();
-        }
-
-        $shopOwnerId = Auth::guard('shop_owner')->id();
-        if ($shopOwnerId) {
-            return (int) $shopOwnerId;
-        }
-
-        $user = Auth::guard('user')->user();
-        if (! $user) {
-            abort(403);
-        }
-
-        return (int) ($user->role === 'shop_owner' || $user->hasRole('Shop Owner')
-            ? $user->id
-            : ($user->shop_owner_id ?? abort(403)));
+        return $this->shopContext->id(request());
     }
 }

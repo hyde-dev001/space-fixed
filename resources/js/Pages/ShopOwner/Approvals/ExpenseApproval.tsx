@@ -143,7 +143,7 @@ const statusLabel: Record<ExpenseStatus, string> = {
 	approved:  "Approved",
 	rejected:  "Rejected",
 	draft:     "Draft",
-	posted:    "Posted",
+	posted:    "Recorded",
 };
 
 // ---- Main component --------------------------------------------------------
@@ -306,7 +306,7 @@ export default function ExpenseApproval({ onModalStateChange }: ExpenseApprovalP
 					<div>
 						<h1 className="text-2xl font-semibold mb-1">Expense Approvals</h1>
 						<p className="text-gray-600 dark:text-gray-400">
-							Review expenses submitted by Finance before they are settled
+							Review approval state separately from any cash settlement
 						</p>
 					</div>
 					<span className="px-3 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200 w-fit">
@@ -342,7 +342,7 @@ export default function ExpenseApproval({ onModalStateChange }: ExpenseApprovalP
 							<option value="approved">Approved</option>
 							<option value="rejected">Rejected</option>
 							<option value="draft">Draft</option>
-							<option value="posted">Posted</option>
+							<option value="posted">Recorded</option>
 						</select>
 					</div>
 
@@ -490,7 +490,9 @@ export default function ExpenseApproval({ onModalStateChange }: ExpenseApprovalP
 								<div className="flex items-center justify-between text-sm pt-1">
 									<span className="text-gray-500 dark:text-gray-400">Receipt</span>
 									<a
-										href={`${erpMode ? "/api/shop-owner/finance" : "/api/finance/session"}/expenses/${viewing.id}/receipt/download`}
+											href={erpMode
+											? `/api/shop-owner/finance/expenses/${viewing.id}/receipt/download`
+											: `/api/finance/expenses/${viewing.id}/receipt`}
 										target="_blank"
 										rel="noreferrer"
 										className="px-3 py-1 text-xs bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"

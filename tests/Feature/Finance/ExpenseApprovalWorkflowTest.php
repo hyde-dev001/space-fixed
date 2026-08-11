@@ -4,6 +4,7 @@ namespace Tests\Feature\Finance;
 
 use App\Models\Approval;
 use App\Models\Finance\Expense;
+use App\Models\Finance\ExpenseSettlement;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\ExpenseApprovalService;
@@ -74,92 +75,73 @@ class ExpenseApprovalWorkflowTest extends TestCase
         $this->expenseApprovalService = app(ExpenseApprovalService::class);
     }
 
-    public function test_expense_v4_workflow_progresses_through_all_four_levels(): void
+    public function test_low_value_expense_has_one_finance_approval(): void
     {
         $expense = $this->createWorkflowBoundExpense();
+        $approval = $expense->approval()->firstOrFail();
 
-        // Level 1: Finance
-        $l1 = $this->actingAs($this->financeFirst, 'user')
+        $this->assertSame(1, $approval->total_levels);
+        $response = $this->actingAs($this->financeFirst, 'user')
             ->postJson("/api/finance/expenses/{$expense->id}/approve", [
-                'approval_notes' => 'L1 finance approved',
+                'approval_notes' => 'Finance approved',
             ]);
 
-        $l1->assertStatus(200)
-            ->assertJson([
-                'is_final' => false,
-            ]);
+        $response->assertStatus(200)->assertJson(['is_final' => true]);
+        $this->assertSame('approved', $expense->fresh()->status);
 
-        $expense->refresh();
-        $this->assertSame(2, $expense->current_approval_level);
-        $this->assertSame('submitted', $expense->status);
-
-        // Wrong actor at level 2: finance should fail at owner stage
-        $wrongRole = $this->actingAs($this->financeFirst, 'user')
+        $conflict = $this->actingAs($this->financeFirst, 'user')
             ->postJson("/api/finance/expenses/{$expense->id}/approve", [
-                'approval_notes' => 'Attempt owner stage as finance',
+                'approval_notes' => 'Duplicate approval',
             ]);
-
-        $wrongRole->assertStatus(422);
-
-        // Level 2: Shop owner
-        $l2 = $this->actingAs($this->shopOwnerMappedUser, 'user')
-            ->postJson("/api/finance/expenses/{$expense->id}/approve", [
-                'approval_notes' => 'Owner approved level 2',
-            ]);
-
-        $l2->assertStatus(200)
-            ->assertJson([
-                'is_final' => false,
-            ]);
-
-        $expense->refresh();
-        $this->assertSame(3, $expense->current_approval_level);
-
-        // Level 3: Finance
-        $l3 = $this->actingAs($this->financeSecond, 'user')
-            ->postJson("/api/finance/expenses/{$expense->id}/approve", [
-                'approval_notes' => 'L3 finance approved',
-            ]);
-
-        $l3->assertStatus(200)
-            ->assertJson([
-                'is_final' => false,
-            ]);
-
-        $expense->refresh();
-        $this->assertSame(4, $expense->current_approval_level);
-
-        // Level 4: Finance final
-        $l4 = $this->actingAs($this->financeFinal, 'user')
-            ->postJson("/api/finance/expenses/{$expense->id}/approve", [
-                'approval_notes' => 'L4 final finance approved',
-            ]);
-
-        $l4->assertStatus(200)
-            ->assertJson([
-                'is_final' => true,
-            ]);
-
-        $expense->refresh();
-        $this->assertSame(4, $expense->current_approval_level);
-        $this->assertSame('approved', $expense->status);
+        $conflict->assertStatus(422)->assertJsonPath('details.code', 'APPROVAL_STATE_CONFLICT');
     }
 
-    public function test_finance_can_reject_expense_at_level_one(): void
+    public function test_high_value_expense_escalates_once_to_shop_owner(): void
+    {
+        $expense = $this->createWorkflowBoundExpense(6000);
+        $this->assertSame(2, $expense->approval()->firstOrFail()->total_levels);
+
+        $first = $this->actingAs($this->financeFirst, 'user')
+            ->postJson("/api/finance/expenses/{$expense->id}/approve", [
+                'approval_notes' => 'Finance review complete',
+            ]);
+        $first->assertStatus(200)->assertJson(['is_final' => false]);
+        $this->assertSame(2, $expense->fresh()->current_approval_level);
+
+        $wrongFinance = $this->actingAs($this->financeSecond, 'user')
+            ->postJson("/api/finance/expenses/{$expense->id}/approve", []);
+        $wrongFinance->assertStatus(422);
+
+        $final = $this->actingAs($this->shopOwnerMappedUser, 'user')
+            ->postJson("/api/finance/expenses/{$expense->id}/approve", [
+                'approval_notes' => 'Owner approved high-value expense',
+            ]);
+        $final->assertStatus(200)->assertJson(['is_final' => true]);
+        $this->assertSame('approved', $expense->fresh()->status);
+    }
+
+    public function test_rejecting_a_paid_expense_does_not_create_a_reversal(): void
     {
         $expense = $this->createWorkflowBoundExpense();
+        ExpenseSettlement::create([
+            'shop_owner_id' => $this->shopOwnerAuth->id,
+            'expense_id' => $expense->id,
+            'entry_type' => ExpenseSettlement::ENTRY_SETTLEMENT,
+            'amount' => '2500.00',
+            'payment_method' => 'cash',
+            'paid_at' => now(),
+            'recorded_by_user_id' => $this->financeFirst->id,
+            'idempotency_key' => 'approval-paid-expense-1',
+            'source' => ExpenseSettlement::SOURCE_MANUAL,
+        ]);
 
         $reject = $this->actingAs($this->financeFirst, 'user')
             ->postJson("/api/finance/expenses/{$expense->id}/reject", [
-                'approval_notes' => 'Insufficient supporting documents',
+                'approval_notes' => 'Rejected after payment; reconcile separately',
             ]);
 
-        $reject->assertStatus(200)
-            ->assertJsonStructure(['message', 'expense']);
-
-        $expense->refresh();
-        $this->assertSame(1, $expense->current_approval_level);
-        $this->assertSame('rejected', $expense->status);
+        $reject->assertStatus(200)->assertJsonPath('settlement_state.paid_amount', '2500.00');
+        $this->assertDatabaseCount('finance_expense_settlements', 1);
     }
 
     public function test_finance_module_permission_can_approve_without_legacy_expense_permission(): void
@@ -176,13 +158,13 @@ class ExpenseApprovalWorkflowTest extends TestCase
 
         $response->assertOk()
             ->assertJson([
-                'is_final' => false,
+                'is_final' => true,
             ]);
 
-        $this->assertSame(2, $expense->fresh()->current_approval_level);
+        $this->assertSame('approved', $expense->fresh()->status);
     }
 
-    private function createWorkflowBoundExpense(): Expense
+    private function createWorkflowBoundExpense(float $amount = 2500): Expense
     {
         $expense = Expense::create([
             'reference' => 'EXP-WF-' . now()->timestamp . '-' . random_int(100, 999),
@@ -190,7 +172,7 @@ class ExpenseApprovalWorkflowTest extends TestCase
             'category' => 'Operations',
             'vendor' => 'Workflow Vendor',
             'description' => 'Expense workflow feature test',
-            'amount' => 2500,
+            'amount' => $amount,
             'tax_amount' => 0,
             'status' => 'submitted',
             'shop_id' => $this->shopOwnerAuth->id,

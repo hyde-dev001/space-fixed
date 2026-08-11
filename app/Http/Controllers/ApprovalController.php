@@ -144,7 +144,8 @@ class ApprovalController extends Controller
 
             return response()->json(['approvals' => $approvals->values()->all()]);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to fetch pending approvals', 'message' => $e->getMessage()], 500);
+            report($e);
+            return response()->json(['error' => 'Failed to fetch pending approvals', 'message' => 'An internal error occurred.'], 500);
         }
     }
 
@@ -221,7 +222,8 @@ class ApprovalController extends Controller
 
             return response()->json(['approvals' => $approvals->sortByDesc('reviewed_at')->values()->all()]);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to fetch approval history', 'message' => $e->getMessage()], 500);
+            report($e);
+            return response()->json(['error' => 'Failed to fetch approval history', 'message' => 'An internal error occurred.'], 500);
         }
     }
 
@@ -266,7 +268,8 @@ class ApprovalController extends Controller
 
             return response()->json(['history' => $history]);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to fetch approval history', 'message' => $e->getMessage()], 500);
+            report($e);
+            return response()->json(['error' => 'Failed to fetch approval history', 'message' => 'An internal error occurred.'], 500);
         }
     }
 
@@ -381,12 +384,6 @@ class ApprovalController extends Controller
                 ], 403);
             }
 
-            // TODO: Trigger the actual approval action (e.g., post journal entry, approve expense)
-            // This would depend on the approvable_type and approvable_id
-            if ($result['is_final'] ?? false) {
-                $this->executeApprovalAction($result['approval']);
-            }
-
             DB::commit();
 
             return response()->json([
@@ -396,7 +393,8 @@ class ApprovalController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['error' => 'Failed to approve request', 'message' => $e->getMessage()], 500);
+            report($e);
+            return response()->json(['error' => 'Failed to approve request', 'message' => 'An internal error occurred.'], 500);
         }
     }
 
@@ -522,7 +520,8 @@ class ApprovalController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['error' => 'Failed to reject request', 'message' => $e->getMessage()], 500);
+            report($e);
+            return response()->json(['error' => 'Failed to reject request', 'message' => 'An internal error occurred.'], 500);
         }
     }
 
@@ -532,39 +531,6 @@ class ApprovalController extends Controller
             && Expense::whereKey($approval->approvable_id)
                 ->whereNotNull('procurement_receipt_id')
                 ->exists();
-    }
-
-    /**
-     * Execute the actual approval action based on the approvable type
-     */
-    private function executeApprovalAction(Approval $approval)
-    {
-        // This method should handle the actual approval action
-        // For example:
-        // - If approvable_type is JournalEntry, post the entry
-        // - If approvable_type is Expense, mark as approved and process
-        // - If approvable_type is Invoice, finalize the invoice
-        // - etc.
-
-        // TODO: Implement based on your specific requirements
-        // Example structure:
-        /*
-        switch ($approval->approvable_type) {
-            case 'App\\Models\\JournalEntry':
-                $journalEntry = JournalEntry::find($approval->approvable_id);
-                if ($journalEntry) {
-                    $journalEntry->update(['status' => 'posted']);
-                }
-                break;
-            case 'App\\Models\\Expense':
-                $expense = Expense::find($approval->approvable_id);
-                if ($expense) {
-                    $expense->update(['status' => 'approved']);
-                }
-                break;
-            // Add more cases as needed
-        }
-        */
     }
 
     /**
@@ -659,7 +625,8 @@ class ApprovalController extends Controller
                 'delegation_id' => $delegationId
             ], 201);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to create delegation', 'message' => $e->getMessage()], 500);
+            report($e);
+            return response()->json(['error' => 'Failed to create delegation', 'message' => 'An internal error occurred.'], 500);
         }
     }
 
@@ -691,7 +658,8 @@ class ApprovalController extends Controller
 
             return response()->json(['delegations' => $delegations]);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to fetch delegations', 'message' => $e->getMessage()], 500);
+            report($e);
+            return response()->json(['error' => 'Failed to fetch delegations', 'message' => 'An internal error occurred.'], 500);
         }
     }
 
@@ -724,7 +692,8 @@ class ApprovalController extends Controller
 
             return response()->json(['message' => 'Delegation deactivated successfully']);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to deactivate delegation', 'message' => $e->getMessage()], 500);
+            report($e);
+            return response()->json(['error' => 'Failed to deactivate delegation', 'message' => 'An internal error occurred.'], 500);
         }
     }
 }

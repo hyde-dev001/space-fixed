@@ -70,7 +70,7 @@ export function useFinanceApi() {
       'X-Requested-With': 'XMLHttpRequest',
     };
 
-    // Prefer Sanctum/XSRF cookie token for web/session routes.
+    // Finance mutations use the authenticated browser session and CSRF token.
     const xsrfCookie = document.cookie
       .split('; ')
       .find((entry) => entry.startsWith('XSRF-TOKEN='))
@@ -86,27 +86,16 @@ export function useFinanceApi() {
       headers['X-CSRF-TOKEN'] = csrfToken;
     }
 
-    // Try Bearer token first (for API auth)
-    try {
-      const token = localStorage.getItem('auth_token');
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-    } catch (e) {
-      // localStorage may not be available
-    }
-
     return headers;
   }, []);
 
   /**
    * Get base URL for session-based vs public endpoints
    */
-  const getBaseUrl = useCallback((skipAuth: boolean = false): string => {
-    if (skipAuth) return '/api/finance';
+  const getBaseUrl = useCallback((_skipAuth: boolean = false): string => {
     if (ownerMode) return '/api/shop-owner/finance';
-    return isAuthenticated ? '/api/finance/session' : '/api/finance';
-  }, [isAuthenticated, ownerMode]);
+    return '/api/finance';
+  }, [ownerMode]);
 
   /**
    * Core fetch wrapper with error handling

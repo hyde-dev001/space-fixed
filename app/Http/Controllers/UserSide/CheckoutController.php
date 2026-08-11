@@ -2284,10 +2284,6 @@ class CheckoutController extends Controller
                     ->log("Order payment processed: {$order->order_number} - ₱" . number_format($grandTotal, 2));
             }
 
-            // Get default revenue account (if finance module is set up)
-            $revenueAccount = null;
-            // Account model not yet implemented - leave account_id as null for now
-
             // Create invoice items from order items
             if ($order->relationLoaded('items') && $order->items->count() > 0) {
                 foreach ($order->items as $orderItem) {
@@ -2300,7 +2296,6 @@ class CheckoutController extends Controller
                         'unit_price' => $orderItem->price,
                         'tax_rate' => 12.00,
                         'amount' => $orderItem->subtotal,
-                        'account_id' => null,
                     ]);
                 }
             }
@@ -2313,7 +2308,6 @@ class CheckoutController extends Controller
                     'unit_price' => $shippingFee,
                     'tax_rate' => 0,
                     'amount' => $shippingFee,
-                    'account_id' => null,
                 ]);
             }
 

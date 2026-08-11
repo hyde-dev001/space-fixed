@@ -9,6 +9,7 @@ use App\Http\Requests\ApprovePurchaseRequestRequest;
 use App\Http\Requests\RejectPurchaseRequestRequest;
 use App\Models\StockRequestApproval;
 use App\Services\PurchaseRequestService;
+use App\Support\Finance\FinanceErrorResponse;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -209,10 +210,7 @@ class PurchaseRequestController extends Controller
                 'error' => $e->getMessage(),
             ]);
 
-            return response()->json([
-                'message' => 'Failed to create purchase request.',
-                'error' => $e->getMessage()
-            ], 500);
+            return FinanceErrorResponse::json($e, 'purchase_request.create', 500, ['shop_id' => (int) (Auth::user()->shop_owner_id ?? 0)]);
         }
     }
 
@@ -304,10 +302,7 @@ class PurchaseRequestController extends Controller
             throw $e;
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json([
-                'message' => 'Failed to update purchase request.',
-                'error' => $e->getMessage()
-            ], 500);
+            return FinanceErrorResponse::json($e, 'purchase_request.update', 500, ['record_id' => $id, 'shop_id' => (int) (Auth::user()->shop_owner_id ?? 0)]);
         }
     }
 
