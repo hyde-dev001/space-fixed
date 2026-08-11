@@ -8,22 +8,31 @@ use App\Models\Finance\Invoice;
 use App\Models\Finance\InvoiceItem;
 use App\Models\AuditLog;
 use App\Services\NotificationService;
+use App\Services\Finance\InvoicePaymentService;
+use App\Support\Finance\FinanceDomainException;
 use App\Support\Finance\FinanceShopContext;
 use App\Support\Finance\FinanceErrorResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 
 class InvoiceController extends Controller
 {
     protected NotificationService $notificationService;
     protected FinanceShopContext $shopContext;
 
-    public function __construct(NotificationService $notificationService, FinanceShopContext $shopContext)
+    public function __construct(
+        NotificationService $notificationService,
+        FinanceShopContext $shopContext,
+        InvoicePaymentService $paymentService,
+    )
     {
         $this->notificationService = $notificationService;
         $this->shopContext = $shopContext;
+        $this->paymentService = $paymentService;
     }
+    protected InvoicePaymentService $paymentService;
     /**
      * List invoices with filtering
      */
@@ -90,6 +99,11 @@ class InvoiceController extends Controller
             ->orderBy('date', 'desc')
             ->paginate($request->get('per_page', 15));
 
+        $invoices->setCollection($invoices->getCollection()->map(function (Invoice $invoice) use ($shopOwnerId) {
+            $invoice->setAttribute('payment_state', $this->paymentService->state($invoice, (int) $shopOwnerId));
+            return $invoice;
+        }));
+
         return response()->json($invoices);
         } catch (\Exception $e) {
             return FinanceErrorResponse::json($e, 'invoice.index');
@@ -117,7 +131,10 @@ class InvoiceController extends Controller
                 }
             ])
             ->findOrFail($id);
-        return response()->json($invoice);
+        $payload = $invoice->toArray();
+        $payload['payment_state'] = $this->paymentService->state($invoice, (int) $shopOwnerId);
+
+        return response()->json($payload);
     }
 
     /**
@@ -646,60 +663,109 @@ class InvoiceController extends Controller
         }
     }
 
-    /**
-     * Mark invoice as paid
-     */
-    public function markAsPaid(Request $request, $id)
+    public function recordPayment(Request $request, $id)
     {
         $validated = $request->validate([
-            'payment_date' => 'required|date',
-            'payment_method' => 'required|string|in:cash,bank_transfer,check,gcash,maya,paypal,other',
+            'amount' => ['required', 'numeric', 'min:0.01'],
+            'payment_method' => ['required', 'string', Rule::in(InvoicePaymentService::PAYMENT_METHODS)],
+            'reference' => ['nullable', 'string', 'max:191'],
+            'received_at' => ['required', 'date'],
+            'idempotency_key' => ['nullable', 'string', 'max:191'],
         ]);
 
+        $user = Auth::guard('user')->user();
+        if (! $user) {
+            return response()->json(['message' => 'Unauthorized', 'code' => 'FORBIDDEN'], 401);
+        }
+
+        $shopOwnerId = $this->shopContext->id($request);
+        $invoice = Invoice::query()->where('shop_id', $shopOwnerId)->findOrFail($id);
+
         try {
-            $shopOwnerId = $this->shopOwnerId();
+            $result = $this->paymentService->record($invoice, $user, $validated);
 
-            if (!$shopOwnerId) {
-                return response()->json(['error' => 'Unauthorized'], 401);
-            }
-            
-            $invoice = Invoice::where('shop_id', $shopOwnerId)
-                ->where('id', $id)
-                ->firstOrFail();
-
-            if (!in_array($invoice->status, ['sent', 'overdue'])) {
-                return response()->json(['error' => 'Only sent or overdue invoices can be marked as paid'], 422);
-            }
-
-            $invoice->update([
-                'status' => 'paid',
-                'payment_date' => $validated['payment_date'],
-                'payment_method' => $validated['payment_method'],
-            ]);
-
-            // Audit log
             AuditLog::create([
                 'shop_owner_id' => $shopOwnerId,
-                'actor_user_id' => $this->actorUserId(),
-                'action' => 'mark_invoice_paid',
+                'actor_user_id' => $user->id,
+                'action' => 'record_invoice_payment',
                 'target_type' => 'invoice',
                 'target_id' => $invoice->id,
                 'metadata' => [
-                    'reference' => $invoice->reference,
-                    'customer' => $invoice->customer_name,
-                    'amount' => $invoice->total,
-                    'payment_date' => $validated['payment_date'],
-                    'payment_method' => $validated['payment_method']
-                ]
+                    'payment_id' => $result['payment']->id,
+                    'amount' => $result['payment']->amount,
+                    'replayed' => $result['replayed'],
+                ],
             ]);
 
             return response()->json([
-                'message' => 'Invoice marked as paid successfully',
-                'invoice' => $invoice->fresh()
+                'message' => $result['replayed'] ? 'Payment request already recorded.' : 'Payment recorded successfully.',
+                'payment' => $result['payment'],
+                'invoice' => $result['invoice'],
+                'replayed' => $result['replayed'],
+            ], $result['replayed'] ? 200 : 201);
+        } catch (FinanceDomainException $exception) {
+            return FinanceErrorResponse::json($exception, 'invoice.payment.create', $exception->httpStatus, [
+                'record_id' => $id,
+                'shop_id' => $shopOwnerId,
             ]);
-        } catch (\Exception $e) {
-            return FinanceErrorResponse::json($e, 'invoice.mark_paid', 500, ['record_id' => $id]);
+        } catch (\Throwable $exception) {
+            return FinanceErrorResponse::json($exception, 'invoice.payment.create', 500, [
+                'record_id' => $id,
+                'shop_id' => $shopOwnerId,
+            ]);
         }
+    }
+
+    public function listPayments(Request $request, $id)
+    {
+        $shopOwnerId = $this->shopContext->id($request);
+        $invoice = Invoice::query()->where('shop_id', $shopOwnerId)->findOrFail($id);
+
+        return response()->json($this->paymentService->state($invoice, $shopOwnerId));
+    }
+
+    public function reversePayment(Request $request, $id, $paymentId)
+    {
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'min:3', 'max:1000'],
+        ]);
+        $user = Auth::guard('user')->user();
+        if (! $user) {
+            return response()->json(['message' => 'Unauthorized', 'code' => 'FORBIDDEN'], 401);
+        }
+
+        $shopOwnerId = $this->shopContext->id($request);
+        $invoice = Invoice::query()->where('shop_id', $shopOwnerId)->findOrFail($id);
+        $payment = $invoice->payments()->where('shop_owner_id', $shopOwnerId)->findOrFail($paymentId);
+
+        try {
+            $reversal = $this->paymentService->reverse($payment, $user, $validated['reason']);
+
+            return response()->json([
+                'message' => 'Payment reversal recorded successfully.',
+                'payment' => $reversal,
+                'invoice' => $this->paymentService->state($invoice->fresh(), $shopOwnerId),
+            ], 201);
+        } catch (FinanceDomainException $exception) {
+            return FinanceErrorResponse::json($exception, 'invoice.payment.reverse', $exception->httpStatus, [
+                'record_id' => $paymentId,
+                'shop_id' => $shopOwnerId,
+            ]);
+        } catch (\Throwable $exception) {
+            return FinanceErrorResponse::json($exception, 'invoice.payment.reverse', 500, [
+                'record_id' => $paymentId,
+                'shop_id' => $shopOwnerId,
+            ]);
+        }
+    }
+
+    /** Compatibility endpoint retained during the route migration. */
+    public function markAsPaid(Request $request, $id)
+    {
+        return response()->json([
+            'message' => 'Use the record payment endpoint instead.',
+            'code' => 'PAYMENT_ROUTE_MOVED',
+        ], 410);
     }
 
     private function shopOwnerId(): ?int

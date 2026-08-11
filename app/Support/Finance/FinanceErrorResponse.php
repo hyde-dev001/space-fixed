@@ -20,6 +20,13 @@ final class FinanceErrorResponse
             'exception' => $exception,
         ]);
 
+        if ($exception instanceof FinanceDomainException) {
+            return response()->json([
+                'message' => $exception->getMessage(),
+                'code' => $exception->errorCode,
+            ], $exception->httpStatus);
+        }
+
         return response()->json([
             'message' => 'The Finance operation could not be completed.',
             'code' => 'INTERNAL_ERROR',

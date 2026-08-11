@@ -26,6 +26,13 @@ export interface Invoice {
   total: number;
   tax_amount: number;
   status: 'draft' | 'sent' | 'paid' | 'void' | 'overdue' | 'posted' | 'cancelled' | 'refunded';
+  payment_state?: {
+    paid_amount: string;
+    remaining_balance: string;
+    status: 'unpaid' | 'partially_paid' | 'paid';
+    source_owner: 'finance' | 'operational';
+    integrity_warnings: string[];
+  };
   journal_entry_id?: string;
   notes?: string;
   items?: InvoiceItem[];

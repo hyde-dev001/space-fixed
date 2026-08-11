@@ -111,6 +111,9 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'shop.isolation'])
         Route::post('/{id}/restore', [InvoiceController::class, 'restore'])->name('finance.invoices.restore');
         Route::post('/{id}/send', [InvoiceController::class, 'send'])->name('finance.invoices.send');
         Route::post('/{id}/void', [InvoiceController::class, 'void'])->name('finance.invoices.void');
+        Route::get('/{id}/payments', [InvoiceController::class, 'listPayments'])->name('finance.invoices.payments.index');
+        Route::post('/{id}/payments', [InvoiceController::class, 'recordPayment'])->name('finance.invoices.payments.store');
+        Route::post('/{id}/payments/{paymentId}/reverse', [InvoiceController::class, 'reversePayment'])->name('finance.invoices.payments.reverse');
         Route::post('/{id}/mark-paid', [InvoiceController::class, 'markAsPaid'])->name('finance.invoices.mark_paid');
         
         // Post to ledger (requires access-finance-invoices permission)
