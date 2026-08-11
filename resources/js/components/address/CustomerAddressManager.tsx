@@ -25,6 +25,7 @@ export type CustomerAddress = {
 
 type Props = {
   onSelect: (address: CustomerAddress) => void;
+  onSelectionCleared?: () => void;
   initialAddressId?: number | null;
   disabled?: boolean;
   title?: string;
@@ -68,6 +69,7 @@ const addressToForm = (address: CustomerAddress): AddressForm => {
 
 export default function CustomerAddressManager({
   onSelect,
+  onSelectionCleared,
   initialAddressId = null,
   disabled = false,
   title = 'Delivery address',
@@ -84,42 +86,76 @@ export default function CustomerAddressManager({
   const [form, setForm] = useState<AddressForm>(emptyForm);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [mutating, setMutating] = useState<{ id: number; action: 'default' | 'delete' } | null>(null);
   const [status, setStatus] = useState('Loading saved addresses…');
   const [error, setError] = useState<string | null>(null);
   const modalRef = useRef<HTMLDivElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const selectedIdRef = useRef<number | null>(initialAddressId);
+  const onSelectRef = useRef(onSelect);
+  const onSelectionClearedRef = useRef(onSelectionCleared);
+  const mountedRef = useRef(true);
   const cities = useMemo(() => getCityMunicipalityOptions(form.province), [form.province]);
   const isModalControlled = onModalOpenChange !== undefined;
   const modalOpen = isModalControlled ? controlledModalOpen : editingId !== undefined;
 
   useEffect(() => {
-    let active = true;
-    fetch('/api/user/addresses', { headers: { Accept: 'application/json' }, credentials: 'include' })
-      .then(async (response) => {
-        if (!response.ok) throw new Error('Unable to load your saved addresses.');
-        return response.json() as Promise<{ addresses?: CustomerAddress[] }>;
-      })
-      .then(({ addresses: loaded = [] }) => {
-        if (!active) return;
-        setAddresses(loaded);
-        const selected = loaded.find((address) => address.id === initialAddressId)
-          ?? loaded.find((address) => address.is_default)
-          ?? loaded[0];
-        if (selected) {
-          setSelectedId(selected.id);
-          onSelect(selected);
-          setStatus('Delivery address ready.');
-        } else {
-          setStatus('No saved addresses yet. Add one to check shop coverage.');
-        }
-      })
-      .catch((reason: Error) => active && setError(reason.message))
-      .finally(() => active && setLoading(false));
+    onSelectRef.current = onSelect;
+    onSelectionClearedRef.current = onSelectionCleared;
+  }, [onSelect, onSelectionCleared]);
 
-    return () => { active = false; };
-  }, [initialAddressId, onSelect]);
+  useEffect(() => {
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  const loadAddresses = useCallback(async (preferredId?: number | null) => {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/user/addresses', {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error('Unable to load your saved addresses.');
+
+      const { addresses: loaded = [] } = await response.json() as { addresses?: CustomerAddress[] };
+      if (!mountedRef.current) return null;
+
+      setAddresses(loaded);
+      const selected = loaded.find((address) => address.id === preferredId)
+        ?? (preferredId === undefined
+          ? loaded.find((address) => address.id === selectedIdRef.current)
+          : undefined)
+        ?? loaded.find((address) => address.is_default)
+        ?? loaded[0];
+      const nextSelectedId = selected?.id ?? null;
+      selectedIdRef.current = nextSelectedId;
+      setSelectedId(nextSelectedId);
+
+      if (selected) {
+        onSelectRef.current(selected);
+        setStatus('Delivery address ready.');
+      } else {
+        onSelectionClearedRef.current?.();
+        setStatus('No saved addresses yet. Add one to check shop coverage.');
+      }
+
+      return selected ?? null;
+    } finally {
+      if (mountedRef.current) setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadAddresses().catch((reason: Error) => {
+      if (!mountedRef.current) return;
+      setError(reason.message);
+      setLoading(false);
+    });
+  }, [loadAddresses]);
 
   const select = (address: CustomerAddress) => {
+    selectedIdRef.current = address.id;
     setSelectedId(address.id);
     setStatus('Delivery address selected.');
     onSelect(address);
@@ -219,7 +255,8 @@ export default function CustomerAddressManager({
     }
 
     const city = normalizeCityMunicipalitySelection(form.province, form.city);
-    if (!form.name.trim() || !form.phone.trim() || !form.address_line.trim()
+    const phone = form.phone.replace(/\D/g, '');
+    if (!form.name.trim() || !phone || !form.address_line.trim()
       || !form.barangay.trim() || !form.province || !city) {
       setError('Complete the required address details before saving.');
       return;
@@ -236,7 +273,7 @@ export default function CustomerAddressManager({
           'X-Requested-With': 'XMLHttpRequest',
         },
         credentials: 'include',
-        body: JSON.stringify({ ...form, city, region: form.region || form.province }),
+        body: JSON.stringify({ ...form, phone, city, region: form.region || form.province }),
       });
       const payload = await response.json().catch(() => ({})) as { address?: CustomerAddress; message?: string };
       if (!response.ok || !payload.address) throw new Error(payload.message || 'Unable to save this address.');
@@ -244,16 +281,73 @@ export default function CustomerAddressManager({
       const saved = payload.address;
       setAddresses((current) => editingId
         ? current.map((address) => address.id === saved.id ? saved : address)
-        : [saved, ...current]);
+        : [saved, ...current.filter((address) => address.id !== saved.id)]);
       setEditingId(undefined);
       onModalOpenChange?.(false);
+      selectedIdRef.current = saved.id;
       setSelectedId(saved.id);
       setStatus('Address saved and selected.');
-      onSelect(saved);
+      onSelectRef.current(saved);
+      try {
+        await loadAddresses(saved.id);
+        setStatus('Address saved and selected.');
+      } catch (reason) {
+        setError(`Address saved, but the saved-address list could not refresh: ${(reason as Error).message}`);
+      }
     } catch (reason) {
       setError((reason as Error).message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const setDefault = async (address: CustomerAddress) => {
+    setError(null);
+    setMutating({ id: address.id, action: 'default' });
+    try {
+      const response = await fetch(`/api/user/addresses/${address.id}/set-default`, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'X-CSRF-TOKEN': document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ?? '',
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        credentials: 'include',
+      });
+      const payload = await response.json().catch(() => ({})) as { message?: string };
+      if (!response.ok) throw new Error(payload.message || 'Unable to set this address as default.');
+      await loadAddresses(address.id);
+      setStatus('Default address updated.');
+    } catch (reason) {
+      setError((reason as Error).message);
+    } finally {
+      setMutating(null);
+    }
+  };
+
+  const remove = async (address: CustomerAddress) => {
+    if (!window.confirm(`Delete the saved address at ${address.address_line}?`)) return;
+
+    setError(null);
+    setMutating({ id: address.id, action: 'delete' });
+    try {
+      const response = await fetch(`/api/user/addresses/${address.id}`, {
+        method: 'DELETE',
+        headers: {
+          Accept: 'application/json',
+          'X-CSRF-TOKEN': document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ?? '',
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        credentials: 'include',
+      });
+      const payload = await response.json().catch(() => ({})) as { message?: string };
+      if (!response.ok) throw new Error(payload.message || 'Unable to delete this address.');
+      await loadAddresses(selectedIdRef.current === address.id ? null : undefined);
+      setStatus('Address deleted.');
+    } catch (reason) {
+      setError((reason as Error).message);
+    } finally {
+      setMutating(null);
     }
   };
 
@@ -276,8 +370,11 @@ export default function CustomerAddressManager({
 
       {!loading && addresses.length > 0 && (
         <div className="grid gap-2 sm:grid-cols-2">
-          {addresses.map((address) => (
-            <div key={address.id} className={`rounded-xl border p-3 ${selectedId === address.id ? 'border-blue-600 bg-blue-50' : 'border-gray-200'}`}>
+          {addresses.map((address) => {
+            const isMutating = mutating?.id === address.id;
+
+            return (
+            <div key={address.id} aria-busy={isMutating} className={`rounded-xl border p-3 transition-colors ${selectedId === address.id ? 'border-blue-600 bg-blue-50' : 'border-gray-200 bg-white'}`}>
               <button
                 type="button"
                 aria-label={`Use address at ${address.address_line}`}
@@ -286,17 +383,31 @@ export default function CustomerAddressManager({
                 onClick={() => select(address)}
                 className="min-h-11 w-full text-left focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <span className="block font-semibold text-gray-950">{address.name}{address.is_default ? ' · Default' : ''}</span>
+                <span className="flex flex-wrap items-center gap-2 font-semibold text-gray-950">
+                  {address.name}
+                  {address.is_default && <span className="rounded-full bg-gray-950 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white">Default</span>}
+                </span>
                 <span className="block text-sm text-gray-700">{fullAddress(address)}</span>
                 {address.latitude === null || address.longitude === null
                   ? <span className="mt-1 block text-xs font-semibold text-amber-700">Pin required</span>
                   : <span className="mt-1 block text-xs font-semibold text-green-700">Pinned address</span>}
               </button>
-              <button type="button" aria-label={`Edit ${address.address_line}`} disabled={disabled} onClick={() => openEdit(address)} className="mt-2 min-h-11 text-sm font-semibold text-blue-700 underline focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50">
-                Edit
-              </button>
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+                <button type="button" aria-label={`Edit ${address.address_line}`} disabled={disabled || isMutating} onClick={() => openEdit(address)} className="min-h-11 text-sm font-semibold text-blue-700 underline underline-offset-4 transition-colors hover:text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50">
+                  Edit
+                </button>
+                {!address.is_default && (
+                  <button type="button" aria-label={`Set as default ${address.address_line}`} disabled={disabled || isMutating} onClick={() => void setDefault(address)} className="min-h-11 text-sm font-semibold text-gray-900 underline underline-offset-4 transition-colors hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50">
+                    {isMutating && mutating?.action === 'default' ? 'Setting…' : 'Set as default'}
+                  </button>
+                )}
+                <button type="button" aria-label={`Delete ${address.address_line}`} disabled={disabled || isMutating} onClick={() => void remove(address)} className="min-h-11 text-sm font-semibold text-red-700 underline underline-offset-4 transition-colors hover:text-red-900 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50">
+                  {isMutating && mutating?.action === 'delete' ? 'Deleting…' : 'Delete'}
+                </button>
+              </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -355,7 +466,7 @@ export default function CustomerAddressManager({
               <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void save(); }}>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-sm font-medium text-gray-800">Full name<input required value={form.name} onChange={(event) => update('name', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3" /></label>
-            <label className="text-sm font-medium text-gray-800">Phone<input required inputMode="numeric" value={form.phone} onChange={(event) => update('phone', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3" /></label>
+            <label className="text-sm font-medium text-gray-800">Phone<input required aria-label="Phone" type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={20} value={form.phone} onChange={(event) => update('phone', event.target.value.replace(/\D/g, ''))} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 transition-shadow focus:border-gray-950 focus:outline-none focus:ring-2 focus:ring-gray-950/10" /><span className="mt-1 block text-xs font-normal text-gray-500">Digits only. Keep the leading 0.</span></label>
             <label className="sm:col-span-2 text-sm font-medium text-gray-800">House no., street, subdivision or building<input required value={form.address_line} onChange={(event) => update('address_line', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3" /></label>
             <label className="text-sm font-medium text-gray-800">Province<select required value={form.province} onChange={(event) => setForm((current) => ({ ...current, province: event.target.value, region: event.target.value, city: '' }))} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3"><option value="">Choose province</option>{PHILIPPINE_LOCATIONS.map(({ name }) => <option key={name}>{name}</option>)}</select></label>
             <label className="text-sm font-medium text-gray-800">City/Municipality<select required value={form.city} onChange={(event) => update('city', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3"><option value="">Choose city or municipality</option>{cities.map((city) => <option key={city}>{city}</option>)}</select></label>
