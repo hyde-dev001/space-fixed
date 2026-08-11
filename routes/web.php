@@ -1683,8 +1683,6 @@ Route::middleware('super_admin.auth')->prefix('admin')->name('admin.')->group(fu
     Route::post('/shop-owner-registration/{id}/reject', [ShopOwnerRegistrationViewController::class, 'reject'])
         ->middleware('privileged.capability:review_registrations')
         ->name('shop-owner-reject');
-    Route::delete('/admins/{id}', [SuperAdminController::class, 'deleteAdmin'])->name('admins.delete');
-
     // Shop management routes
     Route::get('/registered-shops', [SuperAdminController::class, 'showRegisteredShops'])
         ->middleware('privileged.capability:intervene_accounts')
@@ -1731,8 +1729,6 @@ Route::middleware('super_admin.auth')->prefix('admin')->name('admin.')->group(fu
     Route::post('/shops/{id}/activate', [SuperAdminController::class, 'activateShop'])
         ->middleware('privileged.capability:intervene_accounts')
         ->name('shops.activate');
-    Route::delete('/shops/{id}', [SuperAdminController::class, 'deleteShop'])->name('shops.delete');
-
     // User management routes
     Route::get('/user-management', [SuperAdminController::class, 'showUserManagement'])
         ->middleware('privileged.capability:intervene_accounts')
@@ -1743,8 +1739,6 @@ Route::middleware('super_admin.auth')->prefix('admin')->name('admin.')->group(fu
     Route::post('/users/{id}/activate', [SuperAdminController::class, 'activateUser'])
         ->middleware('privileged.capability:intervene_accounts')
         ->name('users.activate');
-    Route::delete('/users/{id}', [SuperAdminController::class, 'deleteUser'])->name('users.delete');
-
     // Shop Reports routes
     Route::get('/shop-reports', [\App\Http\Controllers\superAdmin\ShopReportsController::class, 'index'])->name('shop-reports');
     Route::post('/shop-reports/{id}/action', [\App\Http\Controllers\superAdmin\ShopReportsController::class, 'action'])->name('shop-reports.action');

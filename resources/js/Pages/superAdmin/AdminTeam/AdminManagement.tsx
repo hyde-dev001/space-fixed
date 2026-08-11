@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, router, usePage } from '@inertiajs/react';
+import { Link, router } from '@inertiajs/react';
 import Swal from 'sweetalert2';
 import AppLayout from '../../../layout/AppLayout';
 
@@ -25,12 +25,6 @@ const CheckCircleIcon = ({ className }) => (
 const AlertIcon = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-  </svg>
-);
-
-const TrashBinIcon = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
   </svg>
 );
 
@@ -134,10 +128,6 @@ const MetricCard = ({
 };
 
 const AdminManagement = ({ admins = [], stats = {} }) => {
-  const { props } = usePage();
-  const auth = (props as any).auth;
-  const isSuperAdmin = auth?.user?.role === 'super_admin';
-  
   const [filterStatus, setFilterStatus] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAdmin, setSelectedAdmin] = useState(null);
@@ -258,43 +248,6 @@ const AdminManagement = ({ admins = [], stats = {} }) => {
             Swal.fire({
               title: 'Error',
               text: 'Failed to activate admin. Please try again.',
-              icon: 'error',
-              confirmButtonColor: '#ef4444',
-            });
-          },
-        });
-      }
-    });
-  };
-
-  const handleDeleteAdmin = (adminId, adminName) => {
-    Swal.fire({
-      title: 'Delete Admin?',
-      html: `Are you sure you want to permanently delete "<strong>${adminName}</strong>"?<br><br><span class="text-red-600">This action cannot be undone!</span>`,
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonColor: '#ef4444',
-      cancelButtonColor: '#6b7280',
-      confirmButtonText: 'Yes, delete permanently',
-      cancelButtonText: 'Cancel',
-    }).then((result) => {
-      if (result.isConfirmed) {
-        router.delete(`/admin/admins/${adminId}`, {
-          preserveState: false,
-          onSuccess: () => {
-            Swal.fire({
-              title: 'Deleted!',
-              text: 'Admin has been permanently deleted.',
-              icon: 'success',
-              confirmButtonColor: '#10b981',
-              timer: 1500,
-              showConfirmButton: false,
-            });
-          },
-          onError: () => {
-            Swal.fire({
-              title: 'Error',
-              text: 'Failed to delete admin. Please try again.',
               icon: 'error',
               confirmButtonColor: '#ef4444',
             });
@@ -513,15 +466,6 @@ const AdminManagement = ({ admins = [], stats = {} }) => {
                               title="Activate Admin"
                             >
                               <CheckCircleIcon className="h-5 w-5" />
-                            </button>
-                          )}
-                          {isSuperAdmin && (
-                            <button
-                              onClick={() => handleDeleteAdmin(admin.id, admin.name)}
-                              className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
-                              title="Delete Admin (Super Admin Only)"
-                            >
-                              <TrashBinIcon className="h-5 w-5" />
                             </button>
                           )}
                         </div>

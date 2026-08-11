@@ -745,33 +745,6 @@ class SuperAdminController extends Controller
         return response()->json(['data' => $users], 200);
     }
 
-    public function deleteUser($id)
-    {
-        try {
-            $user = User::findOrFail($id);
-            $payload = [
-                'email' => $user->email,
-                'name' => $user->name,
-            ];
-
-            $user->delete();
-
-            // Audit log the deletion by the super admin
-            AuditLog::create([
-                'shop_owner_id' => null,
-                'actor_user_id' => auth('super_admin')->id(),
-                'action' => 'user_deleted',
-                'target_type' => 'user',
-                'target_id' => $id,
-                'metadata' => $payload,
-            ]);
-
-            return redirect()->back()->with('success', 'User deleted successfully.');
-        } catch (\Exception $e) {
-            return redirect()->back()->withErrors(['error' => 'Failed to delete user.']);
-        }
-    }
-
     public function suspendAdmin($id)
     {
         try {
@@ -819,33 +792,6 @@ class SuperAdminController extends Controller
             return redirect()->back()->with('success', 'Admin activated successfully.');
         } catch (\Exception $e) {
             return redirect()->back()->withErrors(['error' => 'Failed to activate admin.']);
-        }
-    }
-
-    public function deleteAdmin($id)
-    {
-        try {
-            $admin = SuperAdmin::findOrFail($id);
-            $payload = [
-                'email' => $admin->email,
-                'first_name' => $admin->first_name,
-                'last_name' => $admin->last_name,
-            ];
-
-            $admin->delete();
-
-            AuditLog::create([
-                'shop_owner_id' => null,
-                'actor_user_id' => auth('super_admin')->id(),
-                'action' => 'admin_deleted',
-                'target_type' => 'super_admin',
-                'target_id' => $id,
-                'metadata' => $payload,
-            ]);
-
-            return redirect()->back()->with('success', 'Admin deleted successfully.');
-        } catch (\Exception $e) {
-            return redirect()->back()->withErrors(['error' => 'Failed to delete admin.']);
         }
     }
 
@@ -937,34 +883,6 @@ class SuperAdminController extends Controller
             }
 
             return redirect()->back()->withErrors(['error' => 'Failed to activate shop. Please try again.']);
-        }
-    }
-
-    public function deleteShop($id)
-    {
-        try {
-            $shop = ShopOwner::findOrFail($id);
-
-            $payload = [
-                'email' => $shop->email,
-                'business_name' => $shop->business_name ?? null,
-            ];
-
-            $shop->delete();
-
-            // Audit log shop deletion
-            AuditLog::create([
-                'shop_owner_id' => $id,
-                'actor_user_id' => auth('super_admin')->id(),
-                'action' => 'shop_deleted',
-                'target_type' => 'shop_owner',
-                'target_id' => $id,
-                'metadata' => $payload,
-            ]);
-
-            return redirect()->back()->with('success', 'Shop deleted successfully.');
-        } catch (\Exception $e) {
-            return redirect()->back()->withErrors(['error' => 'Failed to delete shop. Please try again.']);
         }
     }
 

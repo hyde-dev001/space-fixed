@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { router, usePage } from '@inertiajs/react';
+import { router } from '@inertiajs/react';
 import Swal from 'sweetalert2';
 import AppLayout from '../../../layout/AppLayout';
 
@@ -39,12 +39,6 @@ const EyeIcon = ({ className }) => (
 const BanIcon = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-  </svg>
-);
-
-const TrashIcon = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
   </svg>
 );
 
@@ -122,9 +116,6 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
 };
 
 function RegisteredShops({ shops, stats }) {
-  const { props } = usePage();
-  const auth = (props as any).auth;
-  const isSuperAdmin = auth?.user?.role === 'super_admin';
   const [shopRows, setShopRows] = useState(() => (Array.isArray(shops) ? shops : []));
   
   const [searchQuery, setSearchQuery] = useState('');
@@ -395,40 +386,6 @@ function RegisteredShops({ shops, stats }) {
     });
   };
 
-  const handleDeleteShop = (shopId, shopName) => {
-    Swal.fire({
-      title: 'Delete Shop?',
-      html: `Are you sure you want to permanently delete "<strong>${shopName}</strong>"?<br><br><span class="text-red-600">This action cannot be undone!</span>`,
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonColor: '#ef4444',
-      cancelButtonColor: '#6b7280',
-      confirmButtonText: 'Yes, delete permanently',
-      cancelButtonText: 'Cancel',
-    }).then((result) => {
-      if (result.isConfirmed) {
-        router.delete(`/admin/shops/${shopId}`, {
-          onSuccess: () => {
-            Swal.fire({
-              title: 'Deleted!',
-              text: 'Shop has been permanently deleted.',
-              icon: 'success',
-              confirmButtonColor: '#10b981',
-            });
-          },
-          onError: () => {
-            Swal.fire({
-              title: 'Error',
-              text: 'Failed to delete shop. Please try again.',
-              icon: 'error',
-              confirmButtonColor: '#ef4444',
-            });
-          },
-        });
-      }
-    });
-  };
-
   const getStatusBadge = (status) => {
     const badges = {
       approved: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300',
@@ -665,16 +622,6 @@ function RegisteredShops({ shops, stats }) {
                               title="Activate Shop"
                             >
                               <CheckCircleIcon className="h-5 w-5" />
-                            </button>
-                          )}
-                          {isSuperAdmin && (
-                            <button
-                              onClick={() => handleDeleteShop(shop.id, shop.business_name)}
-                              disabled={isActionSubmitting}
-                              className="inline-flex items-center justify-center w-8 h-8 rounded-md text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 transition-colors"
-                              title="Delete Shop (Super Admin Only)"
-                            >
-                              <TrashIcon className="h-5 w-5" />
                             </button>
                           )}
                         </div>
