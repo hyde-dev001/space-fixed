@@ -627,7 +627,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                 onClose={selectedProofUrl ? closeProof : closeShipment}
                 size="6xl"
                 showCloseButton={false}
-                className="m-4 max-h-[calc(100dvh-2rem)] overflow-hidden"
+                className="m-4 max-h-[calc(100dvh-2rem)] overflow-hidden !bg-transparent"
               >
                 <>
                 <div
@@ -969,18 +969,18 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                     aria-modal="true"
                     aria-label="Delivery proof image"
                     onKeyDown={trapDialogFocus}
-                    className="relative flex h-[min(88dvh,56rem)] items-center justify-center overflow-hidden rounded-3xl bg-gray-950 p-4 sm:p-8"
+                    className="relative flex h-[min(88dvh,56rem)] items-center justify-center overflow-hidden"
                   >
                     <button
                       ref={proofCloseButtonRef}
                       type="button"
                       aria-label="Close delivery proof image"
                       onClick={closeProof}
-                      className="absolute left-4 top-4 z-10 inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-full bg-black/65 text-white backdrop-blur-sm transition-colors hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                      className="absolute right-4 top-4 z-10 inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-full bg-transparent p-0 text-white transition-colors hover:bg-transparent hover:text-gray-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
                     >
                       <X aria-hidden="true" size={22} />
                     </button>
-                    <img src={selectedProofUrl} alt="Enlarged delivery proof" className="h-full w-full object-contain" />
+                    <img src={selectedProofUrl} alt="Enlarged delivery proof" className="max-h-full max-w-full object-contain" />
                   </div>
                 )}
                 </>
