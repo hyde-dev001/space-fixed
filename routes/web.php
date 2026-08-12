@@ -23,6 +23,7 @@ use App\Http\Controllers\superAdmin\SuperAdminUserManagementController;
 use App\Http\Controllers\superAdmin\SystemMonitoringDashboardController;
 use App\Http\Controllers\PrivilegedMfaController;
 use App\Http\Controllers\PrivilegedPasswordResetController;
+use App\Http\Controllers\PrivilegedReauthenticationController;
 use App\Http\Controllers\PrivilegedSecurityController;
 use App\Http\Controllers\PrivilegedSetupController;
 use App\Http\Controllers\SuperAdminAuthController;
@@ -1717,6 +1718,12 @@ Route::middleware([
     Route::get('/', function () {
         return redirect()->route('admin.system-monitoring');
     })->name('dashboard');
+    Route::get('/reauthenticate', [PrivilegedReauthenticationController::class, 'show'])
+        ->middleware('privileged.no-store')
+        ->name('reauthenticate');
+    Route::post('/reauthenticate', [PrivilegedReauthenticationController::class, 'authenticate'])
+        ->middleware(['privileged.no-store', 'throttle:privileged-reauth'])
+        ->name('reauthenticate.submit');
     Route::get('/security', [PrivilegedSecurityController::class, 'show'])
         ->middleware(['privileged.capability:manage_own_security', 'privileged.no-store'])
         ->name('security');
@@ -1743,6 +1750,14 @@ Route::middleware([
             'throttle:privileged-setup',
         ])
         ->name('security.recovery.acknowledge');
+    Route::post('/security/mfa/reset', [PrivilegedSecurityController::class, 'resetMfa'])
+        ->middleware([
+            'privileged.capability:manage_own_security',
+            'privileged.recent',
+            'privileged.no-store',
+            'throttle:privileged-setup',
+        ])
+        ->name('security.mfa.reset');
     Route::get('/system-monitoring', [SystemMonitoringDashboardController::class, 'index'])
         ->middleware('privileged.capability:view_monitoring')
         ->name('system-monitoring');
@@ -1761,11 +1776,20 @@ Route::middleware([
         ->middleware(['privileged.capability:manage_administrators', 'privileged.recent'])
         ->name('admins.setup.resend');
     Route::post('/admins/{id}/suspend', [SuperAdminController::class, 'suspendAdmin'])
-        ->middleware('privileged.capability:manage_administrators')
+        ->middleware(['privileged.capability:manage_administrators', 'privileged.recent'])
         ->name('admins.suspend');
+    Route::post('/admins/{id}/deactivate', [SuperAdminController::class, 'deactivateAdmin'])
+        ->middleware(['privileged.capability:manage_administrators', 'privileged.recent'])
+        ->name('admins.deactivate');
     Route::post('/admins/{id}/activate', [SuperAdminController::class, 'activateAdmin'])
-        ->middleware('privileged.capability:manage_administrators')
+        ->middleware(['privileged.capability:manage_administrators', 'privileged.recent'])
         ->name('admins.activate');
+    Route::patch('/admins/{id}/role', [SuperAdminController::class, 'updateAdminRole'])
+        ->middleware(['privileged.capability:manage_administrators', 'privileged.recent'])
+        ->name('admins.role.update');
+    Route::post('/admins/{id}/mfa/reset', [SuperAdminController::class, 'resetAdminMfa'])
+        ->middleware(['privileged.capability:manage_platform_security', 'privileged.recent'])
+        ->name('admins.mfa.reset');
 
     Route::get('/shop-owner-registration-view', [ShopOwnerRegistrationViewController::class, 'index'])
         ->middleware('privileged.capability:review_registrations')

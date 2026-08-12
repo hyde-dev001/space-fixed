@@ -25,6 +25,11 @@ final class EnsureRecentPrivilegedReauthentication
         if (! $admin instanceof SuperAdmin
             || ! $isRecent
             || (int) $reauthenticatedVersion !== (int) $admin->security_version) {
+            $request->session()->forget([
+                'privileged_reauthenticated_at',
+                'privileged_reauthenticated_security_version',
+            ]);
+
             if ($request->expectsJson()) {
                 return response()->json(['message' => 'Recent reauthentication required.'], Response::HTTP_LOCKED);
             }

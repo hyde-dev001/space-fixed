@@ -166,6 +166,16 @@ final class PhaseOneRouteSecurityTest extends TestCase
             'admin.appeals.reject' => SuperAdmin::CAP_RESOLVE_APPEALS,
             'admin.data-reports' => SuperAdmin::CAP_VIEW_PRIVILEGED_AUDIT,
             'superAdmin.data-report-access' => SuperAdmin::CAP_VIEW_PRIVILEGED_AUDIT,
+            'admin.admins.suspend' => SuperAdmin::CAP_MANAGE_ADMINISTRATORS,
+            'admin.admins.deactivate' => SuperAdmin::CAP_MANAGE_ADMINISTRATORS,
+            'admin.admins.activate' => SuperAdmin::CAP_MANAGE_ADMINISTRATORS,
+            'admin.admins.role.update' => SuperAdmin::CAP_MANAGE_ADMINISTRATORS,
+            'admin.admins.mfa.reset' => SuperAdmin::CAP_MANAGE_PLATFORM_SECURITY,
+            'admin.security' => SuperAdmin::CAP_MANAGE_OWN_SECURITY,
+            'admin.security.password' => SuperAdmin::CAP_MANAGE_OWN_SECURITY,
+            'admin.security.recovery.generate' => SuperAdmin::CAP_MANAGE_OWN_SECURITY,
+            'admin.security.recovery.acknowledge' => SuperAdmin::CAP_MANAGE_OWN_SECURITY,
+            'admin.security.mfa.reset' => SuperAdmin::CAP_MANAGE_OWN_SECURITY,
         ];
 
         foreach ($fixedCapabilities as $name => $capability) {
@@ -173,6 +183,27 @@ final class PhaseOneRouteSecurityTest extends TestCase
 
             self::assertNotNull($route, $name);
             self::assertContains("privileged.capability:{$capability}", $route->middleware(), $name);
+        }
+
+        $recentRoutes = [
+            'admin.create-admin.store',
+            'admin.admins.setup.resend',
+            'admin.admins.suspend',
+            'admin.admins.deactivate',
+            'admin.admins.activate',
+            'admin.admins.role.update',
+            'admin.admins.mfa.reset',
+            'admin.security.password',
+            'admin.security.recovery.generate',
+            'admin.security.recovery.acknowledge',
+            'admin.security.mfa.reset',
+        ];
+
+        foreach ($recentRoutes as $name) {
+            $route = Route::getRoutes()->getByName($name);
+
+            self::assertNotNull($route, $name);
+            self::assertContains('privileged.recent', $route->middleware(), $name);
         }
     }
 }

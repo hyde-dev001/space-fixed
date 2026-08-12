@@ -15,6 +15,7 @@ use App\Models\ShopOwnerSubscription;
 use App\Models\User;
 use App\Models\AuditLog;
 use App\Services\PrivilegedAudit;
+use App\Services\AdministratorIdentityService;
 use App\Services\PrivilegedSecurityTokenService;
 use App\Services\SuspensionAppealService;
 use Illuminate\Support\Facades\Hash;
@@ -24,6 +25,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
+use Illuminate\Auth\Access\AuthorizationException;
 use Throwable;
 
 class SuperAdminController extends Controller
@@ -31,6 +33,7 @@ class SuperAdminController extends Controller
     public function __construct(
         private readonly PrivilegedSecurityTokenService $tokens,
         private readonly PrivilegedAudit $privilegedAudit,
+        private readonly AdministratorIdentityService $identity,
     ) {
     }
 
@@ -758,54 +761,110 @@ class SuperAdminController extends Controller
         return response()->json(['data' => $users], 200);
     }
 
-    public function suspendAdmin($id)
+    public function suspendAdmin(Request $request, int $id)
     {
         try {
-            $admin = SuperAdmin::findOrFail($id);
-            $admin->update(['status' => 'suspended']);
+            $admin = $this->identity->suspend($request, $this->currentPrivilegedActor(), $id);
 
-            AuditLog::create([
-                'shop_owner_id' => null,
-                'actor_user_id' => auth('super_admin')->id(),
-                'action' => 'admin_suspended',
-                'target_type' => 'super_admin',
-                'target_id' => $admin->id,
-                'metadata' => [
-                    'email' => $admin->email,
-                    'first_name' => $admin->first_name,
-                    'last_name' => $admin->last_name,
-                ],
-            ]);
-
-            return redirect()->back()->with('success', 'Admin suspended successfully.');
-        } catch (\Exception $e) {
-            return redirect()->back()->withErrors(['error' => 'Failed to suspend admin.']);
+            return $this->identityMutationResponse($request, $admin, 'Administrator suspended successfully.');
+        } catch (Throwable $exception) {
+            return $this->identityMutationFailure($request, $exception);
         }
     }
 
-    public function activateAdmin($id)
+    public function deactivateAdmin(Request $request, int $id)
     {
         try {
-            $admin = SuperAdmin::findOrFail($id);
-            $admin->update(['status' => 'active']);
+            $admin = $this->identity->deactivate($request, $this->currentPrivilegedActor(), $id);
 
-            AuditLog::create([
-                'shop_owner_id' => null,
-                'actor_user_id' => auth('super_admin')->id(),
-                'action' => 'admin_activated',
-                'target_type' => 'super_admin',
-                'target_id' => $admin->id,
-                'metadata' => [
-                    'email' => $admin->email,
-                    'first_name' => $admin->first_name,
-                    'last_name' => $admin->last_name,
-                ],
-            ]);
-
-            return redirect()->back()->with('success', 'Admin activated successfully.');
-        } catch (\Exception $e) {
-            return redirect()->back()->withErrors(['error' => 'Failed to activate admin.']);
+            return $this->identityMutationResponse($request, $admin, 'Administrator deactivated successfully.');
+        } catch (Throwable $exception) {
+            return $this->identityMutationFailure($request, $exception);
         }
+    }
+
+    public function activateAdmin(Request $request, int $id)
+    {
+        try {
+            $admin = $this->identity->activate($request, $this->currentPrivilegedActor(), $id);
+
+            return $this->identityMutationResponse($request, $admin, 'Administrator activation completed.');
+        } catch (Throwable $exception) {
+            return $this->identityMutationFailure($request, $exception);
+        }
+    }
+
+    public function updateAdminRole(Request $request, int $id)
+    {
+        $validated = $request->validate([
+            'role' => ['required', Rule::in([
+                SuperAdmin::ROLE_ADMIN,
+                SuperAdmin::ROLE_SUPER_ADMIN,
+            ])],
+        ]);
+
+        try {
+            $admin = $this->identity->updateRole(
+                $request,
+                $this->currentPrivilegedActor(),
+                $id,
+                (string) $validated['role'],
+            );
+
+            return $this->identityMutationResponse($request, $admin, 'Administrator role updated successfully.');
+        } catch (Throwable $exception) {
+            return $this->identityMutationFailure($request, $exception);
+        }
+    }
+
+    public function resetAdminMfa(Request $request, int $id)
+    {
+        try {
+            $admin = $this->identity->resetMfa($request, $this->currentPrivilegedActor(), $id);
+
+            return $this->identityMutationResponse($request, $admin, 'Administrator MFA reset successfully.');
+        } catch (Throwable $exception) {
+            return $this->identityMutationFailure($request, $exception);
+        }
+    }
+
+    private function currentPrivilegedActor(): SuperAdmin
+    {
+        $actor = auth('super_admin')->user();
+
+        if (! $actor instanceof SuperAdmin) {
+            throw new AuthorizationException('A privileged actor is required.');
+        }
+
+        return $actor;
+    }
+
+    private function identityMutationResponse(Request $request, SuperAdmin $admin, string $message)
+    {
+        if ($request->expectsJson()) {
+            return response()->json([
+                'id' => (int) $admin->getKey(),
+                'status' => (string) $admin->status,
+                'role' => (string) $admin->role,
+                'message' => $message,
+            ]);
+        }
+
+        return redirect()->back()->with('success', $message);
+    }
+
+    private function identityMutationFailure(Request $request, Throwable $exception)
+    {
+        $status = $exception instanceof AuthorizationException ? 403 : 422;
+        $message = $status === 403
+            ? 'The administrator identity operation is not permitted.'
+            : 'The administrator identity operation could not be completed.';
+
+        if ($request->expectsJson()) {
+            return response()->json(['message' => $message], $status);
+        }
+
+        return redirect()->back()->withErrors(['error' => $message]);
     }
 
     public function suspendShop(Request $request, $id, SuspensionAppealService $suspensionAppealService)

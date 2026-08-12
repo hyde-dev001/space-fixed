@@ -177,6 +177,127 @@ class PrivilegedAudit
         );
     }
 
+    public function privilegedReauthenticationSucceeded(Request $request, SuperAdmin $admin): void
+    {
+        $this->writeSecurity(
+            event: 'privileged_reauthentication_succeeded',
+            request: $request,
+            actor: $admin,
+            subject: $admin,
+        );
+    }
+
+    public function privilegedReauthenticationFailed(
+        Request $request,
+        ?SuperAdmin $subject = null,
+        string $reason = 'invalid_credentials',
+    ): void {
+        if (! in_array($reason, ['invalid_credentials', 'invalid_code', 'stale_session'], true)) {
+            $reason = 'invalid_credentials';
+        }
+
+        $this->writeSecurity(
+            event: 'privileged_reauthentication_failed',
+            request: $request,
+            subject: $subject,
+            properties: ['reason' => $reason],
+        );
+    }
+
+    public function privilegedAdministratorSuspended(
+        Request $request,
+        SuperAdmin $actor,
+        SuperAdmin $subject,
+    ): void {
+        $this->writeSecurity(
+            event: 'privileged_administrator_suspended',
+            request: $request,
+            actor: $actor,
+            subject: $subject,
+        );
+    }
+
+    public function privilegedAdministratorDeactivated(
+        Request $request,
+        SuperAdmin $actor,
+        SuperAdmin $subject,
+    ): void {
+        $this->writeSecurity(
+            event: 'privileged_administrator_deactivated',
+            request: $request,
+            actor: $actor,
+            subject: $subject,
+        );
+    }
+
+    public function privilegedAdministratorActivated(
+        Request $request,
+        SuperAdmin $actor,
+        SuperAdmin $subject,
+    ): void {
+        $this->writeSecurity(
+            event: 'privileged_administrator_activated',
+            request: $request,
+            actor: $actor,
+            subject: $subject,
+        );
+    }
+
+    public function privilegedAdministratorReturnedToSetup(
+        Request $request,
+        SuperAdmin $actor,
+        SuperAdmin $subject,
+    ): void {
+        $this->writeSecurity(
+            event: 'privileged_administrator_returned_to_setup',
+            request: $request,
+            actor: $actor,
+            subject: $subject,
+        );
+    }
+
+    public function privilegedAdministratorRoleChanged(
+        Request $request,
+        SuperAdmin $actor,
+        SuperAdmin $subject,
+        string $fromRole,
+        string $toRole,
+    ): void {
+        $this->writeSecurity(
+            event: 'privileged_administrator_role_changed',
+            request: $request,
+            actor: $actor,
+            subject: $subject,
+            properties: [
+                'from_role' => $fromRole,
+                'to_role' => $toRole,
+            ],
+        );
+    }
+
+    public function privilegedAdministratorMfaReset(
+        Request $request,
+        SuperAdmin $actor,
+        SuperAdmin $subject,
+    ): void {
+        $this->writeSecurity(
+            event: 'privileged_administrator_mfa_reset',
+            request: $request,
+            actor: $actor,
+            subject: $subject,
+        );
+    }
+
+    public function privilegedOwnMfaReset(Request $request, SuperAdmin $admin): void
+    {
+        $this->writeSecurity(
+            event: 'privileged_own_mfa_reset',
+            request: $request,
+            actor: $admin,
+            subject: $admin,
+        );
+    }
+
     public function privilegedLoginSucceeded(Request $request, SuperAdmin $admin): void
     {
         $this->writeSecurity(

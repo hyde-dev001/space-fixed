@@ -11,6 +11,7 @@ use App\Services\PrivilegedAudit;
 use App\Services\PrivilegedMfaService;
 use App\Services\PrivilegedSecurityTokenService;
 use App\Services\PrivilegedSessionService;
+use App\Services\AdministratorIdentityService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -27,7 +28,45 @@ final class PrivilegedSecurityController extends Controller
         private readonly PrivilegedSecurityTokenService $tokens,
         private readonly PrivilegedSessionService $sessions,
         private readonly PrivilegedAudit $audit,
+        private readonly AdministratorIdentityService $identity,
     ) {
+    }
+
+    public function resetMfa(Request $request)
+    {
+        $admin = Auth::guard('super_admin')->user();
+
+        if (! $admin instanceof SuperAdmin) {
+            return $this->securityFailure($request);
+        }
+
+        try {
+            $resetAdmin = $this->identity->resetOwnMfa($request, $admin);
+        } catch (Throwable) {
+            return $this->securityFailure($request);
+        }
+
+        $request->session()->regenerate();
+        Auth::guard('super_admin')->login($resetAdmin, false);
+        $request->session()->put([
+            'privileged_auth_stage' => 'setup',
+            'privileged_super_admin_id' => (int) $resetAdmin->getKey(),
+            'privileged_security_version' => (int) $resetAdmin->security_version,
+            'privileged_remember_requested' => false,
+        ]);
+        $request->session()->forget([
+            'privileged_reauthenticated_at',
+            'privileged_reauthenticated_security_version',
+        ]);
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'status' => (string) $resetAdmin->status,
+                'message' => 'Your MFA setup must be completed again.',
+            ]);
+        }
+
+        return redirect('/admin/mfa/setup');
     }
 
     public function show(Request $request)
