@@ -13,6 +13,103 @@ use InvalidArgumentException;
 
 class PrivilegedAudit
 {
+    public function privilegedBootstrapCreated(SuperAdmin $admin, string $correlationId): void
+    {
+        $this->writeConsoleSecurity(
+            event: 'privileged_bootstrap_created',
+            subject: $admin,
+            correlationId: $correlationId,
+        );
+    }
+
+    public function privilegedInvitationCreated(Request $request, SuperAdmin $actor, SuperAdmin $subject): void
+    {
+        $this->writeSecurity(
+            event: 'privileged_invitation_created',
+            request: $request,
+            actor: $actor,
+            subject: $subject,
+        );
+    }
+
+    public function privilegedInvitationResent(Request $request, SuperAdmin $actor, SuperAdmin $subject): void
+    {
+        $this->writeSecurity(
+            event: 'privileged_invitation_resent',
+            request: $request,
+            actor: $actor,
+            subject: $subject,
+        );
+    }
+
+    public function privilegedSetupExchangeSucceeded(Request $request, SuperAdmin $subject): void
+    {
+        $this->writeSecurity(
+            event: 'privileged_setup_exchange_succeeded',
+            request: $request,
+            subject: $subject,
+        );
+    }
+
+    public function privilegedSetupExchangeFailed(Request $request): void
+    {
+        $this->writeSecurity(
+            event: 'privileged_setup_exchange_failed',
+            request: $request,
+            properties: ['reason' => 'invalid_or_expired_token'],
+        );
+    }
+
+    public function privilegedSetupPasswordCompleted(Request $request, SuperAdmin $admin): void
+    {
+        $this->writeSecurity(
+            event: 'privileged_setup_password_completed',
+            request: $request,
+            actor: $admin,
+            subject: $admin,
+        );
+    }
+
+    public function privilegedMfaEnrollmentVerified(Request $request, SuperAdmin $admin): void
+    {
+        $this->writeSecurity(
+            event: 'privileged_mfa_enrollment_verified',
+            request: $request,
+            actor: $admin,
+            subject: $admin,
+        );
+    }
+
+    public function privilegedMfaEnrollmentStarted(Request $request, SuperAdmin $admin): void
+    {
+        $this->writeSecurity(
+            event: 'privileged_mfa_enrollment_started',
+            request: $request,
+            actor: $admin,
+            subject: $admin,
+        );
+    }
+
+    public function privilegedMfaEnrollmentFailed(Request $request, SuperAdmin $admin): void
+    {
+        $this->writeSecurity(
+            event: 'privileged_mfa_enrollment_failed',
+            request: $request,
+            subject: $admin,
+            properties: ['reason' => 'invalid_code'],
+        );
+    }
+
+    public function privilegedMfaEnrollmentCompleted(Request $request, SuperAdmin $admin): void
+    {
+        $this->writeSecurity(
+            event: 'privileged_mfa_enrollment_completed',
+            request: $request,
+            actor: $admin,
+            subject: $admin,
+        );
+    }
+
     public function privilegedLoginSucceeded(Request $request, SuperAdmin $admin): void
     {
         $this->writeSecurity(
@@ -200,6 +297,36 @@ class PrivilegedAudit
         }
 
         $logger
+            ->setEvent($event)
+            ->withProperties(array_merge($baseProperties, $properties))
+            ->log($event);
+    }
+
+    private function writeConsoleSecurity(
+        string $event,
+        SuperAdmin $subject,
+        string $correlationId,
+        array $properties = [],
+    ): void {
+        if (! Str::isUuid($correlationId)) {
+            throw new InvalidArgumentException('The privileged audit correlation ID must be a UUID.');
+        }
+
+        $baseProperties = [
+            'actor_type' => null,
+            'actor_guard' => null,
+            'actor_id' => null,
+            'event' => $event,
+            'target_type' => 'super_admin',
+            'target_id' => (int) $subject->getKey(),
+            'source' => 'console',
+            'correlation_id' => $correlationId,
+            'ip_address' => null,
+            'context' => ['ip_address' => null],
+        ];
+
+        activity('privileged')
+            ->performedOn($subject)
             ->setEvent($event)
             ->withProperties(array_merge($baseProperties, $properties))
             ->log($event);

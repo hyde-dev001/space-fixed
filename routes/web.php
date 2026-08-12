@@ -22,6 +22,7 @@ use App\Http\Controllers\superAdmin\ShopOwnerUpgradeRequestController as SuperAd
 use App\Http\Controllers\superAdmin\SuperAdminUserManagementController;
 use App\Http\Controllers\superAdmin\SystemMonitoringDashboardController;
 use App\Http\Controllers\PrivilegedMfaController;
+use App\Http\Controllers\PrivilegedSetupController;
 use App\Http\Controllers\SuperAdminAuthController;
 use App\Http\Controllers\SuperAdminController;
 use App\Http\Controllers\UserController;
@@ -1665,12 +1666,30 @@ Route::post('/admin/login', [SuperAdminAuthController::class, 'login'])
     ->middleware('throttle:privileged-login')
     ->name('admin.login.post');
 Route::post('/admin/logout', [SuperAdminAuthController::class, 'logout'])->name('admin.logout');
+Route::get('/admin/setup', [PrivilegedSetupController::class, 'showSetupPage'])
+    ->middleware('privileged.no-store')
+    ->name('admin.setup');
+Route::post('/admin/setup/exchange', [PrivilegedSetupController::class, 'exchange'])
+    ->middleware(['privileged.no-store', 'throttle:privileged-setup'])
+    ->name('admin.setup.exchange');
+Route::post('/admin/setup/complete', [PrivilegedSetupController::class, 'completePassword'])
+    ->middleware(['privileged.no-store', 'throttle:privileged-setup'])
+    ->name('admin.setup.complete');
 Route::get('/admin/mfa/challenge', [PrivilegedMfaController::class, 'show'])
     ->middleware(['super_admin.auth', 'privileged.active', 'privileged.no-store'])
     ->name('admin.mfa.challenge');
 Route::post('/admin/mfa/challenge', [PrivilegedMfaController::class, 'verify'])
     ->middleware(['super_admin.auth', 'privileged.active', 'privileged.no-store', 'throttle:privileged-mfa'])
     ->name('admin.mfa.challenge.verify');
+Route::get('/admin/mfa/setup', [PrivilegedSetupController::class, 'showEnrollment'])
+    ->middleware(['super_admin.auth', 'privileged.no-store'])
+    ->name('admin.mfa.setup');
+Route::post('/admin/mfa/setup/verify', [PrivilegedSetupController::class, 'verifyEnrollment'])
+    ->middleware(['super_admin.auth', 'privileged.no-store', 'throttle:privileged-setup'])
+    ->name('admin.mfa.setup.verify');
+Route::post('/admin/mfa/setup/recovery/acknowledge', [PrivilegedSetupController::class, 'acknowledgeRecovery'])
+    ->middleware(['super_admin.auth', 'privileged.no-store', 'throttle:privileged-setup'])
+    ->name('admin.mfa.setup.recovery.acknowledge');
 
 // Admin Protected Routes
 Route::middleware([
@@ -1693,8 +1712,11 @@ Route::middleware([
         ->middleware('privileged.capability:manage_administrators')
         ->name('create-admin');
     Route::post('/create-admin', [SuperAdminController::class, 'storeAdmin'])
-        ->middleware('privileged.capability:manage_administrators')
+        ->middleware(['privileged.capability:manage_administrators', 'privileged.recent'])
         ->name('create-admin.store');
+    Route::post('/admins/{id}/setup/resend', [SuperAdminController::class, 'resendInvitation'])
+        ->middleware(['privileged.capability:manage_administrators', 'privileged.recent'])
+        ->name('admins.setup.resend');
     Route::post('/admins/{id}/suspend', [SuperAdminController::class, 'suspendAdmin'])
         ->middleware('privileged.capability:manage_administrators')
         ->name('admins.suspend');

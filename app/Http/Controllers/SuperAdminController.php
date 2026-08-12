@@ -2,25 +2,38 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\Privileged\InviteAdministratorRequest;
+use App\Mail\PrivilegedSetupLinkMail;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
+use App\Models\PrivilegedSecurityToken;
 use App\Models\SuperAdmin;
 use App\Models\ShopOwner;
 use App\Models\PremiumPlan;
 use App\Models\ShopOwnerSubscription;
 use App\Models\User;
 use App\Models\AuditLog;
+use App\Services\PrivilegedAudit;
+use App\Services\PrivilegedSecurityTokenService;
 use App\Services\SuspensionAppealService;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\Rules\Password;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
+use Throwable;
 
 class SuperAdminController extends Controller
 {
+    public function __construct(
+        private readonly PrivilegedSecurityTokenService $tokens,
+        private readonly PrivilegedAudit $privilegedAudit,
+    ) {
+    }
+
     /**
      * Show create admin form
      */
@@ -941,7 +954,7 @@ class SuperAdminController extends Controller
     /**
      * Create a new admin
      */
-    public function storeAdmin(Request $request)
+    public function storeAdmin(InviteAdministratorRequest $request)
     {
         // Backward-compatible endpoint used by admin.create-admin.store route.
         return $this->createAdmin($request);
@@ -950,38 +963,103 @@ class SuperAdminController extends Controller
     /**
      * Create a new admin
      */
-    public function createAdmin(Request $request)
+    public function createAdmin(InviteAdministratorRequest $request)
     {
-        $validated = $request->validate([
-            'first_name' => 'required|string|min:2|max:255',
-            'last_name' => 'required|string|min:2|max:255',
-            'email' => 'required|email|unique:super_admins,email',
-            'phone' => 'required|string|min:10|max:20',
-            'password' => ['required', 'string', Password::min(8)->mixedCase()->numbers(), 'confirmed'],
-            'role' => 'required|string|in:admin,super_admin',
-        ], [
-            'email.unique' => 'This email address is already registered.',
-            'password.min' => 'Password must be at least 8 characters.',
-        ]);
+        $validated = $request->validated();
+        $actor = $request->user('super_admin');
 
         try {
-            // Create the admin account
-            $admin = SuperAdmin::create([
-                'first_name' => $validated['first_name'],
-                'last_name' => $validated['last_name'],
-                'email' => $validated['email'],
-                'phone' => $validated['phone'],
-                'password' => Hash::make($validated['password']),
-                'role' => $validated['role'],
-                'status' => 'active',
-            ]);
+            /** @var array{admin: SuperAdmin, raw_token: string} $result */
+            $result = DB::transaction(function () use ($validated, $actor, $request): array {
+                if (! $actor instanceof SuperAdmin) {
+                    throw new \RuntimeException('A privileged actor is required.');
+                }
 
-            return redirect()->route('admin.admin-management')
-                ->with('success', 'Admin account created successfully');
-        } catch (\Exception $e) {
+                if (SuperAdmin::query()->whereRaw('LOWER(email) = ?', [strtolower($validated['email'])])->exists()) {
+                    throw new \RuntimeException('The administrator email is already registered.');
+                }
+
+                $admin = SuperAdmin::create([
+                    'first_name' => $validated['first_name'],
+                    'last_name' => $validated['last_name'],
+                    'email' => $validated['email'],
+                    'phone' => $validated['phone'],
+                    'password' => Str::random(64),
+                    'role' => $validated['role'],
+                    'status' => SuperAdmin::STATUS_PENDING_SETUP,
+                ]);
+                $issued = $this->tokens->issue($admin, PrivilegedSecurityToken::PURPOSE_SETUP, $actor);
+                $this->privilegedAudit->privilegedInvitationCreated($request, $actor, $admin);
+
+                return [
+                    'admin' => $admin,
+                    'raw_token' => $issued['raw_token'],
+                ];
+            });
+        } catch (Throwable) {
             return back()
                 ->withInput($request->except('password', 'password_confirmation'))
-                ->withErrors(['error' => 'Failed to create admin account. Please try again.']);
+                ->withErrors(['error' => 'Failed to create the administrator invitation.']);
         }
+
+        try {
+            Mail::to($result['admin']->email)->queue(new PrivilegedSetupLinkMail(
+                trim($result['admin']->first_name.' '.$result['admin']->last_name),
+                (string) $result['admin']->email,
+                $result['raw_token'],
+            ));
+        } catch (Throwable) {
+            return redirect()->route('admin.admin-management')
+                ->withErrors(['error' => 'The invitation was created, but the setup mail could not be queued.']);
+        }
+
+        return redirect()->route('admin.admin-management')
+            ->with('success', 'Administrator invitation created successfully.');
+    }
+
+    public function resendInvitation(Request $request, int $id)
+    {
+        $actor = $request->user('super_admin');
+
+        try {
+            /** @var array{admin: SuperAdmin, raw_token: string} $result */
+            $result = DB::transaction(function () use ($request, $actor, $id): array {
+                if (! $actor instanceof SuperAdmin) {
+                    throw new \RuntimeException('A privileged actor is required.');
+                }
+
+                $admin = SuperAdmin::query()->lockForUpdate()->find($id);
+                if (! $admin instanceof SuperAdmin
+                    || $admin->status !== SuperAdmin::STATUS_PENDING_SETUP
+                    || $admin->hasCompletedMfaSetup()) {
+                    throw new \RuntimeException('The administrator is not pending setup.');
+                }
+
+                $issued = $this->tokens->issue($admin, PrivilegedSecurityToken::PURPOSE_SETUP, $actor);
+                $this->privilegedAudit->privilegedInvitationResent($request, $actor, $admin);
+
+                return [
+                    'admin' => $admin,
+                    'raw_token' => $issued['raw_token'],
+                ];
+            });
+        } catch (Throwable) {
+            return redirect()->route('admin.admin-management')
+                ->withErrors(['error' => 'The setup invitation could not be resent.']);
+        }
+
+        try {
+            Mail::to($result['admin']->email)->queue(new PrivilegedSetupLinkMail(
+                trim($result['admin']->first_name.' '.$result['admin']->last_name),
+                (string) $result['admin']->email,
+                $result['raw_token'],
+            ));
+        } catch (Throwable) {
+            return redirect()->route('admin.admin-management')
+                ->withErrors(['error' => 'The invitation was replaced, but the setup mail could not be queued.']);
+        }
+
+        return redirect()->route('admin.admin-management')
+            ->with('success', 'Administrator setup invitation resent successfully.');
     }
 }

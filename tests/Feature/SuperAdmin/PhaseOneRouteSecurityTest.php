@@ -121,8 +121,14 @@ final class PhaseOneRouteSecurityTest extends TestCase
             'admin.login',
             'admin.login.post',
             'admin.logout',
+            'admin.setup',
+            'admin.setup.exchange',
+            'admin.setup.complete',
             'admin.mfa.challenge',
             'admin.mfa.challenge.verify',
+            'admin.mfa.setup',
+            'admin.mfa.setup.verify',
+            'admin.mfa.setup.recovery.acknowledge',
         ];
         $operational = collect(Route::getRoutes()->getRoutes())
             ->filter(function ($route): bool {
