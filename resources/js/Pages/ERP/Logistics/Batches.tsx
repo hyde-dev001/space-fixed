@@ -1,8 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
 import { Plus } from 'lucide-react';
-import { DndProvider } from 'react-dnd';
-import { HTML5Backend } from 'react-dnd-html5-backend';
 import AppLayoutERP from '@/layout/AppLayout_ERP';
 import { logisticsApi } from '@/services/logisticsApi';
 import {
@@ -16,7 +14,9 @@ import {
 } from '@/types/logistics';
 import { workflowFeedback } from '@/utils/workflowFeedback';
 import AvailableDeliveriesPanel from './components/AvailableDeliveriesPanel';
-import BatchCard from './components/BatchCard';
+import BatchDetailsModal from './components/BatchDetailsModal';
+import BatchHistoryModal from './components/BatchHistoryModal';
+import BatchTable from './components/BatchTable';
 import BatchWorkspace from './components/BatchWorkspace';
 import OfferBatchModal from './components/OfferBatchModal';
 
@@ -61,6 +61,10 @@ export default function Batches() {
   const [offerError, setOfferError] = useState('');
   const [offerOverrideRiderId, setOfferOverrideRiderId] = useState<number>();
   const [activeStatus, setActiveStatus] = useState<'all' | DeliveryBatchStatus>('all');
+  const [detailsBatchId, setDetailsBatchId] = useState<number>();
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const detailsTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const historyTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const allDeliveries = useMemo(() => {
@@ -95,6 +99,7 @@ export default function Batches() {
   const activeBatches = batches.filter((batch) => !['completed', 'cancelled'].includes(batch.status));
   const historyBatches = batches.filter((batch) => ['completed', 'cancelled'].includes(batch.status));
   const visibleActiveBatches = activeStatus === 'all' ? activeBatches : activeBatches.filter((batch) => batch.status === activeStatus);
+  const detailsBatch = batches.find((batch) => batch.id === detailsBatchId);
 
   const startNewBatch = () => {
     setBuilding(true);
@@ -112,6 +117,22 @@ export default function Batches() {
     if (typeof workspace?.scrollIntoView === 'function') {
       workspace.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
+  };
+  const openDetails = (batchId: number, trigger: HTMLButtonElement) => {
+    detailsTriggerRef.current = trigger;
+    setDetailsBatchId(batchId);
+  };
+  const closeDetails = () => {
+    setDetailsBatchId(undefined);
+    setTimeout(() => detailsTriggerRef.current?.focus(), 0);
+  };
+  const openHistory = (trigger: HTMLButtonElement) => {
+    historyTriggerRef.current = trigger;
+    setHistoryOpen(true);
+  };
+  const closeHistory = () => {
+    setHistoryOpen(false);
+    setTimeout(() => historyTriggerRef.current?.focus(), 0);
   };
   const changeSlot = (nextDate: string, nextWindow: string) => {
     if (scheduledThisAttempt.length) {
@@ -396,11 +417,12 @@ export default function Batches() {
         const count = tab === 'all' ? activeBatches.length : activeBatches.filter((batch) => batch.status === tab).length;
         const tabLabel = tab === 'all' ? 'All' : tab.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
         return <button key={tab} type="button" aria-pressed={activeStatus === tab} onClick={() => setActiveStatus(tab)} className={`min-h-10 rounded-lg px-3 text-sm font-semibold ${activeStatus === tab ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}`}>{tabLabel} ({count})</button>;
-      })}</div></div>
-      <DndProvider backend={HTML5Backend}><div className="grid gap-4 xl:grid-cols-2">{visibleActiveBatches.map((batch) => <BatchCard key={batch.id} batch={batch} onOpen={() => openBatch(batch.id)} onReview={() => openReview(batch.id)} onCancel={() => cancelBatch(batch.id)} />)}</div></DndProvider>
+      })}<button type="button" onClick={(event) => openHistory(event.currentTarget)} className="min-h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50">History ({historyBatches.length})</button></div></div>
+      <BatchTable batches={visibleActiveBatches} onOpen={openBatch} onDetails={openDetails} onReview={openReview} onCancel={cancelBatch} />
       {!visibleActiveBatches.length && <p className="rounded-xl border border-dashed p-6 text-center text-sm text-gray-500">No active batches in this status.</p>}
     </section>
-    {historyBatches.length > 0 && <details className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800"><summary className="min-h-10 cursor-pointer font-bold text-gray-800 dark:text-white">History ({historyBatches.length})</summary><DndProvider backend={HTML5Backend}><div className="mt-4 grid gap-4 xl:grid-cols-2">{historyBatches.map((batch) => <BatchCard key={batch.id} batch={batch} onOpen={() => openBatch(batch.id)} onRestore={batch.status === 'cancelled' ? () => restoreBatch(batch.id) : undefined} />)}</div></DndProvider></details>}
+    <BatchHistoryModal batches={historyBatches} isOpen={historyOpen} onClose={closeHistory} onOpen={(batchId) => { closeHistory(); openBatch(batchId); }} onDetails={openDetails} onRestore={restoreBatch} />
+    <BatchDetailsModal batch={detailsBatch} isOpen={Boolean(detailsBatch)} onClose={closeDetails} />
     <OfferBatchModal isOpen={reviewOpen} batch={selectedBatch} batches={batches} riders={riders} dailyRiderCapacity={dailyRiderCapacity} forceCapacityOverrideForRiderId={offerOverrideRiderId} submitting={offerSubmitting} error={offerError} onClose={() => { setReviewOpen(false); setOfferOverrideRiderId(undefined); }} onOffer={offerBatch} />
   </main></AppLayoutERP>;
 }
