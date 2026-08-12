@@ -9,6 +9,12 @@ class ReviewReport extends Model
 {
     protected $table = 'review_reports';
 
+    public const STATUS_PENDING_REVIEW = 'pending_review';
+    public const STATUS_UNDER_INVESTIGATION = 'under_investigation';
+    public const STATUS_DISMISSED = 'dismissed';
+    public const STATUS_ACCOUNT_SUSPENDED = 'account_suspended';
+    public const STATUS_LEGACY_BANNED = 'banned';
+
     protected $fillable = [
         'review_type',
         'review_id',
@@ -64,5 +70,17 @@ class ReviewReport extends Model
     public function scopeUnresolved($query)
     {
         return $query->whereNotIn('status', ['dismissed', 'banned']);
+    }
+
+    public function getDomainStatusAttribute(): string
+    {
+        return $this->status === self::STATUS_LEGACY_BANNED
+            ? self::STATUS_ACCOUNT_SUSPENDED
+            : (string) $this->status;
+    }
+
+    public function isTerminal(): bool
+    {
+        return in_array($this->status, [self::STATUS_DISMISSED, self::STATUS_LEGACY_BANNED], true);
     }
 }

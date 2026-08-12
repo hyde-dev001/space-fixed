@@ -13,10 +13,12 @@ class SuspensionAppeal extends Model
     protected $fillable = [
         'account_type',
         'account_id',
+        'suspension_id',
         'account_name',
         'recipient_email',
         'suspension_reason',
         'suspended_by_super_admin_id',
+        'reviewer_id',
         'status',
         'appeal_token',
         'appeal_message',
@@ -35,6 +37,16 @@ class SuspensionAppeal extends Model
     public function suspendedBy(): BelongsTo
     {
         return $this->belongsTo(SuperAdmin::class, 'suspended_by_super_admin_id');
+    }
+
+    public function suspension(): BelongsTo
+    {
+        return $this->belongsTo(AccountSuspension::class, 'suspension_id');
+    }
+
+    public function reviewer(): BelongsTo
+    {
+        return $this->belongsTo(SuperAdmin::class, 'reviewer_id');
     }
 
     public function isExpired(): bool

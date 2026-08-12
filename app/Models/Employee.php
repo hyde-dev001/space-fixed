@@ -63,6 +63,10 @@ class Employee extends Model
         'suspension_reason',
     ];
 
+    protected $hidden = [
+        'privileged_suspension_id',
+    ];
+
     /**
      * The attributes that should be cast.
      *
@@ -133,6 +137,11 @@ class Employee extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'email', 'email');
+    }
+
+    public function privilegedSuspension(): BelongsTo
+    {
+        return $this->belongsTo(AccountSuspension::class, 'privileged_suspension_id');
     }
 
     /**

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Builder;
 
 class ShopReport extends Model
@@ -55,6 +56,11 @@ class ShopReport extends Model
     public function shop(): BelongsTo
     {
         return $this->belongsTo(ShopOwner::class, 'shop_owner_id');
+    }
+
+    public function moderationActions(): HasMany
+    {
+        return $this->hasMany(ShopReportModerationAction::class, 'shop_owner_id', 'shop_owner_id');
     }
 
     public function order(): BelongsTo
