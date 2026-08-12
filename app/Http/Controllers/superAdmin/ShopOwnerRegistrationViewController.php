@@ -7,10 +7,13 @@ use App\Http\Requests\SuperAdmin\RejectShopOwnerRegistrationRequest;
 use App\Models\ShopOwner;
 use App\Models\SuperAdmin;
 use App\Services\ShopOwnerRegistrationDecisionService;
+use App\Support\PrivilegedFailureResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
+use Throwable;
 
 class ShopOwnerRegistrationViewController extends Controller
 {
@@ -59,7 +62,7 @@ class ShopOwnerRegistrationViewController extends Controller
         ]);
     }
 
-    public function approve(Request $request, $id)
+    public function approve(Request $request, $id, PrivilegedFailureResponse $failures)
     {
         $actor = $request->user('super_admin');
         abort_unless($actor instanceof SuperAdmin, 403);
@@ -68,6 +71,17 @@ class ShopOwnerRegistrationViewController extends Controller
             $outcome = $this->registrationDecisions->approve($request, $actor, (int) $id);
         } catch (ConflictHttpException $exception) {
             return $this->conflictResponse($request, $exception->getMessage());
+        } catch (ValidationException $exception) {
+            throw $exception;
+        } catch (Throwable $exception) {
+            return $failures->unexpected(
+                request: $request,
+                operation: 'shop_registration',
+                exception: $exception,
+                message: 'The shop owner registration could not be approved.',
+                code: 'shop_registration_approval_error',
+                forceJson: $request->expectsJson() || $request->ajax() || (bool) $request->header('X-Inertia'),
+            );
         }
 
         // If this is an XHR/JSON request (e.g., fetch), return JSON.
