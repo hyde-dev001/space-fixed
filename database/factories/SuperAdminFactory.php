@@ -30,7 +30,10 @@ class SuperAdminFactory extends Factory
     public function configure(): static
     {
         return $this->afterMaking(function (SuperAdmin $admin): void {
-            if ($admin->status !== SuperAdmin::STATUS_PENDING_SETUP && $admin->mfa_secret === null) {
+            if ($admin->status !== SuperAdmin::STATUS_PENDING_SETUP
+                && $admin->mfa_secret === null
+                && $admin->mfa_recovery_codes === null
+                && $admin->mfa_confirmed_at === null) {
                 $admin->forceFill($this->enrolledAttributes());
             }
         });
@@ -68,7 +71,15 @@ class SuperAdminFactory extends Factory
     {
         return $this->state(['status' => SuperAdmin::STATUS_ACTIVE])
             ->afterMaking(function (SuperAdmin $admin): void {
-                $admin->forceFill($this->enrolledAttributes());
+                $attributes = $this->enrolledAttributes();
+
+                foreach (array_keys($attributes) as $attribute) {
+                    if ($admin->getAttribute($attribute) !== null) {
+                        $attributes[$attribute] = $admin->getAttribute($attribute);
+                    }
+                }
+
+                $admin->forceFill($attributes);
             });
     }
 
