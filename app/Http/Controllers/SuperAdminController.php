@@ -7,7 +7,7 @@ use App\Http\Requests\SuperAdmin\AccountArchiveRequest;
 use App\Http\Requests\SuperAdmin\AccountReactivationRequest;
 use App\Http\Requests\SuperAdmin\AccountRestoreRequest;
 use App\Http\Requests\SuperAdmin\AccountSuspensionRequest;
-use App\Mail\PrivilegedSetupLinkMail;
+use App\Enums\PrivilegedDeliveryType;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -21,13 +21,13 @@ use App\Models\AuditLog;
 use App\Services\PrivilegedAudit;
 use App\Services\AdministratorIdentityService;
 use App\Services\AccountLifecycleService;
+use App\Services\PrivilegedMailDispatcher;
 use App\Services\PrivilegedSecurityTokenService;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -41,6 +41,7 @@ class SuperAdminController extends Controller
         private readonly PrivilegedAudit $privilegedAudit,
         private readonly AdministratorIdentityService $identity,
         private readonly AccountLifecycleService $accountLifecycle,
+        private readonly PrivilegedMailDispatcher $privilegedMailDispatcher,
     ) {
     }
 
@@ -1110,7 +1111,7 @@ class SuperAdminController extends Controller
         $actor = $request->user('super_admin');
 
         try {
-            /** @var array{admin: SuperAdmin, raw_token: string} $result */
+            /** @var array{admin: SuperAdmin} $result */
             $result = DB::transaction(function () use ($validated, $actor, $request): array {
                 if (! $actor instanceof SuperAdmin) {
                     throw new \RuntimeException('A privileged actor is required.');
@@ -1132,26 +1133,27 @@ class SuperAdminController extends Controller
                 $issued = $this->tokens->issue($admin, PrivilegedSecurityToken::PURPOSE_SETUP, $actor);
                 $this->privilegedAudit->privilegedInvitationCreated($request, $actor, $admin);
 
+                $this->privilegedMailDispatcher->dispatch(
+                    type: PrivilegedDeliveryType::PRIVILEGED_ADMIN_SETUP,
+                    businessEventId: 'privileged-admin-setup:'.$admin->getKey().':'.$issued['token']->getKey(),
+                    recipientType: 'super_admin',
+                    recipientId: (int) $admin->getKey(),
+                    payload: [
+                        'recipient_name' => trim($admin->first_name.' '.$admin->last_name),
+                        'email' => (string) $admin->email,
+                        'raw_token' => $issued['raw_token'],
+                    ],
+                    correlationId: $this->privilegedAudit->correlationId($request),
+                );
+
                 return [
                     'admin' => $admin,
-                    'raw_token' => $issued['raw_token'],
                 ];
             });
         } catch (Throwable) {
             return back()
                 ->withInput($request->except('password', 'password_confirmation'))
                 ->withErrors(['error' => 'Failed to create the administrator invitation.']);
-        }
-
-        try {
-            Mail::to($result['admin']->email)->queue(new PrivilegedSetupLinkMail(
-                trim($result['admin']->first_name.' '.$result['admin']->last_name),
-                (string) $result['admin']->email,
-                $result['raw_token'],
-            ));
-        } catch (Throwable) {
-            return redirect()->route('admin.admin-management')
-                ->withErrors(['error' => 'The invitation was created, but the setup mail could not be queued.']);
         }
 
         return redirect()->route('admin.admin-management')
@@ -1163,7 +1165,7 @@ class SuperAdminController extends Controller
         $actor = $request->user('super_admin');
 
         try {
-            /** @var array{admin: SuperAdmin, raw_token: string} $result */
+            /** @var array{admin: SuperAdmin} $result */
             $result = DB::transaction(function () use ($request, $actor, $id): array {
                 if (! $actor instanceof SuperAdmin) {
                     throw new \RuntimeException('A privileged actor is required.');
@@ -1179,25 +1181,26 @@ class SuperAdminController extends Controller
                 $issued = $this->tokens->issue($admin, PrivilegedSecurityToken::PURPOSE_SETUP, $actor);
                 $this->privilegedAudit->privilegedInvitationResent($request, $actor, $admin);
 
+                $this->privilegedMailDispatcher->dispatch(
+                    type: PrivilegedDeliveryType::PRIVILEGED_ADMIN_SETUP,
+                    businessEventId: 'privileged-admin-setup:'.$admin->getKey().':'.$issued['token']->getKey(),
+                    recipientType: 'super_admin',
+                    recipientId: (int) $admin->getKey(),
+                    payload: [
+                        'recipient_name' => trim($admin->first_name.' '.$admin->last_name),
+                        'email' => (string) $admin->email,
+                        'raw_token' => $issued['raw_token'],
+                    ],
+                    correlationId: $this->privilegedAudit->correlationId($request),
+                );
+
                 return [
                     'admin' => $admin,
-                    'raw_token' => $issued['raw_token'],
                 ];
             });
         } catch (Throwable) {
             return redirect()->route('admin.admin-management')
                 ->withErrors(['error' => 'The setup invitation could not be resent.']);
-        }
-
-        try {
-            Mail::to($result['admin']->email)->queue(new PrivilegedSetupLinkMail(
-                trim($result['admin']->first_name.' '.$result['admin']->last_name),
-                (string) $result['admin']->email,
-                $result['raw_token'],
-            ));
-        } catch (Throwable) {
-            return redirect()->route('admin.admin-management')
-                ->withErrors(['error' => 'The invitation was replaced, but the setup mail could not be queued.']);
         }
 
         return redirect()->route('admin.admin-management')

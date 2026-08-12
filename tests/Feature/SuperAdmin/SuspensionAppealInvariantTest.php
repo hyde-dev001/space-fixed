@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Feature\SuperAdmin;
 
-use App\Mail\SuspensionAppealDecisionMail;
-use App\Mail\SuspensionAppealSubmittedMail;
+use App\Enums\PrivilegedDeliveryType;
+use App\Jobs\SendPrivilegedWorkflowMail;
 use App\Models\AccountSuspension;
 use App\Models\Employee;
 use App\Models\ShopOwner;
@@ -16,7 +16,7 @@ use App\Services\AccountSuspensionService;
 use App\Services\PrivilegedAudit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\URL;
 use Mockery;
 use Tests\Concerns\AuthenticatesPrivilegedUsers;
@@ -56,7 +56,7 @@ final class SuspensionAppealInvariantTest extends TestCase
 
     public function test_submission_requires_the_current_suspension_and_same_retry_is_idempotent(): void
     {
-        Mail::fake();
+        Queue::fake();
         $admin = $this->phaseTwoSuperAdmin();
         $customer = $this->activePhaseTwoUser();
         [, $suspension, $appeal] = $this->suspendCustomer($customer, $admin);
@@ -65,6 +65,7 @@ final class SuspensionAppealInvariantTest extends TestCase
 
         $first = $this->postWithCsrf($submitUrl, ['appeal_message' => $message], ['Accept' => 'application/json']);
         $first->assertOk()->assertJson(['status' => 'submitted', 'changed' => true]);
+        DB::commit();
 
         $second = $this->postWithCsrf($submitUrl, ['appeal_message' => $message], ['Accept' => 'application/json']);
         $second->assertOk()->assertJson(['status' => 'submitted', 'changed' => false]);
@@ -74,12 +75,17 @@ final class SuspensionAppealInvariantTest extends TestCase
         ], ['Accept' => 'application/json'])->assertStatus(409);
 
         $this->assertSame($suspension->id, (int) $appeal->fresh()->suspension_id);
-        $this->assertSame(1, Mail::sent(SuspensionAppealSubmittedMail::class)->count());
+        Queue::assertPushed(SendPrivilegedWorkflowMail::class, function (SendPrivilegedWorkflowMail $job) use ($admin, $appeal): bool {
+            return $job->deliveryType === PrivilegedDeliveryType::SUSPENSION_APPEAL_SUBMITTED
+                && $job->recipientType === 'super_admin'
+                && $job->recipientId === $admin->id
+                && $job->businessEventId === 'suspension-appeal-submitted:'.$appeal->id;
+        });
     }
 
     public function test_expired_stale_unlinked_and_wrong_account_appeals_cannot_be_submitted(): void
     {
-        Mail::fake();
+        Queue::fake();
         $admin = $this->phaseTwoSuperAdmin();
         $customer = $this->activePhaseTwoUser();
         [, , $expired] = $this->suspendCustomer($customer, $admin);
@@ -134,7 +140,7 @@ final class SuspensionAppealInvariantTest extends TestCase
 
     public function test_only_super_admin_can_approve_and_approval_restores_exact_account_and_employee(): void
     {
-        Mail::fake();
+        Queue::fake();
         $admin = $this->phaseTwoAdmin();
         $superAdmin = $this->phaseTwoSuperAdmin();
         $customer = $this->activePhaseTwoUser(['email' => 'appeal-employee@example.test']);
@@ -159,6 +165,7 @@ final class SuspensionAppealInvariantTest extends TestCase
         $this->postJson("/admin/appeals/{$appeal->id}/approve", [
             'reviewer_notes' => 'Approved after reviewing the corrective actions.',
         ])->assertOk()->assertJson(['changed' => true, 'status' => 'approved']);
+        DB::commit();
 
         $customer = $customer->fresh();
         $employee = $employee->fresh();
@@ -169,12 +176,17 @@ final class SuspensionAppealInvariantTest extends TestCase
         $this->assertNull($employee->privileged_suspension_id);
         $this->assertSame('approved', $appeal->fresh()->status);
         $this->assertSame($superAdmin->id, (int) $appeal->fresh()->reviewer_id);
-        Mail::assertSent(SuspensionAppealDecisionMail::class);
+        Queue::assertPushed(SendPrivilegedWorkflowMail::class, function (SendPrivilegedWorkflowMail $job) use ($customer, $appeal): bool {
+            return $job->deliveryType === PrivilegedDeliveryType::SUSPENSION_APPEAL_DECIDED
+                && $job->recipientType === 'user'
+                && $job->recipientId === $customer->id
+                && $job->businessEventId === 'suspension-appeal-decided:'.$appeal->id;
+        });
     }
 
     public function test_rejection_keeps_current_suspension_and_decision_retry_is_idempotent(): void
     {
-        Mail::fake();
+        Queue::fake();
         $superAdmin = $this->phaseTwoSuperAdmin();
         $customer = $this->activePhaseTwoUser();
         [, $suspension, $appeal] = $this->suspendCustomer($customer, $superAdmin);
@@ -189,6 +201,7 @@ final class SuspensionAppealInvariantTest extends TestCase
         $this->postJson("/admin/appeals/{$appeal->id}/reject", $payload)
             ->assertOk()
             ->assertJson(['changed' => true, 'status' => 'rejected']);
+        DB::commit();
         $this->postJson("/admin/appeals/{$appeal->id}/reject", $payload)
             ->assertOk()
             ->assertJson(['changed' => false, 'status' => 'rejected']);
@@ -198,12 +211,17 @@ final class SuspensionAppealInvariantTest extends TestCase
         $this->assertSame('suspended', $customer->getRawOriginal('status'));
         $this->assertSame($suspension->id, (int) $customer->current_suspension_id);
         $this->assertNull($suspension->fresh()->ended_at);
-        $this->assertSame(1, Mail::sent(SuspensionAppealDecisionMail::class)->count());
+        Queue::assertPushed(SendPrivilegedWorkflowMail::class, function (SendPrivilegedWorkflowMail $job) use ($customer, $appeal): bool {
+            return $job->deliveryType === PrivilegedDeliveryType::SUSPENSION_APPEAL_DECIDED
+                && $job->recipientType === 'user'
+                && $job->recipientId === $customer->id
+                && $job->businessEventId === 'suspension-appeal-decided:'.$appeal->id;
+        });
     }
 
     public function test_manual_reactivation_wins_before_appeal_approval_and_leaves_one_terminal_result(): void
     {
-        Mail::fake();
+        Queue::fake();
         $superAdmin = $this->phaseTwoSuperAdmin();
         $customer = $this->activePhaseTwoUser();
         [, $suspension, $appeal] = $this->suspendCustomer($customer, $superAdmin);
@@ -231,12 +249,12 @@ final class SuspensionAppealInvariantTest extends TestCase
         $this->assertSame('active', $customer->fresh()->getRawOriginal('status'));
         $this->assertNull($customer->fresh()->current_suspension_id);
         $this->assertNotNull($suspension->fresh()->ended_at);
-        Mail::assertNothingSent();
+        Queue::assertNothingPushed();
     }
 
     public function test_audit_failure_rolls_back_appeal_decision_and_account_restore(): void
     {
-        Mail::fake();
+        Queue::fake();
         $superAdmin = $this->phaseTwoSuperAdmin();
         $customer = $this->activePhaseTwoUser();
         [, $suspension, $appeal] = $this->suspendCustomer($customer, $superAdmin);
@@ -259,7 +277,7 @@ final class SuspensionAppealInvariantTest extends TestCase
         $this->assertSame('suspended', $customer->fresh()->getRawOriginal('status'));
         $this->assertSame($suspension->id, (int) $customer->fresh()->current_suspension_id);
         $this->assertNull($suspension->fresh()->ended_at);
-        Mail::assertNothingSent();
+        Queue::assertNothingPushed();
     }
 
     public function test_expiry_command_is_bounded_and_idempotent(): void

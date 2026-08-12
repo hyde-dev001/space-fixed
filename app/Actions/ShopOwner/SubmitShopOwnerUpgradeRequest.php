@@ -2,16 +2,18 @@
 
 namespace App\Actions\ShopOwner;
 
+use App\Enums\PrivilegedDeliveryType;
 use App\Enums\NotificationType;
 use App\Models\Notification as AdminNotification;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerUpgradeRequest;
 use App\Models\SuperAdmin;
-use App\Notifications\ShopOwnerUpgradeRequested;
+use App\Services\PrivilegedAudit;
+use App\Services\PrivilegedMailDispatcher;
 use App\Services\ShopOwnerDocumentRequirementService;
+use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -21,18 +23,20 @@ final class SubmitShopOwnerUpgradeRequest
 {
     public function __construct(
         private readonly ShopOwnerDocumentRequirementService $documentRequirements,
+        private readonly PrivilegedAudit $audit,
+        private readonly PrivilegedMailDispatcher $privilegedMailDispatcher,
     ) {}
 
     /**
      * @param  array<string, mixed>  $data
      */
-    public function handle(ShopOwner $owner, array $data): ShopOwnerUpgradeRequest
+    public function handle(ShopOwner $owner, array $data, ?Request $request = null): ShopOwnerUpgradeRequest
     {
         $createdPaths = [];
         $requestKey = (string) Str::uuid();
 
         try {
-            $upgradeRequest = DB::transaction(function () use ($owner, $data, $requestKey, &$createdPaths): ShopOwnerUpgradeRequest {
+            $upgradeRequest = DB::transaction(function () use ($owner, $data, $requestKey, $request, &$createdPaths): ShopOwnerUpgradeRequest {
                 $lockedOwner = ShopOwner::query()->lockForUpdate()->findOrFail($owner->getKey());
                 $this->assertApprovedOwner($lockedOwner);
 
@@ -94,41 +98,49 @@ final class SubmitShopOwnerUpgradeRequest
                     ])
                     ->log('shop_owner_upgrade_requested');
 
-                return $upgradeRequest->load('documents');
-            });
-
-            DB::afterCommit(function () use ($upgradeRequest): void {
-                $requestSnapshot = $upgradeRequest->fresh('shopOwner');
-                $recipients = SuperAdmin::query()->active()->get();
-
-                try {
-                    if ($requestSnapshot) {
-                        $businessName = (string) ($requestSnapshot->shopOwner?->business_name ?? 'Shop owner');
-
-                        AdminNotification::notifyAllSuperAdmins(
-                            NotificationType::BUSINESS_UPGRADE_REQUEST_PENDING,
-                            'Business upgrade request',
-                            "{$businessName} submitted a business upgrade request for review.",
-                            '/admin/business-upgrade-requests?status=pending',
-                            [
-                                'upgrade_request_id' => $upgradeRequest->id,
-                                'shop_owner_id' => $upgradeRequest->shop_owner_id,
+                $businessName = (string) ($lockedOwner->business_name ?? 'Shop owner');
+                SuperAdmin::query()
+                    ->active()
+                    ->get()
+                    ->filter(fn (SuperAdmin $recipient): bool => $recipient->hasCompletedMfaSetup()
+                        && $recipient->hasCapability(SuperAdmin::CAP_REVIEW_REGISTRATIONS)
+                        && trim((string) $recipient->email) !== '')
+                    ->each(function (SuperAdmin $recipient) use ($upgradeRequest, $lockedOwner, $businessName, $request): void {
+                        AdminNotification::create([
+                            'super_admin_id' => (int) $recipient->getKey(),
+                            'type' => NotificationType::BUSINESS_UPGRADE_REQUEST_PENDING->value,
+                            'title' => 'Business upgrade request',
+                            'message' => "{$businessName} submitted a business upgrade request for review.",
+                            'action_url' => '/admin/business-upgrade-requests?status=pending',
+                            'data' => [
+                                'upgrade_request_id' => (int) $upgradeRequest->getKey(),
+                                'shop_owner_id' => (int) $lockedOwner->getKey(),
                                 'requested_registration_type' => $upgradeRequest->requested_registration_type,
                                 'requested_business_type' => $upgradeRequest->requested_business_type,
                             ],
-                        );
-                    }
-                } catch (Throwable $exception) {
-                    report($exception);
-                }
+                            'is_read' => false,
+                            'requires_action' => true,
+                            'priority' => 'high',
+                        ]);
 
-                try {
-                    if ($recipients->isNotEmpty() && $requestSnapshot) {
-                        Notification::send($recipients, new ShopOwnerUpgradeRequested($requestSnapshot));
-                    }
-                } catch (Throwable $exception) {
-                    report($exception);
-                }
+                        $this->privilegedMailDispatcher->dispatch(
+                            type: PrivilegedDeliveryType::SHOP_OWNER_UPGRADE_REQUESTED,
+                            businessEventId: 'shop-owner-upgrade-requested:'.$upgradeRequest->getKey(),
+                            recipientType: 'super_admin',
+                            recipientId: (int) $recipient->getKey(),
+                            payload: [
+                                'upgrade_request_id' => (int) $upgradeRequest->getKey(),
+                                'shop_owner_id' => (int) $lockedOwner->getKey(),
+                                'business_name' => $businessName,
+                                'requested_registration_type' => (string) $upgradeRequest->requested_registration_type,
+                                'requested_business_type' => (string) $upgradeRequest->requested_business_type,
+                            ],
+                            correlationId: $request ? $this->audit->correlationId($request) : null,
+                            requiredCapability: SuperAdmin::CAP_REVIEW_REGISTRATIONS,
+                        );
+                    });
+
+                return $upgradeRequest->load('documents');
             });
 
             return $upgradeRequest;

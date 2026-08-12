@@ -41,14 +41,12 @@ final class AccountLifecycleService
                     reason: trim($reason),
                     suspensionId: (int) $result['suspension']->getKey(),
                 );
+
+                $this->appeals->queueSuspensionNotice($result['appeal'], $request);
             }
 
             return $result + ['account' => $account->fresh()];
         });
-
-        if ($result['changed'] && $result['appeal']) {
-            $this->appeals->sendSuspensionNotice($result['appeal']);
-        }
 
         return $result;
     }

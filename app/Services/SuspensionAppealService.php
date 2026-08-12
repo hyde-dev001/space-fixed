@@ -2,23 +2,26 @@
 
 namespace App\Services;
 
-use App\Mail\SuspensionAppealDecisionMail;
-use App\Mail\SuspensionAppealSubmittedMail;
-use App\Mail\SuspensionNoticeMail;
+use App\Enums\PrivilegedDeliveryType;
 use App\Models\AccountSuspension;
 use App\Models\ShopOwner;
 use App\Models\SuperAdmin;
 use App\Models\SuspensionAppeal;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class SuspensionAppealService
 {
+    public function __construct(
+        private readonly PrivilegedMailDispatcher $privilegedMailDispatcher,
+        private readonly PrivilegedAudit $audit,
+    ) {
+    }
+
     public function createForSuspension(
         User|ShopOwner $account,
         AccountSuspension $suspension,
@@ -133,15 +136,13 @@ class SuspensionAppealService
                 'submitted_at' => now(),
             ])->save();
 
+            $this->queueSubmissionNotifications($appeal);
+
             return ['changed' => true, 'appeal' => $appeal->fresh()];
         });
 
         if (($result['expired'] ?? false) === true) {
             throw new HttpException(410, 'This appeal link has already expired.');
-        }
-
-        if ($result['changed']) {
-            $this->sendSubmissionNotificationToSuperAdmins($result['appeal']);
         }
 
         return $result;
@@ -292,6 +293,8 @@ class SuspensionAppealService
                 suspensionId: (int) $suspension->getKey(),
             );
 
+            $this->queueDecisionEmail($appeal, $account, $request);
+
             return [
                 'changed' => true,
                 'account' => $account->fresh(),
@@ -299,10 +302,6 @@ class SuspensionAppealService
                 'suspension_id' => (int) ($reactivation['suspension']?->getKey() ?? $suspension->getKey()),
             ];
         });
-
-        if ($result['changed']) {
-            $this->sendDecisionEmail($result['appeal']);
-        }
 
         return $result;
     }
@@ -484,7 +483,7 @@ class SuspensionAppealService
         );
     }
 
-    public function sendSuspensionNotice(SuspensionAppeal $appeal): void
+    public function queueSuspensionNotice(SuspensionAppeal $appeal, ?Request $request = null): void
     {
         if ((string) $appeal->status !== 'eligible') {
             return;
@@ -496,35 +495,37 @@ class SuspensionAppealService
         }
 
         $expiresAt = $appeal->expires_at ?? now()->addHours((int) config('reporting.suspension_appeal_link_hours', 168));
-        $appealUrl = URL::temporarySignedRoute(
-            'appeals.show',
-            $expiresAt,
-            ['token' => $appeal->appeal_token]
+        $isShopOwner = (string) $appeal->account_type === AccountSuspension::ACCOUNT_TYPE_SHOP_OWNER;
+
+        $this->privilegedMailDispatcher->dispatch(
+            type: $isShopOwner
+                ? PrivilegedDeliveryType::SHOP_SUSPENSION_NOTICE
+                : PrivilegedDeliveryType::CUSTOMER_SUSPENSION_NOTICE,
+            businessEventId: $appeal->suspension_id !== null
+                ? 'account-suspension:'.$appeal->suspension_id.':notice'
+                : 'suspension-appeal:'.$appeal->getKey().':notice',
+            recipientType: $isShopOwner ? 'shop_owner' : 'user',
+            recipientId: (int) $appeal->account_id,
+            payload: [
+                'recipient_email' => $recipientEmail,
+                'account_name' => (string) ($appeal->account_name ?: 'User'),
+                'account_type_label' => $isShopOwner ? 'shop owner' : 'customer',
+                'reason' => $appeal->suspension_reason,
+                'appeal_url' => URL::temporarySignedRoute(
+                    'appeals.show',
+                    $expiresAt,
+                    ['token' => $appeal->appeal_token],
+                ),
+                'expires_at_label' => $expiresAt->format('M d, Y h:i A'),
+            ],
+            correlationId: $request ? $this->audit->correlationId($request) : null,
         );
-        $accountTypeLabel = $appeal->account_type === AccountSuspension::ACCOUNT_TYPE_SHOP_OWNER
-            ? 'shop owner'
-            : 'customer';
+    }
 
-        try {
-            Mail::to($recipientEmail)->send(new SuspensionNoticeMail(
-                accountName: (string) ($appeal->account_name !== '' ? $appeal->account_name : 'User'),
-                accountTypeLabel: $accountTypeLabel,
-                reason: $appeal->suspension_reason,
-                appealUrl: $appealUrl,
-                expiresAtLabel: $expiresAt->format('M d, Y h:i A')
-            ));
-
-            Log::info('Suspension notice email sent', [
-                'appeal_id' => $appeal->id,
-                'email' => $recipientEmail,
-            ]);
-        } catch (\Throwable $e) {
-            Log::error('Failed to send suspension notice email', [
-                'appeal_id' => $appeal->id,
-                'email' => $recipientEmail,
-                'error' => $e->getMessage(),
-            ]);
-        }
+    /** @deprecated Use queueSuspensionNotice() inside the owning transaction. */
+    public function sendSuspensionNotice(SuspensionAppeal $appeal): void
+    {
+        $this->queueSuspensionNotice($appeal);
     }
 
     public function createAndSendForShopOwner(ShopOwner $shopOwner, ?string $reason, ?int $suspendedBySuperAdminId): ?SuspensionAppeal
@@ -569,80 +570,15 @@ class SuspensionAppealService
 
     public function sendDecisionEmail(SuspensionAppeal $appeal): void
     {
-        $decision = (string) $appeal->status;
-        if (!in_array($decision, ['approved', 'rejected'], true)) {
-            return;
-        }
-
-        $email = trim((string) $appeal->recipient_email);
-        if ($email === '') {
-            return;
-        }
-
-        $typeLabel = $appeal->account_type === 'shop_owner' ? 'shop owner' : 'customer';
-
-        try {
-            Mail::to($email)->send(new SuspensionAppealDecisionMail(
-                accountName: (string) ($appeal->account_name ?: 'User'),
-                accountTypeLabel: $typeLabel,
-                decision: $decision,
-                reviewerNotes: $appeal->reviewer_notes
-            ));
-        } catch (\Throwable $e) {
-            Log::error('Failed to send suspension appeal decision email', [
-                'appeal_id' => $appeal->id,
-                'email' => $email,
-                'error' => $e->getMessage(),
-            ]);
+        $account = $this->findAccountForAppeal($appeal);
+        if ($account) {
+            $this->queueDecisionEmail($appeal, $account);
         }
     }
 
     public function sendSubmissionNotificationToSuperAdmins(SuspensionAppeal $appeal): void
     {
-        if ((string) $appeal->status !== 'submitted') {
-            return;
-        }
-
-        $appealMessage = trim((string) ($appeal->appeal_message ?? ''));
-        if ($appealMessage === '') {
-            return;
-        }
-
-        $recipientEmails = SuperAdmin::query()
-            ->whereNotNull('email')
-            ->pluck('email')
-            ->map(fn ($email) => trim((string) $email))
-            ->filter(fn ($email) => $email !== '')
-            ->unique()
-            ->values();
-
-        if ($recipientEmails->isEmpty()) {
-            return;
-        }
-
-        $typeLabel = $appeal->account_type === 'shop_owner' ? 'shop owner' : 'customer';
-        $reviewUrl = route('admin.suspension-appeals');
-        $submittedAtLabel = ($appeal->submitted_at ?? now())->format('M d, Y h:i A');
-
-        foreach ($recipientEmails as $email) {
-            try {
-                Mail::to($email)->send(new SuspensionAppealSubmittedMail(
-                    accountName: (string) ($appeal->account_name ?: 'User'),
-                    accountTypeLabel: $typeLabel,
-                    recipientEmail: (string) ($appeal->recipient_email ?? ''),
-                    suspensionReason: $appeal->suspension_reason,
-                    appealMessage: $appealMessage,
-                    submittedAtLabel: $submittedAtLabel,
-                    reviewUrl: $reviewUrl
-                ));
-            } catch (\Throwable $e) {
-                Log::error('Failed to send suspension appeal submitted email', [
-                    'appeal_id' => $appeal->id,
-                    'email' => $email,
-                    'error' => $e->getMessage(),
-                ]);
-            }
-        }
+        $this->queueSubmissionNotifications($appeal);
     }
 
     private function createAndSend(
@@ -677,8 +613,74 @@ class SuspensionAppealService
             'expires_at' => $expiresAt,
         ]);
 
-        $this->sendSuspensionNotice($appeal);
+        $this->queueSuspensionNotice($appeal);
 
         return $appeal;
+    }
+
+    private function queueDecisionEmail(
+        SuspensionAppeal $appeal,
+        User|ShopOwner $account,
+        ?Request $request = null,
+    ): void {
+        $decision = (string) $appeal->status;
+        $recipientEmail = trim((string) $appeal->recipient_email);
+        if (! in_array($decision, ['approved', 'rejected'], true) || $recipientEmail === '') {
+            return;
+        }
+
+        $isShopOwner = $account instanceof ShopOwner;
+        $this->privilegedMailDispatcher->dispatch(
+            type: PrivilegedDeliveryType::SUSPENSION_APPEAL_DECIDED,
+            businessEventId: 'suspension-appeal-decided:'.$appeal->getKey(),
+            recipientType: $isShopOwner ? 'shop_owner' : 'user',
+            recipientId: (int) $account->getKey(),
+            payload: [
+                'recipient_email' => $recipientEmail,
+                'account_name' => (string) ($appeal->account_name ?: 'User'),
+                'account_type_label' => $isShopOwner ? 'shop owner' : 'customer',
+                'decision' => $decision,
+                'reviewer_notes' => $appeal->reviewer_notes,
+            ],
+            correlationId: $request ? $this->audit->correlationId($request) : null,
+        );
+    }
+
+    private function queueSubmissionNotifications(SuspensionAppeal $appeal): void
+    {
+        if ((string) $appeal->status !== 'submitted' || trim((string) $appeal->appeal_message) === '') {
+            return;
+        }
+
+        $typeLabel = (string) $appeal->account_type === AccountSuspension::ACCOUNT_TYPE_SHOP_OWNER
+            ? 'shop owner'
+            : 'customer';
+        $reviewUrl = route('admin.suspension-appeals');
+        $submittedAtLabel = ($appeal->submitted_at ?? now())->format('M d, Y h:i A');
+
+        SuperAdmin::query()
+            ->active()
+            ->get()
+            ->filter(fn (SuperAdmin $recipient): bool => $recipient->hasCompletedMfaSetup()
+                && $recipient->hasCapability(SuperAdmin::CAP_VIEW_APPEALS)
+                && trim((string) $recipient->email) !== '')
+            ->each(function (SuperAdmin $recipient) use ($appeal, $typeLabel, $reviewUrl, $submittedAtLabel): void {
+                $this->privilegedMailDispatcher->dispatch(
+                    type: PrivilegedDeliveryType::SUSPENSION_APPEAL_SUBMITTED,
+                    businessEventId: 'suspension-appeal-submitted:'.$appeal->getKey(),
+                    recipientType: 'super_admin',
+                    recipientId: (int) $recipient->getKey(),
+                    payload: [
+                        'recipient_email' => (string) $recipient->email,
+                        'account_name' => (string) ($appeal->account_name ?: 'User'),
+                        'account_type_label' => $typeLabel,
+                        'account_recipient_email' => (string) ($appeal->recipient_email ?? ''),
+                        'suspension_reason' => $appeal->suspension_reason,
+                        'appeal_message' => (string) $appeal->appeal_message,
+                        'submitted_at_label' => $submittedAtLabel,
+                        'review_url' => $reviewUrl,
+                    ],
+                );
+            });
     }
 }

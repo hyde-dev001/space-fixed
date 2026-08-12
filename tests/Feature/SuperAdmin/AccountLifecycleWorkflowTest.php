@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Feature\SuperAdmin;
 
+use App\Enums\PrivilegedDeliveryType;
+use App\Jobs\SendPrivilegedWorkflowMail;
 use App\Models\AccountSuspension;
 use App\Models\Employee;
 use App\Models\ShopOwner;
@@ -11,7 +13,8 @@ use App\Models\SuspensionAppeal;
 use App\Models\User;
 use App\Services\PrivilegedAudit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Route;
 use Mockery;
 use Spatie\Activitylog\Models\Activity;
@@ -27,7 +30,7 @@ final class AccountLifecycleWorkflowTest extends TestCase
 
     public function test_user_suspension_has_one_stable_suspension_appeal_and_audit_across_retries(): void
     {
-        Mail::fake();
+        Queue::fake();
         $admin = $this->phaseTwoSuperAdmin();
         $user = $this->activePhaseTwoUser();
         $this->actingAsCompletedPrivileged($admin);
@@ -35,6 +38,7 @@ final class AccountLifecycleWorkflowTest extends TestCase
         $first = $this->postJson("/admin/users/{$user->id}/suspend", [
             'suspension_reason' => 'First verified reason',
         ]);
+        DB::commit();
         $second = $this->postJson("/admin/users/{$user->id}/suspend", [
             'suspension_reason' => 'First verified reason',
         ]);
@@ -54,12 +58,16 @@ final class AccountLifecycleWorkflowTest extends TestCase
             'status' => 'eligible',
         ]);
         $this->assertSame(1, Activity::query()->where('event', 'user_suspended')->count());
-        Mail::assertSentCount(1);
+        Queue::assertPushed(SendPrivilegedWorkflowMail::class, function (SendPrivilegedWorkflowMail $job) use ($user): bool {
+            return $job->deliveryType === PrivilegedDeliveryType::CUSTOMER_SUSPENSION_NOTICE
+                && $job->recipientType === 'user'
+                && $job->recipientId === $user->id
+                && $job->businessEventId === 'account-suspension:'.$user->current_suspension_id.':notice';
+        });
     }
 
     public function test_conflicting_user_suspension_returns_conflict_without_new_state(): void
     {
-        Mail::fake();
         $admin = $this->phaseTwoSuperAdmin();
         $user = $this->activePhaseTwoUser();
         $this->actingAsCompletedPrivileged($admin);
@@ -80,7 +88,6 @@ final class AccountLifecycleWorkflowTest extends TestCase
 
     public function test_shop_suspension_requires_approved_source_and_reactivation_does_not_approve_pending_or_rejected_shops(): void
     {
-        Mail::fake();
         $admin = $this->phaseTwoSuperAdmin();
         $approved = $this->approvedPhaseTwoShop();
         $pending = ShopOwner::factory()->pending()->create();
@@ -110,7 +117,6 @@ final class AccountLifecycleWorkflowTest extends TestCase
 
     public function test_linked_active_employee_is_suspended_with_exact_provenance_and_restored_on_reactivation(): void
     {
-        Mail::fake();
         $admin = $this->phaseTwoSuperAdmin();
         $shop = $this->approvedPhaseTwoShop();
         $user = $this->activePhaseTwoUser([
@@ -147,7 +153,6 @@ final class AccountLifecycleWorkflowTest extends TestCase
 
     public function test_ambiguous_linked_employees_roll_back_the_entire_user_suspension(): void
     {
-        Mail::fake();
         $admin = $this->phaseTwoSuperAdmin();
         $shop = $this->approvedPhaseTwoShop();
         $user = $this->activePhaseTwoUser([
@@ -170,7 +175,6 @@ final class AccountLifecycleWorkflowTest extends TestCase
 
     public function test_missing_or_superseded_employee_provenance_blocks_reactivation(): void
     {
-        Mail::fake();
         $admin = $this->phaseTwoSuperAdmin();
         $shop = $this->approvedPhaseTwoShop();
         $user = $this->activePhaseTwoUser([
@@ -197,7 +201,6 @@ final class AccountLifecycleWorkflowTest extends TestCase
 
     public function test_inactive_or_terminated_linked_employees_are_not_rewritten_or_claimed(): void
     {
-        Mail::fake();
         $admin = $this->phaseTwoSuperAdmin();
         $shop = $this->approvedPhaseTwoShop();
         $user = $this->activePhaseTwoUser([
@@ -218,7 +221,6 @@ final class AccountLifecycleWorkflowTest extends TestCase
 
     public function test_already_suspended_unattributed_employee_blocks_user_suspension(): void
     {
-        Mail::fake();
         $admin = $this->phaseTwoSuperAdmin();
         $shop = $this->approvedPhaseTwoShop();
         $user = $this->activePhaseTwoUser([
@@ -239,7 +241,6 @@ final class AccountLifecycleWorkflowTest extends TestCase
 
     public function test_mandatory_audit_failure_rolls_back_the_account_suspension(): void
     {
-        Mail::fake();
         $admin = $this->phaseTwoSuperAdmin();
         $user = $this->activePhaseTwoUser();
         $audit = Mockery::mock(PrivilegedAudit::class);
@@ -376,7 +377,6 @@ final class AccountLifecycleWorkflowTest extends TestCase
 
     public function test_archived_suspended_user_restores_as_suspended(): void
     {
-        Mail::fake();
         $admin = $this->phaseTwoSuperAdmin();
         $user = $this->activePhaseTwoUser();
         $this->actingAsCompletedPrivileged($admin);
@@ -398,7 +398,6 @@ final class AccountLifecycleWorkflowTest extends TestCase
 
     public function test_mismatched_employee_provenance_blocks_reactivation(): void
     {
-        Mail::fake();
         $admin = $this->phaseTwoSuperAdmin();
         $shop = $this->approvedPhaseTwoShop();
         $user = $this->activePhaseTwoUser([

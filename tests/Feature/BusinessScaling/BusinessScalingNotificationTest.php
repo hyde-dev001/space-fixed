@@ -4,15 +4,18 @@ declare(strict_types=1);
 
 namespace Tests\Feature\BusinessScaling;
 
+use App\Enums\PrivilegedDeliveryType;
 use App\Enums\NotificationType;
+use App\Jobs\SendPrivilegedWorkflowMail;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerUpgradeRequest;
 use App\Models\SuperAdmin;
-use App\Notifications\ShopOwnerUpgradeRequested;
 use App\Notifications\ShopOwnerUpgradeReviewed;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Tests\Concerns\AuthenticatesPrivilegedUsers;
 use Tests\TestCase;
@@ -29,6 +32,7 @@ final class BusinessScalingNotificationTest extends TestCase
         Storage::fake('local');
         Storage::fake('public');
         Notification::fake();
+        Queue::fake();
     }
 
     public function test_submission_notifies_only_active_super_admins_after_commit(): void
@@ -53,8 +57,15 @@ final class BusinessScalingNotificationTest extends TestCase
             ], ['Accept' => 'application/json'])
             ->assertCreated();
 
-        Notification::assertSentTo($active, ShopOwnerUpgradeRequested::class);
-        Notification::assertNotSentTo($inactive, ShopOwnerUpgradeRequested::class);
+        DB::commit();
+        Queue::assertPushed(SendPrivilegedWorkflowMail::class, function (SendPrivilegedWorkflowMail $job) use ($active): bool {
+            return $job->deliveryType === PrivilegedDeliveryType::SHOP_OWNER_UPGRADE_REQUESTED
+                && $job->recipientType === 'super_admin'
+                && $job->recipientId === $active->id;
+        });
+        Queue::assertNotPushed(SendPrivilegedWorkflowMail::class, function (SendPrivilegedWorkflowMail $job) use ($inactive): bool {
+            return $job->recipientId === $inactive->id;
+        });
         $this->assertDatabaseHas('notifications', [
             'super_admin_id' => $active->id,
             'type' => NotificationType::BUSINESS_UPGRADE_REQUEST_PENDING->value,
@@ -95,6 +106,7 @@ final class BusinessScalingNotificationTest extends TestCase
                 ],
             ], ['Accept' => 'application/json'])
             ->assertCreated();
+        DB::commit();
 
         $request = ShopOwnerUpgradeRequest::query()->latest('id')->firstOrFail();
         $paths = $request->documents()->pluck('path')->all();

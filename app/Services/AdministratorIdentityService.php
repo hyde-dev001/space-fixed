@@ -4,14 +4,13 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-use App\Mail\PrivilegedSetupLinkMail;
+use App\Enums\PrivilegedDeliveryType;
 use App\Models\PrivilegedSecurityToken;
 use App\Models\SuperAdmin;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use RuntimeException;
@@ -22,6 +21,7 @@ final class AdministratorIdentityService
         private readonly PrivilegedSecurityTokenService $tokens,
         private readonly PrivilegedSessionService $sessions,
         private readonly PrivilegedAudit $audit,
+        private readonly PrivilegedMailDispatcher $privilegedMailDispatcher,
     ) {
     }
 
@@ -110,7 +110,20 @@ final class AdministratorIdentityService
                 $issued = $this->tokens->issue($target, PrivilegedSecurityToken::PURPOSE_SETUP, $lockedActor);
                 $this->audit->privilegedAdministratorReturnedToSetup($request, $lockedActor, $target);
 
-                return ['admin' => $target, 'setup_token' => $issued['raw_token']];
+                $this->privilegedMailDispatcher->dispatch(
+                    type: PrivilegedDeliveryType::PRIVILEGED_ADMIN_SETUP,
+                    businessEventId: 'privileged-admin-setup:'.$target->getKey().':'.$issued['token']->getKey(),
+                    recipientType: 'super_admin',
+                    recipientId: (int) $target->getKey(),
+                    payload: [
+                        'recipient_name' => trim($target->first_name.' '.$target->last_name),
+                        'email' => (string) $target->email,
+                        'raw_token' => $issued['raw_token'],
+                    ],
+                    correlationId: $this->audit->correlationId($request),
+                );
+
+                return ['admin' => $target, 'setup_token' => null];
             },
         );
 
@@ -240,18 +253,6 @@ final class AdministratorIdentityService
     {
         $admin = $result['admin'];
         $this->sessions->invalidateAllAfterCommit($admin);
-
-        if (is_string($result['setup_token'])) {
-            try {
-                Mail::to((string) $admin->email)->queue(new PrivilegedSetupLinkMail(
-                    trim($admin->first_name.' '.$admin->last_name),
-                    (string) $admin->email,
-                    $result['setup_token'],
-                ));
-            } catch (\Throwable) {
-                // The pending account remains resumable if delivery handoff fails.
-            }
-        }
 
         return $admin;
     }

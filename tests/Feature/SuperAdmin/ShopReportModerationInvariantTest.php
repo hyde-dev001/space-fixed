@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Feature\SuperAdmin;
 
-use App\Mail\ShopReportWarningMail;
-use App\Mail\SuspensionNoticeMail;
+use App\Enums\PrivilegedDeliveryType;
+use App\Jobs\SendPrivilegedWorkflowMail;
 use App\Models\AccountSuspension;
 use App\Models\Employee;
 use App\Models\ShopOwner;
@@ -14,7 +14,8 @@ use App\Models\ShopReportModerationAction;
 use App\Services\PrivilegedAudit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use Mockery;
 use Tests\Concerns\AuthenticatesPrivilegedUsers;
 use Tests\Concerns\BuildsPhaseTwoWorkflowFixtures;
@@ -28,7 +29,6 @@ final class ShopReportModerationInvariantTest extends TestCase
 
     public function test_decision_uses_the_exact_submitted_report_set(): void
     {
-        Mail::fake();
         $admin = $this->phaseTwoSuperAdmin();
         $shop = $this->approvedPhaseTwoShop();
         $reports = $this->openPhaseTwoShopReports($shop, 3);
@@ -50,12 +50,11 @@ final class ShopReportModerationInvariantTest extends TestCase
         $this->assertSame([$reports[0]->id, $reports[1]->id], $action->report_ids);
         $this->assertNotSame('', (string) $action->decision_key);
         $this->assertNull($action->warning_strike_number);
-        Mail::assertNothingSent();
     }
 
     public function test_same_set_same_outcome_is_idempotent_and_conflicting_outcome_is_rejected(): void
     {
-        Mail::fake();
+        Queue::fake();
         $admin = $this->phaseTwoSuperAdmin();
         $shop = $this->approvedPhaseTwoShop();
         $reports = $this->openPhaseTwoShopReports($shop, 2);
@@ -66,6 +65,7 @@ final class ShopReportModerationInvariantTest extends TestCase
             'report_ids' => [$reports[1]->id, $reports[0]->id],
             'admin_notes' => 'First warning decision.',
         ]);
+        DB::commit();
         $second = $this->postJson("/admin/shop-reports/{$shop->id}/action", [
             'action' => 'warn',
             'report_ids' => [$reports[0]->id, $reports[1]->id],
@@ -79,7 +79,7 @@ final class ShopReportModerationInvariantTest extends TestCase
             $second->json('action.id'),
         );
         $this->assertDatabaseCount('shop_report_moderation_actions', 1);
-        Mail::assertSentCount(1);
+        Queue::assertPushed(SendPrivilegedWorkflowMail::class, 1);
 
         $this->postJson("/admin/shop-reports/{$shop->id}/action", [
             'action' => 'dismiss',
@@ -94,7 +94,7 @@ final class ShopReportModerationInvariantTest extends TestCase
 
     public function test_warning_strikes_are_runtime_actions_and_the_third_warning_suspends_once(): void
     {
-        Mail::fake();
+        Queue::fake();
         $admin = $this->phaseTwoSuperAdmin();
         $shop = $this->approvedPhaseTwoShop();
         $this->actingAsCompletedPrivileged($admin);
@@ -107,6 +107,7 @@ final class ShopReportModerationInvariantTest extends TestCase
                 'report_ids' => [$report->id],
                 'admin_notes' => "Warning {$strike}",
             ])->assertOk();
+            DB::commit();
         }
 
         $actions = ShopReportModerationAction::query()->orderBy('warning_strike_number')->get();
@@ -115,8 +116,13 @@ final class ShopReportModerationInvariantTest extends TestCase
         $this->assertSame('suspended', $shop->fresh()->getRawOriginal('status'));
         $this->assertNotNull($shop->fresh()->current_suspension_id);
         $this->assertSame(1, AccountSuspension::query()->count());
-        Mail::assertSent(ShopReportWarningMail::class, 2);
-        Mail::assertSent(SuspensionNoticeMail::class);
+        Queue::assertPushed(SendPrivilegedWorkflowMail::class, 3);
+        $this->assertCount(2, Queue::pushed(SendPrivilegedWorkflowMail::class, function (SendPrivilegedWorkflowMail $job): bool {
+            return $job->deliveryType === PrivilegedDeliveryType::SHOP_REPORT_WARNING;
+        }));
+        Queue::assertPushed(SendPrivilegedWorkflowMail::class, function (SendPrivilegedWorkflowMail $job): bool {
+            return $job->deliveryType === PrivilegedDeliveryType::SHOP_SUSPENSION_NOTICE;
+        });
     }
 
     public function test_invalid_report_sets_and_client_decision_key_do_not_mutate(): void
@@ -189,7 +195,6 @@ final class ShopReportModerationInvariantTest extends TestCase
 
     public function test_audit_failure_rolls_back_reports_action_and_notifications(): void
     {
-        Mail::fake();
         $admin = $this->phaseTwoSuperAdmin();
         $shop = $this->approvedPhaseTwoShop();
         $report = $this->openPhaseTwoShopReports($shop, 1)->sole();
@@ -207,7 +212,6 @@ final class ShopReportModerationInvariantTest extends TestCase
         $this->assertSame('submitted', $report->fresh()->status);
         $this->assertSame('approved', $shop->fresh()->getRawOriginal('status'));
         $this->assertDatabaseCount('shop_report_moderation_actions', 0);
-        Mail::assertNothingSent();
     }
 
     public function test_suspension_failure_rolls_back_reports_and_decision(): void

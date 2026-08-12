@@ -75,20 +75,15 @@ class ShopOwnerRegistrationViewController extends Controller
             return response()->json([
                 'success' => true,
                 'applied' => $outcome['applied'],
-                'notification_failed' => $outcome['notification_failed'],
                 'message' => $outcome['applied']
-                    ? ($outcome['notification_failed']
-                        ? 'Shop owner registration approved, but the password setup notification could not be queued.'
-                        : 'Shop owner registration approved successfully. Password setup notification queued.')
+                    ? 'Shop owner registration approved.'
                     : 'Shop owner registration was already approved.',
             ]);
         }
 
         // For Inertia form submissions, redirect back with flash message.
         return redirect()->back()->with('success', $outcome['applied']
-            ? ($outcome['notification_failed']
-                ? 'Shop owner registration approved, but the password setup notification could not be queued.'
-                : 'Shop owner registration approved successfully. Password setup notification queued.')
+            ? 'Shop owner registration approved.'
             : 'Shop owner registration was already approved.');
     }
 
@@ -113,20 +108,15 @@ class ShopOwnerRegistrationViewController extends Controller
             return response()->json([
                 'success' => true,
                 'applied' => $outcome['applied'],
-                'notification_failed' => $outcome['notification_failed'],
                 'message' => $outcome['applied']
-                    ? ($outcome['notification_failed']
-                        ? 'Shop owner registration rejected, but the rejection notification could not be queued.'
-                        : 'Shop owner registration rejected successfully. Rejection notification queued.')
+                    ? 'Shop owner registration rejected.'
                     : 'Shop owner registration was already rejected with the same reason.',
             ]);
         }
 
         // For Inertia form submissions, redirect back with flash message.
         return redirect()->back()->with('success', $outcome['applied']
-            ? ($outcome['notification_failed']
-                ? 'Shop owner registration rejected, but the rejection notification could not be queued.'
-                : 'Shop owner registration rejected successfully. Rejection notification queued.')
+            ? 'Shop owner registration rejected.'
             : 'Shop owner registration was already rejected with the same reason.');
     }
 

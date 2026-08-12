@@ -4,13 +4,11 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enums\PrivilegedDeliveryType;
 use App\Models\ShopOwner;
 use App\Models\SuperAdmin;
-use App\Notifications\ShopOwnerApproved;
-use App\Notifications\ShopOwnerRejected;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
@@ -21,10 +19,11 @@ final class ShopOwnerRegistrationDecisionService
         private readonly ShopOwnerDocumentRequirementService $documentRequirements,
         private readonly ShopModuleProvisioningService $shopModuleProvisioning,
         private readonly PrivilegedAudit $privilegedAudit,
+        private readonly PrivilegedMailDispatcher $privilegedMailDispatcher,
     ) {}
 
     /**
-     * @return array{applied: bool, shop_owner: ShopOwner, notification_failed: bool}
+     * @return array{applied: bool, shop_owner: ShopOwner}
      */
     public function approve(Request $request, SuperAdmin $actor, int $shopOwnerId): array
     {
@@ -96,6 +95,17 @@ final class ShopOwnerRegistrationDecisionService
                 $eligibleModuleKeys,
             );
 
+            $this->privilegedMailDispatcher->dispatch(
+                type: PrivilegedDeliveryType::SHOP_REGISTRATION_APPROVED,
+                businessEventId: 'shop-registration-approved:'.$shopOwner->getKey(),
+                recipientType: 'shop_owner',
+                recipientId: (int) $shopOwner->getKey(),
+                payload: [
+                    'setup_token' => $setupToken,
+                ],
+                correlationId: $this->privilegedAudit->correlationId($request),
+            );
+
             return [
                 'applied' => true,
                 'shop_owner' => $shopOwner->fresh(),
@@ -103,22 +113,13 @@ final class ShopOwnerRegistrationDecisionService
             ];
         });
 
-        if ($outcome['applied']) {
-            $outcome['notification_failed'] = $this->notifyAfterCommit(
-                $outcome['shop_owner'],
-                new ShopOwnerApproved($outcome['shop_owner'], (string) $outcome['setup_token']),
-            );
-        } else {
-            $outcome['notification_failed'] = false;
-        }
-
         unset($outcome['setup_token']);
 
         return $outcome;
     }
 
     /**
-     * @return array{applied: bool, shop_owner: ShopOwner, notification_failed: bool}
+     * @return array{applied: bool, shop_owner: ShopOwner}
      */
     public function reject(Request $request, SuperAdmin $actor, int $shopOwnerId, string $reason): array
     {
@@ -173,18 +174,22 @@ final class ShopOwnerRegistrationDecisionService
                 array_map(static fn ($document): int => (int) $document->getKey(), $documentState['latest']),
             );
 
+            $this->privilegedMailDispatcher->dispatch(
+                type: PrivilegedDeliveryType::SHOP_REGISTRATION_REJECTED,
+                businessEventId: 'shop-registration-rejected:'.$shopOwner->getKey(),
+                recipientType: 'shop_owner',
+                recipientId: (int) $shopOwner->getKey(),
+                payload: [
+                    'rejection_reason' => $reason,
+                ],
+                correlationId: $this->privilegedAudit->correlationId($request),
+            );
+
             return [
                 'applied' => true,
                 'shop_owner' => $shopOwner->fresh(),
             ];
         });
-
-        $outcome['notification_failed'] = $outcome['applied']
-            ? $this->notifyAfterCommit(
-                $outcome['shop_owner'],
-                new ShopOwnerRejected($outcome['shop_owner'], $reason),
-            )
-            : false;
 
         return $outcome;
     }
@@ -196,20 +201,4 @@ final class ShopOwnerRegistrationDecisionService
         return $status instanceof \BackedEnum ? (string) $status->value : (string) $status;
     }
 
-    private function notifyAfterCommit(ShopOwner $shopOwner, object $notification): bool
-    {
-        try {
-            $shopOwner->notify($notification);
-
-            return false;
-        } catch (\Throwable $exception) {
-            report($exception);
-            Log::error('Shop owner registration notification delivery failed after commit.', [
-                'shop_owner_id' => (int) $shopOwner->getKey(),
-                'notification' => $notification::class,
-            ]);
-
-            return true;
-        }
-    }
 }

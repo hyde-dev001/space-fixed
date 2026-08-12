@@ -4,16 +4,17 @@ declare(strict_types=1);
 
 namespace Tests\Feature\SuperAdmin;
 
+use App\Enums\PrivilegedDeliveryType;
+use App\Jobs\SendPrivilegedWorkflowMail;
 use App\Models\ShopDocument;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerModule;
 use App\Models\SuperAdmin;
-use App\Notifications\ShopOwnerApproved;
-use App\Notifications\ShopOwnerRejected;
 use App\Services\PrivilegedAudit;
 use App\Services\BusinessAccessControlService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Concerns\AuthenticatesPrivilegedUsers;
@@ -30,7 +31,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
 
         Storage::fake('local');
         Storage::fake('public');
-        Notification::fake();
+        Queue::fake();
     }
 
     public function test_pending_registration_approval_commits_documents_token_modules_audit_and_delivery(): void
@@ -44,6 +45,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('success', true)
             ->assertJsonPath('applied', true);
+        DB::commit();
 
         $this->assertDatabaseHas('shop_owners', [
             'id' => $owner->id,
@@ -63,7 +65,11 @@ final class RegistrationDecisionWorkflowTest extends TestCase
             'subject_type' => ShopOwner::class,
             'subject_id' => $owner->id,
         ]);
-        Notification::assertSentTo($owner->fresh(), ShopOwnerApproved::class);
+        $this->assertDeliveryQueued(
+            PrivilegedDeliveryType::SHOP_REGISTRATION_APPROVED,
+            $owner->id,
+            ['setup_token'],
+        );
     }
 
     public function test_rejection_requires_a_reason_and_updates_current_documents_atomically(): void
@@ -77,7 +83,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
             ->assertJsonValidationErrors(['rejection_reason']);
 
         $this->assertDatabaseHas('shop_owners', ['id' => $owner->id, 'status' => 'pending']);
-        Notification::assertNothingSent();
+        Queue::assertNothingPushed();
 
         $this->actingAsCompletedPrivileged($admin)
             ->postJson(route('admin.shop-owner-reject', $owner), [
@@ -85,6 +91,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
             ])
             ->assertOk()
             ->assertJsonPath('applied', true);
+        DB::commit();
 
         $this->assertDatabaseHas('shop_owners', [
             'id' => $owner->id,
@@ -97,7 +104,11 @@ final class RegistrationDecisionWorkflowTest extends TestCase
             'subject_type' => ShopOwner::class,
             'subject_id' => $owner->id,
         ]);
-        Notification::assertSentTo($owner->fresh(), ShopOwnerRejected::class);
+        $this->assertDeliveryQueued(
+            PrivilegedDeliveryType::SHOP_REGISTRATION_REJECTED,
+            $owner->id,
+            ['rejection_reason'],
+        );
     }
 
     public function test_rejection_retries_are_idempotent_only_for_the_same_reason(): void
@@ -110,6 +121,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
             ->postJson(route('admin.shop-owner-reject', $owner), ['rejection_reason' => $reason])
             ->assertOk()
             ->assertJsonPath('applied', true);
+        DB::commit();
 
         $this->actingAsCompletedPrivileged($admin)
             ->postJson(route('admin.shop-owner-reject', $owner->fresh()), ['rejection_reason' => $reason])
@@ -120,7 +132,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
             ->postJson(route('admin.shop-owner-reject', $owner->fresh()), ['rejection_reason' => 'A different reason.'])
             ->assertStatus(409);
 
-        Notification::assertSentToTimes($owner->fresh(), ShopOwnerRejected::class, 1);
+        Queue::assertPushed(SendPrivilegedWorkflowMail::class, 1);
         $this->assertSame(1, $this->activityCount('shop_registration_rejected', $owner));
     }
 
@@ -164,6 +176,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
             ->postJson(route('admin.shop-owner-approve', $owner))
             ->assertOk()
             ->assertJsonPath('applied', true);
+        DB::commit();
 
         $token = (string) $this->assertDatabaseHasAndGetToken($owner);
         $auditCount = $this->activityCount('shop_registration_approved', $owner);
@@ -175,7 +188,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
 
         $this->assertSame($token, (string) $this->assertDatabaseHasAndGetToken($owner));
         $this->assertSame($auditCount, $this->activityCount('shop_registration_approved', $owner));
-        Notification::assertSentToTimes($owner->fresh(), ShopOwnerApproved::class, 1);
+        Queue::assertPushed(SendPrivilegedWorkflowMail::class, 1);
 
         $this->actingAsCompletedPrivileged($admin)
             ->postJson(route('admin.shop-owner-reject', $owner->fresh()), [
@@ -208,7 +221,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
         $this->assertSame(0, ShopDocument::query()->where('shop_owner_id', $owner->id)->where('status', 'approved')->count());
         $this->assertDatabaseMissing('password_reset_tokens', ['email' => $owner->email]);
         $this->assertDatabaseMissing('shop_owner_modules', ['shop_owner_id' => $owner->id]);
-        Notification::assertNothingSent();
+        Queue::assertNothingPushed();
     }
 
     public function test_approval_rolls_back_when_module_provisioning_fails(): void
@@ -229,7 +242,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
         $this->assertDatabaseHas('shop_owners', ['id' => $owner->id, 'status' => 'pending']);
         $this->assertDatabaseMissing('password_reset_tokens', ['email' => $owner->email]);
         $this->assertDatabaseMissing('shop_owner_modules', ['shop_owner_id' => $owner->id]);
-        Notification::assertNothingSent();
+        Queue::assertNothingPushed();
     }
 
     public function test_registration_index_keeps_document_urls_protected(): void
@@ -297,7 +310,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
             ->assertJsonValidationErrors([$type]);
 
         $this->assertDatabaseHas('shop_owners', ['id' => $owner->id, 'status' => 'pending']);
-        Notification::assertNothingSent();
+        Queue::assertNothingPushed();
     }
 
     private function assertDatabaseHasAndGetToken(ShopOwner $owner): string
@@ -318,5 +331,21 @@ final class RegistrationDecisionWorkflowTest extends TestCase
             ->where('subject_type', ShopOwner::class)
             ->where('subject_id', $owner->id)
             ->count();
+    }
+
+    /**
+     * @param array<int, string> $requiredPayloadKeys
+     */
+    private function assertDeliveryQueued(
+        PrivilegedDeliveryType $type,
+        int $recipientId,
+        array $requiredPayloadKeys,
+    ): void {
+        Queue::assertPushed(SendPrivilegedWorkflowMail::class, function (SendPrivilegedWorkflowMail $job) use ($type, $recipientId, $requiredPayloadKeys): bool {
+            return $job->deliveryType === $type
+                && $job->recipientType === 'shop_owner'
+                && $job->recipientId === $recipientId
+                && collect($requiredPayloadKeys)->every(fn (string $key): bool => array_key_exists($key, $job->payload));
+        });
     }
 }

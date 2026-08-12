@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Tests\Feature\SuperAdmin;
 
 use App\Mail\PrivilegedSetupLinkMail;
+use App\Enums\PrivilegedDeliveryType;
+use App\Jobs\SendPrivilegedWorkflowMail;
 use App\Models\PrivilegedSecurityToken;
 use App\Models\SuperAdmin;
 use App\Services\PrivilegedSecurityTokenService;
@@ -14,7 +16,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
 use PragmaRX\Google2FA\Google2FA;
 use Tests\Concerns\AuthenticatesPrivilegedUsers;
@@ -162,8 +164,9 @@ final class PrivilegedBootstrapAndInvitationTest extends TestCase
         self::assertDatabaseMissing('super_admins', ['email' => 'denied@example.test']);
     }
 
-    public function test_invitation_resend_replaces_the_old_token_and_mail_failure_keeps_pending_state(): void
+    public function test_invitation_resend_replaces_the_old_token_and_keeps_pending_state_when_delivery_is_deferred(): void
     {
+        Queue::fake();
         $actor = SuperAdmin::factory()->superAdmin()->create();
         $this->actingAsCompletedPrivileged($actor);
         $this->markRecentlyReauthenticated($actor);
@@ -175,6 +178,7 @@ final class PrivilegedBootstrapAndInvitationTest extends TestCase
             'phone' => '09171234567',
             'role' => SuperAdmin::ROLE_ADMIN,
         ])->assertRedirect();
+        DB::commit();
 
         $invited = SuperAdmin::query()->where('email', 'resend@example.test')->firstOrFail();
         $oldToken = PrivilegedSecurityToken::query()
@@ -184,15 +188,20 @@ final class PrivilegedBootstrapAndInvitationTest extends TestCase
 
         $this->post("/admin/admins/{$invited->id}/setup/resend")
             ->assertRedirect(route('admin.admin-management'));
+        $this->assertSame(2, Queue::pushed(SendPrivilegedWorkflowMail::class)->count());
 
         self::assertNotNull($oldToken->fresh()?->used_at);
         self::assertSame(2, PrivilegedSecurityToken::query()->where('super_admin_id', $invited->id)->count());
 
-        Mail::shouldReceive('to')->once()->andThrow(new \RuntimeException('mail unavailable'));
         $this->post("/admin/admins/{$invited->id}/setup/resend")
-            ->assertRedirect(route('admin.admin-management'))
-            ->assertSessionHasErrors('error');
+            ->assertRedirect(route('admin.admin-management'));
+        $this->assertSame(3, Queue::pushed(SendPrivilegedWorkflowMail::class)->count());
         self::assertSame(SuperAdmin::STATUS_PENDING_SETUP, $invited->fresh()?->status);
+
+        Queue::assertPushed(SendPrivilegedWorkflowMail::class, function (SendPrivilegedWorkflowMail $job): bool {
+            return $job->deliveryType === PrivilegedDeliveryType::PRIVILEGED_ADMIN_SETUP
+                && $job->recipientType === 'super_admin';
+        });
     }
 
     public function test_setup_exchange_is_token_free_in_the_page_and_stores_only_non_secret_authorization(): void

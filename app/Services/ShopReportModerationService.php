@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-use App\Mail\ShopReportWarningMail;
+use App\Enums\PrivilegedDeliveryType;
 use App\Models\AccountSuspension;
 use App\Models\ShopOwner;
 use App\Models\ShopReport;
@@ -13,8 +13,6 @@ use App\Models\SuperAdmin;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 final class ShopReportModerationService
@@ -29,6 +27,7 @@ final class ShopReportModerationService
         private readonly AccountSuspensionService $suspensions,
         private readonly SuspensionAppealService $appeals,
         private readonly PrivilegedAudit $audit,
+        private readonly PrivilegedMailDispatcher $privilegedMailDispatcher,
     ) {
     }
 
@@ -147,6 +146,12 @@ final class ShopReportModerationService
                 warningStrikeNumber: $warningStrike,
             );
 
+            if ($effectiveAction === 'warn') {
+                $this->queueWarningNotice($shop, $reports, $action, $request);
+            } elseif (($suspensionResult['changed'] ?? false) && ($suspensionResult['appeal'] ?? null)) {
+                $this->appeals->queueSuspensionNotice($suspensionResult['appeal'], $request);
+            }
+
             return [
                 'changed' => true,
                 'shop' => $shop->fresh(),
@@ -160,14 +165,6 @@ final class ShopReportModerationService
                 'suspension_changed' => $suspensionResult['changed'] ?? false,
             ];
         });
-
-        if ($result['changed']) {
-            if ($result['effective_action'] === 'warn') {
-                $this->sendWarningNotice($result['shop'], $result['reports'], $result['action']->notes);
-            } elseif (($result['suspension_changed'] ?? false) && $result['appeal']) {
-                $this->appeals->sendSuspensionNotice($result['appeal']);
-            }
-        }
 
         return $result;
     }
@@ -312,7 +309,12 @@ final class ShopReportModerationService
     }
 
     /** @param Collection<int, ShopReport> $reports */
-    private function sendWarningNotice(ShopOwner $shop, Collection $reports, ?string $notes): void
+    private function queueWarningNotice(
+        ShopOwner $shop,
+        Collection $reports,
+        ShopReportModerationAction $action,
+        Request $request,
+    ): void
     {
         $email = trim((string) $shop->email);
         if ($email === '') {
@@ -327,26 +329,20 @@ final class ShopReportModerationService
         $primaryReason = ShopReport::REASON_LABELS[$firstReason]
             ?? ($firstReason !== '' ? $firstReason : 'Policy violation');
 
-        try {
-            Mail::to($email)->send(new ShopReportWarningMail(
-                accountName: $accountName !== '' ? $accountName : 'Shop Owner',
-                reportCount: $reports->count(),
-                primaryReason: $primaryReason,
-                adminNotes: $notes,
-                reviewedAtLabel: now()->format('M d, Y h:i A'),
-            ));
-
-            Log::info('Shop report warning email sent', [
-                'shop_owner_id' => $shop->id,
-                'email' => $email,
+        $this->privilegedMailDispatcher->dispatch(
+            type: PrivilegedDeliveryType::SHOP_REPORT_WARNING,
+            businessEventId: 'shop-report-warning:'.$action->getKey(),
+            recipientType: 'shop_owner',
+            recipientId: (int) $shop->getKey(),
+            payload: [
+                'recipient_email' => $email,
+                'account_name' => $accountName !== '' ? $accountName : 'Shop Owner',
                 'report_count' => $reports->count(),
-            ]);
-        } catch (\Throwable $exception) {
-            Log::error('Failed to send shop report warning email', [
-                'shop_owner_id' => $shop->id,
-                'email' => $email,
-                'error' => $exception->getMessage(),
-            ]);
-        }
+                'primary_reason' => $primaryReason,
+                'admin_notes' => $action->notes,
+                'reviewed_at_label' => now()->format('M d, Y h:i A'),
+            ],
+            correlationId: $this->audit->correlationId($request),
+        );
     }
 }

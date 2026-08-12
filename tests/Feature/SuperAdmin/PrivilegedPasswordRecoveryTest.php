@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Feature\SuperAdmin;
 
+use App\Enums\PrivilegedDeliveryType;
+use App\Jobs\SendPrivilegedWorkflowMail;
 use App\Models\PrivilegedSecurityToken;
 use App\Models\PrivilegedSession;
 use App\Models\SuperAdmin;
@@ -18,6 +20,7 @@ use Illuminate\Session\ArraySessionHandler;
 use Illuminate\Session\Store;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
 use Spatie\Activitylog\Models\Activity;
 use Tests\Concerns\AuthenticatesPrivilegedUsers;
@@ -36,7 +39,7 @@ final class PrivilegedPasswordRecoveryTest extends TestCase
 
     public function test_forgot_password_is_generic_and_only_active_accounts_receive_a_reset_mail(): void
     {
-        $this->useDatabaseQueue();
+        Queue::fake();
         SuperAdmin::factory()->pendingSetup()->create(['email' => 'pending@example.test']);
         SuperAdmin::factory()->suspended()->create(['email' => 'suspended@example.test']);
         SuperAdmin::factory()->inactive()->create(['email' => 'inactive@example.test']);
@@ -55,11 +58,17 @@ final class PrivilegedPasswordRecoveryTest extends TestCase
             $responses[] = $response->json('message');
         }
 
+        DB::commit();
+
         self::assertCount(1, array_unique($responses));
         self::assertSame(1, PrivilegedSecurityToken::query()
             ->where('purpose', PrivilegedSecurityToken::PURPOSE_PASSWORD_RESET)
             ->count());
-        self::assertSame(1, DB::table('jobs')->count());
+        Queue::assertPushed(SendPrivilegedWorkflowMail::class, function (SendPrivilegedWorkflowMail $job): bool {
+            return $job->deliveryType === PrivilegedDeliveryType::PRIVILEGED_PASSWORD_RESET
+                && $job->recipientType === 'super_admin'
+                && $job->recipientId === (int) SuperAdmin::query()->where('email', 'active@example.test')->value('id');
+        });
     }
 
     public function test_reset_mailable_is_encrypted_queued_and_places_the_bearer_only_in_the_fragment(): void

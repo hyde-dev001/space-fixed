@@ -4,18 +4,18 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Enums\PrivilegedDeliveryType;
 use App\Http\Requests\Privileged\ExchangePrivilegedBearerRequest;
 use App\Http\Requests\Privileged\ResetPrivilegedPasswordRequest;
-use App\Mail\PrivilegedPasswordResetMail;
 use App\Models\PrivilegedSecurityToken;
 use App\Models\SuperAdmin;
 use App\Services\PrivilegedAudit;
+use App\Services\PrivilegedMailDispatcher;
 use App\Services\PrivilegedSecurityTokenService;
 use App\Services\PrivilegedSessionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
@@ -30,6 +30,7 @@ final class PrivilegedPasswordResetController extends Controller
         private readonly PrivilegedSecurityTokenService $tokens,
         private readonly PrivilegedSessionService $sessions,
         private readonly PrivilegedAudit $audit,
+        private readonly PrivilegedMailDispatcher $privilegedMailDispatcher,
     ) {
     }
 
@@ -50,7 +51,7 @@ final class PrivilegedPasswordResetController extends Controller
 
             if ($admin instanceof SuperAdmin && $admin->isActive()) {
                 try {
-                    /** @var array{admin: SuperAdmin, raw_token: string} $result */
+                    /** @var array{admin: SuperAdmin} $result */
                     $result = DB::transaction(function () use ($request, $admin): array {
                         $lockedAdmin = SuperAdmin::query()->lockForUpdate()->find($admin->getKey());
 
@@ -65,17 +66,23 @@ final class PrivilegedPasswordResetController extends Controller
                         );
                         $this->audit->privilegedPasswordResetRequested($request, $lockedAdmin);
 
+                        $this->privilegedMailDispatcher->dispatch(
+                            type: PrivilegedDeliveryType::PRIVILEGED_PASSWORD_RESET,
+                            businessEventId: 'privileged-password-reset:'.$lockedAdmin->getKey().':'.$issued['token']->getKey(),
+                            recipientType: 'super_admin',
+                            recipientId: (int) $lockedAdmin->getKey(),
+                            payload: [
+                                'recipient_name' => trim($lockedAdmin->first_name.' '.$lockedAdmin->last_name),
+                                'email' => (string) $lockedAdmin->email,
+                                'raw_token' => $issued['raw_token'],
+                            ],
+                            correlationId: $this->audit->correlationId($request),
+                        );
+
                         return [
                             'admin' => $lockedAdmin,
-                            'raw_token' => $issued['raw_token'],
                         ];
                     });
-
-                    Mail::to($result['admin']->email)->queue(new PrivilegedPasswordResetMail(
-                        trim($result['admin']->first_name.' '.$result['admin']->last_name),
-                        (string) $result['admin']->email,
-                        $result['raw_token'],
-                    ));
                 } catch (Throwable) {
                     // The public response remains generic whether auditing or delivery fails.
                 }

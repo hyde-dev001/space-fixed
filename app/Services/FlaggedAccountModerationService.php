@@ -168,6 +168,10 @@ final class FlaggedAccountModerationService
                 suspensionId: (int) $suspension->getKey(),
             );
 
+            if ($suspensionResult['changed'] && $suspensionResult['appeal']) {
+                $this->appeals->queueSuspensionNotice($suspensionResult['appeal'], $request);
+            }
+
             return [
                 'changed' => true,
                 'report' => $report->fresh(),
@@ -176,10 +180,6 @@ final class FlaggedAccountModerationService
                 'appeal' => $suspensionResult['appeal'],
             ];
         });
-
-        if ($result['changed'] && $result['suspension_changed'] && $result['appeal']) {
-            $this->appeals->sendSuspensionNotice($result['appeal']);
-        }
 
         return $result;
     }

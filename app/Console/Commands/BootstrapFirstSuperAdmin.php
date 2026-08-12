@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Mail\PrivilegedSetupLinkMail;
+use App\Enums\PrivilegedDeliveryType;
 use App\Models\PrivilegedSecurityToken;
 use App\Models\SuperAdmin;
 use App\Services\PrivilegedAudit;
+use App\Services\PrivilegedMailDispatcher;
 use App\Services\PrivilegedSecurityTokenService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Throwable;
@@ -25,6 +25,7 @@ final class BootstrapFirstSuperAdmin extends Command
     public function __construct(
         private readonly PrivilegedAudit $audit,
         private readonly PrivilegedSecurityTokenService $tokens,
+        private readonly PrivilegedMailDispatcher $privilegedMailDispatcher,
     ) {
         parent::__construct();
     }
@@ -62,7 +63,7 @@ final class BootstrapFirstSuperAdmin extends Command
         $correlationId = (string) Str::uuid();
 
         try {
-            /** @var array{admin: SuperAdmin, raw_token: string} $result */
+            /** @var array{admin: SuperAdmin} $result */
             $result = DB::transaction(function () use ($identity, $correlationId): array {
                 $admin = new SuperAdmin([
                     'first_name' => $identity['first_name'],
@@ -77,19 +78,25 @@ final class BootstrapFirstSuperAdmin extends Command
                 $issued = $this->tokens->issue($admin, PrivilegedSecurityToken::PURPOSE_SETUP, null);
                 $this->audit->privilegedBootstrapCreated($admin, $correlationId);
 
+                $this->privilegedMailDispatcher->dispatch(
+                    type: PrivilegedDeliveryType::PRIVILEGED_ADMIN_SETUP,
+                    businessEventId: 'privileged-admin-setup:'.$admin->getKey().':'.$issued['token']->getKey(),
+                    recipientType: 'super_admin',
+                    recipientId: (int) $admin->getKey(),
+                    payload: [
+                        'recipient_name' => trim($admin->first_name.' '.$admin->last_name),
+                        'email' => (string) $admin->email,
+                        'raw_token' => $issued['raw_token'],
+                    ],
+                    correlationId: $correlationId,
+                );
+
                 return [
                     'admin' => $admin,
-                    'raw_token' => $issued['raw_token'],
                 ];
             });
         } catch (Throwable) {
             $this->error('Bootstrap failed; no account or setup token was committed.');
-
-            return self::FAILURE;
-        }
-
-        if (! $this->queueSetupMail($result['admin'], $result['raw_token'])) {
-            $this->error('Bootstrap created a pending account, but the setup mail could not be queued.');
 
             return self::FAILURE;
         }
@@ -129,7 +136,7 @@ final class BootstrapFirstSuperAdmin extends Command
         $correlationId = (string) Str::uuid();
 
         try {
-            /** @var array{admin: SuperAdmin, raw_token: string} $result */
+            /** @var array{admin: SuperAdmin} $result */
             $result = DB::transaction(function () use ($pending, $correlationId): array {
                 $locked = SuperAdmin::query()->lockForUpdate()->find($pending->getKey());
 
@@ -142,9 +149,21 @@ final class BootstrapFirstSuperAdmin extends Command
                 $issued = $this->tokens->issue($locked, PrivilegedSecurityToken::PURPOSE_SETUP, null);
                 $this->audit->privilegedBootstrapCreated($locked, $correlationId);
 
+                $this->privilegedMailDispatcher->dispatch(
+                    type: PrivilegedDeliveryType::PRIVILEGED_ADMIN_SETUP,
+                    businessEventId: 'privileged-admin-setup:'.$locked->getKey().':'.$issued['token']->getKey(),
+                    recipientType: 'super_admin',
+                    recipientId: (int) $locked->getKey(),
+                    payload: [
+                        'recipient_name' => trim($locked->first_name.' '.$locked->last_name),
+                        'email' => (string) $locked->email,
+                        'raw_token' => $issued['raw_token'],
+                    ],
+                    correlationId: $correlationId,
+                );
+
                 return [
                     'admin' => $locked,
-                    'raw_token' => $issued['raw_token'],
                 ];
             });
         } catch (Throwable) {
@@ -153,30 +172,9 @@ final class BootstrapFirstSuperAdmin extends Command
             return self::FAILURE;
         }
 
-        if (! $this->queueSetupMail($result['admin'], $result['raw_token'])) {
-            $this->error('Bootstrap replacement committed, but the setup mail could not be queued.');
-
-            return self::FAILURE;
-        }
-
         $this->printSuccess($result['admin'], $correlationId);
 
         return self::SUCCESS;
-    }
-
-    private function queueSetupMail(SuperAdmin $admin, string $rawToken): bool
-    {
-        try {
-            Mail::to($admin->email)->queue(new PrivilegedSetupLinkMail(
-                trim($admin->first_name.' '.$admin->last_name),
-                (string) $admin->email,
-                $rawToken,
-            ));
-        } catch (Throwable) {
-            return false;
-        }
-
-        return true;
     }
 
     private function printSuccess(SuperAdmin $admin, string $correlationId): void

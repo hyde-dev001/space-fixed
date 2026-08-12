@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Feature\SuperAdmin;
 
+use App\Enums\PrivilegedDeliveryType;
+use App\Jobs\SendPrivilegedWorkflowMail;
 use App\Models\AccountSuspension;
 use App\Models\Employee;
 use App\Models\ReviewReport;
@@ -13,7 +15,8 @@ use App\Models\SuspensionAppeal;
 use App\Models\User;
 use App\Services\PrivilegedAudit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use Mockery;
 use Tests\Concerns\AuthenticatesPrivilegedUsers;
 use Tests\Concerns\BuildsPhaseTwoWorkflowFixtures;
@@ -79,7 +82,7 @@ final class FlaggedAccountWorkflowTest extends TestCase
 
     public function test_suspension_uses_one_current_shared_identity_and_identical_retry_is_idempotent(): void
     {
-        Mail::fake();
+        Queue::fake();
         $admin = $this->phaseTwoSuperAdmin();
         $customer = $this->activePhaseTwoUser();
         $report = $this->flaggedReport($customer);
@@ -94,6 +97,7 @@ final class FlaggedAccountWorkflowTest extends TestCase
             'status' => ReviewReport::STATUS_ACCOUNT_SUSPENDED,
             'changed' => true,
         ]);
+        DB::commit();
 
         $customer = $customer->fresh();
         $suspension = AccountSuspension::query()->sole();
@@ -113,7 +117,12 @@ final class FlaggedAccountWorkflowTest extends TestCase
         ]);
         $this->assertDatabaseCount('account_suspensions', 1);
         $this->assertDatabaseCount('suspension_appeals', 1);
-        Mail::assertSentCount(1);
+        Queue::assertPushed(SendPrivilegedWorkflowMail::class, function (SendPrivilegedWorkflowMail $job) use ($customer, $suspension): bool {
+            return $job->deliveryType === PrivilegedDeliveryType::CUSTOMER_SUSPENSION_NOTICE
+                && $job->recipientType === 'user'
+                && $job->recipientId === $customer->id
+                && $job->businessEventId === 'account-suspension:'.$suspension->id.':notice';
+        });
     }
 
     public function test_conflicting_terminal_retry_and_inactive_customer_are_rejected_without_mutation(): void
@@ -167,6 +176,7 @@ final class FlaggedAccountWorkflowTest extends TestCase
 
     public function test_audit_failure_rolls_back_the_complete_flagged_account_decision(): void
     {
+        Queue::fake();
         $admin = $this->phaseTwoSuperAdmin();
         $customer = $this->activePhaseTwoUser();
         $report = $this->flaggedReport($customer);
@@ -186,6 +196,7 @@ final class FlaggedAccountWorkflowTest extends TestCase
         $this->assertSame('active', $customer->fresh()->getRawOriginal('status'));
         $this->assertDatabaseCount('account_suspensions', 0);
         $this->assertDatabaseCount('suspension_appeals', 0);
+        Queue::assertNothingPushed();
     }
 
     public function test_regular_admin_can_moderate_flagged_accounts(): void
