@@ -127,12 +127,12 @@ class SystemMonitoringDashboardController extends Controller
                     [
                         'metric' => 'Total Admin Accounts',
                         'value' => (string) $totalAdmins,
-                        'status' => 'Live',
+                        'status' => 'Snapshot',
                     ],
                     [
                         'metric' => 'Suspended Admin Accounts',
                         'value' => (string) $suspendedAdmins,
-                        'status' => 'Live',
+                        'status' => 'Snapshot',
                     ],
                     [
                         'metric' => 'Failed Jobs',

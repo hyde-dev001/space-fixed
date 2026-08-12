@@ -56,10 +56,11 @@ class HandleInertiaRequests extends Middleware
         $erpContext = $request->attributes->get('erp.actor_context');
         $erpContext = $erpContext instanceof ErpActorContext ? $erpContext : null;
         $user = Auth::guard('user')->user();
+        $superAdmin = Auth::guard('super_admin')->user();
         $isCustomer = $user && empty($user->shop_owner_id);
         $internalShopOwner = $erpContext?->tenantOwner();
 
-        if ($internalShopOwner === null && ! Auth::guard('super_admin')->check()) {
+        if ($internalShopOwner === null && ! $superAdmin) {
             if (Auth::guard('shop_owner')->check()) {
                 $internalShopOwner = Auth::guard('shop_owner')->user();
             } elseif ($user && ! $isCustomer) {
@@ -180,12 +181,13 @@ class HandleInertiaRequests extends Middleware
             // Only include ONE authenticated user to prevent header confusion
             'auth' => [
                 'super_admin' => Auth::guard('super_admin')->check() ? [
-                    'id' => Auth::guard('super_admin')->user()->id,
-                    'first_name' => Auth::guard('super_admin')->user()->first_name,
-                    'last_name' => Auth::guard('super_admin')->user()->last_name,
-                    'name' => Auth::guard('super_admin')->user()->first_name . ' ' . Auth::guard('super_admin')->user()->last_name,
-                    'email' => Auth::guard('super_admin')->user()->email,
-                    'role' => Auth::guard('super_admin')->user()->role,
+                    'id' => $superAdmin->id,
+                    'first_name' => $superAdmin->first_name,
+                    'last_name' => $superAdmin->last_name,
+                    'name' => $superAdmin->first_name . ' ' . $superAdmin->last_name,
+                    'email' => $superAdmin->email,
+                    'role' => $superAdmin->role,
+                    'capabilities' => $superAdmin->capabilities(),
                 ] : null,
 
                 'shop_owner' => Auth::guard('shop_owner')->check() ? [

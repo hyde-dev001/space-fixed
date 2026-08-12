@@ -116,31 +116,17 @@ class SuperAdminAuthController extends Controller
      */
     public function showProfile()
     {
-        return Inertia::render('superAdmin/Settings/Profile', [
-            'admin' => Auth::guard('super_admin')->user()
-        ]);
-    }
-
-    /**
-     * Update super admin password
-     */
-    public function updatePassword(Request $request)
-    {
-        $request->validate([
-            'current_password' => 'required',
-            'password' => 'required|min:8|confirmed',
-        ]);
-
         $admin = Auth::guard('super_admin')->user();
 
-        if (!Hash::check($request->current_password, $admin->password)) {
-            return back()->withErrors(['current_password' => 'Current password is incorrect']);
-        }
-
-        $admin->update([
-            'password' => Hash::make($request->password)
+        return Inertia::render('superAdmin/Settings/Profile', [
+            'admin' => [
+                'id' => $admin->id,
+                'first_name' => $admin->first_name,
+                'last_name' => $admin->last_name,
+                'name' => trim($admin->first_name . ' ' . $admin->last_name),
+                'email' => $admin->email,
+                'role' => $admin->role,
+            ],
         ]);
-
-        return back()->with('success', 'Password updated successfully');
     }
 }

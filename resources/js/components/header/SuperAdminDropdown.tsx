@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { usePage, router } from "@inertiajs/react";
-import { route } from "ziggy-js";
+import { Link, usePage, router } from "@inertiajs/react";
 import { Dropdown } from "../ui/dropdown/Dropdown";
 import Swal from "sweetalert2";
 
 export default function SuperAdminDropdown() {
   const { auth } = usePage().props as any;
   const [isOpen, setIsOpen] = useState(false);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
 
   const superAdmin = auth?.super_admin;
   
@@ -14,6 +14,7 @@ export default function SuperAdminDropdown() {
 
   const userName = superAdmin?.name || "Super Admin";
   const userEmail = superAdmin?.email || "admin@solespace.com";
+  const roleLabel = superAdmin?.role === "super_admin" ? "Super Administrator" : "Admin";
 
   function toggleDropdown() {
     setIsOpen(!isOpen);
@@ -25,6 +26,7 @@ export default function SuperAdminDropdown() {
 
   async function handleLogout() {
     closeDropdown();
+    setLogoutError(null);
     
     const result = await Swal.fire({
       title: "Sign Out",
@@ -40,11 +42,8 @@ export default function SuperAdminDropdown() {
     if (result.isConfirmed) {
       router.post('/admin/logout', {}, {
         preserveState: false,
-        onSuccess: () => {
-          setTimeout(() => { router.visit('/admin/login'); }, 200);
-        },
         onError: () => {
-          router.visit('/admin/login');
+          setLogoutError('Sign out failed. Please try again.');
         }
       });
     }
@@ -67,7 +66,6 @@ export default function SuperAdminDropdown() {
         </div>
         <div className="hidden sm:block">
           <span className="block font-semibold text-sm">{userName}</span>
-          <span className="text-xs text-gray-500 dark:text-gray-400">Super Admin</span>
         </div>
         <svg
           className={`stroke-gray-500 dark:stroke-gray-400 transition-transform duration-200 ${
@@ -113,11 +111,34 @@ export default function SuperAdminDropdown() {
                 {userEmail}
               </p>
               <p className="mt-1 inline-block text-xs font-semibold px-2 py-0.5 bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300 rounded-full">
-                Super Administrator
+                {roleLabel}
               </p>
             </div>
           </div>
         </div>
+
+        <nav className="border-b border-gray-200 px-3 py-2 dark:border-gray-700" aria-label="Administrator account">
+          <Link
+            href="/admin/profile"
+            onClick={closeDropdown}
+            className="block rounded-lg px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+          >
+            Profile
+          </Link>
+          <Link
+            href="/admin/security"
+            onClick={closeDropdown}
+            className="block rounded-lg px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+          >
+            Security
+          </Link>
+        </nav>
+
+        {logoutError && (
+          <p role="alert" className="px-4 pt-3 text-sm text-red-600 dark:text-red-400">
+            {logoutError}
+          </p>
+        )}
 
         <button
           onClick={handleLogout}

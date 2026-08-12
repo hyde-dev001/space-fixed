@@ -161,9 +161,22 @@ class SuperAdmin extends Authenticatable
             && $this->mfa_recovery_codes !== null;
     }
 
+    /**
+     * Return the fixed capabilities granted by this administrator's role.
+     *
+     * The list is shared with the frontend for visibility only. Backend
+     * capability middleware remains authoritative for every protected action.
+     *
+     * @return array<int, string>
+     */
+    public function capabilities(): array
+    {
+        return self::CAPABILITIES_BY_ROLE[$this->role] ?? [];
+    }
+
     public function hasCapability(string $capability): bool
     {
-        return in_array($capability, self::CAPABILITIES_BY_ROLE[$this->role] ?? [], true);
+        return in_array($capability, $this->capabilities(), true);
     }
 
     /**

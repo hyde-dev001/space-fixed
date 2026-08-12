@@ -124,11 +124,13 @@ describe('privileged security settings', () => {
   it('links profile users to the dedicated security page', () => {
     render(
       <Profile
-        auth={{
-          user: {
-            name: 'Ada Lovelace',
-            email: 'ada@example.test',
-          },
+        admin={{
+          id: 1,
+          first_name: 'Ada',
+          last_name: 'Lovelace',
+          name: 'Ada Lovelace',
+          email: 'ada@example.test',
+          role: 'admin',
         }}
       />,
     );

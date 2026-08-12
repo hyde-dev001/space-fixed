@@ -1735,6 +1735,9 @@ Route::middleware([
     Route::get('/security', [PrivilegedSecurityController::class, 'show'])
         ->middleware(['privileged.capability:manage_own_security', 'privileged.no-store'])
         ->name('security');
+    Route::get('/profile', [SuperAdminAuthController::class, 'showProfile'])
+        ->middleware(['privileged.capability:manage_own_security', 'privileged.no-store'])
+        ->name('profile');
     Route::post('/security/password', [PrivilegedSecurityController::class, 'changePassword'])
         ->middleware([
             'privileged.capability:manage_own_security',

@@ -3,24 +3,18 @@ import type { ReactNode } from 'react';
 import AppLayout from '../../../layout/AppLayout';
 
 interface ProfileProps {
-  auth?: {
-    user?: {
-      name?: string;
-      email?: string;
-    };
-  };
-  admin?: {
-    name?: string;
-    first_name?: string;
-    last_name?: string;
-    email?: string;
+  admin: {
+    id: number;
+    name: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+    role: 'admin' | 'super_admin';
   };
 }
 
-export default function Profile({ auth, admin }: ProfileProps) {
-  const user = auth?.user;
-  const displayName = user?.name || admin?.name || [admin?.first_name, admin?.last_name].filter(Boolean).join(' ') || 'Super Admin';
-  const displayEmail = user?.email || admin?.email || 'Administrator email';
+export default function Profile({ admin }: ProfileProps) {
+  const roleLabel = admin.role === 'super_admin' ? 'Super Administrator' : 'Admin';
 
   return (
     <div className="p-6">
@@ -53,17 +47,17 @@ export default function Profile({ auth, admin }: ProfileProps) {
           <dl className="space-y-4">
             <div>
               <dt className="text-sm font-medium text-gray-700 dark:text-gray-300">Full name</dt>
-              <dd className="mt-1 text-lg text-gray-900 dark:text-white">{displayName}</dd>
+              <dd className="mt-1 text-lg text-gray-900 dark:text-white">{admin.name}</dd>
             </div>
             <div>
               <dt className="text-sm font-medium text-gray-700 dark:text-gray-300">Email address</dt>
-              <dd className="mt-1 text-lg text-gray-900 dark:text-white">{displayEmail}</dd>
+              <dd className="mt-1 text-lg text-gray-900 dark:text-white">{admin.email}</dd>
             </div>
             <div>
               <dt className="text-sm font-medium text-gray-700 dark:text-gray-300">Role</dt>
               <dd className="mt-1">
                 <span className="inline-flex rounded-full bg-blue-100 px-3 py-1 text-sm font-medium text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-                  Super Administrator
+                  {roleLabel}
                 </span>
               </dd>
             </div>
