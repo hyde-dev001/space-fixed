@@ -475,8 +475,8 @@ it('lets dispatcher reject pending delivery proof with a reason', async () => {
 
   render(<Shipments />);
   fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
-  expect(screen.getByRole('link', { name: 'Open uploaded delivery proof' }))
-    .toHaveAttribute('href', '/api/logistics/proofs/17/file');
+  expect(screen.getByRole('button', { name: 'View delivery proof' })).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Open uploaded delivery proof' })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Reject proof' }));
 
   await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
@@ -486,7 +486,7 @@ it('lets dispatcher reject pending delivery proof with a reason', async () => {
   ));
 });
 
-it('shows a completed delivery proof even when no approval action is available', () => {
+it('opens a completed delivery proof in an in-page image modal and restores focus', async () => {
   setDispatcherLeg({
     id: 2,
     leg_type: 'outbound',
@@ -499,7 +499,49 @@ it('shows a completed delivery proof even when no approval action is available',
   render(<Shipments />);
   fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
 
-  expect(screen.getByText('View delivery proof')).toBeInTheDocument();
+  const view = screen.getByRole('button', { name: 'View delivery proof' });
+  const preview = screen.getByAltText('Uploaded delivery proof');
+  expect(screen.queryByText('View delivery proof')).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Open uploaded delivery proof' })).not.toBeInTheDocument();
+  expect(preview).toHaveClass('h-full', 'w-full', 'object-cover');
+  expect(preview.parentElement).toHaveClass('h-48', 'w-full');
+  expect(view.parentElement).toHaveClass('absolute', 'inset-0', 'flex', 'items-center', 'justify-center');
+
+  fireEvent.click(view);
+
+  expect(screen.getByRole('dialog', { name: 'Delivery proof image' })).toBeInTheDocument();
+  expect(screen.queryByRole('dialog', { name: 'Shipment 1 delivery details' })).not.toBeInTheDocument();
+  expect(screen.getByAltText('Enlarged delivery proof'))
+    .toHaveAttribute('src', '/api/logistics/proofs/17/file');
+  expect(screen.getByAltText('Enlarged delivery proof')).toHaveClass('object-contain');
+  const close = screen.getByRole('button', { name: 'Close delivery proof image' });
+  expect(close).toHaveClass('left-4', 'top-4');
+  await waitFor(() => expect(document.activeElement).toBe(close));
+
+  fireEvent.click(close);
+
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Delivery proof image' })).not.toBeInTheDocument());
+  expect(screen.getByRole('dialog', { name: 'Shipment 1 delivery details' })).toBeInTheDocument();
+  await waitFor(() => expect(document.activeElement).toBe(view));
+});
+
+it('closes only the delivery proof image with Escape', () => {
+  setDispatcherLeg({
+    id: 2,
+    leg_type: 'outbound',
+    status: 'delivered',
+    assignments: [],
+    proofs: [{ id: 17, handoff_type: 'delivery', review_status: 'approved', proof_url: '/api/logistics/proofs/17/file' }],
+    attempts: [],
+  });
+
+  render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: 'View delivery proof' }));
+  fireEvent.keyDown(document, { key: 'Escape' });
+
+  expect(screen.queryByRole('dialog', { name: 'Delivery proof image' })).not.toBeInTheDocument();
+  expect(screen.getByRole('dialog', { name: 'Shipment 1 delivery details' })).toBeInTheDocument();
 });
 
 it('shows subject for refund without reassignment at maximum attempts', () => {
