@@ -1,5 +1,0 @@
-<<<<<<<< HEAD:public/build/assets/index-Bg_T6lPN.js
-import{j as e}from"./app-BzG1iCvU.js";const n=({children:s,className:a})=>e.jsx("table",{className:`min-w-full  ${a}`,children:s}),o=({children:s,className:a})=>e.jsx("thead",{className:a,children:s}),c=({children:s,className:a})=>e.jsx("tbody",{className:a,children:s}),b=({children:s,className:a})=>e.jsx("tr",{className:a,children:s}),x=({children:s,isHeader:a=!1,className:t})=>{const r=a?"th":"td";return e.jsx(r,{className:` ${t}`,children:s})};export{n as T,o as a,b,x as c,c as d};
-========
-import{j as e}from"./app-DVFUWuZy.js";const n=({children:s,className:a})=>e.jsx("table",{className:`min-w-full  ${a}`,children:s}),o=({children:s,className:a})=>e.jsx("thead",{className:a,children:s}),c=({children:s,className:a})=>e.jsx("tbody",{className:a,children:s}),b=({children:s,className:a})=>e.jsx("tr",{className:a,children:s}),x=({children:s,isHeader:a=!1,className:t})=>{const r=a?"th":"td";return e.jsx(r,{className:` ${t}`,children:s})};export{n as T,o as a,b,x as c,c as d};
->>>>>>>> ebe911608 (feat: move shipment delivery details to modal):public/build/assets/index-C2sUR5Sg.js
