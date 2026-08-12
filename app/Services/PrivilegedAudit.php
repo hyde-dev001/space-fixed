@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\ShopDocument;
 use App\Models\AccountSuspension;
+use App\Models\ReviewReport;
 use App\Models\ShopOwner;
 use App\Models\ShopReportModerationAction;
 use App\Models\SuperAdmin;
@@ -663,6 +664,33 @@ class PrivilegedAudit
                 'applied_action' => $appliedAction,
                 'warning_strike_number' => $warningStrikeNumber,
                 'moderation_source' => (string) $moderationAction->source,
+            ],
+        );
+    }
+
+    public function flaggedAccountModerated(
+        Request $request,
+        SuperAdmin $actor,
+        ReviewReport $report,
+        User $customer,
+        string $action,
+        string $priorStatus,
+        string $newStatus,
+        ?int $suspensionId,
+    ): void {
+        $this->write(
+            event: 'flagged_account_moderated',
+            actor: $actor,
+            subject: $report,
+            source: 'http',
+            correlationId: $this->correlationId($request),
+            ipAddress: $request->ip(),
+            properties: [
+                'customer_id' => (int) $customer->getKey(),
+                'action' => $action,
+                'prior_status' => $priorStatus,
+                'new_status' => $newStatus,
+                'suspension_id' => $suspensionId,
             ],
         );
     }

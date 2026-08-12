@@ -69,7 +69,10 @@ class ReviewReport extends Model
 
     public function scopeUnresolved($query)
     {
-        return $query->whereNotIn('status', ['dismissed', 'banned']);
+        return $query->whereNotIn('status', [
+            self::STATUS_DISMISSED,
+            self::STATUS_LEGACY_BANNED,
+        ]);
     }
 
     public function getDomainStatusAttribute(): string
@@ -81,6 +84,19 @@ class ReviewReport extends Model
 
     public function isTerminal(): bool
     {
-        return in_array($this->status, [self::STATUS_DISMISSED, self::STATUS_LEGACY_BANNED], true);
+        return in_array((string) $this->getRawOriginal('status'), [
+            self::STATUS_DISMISSED,
+            self::STATUS_LEGACY_BANNED,
+        ], true);
+    }
+
+    public function isPendingReview(): bool
+    {
+        return (string) $this->getRawOriginal('status') === self::STATUS_PENDING_REVIEW;
+    }
+
+    public function isUnderInvestigation(): bool
+    {
+        return (string) $this->getRawOriginal('status') === self::STATUS_UNDER_INVESTIGATION;
     }
 }

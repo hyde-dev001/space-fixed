@@ -1,44 +1,48 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Http\Controllers\superAdmin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\SuperAdmin\FlaggedAccountDecisionRequest;
 use App\Models\ReviewReport;
-use App\Services\SuspensionAppealService;
+use App\Models\SuperAdmin;
+use App\Services\FlaggedAccountModerationService;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
+use Throwable;
 
-class FlaggedAccountsController extends Controller
+final class FlaggedAccountsController extends Controller
 {
     public function index(): Response
     {
         $reports = ReviewReport::with([
-                'customer:id,name,email',
-                'shopOwner:id,business_name,first_name,last_name',
+                'customer' => fn ($query) => $query->withTrashed(),
+                'shopOwner' => fn ($query) => $query->withTrashed(),
             ])
             ->orderByDesc('created_at')
             ->get()
-            ->map(function ($report) {
+            ->map(function (ReviewReport $report): array {
                 $shopName = $report->shopOwner?->business_name
                     ?? trim(($report->shopOwner?->first_name ?? '') . ' ' . ($report->shopOwner?->last_name ?? ''))
                     ?: 'Unknown Shop';
 
                 return [
-                    'id'             => (string) $report->id,
-                    'username'       => $report->customer?->name ?? 'Unknown Customer',
-                    'email'          => $report->customer?->email ?? '',
-                    'flaggedReason'  => ReviewReport::$reasonLabels[$report->reason] ?? ucfirst(str_replace('_', ' ', $report->reason)),
-                    'flaggedDate'    => $report->created_at->toISOString(),
-                    'status'         => $report->status,
-                    // Extended review detail fields
-                    'reviewType'     => $report->review_type,
+                    'id' => (string) $report->id,
+                    'username' => $report->customer?->name ?? 'Unknown Customer',
+                    'email' => $report->customer?->email ?? '',
+                    'flaggedReason' => $report->reason_label,
+                    'flaggedDate' => $report->created_at->toISOString(),
+                    'status' => $report->domain_status,
+                    'reviewType' => $report->review_type,
                     'reviewSnapshot' => $report->review_snapshot,
-                    'reportNotes'    => $report->notes,
-                    'reportedBy'     => $shopName,
-                    'adminNotes'     => $report->admin_notes,
+                    'reportNotes' => $report->notes,
+                    'reportedBy' => $shopName,
+                    'adminNotes' => $report->admin_notes,
                 ];
             });
 
@@ -47,50 +51,77 @@ class FlaggedAccountsController extends Controller
         ]);
     }
 
-    /** Mark a report as under investigation */
-    public function markReviewed(int $id): JsonResponse
-    {
-        $report = ReviewReport::findOrFail($id);
-        $report->update(['status' => 'under_investigation']);
-        return response()->json(['status' => $report->status]);
+    public function markReviewed(
+        FlaggedAccountDecisionRequest $request,
+        int $id,
+        FlaggedAccountModerationService $moderation,
+    ): JsonResponse {
+        return $this->decide($request, $id, 'mark_reviewed', $moderation);
     }
 
-    /** Dismiss the report — keep the review live */
-    public function dismiss(Request $request, int $id): JsonResponse
-    {
-        $report = ReviewReport::findOrFail($id);
-        $report->update([
-            'status'      => 'dismissed',
-            'admin_notes' => $request->input('admin_notes'),
-            'resolved_at' => now(),
-        ]);
-        return response()->json(['status' => $report->status]);
+    public function dismiss(
+        FlaggedAccountDecisionRequest $request,
+        int $id,
+        FlaggedAccountModerationService $moderation,
+    ): JsonResponse {
+        return $this->decide($request, $id, 'dismiss', $moderation);
     }
 
-    /** Ban the customer and resolve the report */
-    public function ban(Request $request, int $id, SuspensionAppealService $suspensionAppealService): JsonResponse
-    {
-        $report = ReviewReport::with('customer')->findOrFail($id);
+    public function ban(
+        FlaggedAccountDecisionRequest $request,
+        int $id,
+        FlaggedAccountModerationService $moderation,
+    ): JsonResponse {
+        return $this->decide($request, $id, 'account_suspended', $moderation);
+    }
 
-        $reason = $request->input('admin_notes')
-            ?: 'Suspended after super admin review of reported customer behavior.';
+    private function decide(
+        FlaggedAccountDecisionRequest $request,
+        int $id,
+        string $action,
+        FlaggedAccountModerationService $moderation,
+    ): JsonResponse {
+        $actor = Auth::guard('super_admin')->user();
+        abort_unless($actor instanceof SuperAdmin, 403);
 
-        $report->update([
-            'status'      => 'banned',
-            'admin_notes' => $request->input('admin_notes'),
-            'resolved_at' => now(),
-        ]);
-
-        if ($report->customer) {
-            $report->customer->update(['status' => 'suspended']);
-            $suspensionAppealService->createAndSendForCustomer(
-                $report->customer,
-                $reason,
-                Auth::guard('super_admin')->id()
+        try {
+            $result = $moderation->moderate(
+                reportId: $id,
+                action: $action,
+                notes: $request->validated('admin_notes'),
+                actor: $actor,
+                request: $request,
             );
-        }
 
-        return response()->json(['status' => $report->status]);
+            $report = $result['report'];
+            $status = $report->domain_status;
+
+            return response()->json([
+                'success' => true,
+                'changed' => $result['changed'],
+                'status' => $status,
+                'legacy_status' => (string) $report->status,
+                'suspension_id' => $result['suspension_id'],
+            ]);
+        } catch (HttpExceptionInterface $exception) {
+            $status = $exception->getStatusCode();
+            $message = in_array($status, [409, 422], true)
+                ? $exception->getMessage()
+                : 'The flagged-account decision could not be completed.';
+
+            return response()->json([
+                'success' => false,
+                'message' => $message,
+                'code' => $status === 409 ? 'flagged_account_conflict' : 'flagged_account_error',
+            ], $status);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'The flagged-account decision could not be completed.',
+                'code' => 'flagged_account_error',
+            ], 500);
+        }
     }
 }
-
