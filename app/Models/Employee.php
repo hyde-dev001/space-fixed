@@ -96,7 +96,10 @@ class Employee extends Model
      */
     public function suspend(): void
     {
-        $this->update(['status' => 'suspended']);
+        $this->forceFill([
+            'status' => 'suspended',
+            'privileged_suspension_id' => null,
+        ])->save();
     }
 
     /**
@@ -104,7 +107,10 @@ class Employee extends Model
      */
     public function activate(): void
     {
-        $this->update(['status' => 'active']);
+        $this->forceFill([
+            'status' => 'active',
+            'privileged_suspension_id' => null,
+        ])->save();
     }
 
     /**

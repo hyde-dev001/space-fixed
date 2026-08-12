@@ -89,4 +89,57 @@ class SuspensionSessionEnforcementTest extends TestCase
         $response->assertSessionHasErrors('email');
         $this->assertGuest('user');
     }
+
+    public function test_standalone_suspended_user_is_forced_logged_out_on_next_request(): void
+    {
+        $user = User::factory()->create([
+            'status' => 'suspended',
+            'shop_owner_id' => null,
+        ]);
+
+        $response = $this->actingAs($user, 'user')
+            ->getJson('/erp/profile');
+
+        $response
+            ->assertStatus(403)
+            ->assertJson([
+                'success' => false,
+                'code' => 'account_suspended',
+            ]);
+
+        $this->assertGuest('user');
+    }
+
+    public function test_archived_user_is_forced_logged_out_on_next_request(): void
+    {
+        $user = User::factory()->create(['status' => 'active']);
+        $user->delete();
+
+        $response = $this->actingAs($user, 'user')
+            ->getJson('/erp/profile');
+
+        $response
+            ->assertStatus(403)
+            ->assertJson([
+                'success' => false,
+                'code' => 'account_unavailable',
+            ]);
+
+        $this->assertGuest('user');
+    }
+
+    public function test_archived_parent_shop_denies_an_active_staff_user(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create();
+        $user = User::factory()->create([
+            'status' => 'active',
+            'shop_owner_id' => $shopOwner->id,
+        ]);
+        $shopOwner->delete();
+
+        $response = $this->actingAs($user, 'user')
+            ->getJson('/erp/time-in');
+
+        $response->assertStatus(403);
+    }
 }

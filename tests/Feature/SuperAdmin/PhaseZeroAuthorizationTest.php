@@ -3,6 +3,7 @@
 namespace Tests\Feature\SuperAdmin;
 
 use App\Enums\ShopOwnerStatus;
+use App\Models\AccountSuspension;
 use App\Models\ShopOwner;
 use App\Models\SuperAdmin;
 use App\Models\User;
@@ -50,14 +51,16 @@ class PhaseZeroAuthorizationTest extends TestCase
     public function test_regular_admin_can_review_registrations_and_intervene_on_accounts(): void
     {
         $admin = SuperAdmin::factory()->admin()->create();
-        $user = User::factory()->create(['status' => 'suspended']);
+        $user = $this->suspendedUserWithCurrentIdentity();
 
         $this->actingAsCompletedPrivileged($admin)
             ->get('/admin/shop-owner-registration-view')
             ->assertOk();
 
         $this->actingAsCompletedPrivileged($admin)
-            ->postJson("/admin/users/{$user->id}/activate")
+            ->postJson("/admin/users/{$user->id}/activate", [
+                'reactivation_reason' => 'Phase zero capability regression check',
+            ])
             ->assertOk();
 
         $this->assertSame('active', $user->fresh()->status);
@@ -66,7 +69,7 @@ class PhaseZeroAuthorizationTest extends TestCase
     public function test_super_admin_can_reach_every_phase_zero_capability_area(): void
     {
         $admin = SuperAdmin::factory()->superAdmin()->create();
-        $user = User::factory()->create(['status' => 'suspended']);
+        $user = $this->suspendedUserWithCurrentIdentity();
 
         $this->actingAsCompletedPrivileged($admin)
             ->get('/admin/admin')
@@ -85,8 +88,25 @@ class PhaseZeroAuthorizationTest extends TestCase
             ->assertOk();
 
         $this->actingAsCompletedPrivileged($admin)
-            ->postJson("/admin/users/{$user->id}/activate")
+            ->postJson("/admin/users/{$user->id}/activate", [
+                'reactivation_reason' => 'Phase zero capability regression check',
+            ])
             ->assertOk();
+    }
+
+    private function suspendedUserWithCurrentIdentity(): User
+    {
+        $user = User::factory()->create(['status' => 'suspended']);
+        $suspension = AccountSuspension::create([
+            'account_type' => AccountSuspension::ACCOUNT_TYPE_CUSTOMER,
+            'account_id' => $user->id,
+            'source' => AccountSuspension::SOURCE_LEGACY_RECONCILIATION,
+            'reason' => 'Phase zero authorization fixture',
+            'started_at' => now(),
+        ]);
+        $user->forceFill(['current_suspension_id' => $suspension->id])->save();
+
+        return $user->fresh();
     }
 
     public function test_restricted_routes_declare_the_fixed_capability(): void

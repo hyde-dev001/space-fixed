@@ -29,13 +29,16 @@ class CheckEmployeeSuspension
         if (Auth::guard('shop_owner')->check()) {
             $shopOwner = Auth::guard('shop_owner')->user();
 
-            if ($this->isShopOwnerSuspended($shopOwner?->status)) {
+            if ($shopOwner?->trashed() || ! $this->isShopOwnerOperational($shopOwner?->status)) {
                 $this->logoutGuard($request, 'shop_owner');
 
                 return $this->suspendedResponse(
                     $request,
                     route('shop-owner.login.form'),
-                    'Your shop account has been suspended. Please contact support.'
+                    'Your shop account is unavailable. Please contact support.',
+                    $shopOwner?->trashed() || ! $this->isShopOwnerSuspended($shopOwner?->status)
+                        ? 'account_unavailable'
+                        : 'account_suspended',
                 );
             }
         }
@@ -43,29 +46,53 @@ class CheckEmployeeSuspension
         if (Auth::guard('user')->check()) {
             $user = Auth::guard('user')->user();
 
-            if (!is_null($user->shop_owner_id)) {
-                $shopOwner = ShopOwner::find($user->shop_owner_id);
-
-                if ($shopOwner && $this->isShopOwnerSuspended($shopOwner->status)) {
-                    $this->logoutGuard($request, 'user');
-
-                    return $this->suspendedResponse(
-                        $request,
-                        route('login'),
-                        'Your shop account has been suspended. Please contact your administrator.'
-                    );
-                }
-            }
-
-            $employee = Employee::where('email', $user->email)->first();
-
-            if ($employee && $this->isEmployeeSuspended($employee->status)) {
+            if ($user?->trashed() || ! $this->isUserActive($user?->status)) {
                 $this->logoutGuard($request, 'user');
 
                 return $this->suspendedResponse(
                     $request,
                     route('login'),
-                    'Your account has been suspended. Please contact your administrator.'
+                    'Your account is unavailable. Please contact support.',
+                    $user?->trashed() || ! $this->isUserSuspended($user?->status)
+                        ? 'account_unavailable'
+                        : 'account_suspended',
+                );
+            }
+
+            if (!is_null($user->shop_owner_id)) {
+                $shopOwner = ShopOwner::withTrashed()->find($user->shop_owner_id);
+
+                if (!$shopOwner || $shopOwner->trashed() || ! $this->isShopOwnerOperational($shopOwner->status)) {
+                    $this->logoutGuard($request, 'user');
+
+                    return $this->suspendedResponse(
+                        $request,
+                        route('login'),
+                        'Your account is unavailable. Please contact your administrator.',
+                        $shopOwner?->trashed() || ! $this->isShopOwnerSuspended($shopOwner?->status)
+                            ? 'account_unavailable'
+                            : 'account_suspended',
+                    );
+                }
+            }
+
+            $employees = Employee::withTrashed()
+                ->whereRaw('LOWER(email) = ?', [strtolower((string) $user->email)])
+                ->orderBy('id')
+                ->get();
+
+            if ($employees->count() > 1
+                || ($employees->count() === 1
+                    && ($employees->first()->trashed() || ! $this->isEmployeeActive($employees->first()->status)))) {
+                $this->logoutGuard($request, 'user');
+
+                return $this->suspendedResponse(
+                    $request,
+                    route('login'),
+                    'Your account is unavailable. Please contact your administrator.',
+                    $employees->count() === 1 && $this->isEmployeeSuspended($employees->first()->status)
+                        ? 'account_suspended'
+                        : 'account_unavailable',
                 );
             }
         }
@@ -82,6 +109,25 @@ class CheckEmployeeSuspension
         return (string) $status === EmployeeStatus::SUSPENDED->value;
     }
 
+    private function isEmployeeActive(mixed $status): bool
+    {
+        if ($status instanceof EmployeeStatus) {
+            return $status === EmployeeStatus::ACTIVE;
+        }
+
+        return (string) $status === EmployeeStatus::ACTIVE->value;
+    }
+
+    private function isUserActive(mixed $status): bool
+    {
+        return (string) $status === 'active';
+    }
+
+    private function isUserSuspended(mixed $status): bool
+    {
+        return (string) $status === 'suspended';
+    }
+
     private function isShopOwnerSuspended(mixed $status): bool
     {
         if ($status instanceof ShopOwnerStatus) {
@@ -89,6 +135,15 @@ class CheckEmployeeSuspension
         }
 
         return (string) $status === ShopOwnerStatus::SUSPENDED->value;
+    }
+
+    private function isShopOwnerOperational(mixed $status): bool
+    {
+        if ($status instanceof ShopOwnerStatus) {
+            return $status === ShopOwnerStatus::APPROVED;
+        }
+
+        return (string) $status === ShopOwnerStatus::APPROVED->value;
     }
 
     private function logoutGuard(Request $request, string $guard): void
@@ -101,13 +156,13 @@ class CheckEmployeeSuspension
         }
     }
 
-    private function suspendedResponse(Request $request, string $loginUrl, string $message): Response
+    private function suspendedResponse(Request $request, string $loginUrl, string $message, string $code = 'account_suspended'): Response
     {
         if ($request->expectsJson() || $request->is('api/*')) {
             return response()->json([
                 'success' => false,
                 'message' => $message,
-                'code' => 'account_suspended',
+                'code' => $code,
             ], 403);
         }
 

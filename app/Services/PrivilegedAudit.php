@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\ShopDocument;
+use App\Models\AccountSuspension;
 use App\Models\ShopOwner;
 use App\Models\SuperAdmin;
 use App\Models\User;
@@ -531,6 +532,131 @@ class PrivilegedAudit
                 'new_status' => 'rejected',
                 'reason' => $reason,
                 'document_ids' => array_values($documentIds),
+            ],
+        );
+    }
+
+    public function userSuspended(
+        Request $request,
+        SuperAdmin $actor,
+        User $user,
+        string $priorStatus,
+        string $newStatus,
+        string $reason,
+        ?int $suspensionId,
+    ): void {
+        $this->writeAccountLifecycle('user_suspended', $request, $actor, $user, $priorStatus, $newStatus, $reason, $suspensionId);
+    }
+
+    public function userReactivated(
+        Request $request,
+        SuperAdmin $actor,
+        User $user,
+        string $priorStatus,
+        string $newStatus,
+        string $reason,
+        ?int $suspensionId,
+    ): void {
+        $this->writeAccountLifecycle('user_reactivated', $request, $actor, $user, $priorStatus, $newStatus, $reason, $suspensionId);
+    }
+
+    public function userArchived(
+        Request $request,
+        SuperAdmin $actor,
+        User $user,
+        string $priorStatus,
+        string $newStatus,
+        string $reason,
+        ?int $suspensionId,
+    ): void {
+        $this->writeAccountLifecycle('user_archived', $request, $actor, $user, $priorStatus, $newStatus, $reason, $suspensionId);
+    }
+
+    public function userRestored(
+        Request $request,
+        SuperAdmin $actor,
+        User $user,
+        string $priorStatus,
+        string $newStatus,
+        string $reason,
+        ?int $suspensionId,
+    ): void {
+        $this->writeAccountLifecycle('user_restored', $request, $actor, $user, $priorStatus, $newStatus, $reason, $suspensionId);
+    }
+
+    public function shopSuspended(
+        Request $request,
+        SuperAdmin $actor,
+        ShopOwner $shopOwner,
+        string $priorStatus,
+        string $newStatus,
+        string $reason,
+        ?int $suspensionId,
+    ): void {
+        $this->writeAccountLifecycle('shop_suspended', $request, $actor, $shopOwner, $priorStatus, $newStatus, $reason, $suspensionId);
+    }
+
+    public function shopReactivated(
+        Request $request,
+        SuperAdmin $actor,
+        ShopOwner $shopOwner,
+        string $priorStatus,
+        string $newStatus,
+        string $reason,
+        ?int $suspensionId,
+    ): void {
+        $this->writeAccountLifecycle('shop_reactivated', $request, $actor, $shopOwner, $priorStatus, $newStatus, $reason, $suspensionId);
+    }
+
+    public function shopArchived(
+        Request $request,
+        SuperAdmin $actor,
+        ShopOwner $shopOwner,
+        string $priorStatus,
+        string $newStatus,
+        string $reason,
+        ?int $suspensionId,
+    ): void {
+        $this->writeAccountLifecycle('shop_archived', $request, $actor, $shopOwner, $priorStatus, $newStatus, $reason, $suspensionId);
+    }
+
+    public function shopRestored(
+        Request $request,
+        SuperAdmin $actor,
+        ShopOwner $shopOwner,
+        string $priorStatus,
+        string $newStatus,
+        string $reason,
+        ?int $suspensionId,
+    ): void {
+        $this->writeAccountLifecycle('shop_restored', $request, $actor, $shopOwner, $priorStatus, $newStatus, $reason, $suspensionId);
+    }
+
+    private function writeAccountLifecycle(
+        string $event,
+        Request $request,
+        SuperAdmin $actor,
+        Model $subject,
+        string $priorStatus,
+        string $newStatus,
+        string $reason,
+        ?int $suspensionId,
+    ): void {
+        $this->write(
+            event: $event,
+            actor: $actor,
+            subject: $subject,
+            source: 'http',
+            correlationId: $this->correlationId($request),
+            ipAddress: $request->ip(),
+            properties: [
+                'prior_status' => $priorStatus,
+                'new_status' => $newStatus,
+                'reason' => $reason,
+                'suspension_id' => $suspensionId,
+                'account_type' => $subject instanceof ShopOwner
+                    ? AccountSuspension::ACCOUNT_TYPE_SHOP_OWNER
+                    : AccountSuspension::ACCOUNT_TYPE_CUSTOMER,
             ],
         );
     }

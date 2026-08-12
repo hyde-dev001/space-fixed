@@ -210,11 +210,13 @@ class SuspensionFinalApprovalController extends Controller
                     $employee->update([
                         'status' => EmployeeStatus::SUSPENDED,
                         'suspension_reason' => $suspensionRequest->reason,
+                        'privileged_suspension_id' => null,
                     ]);
                 } else {
                     $employee->update([
                         'status' => EmployeeStatus::ACTIVE,
                         'suspension_reason' => null,
+                        'privileged_suspension_id' => null,
                     ]);
                 }
             }

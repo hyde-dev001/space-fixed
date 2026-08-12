@@ -168,6 +168,7 @@ class SuspensionApprovalController extends Controller
                 $req->employee->update([
                     'status' => EmployeeStatus::ACTIVE,
                     'suspension_reason' => null,
+                    'privileged_suspension_id' => null,
                 ]);
             }
         }

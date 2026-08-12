@@ -430,7 +430,10 @@ class EmployeeController extends Controller
         if ($request->has('department')) $data['department'] = $request->department;
         if ($request->has('hireDate')) $data['hire_date'] = $request->hireDate;
         if ($request->has('salary')) $data['salary'] = $request->salary;
-        if ($request->has('status')) $data['status'] = $request->status;
+        if ($request->has('status')) {
+            $data['status'] = $request->status;
+            $data['privileged_suspension_id'] = null;
+        }
         if ($request->has('suspensionReason')) $data['suspension_reason'] = $request->suspensionReason;
         if ($request->has('location')) $data['address'] = $request->location;
         if ($request->has('address')) $data['address'] = $request->address;
@@ -523,6 +526,7 @@ class EmployeeController extends Controller
         $employee->update([
             'status' => 'suspended',
             'suspensionReason' => $request->reason,
+            'privileged_suspension_id' => null,
         ]);
 
         $this->syncLinkedUserStatus($employee, (int) $user->shop_owner_id, 'suspended');
@@ -549,6 +553,7 @@ class EmployeeController extends Controller
         $employee->update([
             'status' => 'active',
             'suspension_reason' => null,
+            'privileged_suspension_id' => null,
         ]);
 
         $this->syncLinkedUserStatus($employee, (int) $user->shop_owner_id, 'active');

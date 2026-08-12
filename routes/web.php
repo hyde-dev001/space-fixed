@@ -1853,6 +1853,15 @@ Route::middleware([
     Route::post('/shops/{id}/activate', [SuperAdminController::class, 'activateShop'])
         ->middleware('privileged.capability:intervene_accounts')
         ->name('shops.activate');
+    Route::post('/shops/{id}/reactivate', [SuperAdminController::class, 'reactivateShop'])
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('shops.reactivate');
+    Route::post('/shops/{id}/archive', [SuperAdminController::class, 'archiveShop'])
+        ->middleware(['privileged.capability:intervene_accounts', 'privileged.recent'])
+        ->name('shops.archive');
+    Route::post('/shops/{id}/restore', [SuperAdminController::class, 'restoreShop'])
+        ->middleware(['privileged.capability:intervene_accounts', 'privileged.recent'])
+        ->name('shops.restore');
     // User management routes
     Route::get('/user-management', [SuperAdminController::class, 'showUserManagement'])
         ->middleware('privileged.capability:intervene_accounts')
@@ -1863,6 +1872,15 @@ Route::middleware([
     Route::post('/users/{id}/activate', [SuperAdminController::class, 'activateUser'])
         ->middleware('privileged.capability:intervene_accounts')
         ->name('users.activate');
+    Route::post('/users/{id}/reactivate', [SuperAdminController::class, 'reactivateUser'])
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('users.reactivate');
+    Route::post('/users/{id}/archive', [SuperAdminController::class, 'archiveUser'])
+        ->middleware(['privileged.capability:intervene_accounts', 'privileged.recent'])
+        ->name('users.archive');
+    Route::post('/users/{id}/restore', [SuperAdminController::class, 'restoreUser'])
+        ->middleware(['privileged.capability:intervene_accounts', 'privileged.recent'])
+        ->name('users.restore');
     // Shop Reports routes
     Route::get('/shop-reports', [\App\Http\Controllers\superAdmin\ShopReportsController::class, 'index'])
         ->middleware('privileged.capability:moderate_reports')

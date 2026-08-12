@@ -3,6 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\Privileged\InviteAdministratorRequest;
+use App\Http\Requests\SuperAdmin\AccountArchiveRequest;
+use App\Http\Requests\SuperAdmin\AccountReactivationRequest;
+use App\Http\Requests\SuperAdmin\AccountRestoreRequest;
+use App\Http\Requests\SuperAdmin\AccountSuspensionRequest;
 use App\Mail\PrivilegedSetupLinkMail;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -16,8 +20,8 @@ use App\Models\User;
 use App\Models\AuditLog;
 use App\Services\PrivilegedAudit;
 use App\Services\AdministratorIdentityService;
+use App\Services\AccountLifecycleService;
 use App\Services\PrivilegedSecurityTokenService;
-use App\Services\SuspensionAppealService;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
@@ -26,6 +30,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Throwable;
 
 class SuperAdminController extends Controller
@@ -34,6 +40,7 @@ class SuperAdminController extends Controller
         private readonly PrivilegedSecurityTokenService $tokens,
         private readonly PrivilegedAudit $privilegedAudit,
         private readonly AdministratorIdentityService $identity,
+        private readonly AccountLifecycleService $accountLifecycle,
     ) {
     }
 
@@ -646,92 +653,69 @@ class SuperAdminController extends Controller
     /**
      * Admin action stubs
      */
-    public function suspendUser(Request $request, $id, SuspensionAppealService $suspensionAppealService)
+    public function suspendUser(AccountSuspensionRequest $request, int $id)
     {
-        $validated = $request->validate([
-            'suspension_reason' => 'nullable|string|max:1000',
-        ]);
-
-        try {
-            $user = User::findOrFail($id);
-            $user->update(['status' => 'suspended']);
-
-            $suspensionReason = $validated['suspension_reason'] ?? null;
-            $suspensionAppealService->createAndSendForCustomer(
-                $user,
-                $suspensionReason,
-                auth('super_admin')->id()
-            );
-
-            // If this user is associated with an employee record, mark employee as inactive too
-            try {
-                $employee = \App\Models\Employee::where('email', $user->email)->first();
-                if ($employee) {
-                    $employee->update(['status' => 'inactive']);
-                }
-            } catch (\Exception $e) {
-                // non-fatal
-            }
-
-            AuditLog::create([
-                'shop_owner_id' => null,
-                'actor_user_id' => auth('super_admin')->id(),
-                'action' => 'user_suspended',
-                'target_type' => 'user',
-                'target_id' => $user->id,
-                'metadata' => [
-                    'email' => $user->email,
-                    'name' => $user->name,
-                    'suspension_reason' => $suspensionReason,
-                ],
-            ]);
-
-            if ($request->ajax() || $request->wantsJson() || $request->header('X-Inertia')) {
-                return response()->json(['success' => true, 'message' => 'User suspended successfully.']);
-            }
-
-            return redirect()->back()->with('success', 'User suspended successfully.');
-        } catch (\Exception $e) {
-            return redirect()->back()->withErrors(['error' => 'Failed to suspend user.']);
-        }
+        return $this->runAccountLifecycle(
+            request: $request,
+            action: fn () => $this->accountLifecycle->suspend(
+                'user',
+                $id,
+                $this->currentPrivilegedActor(),
+                $request,
+                (string) $request->validated('suspension_reason'),
+            ),
+            successMessage: 'User suspended successfully.',
+        );
     }
 
-    public function activateUser(Request $request, $id)
+    public function activateUser(AccountReactivationRequest $request, int $id)
     {
-        try {
-            $user = User::findOrFail($id);
-            $user->update(['status' => 'active']);
+        return $this->reactivateUser($request, $id);
+    }
 
-            // If this user is associated with an employee record, mark employee as active too
-            try {
-                $employee = \App\Models\Employee::where('email', $user->email)->first();
-                if ($employee) {
-                    $employee->update(['status' => 'active']);
-                }
-            } catch (\Exception $e) {
-                // non-fatal
-            }
+    public function reactivateUser(AccountReactivationRequest $request, int $id)
+    {
+        return $this->runAccountLifecycle(
+            request: $request,
+            action: fn () => $this->accountLifecycle->reactivate(
+                'user',
+                $id,
+                $this->currentPrivilegedActor(),
+                $request,
+                (string) $request->validated('reactivation_reason'),
+            ),
+            successMessage: 'User reactivated successfully.',
+        );
+    }
 
-            AuditLog::create([
-                'shop_owner_id' => null,
-                'actor_user_id' => auth('super_admin')->id(),
-                'action' => 'user_activated',
-                'target_type' => 'user',
-                'target_id' => $user->id,
-                'metadata' => [
-                    'email' => $user->email,
-                    'name' => $user->name,
-                ],
-            ]);
+    public function archiveUser(AccountArchiveRequest $request, int $id)
+    {
+        return $this->runAccountLifecycle(
+            request: $request,
+            action: fn () => $this->accountLifecycle->archive(
+                'user',
+                $id,
+                $this->currentPrivilegedActor(),
+                $request,
+                (string) $request->validated('archive_reason'),
+            ),
+            successMessage: 'User archived successfully.',
+        );
+    }
 
-            if ($request->ajax() || $request->wantsJson() || $request->header('X-Inertia')) {
-                return response()->json(['success' => true, 'message' => 'User activated successfully.']);
-            }
-
-            return redirect()->back()->with('success', 'User activated successfully.');
-        } catch (\Exception $e) {
-            return redirect()->back()->withErrors(['error' => 'Failed to activate user.']);
-        }
+    public function restoreUser(AccountRestoreRequest $request, int $id)
+    {
+        return $this->runAccountLifecycle(
+            request: $request,
+            action: fn () => $this->accountLifecycle->restore(
+                'user',
+                $id,
+                $this->currentPrivilegedActor(),
+                $request,
+                (string) $request->validated('restore_reason'),
+            ),
+            successMessage: 'User restored successfully.',
+        );
     }
 
     /**
@@ -871,95 +855,122 @@ class SuperAdminController extends Controller
         return redirect()->back()->withErrors(['error' => $message]);
     }
 
-    public function suspendShop(Request $request, $id, SuspensionAppealService $suspensionAppealService)
+    private function runAccountLifecycle(Request $request, callable $action, string $successMessage)
     {
-        $validated = $request->validate([
-            'suspension_reason' => 'nullable|string|max:1000'
-        ]);
-
         try {
-            $shop = ShopOwner::findOrFail($id);
-            $shop->update([
-                'status' => 'suspended',
-                'suspension_reason' => $validated['suspension_reason'] ?? null
-            ]);
+            $result = $action();
+            $account = $result['account'];
+            $payload = [
+                'success' => true,
+                'message' => $successMessage,
+                'account' => [
+                    'id' => (int) $account->getKey(),
+                    'status' => (string) $account->getRawOriginal('status'),
+                    'archived' => $account->trashed(),
+                ],
+            ];
 
-            $suspensionAppealService->createAndSendForShopOwner(
-                $shop,
-                $validated['suspension_reason'] ?? null,
-                auth('super_admin')->id()
-            );
-
-            if ($request->expectsJson() || $request->wantsJson() || $request->ajax()) {
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Shop suspended successfully.',
-                    'shop' => [
-                        'id' => $shop->id,
-                        'status' => 'suspended',
-                        'suspension_reason' => $validated['suspension_reason'] ?? null,
-                    ],
-                ]);
+            if (array_key_exists('suspension', $result)) {
+                $payload['suspension_id'] = $result['suspension']?->getKey();
             }
 
-            return redirect()->back()->with('success', 'Shop suspended successfully.');
-        } catch (\Exception $e) {
-            if ($request->expectsJson() || $request->wantsJson() || $request->ajax()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Failed to suspend shop. Please try again.',
-                ], 500);
+            if ($request->expectsJson() || $request->ajax() || $request->header('X-Inertia')) {
+                return response()->json($payload);
             }
 
-            return redirect()->back()->withErrors(['error' => 'Failed to suspend shop. Please try again.']);
+            return redirect()->back()->with('success', $successMessage);
+        } catch (ModelNotFoundException $exception) {
+            return $this->accountLifecycleFailure($request, 404, 'The requested account was not found.');
+        } catch (HttpExceptionInterface $exception) {
+            $status = $exception->getStatusCode();
+            $message = $status === 409
+                ? $exception->getMessage()
+                : 'The account lifecycle operation could not be completed.';
+
+            return $this->accountLifecycleFailure($request, $status, $message);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return $this->accountLifecycleFailure($request, 500, 'The account lifecycle operation could not be completed.');
         }
     }
 
-    public function activateShop(Request $request, $id)
+    private function accountLifecycleFailure(Request $request, int $status, string $message)
     {
-        try {
-            $shop = ShopOwner::findOrFail($id);
-            $shop->update([
-                'status' => 'approved',
-                'suspension_reason' => null
-            ]);
-
-            // Audit log activation
-            AuditLog::create([
-                'shop_owner_id' => $shop->id,
-                'actor_user_id' => auth('super_admin')->id(),
-                'action' => 'shop_activated',
-                'target_type' => 'shop_owner',
-                'target_id' => $shop->id,
-                'metadata' => [
-                    'email' => $shop->email,
-                    'business_name' => $shop->business_name ?? null,
-                ],
-            ]);
-
-            if ($request->expectsJson() || $request->wantsJson() || $request->ajax()) {
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Shop activated successfully.',
-                    'shop' => [
-                        'id' => $shop->id,
-                        'status' => 'approved',
-                        'suspension_reason' => null,
-                    ],
-                ]);
-            }
-
-            return redirect()->back()->with('success', 'Shop activated successfully.');
-        } catch (\Exception $e) {
-            if ($request->expectsJson() || $request->wantsJson() || $request->ajax()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Failed to activate shop. Please try again.',
-                ], 500);
-            }
-
-            return redirect()->back()->withErrors(['error' => 'Failed to activate shop. Please try again.']);
+        if ($request->expectsJson() || $request->ajax() || $request->header('X-Inertia')) {
+            return response()->json([
+                'success' => false,
+                'message' => $message,
+                'code' => $status === 409 ? 'account_lifecycle_conflict' : 'account_lifecycle_error',
+            ], $status);
         }
+
+        return redirect()->back()->withErrors(['error' => $message])->setStatusCode($status);
+    }
+
+    public function suspendShop(AccountSuspensionRequest $request, int $id)
+    {
+        return $this->runAccountLifecycle(
+            request: $request,
+            action: fn () => $this->accountLifecycle->suspend(
+                'shop',
+                $id,
+                $this->currentPrivilegedActor(),
+                $request,
+                (string) $request->validated('suspension_reason'),
+            ),
+            successMessage: 'Shop suspended successfully.',
+        );
+    }
+
+    public function activateShop(AccountReactivationRequest $request, int $id)
+    {
+        return $this->reactivateShop($request, $id);
+    }
+
+    public function reactivateShop(AccountReactivationRequest $request, int $id)
+    {
+        return $this->runAccountLifecycle(
+            request: $request,
+            action: fn () => $this->accountLifecycle->reactivate(
+                'shop',
+                $id,
+                $this->currentPrivilegedActor(),
+                $request,
+                (string) $request->validated('reactivation_reason'),
+            ),
+            successMessage: 'Shop reactivated successfully.',
+        );
+    }
+
+    public function archiveShop(AccountArchiveRequest $request, int $id)
+    {
+        return $this->runAccountLifecycle(
+            request: $request,
+            action: fn () => $this->accountLifecycle->archive(
+                'shop',
+                $id,
+                $this->currentPrivilegedActor(),
+                $request,
+                (string) $request->validated('archive_reason'),
+            ),
+            successMessage: 'Shop archived successfully.',
+        );
+    }
+
+    public function restoreShop(AccountRestoreRequest $request, int $id)
+    {
+        return $this->runAccountLifecycle(
+            request: $request,
+            action: fn () => $this->accountLifecycle->restore(
+                'shop',
+                $id,
+                $this->currentPrivilegedActor(),
+                $request,
+                (string) $request->validated('restore_reason'),
+            ),
+            successMessage: 'Shop restored successfully.',
+        );
     }
 
     /**
