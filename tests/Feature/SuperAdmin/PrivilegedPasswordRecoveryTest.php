@@ -9,16 +9,279 @@ use App\Models\PrivilegedSession;
 use App\Models\SuperAdmin;
 use App\Services\PrivilegedSecurityTokenService;
 use App\Services\PrivilegedSessionService;
+use Carbon\Carbon;
+use Illuminate\Contracts\Queue\ShouldBeEncrypted;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Session\ArraySessionHandler;
 use Illuminate\Session\Store;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Testing\TestResponse;
+use Spatie\Activitylog\Models\Activity;
+use Tests\Concerns\AuthenticatesPrivilegedUsers;
 use Tests\TestCase;
 
 final class PrivilegedPasswordRecoveryTest extends TestCase
 {
+    use AuthenticatesPrivilegedUsers;
     use RefreshDatabase;
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+        parent::tearDown();
+    }
+
+    public function test_forgot_password_is_generic_and_only_active_accounts_receive_a_reset_mail(): void
+    {
+        $this->useDatabaseQueue();
+        SuperAdmin::factory()->pendingSetup()->create(['email' => 'pending@example.test']);
+        SuperAdmin::factory()->suspended()->create(['email' => 'suspended@example.test']);
+        SuperAdmin::factory()->inactive()->create(['email' => 'inactive@example.test']);
+        SuperAdmin::factory()->mfaEnrolled()->create(['email' => 'active@example.test']);
+
+        $responses = [];
+        foreach ([
+            'unknown@example.test',
+            'pending@example.test',
+            'suspended@example.test',
+            'inactive@example.test',
+            'active@example.test',
+        ] as $email) {
+            $response = $this->postJson('/admin/forgot-password', ['email' => strtoupper($email)]);
+            $response->assertOk();
+            $responses[] = $response->json('message');
+        }
+
+        self::assertCount(1, array_unique($responses));
+        self::assertSame(1, PrivilegedSecurityToken::query()
+            ->where('purpose', PrivilegedSecurityToken::PURPOSE_PASSWORD_RESET)
+            ->count());
+        self::assertSame(1, DB::table('jobs')->count());
+    }
+
+    public function test_reset_mailable_is_encrypted_queued_and_places_the_bearer_only_in_the_fragment(): void
+    {
+        $rawToken = 'reset-fragment-token';
+        $mail = new \App\Mail\PrivilegedPasswordResetMail('Admin User', 'admin@example.test', $rawToken);
+
+        self::assertInstanceOf(ShouldQueue::class, $mail);
+        self::assertInstanceOf(ShouldBeEncrypted::class, $mail);
+        $rendered = $mail->render();
+        self::assertStringContainsString('#token='.$rawToken, $rendered);
+        self::assertStringNotContainsString('?token='.$rawToken, $rendered);
+        self::assertStringNotContainsString('/admin/reset-password/'.$rawToken, $rendered);
+    }
+
+    public function test_password_reset_exchange_and_consumption_are_atomic_and_invalidate_all_privileged_sessions(): void
+    {
+        $admin = SuperAdmin::factory()->mfaEnrolled()->create([
+            'email' => 'reset-target@example.test',
+            'password' => 'OldPassword1!',
+            'remember_token' => 'remember-before',
+        ]);
+        $otherRequest = $this->requestWithSessionId('reset-other-session');
+        app(PrivilegedSessionService::class)->establish($otherRequest, $admin);
+        $issued = app(PrivilegedSecurityTokenService::class)->issue(
+            $admin,
+            PrivilegedSecurityToken::PURPOSE_PASSWORD_RESET,
+            null,
+        );
+        $rawToken = $issued['raw_token'];
+        $oldSecret = $admin->mfa_secret;
+        $oldVersion = (int) $admin->security_version;
+
+        $this->get('/admin/reset-password')
+            ->assertOk()
+            ->assertHeader('Cache-Control', 'must-revalidate, no-cache, no-store, private');
+        $exchange = $this->postJson('/admin/reset-password/exchange', ['token' => $rawToken]);
+        $exchange->assertOk()->assertJson(['authorized' => true]);
+        $this->syncSessionCookie($exchange);
+        self::assertStringNotContainsString($rawToken, serialize(session()->all()));
+
+        $response = $this->post('/admin/reset-password/complete', [
+            'password' => 'Replacement-Password1!',
+            'password_confirmation' => 'Replacement-Password1!',
+        ]);
+        $response->assertRedirect(route('admin.login'));
+
+        $fresh = $admin->fresh();
+        self::assertTrue(Hash::check('Replacement-Password1!', (string) $fresh?->getRawOriginal('password')));
+        self::assertFalse(Hash::check('OldPassword1!', (string) $fresh?->getRawOriginal('password')));
+        self::assertSame($oldVersion + 1, (int) $fresh?->security_version);
+        self::assertNotSame('remember-before', $fresh?->remember_token);
+        self::assertNotNull($fresh?->password_changed_at);
+        self::assertSame($oldSecret, $fresh?->mfa_secret);
+        self::assertNotNull($issued['token']->fresh()?->used_at);
+        self::assertDatabaseCount('privileged_sessions', 0);
+        self::assertStringNotContainsString($rawToken, $response->headers->get('Location', ''));
+    }
+
+    public function test_password_reset_token_is_rejected_after_the_account_leaves_active_state(): void
+    {
+        $admin = SuperAdmin::factory()->mfaEnrolled()->create();
+        $issued = app(PrivilegedSecurityTokenService::class)->issue(
+            $admin,
+            PrivilegedSecurityToken::PURPOSE_PASSWORD_RESET,
+            null,
+        );
+        $admin->forceFill(['status' => SuperAdmin::STATUS_SUSPENDED])->save();
+
+        $this->postJson('/admin/reset-password/exchange', ['token' => $issued['raw_token']])
+            ->assertUnprocessable()
+            ->assertJson(['message' => 'The reset link is invalid or expired.']);
+        self::assertNull($issued['token']->fresh()?->used_at);
+    }
+
+    public function test_failed_password_reset_consumption_clears_the_internal_authorization(): void
+    {
+        $admin = SuperAdmin::factory()->mfaEnrolled()->create();
+        $issued = app(PrivilegedSecurityTokenService::class)->issue(
+            $admin,
+            PrivilegedSecurityToken::PURPOSE_PASSWORD_RESET,
+            null,
+        );
+
+        $exchange = $this->postJson('/admin/reset-password/exchange', ['token' => $issued['raw_token']])
+            ->assertOk();
+        $this->syncSessionCookie($exchange);
+        $admin->forceFill(['status' => SuperAdmin::STATUS_SUSPENDED])->save();
+
+        $this->postJson('/admin/reset-password/complete', [
+            'password' => 'Replacement-Password1!',
+            'password_confirmation' => 'Replacement-Password1!',
+        ])->assertUnprocessable();
+
+        self::assertNull(session('privileged_password_reset_authorization'));
+        self::assertNull($issued['token']->fresh()?->used_at);
+    }
+
+    public function test_reset_limiter_normalizes_email_before_counting_attempts(): void
+    {
+        for ($attempt = 1; $attempt <= 5; $attempt++) {
+            $this->postJson('/admin/forgot-password', [
+                'email' => 'RATE-LIMIT@example.test',
+            ])->assertOk();
+        }
+
+        $this->postJson('/admin/forgot-password', [
+            'email' => 'rate-limit@example.test',
+        ])->assertTooManyRequests();
+    }
+
+    public function test_security_state_is_available_to_both_roles_without_secrets_or_hashes(): void
+    {
+        foreach ([SuperAdmin::ROLE_ADMIN, SuperAdmin::ROLE_SUPER_ADMIN] as $role) {
+            $admin = SuperAdmin::factory()->mfaEnrolled()->create(['role' => $role]);
+            $this->actingAsCompletedPrivileged($admin);
+
+            $response = $this->getJson('/admin/security')->assertOk();
+            $payload = $response->getContent();
+            self::assertStringNotContainsString('mfa_secret', $payload);
+            self::assertStringNotContainsString('mfa_recovery_codes', $payload);
+            self::assertStringNotContainsString('password', $payload);
+            self::assertStringContainsString('recovery_code_count', $payload);
+        }
+    }
+
+    public function test_password_change_requires_recent_reauthentication_and_preserves_only_the_current_session(): void
+    {
+        $admin = SuperAdmin::factory()->mfaEnrolled()->create([
+            'password' => 'OldPassword1!',
+            'remember_token' => 'remember-before',
+        ]);
+        $this->actingAsCompletedPrivileged($admin);
+        $this->markRecentlyReauthenticated($admin);
+        $otherRequest = $this->requestWithSessionId('password-change-other');
+        app(PrivilegedSessionService::class)->establish($otherRequest, $admin);
+        $oldSecret = $admin->mfa_secret;
+
+        $this->post('/admin/security/password', [
+            'password' => 'NewPassword-Change1!',
+            'password_confirmation' => 'NewPassword-Change1!',
+        ])->assertRedirect(route('admin.security'));
+
+        $fresh = $admin->fresh();
+        self::assertTrue(Hash::check('NewPassword-Change1!', (string) $fresh?->getRawOriginal('password')));
+        self::assertSame(2, (int) $fresh?->security_version);
+        self::assertNotSame('remember-before', $fresh?->remember_token);
+        self::assertNotNull($fresh?->password_changed_at);
+        self::assertSame($oldSecret, $fresh?->mfa_secret);
+        self::assertSame(1, PrivilegedSession::query()->where('super_admin_id', $admin->id)->count());
+        self::assertDatabaseMissing('privileged_sessions', ['session_id' => $this->sessionKey('password-change-other')]);
+    }
+
+    public function test_password_change_audit_failure_rolls_back_credentials_version_and_sessions(): void
+    {
+        $admin = SuperAdmin::factory()->mfaEnrolled()->create([
+            'password' => 'OldPassword1!',
+            'remember_token' => 'remember-before',
+        ]);
+        $this->actingAsCompletedPrivileged($admin);
+        $this->markRecentlyReauthenticated($admin);
+        $this->mock(\App\Services\PrivilegedAudit::class, function ($mock): void {
+            $mock->shouldReceive('privilegedPasswordChangeCompleted')
+                ->once()
+                ->andThrow(new \RuntimeException('audit unavailable'));
+        });
+
+        $this->post('/admin/security/password', [
+            'password' => 'NewPassword-Change1!',
+            'password_confirmation' => 'NewPassword-Change1!',
+        ])->assertRedirect(route('admin.security'))
+            ->assertSessionHasErrors('error');
+
+        $fresh = $admin->fresh();
+        self::assertTrue(Hash::check('OldPassword1!', (string) $fresh?->getRawOriginal('password')));
+        self::assertSame(1, (int) $fresh?->security_version);
+        self::assertSame('remember-before', $fresh?->remember_token);
+        self::assertDatabaseCount('privileged_sessions', 1);
+    }
+
+    public function test_recovery_regeneration_returns_plaintext_once_and_requires_acknowledgement(): void
+    {
+        $admin = SuperAdmin::factory()->mfaEnrolled()->create();
+        $this->actingAsCompletedPrivileged($admin);
+        $this->markRecentlyReauthenticated($admin);
+        $oldHashes = $admin->mfa_recovery_codes;
+
+        $response = $this->postJson('/admin/security/recovery/generate')->assertOk();
+        $codes = $response->json('recovery_codes');
+        $acknowledgementToken = (string) $response->json('acknowledgement_token');
+        self::assertCount(8, $codes);
+        self::assertNotSame($oldHashes, $admin->fresh()?->mfa_recovery_codes);
+        self::assertStringNotContainsString(implode('', $codes), serialize(session()->all()));
+        self::assertStringNotContainsString($acknowledgementToken, serialize(session()->all()));
+        self::assertStringNotContainsString($acknowledgementToken, Activity::query()->latest('id')->firstOrFail()->properties->toJson());
+
+        $this->postJson('/admin/security/recovery/acknowledge', [
+            'token' => $acknowledgementToken,
+        ])->assertOk()->assertJson(['acknowledged' => true]);
+
+        $this->postJson('/admin/security/recovery/acknowledge', [
+            'token' => $acknowledgementToken,
+        ])->assertUnprocessable();
+    }
+
+    public function test_lost_recovery_acknowledgement_is_replaced_by_a_new_generation(): void
+    {
+        $admin = SuperAdmin::factory()->mfaEnrolled()->create();
+        $this->actingAsCompletedPrivileged($admin);
+        $this->markRecentlyReauthenticated($admin);
+
+        $first = $this->postJson('/admin/security/recovery/generate')->assertOk();
+        $firstToken = (string) $first->json('acknowledgement_token');
+        $second = $this->postJson('/admin/security/recovery/generate')->assertOk();
+        $secondToken = (string) $second->json('acknowledgement_token');
+
+        self::assertNotSame($firstToken, $secondToken);
+        $this->postJson('/admin/security/recovery/acknowledge', ['token' => $firstToken])
+            ->assertUnprocessable();
+        $this->postJson('/admin/security/recovery/acknowledge', ['token' => $secondToken])
+            ->assertOk();
+    }
 
     public function test_issued_bearer_is_returned_once_but_only_its_hash_is_persisted(): void
     {
@@ -203,5 +466,30 @@ final class PrivilegedPasswordRecoveryTest extends TestCase
     private function sessionKey(string $label): string
     {
         return str_pad(str_replace('-', '', $label), 40, '0');
+    }
+
+    private function useDatabaseQueue(): void
+    {
+        config(['queue.default' => 'database']);
+    }
+
+    private function markRecentlyReauthenticated(SuperAdmin $admin): void
+    {
+        session()->put([
+            'privileged_reauthenticated_at' => now()->timestamp,
+            'privileged_reauthenticated_security_version' => (int) $admin->security_version,
+        ]);
+        session()->save();
+        $this->withCredentials()->withCookie(config('session.cookie'), session()->getId());
+    }
+
+    private function syncSessionCookie(TestResponse $response): void
+    {
+        $cookie = collect($response->headers->getCookies())
+            ->first(fn ($candidate): bool => $candidate->getName() === config('session.cookie'));
+
+        if ($cookie !== null) {
+            $this->withCredentials()->withUnencryptedCookie($cookie->getName(), $cookie->getValue());
+        }
     }
 }

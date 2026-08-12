@@ -22,6 +22,8 @@ use App\Http\Controllers\superAdmin\ShopOwnerUpgradeRequestController as SuperAd
 use App\Http\Controllers\superAdmin\SuperAdminUserManagementController;
 use App\Http\Controllers\superAdmin\SystemMonitoringDashboardController;
 use App\Http\Controllers\PrivilegedMfaController;
+use App\Http\Controllers\PrivilegedPasswordResetController;
+use App\Http\Controllers\PrivilegedSecurityController;
 use App\Http\Controllers\PrivilegedSetupController;
 use App\Http\Controllers\SuperAdminAuthController;
 use App\Http\Controllers\SuperAdminController;
@@ -1675,6 +1677,21 @@ Route::post('/admin/setup/exchange', [PrivilegedSetupController::class, 'exchang
 Route::post('/admin/setup/complete', [PrivilegedSetupController::class, 'completePassword'])
     ->middleware(['privileged.no-store', 'throttle:privileged-setup'])
     ->name('admin.setup.complete');
+Route::get('/admin/forgot-password', [PrivilegedPasswordResetController::class, 'showForgotPassword'])
+    ->middleware('privileged.no-store')
+    ->name('admin.password.request');
+Route::post('/admin/forgot-password', [PrivilegedPasswordResetController::class, 'send'])
+    ->middleware('throttle:privileged-password-reset')
+    ->name('admin.password.email');
+Route::get('/admin/reset-password', [PrivilegedPasswordResetController::class, 'showResetPassword'])
+    ->middleware('privileged.no-store')
+    ->name('admin.password.reset');
+Route::post('/admin/reset-password/exchange', [PrivilegedPasswordResetController::class, 'exchange'])
+    ->middleware(['privileged.no-store', 'throttle:privileged-password-reset'])
+    ->name('admin.password.reset.exchange');
+Route::post('/admin/reset-password/complete', [PrivilegedPasswordResetController::class, 'complete'])
+    ->middleware(['privileged.no-store', 'throttle:privileged-password-reset'])
+    ->name('admin.password.reset.complete');
 Route::get('/admin/mfa/challenge', [PrivilegedMfaController::class, 'show'])
     ->middleware(['super_admin.auth', 'privileged.active', 'privileged.no-store'])
     ->name('admin.mfa.challenge');
@@ -1700,6 +1717,32 @@ Route::middleware([
     Route::get('/', function () {
         return redirect()->route('admin.system-monitoring');
     })->name('dashboard');
+    Route::get('/security', [PrivilegedSecurityController::class, 'show'])
+        ->middleware(['privileged.capability:manage_own_security', 'privileged.no-store'])
+        ->name('security');
+    Route::post('/security/password', [PrivilegedSecurityController::class, 'changePassword'])
+        ->middleware([
+            'privileged.capability:manage_own_security',
+            'privileged.recent',
+            'privileged.no-store',
+        ])
+        ->name('security.password');
+    Route::post('/security/recovery/generate', [PrivilegedSecurityController::class, 'generateRecoveryCodes'])
+        ->middleware([
+            'privileged.capability:manage_own_security',
+            'privileged.recent',
+            'privileged.no-store',
+            'throttle:privileged-setup',
+        ])
+        ->name('security.recovery.generate');
+    Route::post('/security/recovery/acknowledge', [PrivilegedSecurityController::class, 'acknowledgeRecovery'])
+        ->middleware([
+            'privileged.capability:manage_own_security',
+            'privileged.recent',
+            'privileged.no-store',
+            'throttle:privileged-setup',
+        ])
+        ->name('security.recovery.acknowledge');
     Route::get('/system-monitoring', [SystemMonitoringDashboardController::class, 'index'])
         ->middleware('privileged.capability:view_monitoring')
         ->name('system-monitoring');

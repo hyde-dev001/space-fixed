@@ -110,6 +110,73 @@ class PrivilegedAudit
         );
     }
 
+    public function privilegedPasswordResetRequested(Request $request, ?SuperAdmin $subject = null): void
+    {
+        $this->writeSecurity(
+            event: 'privileged_password_reset_requested',
+            request: $request,
+            subject: $subject,
+        );
+    }
+
+    public function privilegedPasswordResetExchangeSucceeded(Request $request, SuperAdmin $subject): void
+    {
+        $this->writeSecurity(
+            event: 'privileged_password_reset_exchange_succeeded',
+            request: $request,
+            subject: $subject,
+        );
+    }
+
+    public function privilegedPasswordResetExchangeFailed(Request $request): void
+    {
+        $this->writeSecurity(
+            event: 'privileged_password_reset_exchange_failed',
+            request: $request,
+            properties: ['reason' => 'invalid_or_expired_token'],
+        );
+    }
+
+    public function privilegedPasswordResetCompleted(Request $request, SuperAdmin $admin): void
+    {
+        $this->writeSecurity(
+            event: 'privileged_password_reset_completed',
+            request: $request,
+            actor: $admin,
+            subject: $admin,
+        );
+    }
+
+    public function privilegedPasswordChangeCompleted(Request $request, SuperAdmin $admin): void
+    {
+        $this->writeSecurity(
+            event: 'privileged_password_change_completed',
+            request: $request,
+            actor: $admin,
+            subject: $admin,
+        );
+    }
+
+    public function privilegedRecoveryCodesGenerated(Request $request, SuperAdmin $admin): void
+    {
+        $this->writeSecurity(
+            event: 'privileged_recovery_codes_generated',
+            request: $request,
+            actor: $admin,
+            subject: $admin,
+        );
+    }
+
+    public function privilegedRecoveryCodesAcknowledged(Request $request, SuperAdmin $admin): void
+    {
+        $this->writeSecurity(
+            event: 'privileged_recovery_codes_acknowledged',
+            request: $request,
+            actor: $admin,
+            subject: $admin,
+        );
+    }
+
     public function privilegedLoginSucceeded(Request $request, SuperAdmin $admin): void
     {
         $this->writeSecurity(
