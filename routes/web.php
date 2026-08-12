@@ -35,6 +35,7 @@ use App\Http\Controllers\UserSide\CheckoutController;
 use App\Http\Controllers\UserSide\CustomerProfileController;
 use App\Http\Controllers\UserSide\LandingPageController;
 use App\Http\Controllers\UserSide\OrderController;
+use App\Http\Middleware\AttachPrivilegedCorrelationId;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -722,6 +723,7 @@ Route::group([], function () {
 
 // Super Admin Routes
 Route::prefix('superAdmin')->name('superAdmin.')->middleware([
+    AttachPrivilegedCorrelationId::class,
     'super_admin.auth',
     'privileged.active',
     'privileged.mfa',
@@ -1634,6 +1636,7 @@ Route::middleware(['auth:user', 'check.suspension'])->group(function () {
 
 // Super Admin Notification API routes
 Route::middleware([
+    AttachPrivilegedCorrelationId::class,
     'super_admin.auth',
     'privileged.active',
     'privileged.mfa',
@@ -1664,53 +1667,58 @@ Route::get('/shop/message', function () {
 })->name('shop.message');
 
 // Super Admin Authentication Routes (Second set - removed duplicate, fixing authentication flows)
-Route::get('/admin/login', [SuperAdminAuthController::class, 'showLoginForm'])->name('admin.login');
+Route::get('/admin/login', [SuperAdminAuthController::class, 'showLoginForm'])
+    ->middleware(AttachPrivilegedCorrelationId::class)
+    ->name('admin.login');
 Route::post('/admin/login', [SuperAdminAuthController::class, 'login'])
-    ->middleware('throttle:privileged-login')
+    ->middleware([AttachPrivilegedCorrelationId::class, 'throttle:privileged-login'])
     ->name('admin.login.post');
-Route::post('/admin/logout', [SuperAdminAuthController::class, 'logout'])->name('admin.logout');
+Route::post('/admin/logout', [SuperAdminAuthController::class, 'logout'])
+    ->middleware(AttachPrivilegedCorrelationId::class)
+    ->name('admin.logout');
 Route::get('/admin/setup', [PrivilegedSetupController::class, 'showSetupPage'])
-    ->middleware('privileged.no-store')
+    ->middleware([AttachPrivilegedCorrelationId::class, 'privileged.no-store'])
     ->name('admin.setup');
 Route::post('/admin/setup/exchange', [PrivilegedSetupController::class, 'exchange'])
-    ->middleware(['privileged.no-store', 'throttle:privileged-setup'])
+    ->middleware([AttachPrivilegedCorrelationId::class, 'privileged.no-store', 'throttle:privileged-setup'])
     ->name('admin.setup.exchange');
 Route::post('/admin/setup/complete', [PrivilegedSetupController::class, 'completePassword'])
-    ->middleware(['privileged.no-store', 'throttle:privileged-setup'])
+    ->middleware([AttachPrivilegedCorrelationId::class, 'privileged.no-store', 'throttle:privileged-setup'])
     ->name('admin.setup.complete');
 Route::get('/admin/forgot-password', [PrivilegedPasswordResetController::class, 'showForgotPassword'])
-    ->middleware('privileged.no-store')
+    ->middleware([AttachPrivilegedCorrelationId::class, 'privileged.no-store'])
     ->name('admin.password.request');
 Route::post('/admin/forgot-password', [PrivilegedPasswordResetController::class, 'send'])
-    ->middleware('throttle:privileged-password-reset')
+    ->middleware([AttachPrivilegedCorrelationId::class, 'throttle:privileged-password-reset'])
     ->name('admin.password.email');
 Route::get('/admin/reset-password', [PrivilegedPasswordResetController::class, 'showResetPassword'])
-    ->middleware('privileged.no-store')
+    ->middleware([AttachPrivilegedCorrelationId::class, 'privileged.no-store'])
     ->name('admin.password.reset');
 Route::post('/admin/reset-password/exchange', [PrivilegedPasswordResetController::class, 'exchange'])
-    ->middleware(['privileged.no-store', 'throttle:privileged-password-reset'])
+    ->middleware([AttachPrivilegedCorrelationId::class, 'privileged.no-store', 'throttle:privileged-password-reset'])
     ->name('admin.password.reset.exchange');
 Route::post('/admin/reset-password/complete', [PrivilegedPasswordResetController::class, 'complete'])
-    ->middleware(['privileged.no-store', 'throttle:privileged-password-reset'])
+    ->middleware([AttachPrivilegedCorrelationId::class, 'privileged.no-store', 'throttle:privileged-password-reset'])
     ->name('admin.password.reset.complete');
 Route::get('/admin/mfa/challenge', [PrivilegedMfaController::class, 'show'])
-    ->middleware(['super_admin.auth', 'privileged.active', 'privileged.no-store'])
+    ->middleware([AttachPrivilegedCorrelationId::class, 'super_admin.auth', 'privileged.active', 'privileged.no-store'])
     ->name('admin.mfa.challenge');
 Route::post('/admin/mfa/challenge', [PrivilegedMfaController::class, 'verify'])
-    ->middleware(['super_admin.auth', 'privileged.active', 'privileged.no-store', 'throttle:privileged-mfa'])
+    ->middleware([AttachPrivilegedCorrelationId::class, 'super_admin.auth', 'privileged.active', 'privileged.no-store', 'throttle:privileged-mfa'])
     ->name('admin.mfa.challenge.verify');
 Route::get('/admin/mfa/setup', [PrivilegedSetupController::class, 'showEnrollment'])
-    ->middleware(['super_admin.auth', 'privileged.no-store'])
+    ->middleware([AttachPrivilegedCorrelationId::class, 'super_admin.auth', 'privileged.no-store'])
     ->name('admin.mfa.setup');
 Route::post('/admin/mfa/setup/verify', [PrivilegedSetupController::class, 'verifyEnrollment'])
-    ->middleware(['super_admin.auth', 'privileged.no-store', 'throttle:privileged-setup'])
+    ->middleware([AttachPrivilegedCorrelationId::class, 'super_admin.auth', 'privileged.no-store', 'throttle:privileged-setup'])
     ->name('admin.mfa.setup.verify');
 Route::post('/admin/mfa/setup/recovery/acknowledge', [PrivilegedSetupController::class, 'acknowledgeRecovery'])
-    ->middleware(['super_admin.auth', 'privileged.no-store', 'throttle:privileged-setup'])
+    ->middleware([AttachPrivilegedCorrelationId::class, 'super_admin.auth', 'privileged.no-store', 'throttle:privileged-setup'])
     ->name('admin.mfa.setup.recovery.acknowledge');
 
 // Admin Protected Routes
 Route::middleware([
+    AttachPrivilegedCorrelationId::class,
     'super_admin.auth',
     'privileged.active',
     'privileged.mfa',
@@ -2628,6 +2636,7 @@ Route::group([], function () {
 
 // Super Admin Routes
 Route::prefix('superAdmin')->name('superAdmin.')->middleware([
+    AttachPrivilegedCorrelationId::class,
     'super_admin.auth',
     'privileged.active',
     'privileged.mfa',

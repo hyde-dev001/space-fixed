@@ -891,7 +891,7 @@ class PrivilegedAudit
         }
     }
 
-    private function correlationId(Request $request): string
+    public function correlationId(Request $request): string
     {
         $existing = $request->attributes->get('privileged_audit_correlation_id');
 
