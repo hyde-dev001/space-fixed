@@ -27,6 +27,22 @@ class CheckEmployeeSuspension
             return $next($request);
         }
 
+        // Rejected owners must retain access to their own private documents
+        // so the signed resubmission workflow can function. The controller
+        // still enforces exact owner/document identity before serving bytes.
+        $authenticatedShopOwner = Auth::guard('shop_owner')->user();
+        if ($routeName === 'shop-owner.documents.show'
+            && $authenticatedShopOwner instanceof ShopOwner
+            && $this->isShopOwnerRejected($authenticatedShopOwner->status)) {
+            return $next($request);
+        }
+
+        if ($routeName === 'shop-owner.resubmission.document'
+            && (! ($authenticatedShopOwner instanceof ShopOwner)
+                || $this->isShopOwnerRejected($authenticatedShopOwner->status))) {
+            return $next($request);
+        }
+
         if (Auth::guard('shop_owner')->check()) {
             $authenticatedShopOwner = Auth::guard('shop_owner')->user();
             $shopOwner = $authenticatedShopOwner instanceof ShopOwner
@@ -142,6 +158,15 @@ class CheckEmployeeSuspension
         }
 
         return (string) $status === ShopOwnerStatus::SUSPENDED->value;
+    }
+
+    private function isShopOwnerRejected(mixed $status): bool
+    {
+        if ($status instanceof ShopOwnerStatus) {
+            return $status === ShopOwnerStatus::REJECTED;
+        }
+
+        return (string) $status === ShopOwnerStatus::REJECTED->value;
     }
 
     private function isShopOwnerOperational(mixed $status): bool
