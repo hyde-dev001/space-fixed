@@ -43,7 +43,6 @@ class PhaseZeroAuthorizationTest extends TestCase
             'administrator management' => ['GET', '/admin/admin'],
             'administrator creation' => ['POST', '/admin/create-admin'],
             'plan management' => ['POST', '/admin/premium-plans'],
-            'subscription intervention' => ['POST', '/admin/subscriptions/1/cancel'],
             'appeal decision' => ['POST', '/admin/appeals/1/approve'],
         ];
     }
@@ -136,9 +135,6 @@ class PhaseZeroAuthorizationTest extends TestCase
             'admin.premium-plans.archive' => SuperAdmin::CAP_MANAGE_PLANS,
             'admin.premium-plans.reactivate' => SuperAdmin::CAP_MANAGE_PLANS,
             'admin.subscription-management' => SuperAdmin::CAP_MANAGE_PLANS,
-            'admin.subscriptions.cancel' => SuperAdmin::CAP_INTERVENE_SUBSCRIPTIONS,
-            'admin.subscriptions.upgrade' => SuperAdmin::CAP_INTERVENE_SUBSCRIPTIONS,
-            'admin.subscriptions.downgrade' => SuperAdmin::CAP_INTERVENE_SUBSCRIPTIONS,
             'admin.appeals.approve' => SuperAdmin::CAP_RESOLVE_APPEALS,
             'admin.appeals.reject' => SuperAdmin::CAP_RESOLVE_APPEALS,
         ];

@@ -1852,15 +1852,6 @@ Route::middleware([
     Route::post('/premium-plans/{premiumPlan}/reactivate', [SuperAdminController::class, 'reactivatePremiumPlan'])
         ->middleware('privileged.capability:manage_plans')
         ->name('premium-plans.reactivate');
-    Route::post('/subscriptions/{id}/cancel', [SuperAdminController::class, 'cancelSubscription'])
-        ->middleware('privileged.capability:intervene_subscriptions')
-        ->name('subscriptions.cancel');
-    Route::post('/subscriptions/{id}/upgrade', [SuperAdminController::class, 'upgradeSubscription'])
-        ->middleware('privileged.capability:intervene_subscriptions')
-        ->name('subscriptions.upgrade');
-    Route::post('/subscriptions/{id}/downgrade', [SuperAdminController::class, 'downgradeSubscription'])
-        ->middleware('privileged.capability:intervene_subscriptions')
-        ->name('subscriptions.downgrade');
     Route::post('/shops/{id}/suspend', [SuperAdminController::class, 'suspendShop'])
         ->middleware('privileged.capability:intervene_accounts')
         ->name('shops.suspend');

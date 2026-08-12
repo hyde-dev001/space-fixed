@@ -248,7 +248,6 @@ export default function SubscriptionManagement() {
   const [changeTypeFilter, setChangeTypeFilter] = useState<ChangeTypeFilter>('all');
   const [sortBy, setSortBy] = useState<SortValue>('latest');
   const [currentPage, setCurrentPage] = useState(1);
-  const [isSubmitting, setIsSubmitting] = useState<number | null>(null);
   const [selected, setSelected] = useState<SubscriptionItem | null>(null);
   const [editingPlan, setEditingPlan] = useState<PremiumPlanItem | null>(null);
   const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
@@ -386,41 +385,6 @@ export default function SubscriptionManagement() {
   useEffect(() => {
     setCurrentPage((prev) => Math.min(prev, totalPages));
   }, [totalPages]);
-
-  const withSubmitState = (subscriptionId: number, callback: () => void) => {
-    setIsSubmitting(subscriptionId);
-    callback();
-  };
-
-  const deactivateSubscription = (subscription: SubscriptionItem) => {
-    Swal.fire({
-      title: 'Deactivate subscription?',
-      text: `This will deactivate ${subscription.shop.business_name}'s premium subscription renewal.`,
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonText: 'Yes, deactivate',
-      confirmButtonColor: '#dc2626',
-    }).then((result) => {
-      if (!result.isConfirmed) return;
-
-      withSubmitState(subscription.id, () => {
-        router.post(
-          `/admin/subscriptions/${subscription.id}/cancel`,
-          {
-            cancellation_reason: 'admin_deactivated',
-            cancellation_notes: null,
-          },
-          {
-            preserveScroll: true,
-            onFinish: () => {
-              setIsSubmitting(null);
-              setSelected(null);
-            },
-          }
-        );
-      });
-    });
-  };
 
   return (
     <AppLayout>
@@ -743,16 +707,6 @@ export default function SubscriptionManagement() {
               <div className="mt-6 flex flex-wrap items-center justify-end gap-2">
                 <Button variant="outline" size="sm" onClick={() => setSelected(null)}>
                   Close
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    if (isSubmitting === selected.id || selected.status === 'deactivated') return;
-                    deactivateSubscription(selected);
-                  }}
-                  className="bg-red-600 text-white hover:bg-red-700"
-                >
-                  {isSubmitting === selected.id ? 'Processing...' : 'Deactivate'}
                 </Button>
               </div>
             </div>

@@ -71,27 +71,19 @@ final class PrivilegedFailureAuditTest extends TestCase
         $this->assertFailureEvent('privileged_workflow_conflict', 'shop_owner_upgrade', $response->json('correlation_id'));
     }
 
-    public function test_unexpected_subscription_failure_is_sanitized_and_audited(): void
+    public function test_withdrawn_subscription_intervention_has_no_failure_audit_path(): void
     {
         $admin = SuperAdmin::factory()->superAdmin()->create();
+        $before = DB::table('activity_log')->count();
 
         $response = $this->actingAsCompletedPrivileged($admin)
-            ->postJson(route('admin.subscriptions.cancel', 999999), [
+            ->postJson('/admin/subscriptions/999999/cancel', [
                 'cancellation_reason' => 'operator correction',
             ])
-            ->assertStatus(500)
-            ->assertJsonPath('code', 'subscription_cancel_error');
+            ->assertNotFound();
 
+        $this->assertSame($before, DB::table('activity_log')->count());
         $this->assertStringNotContainsString('No query results', (string) $response->getContent());
-        $this->assertStringNotContainsString('999999', (string) $response->getContent());
-        $this->assertFailureEvent('privileged_workflow_failed', 'subscription_cancel', $response->json('correlation_id'));
-
-        $activity = DB::table('activity_log')
-            ->where('description', 'privileged_workflow_failed')
-            ->latest('id')
-            ->first();
-        $this->assertStringNotContainsString('No query results', (string) $activity?->properties);
-        $this->assertStringNotContainsString('SQLSTATE', (string) $activity?->properties);
     }
 
     public function test_validation_failure_does_not_create_failure_audit_noise(): void
