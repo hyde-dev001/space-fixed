@@ -35,6 +35,7 @@ interface ShopGroup {
   shop_status: string;
   total_reports: number;
   open_reports: number;
+  open_report_ids: number[];
   latest_reason: string;
   latest_date: string | null;
   pattern_flags: string[];
@@ -202,8 +203,11 @@ const ActionModal = ({
   const [action, setAction] = useState<'dismiss' | 'warn' | 'suspend' | ''>('');
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   const nextWarnStrike = Math.min(shopGroup.warning_strike + 1, shopGroup.warning_limit);
+  const suspensionPending = action === 'suspend'
+    || (action === 'warn' && shopGroup.next_warn_will_suspend);
 
   const handleSubmit = () => {
     if (!action) return;
@@ -215,7 +219,7 @@ const ActionModal = ({
     };
 
     const warnings: Record<string, string> = {
-      dismiss: 'This will mark all open reports as dismissed.',
+      dismiss: `This will mark ${shopGroup.open_report_ids.length} selected report(s) as dismissed.`,
       warn: shopGroup.next_warn_will_suspend
         ? `Current warning level is <b>${shopGroup.warning_strike}/${shopGroup.warning_limit}</b>. Applying warn now will auto-escalate this shop to <b>suspension</b>.`
         : `Current warning level is <b>${shopGroup.warning_strike}/${shopGroup.warning_limit}</b>. This warn action will move the shop to <b>${nextWarnStrike}/${shopGroup.warning_limit}</b>.`,
@@ -233,19 +237,25 @@ const ActionModal = ({
     }).then((result) => {
       if (!result.isConfirmed) return;
 
+      setErrorMessage('');
       setSubmitting(true);
       router.post(
         `/admin/shop-reports/${shopGroup.shop_owner_id}/action`,
-        { action, admin_notes: notes },
+        {
+          action,
+          report_ids: shopGroup.open_report_ids,
+          admin_notes: notes,
+        },
         {
           preserveScroll: true,
           onSuccess: () => {
-            setSubmitting(false);
             onClose();
           },
-          onError: () => {
-            setSubmitting(false);
+          onError: (errors) => {
+            const firstError = Object.values(errors)[0];
+            setErrorMessage(Array.isArray(firstError) ? firstError[0] : firstError ?? 'The server did not apply this decision.');
           },
+          onFinish: () => setSubmitting(false),
         }
       );
     });
@@ -278,6 +288,11 @@ const ActionModal = ({
               ? ' • Next warn will auto-suspend this shop.'
               : ` • ${shopGroup.warnings_until_suspension} warning(s) before auto-suspension.`}
           </div>
+          {errorMessage && (
+            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-700 dark:bg-red-900/20 dark:text-red-300">
+              {errorMessage}
+            </p>
+          )}
 
           {/* Action selector */}
           <div>
@@ -325,14 +340,14 @@ const ActionModal = ({
           {/* Notes */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Admin Notes {action === 'suspend' && <span className="text-red-500">*</span>}
+              Admin Notes {suspensionPending && <span className="text-red-500">*</span>}
             </label>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={3}
               placeholder={
-                action === 'suspend'
+                suspensionPending
                   ? 'Reason for suspension (required — will be shown to shop owner)...'
                   : 'Optional notes for this action...'
               }
@@ -340,7 +355,7 @@ const ActionModal = ({
             />
           </div>
 
-          {action === 'suspend' && (
+          {suspensionPending && (
             <p className="text-xs text-red-500 dark:text-red-400 flex items-center gap-1">
               <AlertIcon className="w-4 h-4 flex-shrink-0" />
               This will immediately suspend the shop and block access.
@@ -358,7 +373,7 @@ const ActionModal = ({
           </button>
           <button
             onClick={handleSubmit}
-            disabled={!action || submitting || (action === 'suspend' && !notes.trim())}
+            disabled={!action || submitting || !shopGroup.open_report_ids.length || (suspensionPending && !notes.trim())}
             className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed bg-blue-600 hover:bg-blue-700"
           >
             {submitting ? 'Processing…' : 'Confirm Action'}

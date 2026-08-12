@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\ShopDocument;
 use App\Models\AccountSuspension;
 use App\Models\ShopOwner;
+use App\Models\ShopReportModerationAction;
 use App\Models\SuperAdmin;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
@@ -630,6 +631,40 @@ class PrivilegedAudit
         ?int $suspensionId,
     ): void {
         $this->writeAccountLifecycle('shop_restored', $request, $actor, $shopOwner, $priorStatus, $newStatus, $reason, $suspensionId);
+    }
+
+    /**
+     * Record one exact-set shop-report decision without copying report text,
+     * credentials, or private storage paths into the privileged audit log.
+     *
+     * @param array<int, int> $reportIds
+     */
+    public function shopReportsModerated(
+        Request $request,
+        SuperAdmin $actor,
+        ShopOwner $shopOwner,
+        ShopReportModerationAction $moderationAction,
+        array $reportIds,
+        string $requestedAction,
+        string $appliedAction,
+        ?int $warningStrikeNumber,
+    ): void {
+        $this->write(
+            event: 'shop_reports_moderated',
+            actor: $actor,
+            subject: $shopOwner,
+            source: 'http',
+            correlationId: $this->correlationId($request),
+            ipAddress: $request->ip(),
+            properties: [
+                'moderation_action_id' => (int) $moderationAction->getKey(),
+                'report_ids' => array_values(array_map('intval', $reportIds)),
+                'requested_action' => $requestedAction,
+                'applied_action' => $appliedAction,
+                'warning_strike_number' => $warningStrikeNumber,
+                'moderation_source' => (string) $moderationAction->source,
+            ],
+        );
     }
 
     private function writeAccountLifecycle(

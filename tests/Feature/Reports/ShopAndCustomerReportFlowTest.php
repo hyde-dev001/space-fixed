@@ -4,7 +4,6 @@ namespace Tests\Feature\Reports;
 
 use App\Mail\ShopReportWarningMail;
 use App\Mail\SuspensionNoticeMail;
-use App\Models\AuditLog;
 use App\Models\Order;
 use App\Models\RepairRequest;
 use App\Models\RepairReview;
@@ -12,6 +11,7 @@ use App\Models\ReviewReport;
 use App\Models\ShopReview;
 use App\Models\ShopOwner;
 use App\Models\ShopReport;
+use App\Models\ShopReportModerationAction;
 use App\Models\SuperAdmin;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -404,6 +404,11 @@ class ShopAndCustomerReportFlowTest extends TestCase
 
         $this->postWithCsrf("/admin/shop-reports/{$shopOwner->id}/action", [
             'action' => 'warn',
+            'report_ids' => ShopReport::query()
+                ->where('shop_owner_id', $shopOwner->id)
+                ->whereIn('status', ['submitted', 'under_review'])
+                ->pluck('id')
+                ->all(),
             'admin_notes' => 'Reviewed and warned the shop owner based on submitted evidence.',
         ])->assertRedirect();
 
@@ -459,10 +464,11 @@ class ShopAndCustomerReportFlowTest extends TestCase
 
         for ($strike = 1; $strike <= 3; $strike++) {
             $customer = $this->createEligibleCustomer();
-            $this->createSubmittedShopReport($shopOwner, $customer);
+            $report = $this->createSubmittedShopReport($shopOwner, $customer);
 
             $this->postWithCsrf("/admin/shop-reports/{$shopOwner->id}/action", [
                 'action' => 'warn',
+                'report_ids' => [$report->id],
                 'admin_notes' => "Warning strike {$strike}",
             ])->assertRedirect();
         }
@@ -472,16 +478,14 @@ class ShopAndCustomerReportFlowTest extends TestCase
             'status' => 'suspended',
         ]);
 
-        $this->assertSame(2, AuditLog::query()
-            ->where('target_type', 'ShopOwner')
-            ->where('target_id', $shopOwner->id)
-            ->where('action', 'shop_report_warn')
+        $this->assertSame(2, ShopReportModerationAction::query()
+            ->where('shop_owner_id', $shopOwner->id)
+            ->where('applied_action', 'warn')
             ->count());
 
-        $this->assertSame(1, AuditLog::query()
-            ->where('target_type', 'ShopOwner')
-            ->where('target_id', $shopOwner->id)
-            ->where('action', 'shop_report_suspend')
+        $this->assertSame(1, ShopReportModerationAction::query()
+            ->where('shop_owner_id', $shopOwner->id)
+            ->where('applied_action', 'suspend')
             ->count());
 
         Mail::assertSent(ShopReportWarningMail::class, function (ShopReportWarningMail $mail) use ($shopOwner) {
@@ -504,10 +508,11 @@ class ShopAndCustomerReportFlowTest extends TestCase
 
         for ($strike = 1; $strike <= 2; $strike++) {
             $customer = $this->createEligibleCustomer();
-            $this->createSubmittedShopReport($shopOwner, $customer);
+            $report = $this->createSubmittedShopReport($shopOwner, $customer);
 
             $this->postWithCsrf("/admin/shop-reports/{$shopOwner->id}/action", [
                 'action' => 'warn',
+                'report_ids' => [$report->id],
                 'admin_notes' => "Warning strike {$strike}",
             ])->assertRedirect();
         }

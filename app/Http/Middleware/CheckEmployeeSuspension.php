@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use App\Models\Employee;
 use App\Models\ShopOwner;
+use App\Models\User;
 use Symfony\Component\HttpFoundation\Response;
 
 class CheckEmployeeSuspension
@@ -27,7 +28,10 @@ class CheckEmployeeSuspension
         }
 
         if (Auth::guard('shop_owner')->check()) {
-            $shopOwner = Auth::guard('shop_owner')->user();
+            $authenticatedShopOwner = Auth::guard('shop_owner')->user();
+            $shopOwner = $authenticatedShopOwner instanceof ShopOwner
+                ? ShopOwner::withTrashed()->find($authenticatedShopOwner->getKey())
+                : null;
 
             if ($shopOwner?->trashed() || ! $this->isShopOwnerOperational($shopOwner?->status)) {
                 $this->logoutGuard($request, 'shop_owner');
@@ -44,7 +48,10 @@ class CheckEmployeeSuspension
         }
 
         if (Auth::guard('user')->check()) {
-            $user = Auth::guard('user')->user();
+            $authenticatedUser = Auth::guard('user')->user();
+            $user = $authenticatedUser instanceof User
+                ? User::withTrashed()->find($authenticatedUser->getKey())
+                : null;
 
             if ($user?->trashed() || ! $this->isUserActive($user?->status)) {
                 $this->logoutGuard($request, 'user');
