@@ -824,6 +824,164 @@ class PrivilegedAudit
         $this->writePremiumPlan('premium_plan_reactivated', $request, $actor, $plan, $changes);
     }
 
+    public function premiumSubscriptionCancelled(
+        Request $request,
+        SuperAdmin $actor,
+        Model $subscription,
+        string $priorStatus,
+        string $reason,
+        ?string $notes,
+    ): void {
+        $this->write(
+            event: 'subscription_cancelled',
+            actor: $actor,
+            subject: $subscription,
+            source: 'http',
+            correlationId: $this->correlationId($request),
+            ipAddress: $request->ip(),
+            properties: [
+                'subscription_id' => (int) $subscription->getKey(),
+                'shop_owner_id' => (int) $subscription->getAttribute('shop_owner_id'),
+                'prior_status' => $priorStatus,
+                'new_status' => 'cancelled',
+                'reason' => $reason,
+                'notes' => $notes,
+                'ends_at' => $subscription->getAttribute('ends_at')?->toISOString(),
+            ],
+        );
+    }
+
+    public function legacySubscriptionCorrected(
+        Request $request,
+        SuperAdmin $actor,
+        Model $subscription,
+        string $priorStatus,
+        string $targetStatus,
+        \Carbon\CarbonInterface $effectiveEndsAt,
+        string $reason,
+        ?string $notes,
+    ): void {
+        $this->write(
+            event: 'legacy_subscription_corrected',
+            actor: $actor,
+            subject: $subscription,
+            source: 'http',
+            correlationId: $this->correlationId($request),
+            ipAddress: $request->ip(),
+            properties: [
+                'subscription_id' => (int) $subscription->getKey(),
+                'shop_owner_id' => (int) $subscription->getAttribute('shop_owner_id'),
+                'prior_status' => $priorStatus,
+                'target_status' => $targetStatus,
+                'effective_ends_at' => $effectiveEndsAt->toISOString(),
+                'reason' => $reason,
+                'notes' => $notes,
+            ],
+        );
+    }
+
+    public function premiumSubscriptionRefundInitiated(
+        Request $request,
+        SuperAdmin $actor,
+        Model $refund,
+        Model $payment,
+        Model $subscription,
+    ): void {
+        $this->writeRefundEvent(
+            event: 'subscription_refund_initiated',
+            request: $request,
+            actor: $actor,
+            refund: $refund,
+            subscription: $subscription,
+            properties: [
+                'payment_id' => (int) $payment->getKey(),
+                'amount' => (string) $refund->getAttribute('amount'),
+                'currency' => (string) $refund->getAttribute('currency'),
+                'provider_reason' => (string) $refund->getAttribute('provider_reason'),
+            ],
+        );
+    }
+
+    public function premiumSubscriptionRefundSucceeded(
+        Request $request,
+        SuperAdmin $actor,
+        Model $refund,
+        Model $subscription,
+    ): void {
+        $this->writeRefundEvent('subscription_refund_succeeded', $request, $actor, $refund, $subscription);
+    }
+
+    public function premiumSubscriptionRefundProcessing(
+        Request $request,
+        SuperAdmin $actor,
+        Model $refund,
+        Model $subscription,
+    ): void {
+        $this->writeRefundEvent('subscription_refund_processing', $request, $actor, $refund, $subscription);
+    }
+
+    public function premiumSubscriptionRefundFailed(
+        Request $request,
+        SuperAdmin $actor,
+        Model $refund,
+        Model $subscription,
+    ): void {
+        $this->writeRefundEvent('subscription_refund_failed', $request, $actor, $refund, $subscription);
+    }
+
+    public function premiumSubscriptionRefundUnknown(
+        Request $request,
+        SuperAdmin $actor,
+        Model $refund,
+        Model $subscription,
+    ): void {
+        $this->writeRefundEvent('subscription_refund_unknown', $request, $actor, $refund, $subscription);
+    }
+
+    public function premiumSubscriptionRefundWebhookUpdated(
+        Request $request,
+        Model $refund,
+        Model $subscription,
+        string $outcome,
+    ): void {
+        activity('privileged')
+            ->performedOn($subscription)
+            ->setEvent('subscription_refund_'.$outcome)
+            ->withProperties([
+                'event' => 'subscription_refund_'.$outcome,
+                'source' => 'provider_webhook',
+                'correlation_id' => $this->correlationId($request),
+                'ip_address' => $request->ip(),
+                'refund_id' => (int) $refund->getKey(),
+                'subscription_id' => (int) $subscription->getKey(),
+                'provider_refund_id' => $refund->getAttribute('provider_refund_id'),
+                'status' => $outcome,
+            ])
+            ->log('subscription_refund_'.$outcome);
+    }
+
+    public function premiumSubscriptionRefundReconciled(
+        Request $request,
+        Model $refund,
+        Model $subscription,
+        string $outcome,
+    ): void {
+        activity('privileged')
+            ->performedOn($subscription)
+            ->setEvent('subscription_refund_reconciled')
+            ->withProperties([
+                'event' => 'subscription_refund_reconciled',
+                'source' => 'provider_reconciliation',
+                'correlation_id' => $this->correlationId($request),
+                'ip_address' => $request->ip(),
+                'refund_id' => (int) $refund->getKey(),
+                'subscription_id' => (int) $subscription->getKey(),
+                'provider_refund_id' => $refund->getAttribute('provider_refund_id'),
+                'status' => $outcome,
+            ])
+            ->log('subscription_refund_reconciled');
+    }
+
     /**
      * @param array<int, string> $newlyEnabledModuleKeys
      */
@@ -952,6 +1110,31 @@ class PrivilegedAudit
             correlationId: $this->correlationId($request),
             ipAddress: $request->ip(),
             properties: ['changes' => $changes],
+        );
+    }
+
+    private function writeRefundEvent(
+        string $event,
+        Request $request,
+        SuperAdmin $actor,
+        Model $refund,
+        Model $subscription,
+        array $properties = [],
+    ): void {
+        $this->write(
+            event: $event,
+            actor: $actor,
+            subject: $refund,
+            source: 'http',
+            correlationId: $this->correlationId($request),
+            ipAddress: $request->ip(),
+            properties: array_merge([
+                'refund_id' => (int) $refund->getKey(),
+                'subscription_id' => (int) $subscription->getKey(),
+                'provider_refund_id' => $refund->getAttribute('provider_refund_id'),
+                'status' => (string) $refund->getAttribute('status'),
+                'failure_code' => $refund->getAttribute('failure_code'),
+            ], $properties),
         );
     }
 

@@ -18,6 +18,7 @@ use App\Models\SuperAdmin;
 use App\Models\ShopOwner;
 use App\Models\PremiumPlan;
 use App\Models\ShopOwnerSubscription;
+use App\Models\ShopOwnerSubscriptionPayment;
 use App\Models\User;
 use App\Services\PrivilegedAudit;
 use App\Services\AdministratorIdentityService;
@@ -228,8 +229,8 @@ class SuperAdminController extends Controller
         $hasPlanChangeColumns = Schema::hasColumn('shop_owner_subscriptions', 'replaces_subscription_id')
             && Schema::hasColumn('shop_owner_subscriptions', 'payment_method');
 
-        // Fetch all subscriptions with relations
-        $subscriptionModels = \App\Models\ShopOwnerSubscription::with(['shopOwner', 'premiumPlan'])
+        $subscriptionModels = ShopOwnerSubscription::query()
+            ->with(['shopOwner', 'premiumPlan', 'payments.refunds'])
             ->orderBy('created_at', 'desc')
             ->get();
 
@@ -238,38 +239,67 @@ class SuperAdminController extends Controller
         });
 
         $subscriptions = $subscriptionModels
-            ->map(function ($subscription) use ($now, $hasCancellationColumns, $hasPlanChangeColumns, $planNameBySubscriptionId) {
+            ->map(function (ShopOwnerSubscription $subscription) use ($now, $hasCancellationColumns, $hasPlanChangeColumns, $planNameBySubscriptionId, $subscriptionModels) {
                 $effectiveEndsAt = $subscription->ends_at;
                 if (!$effectiveEndsAt && $subscription->starts_at && $subscription->premiumPlan) {
                     $effectiveEndsAt = $subscription->starts_at->copy()->addDays((int) $subscription->premiumPlan->duration_days);
                 }
 
                 $nextBillingAt = null;
-                if (!in_array($subscription->status, ['deactivated', 'cancelled', 'expired', 'failed'], true) && $effectiveEndsAt?->greaterThanOrEqualTo($now)) {
+                if ($subscription->status === 'active' && $effectiveEndsAt?->greaterThanOrEqualTo($now)) {
                     $nextBillingAt = $effectiveEndsAt;
                 }
 
                 $cancellationReason = $hasCancellationColumns ? $subscription->cancellation_reason : null;
                 $cancellationNotes = $hasCancellationColumns ? $subscription->cancellation_notes : null;
 
-                if ((empty($cancellationReason) || empty($cancellationNotes)) && class_exists(\Spatie\Activitylog\Models\Activity::class)) {
-                    $activity = \Spatie\Activitylog\Models\Activity::query()
-                        ->where('subject_type', \App\Models\ShopOwnerSubscription::class)
-                        ->where('subject_id', $subscription->id)
-                        ->where(function ($query) {
-                            $query->where('description', 'like', '%cancel%')
-                                ->orWhere('description', 'like', '%deactivat%');
-                        })
-                        ->latest('id')
-                        ->first();
-
-                    $cancellationReason = $cancellationReason ?: data_get($activity, 'properties.reason');
-                    $cancellationNotes = $cancellationNotes ?: data_get($activity, 'properties.notes');
-                }
-
                 $replacesSubscriptionId = $hasPlanChangeColumns
                     ? ($subscription->replaces_subscription_id ? (int) $subscription->replaces_subscription_id : null)
                     : null;
+
+                $hasPendingLifecycleChild = $subscriptionModels->contains(
+                    fn (ShopOwnerSubscription $candidate): bool => $candidate->status === 'pending'
+                        && ((int) $candidate->renewal_of_subscription_id === (int) $subscription->id
+                            || (int) $candidate->replaces_subscription_id === (int) $subscription->id),
+                );
+                $paidPayments = $subscription->payments
+                    ->filter(fn (ShopOwnerSubscriptionPayment $payment): bool => $payment->status === 'paid')
+                    ->sortByDesc(fn (ShopOwnerSubscriptionPayment $payment): int => $payment->paid_at?->getTimestamp() ?? 0)
+                    ->values();
+                $grossCollected = (float) $paidPayments->sum(
+                    fn (ShopOwnerSubscriptionPayment $payment): float => (float) ($payment->amount_paid ?? 0),
+                );
+                $refundAttempts = $subscription->payments
+                    ->flatMap(fn (ShopOwnerSubscriptionPayment $payment) => $payment->refunds)
+                    ->sortByDesc('id')
+                    ->values();
+                $refundedAmount = (float) $refundAttempts
+                    ->where('status', 'succeeded')
+                    ->sum(fn ($refund): float => (float) ($refund->amount ?? 0));
+                $unresolvedRefund = $refundAttempts->first(
+                    fn ($refund): bool => in_array($refund->status, ['pending', 'processing', 'unknown'], true),
+                );
+                $refundPayment = $paidPayments->first(function (ShopOwnerSubscriptionPayment $payment) use ($refundAttempts): bool {
+                    if (
+                        strtolower((string) $payment->gateway) !== 'paymongo'
+                        || ! filled($payment->paymongo_payment_id)
+                        || strtoupper((string) $payment->currency) !== 'PHP'
+                        || (float) ($payment->amount_paid ?? 0) <= 0
+                    ) {
+                        return false;
+                    }
+
+                    return ! $refundAttempts->contains(
+                        fn ($refund): bool => (int) $refund->payment_id === (int) $payment->id
+                            && in_array($refund->status, ['pending', 'processing', 'unknown', 'succeeded'], true),
+                    );
+                });
+                $canCancel = $subscription->status === 'active'
+                    && $grossCollected > 0
+                    && ! $hasPendingLifecycleChild;
+                $eligibleForRefund = in_array($subscription->status, ['active', 'cancelled'], true)
+                    && $refundPayment instanceof ShopOwnerSubscriptionPayment
+                    && ! $hasPendingLifecycleChild;
 
                 return [
                     'id' => $subscription->id,
@@ -288,26 +318,70 @@ class SuperAdminController extends Controller
                     'plan_code' => $subscription->plan_code,
                     'showroom_slot_limit' => $subscription->showroom_slot_limit,
                     'status' => $subscription->status,
-                    'amount_paid' => (float) ($subscription->paid_amount ?? $subscription->premiumPlan?->price ?? 0),
+                    'amount_paid' => $grossCollected,
+                    'refunded_amount' => $refundedAmount,
+                    'net_collected' => max(0, $grossCollected - $refundedAmount),
                     'starts_at' => $subscription->starts_at ? $subscription->starts_at->format('Y-m-d H:i:s') : null,
-                    'ends_at' => $subscription->ends_at ? $subscription->ends_at->format('Y-m-d H:i:s') : null,
+                    'ends_at' => $effectiveEndsAt?->format('Y-m-d H:i:s'),
                     'next_billing_at' => $nextBillingAt?->format('Y-m-d H:i:s'),
                     'cancellation_reason' => $cancellationReason,
                     'cancellation_notes' => $cancellationNotes,
                     'payment_method' => $hasPlanChangeColumns ? $subscription->payment_method : null,
                     'replaces_subscription_id' => $replacesSubscriptionId,
                     'previous_plan_name' => $replacesSubscriptionId ? $planNameBySubscriptionId->get($replacesSubscriptionId) : null,
+                    'payments' => $subscription->payments->sortByDesc('id')->values()->map(
+                        fn (ShopOwnerSubscriptionPayment $payment): array => [
+                            'id' => (int) $payment->id,
+                            'payment_type' => (string) $payment->payment_type,
+                            'amount_due' => (float) ($payment->amount_due ?? 0),
+                            'amount_paid' => $payment->amount_paid !== null ? (float) $payment->amount_paid : null,
+                            'currency' => (string) $payment->currency,
+                            'status' => (string) $payment->status,
+                            'paid_at' => $payment->paid_at?->toISOString(),
+                            'refunds' => $payment->refunds->sortByDesc('id')->values()->map(
+                                fn ($refund): array => [
+                                    'id' => (int) $refund->id,
+                                    'status' => (string) $refund->status,
+                                    'amount' => (float) $refund->amount,
+                                    'currency' => (string) $refund->currency,
+                                    'business_reason' => (string) $refund->business_reason,
+                                    'provider_reason' => (string) $refund->provider_reason,
+                                    'provider_refund_id' => $refund->provider_refund_id,
+                                    'failure_code' => $refund->failure_code,
+                                    'initiated_at' => $refund->initiated_at?->toISOString(),
+                                    'finalized_at' => $refund->finalized_at?->toISOString(),
+                                    'reconciled_at' => $refund->reconciled_at?->toISOString(),
+                                ],
+                            )->all(),
+                        ],
+                    )->all(),
+                    'refund_attempts' => $refundAttempts->map(
+                        fn ($refund): array => [
+                            'id' => (int) $refund->id,
+                            'status' => (string) $refund->status,
+                            'amount' => (float) $refund->amount,
+                            'currency' => (string) $refund->currency,
+                            'business_reason' => (string) $refund->business_reason,
+                            'provider_reason' => (string) $refund->provider_reason,
+                            'provider_refund_id' => $refund->provider_refund_id,
+                            'failure_code' => $refund->failure_code,
+                            'initiated_at' => $refund->initiated_at?->toISOString(),
+                            'finalized_at' => $refund->finalized_at?->toISOString(),
+                            'reconciled_at' => $refund->reconciled_at?->toISOString(),
+                        ],
+                    )->all(),
+                    'can_cancel' => $canCancel,
+                    'legacy_correction_available' => $subscription->status === 'deactivated',
+                    'eligible_for_refund' => $eligibleForRefund,
+                    'refund_payment_id' => $eligibleForRefund ? (int) $refundPayment->id : null,
+                    'refund_block_reason' => $unresolvedRefund ? 'reconciliation_required' : null,
                     'created_at' => $subscription->created_at->format('Y-m-d H:i:s'),
                 ];
             });
 
         // Calculate statistics
         $isOngoing = function (array $sub) use ($now) {
-            if (($sub['status'] ?? null) === 'deactivated') {
-                return false;
-            }
-
-            if (!empty($sub['ends_at'])) {
+            if (in_array(($sub['status'] ?? null), ['active', 'cancelled'], true) && !empty($sub['ends_at'])) {
                 $endDate = \Carbon\Carbon::parse($sub['ends_at']);
                 return $endDate->greaterThanOrEqualTo($now);
             }
@@ -315,14 +389,17 @@ class SuperAdminController extends Controller
             return ($sub['status'] ?? null) === 'active';
         };
 
+        $grossCollected = (float) $subscriptions->sum('amount_paid');
+        $refundedAmount = (float) $subscriptions->sum('refunded_amount');
+
         $stats = [
             // Keep cards consistent with UI badge logic: ongoing depends on end date, not only raw status.
             'active' => $subscriptions->filter(fn ($sub) => $isOngoing($sub))->count(),
             'expired' => $subscriptions->filter(fn ($sub) => !$isOngoing($sub))->count(),
-            // Count all successful paid subscriptions, even if later cancelled/expired.
-            'total_revenue' => $subscriptions->whereIn('status', ['active', 'cancelled', 'deactivated', 'expired'])->sum(function ($sub) {
-                return $sub['amount_paid'] ?? 0;
-            }),
+            'total_revenue' => $grossCollected,
+            'gross_collected' => $grossCollected,
+            'refunded_amount' => $refundedAmount,
+            'net_collected' => max(0, $grossCollected - $refundedAmount),
             'expiring_soon' => $subscriptions->filter(function ($sub) use ($isOngoing, $now) {
                 if (!$isOngoing($sub) || empty($sub['ends_at'])) {
                     return false;

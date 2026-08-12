@@ -8,6 +8,7 @@ use App\Models\PremiumPlan;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerSubscription;
 use App\Models\ShopOwnerSubscriptionPayment;
+use App\Models\ShopOwnerSubscriptionRefund;
 use App\Models\SuperAdmin;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -20,17 +21,13 @@ final class SubscriptionInterventionContainmentTest extends TestCase
     use AuthenticatesPrivilegedUsers;
     use RefreshDatabase;
 
-    public function test_super_admin_subscription_interventions_are_not_registered(): void
+    public function test_super_admin_plan_swap_interventions_remain_withdrawn(): void
     {
-        foreach ([
-            'admin.subscriptions.cancel',
-            'admin.subscriptions.upgrade',
-            'admin.subscriptions.downgrade',
-        ] as $routeName) {
+        foreach (['admin.subscriptions.upgrade', 'admin.subscriptions.downgrade'] as $routeName) {
             $this->assertNull(Route::getRoutes()->getByName($routeName), $routeName);
         }
 
-        foreach (['cancel', 'upgrade', 'downgrade'] as $action) {
+        foreach (['upgrade', 'downgrade'] as $action) {
             $this->assertCount(
                 0,
                 collect(Route::getRoutes())->filter(fn ($route) => $route->uri() === "admin/subscriptions/{id}/{$action}"),
@@ -39,7 +36,7 @@ final class SubscriptionInterventionContainmentTest extends TestCase
         }
     }
 
-    public function test_old_subscription_post_uris_cannot_mutate_billing_or_audit_state(): void
+    public function test_old_subscription_plan_swap_post_uris_cannot_mutate_billing_or_audit_state(): void
     {
         $admin = SuperAdmin::factory()->superAdmin()->create();
         $plan = $this->createPlan();
@@ -70,7 +67,7 @@ final class SubscriptionInterventionContainmentTest extends TestCase
         $planBefore = $plan->fresh()->getAttributes();
         $auditCountBefore = DB::table('activity_log')->count();
 
-        foreach (['cancel', 'upgrade', 'downgrade'] as $action) {
+        foreach (['upgrade', 'downgrade'] as $action) {
             $this->actingAsCompletedPrivileged($admin)
                 ->postJson("/admin/subscriptions/{$subscription->id}/{$action}", [
                     'target_plan_id' => $plan->id,
@@ -119,6 +116,82 @@ final class SubscriptionInterventionContainmentTest extends TestCase
 
         $this->assertSame(['GET', 'HEAD'], Route::getRoutes()->getByName('shop-owner.premium-success')?->methods());
         $this->assertSame(['GET', 'HEAD'], Route::getRoutes()->getByName('shop-owner.premium-cancel')?->methods());
+    }
+
+    public function test_billing_payload_uses_ledger_revenue_and_declares_only_server_eligible_controls(): void
+    {
+        $superAdmin = SuperAdmin::factory()->superAdmin()->create();
+        $plan = $this->createPlan();
+        $owner = ShopOwner::factory()->approved()->create();
+        $subscription = ShopOwnerSubscription::query()->create([
+            'shop_owner_id' => $owner->id,
+            'premium_plan_id' => $plan->id,
+            'plan_code' => $plan->plan_code,
+            'showroom_slot_limit' => $plan->showroom_slot_limit,
+            'status' => 'active',
+            'paid_amount' => 999,
+            'starts_at' => now()->subDay(),
+            'ends_at' => now()->addDays(29),
+        ]);
+        $payment = ShopOwnerSubscriptionPayment::query()->create([
+            'shop_owner_id' => $owner->id,
+            'subscription_id' => $subscription->id,
+            'payment_type' => 'new_subscription',
+            'gateway' => 'paymongo',
+            'currency' => 'PHP',
+            'paymongo_payment_id' => 'payload-payment-1',
+            'amount_due' => 249,
+            'amount_paid' => 249,
+            'status' => 'paid',
+            'paid_at' => now()->subDay(),
+        ]);
+        ShopOwnerSubscriptionRefund::query()->create([
+            'payment_id' => $payment->id,
+            'subscription_id' => $subscription->id,
+            'local_reference' => (string) fake()->uuid(),
+            'provider_refund_id' => 'payload-refund-1',
+            'amount' => 249,
+            'currency' => 'PHP',
+            'business_reason' => 'Payload test refund.',
+            'provider_reason' => 'others',
+            'status' => 'succeeded',
+            'initiated_at' => now()->subHour(),
+            'finalized_at' => now()->subHour(),
+        ]);
+
+        $legacy = ShopOwnerSubscription::query()->create([
+            'shop_owner_id' => $owner->id,
+            'premium_plan_id' => $plan->id,
+            'plan_code' => $plan->plan_code,
+            'showroom_slot_limit' => $plan->showroom_slot_limit,
+            'status' => 'deactivated',
+            'paid_amount' => 777,
+        ]);
+
+        $this->actingAsCompletedPrivileged($superAdmin)
+            ->get('/admin/subscription-management')
+            ->assertOk()
+            ->assertInertia(function ($page) use ($subscription, $legacy): void {
+                $props = $page->toArray()['props'];
+                $rows = collect($props['subscriptions'])->keyBy('id');
+
+                $this->assertSame(249.0, (float) $props['stats']['total_revenue']);
+                $this->assertSame(249.0, (float) $props['stats']['gross_collected']);
+                $this->assertSame(249.0, (float) $props['stats']['refunded_amount']);
+                $this->assertSame(0.0, (float) $props['stats']['net_collected']);
+                $this->assertSame(0.0, (float) $rows[$legacy->id]['amount_paid']);
+                $this->assertTrue($rows[$legacy->id]['legacy_correction_available']);
+                $this->assertFalse($rows[$legacy->id]['eligible_for_refund']);
+                $this->assertSame(249.0, (float) $rows[$subscription->id]['amount_paid']);
+                $this->assertSame(249.0, (float) $rows[$subscription->id]['refunded_amount']);
+                $this->assertSame(0.0, (float) $rows[$subscription->id]['net_collected']);
+                $this->assertFalse($rows[$subscription->id]['eligible_for_refund']);
+                $this->assertTrue($rows[$subscription->id]['can_cancel']);
+                $this->assertCount(1, $rows[$subscription->id]['payments']);
+                $this->assertCount(1, $rows[$subscription->id]['refund_attempts']);
+            });
+
+        $this->assertSame('deactivated', $legacy->fresh()->status);
     }
 
     private function createPlan(): PremiumPlan

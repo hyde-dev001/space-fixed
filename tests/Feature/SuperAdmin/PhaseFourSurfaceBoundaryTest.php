@@ -58,7 +58,6 @@ final class PhaseFourSurfaceBoundaryTest extends TestCase
             'deactivateUser',
             'resetUserPassword',
             'NotificationCommunicationTools',
-            'subscriptions.cancel',
             'subscriptions.upgrade',
             'subscriptions.downgrade',
         ] as $retiredAction) {
@@ -66,7 +65,6 @@ final class PhaseFourSurfaceBoundaryTest extends TestCase
         }
 
         foreach ([
-            'admin.subscriptions.cancel',
             'admin.subscriptions.upgrade',
             'admin.subscriptions.downgrade',
         ] as $name) {

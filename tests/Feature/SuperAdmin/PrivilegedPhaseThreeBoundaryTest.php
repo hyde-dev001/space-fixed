@@ -190,13 +190,9 @@ final class PrivilegedPhaseThreeBoundaryTest extends TestCase
         }
     }
 
-    public function test_subscription_mutations_are_withdrawn_until_phase_five(): void
+    public function test_subscription_plan_swaps_remain_withdrawn_after_phase_five(): void
     {
-        foreach ([
-            'admin.subscriptions.cancel',
-            'admin.subscriptions.upgrade',
-            'admin.subscriptions.downgrade',
-        ] as $name) {
+        foreach (['admin.subscriptions.upgrade', 'admin.subscriptions.downgrade'] as $name) {
             $this->assertNull(Route::getRoutes()->getByName($name), $name);
         }
     }

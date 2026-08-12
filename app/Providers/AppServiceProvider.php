@@ -75,6 +75,12 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(5)->by('privileged-reauth|'.$sessionId.'|'.$request->ip());
         });
 
+        RateLimiter::for('privileged-subscription-refund', static function (Request $request): Limit {
+            $adminId = (string) ($request->user('super_admin')?->getAuthIdentifier() ?? 'unknown');
+
+            return Limit::perMinute(5)->by('privileged-subscription-refund|'.$adminId.'|'.$request->ip());
+        });
+
         if (app()->environment('production')
             && (bool) config('shop_modules.owner_erp_workspace_enabled', false)
             && ! (bool) config('shop_modules.enforcement_enabled', false)) {

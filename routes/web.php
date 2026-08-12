@@ -20,6 +20,7 @@ use App\Http\Controllers\superAdmin\ShopOwnerUpgradeRequestController as SuperAd
 use App\Http\Controllers\superAdmin\SuperAdminUserManagementController;
 use App\Http\Controllers\superAdmin\SystemMonitoringDashboardController;
 use App\Http\Controllers\superAdmin\PrivilegedAuditController;
+use App\Http\Controllers\superAdmin\SubscriptionInterventionController;
 use App\Http\Controllers\PrivilegedMfaController;
 use App\Http\Controllers\PrivilegedPasswordResetController;
 use App\Http\Controllers\PrivilegedReauthenticationController;
@@ -1840,6 +1841,25 @@ Route::middleware([
     Route::get('/subscription-management', [SuperAdminController::class, 'showSubscriptionManagement'])
         ->middleware('privileged.capability:manage_plans')
         ->name('subscription-management');
+    Route::post('/subscriptions/{subscription}/cancel', [SubscriptionInterventionController::class, 'cancel'])
+        ->middleware([
+            'privileged.capability:intervene_subscriptions',
+            'privileged.recent',
+        ])
+        ->name('subscriptions.cancel');
+    Route::patch('/subscriptions/{subscription}/legacy-correction', [SubscriptionInterventionController::class, 'legacyCorrection'])
+        ->middleware([
+            'privileged.capability:intervene_subscriptions',
+            'privileged.recent',
+        ])
+        ->name('subscriptions.legacy-correction');
+    Route::post('/subscription-payments/{payment}/refunds', [SubscriptionInterventionController::class, 'refund'])
+        ->middleware([
+            'privileged.capability:intervene_subscriptions',
+            'privileged.recent',
+            'throttle:privileged-subscription-refund',
+        ])
+        ->name('subscription-payments.refunds.store');
     Route::post('/premium-plans', [SuperAdminController::class, 'storePremiumPlan'])
         ->middleware('privileged.capability:manage_plans')
         ->name('premium-plans.store');

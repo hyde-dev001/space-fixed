@@ -246,6 +246,48 @@ final class PrivilegedTransactionFailureInjectionTest extends TestCase
         Queue::assertNothingPushed();
     }
 
+    public function test_subscription_cancellation_audit_failure_rolls_back_subscription_state(): void
+    {
+        $admin = $this->phaseTwoSuperAdmin();
+        $plan = PremiumPlan::query()->create([
+            'plan_code' => 'cancellation-failure-plan',
+            'name' => 'Cancellation Failure Plan',
+            'description' => 'Failure injection cancellation plan',
+            'price' => 249,
+            'duration_days' => 30,
+            'showroom_slot_limit' => 48,
+            'benefits' => [],
+            'status' => 'active',
+        ]);
+        $owner = ShopOwner::factory()->approved()->create();
+        $subscription = ShopOwnerSubscription::query()->create([
+            'shop_owner_id' => $owner->id,
+            'premium_plan_id' => $plan->id,
+            'plan_code' => $plan->plan_code,
+            'showroom_slot_limit' => $plan->showroom_slot_limit,
+            'status' => 'active',
+            'auto_renew' => true,
+            'auto_renew_status' => ShopOwnerSubscription::AUTO_RENEW_STATUS_ENABLED,
+            'starts_at' => now()->subDay(),
+            'ends_at' => now()->addDays(29),
+        ]);
+        $secret = 'subscription cancellation audit secret';
+        $this->injectAuditFailure('premiumSubscriptionCancelled', $secret);
+        $this->markRecentlyReauthenticated($admin);
+
+        $response = $this->actingAsCompletedPrivileged($admin)
+            ->postJson(route('admin.subscriptions.cancel', $subscription), [
+                'cancellation_reason' => 'operator_correction',
+                'cancellation_notes' => 'Failure injection cancellation.',
+            ]);
+
+        $this->assertSafeFailure($response, 'subscription_cancel_error', 'subscription_cancel', $secret);
+        $this->assertSame('active', $subscription->fresh()->status);
+        $this->assertTrue((bool) $subscription->fresh()->auto_renew);
+        $this->assertNull($subscription->fresh()->cancellation_reason);
+        $this->assertNoSuccessAudit('subscription_cancelled');
+    }
+
     public function test_business_upgrade_approval_audit_failure_rolls_back_owner_request_and_modules(): void
     {
         $admin = $this->phaseTwoAdmin();

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { router, useForm, usePage } from '@inertiajs/react';
+import axios from 'axios';
 import Swal from 'sweetalert2';
 import AppLayout from '../../../layout/AppLayout';
 import Button from '../../../components/ui/button/Button';
@@ -9,6 +10,32 @@ const ModalPortal: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   if (typeof document === 'undefined') return null;
   return createPortal(children, document.body);
 };
+
+interface RefundAttempt {
+  id: number;
+  local_reference?: string;
+  provider_refund_id?: string | null;
+  amount: number;
+  currency: string;
+  business_reason: string;
+  provider_reason: string;
+  status: string;
+  failure_code?: string | null;
+  initiated_at?: string | null;
+  finalized_at?: string | null;
+  reconciled_at?: string | null;
+}
+
+interface PaymentLedgerRow {
+  id: number;
+  payment_type: string;
+  amount_due: number;
+  amount_paid: number | null;
+  currency: string;
+  status: string;
+  paid_at: string | null;
+  refunds: RefundAttempt[];
+}
 
 interface SubscriptionItem {
   id: number;
@@ -33,6 +60,15 @@ interface SubscriptionItem {
   next_billing_at: string | null;
   cancellation_reason: string | null;
   cancellation_notes: string | null;
+  refunded_amount?: number;
+  net_collected?: number;
+  payments?: PaymentLedgerRow[];
+  refund_attempts?: RefundAttempt[];
+  can_cancel?: boolean;
+  legacy_correction_available?: boolean;
+  eligible_for_refund?: boolean;
+  refund_payment_id?: number | null;
+  refund_block_reason?: string | null;
   payment_method?: string | null;
   replaces_subscription_id?: number | null;
   previous_plan_name?: string | null;
@@ -44,6 +80,9 @@ interface SubscriptionStats {
   expired: number;
   total_revenue: number;
   expiring_soon: number;
+  gross_collected?: number;
+  refunded_amount?: number;
+  net_collected?: number;
 }
 
 interface PremiumPlanItem {
@@ -226,7 +265,7 @@ const MetricCard = ({
             <Icon className="size-7 text-white drop-shadow-sm" />
           </div>
 
-          <span className="rounded-full bg-gray-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:bg-gray-700 dark:text-gray-300">Live</span>
+          <span className="rounded-full bg-gray-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:bg-gray-700 dark:text-gray-300">Snapshot</span>
         </div>
 
         <div className="space-y-2">
@@ -252,7 +291,150 @@ export default function SubscriptionManagement() {
   const [editingPlan, setEditingPlan] = useState<PremiumPlanItem | null>(null);
   const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
   const [planStatusFilter, setPlanStatusFilter] = useState<'active' | 'inactive'>('active');
+  const [mutationPending, setMutationPending] = useState(false);
+  const [mutationError, setMutationError] = useState<string | null>(null);
+  const [mutationNotice, setMutationNotice] = useState<string | null>(null);
+  const [correctionOpen, setCorrectionOpen] = useState(false);
+  const [correctionStatus, setCorrectionStatus] = useState<'cancelled' | 'expired'>('expired');
+  const [correctionDate, setCorrectionDate] = useState('');
+  const [correctionReason, setCorrectionReason] = useState('');
   const planForm = useForm<PlanForm>(emptyPlan);
+
+  const reloadBilling = () => router.reload({ only: ['subscriptions', 'stats'], preserveScroll: true });
+
+  const errorMessageFor = (error: unknown) => error instanceof Error
+    ? error.message
+    : 'The billing operation could not be completed.';
+
+  const cancelSubscription = async () => {
+    if (!selected?.can_cancel || mutationPending) return;
+
+    const result = await Swal.fire({
+      title: 'Cancel at period end?',
+      text: 'Access remains available through the current paid end date. No refund is issued by this action.',
+      input: 'select',
+      inputOptions: {
+        reduce_costs: 'Reduce costs',
+        low_value: 'Low value',
+        technical_issues: 'Technical issues',
+        missing_features: 'Missing features',
+        subscribed_by_mistake: 'Subscribed by mistake',
+        temporary_pause: 'Temporary pause',
+        others: 'Other',
+        operator_correction: 'Operator correction',
+      },
+      inputPlaceholder: 'Choose a reason',
+      inputValidator: (value) => value ? undefined : 'Choose a cancellation reason.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Cancel at period end',
+    });
+
+    if (!result.isConfirmed || typeof result.value !== 'string' || !result.value) return;
+
+    setMutationPending(true);
+    setMutationError(null);
+    setMutationNotice(null);
+
+    try {
+      const response = await axios.post(`/admin/subscriptions/${selected.id}/cancel`, {
+        cancellation_reason: result.value,
+      });
+
+      if (!response.data?.success) {
+        setMutationError(response.data?.message || 'The subscription was not cancelled.');
+        return;
+      }
+
+      setSelected(null);
+      reloadBilling();
+    } catch (error: unknown) {
+      setMutationError(errorMessageFor(error));
+    } finally {
+      setMutationPending(false);
+    }
+  };
+
+  const refundSubscription = async () => {
+    if (!selected?.eligible_for_refund || !selected.refund_payment_id || mutationPending) return;
+
+    const result = await Swal.fire({
+      title: 'Issue full refund?',
+      text: 'This sends one provider-backed full refund request for the paid ledger entry. The subscription is ended only after provider confirmation.',
+      input: 'textarea',
+      inputPlaceholder: 'Required business reason',
+      inputValidator: (value) => value?.trim() ? undefined : 'Enter a business reason.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Issue full refund',
+    });
+
+    if (!result.isConfirmed || typeof result.value !== 'string' || !result.value.trim()) return;
+
+    setMutationPending(true);
+    setMutationError(null);
+    setMutationNotice(null);
+
+    try {
+      const response = await axios.post(`/admin/subscription-payments/${selected.refund_payment_id}/refunds`, {
+        business_reason: result.value.trim(),
+        provider_reason: 'others',
+      });
+
+      if (!response.data?.success) {
+        setMutationError(response.data?.message || 'The refund was not completed.');
+        return;
+      }
+
+      if (response.data.status !== 'succeeded') {
+        setMutationNotice(response.data.message || 'The refund is still being processed and requires reconciliation.');
+        reloadBilling();
+        return;
+      }
+
+      setSelected(null);
+      reloadBilling();
+    } catch (error: unknown) {
+      setMutationError(errorMessageFor(error));
+    } finally {
+      setMutationPending(false);
+    }
+  };
+
+  const correctLegacySubscription = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selected?.legacy_correction_available || mutationPending) return;
+
+    if (!correctionDate || !correctionReason.trim()) {
+      setMutationError('Choose an effective end date and provide a correction reason.');
+      return;
+    }
+
+    setMutationPending(true);
+    setMutationError(null);
+    setMutationNotice(null);
+
+    try {
+      const response = await axios.patch(`/admin/subscriptions/${selected.id}/legacy-correction`, {
+        target_status: correctionStatus,
+        effective_ends_at: new Date(`${correctionDate}T00:00:00Z`).toISOString(),
+        correction_reason: correctionReason.trim(),
+      });
+
+      if (!response.data?.success) {
+        setMutationError(response.data?.message || 'The legacy state was not corrected.');
+        return;
+      }
+
+      setSelected(null);
+      setCorrectionOpen(false);
+      reloadBilling();
+    } catch (error: unknown) {
+      setMutationError(errorMessageFor(error));
+    } finally {
+      setMutationPending(false);
+    }
+  };
 
   const openPlanModal = (plan?: PremiumPlanItem) => {
     setEditingPlan(plan ?? null);
@@ -302,6 +484,15 @@ export default function SubscriptionManagement() {
     };
   }, [selected]);
 
+  useEffect(() => {
+    setMutationError(null);
+    setMutationNotice(null);
+    setCorrectionOpen(false);
+    setCorrectionDate('');
+    setCorrectionReason('');
+    setCorrectionStatus('expired');
+  }, [selected?.id]);
+
   const metrics = [
     {
       title: 'Active Subscriptions',
@@ -311,11 +502,11 @@ export default function SubscriptionManagement() {
       description: 'Currently active plans',
     },
     {
-      title: 'Total Revenue',
-      value: formatMoney(stats.total_revenue),
+      title: 'Gross Collected',
+      value: formatMoney(stats.gross_collected ?? stats.total_revenue),
       icon: CreditCardIcon,
       color: 'info' as const,
-      description: 'From premium subscriptions',
+      description: 'Paid payment-ledger totals',
     },
     {
       title: 'Expiring Soon',
@@ -330,6 +521,13 @@ export default function SubscriptionManagement() {
       icon: CalendarIcon,
       color: 'error' as const,
       description: 'Subscriptions ended',
+    },
+    {
+      title: 'Net Collected',
+      value: formatMoney(stats.net_collected ?? stats.total_revenue),
+      icon: CalendarIcon,
+      color: 'success' as const,
+      description: `Refunded: ${formatMoney(stats.refunded_amount ?? 0)}`,
     },
   ];
 
@@ -668,6 +866,9 @@ export default function SubscriptionManagement() {
                     {selected.premium_plan?.name ?? 'No linked plan'}
                   </p>
                   <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Status: {resolveUiStatus(selected.status, selected.ends_at) === 'ongoing' ? 'Active' : 'Not Active'}</p>
+                  {selected.status === 'deactivated' && (
+                    <p className="mt-1 text-sm font-medium text-amber-700 dark:text-amber-400">Needs correction: legacy state is unresolved.</p>
+                  )}
                   {isUpgradeRecord(selected) ? (
                     <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                       Previous Plan: <span className="font-medium text-gray-700 dark:text-gray-200">{selected.previous_plan_name || selectedPreviousSubscription?.premium_plan?.name || 'Unavailable'}</span>
@@ -704,7 +905,84 @@ export default function SubscriptionManagement() {
                 )}
               </div>
 
+              {(selected.payments?.length ?? 0) > 0 && (
+                <section className="mt-6 rounded-2xl border border-gray-200 p-5 dark:border-gray-700" aria-labelledby="payment-ledger-heading">
+                  <h3 id="payment-ledger-heading" className="text-xs font-semibold uppercase tracking-wide text-gray-400">Payment ledger</h3>
+                  <div className="mt-3 divide-y divide-gray-200 dark:divide-gray-700">
+                    {selected.payments?.map((payment) => (
+                      <div key={payment.id} className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
+                        <div>
+                          <p className="text-sm font-semibold text-gray-900 dark:text-white">{payment.payment_type.replaceAll('_', ' ')}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">{payment.status} · {formatDate(payment.paid_at)}</p>
+                        </div>
+                        <p className="text-sm font-semibold text-gray-700 dark:text-gray-200">{formatMoney(Number(payment.amount_paid ?? payment.amount_due))}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {((selected.refund_attempts?.length ?? 0) > 0 || selected.refund_block_reason) && (
+                <section className="mt-4 rounded-2xl border border-gray-200 p-5 dark:border-gray-700" aria-labelledby="refund-history-heading">
+                  <h3 id="refund-history-heading" className="text-xs font-semibold uppercase tracking-wide text-gray-400">Refund history</h3>
+                  {selected.refund_block_reason && <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">Reconciliation required before another refund can be issued.</p>}
+                  <div className="mt-3 space-y-2">
+                    {selected.refund_attempts?.map((refund) => (
+                      <p key={refund.id} className="text-sm text-gray-700 dark:text-gray-300">
+                        {refund.status} · {formatMoney(refund.amount)} · {refund.business_reason}
+                      </p>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {(mutationError || mutationNotice) && (
+                <div className={`mt-4 rounded-xl border px-4 py-3 text-sm ${mutationError ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-900/20 dark:text-rose-400' : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/60 dark:bg-amber-900/20 dark:text-amber-300'}`} role="alert">
+                  {mutationError || mutationNotice}
+                </div>
+              )}
+
+              {correctionOpen && selected.legacy_correction_available && (
+                <form onSubmit={correctLegacySubscription} className="mt-4 rounded-2xl border border-amber-200 bg-amber-50/60 p-5 dark:border-amber-900/60 dark:bg-amber-900/10">
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Correct legacy state</h3>
+                  <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">Only the status, effective end date, and correction reason can change. Billing and paid history stay untouched.</p>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Target status
+                      <select value={correctionStatus} onChange={(event) => setCorrectionStatus(event.target.value as 'cancelled' | 'expired')} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 dark:border-gray-600 dark:bg-gray-700">
+                        <option value="expired">Expired</option>
+                        <option value="cancelled">Cancelled</option>
+                      </select>
+                    </label>
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Effective end date
+                      <input type="date" required value={correctionDate} onChange={(event) => setCorrectionDate(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 dark:border-gray-600 dark:bg-gray-700" />
+                    </label>
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-200 sm:col-span-1">Correction reason
+                      <input type="text" required maxLength={120} value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 dark:border-gray-600 dark:bg-gray-700" />
+                    </label>
+                  </div>
+                  <div className="mt-4 flex justify-end gap-2">
+                    <button type="button" onClick={() => setCorrectionOpen(false)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 dark:border-gray-600 dark:text-gray-200">Close correction</button>
+                    <button type="submit" disabled={mutationPending} className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{mutationPending ? 'Saving…' : 'Save correction'}</button>
+                  </div>
+                </form>
+              )}
+
               <div className="mt-6 flex flex-wrap items-center justify-end gap-2">
+                {selected.can_cancel && (
+                  <button type="button" onClick={cancelSubscription} disabled={mutationPending} className="rounded-lg border border-amber-300 px-3 py-2 text-sm font-semibold text-amber-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-700 dark:text-amber-300">
+                    {mutationPending ? 'Working…' : 'Cancel at period end'}
+                  </button>
+                )}
+                {selected.eligible_for_refund && selected.refund_payment_id && (
+                  <button type="button" onClick={refundSubscription} disabled={mutationPending} className="rounded-lg border border-rose-300 px-3 py-2 text-sm font-semibold text-rose-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-rose-700 dark:text-rose-300">
+                    {mutationPending ? 'Working…' : 'Issue full refund'}
+                  </button>
+                )}
+                {selected.legacy_correction_available && !correctionOpen && (
+                  <button type="button" onClick={() => setCorrectionOpen(true)} disabled={mutationPending} className="rounded-lg border border-blue-300 px-3 py-2 text-sm font-semibold text-blue-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-blue-700 dark:text-blue-300">
+                    Correct legacy state
+                  </button>
+                )}
                 <Button variant="outline" size="sm" onClick={() => setSelected(null)}>
                   Close
                 </Button>

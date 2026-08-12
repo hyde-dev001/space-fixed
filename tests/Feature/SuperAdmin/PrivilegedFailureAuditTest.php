@@ -71,19 +71,20 @@ final class PrivilegedFailureAuditTest extends TestCase
         $this->assertFailureEvent('privileged_workflow_conflict', 'shop_owner_upgrade', $response->json('correlation_id'));
     }
 
-    public function test_withdrawn_subscription_intervention_has_no_failure_audit_path(): void
+    public function test_withdrawn_subscription_plan_swap_has_no_failure_audit_path(): void
     {
         $admin = SuperAdmin::factory()->superAdmin()->create();
         $before = DB::table('activity_log')->count();
 
-        $response = $this->actingAsCompletedPrivileged($admin)
-            ->postJson('/admin/subscriptions/999999/cancel', [
-                'cancellation_reason' => 'operator correction',
-            ])
-            ->assertNotFound();
+        foreach (['upgrade', 'downgrade'] as $action) {
+            $this->actingAsCompletedPrivileged($admin)
+                ->postJson("/admin/subscriptions/999999/{$action}", [
+                    'target_plan_id' => 1,
+                ])
+                ->assertNotFound();
+        }
 
         $this->assertSame($before, DB::table('activity_log')->count());
-        $this->assertStringNotContainsString('No query results', (string) $response->getContent());
     }
 
     public function test_validation_failure_does_not_create_failure_audit_noise(): void
