@@ -10,7 +10,12 @@ interface AppealItem {
   account_name: string | null;
   recipient_email: string;
   suspension_reason: string | null;
-  status: 'eligible' | 'submitted' | 'approved' | 'rejected' | 'expired';
+  status: 'eligible' | 'submitted' | 'approved' | 'rejected' | 'expired' | 'superseded' | 'stale';
+  persisted_status?: string;
+  state?: string;
+  current?: boolean;
+  actionable?: boolean;
+  suspension_id?: number | null;
   appeal_message: string | null;
   reviewer_notes: string | null;
   submitted_at: string | null;
@@ -25,6 +30,9 @@ interface Stats {
   submitted: number;
   approved: number;
   rejected: number;
+  expired?: number;
+  superseded?: number;
+  stale?: number;
 }
 
 interface Props {
@@ -138,9 +146,17 @@ const statusBadgeClasses: Record<AppealItem['status'], string> = {
   rejected: 'bg-rose-100 text-rose-700 border border-rose-200',
   expired: 'bg-slate-200 text-slate-700 border border-slate-300',
   eligible: 'bg-blue-100 text-blue-700 border border-blue-200',
+  superseded: 'bg-gray-200 text-gray-700 border border-gray-300',
+  stale: 'bg-orange-100 text-orange-700 border border-orange-200',
 };
 
-const statusLabel = (status: AppealItem['status']) => status.charAt(0).toUpperCase() + status.slice(1);
+const statusLabel = (status: AppealItem['status'], current = false) => {
+  if (current && (status === 'eligible' || status === 'submitted')) {
+    return `Current / ${status}`;
+  }
+
+  return status.charAt(0).toUpperCase() + status.slice(1);
+};
 
 export default function SuspensionAppeals({ appeals = [], stats }: Props) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -216,12 +232,13 @@ export default function SuspensionAppeals({ appeals = [], stats }: Props) {
           showConfirmButton: false,
         });
       },
-      onError: () => {
+      onError: (errors) => {
         setIsActionSubmitting(false);
+        const message = Object.values(errors)[0] || 'The appeal state changed. Refresh the queue and try again.';
         Swal.fire({
           icon: 'error',
           title: 'Action failed',
-          text: 'Please try again.',
+          text: message,
         });
       },
     });
@@ -313,6 +330,8 @@ export default function SuspensionAppeals({ appeals = [], stats }: Props) {
               <option value="approved">Approved</option>
               <option value="rejected">Rejected</option>
               <option value="expired">Expired</option>
+              <option value="superseded">Superseded</option>
+              <option value="stale">Stale</option>
             </select>
           </div>
         </div>
@@ -351,7 +370,7 @@ export default function SuspensionAppeals({ appeals = [], stats }: Props) {
                     <td className="px-4 py-3 capitalize text-gray-700">{item.account_type.replace('_', ' ')}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClasses[item.status]}`}>
-                        {statusLabel(item.status)}
+                        {statusLabel(item.status, item.current)}
                       </span>
                     </td>
                     <td className="max-w-xs px-4 py-3 text-gray-700">{item.suspension_reason || '-'}</td>
@@ -397,7 +416,7 @@ export default function SuspensionAppeals({ appeals = [], stats }: Props) {
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Status</p>
                     <span className={`mt-1 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClasses[selectedAppeal.status]}`}>
-                      {statusLabel(selectedAppeal.status)}
+                      {statusLabel(selectedAppeal.status, selectedAppeal.current)}
                     </span>
                   </div>
                 </div>
@@ -412,7 +431,7 @@ export default function SuspensionAppeals({ appeals = [], stats }: Props) {
                   <p className="text-sm text-gray-700">{selectedAppeal.appeal_message || '-'}</p>
                 </div>
 
-                {selectedAppeal.status === 'submitted' ? (
+                {selectedAppeal.status === 'submitted' && selectedAppeal.actionable === true ? (
                   <div>
                     <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Reviewer Notes (Optional)</label>
                     <textarea
@@ -439,7 +458,7 @@ export default function SuspensionAppeals({ appeals = [], stats }: Props) {
                   Close
                 </button>
 
-                {selectedAppeal.status === 'submitted' && (
+                {selectedAppeal.status === 'submitted' && selectedAppeal.actionable === true && (
                   <>
                     <button
                       onClick={() => handleDecision('approve')}

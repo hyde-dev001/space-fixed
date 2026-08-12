@@ -8,6 +8,7 @@ use App\Models\ReviewReport;
 use App\Models\ShopOwner;
 use App\Models\ShopReportModerationAction;
 use App\Models\SuperAdmin;
+use App\Models\SuspensionAppeal;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -690,6 +691,34 @@ class PrivilegedAudit
                 'action' => $action,
                 'prior_status' => $priorStatus,
                 'new_status' => $newStatus,
+                'suspension_id' => $suspensionId,
+            ],
+        );
+    }
+
+    public function suspensionAppealDecided(
+        Request $request,
+        SuperAdmin $actor,
+        SuspensionAppeal $appeal,
+        User|ShopOwner $account,
+        string $decision,
+        ?string $reviewerNotes,
+        int $suspensionId,
+    ): void {
+        $this->write(
+            event: 'suspension_appeal_decided',
+            actor: $actor,
+            subject: $appeal,
+            source: 'http',
+            correlationId: $this->correlationId($request),
+            ipAddress: $request->ip(),
+            properties: [
+                'account_type' => $account instanceof ShopOwner
+                    ? AccountSuspension::ACCOUNT_TYPE_SHOP_OWNER
+                    : AccountSuspension::ACCOUNT_TYPE_CUSTOMER,
+                'account_id' => (int) $account->getKey(),
+                'decision' => $decision,
+                'reviewer_notes' => $reviewerNotes,
                 'suspension_id' => $suspensionId,
             ],
         );

@@ -48,3 +48,9 @@ Schedule::command('products:process-discount-schedules')
     ->everyTenMinutes()
     ->withoutOverlapping()
     ->onOneServer();
+
+// Suspension appeals own routine expiry detection; queue pages remain read-only.
+Schedule::command('suspension-appeals:expire')
+    ->everyFifteenMinutes()
+    ->withoutOverlapping()
+    ->onOneServer();

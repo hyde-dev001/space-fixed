@@ -51,6 +51,6 @@ class SuspensionAppeal extends Model
 
     public function isExpired(): bool
     {
-        return $this->expires_at !== null && now()->greaterThan($this->expires_at);
+        return $this->expires_at !== null && now()->greaterThanOrEqualTo($this->expires_at);
     }
 }
