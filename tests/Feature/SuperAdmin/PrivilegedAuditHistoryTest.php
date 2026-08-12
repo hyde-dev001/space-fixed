@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Tests\Feature\SuperAdmin;
 
+use App\Models\ShopDocument;
 use App\Models\ShopOwner;
 use App\Models\SuperAdmin;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -163,6 +165,78 @@ final class PrivilegedAuditHistoryTest extends TestCase
                 ->missing('entries.0.metadata.token')
                 ->missing('entries.0.metadata.raw_request')
                 ->missing('entries.0.properties')
+            );
+    }
+
+    public function test_document_renewal_audit_is_visible_with_allowlisted_metadata_only(): void
+    {
+        $viewer = SuperAdmin::factory()->admin()->create();
+        $owner = ShopOwner::factory()->approved()->create();
+        $predecessor = ShopDocument::create([
+            'shop_owner_id' => $owner->id,
+            'document_type' => 'mayors_permit',
+            'logical_slot' => 'mayors_permit',
+            'version_number' => 1,
+            'file_path' => 'private/original.png',
+            'disk' => 'local',
+            'status' => 'approved',
+            'is_current' => true,
+        ]);
+        $predecessor->update([
+            'is_current' => null,
+            'superseded_at' => now(),
+        ]);
+        $renewal = ShopDocument::create([
+            'shop_owner_id' => $owner->id,
+            'document_type' => 'mayors_permit',
+            'logical_slot' => 'mayors_permit',
+            'version_number' => 2,
+            'predecessor_document_id' => $predecessor->id,
+            'file_path' => 'private/renewal.png',
+            'disk' => 'local',
+            'status' => 'approved',
+            'is_current' => true,
+        ]);
+
+        app(\App\Services\PrivilegedAudit::class)->shopDocumentRenewalApproved(
+            Request::create('/admin/document-renewals/'.$renewal->id.'/approve', 'POST', [], [], [], [
+                'REMOTE_ADDR' => '198.51.100.8',
+            ]),
+            $viewer,
+            $renewal,
+            $owner,
+            $predecessor,
+            [
+                'document_type' => 'mayors_permit',
+                'logical_slot' => 'mayors_permit',
+                'version_number' => 2,
+                'issued_on' => '2026-08-13',
+                'expiration_mode' => 'dated',
+                'expires_on' => '2027-08-13',
+                'submitted_issued_on' => '2026-08-01',
+                'submitted_expiration_mode' => 'dated',
+                'submitted_expires_on' => '2027-08-01',
+                'path' => 'private/renewal.png',
+                'checksum_sha256' => 'secret-checksum',
+                'raw_request' => ['file' => 'secret'],
+            ],
+        );
+
+        $this->actingAsCompletedPrivileged($viewer)
+            ->get('/admin/audit')
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('entries.0.event', 'shop_document_renewal_approved')
+                ->where('entries.0.metadata.document_type', 'mayors_permit')
+                ->where('entries.0.metadata.logical_slot', 'mayors_permit')
+                ->where('entries.0.metadata.version_number', 2)
+                ->where('entries.0.metadata.issued_on', '2026-08-13')
+                ->where('entries.0.metadata.expiration_mode', 'dated')
+                ->where('entries.0.metadata.expires_on', '2027-08-13')
+                ->where('entries.0.metadata.submitted_issued_on', '2026-08-01')
+                ->where('entries.0.metadata.submitted_expires_on', '2027-08-01')
+                ->missing('entries.0.metadata.path')
+                ->missing('entries.0.metadata.checksum_sha256')
+                ->missing('entries.0.metadata.raw_request')
             );
     }
 

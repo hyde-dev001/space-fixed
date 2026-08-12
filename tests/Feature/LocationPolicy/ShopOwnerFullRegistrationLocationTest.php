@@ -43,14 +43,14 @@ class ShopOwnerFullRegistrationLocationTest extends TestCase
     }
 
     /** @test */
-    public function full_registration_with_cavite_coordinates_passes(): void
+    public function legacy_full_registration_with_cavite_coordinates_is_refused_without_versioned_metadata(): void
     {
         Storage::fake('public');
 
         $response = $this->postJson('/api/shop/register-full', $this->payload());
 
-        $response->assertStatus(201)
-            ->assertJsonPath('success', true);
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['documents']);
     }
 
     /** @test */

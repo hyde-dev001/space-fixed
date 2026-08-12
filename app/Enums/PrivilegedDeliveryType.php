@@ -17,4 +17,6 @@ enum PrivilegedDeliveryType: string
     case SUSPENSION_APPEAL_DECIDED = 'suspension_appeal_decided';
     case SHOP_OWNER_UPGRADE_REQUESTED = 'shop_owner_upgrade_requested';
     case SHOP_OWNER_UPGRADE_REVIEWED = 'shop_owner_upgrade_reviewed';
+    case SHOP_DOCUMENT_RENEWAL_SUBMITTED = 'shop_document_renewal_submitted';
+    case SHOP_DOCUMENT_RENEWAL_REVIEWED = 'shop_document_renewal_reviewed';
 }

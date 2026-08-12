@@ -34,11 +34,11 @@ final class PrivateSensitiveDocumentController extends Controller
         }
 
         $ownerStatus = $this->statusValue($shopOwner->status);
-        $allowedStatuses = $actor->role === 'super_admin'
-            ? ['pending', 'rejected', 'approved', 'suspended']
-            : ['pending', 'rejected'];
+        $allowed = $actor->role === 'super_admin'
+            ? in_array($ownerStatus, ['pending', 'rejected', 'approved', 'suspended'], true)
+            : $this->canAdminViewApprovedShopRenewal($shopOwner, $document, $ownerStatus);
 
-        if (! in_array($ownerStatus, $allowedStatuses, true)) {
+        if (! $allowed) {
             abort(404);
         }
 
@@ -237,5 +237,31 @@ final class PrivateSensitiveDocumentController extends Controller
     private function statusValue(mixed $status): string
     {
         return $status instanceof \BackedEnum ? (string) $status->value : (string) $status;
+    }
+
+    private function canAdminViewApprovedShopRenewal(ShopOwner $shopOwner, ShopDocument $document, string $ownerStatus): bool
+    {
+        if (in_array($ownerStatus, ['pending', 'rejected'], true)) {
+            return true;
+        }
+
+        if ($ownerStatus !== 'approved') {
+            return false;
+        }
+
+        if ((string) $document->status === 'pending'
+            && ! (bool) $document->is_current
+            && $document->predecessor_document_id !== null) {
+            return true;
+        }
+
+        return ShopDocument::query()
+            ->where('shop_owner_id', $shopOwner->getKey())
+            ->where('status', 'pending')
+            ->where(function ($query): void {
+                $query->whereNull('is_current')->orWhere('is_current', false);
+            })
+            ->where('predecessor_document_id', $document->getKey())
+            ->exists();
     }
 }

@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Tests\Feature\BusinessScaling;
 
+use App\Models\ShopDocument;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerModule;
 use App\Models\ShopOwnerUpgradeRequest;
 use App\Models\ShopOwnerUpgradeRequestDocument;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 final class ShopSettingsBusinessScalingPayloadTest extends TestCase
@@ -81,6 +83,98 @@ final class ShopSettingsBusinessScalingPayloadTest extends TestCase
         $this->assertSame([], $page['available_combined_transitions']);
         $this->assertSame('rejected', $page['latest_terminal_request']['status']);
         $this->assertSame('Evidence needs correction.', $page['latest_terminal_request']['decision_reason']);
+    }
+
+    public function test_approved_shop_can_use_private_legacy_business_evidence_with_an_explicit_label(): void
+    {
+        Storage::fake('local');
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'individual',
+            'business_type' => 'retail',
+        ]);
+        Storage::disk('local')->put('legacy/dti.pdf', 'legacy-dti');
+        $legacy = ShopDocument::create([
+            'shop_owner_id' => $owner->id,
+            'document_type' => 'dti_registration',
+            'file_path' => 'legacy/dti.pdf',
+            'disk' => 'local',
+            'status' => 'approved',
+        ]);
+
+        $page = $this->settingsPage($owner)['props']['shop_settings'];
+        $evidence = collect($page['business_scaling']['required_evidence'])
+            ->firstWhere('key', 'dti_registration');
+
+        $this->assertSame($legacy->id, $evidence['existing_document_id']);
+        $this->assertSame('Legacy DTI/SEC — classification pending', $evidence['legacy_label']);
+        $compliance = collect($page['document_compliance'])->firstWhere('logical_slot', 'business_registration');
+        $this->assertSame($legacy->id, $compliance['current']['id']);
+        $this->assertSame('Legacy DTI/SEC — classification pending', $compliance['current']['legacy_label']);
+    }
+
+    public function test_versioned_non_current_or_public_business_evidence_is_not_used_as_current(): void
+    {
+        Storage::fake('local');
+        Storage::fake('public');
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'individual',
+            'business_type' => 'retail',
+        ]);
+        Storage::disk('local')->put('versioned/dti.pdf', 'versioned-dti');
+        ShopDocument::create([
+            'shop_owner_id' => $owner->id,
+            'document_type' => 'dti_registration',
+            'logical_slot' => 'business_registration',
+            'version_number' => 1,
+            'file_path' => 'versioned/dti.pdf',
+            'disk' => 'local',
+            'status' => 'approved',
+            'is_current' => false,
+            'expiration_mode' => 'unknown',
+        ]);
+        Storage::disk('public')->put('public/dti.pdf', 'public-dti');
+        ShopDocument::create([
+            'shop_owner_id' => $owner->id,
+            'document_type' => 'dti_registration',
+            'file_path' => 'public/dti.pdf',
+            'disk' => 'public',
+            'status' => 'approved',
+        ]);
+
+        $page = $this->settingsPage($owner)['props']['shop_settings'];
+        $evidence = collect($page['business_scaling']['required_evidence'])
+            ->firstWhere('key', 'dti_registration');
+        $compliance = collect($page['document_compliance'])->firstWhere('logical_slot', 'business_registration');
+
+        $this->assertNull($evidence['existing_document_id']);
+        $this->assertNull($compliance['current']);
+    }
+
+    public function test_reconciled_legacy_business_evidence_keeps_its_ambiguity_label(): void
+    {
+        Storage::fake('local');
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'individual',
+            'business_type' => 'retail',
+        ]);
+        Storage::disk('local')->put('reconciled/legacy-dti.pdf', 'legacy-dti');
+        $legacy = ShopDocument::create([
+            'shop_owner_id' => $owner->id,
+            'document_type' => 'legacy_dti_sec_registration',
+            'logical_slot' => 'business_registration',
+            'version_number' => 1,
+            'file_path' => 'reconciled/legacy-dti.pdf',
+            'disk' => 'local',
+            'status' => 'approved',
+            'is_current' => true,
+            'expiration_mode' => 'unknown',
+        ]);
+
+        $page = $this->settingsPage($owner)['props']['shop_settings'];
+        $compliance = collect($page['document_compliance'])->firstWhere('logical_slot', 'business_registration');
+
+        $this->assertSame($legacy->id, $compliance['current']['id']);
+        $this->assertSame('Legacy DTI/SEC — classification pending', $compliance['current']['legacy_label']);
     }
 
     /**

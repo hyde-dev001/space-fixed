@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\PrivilegedAudit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
@@ -96,32 +97,46 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
         $this->assertArrayNotHasKey('valid_id_path', $user->toArray());
     }
 
-    public function test_full_shop_registration_ignores_client_disk_fields_and_stores_documents_locally(): void
+    public function test_canonical_shop_registration_ignores_client_disk_fields_and_stores_documents_locally(): void
     {
-        $response = $this->post('/api/shop/register-full', [
-            'firstName' => 'Juan',
-            'lastName' => 'Dela Cruz',
-            'email' => 'private-shop-registration@example.com',
+        $email = 'private-shop-registration@solespaceph.com';
+        Cache::put('shop_owner_registration_email_otp:' . sha1($email), [
+            'verified' => true,
+            'verified_at' => now()->timestamp,
+            'attempts' => 0,
+            'expires_at' => now()->addHour()->timestamp,
+            'otp_hash' => null,
+        ], now()->addHour());
+
+        $response = $this->postJson('/shop-owner/register', [
+            'first_name' => 'Juan',
+            'last_name' => 'Dela Cruz',
+            'email' => $email,
             'phone' => '09171234567',
-            'businessName' => 'Juan Shoes',
-            'businessAddress' => 'Dasmarinas, Cavite',
-            'businessType' => 'repair',
-            'registrationType' => 'individual',
-            'operatingHours' => [['day' => 'monday', 'open' => '09:00', 'close' => '17:00']],
-            'agreesToRequirements' => true,
+            'business_name' => 'Juan Shoes',
+            'business_address' => 'Dasmarinas, Cavite',
+            'business_type' => 'repair',
+            'registration_type' => 'individual',
             'shop_latitude' => 14.3294,
             'shop_longitude' => 120.9367,
             'disk' => 'public',
             'valid_id_disk' => 'public',
-            'dtiRegistration' => $this->uploadedPng('dti.png'),
-            'mayorsPermit' => $this->uploadedPng('permit.png'),
-            'birCertificate' => $this->uploadedPng('bir.png'),
-            'validId' => $this->uploadedPng('id.png'),
+            'business_registration' => $this->uploadedPng('dti.png'),
+            'business_registration_type' => 'dti_registration',
+            'mayors_permit' => $this->uploadedPng('permit.png'),
+            'bir_certificate' => $this->uploadedPng('bir.png'),
+            'valid_id' => $this->uploadedPng('id.png'),
+            'document_metadata' => [
+                'business_registration' => ['issued_on' => '2026-01-01', 'expiration_mode' => 'none', 'expires_on' => null],
+                'mayors_permit' => ['issued_on' => '2026-01-01', 'expiration_mode' => 'dated', 'expires_on' => '2027-01-01'],
+                'bir_certificate' => ['issued_on' => '2026-01-01', 'expiration_mode' => 'none', 'expires_on' => null],
+                'valid_id' => ['issued_on' => '2026-01-01', 'expiration_mode' => 'none', 'expires_on' => null],
+            ],
         ]);
 
         $response->assertCreated();
 
-        $owner = ShopOwner::query()->where('email', 'private-shop-registration@example.com')->firstOrFail();
+        $owner = ShopOwner::query()->where('email', $email)->firstOrFail();
         $documents = $owner->documents()->get();
 
         $this->assertCount(4, $documents);
@@ -175,7 +190,7 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
         Storage::disk('public')->assertMissing($user->valid_id_path);
     }
 
-    public function test_rejected_resubmission_replaces_files_on_local_disk_and_deletes_old_recorded_disk_file_after_commit(): void
+    public function test_rejected_resubmission_creates_a_new_version_and_retains_historical_files(): void
     {
         $owner = ShopOwner::factory()->rejected()->create([
             'business_type' => 'retail',
@@ -185,10 +200,10 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
         ]);
         $oldPath = 'shop_documents/old-dti.png';
         Storage::disk('public')->put($oldPath, 'old-dti');
-        $oldDocument = $this->createDocument($owner, 'dti_registration', 'public', $oldPath, 'old-dti');
-        $this->createDocument($owner, 'mayors_permit', 'local', 'shop_documents/old-permit.png');
-        $this->createDocument($owner, 'bir_certificate', 'local', 'shop_documents/old-bir.png');
-        $this->createDocument($owner, 'valid_id', 'local', 'shop_documents/old-id.png');
+        $oldDocument = $this->createDocument($owner, 'dti_registration', 'public', $oldPath, 'old-dti', true, 'rejected');
+        $this->createDocument($owner, 'mayors_permit', 'local', 'shop_documents/old-permit.png', null, true, 'rejected');
+        $this->createDocument($owner, 'bir_certificate', 'local', 'shop_documents/old-bir.png', null, true, 'rejected');
+        $this->createDocument($owner, 'valid_id', 'local', 'shop_documents/old-id.png', null, true, 'rejected');
 
         $url = URL::temporarySignedRoute(
             'shop-owner.resubmission.submit',
@@ -207,7 +222,14 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
             'shop_latitude' => 14.3294,
             'shop_longitude' => 120.9367,
             'shop_address' => 'Dasmarinas, Cavite',
-            'dti_registration' => $this->uploadedPng('replacement-dti.png'),
+            'business_registration' => $this->uploadedPng('replacement-dti.png'),
+            'business_registration_type' => 'dti_registration',
+            'document_metadata' => [
+                'business_registration' => ['issued_on' => '2026-01-01', 'expiration_mode' => 'none', 'expires_on' => null],
+                'mayors_permit' => ['issued_on' => '2026-01-01', 'expiration_mode' => 'dated', 'expires_on' => '2027-01-01'],
+                'bir_certificate' => ['issued_on' => '2026-01-01', 'expiration_mode' => 'none', 'expires_on' => null],
+                'valid_id' => ['issued_on' => '2026-01-01', 'expiration_mode' => 'none', 'expires_on' => null],
+            ],
         ], ['Accept' => 'application/json']);
 
         $response->assertOk()->assertJsonPath('success', true);
@@ -216,7 +238,9 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
         $this->assertNotSame($oldDocument->file_path, $replacement->file_path);
         $this->assertSame('local', $replacement->disk);
         Storage::disk('local')->assertExists($replacement->file_path);
-        Storage::disk('public')->assertMissing($oldPath);
+        Storage::disk('public')->assertExists($oldPath);
+        $this->assertSame('rejected', $oldDocument->fresh()->status);
+        $this->assertSame($oldDocument->id, $replacement->predecessor_document_id);
         $this->assertSame('pending', $owner->fresh()->status->value);
     }
 
@@ -230,12 +254,12 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
         ]);
         $oldPath = 'shop_documents/old-dti.png';
         Storage::disk('public')->put($oldPath, 'old-dti');
-        $oldDocument = $this->createDocument($owner, 'dti_registration', 'public', $oldPath, 'old-dti');
-        $this->createDocument($owner, 'mayors_permit', 'local', 'shop_documents/old-permit.png');
-        $this->createDocument($owner, 'bir_certificate', 'local', 'shop_documents/old-bir.png');
-        $this->createDocument($owner, 'valid_id', 'local', 'shop_documents/old-id.png');
+        $oldDocument = $this->createDocument($owner, 'dti_registration', 'public', $oldPath, 'old-dti', true, 'rejected');
+        $this->createDocument($owner, 'mayors_permit', 'local', 'shop_documents/old-permit.png', null, true, 'rejected');
+        $this->createDocument($owner, 'bir_certificate', 'local', 'shop_documents/old-bir.png', null, true, 'rejected');
+        $this->createDocument($owner, 'valid_id', 'local', 'shop_documents/old-id.png', null, true, 'rejected');
 
-        ShopDocument::updating(static function (): void {
+        ShopOwner::updating(static function (): void {
             throw new \RuntimeException('database mutation failed');
         });
 
@@ -256,7 +280,14 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
             'shop_latitude' => 14.3294,
             'shop_longitude' => 120.9367,
             'shop_address' => 'Dasmarinas, Cavite',
-            'dti_registration' => $this->uploadedPng('replacement-dti.png'),
+            'business_registration' => $this->uploadedPng('replacement-dti.png'),
+            'business_registration_type' => 'dti_registration',
+            'document_metadata' => [
+                'business_registration' => ['issued_on' => '2026-01-01', 'expiration_mode' => 'none', 'expires_on' => null],
+                'mayors_permit' => ['issued_on' => '2026-01-01', 'expiration_mode' => 'dated', 'expires_on' => '2027-01-01'],
+                'bir_certificate' => ['issued_on' => '2026-01-01', 'expiration_mode' => 'none', 'expires_on' => null],
+                'valid_id' => ['issued_on' => '2026-01-01', 'expiration_mode' => 'none', 'expires_on' => null],
+            ],
         ], ['Accept' => 'application/json']);
 
         $response->assertStatus(500);

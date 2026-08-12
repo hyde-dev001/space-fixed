@@ -2,9 +2,10 @@
 import { Head, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import 'leaflet/dist/leaflet.css';
-																																								import { AlertTriangle, Building2, CalendarDays, Check, CheckCircle2, ChevronDown, Eye, EyeOff, FileText, MapPin, Pencil, Settings, Store, Trash2, User, Wrench } from 'lucide-react';
+import { AlertTriangle, Building2, CalendarDays, Check, CheckCircle2, ChevronDown, Eye, EyeOff, MapPin, Pencil, Settings, Store, Trash2, User, Wrench } from 'lucide-react';
 																																								import UserSwal from '../../UserSide/Shared/UserModal';
 import BusinessScalingSettings, { type BusinessScalingPayload } from './components/BusinessScalingSettings';
+import BusinessDocumentCompliance, { type ComplianceSlot } from './components/BusinessDocumentCompliance';
 import { requiredPolicySectionKeys } from '../../../utils/policySectionResolver';
 import type { PolicySectionKey, ShopPolicyEditorStateResponse, ShopPolicySections } from '../../../types/shopPolicy';
 
@@ -40,6 +41,7 @@ type ShopSettingsPayload = {
 		is_image: boolean;
 		file_url: string | null;
 	}>;
+	document_compliance: ComplianceSlot[];
 	repair_payment_policy: 'deposit_50' | 'full_upfront';
 	repair_workload_limit: number;
 	order_refund_deadline_days: number;
@@ -2093,50 +2095,8 @@ const ShopSetting: React.FC = () => {
 						<BusinessScalingSettings businessScaling={shop_settings.business_scaling} />
 					</div>
 
-					<div className="rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-12 lg:order-7">
-						<div className="border-b border-gray-200 p-5">
-							<h2 className="text-xl font-semibold text-gray-900">Required Business Documents</h2>
-							<p className="mt-1 text-sm text-gray-600">
-								Please provide these 4 documents for shop verification and compliance.
-							</p>
-						</div>
-
-						<div className="grid grid-cols-1 gap-4 p-5 md:grid-cols-2">
-							{shop_settings.required_documents.map((doc) => {
-								return (
-									<div key={doc.key} className="rounded-xl border border-gray-200 bg-gray-50/40 p-4">
-										<div className="mb-3 flex items-start gap-2">
-											<div className="pr-2">
-												<h3 className="text-sm font-semibold text-gray-900">{doc.title}</h3>
-												<p className="mt-1 text-xs text-gray-600">{doc.description}</p>
-											</div>
-										</div>
-
-										<div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-											{doc.file_url && doc.is_image ? (
-												<img src={doc.file_url} alt={doc.title} className="h-36 w-full object-cover" />
-											) : (
-												<div className="flex h-36 w-full flex-col items-center justify-center gap-2 bg-gray-100 text-gray-500">
-													<FileText size={22} />
-													<span className="text-xs font-medium">{doc.file_url ? 'Document Uploaded' : 'No Document Uploaded'}</span>
-												</div>
-											)}
-										</div>
-
-										{doc.file_url && (
-											<a
-												href={doc.file_url}
-												target="_blank"
-												rel="noreferrer"
-												className="mt-3 inline-flex text-xs font-semibold text-gray-800 underline underline-offset-2 hover:text-black"
-											>
-												View uploaded file
-											</a>
-										)}
-									</div>
-								);
-							})}
-						</div>
+					<div className="lg:col-span-12 lg:order-7">
+						<BusinessDocumentCompliance documents={shop_settings.document_compliance} />
 					</div>
 
 					<div className="rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-12 lg:order-2">

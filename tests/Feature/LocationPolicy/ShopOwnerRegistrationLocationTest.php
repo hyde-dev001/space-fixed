@@ -12,7 +12,7 @@ use Tests\TestCase;
  *
  * Tests the same five scenarios through the real HTTP stack:
  *
- *  T1  Register with Cavite coordinates           → HTTP 201
+     *  T1  Legacy register with Cavite coordinates     → HTTP 422 (safe refusal)
  *  T2  Register with NCR (Makati) coordinates     → HTTP 422 + denial message
  *  T3  Register with Cavite address text only
  *       (no coordinates)                          → HTTP 422 (coords required)
@@ -70,19 +70,19 @@ class ShopOwnerRegistrationLocationTest extends TestCase
     // ═══════════════════════════════════════════════════════════════════════
 
     /** @test */
-    public function registration_with_dasmarinas_coordinates_returns_201(): void
+    public function legacy_registration_with_dasmarinas_coordinates_is_refused_without_versioned_documents(): void
     {
         $response = $this->postJson('/api/shop/register', $this->basePayload([
             'shop_latitude'  => self::LAT_DASMARINAS,
             'shop_longitude' => self::LNG_DASMARINAS,
         ]));
 
-        $response->assertStatus(201)
-            ->assertJsonPath('success', true);
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['documents']);
     }
 
     /** @test */
-    public function registration_with_general_trias_coordinates_returns_201(): void
+    public function legacy_registration_with_general_trias_coordinates_is_refused_without_versioned_documents(): void
     {
         $response = $this->postJson('/api/shop/register', $this->basePayload([
             'email'          => 'gentrias@example.com',
@@ -90,11 +90,12 @@ class ShopOwnerRegistrationLocationTest extends TestCase
             'shop_longitude' => self::LNG_GEN_TRIAS,
         ]));
 
-        $response->assertStatus(201);
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['documents']);
     }
 
     /** @test */
-    public function registration_with_cavite_coordinates_persists_shop_owner_record(): void
+    public function legacy_registration_with_cavite_coordinates_does_not_persist_shop_owner_record(): void
     {
         $this->postJson('/api/shop/register', $this->basePayload([
             'email'          => 'persist@example.com',
@@ -102,11 +103,11 @@ class ShopOwnerRegistrationLocationTest extends TestCase
             'shop_longitude' => self::LNG_DASMARINAS,
         ]));
 
-        $this->assertDatabaseHas('shop_owners', ['email' => 'persist@example.com', 'status' => 'pending']);
+        $this->assertDatabaseMissing('shop_owners', ['email' => 'persist@example.com']);
     }
 
     /** @test */
-    public function registration_with_cavite_coordinates_stores_coordinates_on_record(): void
+    public function legacy_registration_with_cavite_coordinates_does_not_create_a_record_to_store_coordinates(): void
     {
         $this->postJson('/api/shop/register', $this->basePayload([
             'email'          => 'coords@example.com',
@@ -115,9 +116,7 @@ class ShopOwnerRegistrationLocationTest extends TestCase
         ]));
 
         $shopOwner = ShopOwner::where('email', 'coords@example.com')->first();
-        $this->assertNotNull($shopOwner, 'ShopOwner record should exist');
-        $this->assertNotNull($shopOwner->shop_latitude);
-        $this->assertNotNull($shopOwner->shop_longitude);
+        $this->assertNull($shopOwner, 'Legacy route must not create a shop owner record.');
     }
 
     // ═══════════════════════════════════════════════════════════════════════

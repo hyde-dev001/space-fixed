@@ -7,6 +7,7 @@ use App\Http\Controllers\ForgotPasswordOtpController;
 use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\ShopOwner\EcommerceController;
 use App\Http\Controllers\ShopOwner\ShopSettingsController;
+use App\Http\Controllers\ShopOwner\ShopOwnerDocumentRenewalController;
 use App\Http\Controllers\ShopOwner\ShopOwnerUpgradeRequestController;
 use App\Http\Controllers\ShopOwner\ShopOwnerModuleController;
 use App\Http\Controllers\ShopOwner\UserAccessControlController;
@@ -16,6 +17,7 @@ use App\Http\Controllers\ShopOwnerPasswordSetupController;
 use App\Http\Controllers\ShopRegistrationController;
 use App\Http\Controllers\superAdmin\FlaggedAccountsController;
 use App\Http\Controllers\superAdmin\ShopOwnerRegistrationViewController;
+use App\Http\Controllers\superAdmin\ShopDocumentRenewalController as SuperAdminShopDocumentRenewalController;
 use App\Http\Controllers\superAdmin\ShopOwnerUpgradeRequestController as SuperAdminShopOwnerUpgradeRequestController;
 use App\Http\Controllers\superAdmin\SuperAdminUserManagementController;
 use App\Http\Controllers\superAdmin\SystemMonitoringDashboardController;
@@ -786,6 +788,9 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
     Route::get('/{shopOwner}/documents/{document}', [PrivateSensitiveDocumentController::class, 'showForShopOwner'])
         ->scopeBindings()
         ->name('documents.show');
+    Route::post('/compliance-documents/{document}/renewals', [ShopOwnerDocumentRenewalController::class, 'store'])
+        ->whereNumber('document')
+        ->name('compliance-documents.renewals.store');
 
     // Dashboard - Available to ALL shop owners
     Route::get('/dashboard', function () {
@@ -1809,6 +1814,17 @@ Route::middleware([
     Route::get('/shop-owner-registration-view', [ShopOwnerRegistrationViewController::class, 'index'])
         ->middleware('privileged.capability:review_registrations')
         ->name('shop-owner-registration-view');
+    Route::get('/document-renewals', [SuperAdminShopDocumentRenewalController::class, 'index'])
+        ->middleware('privileged.capability:review_registrations')
+        ->name('document-renewals.index');
+    Route::post('/document-renewals/{document}/approve', [SuperAdminShopDocumentRenewalController::class, 'approve'])
+        ->whereNumber('document')
+        ->middleware('privileged.capability:review_registrations')
+        ->name('document-renewals.approve');
+    Route::post('/document-renewals/{document}/reject', [SuperAdminShopDocumentRenewalController::class, 'reject'])
+        ->whereNumber('document')
+        ->middleware('privileged.capability:review_registrations')
+        ->name('document-renewals.reject');
     Route::get('/shop-owners/{shopOwner}/documents/{document}', [PrivateSensitiveDocumentController::class, 'showForPrivileged'])
         ->scopeBindings()
         ->middleware('privileged.capability:review_registrations')

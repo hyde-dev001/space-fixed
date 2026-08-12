@@ -311,7 +311,7 @@ final class SubmitShopOwnerUpgradeRequest
         array &$createdPaths,
     ): void {
         $source = $owner->documents()->whereKey($documentId)->where('status', 'approved')->first();
-        if (! $source || $this->documentRequirements->normalizeType((string) $source->document_type) !== $documentType) {
+        if (! $source || ! $this->isReusableApprovedDocument($owner, $source, $documentType)) {
             throw ValidationException::withMessages([
                 "reuse_document_ids.{$documentType}" => 'The selected approved document is not valid for this requirement.',
             ]);
@@ -319,9 +319,9 @@ final class SubmitShopOwnerUpgradeRequest
 
         $sourcePath = (string) $source->file_path;
         $sourceDisk = trim((string) $source->disk);
-        if (! in_array($sourceDisk, ['local', 'public'], true)) {
+        if ($sourceDisk !== 'local' || ! $this->documentRequirements->hasPrivateStoredFile($source)) {
             throw ValidationException::withMessages([
-                "reuse_document_ids.{$documentType}" => 'The selected approved document uses an unsupported storage disk.',
+                "reuse_document_ids.{$documentType}" => 'The selected approved document must be current and stored on the private disk.',
             ]);
         }
 
@@ -371,6 +371,38 @@ final class SubmitShopOwnerUpgradeRequest
         }
 
         return in_array($normalized, ['retail', 'repair'], true) ? $normalized : '';
+    }
+
+    private function isReusableApprovedDocument(
+        ShopOwner $owner,
+        object $source,
+        string $documentType,
+    ): bool {
+        if ((string) $source->status !== 'approved') {
+            return false;
+        }
+
+        if ($this->documentRequirements->isLegacyBusinessDocument($source)) {
+            if ($documentType !== 'dti_registration' || $owner->status?->value !== 'approved') {
+                return false;
+            }
+
+            $latestLegacy = $owner->documents()
+                ->where('status', 'approved')
+                ->get()
+                ->filter(fn ($document): bool => $this->documentRequirements->isLegacyBusinessDocument($document))
+                ->sortByDesc(fn ($document): array => [
+                    $document->created_at?->getTimestamp() ?? 0,
+                    (int) $document->getKey(),
+                ])
+                ->first();
+
+            return $latestLegacy && (int) $latestLegacy->getKey() === (int) $source->getKey();
+        }
+
+        return (bool) $source->is_current
+            && (string) $source->logical_slot === $documentType
+            && $this->documentRequirements->normalizeType((string) $source->document_type) === $documentType;
     }
 
     private function ownerValue(ShopOwner $owner, string $attribute): string

@@ -40,13 +40,42 @@ trait BuildsPhaseTwoWorkflowFixtures
             $document = ShopDocument::create([
                 'shop_owner_id' => $shopOwner->id,
                 'document_type' => $type,
+                'logical_slot' => $type === 'dti_registration' ? 'business_registration' : $type,
+                'version_number' => 1,
+                'is_current' => false,
                 'file_path' => $path,
                 'status' => 'pending',
+                'issued_on' => '2026-01-01',
+                'expiration_mode' => $type === 'mayors_permit' ? 'dated' : 'none',
+                'expires_on' => $type === 'mayors_permit' ? '2027-01-01' : null,
             ]);
             $document->forceFill(['disk' => 'local'])->save();
         }
 
         return $shopOwner->fresh();
+    }
+
+    /**
+     * @return array{documents: array<int, array<string, int|string|bool|null>>}
+     */
+    protected function approvalPayloadFor(ShopOwner $shopOwner): array
+    {
+        return [
+            'documents' => $shopOwner->documents()
+                ->orderBy('id')
+                ->get()
+                ->map(static fn (ShopDocument $document): array => [
+                    'id' => (int) $document->getKey(),
+                    'document_type' => (string) $document->document_type,
+                    'logical_slot' => (string) $document->logical_slot,
+                    'version_number' => (int) $document->version_number,
+                    'issued_on' => $document->issued_on?->toDateString(),
+                    'expiration_mode' => (string) $document->expiration_mode,
+                    'expires_on' => $document->expires_on?->toDateString(),
+                    'viewed' => true,
+                ])
+                ->all(),
+        ];
     }
 
     protected function activePhaseTwoUser(array $attributes = []): User

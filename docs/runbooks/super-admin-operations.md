@@ -42,3 +42,21 @@ Do not delete refund attempts, set `paid_amount` to zero, reverse provider histo
 ## Safety checks before enabling interventions
 
 Confirm production PayMongo credentials and webhook signature verification are configured, the migration is deployed, and the focused Phase 5 billing tests pass. Use sandbox/test credentials for browser verification. Never send a real refund during local verification.
+
+## Legacy shop-document reconciliation
+
+Run the Phase 6 reconciliation in read-only mode first and review only the reported counts and local document IDs:
+
+```powershell
+php artisan shop-documents:reconcile-legacy --chunk=100
+```
+
+Apply only a reviewed bounded owner batch. The command caps chunks at 1,000 and accepts a positive `--shop-owner-id` filter:
+
+```powershell
+php artisan shop-documents:reconcile-legacy --apply --shop-owner-id=123 --chunk=100
+```
+
+The reconciler may assign stable slots, versions, predecessor links, and `expiration_mode=unknown` when ordering is deterministic. It never infers DTI versus SEC, expiration dates, missing files, or a current row from public/ambiguous evidence. Unresolved IDs require operator review; do not manually rewrite historical rows or delete their files.
+
+Re-run the same reviewed batch to verify it is inert. Approved shops retain a private legacy DTI/SEC compatibility label until a concrete DTI or SEC renewal is reviewed. Upgrade evidence reuse remains limited to current approved private documents; public, missing, or superseded files must be uploaded again.

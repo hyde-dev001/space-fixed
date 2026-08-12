@@ -3,9 +3,12 @@
 namespace App\Http\Controllers\superAdmin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\SuperAdmin\ApproveShopOwnerRegistrationRequest;
 use App\Http\Requests\SuperAdmin\RejectShopOwnerRegistrationRequest;
+use App\Models\ShopDocument;
 use App\Models\ShopOwner;
 use App\Models\SuperAdmin;
+use App\Services\ShopDocumentValidityService;
 use App\Services\ShopOwnerRegistrationDecisionService;
 use App\Support\PrivilegedFailureResponse;
 use Illuminate\Http\Request;
@@ -19,6 +22,7 @@ class ShopOwnerRegistrationViewController extends Controller
 {
     public function __construct(
         private readonly ShopOwnerRegistrationDecisionService $registrationDecisions,
+        private readonly ShopDocumentValidityService $documentValidity,
     ) {}
 
     public function index(): Response
@@ -29,11 +33,20 @@ class ShopOwnerRegistrationViewController extends Controller
             ->map(function ($shopOwner) {
                 $documents = $shopOwner->documents->map(function ($doc) use ($shopOwner) {
                     return [
+                        'id' => (int) $doc->getKey(),
                         'url' => route('admin.shop-documents.show', [
                             'shopOwner' => $shopOwner->id,
                             'document' => $doc->id,
                         ]),
-                        'type' => $doc->document_type,
+                        'type' => $this->reviewType($doc),
+                        'documentType' => (string) $doc->document_type,
+                        'logicalSlot' => filled($doc->logical_slot) ? (string) $doc->logical_slot : null,
+                        'versionNumber' => $doc->version_number !== null ? (int) $doc->version_number : null,
+                        'issuedOn' => $doc->issued_on?->toDateString(),
+                        'expirationMode' => $doc->expiration_mode,
+                        'expiresOn' => $doc->expires_on?->toDateString(),
+                        'validity' => $this->documentValidity->classify($doc),
+                        'status' => (string) $doc->status,
                     ];
                 })->values();
 
@@ -62,7 +75,19 @@ class ShopOwnerRegistrationViewController extends Controller
         ]);
     }
 
-    public function approve(Request $request, $id, ?PrivilegedFailureResponse $failures = null)
+    private function reviewType(ShopDocument $document): string
+    {
+        $type = strtolower(trim((string) $document->document_type));
+        $logicalSlot = trim((string) $document->logical_slot);
+
+        if ($logicalSlot === '' && in_array($type, ['dti_registration', 'sec_registration'], true)) {
+            return 'legacy_dti_sec_registration';
+        }
+
+        return (string) $document->document_type;
+    }
+
+    public function approve(ApproveShopOwnerRegistrationRequest $request, $id, ?PrivilegedFailureResponse $failures = null)
     {
         $actor = $request->user('super_admin');
         abort_unless($actor instanceof SuperAdmin, 403);

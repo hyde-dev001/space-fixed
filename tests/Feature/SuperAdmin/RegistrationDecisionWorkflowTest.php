@@ -40,7 +40,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
         $owner = $this->pendingRegistrationWithDocuments();
 
         $response = $this->actingAsCompletedPrivileged($admin)
-            ->postJson(route('admin.shop-owner-approve', $owner));
+            ->postJson(route('admin.shop-owner-approve', $owner), $this->approvalPayload($owner));
 
         $response->assertOk()
             ->assertJsonPath('success', true)
@@ -70,6 +70,72 @@ final class RegistrationDecisionWorkflowTest extends TestCase
             $owner->id,
             ['setup_token'],
         );
+    }
+
+    public function test_approval_requires_reviewer_verified_document_metadata(): void
+    {
+        $admin = SuperAdmin::factory()->admin()->create();
+        $owner = $this->pendingRegistrationWithDocuments();
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->postJson(route('admin.shop-owner-approve', $owner), [
+                'documents' => [],
+            ])
+            ->assertStatus(422);
+
+        $this->assertDatabaseHas('shop_owners', [
+            'id' => $owner->id,
+            'status' => 'pending',
+        ]);
+        $this->assertSame(0, ShopDocument::query()
+            ->where('shop_owner_id', $owner->id)
+            ->where('status', 'approved')
+            ->count());
+    }
+
+    public function test_approval_requires_each_document_to_be_marked_viewed(): void
+    {
+        $admin = SuperAdmin::factory()->admin()->create();
+        $owner = $this->pendingRegistrationWithDocuments();
+        $payload = $this->approvalPayload($owner);
+        $payload['documents'][0]['viewed'] = false;
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->postJson(route('admin.shop-owner-approve', $owner), $payload)
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['documents.0.viewed']);
+
+        $this->assertDatabaseHas('shop_owners', [
+            'id' => $owner->id,
+            'status' => 'pending',
+        ]);
+        $this->assertSame(0, ShopDocument::query()
+            ->where('shop_owner_id', $owner->id)
+            ->where('status', 'approved')
+            ->count());
+    }
+
+    public function test_reviewer_can_correct_only_the_business_registration_authority(): void
+    {
+        $admin = SuperAdmin::factory()->admin()->create();
+        $owner = $this->pendingRegistrationWithDocuments();
+        $payload = $this->approvalPayload($owner);
+        $businessRegistrationIndex = collect($payload['documents'])
+            ->search(static fn (array $document): bool => $document['logical_slot'] === 'business_registration');
+        $payload['documents'][$businessRegistrationIndex]['document_type'] = 'sec_registration';
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->postJson(route('admin.shop-owner-approve', $owner), $payload)
+            ->assertOk()
+            ->assertJsonPath('applied', true);
+
+        $this->assertDatabaseHas('shop_documents', [
+            'shop_owner_id' => $owner->id,
+            'logical_slot' => 'business_registration',
+            'document_type' => 'sec_registration',
+            'status' => 'approved',
+            'is_current' => 1,
+        ]);
     }
 
     public function test_rejection_requires_a_reason_and_updates_current_documents_atomically(): void
@@ -173,7 +239,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
         $owner = $this->pendingRegistrationWithDocuments();
 
         $this->actingAsCompletedPrivileged($admin)
-            ->postJson(route('admin.shop-owner-approve', $owner))
+            ->postJson(route('admin.shop-owner-approve', $owner), $this->approvalPayload($owner))
             ->assertOk()
             ->assertJsonPath('applied', true);
         DB::commit();
@@ -214,7 +280,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
         });
 
         $this->actingAsCompletedPrivileged($admin)
-            ->postJson(route('admin.shop-owner-approve', $owner))
+            ->postJson(route('admin.shop-owner-approve', $owner), $this->approvalPayload($owner))
             ->assertStatus(500);
 
         $this->assertDatabaseHas('shop_owners', ['id' => $owner->id, 'status' => 'pending']);
@@ -236,7 +302,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
         });
 
         $this->actingAsCompletedPrivileged($admin)
-            ->postJson(route('admin.shop-owner-approve', $owner))
+            ->postJson(route('admin.shop-owner-approve', $owner), $this->approvalPayload($owner))
             ->assertStatus(500);
 
         $this->assertDatabaseHas('shop_owners', ['id' => $owner->id, 'status' => 'pending']);
@@ -249,18 +315,37 @@ final class RegistrationDecisionWorkflowTest extends TestCase
     {
         $admin = SuperAdmin::factory()->admin()->create();
         $owner = $this->pendingRegistrationWithDocuments();
+        $document = $owner->documents()->orderBy('id')->firstOrFail();
 
         $response = $this->actingAsCompletedPrivileged($admin)
             ->get(route('admin.shop-owner-registration-view'));
 
         $response->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('registrations.0.documents.0.url', route('admin.shop-documents.show', [
-                    'shopOwner' => $owner->id,
-                    'document' => $owner->documents()->firstOrFail()->id,
-                ])));
+                ->where('registrations', function ($registrations) use ($document, $owner): bool {
+                    $registration = collect($registrations)->firstWhere('id', $owner->id);
+                    $payload = collect($registration['documents'] ?? [])->firstWhere('id', $document->id);
+
+                    return is_array($payload)
+                        && $payload['id'] === $document->id
+                        && $payload['type'] === $document->document_type
+                        && $payload['documentType'] === $document->document_type
+                        && $payload['logicalSlot'] === $document->logical_slot
+                        && $payload['versionNumber'] === $document->version_number
+                        && $payload['issuedOn'] === $document->issued_on?->toDateString()
+                        && $payload['expirationMode'] === $document->expiration_mode
+                        && $payload['expiresOn'] === $document->expires_on?->toDateString()
+                        && $payload['validity'] === 'metadata_unverified'
+                        && $payload['status'] === 'pending'
+                        && $payload['url'] === route('admin.shop-documents.show', [
+                            'shopOwner' => $owner->id,
+                            'document' => $document->id,
+                        ]);
+                }));
         $this->assertStringNotContainsString('/storage/', $response->getContent());
         $this->assertStringNotContainsString('phase-two/', $response->getContent());
+        $this->assertStringNotContainsString('checksum_sha256', $response->getContent());
+        $this->assertStringNotContainsString('reviewed_by_super_admin_id', $response->getContent());
     }
 
     /**
@@ -284,8 +369,16 @@ final class RegistrationDecisionWorkflowTest extends TestCase
             $document = ShopDocument::create([
                 'shop_owner_id' => $owner->id,
                 'document_type' => $options['type'] ?? $type,
+                'logical_slot' => in_array($type, ['dti_registration', 'sec_registration'], true)
+                    ? 'business_registration'
+                    : $type,
+                'version_number' => 1,
+                'is_current' => false,
                 'file_path' => $path,
                 'status' => $options['status'] ?? 'pending',
+                'issued_on' => '2026-01-01',
+                'expiration_mode' => $type === 'mayors_permit' ? 'dated' : 'none',
+                'expires_on' => $type === 'mayors_permit' ? '2027-01-01' : null,
             ]);
             $document->forceFill(['disk' => 'local'])->save();
         }
@@ -302,10 +395,33 @@ final class RegistrationDecisionWorkflowTest extends TestCase
         return $owner->fresh();
     }
 
+    /**
+     * @return array{documents: array<int, array<string, int|string|bool|null>>}
+     */
+    private function approvalPayload(ShopOwner $owner): array
+    {
+        return [
+            'documents' => $owner->documents()
+                ->orderBy('id')
+                ->get()
+                ->map(static fn (ShopDocument $document): array => [
+                    'id' => (int) $document->getKey(),
+                    'document_type' => (string) $document->document_type,
+                    'logical_slot' => (string) $document->logical_slot,
+                    'version_number' => (int) $document->version_number,
+                    'issued_on' => $document->issued_on?->toDateString(),
+                    'expiration_mode' => (string) $document->expiration_mode,
+                    'expires_on' => $document->expires_on?->toDateString(),
+                    'viewed' => true,
+                ])
+                ->all(),
+        ];
+    }
+
     private function assertApprovalValidationFailure(SuperAdmin $admin, ShopOwner $owner, string $type): void
     {
         $this->actingAsCompletedPrivileged($admin)
-            ->postJson(route('admin.shop-owner-approve', $owner), [])
+            ->postJson(route('admin.shop-owner-approve', $owner), $this->approvalPayload($owner))
             ->assertStatus(422)
             ->assertJsonValidationErrors([$type]);
 

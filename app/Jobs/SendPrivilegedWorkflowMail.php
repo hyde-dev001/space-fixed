@@ -19,6 +19,8 @@ use App\Notifications\ShopOwnerApproved;
 use App\Notifications\ShopOwnerRejected;
 use App\Notifications\ShopOwnerUpgradeRequested;
 use App\Notifications\ShopOwnerUpgradeReviewed;
+use App\Notifications\ShopDocumentRenewalSubmitted;
+use App\Notifications\ShopDocumentRenewalReviewed;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeEncrypted;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -138,6 +140,7 @@ final class SendPrivilegedWorkflowMail implements ShouldQueue, ShouldBeEncrypted
         return match ($this->deliveryType) {
             PrivilegedDeliveryType::SUSPENSION_APPEAL_SUBMITTED => SuperAdmin::CAP_VIEW_APPEALS,
             PrivilegedDeliveryType::SHOP_OWNER_UPGRADE_REQUESTED => SuperAdmin::CAP_REVIEW_REGISTRATIONS,
+            PrivilegedDeliveryType::SHOP_DOCUMENT_RENEWAL_SUBMITTED => SuperAdmin::CAP_REVIEW_REGISTRATIONS,
             default => null,
         };
     }
@@ -147,6 +150,7 @@ final class SendPrivilegedWorkflowMail implements ShouldQueue, ShouldBeEncrypted
         return in_array($this->deliveryType, [
             PrivilegedDeliveryType::SUSPENSION_APPEAL_SUBMITTED,
             PrivilegedDeliveryType::SHOP_OWNER_UPGRADE_REQUESTED,
+            PrivilegedDeliveryType::SHOP_DOCUMENT_RENEWAL_SUBMITTED,
         ], true);
     }
 
@@ -239,6 +243,26 @@ final class SendPrivilegedWorkflowMail implements ShouldQueue, ShouldBeEncrypted
                     dormantEmployeePermissionWarning: $this->boolean('dormant_employee_permission_warning'),
                 ),
             ),
+            PrivilegedDeliveryType::SHOP_DOCUMENT_RENEWAL_SUBMITTED => $this->sendNotification(
+                $recipient,
+                new ShopDocumentRenewalSubmitted(
+                    documentId: $this->integer('document_id'),
+                    shopOwnerId: $this->integer('shop_owner_id'),
+                    businessName: $this->string('business_name'),
+                    logicalSlot: $this->string('logical_slot'),
+                ),
+            ),
+            PrivilegedDeliveryType::SHOP_DOCUMENT_RENEWAL_REVIEWED => $this->sendNotification(
+                $recipient,
+                new ShopDocumentRenewalReviewed(
+                    documentId: $this->integer('document_id'),
+                    shopOwnerId: $this->integer('shop_owner_id'),
+                    businessName: $this->string('business_name'),
+                    logicalSlot: $this->string('logical_slot'),
+                    decision: $this->string('decision'),
+                    decisionReason: $this->nullableString('decision_reason'),
+                ),
+            ),
         };
     }
 
@@ -266,6 +290,8 @@ final class SendPrivilegedWorkflowMail implements ShouldQueue, ShouldBeEncrypted
             PrivilegedDeliveryType::SUSPENSION_APPEAL_DECIDED => ['recipient_email', 'account_name', 'account_type_label', 'decision', 'reviewer_notes'],
             PrivilegedDeliveryType::SHOP_OWNER_UPGRADE_REQUESTED => ['upgrade_request_id', 'shop_owner_id', 'business_name', 'requested_registration_type', 'requested_business_type'],
             PrivilegedDeliveryType::SHOP_OWNER_UPGRADE_REVIEWED => ['upgrade_request_id', 'decision', 'decision_reason', 'newly_enabled_module_keys', 'dormant_employee_permission_warning'],
+            PrivilegedDeliveryType::SHOP_DOCUMENT_RENEWAL_SUBMITTED => ['document_id', 'shop_owner_id', 'business_name', 'logical_slot'],
+            PrivilegedDeliveryType::SHOP_DOCUMENT_RENEWAL_REVIEWED => ['document_id', 'shop_owner_id', 'business_name', 'logical_slot', 'decision', 'decision_reason'],
         };
 
         $safePayload = [];

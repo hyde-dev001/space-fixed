@@ -72,10 +72,51 @@ interface OperatingHours {
   close: string;
 }
 
-interface RegistrationDocument {
+export type RegistrationExpirationMode = 'dated' | 'none' | '';
+
+export interface RegistrationDocument {
+  id?: number;
   url: string;
   type?: string;
+  documentType?: string;
+  logicalSlot?: string | null;
+  versionNumber?: number | null;
+  issuedOn?: string | null;
+  expirationMode?: RegistrationExpirationMode | null;
+  expiresOn?: string | null;
+  validity?: string;
+  status?: string;
 }
+
+export interface RegistrationReviewMetadata {
+  documentType: string;
+  logicalSlot: string;
+  versionNumber: number;
+  issuedOn: string | null;
+  expirationMode: RegistrationExpirationMode;
+  expiresOn: string | null;
+}
+
+export const buildRegistrationApprovalPayload = (
+  documents: RegistrationDocument[],
+  viewedDocuments: Set<number>,
+  reviewMetadata: Record<number, Partial<RegistrationReviewMetadata>> = {},
+) => ({
+  documents: documents.map((document, index) => {
+    const metadata = reviewMetadata[document.id ?? 0] ?? {};
+
+    return {
+      id: document.id ?? 0,
+      document_type: metadata.documentType ?? document.documentType ?? document.type ?? '',
+      logical_slot: metadata.logicalSlot ?? document.logicalSlot ?? '',
+      version_number: metadata.versionNumber ?? document.versionNumber ?? 0,
+      issued_on: metadata.issuedOn ?? document.issuedOn ?? null,
+      expiration_mode: metadata.expirationMode ?? document.expirationMode ?? '',
+      expires_on: metadata.expiresOn ?? document.expiresOn ?? null,
+      viewed: viewedDocuments.has(index),
+    };
+  }),
+});
 
 export const areAllDocumentsViewed = (documentCount: number, viewedDocuments = new Set<number>()) =>
   documentCount > 0 && viewedDocuments.size >= documentCount;
@@ -116,6 +157,27 @@ interface Registration {
   status: "pending" | "approved" | "rejected";
   createdAt: string;
 }
+
+const documentsForRegistration = (registration: Registration): RegistrationDocument[] => (
+  registration.documents && registration.documents.length > 0
+    ? registration.documents
+    : (registration.documentUrls || []).map((url) => ({ url }))
+);
+
+const initialReviewMetadata = (documents: RegistrationDocument[]): Record<number, RegistrationReviewMetadata> => (
+  Object.fromEntries(
+    documents
+      .filter((document): document is RegistrationDocument & { id: number } => typeof document.id === 'number')
+      .map((document) => [document.id, {
+        documentType: document.documentType ?? document.type ?? '',
+        logicalSlot: document.logicalSlot ?? '',
+        versionNumber: document.versionNumber ?? 0,
+        issuedOn: document.issuedOn ?? null,
+        expirationMode: document.expirationMode ?? '',
+        expiresOn: document.expiresOn ?? null,
+      }]),
+  )
+);
 
 interface MetricData {
   title: string;
@@ -188,6 +250,7 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
   const [expandedCardId, setExpandedCardId] = useState<number | null>(null);
   const [expandedDocuments, setExpandedDocuments] = useState<Set<number>>(new Set());
   const [viewedDocuments, setViewedDocuments] = useState<Record<number, Set<number>>>({});
+  const [reviewMetadata, setReviewMetadata] = useState<Record<number, Partial<RegistrationReviewMetadata>>>({});
   const [registrationsState, setRegistrationsState] = useState<Registration[]>(registrations);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<'pending' | 'approved' | 'rejected'>('pending');
@@ -215,7 +278,9 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
   const getDocumentTypeLabel = (documentType?: string, otherIndex = 1) => {
     const normalized = (documentType || '').toLowerCase();
 
-    if (normalized === 'dti_registration') return 'Business Registration (DTI/SEC)';
+    if (normalized === 'legacy_dti_sec_registration') return 'Legacy Business Registration (DTI/SEC)';
+    if (normalized === 'dti_registration') return 'Business Registration (DTI)';
+    if (normalized === 'sec_registration') return 'Business Registration (SEC)';
     if (normalized === 'mayors_permit') return "Mayor's Permit";
     if (normalized === 'bir_certificate') return 'BIR Certificate';
     if (normalized === 'valid_id') return 'Valid ID';
@@ -243,6 +308,14 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
     return `After reviewing your application for ${registration.businessName} (${registrationTypeLabel}), we regret to inform you that we are unable to approve your registration at this time due to ${reason}. Please review the submission requirements, address the concern, and resubmit your application for re-evaluation.`.slice(0, 500);
   };
 
+  const openRegistration = (registration: Registration) => {
+    const documents = documentsForRegistration(registration);
+
+    setSelectedRegistration(registration);
+    setReviewMetadata(initialReviewMetadata(documents));
+    setIsViewModalOpen(true);
+  };
+
   const handleApprove = async (id: number) => {
     const registration = registrationsState.find((item) => item.id === id);
     if (!registration || !canDecideRegistration(registration.status) || submittingRegistrationId !== null) {
@@ -262,7 +335,10 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
 
     if (result.isConfirmed) {
       setSubmittingRegistrationId(id);
-      router.post(`/admin/shop-owner-registration/${id}/approve`, {}, {
+      const documents = documentsForRegistration(registration);
+      const payload = buildRegistrationApprovalPayload(documents, viewedDocuments[id] ?? new Set(), reviewMetadata);
+
+      router.post(`/admin/shop-owner-registration/${id}/approve`, payload, {
         onSuccess: () => {
           setRegistrationsState(prev =>
             prev.map(reg => reg.id === id ? { ...reg, status: "approved" as const } : reg)
@@ -397,16 +473,37 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
   }, [searchTerm, filterStatus]);
 
   const selectedRegistrationDocuments: RegistrationDocument[] = selectedRegistration
-    ? (
-      selectedRegistration.documents && selectedRegistration.documents.length > 0
-        ? selectedRegistration.documents
-        : (selectedRegistration.documentUrls || []).map((url) => ({ url }))
-    )
+    ? documentsForRegistration(selectedRegistration)
     : [];
   const allDocumentsViewed = areAllDocumentsViewed(
     selectedRegistrationDocuments.length,
     selectedRegistration ? viewedDocuments[selectedRegistration.id] : undefined,
   );
+  const reviewMetadataComplete = selectedRegistrationDocuments.length > 0
+    && selectedRegistrationDocuments.every((document) => {
+      const metadata = document.id === undefined ? undefined : reviewMetadata[document.id];
+      const expirationMode = metadata?.expirationMode ?? document.expirationMode;
+
+      return typeof document.id === 'number'
+        && typeof (metadata?.documentType ?? document.documentType) === 'string'
+        && Boolean(metadata?.logicalSlot ?? document.logicalSlot)
+        && (metadata?.versionNumber ?? document.versionNumber ?? 0) > 0
+        && (expirationMode === 'dated' || expirationMode === 'none');
+    });
+  const canSubmitApproval = allDocumentsViewed && reviewMetadataComplete;
+
+  const updateReviewMetadata = (
+    documentId: number,
+    changes: Partial<RegistrationReviewMetadata>,
+  ) => {
+    setReviewMetadata((current) => ({
+      ...current,
+      [documentId]: {
+        ...(current[documentId] ?? {}),
+        ...changes,
+      },
+    }));
+  };
 
   return (
     <AppLayout>
@@ -558,10 +655,7 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
                       <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
                         <div className="flex justify-center space-x-2">
                           <button
-                            onClick={() => {
-                              setSelectedRegistration(reg);
-                              setIsViewModalOpen(true);
-                            }}
+                            onClick={() => openRegistration(reg)}
                             className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300"
                             title="View Details"
                           >
@@ -780,6 +874,77 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
                                     {expandedDocuments.has(index) ? 'Hide' : 'View'}
                                   </button>
                                 </div>
+                                {document.id !== undefined && (
+                                  <div className="mt-3 space-y-3 border-t border-gray-100 pt-3 dark:border-gray-700">
+                                    <p className="text-xs text-gray-600 dark:text-gray-300">
+                                      Owner declaration: issued {document.issuedOn || 'not provided'}; {
+                                        document.expirationMode === 'dated'
+                                          ? `expires ${document.expiresOn || 'date not provided'}`
+                                          : document.expirationMode === 'none'
+                                            ? 'no expiration declared'
+                                            : 'expiration not declared'
+                                      }.
+                                    </p>
+                                    {document.logicalSlot === 'business_registration' && (
+                                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                                        Verified authority
+                                        <select
+                                          value={reviewMetadata[document.id]?.documentType ?? document.documentType ?? ''}
+                                          onChange={(event) => updateReviewMetadata(document.id!, {
+                                            documentType: event.target.value,
+                                          })}
+                                          className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                                        >
+                                          <option value="dti_registration">DTI</option>
+                                          <option value="sec_registration">SEC</option>
+                                        </select>
+                                      </label>
+                                    )}
+                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                                        Verified issue date
+                                        <input
+                                          type="date"
+                                          value={reviewMetadata[document.id]?.issuedOn ?? document.issuedOn ?? ''}
+                                          onChange={(event) => updateReviewMetadata(document.id!, {
+                                            issuedOn: event.target.value || null,
+                                          })}
+                                          className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                                        />
+                                      </label>
+                                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                                        Verified expiration
+                                        <select
+                                          value={reviewMetadata[document.id]?.expirationMode ?? document.expirationMode ?? ''}
+                                          onChange={(event) => updateReviewMetadata(document.id!, {
+                                            expirationMode: event.target.value as RegistrationExpirationMode,
+                                            expiresOn: event.target.value === 'none'
+                                              ? null
+                                              : reviewMetadata[document.id!]?.expiresOn ?? document.expiresOn ?? null,
+                                          })}
+                                          className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                                        >
+                                          <option value="">Select…</option>
+                                          <option value="dated">Dated</option>
+                                          <option value="none">No expiration</option>
+                                        </select>
+                                      </label>
+                                    </div>
+                                    {(reviewMetadata[document.id]?.expirationMode ?? document.expirationMode) === 'dated' && (
+                                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                                        Verified expiration date
+                                        <input
+                                          type="date"
+                                          value={reviewMetadata[document.id]?.expiresOn ?? document.expiresOn ?? ''}
+                                          onChange={(event) => updateReviewMetadata(document.id!, {
+                                            expiresOn: event.target.value || null,
+                                          })}
+                                          className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                                        />
+                                      </label>
+                                    )}
+                                  </div>
+                                )}
                                 {expandedDocuments.has(index) && (
                                   <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
                                     <div className="bg-gray-100 dark:bg-gray-900 rounded border border-gray-300 dark:border-gray-600 flex items-center justify-center" style={{ minHeight: '200px' }}>
@@ -813,6 +978,16 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
 
                     {/* Action Buttons */}
                     <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                      {!allDocumentsViewed && (
+                        <p className="mb-3 text-right text-xs text-amber-700 dark:text-amber-300">
+                          View every private document before submitting a decision.
+                        </p>
+                      )}
+                      {allDocumentsViewed && !reviewMetadataComplete && (
+                        <p className="mb-3 text-right text-xs text-amber-700 dark:text-amber-300">
+                          Reviewer metadata is unavailable or incomplete for one or more documents.
+                        </p>
+                      )}
                       <div className="flex justify-end gap-3">
                         {canDecideRegistration(selectedRegistration.status) && (
                           <>
@@ -828,7 +1003,7 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
                               {submittingRegistrationId === selectedRegistration.id ? 'Submitting…' : 'Reject'}
                             </Button>
                             <Button
-                              disabled={!allDocumentsViewed || submittingRegistrationId !== null}
+                              disabled={!canSubmitApproval || submittingRegistrationId !== null}
                               onClick={() => {
                                 handleApprove(selectedRegistration.id);
                                 setIsViewModalOpen(false);

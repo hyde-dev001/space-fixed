@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Tests\Feature\BusinessScaling;
 
 use App\Http\Controllers\superAdmin\ShopOwnerRegistrationViewController;
+use App\Http\Requests\SuperAdmin\ApproveShopOwnerRegistrationRequest;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerModule;
 use App\Models\SuperAdmin;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Tests\Concerns\AuthenticatesPrivilegedUsers;
@@ -85,7 +85,11 @@ final class ShopModuleInitialApprovalTest extends TestCase
     {
         $admin = SuperAdmin::factory()->admin()->create();
         $this->actingAsCompletedPrivileged($admin);
-        $request = Request::create('/superAdmin/shop-owner-registration/'.$owner->id.'/approve', 'POST');
+        $request = ApproveShopOwnerRegistrationRequest::create(
+            '/superAdmin/shop-owner-registration/'.$owner->id.'/approve',
+            'POST',
+            $this->approvalPayloadFor($owner),
+        );
         $request->headers->set('Accept', 'application/json');
         $request->setUserResolver(static fn (?string $guard = null) => $guard === 'super_admin' ? $admin : null);
 

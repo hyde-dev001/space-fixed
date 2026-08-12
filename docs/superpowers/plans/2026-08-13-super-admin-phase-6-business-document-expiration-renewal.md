@@ -8,7 +8,19 @@
 
 **Tech Stack:** PHP 8.2, Laravel 12, Eloquent, private Laravel storage, Inertia 2, React 18, TypeScript 5.7, Tailwind CSS 4, PHPUnit 11, Vitest 3, pnpm.
 
-**Status:** DRAFT FOR APPROVAL
+**Status:** IN PROGRESS — backend implementation and regression verified; frontend, build, migration-application, reconciliation-snapshot, and browser evidence pending
+
+## Current Execution Evidence (2026-08-13)
+
+- Worktree/branch: `.worktrees/super-admin-phase-0-containment` / `super-admin-phase-0-containment`.
+- Phase 6 focused backend suite: `67 tests, 470 assertions, 1 explicit SQLite concurrency skip`.
+- Affected-domain regression: `195 tests, 15,637 assertions, 35 PHPUnit deprecations, 2 skips` (fresh after the final resubmission compatibility adjustment).
+- Full PHPUnit suite: `1,845 tests, 45,225 assertions, 216 PHPUnit deprecations, 8 skips`; exit status passed before the final resubmission payload-only adjustment. The affected-domain rerun after that adjustment also passed.
+- Changed/new PHP syntax checks and `git diff --check` passed.
+- Route inspection confirms one owner renewal POST route and three privileged renewal routes with correlation, privileged authentication, active-state, MFA, and capability middleware. The reminder schedule is `0 17 * * *` UTC (`01:00` Asia/Manila).
+- Migration status remains pending for `2026_08_12_195255_add_lifecycle_fields_to_shop_documents_table` and `2026_08_12_195256_create_shop_document_reminder_deliveries_table`; migrations were inspected with `--pretend` but not applied to a deployment database.
+- `pnpm` is not installed. The required Vitest command fails before test execution; direct Vitest invocation also fails with `EPERM` opening the pnpm-linked Vitest module. `pnpm run build` is therefore not runnable here.
+- Browser verification and safe-database reconciliation/apply evidence are not recorded in this environment. Do not mark this plan `EXECUTED` or enable the schedule until those deployment gates are completed.
 
 ---
 
@@ -630,7 +642,7 @@ pnpm exec vitest run resources/js/Pages/UserSide/Auth/__tests__/ShopOwnerRegistr
 - Modify: `docs/superpowers/plans/2026-08-13-super-admin-phase-6-business-document-expiration-renewal.md`
 - Create only if Phase 6 produces a durable reusable lesson: `docs/ai-learning-log.md`
 
-- [ ] **Step 1: Perform the required sequential review stack**
+- [x] **Step 1: Perform the required sequential review stack**
 
 Record:
 
@@ -643,7 +655,7 @@ Record:
 7. reuse/dead-code review—reuse existing storage/audit/notification/route patterns and confirm the HR command remains separate;
 8. improvement evidence—before/after destructive replacement, DTI/SEC ambiguity, reminder deduplication, route truthfulness, and query bounds; report unmeasured performance as `not measured`.
 
-- [ ] **Step 2: Run structural inspection**
+- [x] **Step 2: Run structural inspection**
 
 ```powershell
 php artisan route:list --path=shop-owner/compliance-documents
@@ -666,6 +678,8 @@ git diff --check
 ```
 
 The repository has no committed TypeScript compiler configuration or frontend lint script; do not report type-checking/linting as passing unless that tooling is actually added and run. If an existing environment prerequisite blocks a broad suite, record exact command/output and focused passing evidence.
+
+Backend evidence for this step is recorded above: the affected-domain suite passed with 195 tests and the direct full PHPUnit suite passed with 1,845 tests. The required `pnpm` commands were attempted but blocked because `pnpm` is unavailable; direct Vitest invocation was blocked by an `EPERM` error opening the pnpm-linked module. `composer test` previously reached its 300-second wrapper timeout, while direct `vendor\\bin\\phpunit` completed successfully.
 
 - [ ] **Step 4: Run reconciliation and scheduler dry-runs against a safe database snapshot**
 

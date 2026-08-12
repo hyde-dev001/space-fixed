@@ -53,7 +53,7 @@ final class ShopOwnerUpgradeSubmissionTest extends TestCase
         }
     }
 
-    public function test_approved_documents_can_be_reused_as_private_snapshots_without_touching_sources(): void
+    public function test_public_approved_documents_cannot_be_reused_as_upgrade_evidence(): void
     {
         $owner = ShopOwner::factory()->approved()->create([
             'registration_type' => 'individual',
@@ -74,12 +74,42 @@ final class ShopOwnerUpgradeSubmissionTest extends TestCase
 
         $this->actingAs($owner, 'shop_owner')
             ->post(route('shop-owner.upgrade-requests.store'), $payload, ['Accept' => 'application/json'])
-            ->assertCreated();
+            ->assertStatus(422);
 
-        $snapshot = ShopOwnerUpgradeRequest::firstOrFail()->documents()->where('document_type', 'dti_registration')->firstOrFail();
-        Storage::disk('local')->assertExists($snapshot->path);
-        $this->assertSame('approved-source-bytes', Storage::disk('local')->get($snapshot->path));
+        $this->assertDatabaseCount('shop_owner_upgrade_requests', 0);
+        $this->assertDatabaseCount('shop_owner_upgrade_request_documents', 0);
         $this->assertSame('approved-source-bytes', Storage::disk('public')->get($sourcePath));
+    }
+
+    public function test_non_current_versioned_documents_cannot_be_reused_as_upgrade_evidence(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'individual',
+            'business_type' => 'retail',
+        ]);
+        $sourcePath = 'shop_documents/superseded-dti.pdf';
+        Storage::disk('local')->put($sourcePath, 'superseded-source-bytes');
+        $source = ShopDocument::create([
+            'shop_owner_id' => $owner->id,
+            'document_type' => 'dti_registration',
+            'logical_slot' => 'business_registration',
+            'version_number' => 1,
+            'file_path' => $sourcePath,
+            'disk' => 'local',
+            'status' => 'approved',
+            'is_current' => false,
+            'expiration_mode' => 'unknown',
+        ]);
+
+        $payload = $this->uploadPayload();
+        unset($payload['documents']['dti_registration']);
+        $payload['reuse_document_ids'] = ['dti_registration' => $source->id];
+
+        $this->actingAs($owner, 'shop_owner')
+            ->post(route('shop-owner.upgrade-requests.store'), $payload, ['Accept' => 'application/json'])
+            ->assertStatus(422);
+
+        $this->assertDatabaseCount('shop_owner_upgrade_requests', 0);
     }
 
     public function test_approved_document_reuse_reads_the_recorded_local_source_disk(): void

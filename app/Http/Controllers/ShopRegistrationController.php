@@ -2,37 +2,17 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\ShopOwner;
-use App\Models\ShopDocument;
 use App\Services\CaviteLocationPolicyService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 
-class ShopRegistrationController extends Controller
+final class ShopRegistrationController extends Controller
 {
-    private function resolvedLatitude(array $validated)
-    {
-        return $validated['shop_latitude'] ?? $validated['shopLatitude'] ?? null;
-    }
-
-    private function resolvedLongitude(array $validated)
-    {
-        return $validated['shop_longitude'] ?? $validated['shopLongitude'] ?? null;
-    }
-
-    private function resolvedPostalCode(array $validated)
-    {
-        return $validated['postal_code']
-            ?? $validated['postalCode']
-            ?? $validated['zip_code']
-            ?? $validated['zipCode']
-            ?? null;
-    }
-
-    // <!-- API endpoint to register shop owner from React frontend -->
+    /**
+     * The legacy API route remains registered for compatibility, but it must
+     * not create an owner without the canonical immutable document contract.
+     */
     public function store(Request $request, CaviteLocationPolicyService $caviteLocationPolicy)
     {
-        // <!-- Validate incoming request data -->
         $validated = $request->validate([
             'firstName' => 'required|string|max:255',
             'lastName' => 'required|string|max:255',
@@ -64,7 +44,7 @@ class ShopRegistrationController extends Controller
                     'email' => $validated['email'] ?? null,
                     'business_name' => $validated['businessName'] ?? null,
                     'target_type' => 'shop_owner_registration',
-                ]
+                ],
             );
         } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([
@@ -74,51 +54,14 @@ class ShopRegistrationController extends Controller
             ], 422);
         }
 
-        try {
-            // <!-- Create new shop owner record in database with proper field mapping -->
-            $shopOwner = ShopOwner::create([
-                'first_name' => $validated['firstName'],
-                'last_name' => $validated['lastName'],
-                'email' => $validated['email'],
-                'phone' => $validated['phone'],
-                'business_name' => $validated['businessName'],
-                'business_address' => $validated['businessAddress'],
-                'postal_code' => $this->resolvedPostalCode($validated),
-                'business_type' => $validated['businessType'],
-                'registration_type' => $validated['registrationType'],
-                'shop_latitude' => $this->resolvedLatitude($validated),
-                'shop_longitude' => $this->resolvedLongitude($validated),
-                'shop_address' => $validated['businessAddress'],
-                'operating_hours' => isset($validated['operatingHours']) ? json_encode($validated['operatingHours']) : null,
-                'status' => 'pending', // <!-- Set initial status to pending for Super Admin approval -->
-            ]);
-
-            // <!-- Return JSON success response -->
-            return response()->json([
-                'success' => true,
-                'message' => 'Shop owner registration submitted successfully! Your application is pending review.',
-                'data' => $shopOwner,
-            ], 201);
-
-        } catch (\Exception $e) {
-            // <!-- Log the error for debugging -->
-            \Log::error('Shop registration error: ' . $e->getMessage());
-            
-            // <!-- Return JSON error response -->
-            return response()->json([
-                'success' => false,
-                'message' => 'Registration failed: ' . $e->getMessage(),
-            ], 500);
-        }
+        return $this->rejectLegacyDocumentContract($request);
     }
 
     /**
-     * Register a full shop owner with operating hours
-     * <!-- Comprehensive registration endpoint for complete shop details -->
+     * The legacy full-registration API has no versioned metadata contract.
      */
     public function storeFull(Request $request, CaviteLocationPolicyService $caviteLocationPolicy)
     {
-        // <!-- Validate incoming request data -->
         $validated = $request->validate([
             'firstName' => 'required|string|max:255',
             'lastName' => 'required|string|max:255',
@@ -158,7 +101,7 @@ class ShopRegistrationController extends Controller
                     'email' => $validated['email'] ?? null,
                     'business_name' => $validated['businessName'] ?? null,
                     'target_type' => 'shop_owner_registration',
-                ]
+                ],
             );
         } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([
@@ -168,89 +111,21 @@ class ShopRegistrationController extends Controller
             ], 422);
         }
 
-        try {
-            // <!-- Validate that user has acknowledged requirements -->
-            if (!$validated['agreesToRequirements']) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'You must confirm you have all required business permits and valid ID.',
-                ], 422);
-            }
-
-            // <!-- Format operating hours for storage -->
-            $formattedHours = [];
-            foreach ($validated['operatingHours'] as $hours) {
-                $formattedHours[$hours['day']] = [
-                    'open' => $hours['open'],
-                    'close' => $hours['close'],
-                ];
-            }
-
-            // <!-- Create new shop owner record in database -->
-            $shopOwner = ShopOwner::create([
-                'first_name' => $validated['firstName'],
-                'last_name' => $validated['lastName'],
-                'email' => $validated['email'],
-                'phone' => $validated['phone'],
-                'business_name' => $validated['businessName'],
-                'business_address' => $validated['businessAddress'],
-                'postal_code' => $this->resolvedPostalCode($validated),
-                'business_type' => $validated['businessType'],
-                'registration_type' => $validated['registrationType'],
-                'shop_latitude' => $this->resolvedLatitude($validated),
-                'shop_longitude' => $this->resolvedLongitude($validated),
-                'shop_address' => $validated['businessAddress'],
-                'operating_hours' => json_encode($formattedHours),
-                'status' => 'pending', // <!-- Set initial status to pending for Super Admin approval -->
-            ]);
-
-            $this->storeDocuments($request, $shopOwner);
-
-            // <!-- Log successful registration for audit trail -->
-            \Log::info('Shop owner registered: ' . $shopOwner->id . ' - ' . $shopOwner->email);
-
-            // Notify all super admins
-            \App\Models\Notification::notifyAllSuperAdmins(
-                \App\Enums\NotificationType::SHOP_REGISTRATION_PENDING,
-                'New Shop Registration',
-                "{$shopOwner->business_name} ({$shopOwner->first_name} {$shopOwner->last_name}) submitted a registration and is awaiting approval.",
-                '/admin/shop-owner-registration-view',
-                ['shop_owner_id' => $shopOwner->id, 'business_name' => $shopOwner->business_name]
-            );
-
-            // <!-- Return JSON success response -->
-            return response()->json([
-                'success' => true,
-                'message' => 'Shop owner registration submitted successfully! Your application is pending review.',
-                'data' => $shopOwner,
-            ], 201);
-
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            // <!-- Return validation errors -->
+        if (! $validated['agreesToRequirements']) {
             return response()->json([
                 'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $e->errors(),
+                'message' => 'You must confirm you have all required business permits and valid ID.',
             ], 422);
-        } catch (\Exception $e) {
-            // <!-- Log the error for debugging -->
-            \Log::error('Shop registration error: ' . $e->getMessage());
-            
-            // <!-- Return JSON error response -->
-            return response()->json([
-                'success' => false,
-                'message' => 'Registration failed: ' . $e->getMessage(),
-            ], 500);
         }
+
+        return $this->rejectLegacyDocumentContract($request);
     }
 
     /**
-     * Register a full shop owner with Inertia (server-side form submission)
-     * <!-- Handles POST from Inertia form with automatic CSRF token handling -->
+     * The legacy Inertia action remains registered but has no write path.
      */
     public function storeFullInertia(Request $request, CaviteLocationPolicyService $caviteLocationPolicy)
     {
-        // <!-- Validate incoming request data -->
         $validated = $request->validate([
             'firstName' => 'required|string|max:255',
             'lastName' => 'required|string|max:255',
@@ -290,90 +165,37 @@ class ShopRegistrationController extends Controller
                     'email' => $validated['email'] ?? null,
                     'business_name' => $validated['businessName'] ?? null,
                     'target_type' => 'shop_owner_registration',
-                ]
+                ],
             );
-
-            // <!-- Validate that user has acknowledged requirements -->
-            if (!$validated['agreesToRequirements']) {
-                return redirect()->back()->withErrors([
-                    'agreesToRequirements' => 'You must confirm you have all required business permits and valid ID.',
-                ]);
-            }
-
-            // <!-- Format operating hours for storage -->
-            $formattedHours = [];
-            foreach ($validated['operatingHours'] as $hours) {
-                $formattedHours[$hours['day']] = [
-                    'open' => $hours['open'],
-                    'close' => $hours['close'],
-                ];
-            }
-
-            // <!-- Create new shop owner record in database -->
-            $shopOwner = ShopOwner::create([
-                'first_name' => $validated['firstName'],
-                'last_name' => $validated['lastName'],
-                'email' => $validated['email'],
-                'phone' => $validated['phone'],
-                'business_name' => $validated['businessName'],
-                'business_address' => $validated['businessAddress'],
-                'postal_code' => $this->resolvedPostalCode($validated),
-                'business_type' => $validated['businessType'],
-                'registration_type' => $validated['registrationType'],
-                'shop_latitude' => $this->resolvedLatitude($validated),
-                'shop_longitude' => $this->resolvedLongitude($validated),
-                'shop_address' => $validated['businessAddress'],
-                'operating_hours' => json_encode($formattedHours),
-                'status' => 'pending',
-            ]);
-
-            $this->storeDocuments($request, $shopOwner);
-
-            // <!-- Log successful registration for audit trail -->
-            \Log::info('Shop owner registered via Inertia: ' . $shopOwner->id . ' - ' . $shopOwner->email);
-
-            // Notify all super admins
-            \App\Models\Notification::notifyAllSuperAdmins(
-                \App\Enums\NotificationType::SHOP_REGISTRATION_PENDING,
-                'New Shop Registration',
-                "{$shopOwner->business_name} ({$shopOwner->first_name} {$shopOwner->last_name}) submitted a registration and is awaiting approval.",
-                '/admin/shop-owner-registration-view',
-                ['shop_owner_id' => $shopOwner->id, 'business_name' => $shopOwner->business_name]
-            );
-
-            // <!-- Redirect with success message -->
-            return redirect()->back()->with('success', 'Registration submitted successfully! Your application is pending review.');
-
         } catch (\Illuminate\Validation\ValidationException $e) {
             return redirect()->back()->withErrors($e->errors())->withInput();
-        } catch (\Exception $e) {
-            \Log::error('Shop registration error: ' . $e->getMessage());
-            return redirect()->back()->withErrors(['message' => 'Registration failed: ' . $e->getMessage()]);
         }
+
+        if (! $validated['agreesToRequirements']) {
+            return redirect()->back()->withErrors([
+                'agreesToRequirements' => 'You must confirm you have all required business permits and valid ID.',
+            ])->withInput();
+        }
+
+        return $this->rejectLegacyDocumentContract($request);
     }
 
-    private function storeDocuments(Request $request, ShopOwner $shopOwner): void
+    private function rejectLegacyDocumentContract(Request $request)
     {
-        $documentMap = [
-            'dtiRegistration' => 'dti_registration',
-            'mayorsPermit' => 'mayors_permit',
-            'birCertificate' => 'bir_certificate',
-            'validId' => 'valid_id',
+        $errors = [
+            'documents' => [
+                'This compatibility route no longer accepts the legacy document contract. Submit through the canonical shop-owner registration form.',
+            ],
         ];
 
-        foreach ($documentMap as $field => $type) {
-            if ($request->hasFile($field)) {
-                $path = $request->file($field)->store('shop_documents', 'local');
-
-                $document = ShopDocument::create([
-                    'shop_owner_id' => $shopOwner->id,
-                    'document_type' => $type,
-                    'file_path' => $path,
-                    'status' => 'pending',
-                ]);
-                $document->disk = 'local';
-                $document->save();
-            }
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Please use the canonical versioned document registration form.',
+                'errors' => $errors,
+            ], 422);
         }
+
+        return redirect()->back()->withErrors($errors)->withInput();
     }
 }

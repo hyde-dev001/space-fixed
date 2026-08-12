@@ -10,6 +10,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class ShopOwnerAuthRegistrationTest extends TestCase
@@ -26,10 +27,33 @@ class ShopOwnerAuthRegistrationTest extends TestCase
         $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
 
         return [
-            'dti_registration' => UploadedFile::fake()->createWithContent('dti_registration.png', $png),
+            'business_registration' => UploadedFile::fake()->createWithContent('dti_registration.png', $png),
+            'business_registration_type' => 'dti_registration',
             'mayors_permit' => UploadedFile::fake()->createWithContent('mayors_permit.png', $png),
             'bir_certificate' => UploadedFile::fake()->createWithContent('bir_certificate.png', $png),
             'valid_id' => UploadedFile::fake()->createWithContent('valid_id.png', $png),
+            'document_metadata' => [
+                'business_registration' => [
+                    'issued_on' => '2026-01-01',
+                    'expiration_mode' => 'none',
+                    'expires_on' => null,
+                ],
+                'mayors_permit' => [
+                    'issued_on' => '2026-01-01',
+                    'expiration_mode' => 'dated',
+                    'expires_on' => '2027-01-01',
+                ],
+                'bir_certificate' => [
+                    'issued_on' => '2026-01-01',
+                    'expiration_mode' => 'none',
+                    'expires_on' => null,
+                ],
+                'valid_id' => [
+                    'issued_on' => '2026-01-01',
+                    'expiration_mode' => 'none',
+                    'expires_on' => null,
+                ],
+            ],
         ];
     }
 
@@ -49,6 +73,29 @@ class ShopOwnerAuthRegistrationTest extends TestCase
             'shop_longitude' => self::LNG_DASMARINAS,
             'shop_address' => 'Dasmariñas, Cavite',
             'shop_geofence_radius' => 150,
+            'business_registration_type' => 'dti_registration',
+            'document_metadata' => [
+                'business_registration' => [
+                    'issued_on' => '2026-01-01',
+                    'expiration_mode' => 'none',
+                    'expires_on' => null,
+                ],
+                'mayors_permit' => [
+                    'issued_on' => '2026-01-01',
+                    'expiration_mode' => 'dated',
+                    'expires_on' => '2027-01-01',
+                ],
+                'bir_certificate' => [
+                    'issued_on' => '2026-01-01',
+                    'expiration_mode' => 'none',
+                    'expires_on' => null,
+                ],
+                'valid_id' => [
+                    'issued_on' => '2026-01-01',
+                    'expiration_mode' => 'none',
+                    'expires_on' => null,
+                ],
+            ],
         ], $overrides);
     }
 
@@ -84,6 +131,72 @@ class ShopOwnerAuthRegistrationTest extends TestCase
 
         $this->assertDatabaseHas('shop_owners', [
             'email' => 'auth-register@solespaceph.com',
+            'status' => 'pending',
+        ]);
+        $this->assertSame(4, ShopDocument::query()
+            ->where('shop_owner_id', ShopOwner::query()->where('email', 'auth-register@solespaceph.com')->value('id'))
+            ->where('version_number', 1)
+            ->whereNull('is_current')
+            ->count());
+        $this->assertDatabaseHas('shop_documents', [
+            'document_type' => 'dti_registration',
+            'logical_slot' => 'business_registration',
+            'version_number' => 1,
+            'is_current' => null,
+            'status' => 'pending',
+        ]);
+    }
+
+    public function test_registration_rejects_an_ambiguous_business_registration_contract(): void
+    {
+        Storage::fake('local');
+        $this->markRegistrationEmailVerified('auth-missing-business-registration@solespaceph.com');
+
+        $payload = array_merge($this->payload([
+            'email' => 'auth-missing-business-registration@solespaceph.com',
+        ]), $this->docs());
+        unset($payload['business_registration_type']);
+
+        $this->postJson('/shop-owner/register', $payload)
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['business_registration_type']);
+
+        $this->assertDatabaseMissing('shop_owners', [
+            'email' => 'auth-missing-business-registration@solespaceph.com',
+        ]);
+    }
+
+    public function test_registration_persists_supporting_documents_under_stable_uuid_slots(): void
+    {
+        Storage::fake('local');
+        $email = 'auth-supporting-document@solespaceph.com';
+        $slotId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+        $this->markRegistrationEmailVerified($email);
+
+        $response = $this->postJson('/shop-owner/register', array_merge(
+            $this->payload(['email' => $email]),
+            $this->docs(),
+            [
+                'other_documents' => [
+                    $slotId => UploadedFile::fake()->createWithContent('lease.png', $this->pngBytes()),
+                ],
+                'other_document_metadata' => [
+                    $slotId => [
+                        'issued_on' => '2026-01-01',
+                        'expiration_mode' => 'dated',
+                        'expires_on' => '2028-01-01',
+                    ],
+                ],
+            ],
+        ));
+
+        $response->assertStatus(201);
+
+        $this->assertDatabaseHas('shop_documents', [
+            'shop_owner_id' => ShopOwner::query()->where('email', $email)->value('id'),
+            'document_type' => 'supporting_document',
+            'logical_slot' => 'supporting_document:' . $slotId,
+            'version_number' => 1,
             'status' => 'pending',
         ]);
     }
@@ -203,7 +316,8 @@ class ShopOwnerAuthRegistrationTest extends TestCase
             'rejection_reason' => null,
             'business_name' => 'Updated Juan Shoes',
         ]);
-        $this->assertSame(4, ShopDocument::query()->where('shop_owner_id', $owner->id)->count());
+        $this->assertSame(8, ShopDocument::query()->where('shop_owner_id', $owner->id)->count());
+        $this->assertSame(4, ShopDocument::query()->where('shop_owner_id', $owner->id)->where('status', 'rejected')->count());
         $this->assertSame(4, ShopDocument::query()->where('shop_owner_id', $owner->id)->where('status', 'pending')->count());
 
         $this->withHeaders(['Accept' => 'application/json'])
@@ -216,7 +330,7 @@ class ShopOwnerAuthRegistrationTest extends TestCase
             'id' => $owner->id,
             'resubmission_count' => 1,
         ]);
-        $this->assertSame(4, ShopDocument::query()->where('shop_owner_id', $owner->id)->count());
+        $this->assertSame(8, ShopDocument::query()->where('shop_owner_id', $owner->id)->count());
     }
 
     public function test_resubmission_fails_closed_for_missing_and_missing_on_disk_documents(): void
@@ -238,7 +352,63 @@ class ShopOwnerAuthRegistrationTest extends TestCase
         }
     }
 
-    public function test_phase_two_resubmission_updates_current_rows_until_phase_six_immutability(): void
+    public function test_resubmission_form_preserves_sec_and_lifecycle_supporting_document_identity(): void
+    {
+        Storage::fake('local');
+        $owner = ShopOwner::factory()->rejected()->create([
+            'rejection_reason' => 'Please provide clearer documents.',
+            'business_type' => 'repair',
+            'registration_type' => 'individual',
+        ]);
+        $businessPath = "shop_documents/{$owner->id}/sec-registration.png";
+        $supportingPath = "shop_documents/{$owner->id}/lease.png";
+        Storage::disk('local')->put($businessPath, 'business');
+        Storage::disk('local')->put($supportingPath, 'supporting');
+
+        $business = ShopDocument::create([
+            'shop_owner_id' => $owner->id,
+            'document_type' => 'sec_registration',
+            'file_path' => $businessPath,
+            'status' => 'rejected',
+        ]);
+        $business->forceFill([
+            'disk' => 'local',
+            'logical_slot' => 'business_registration',
+            'version_number' => 1,
+            'is_current' => null,
+            'expiration_mode' => 'none',
+        ])->save();
+
+        $supporting = ShopDocument::create([
+            'shop_owner_id' => $owner->id,
+            'document_type' => 'supporting_document',
+            'file_path' => $supportingPath,
+            'status' => 'rejected',
+        ]);
+        $supporting->forceFill([
+            'disk' => 'local',
+            'logical_slot' => 'supporting_document:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            'version_number' => 1,
+            'is_current' => null,
+            'expiration_mode' => 'none',
+        ])->save();
+
+        $url = URL::temporarySignedRoute(
+            'shop-owner.resubmission.form',
+            now()->addDay(),
+            ['shopOwner' => $owner->id],
+        );
+
+        $this->get($url)
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('UserSide/Auth/ShopOwnerRegistration')
+                ->where('resubmission.documents.dti_registration.type', 'sec_registration')
+                ->where('resubmission.documents.other_documents.0.type', 'supporting_document')
+                ->where('resubmission.documents.other_documents.0.logical_slot', 'supporting_document:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
+            );
+    }
+
+    public function test_resubmission_creates_immutable_versions_instead_of_updating_current_rows(): void
     {
         Storage::fake('local');
         $owner = $this->rejectedOwnerWithDocuments();
@@ -261,7 +431,12 @@ class ShopOwnerAuthRegistrationTest extends TestCase
             ->pluck('id')
             ->all();
 
-        $this->assertSame($originalIds, $currentIds, 'Immutable document rows begin in Phase 6; Phase 2 updates the current row.');
+        $this->assertCount(8, $currentIds);
+        $this->assertSame($originalIds, array_slice($currentIds, 0, 4));
+        $this->assertSame(
+            ['rejected', 'rejected', 'rejected', 'rejected'],
+            ShopDocument::query()->whereKey($originalIds)->orderBy('id')->pluck('status')->all(),
+        );
     }
 
     /** @param array<int, string> $types */

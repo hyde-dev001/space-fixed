@@ -591,6 +591,77 @@ class PrivilegedAudit
         );
     }
 
+    /**
+     * Record a committed document-renewal approval without copying private
+     * storage details into the privileged history.
+     *
+     * @param array{document_type: string, logical_slot: string, version_number: int, issued_on: string|null, expiration_mode: string, expires_on: string|null} $metadata
+     */
+    public function shopDocumentRenewalApproved(
+        Request $request,
+        SuperAdmin $actor,
+        ShopDocument $document,
+        ShopOwner $shopOwner,
+        ?ShopDocument $predecessor,
+        array $metadata,
+    ): void {
+        $this->write(
+            event: 'shop_document_renewal_approved',
+            actor: $actor,
+            subject: $document,
+            source: 'http',
+            correlationId: $this->correlationId($request),
+            ipAddress: $request->ip(),
+            properties: [
+                'shop_owner_id' => (int) $shopOwner->getKey(),
+                'predecessor_document_id' => $predecessor?->getKey(),
+                'prior_status' => 'pending',
+                'new_status' => 'approved',
+                'document_type' => $metadata['document_type'],
+                'submitted_document_type' => $metadata['submitted_document_type'] ?? null,
+                'logical_slot' => $metadata['logical_slot'],
+                'version_number' => $metadata['version_number'],
+                'issued_on' => $metadata['issued_on'],
+                'expiration_mode' => $metadata['expiration_mode'],
+                'expires_on' => $metadata['expires_on'],
+                'submitted_issued_on' => $metadata['submitted_issued_on'] ?? null,
+                'submitted_expiration_mode' => $metadata['submitted_expiration_mode'] ?? null,
+                'submitted_expires_on' => $metadata['submitted_expires_on'] ?? null,
+            ],
+        );
+    }
+
+    /**
+     * Record a committed document-renewal rejection without altering the
+     * predecessor's current evidence.
+     */
+    public function shopDocumentRenewalRejected(
+        Request $request,
+        SuperAdmin $actor,
+        ShopDocument $document,
+        ShopOwner $shopOwner,
+        ?ShopDocument $predecessor,
+        string $reason,
+    ): void {
+        $this->write(
+            event: 'shop_document_renewal_rejected',
+            actor: $actor,
+            subject: $document,
+            source: 'http',
+            correlationId: $this->correlationId($request),
+            ipAddress: $request->ip(),
+            properties: [
+                'shop_owner_id' => (int) $shopOwner->getKey(),
+                'predecessor_document_id' => $predecessor?->getKey(),
+                'prior_status' => 'pending',
+                'new_status' => 'rejected',
+                'logical_slot' => (string) $document->logical_slot,
+                'version_number' => (int) $document->version_number,
+                'reason' => $reason,
+            ],
+        );
+    }
+
     public function userSuspended(
         Request $request,
         SuperAdmin $actor,
