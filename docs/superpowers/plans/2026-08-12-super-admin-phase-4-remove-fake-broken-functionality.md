@@ -8,7 +8,7 @@
 
 **Tech Stack:** PHP 8.2, Laravel 12, Eloquent, Inertia 2, React 18, TypeScript 5.7, TanStack Query, PHPUnit 11, Vitest 3, pnpm.
 
-**Status:** DRAFT FOR APPROVAL
+**Status:** EXECUTED; browser verification pending environment prerequisites
 
 ---
 
@@ -165,7 +165,7 @@ Do not duplicate a separate editable role matrix in TypeScript. Expose the model
 - Modify: `tests/Feature/SuperAdmin/PrivilegedPhaseThreeBoundaryTest.php`
 - Test: `resources/js/layout/__tests__/AppSidebar.test.tsx`
 
-- [ ] **Step 1: Write failing backend structural tests**
+- [x] **Step 1: Write failing backend structural tests**
 
 Assert that the completed Phase 4 route table must have:
 
@@ -186,7 +186,7 @@ php artisan test tests/Feature/SuperAdmin/PhaseFourSurfaceBoundaryTest.php tests
 
 Expected: FAIL because fake communications routes and unsafe subscription mutations are still registered and canonical profile is absent.
 
-- [ ] **Step 2: Add a failing runtime-navigation test**
+- [x] **Step 2: Add a failing runtime-navigation test**
 
 Extend the actual `resources/js/layout/AppSidebar.tsx` test, not the unused duplicate layout tree. Prove that:
 
@@ -204,7 +204,7 @@ pnpm exec vitest run resources/js/layout/__tests__/AppSidebar.test.tsx
 
 Expected: FAIL because the current sidebar ignores its role calculation and exposes the fake page.
 
-- [ ] **Step 3: Record dependency evidence before deletion**
+- [x] **Step 3: Record dependency evidence before deletion**
 
 Use CodeGraph first, then focused searches and route inspection to confirm:
 
@@ -217,7 +217,7 @@ rg -n "NotificationCommunicationTools|notification-communication-tools|/admin/no
 
 Classify each reference as runtime caller, safe compatibility redirect, test, generated Ziggy data, or Phase 7 structural debt. Do not delete generated artifacts manually in this task.
 
-- [ ] **Step 4: Commit boundary tests with the first implementation task that makes them pass**
+- [x] **Step 4: Commit boundary tests with the first implementation task that makes them pass**
 
 Do not commit deliberately failing tests alone. Keep this task's tests red until Tasks 2-5 satisfy the frozen boundary.
 
@@ -235,7 +235,7 @@ Do not commit deliberately failing tests alone. Keep this task's tests red until
 - Delete: `resources/js/Pages/superAdmin/Communications/NotificationCommunicationTools.tsx`
 - Modify: `tests/Feature/SuperAdmin/PhaseFourSurfaceBoundaryTest.php`
 
-- [ ] **Step 1: Write failing inbox authorization and ownership tests**
+- [x] **Step 1: Write failing inbox authorization and ownership tests**
 
 Cover:
 
@@ -257,7 +257,7 @@ php artisan test tests/Feature/SuperAdmin/AdminNotificationInboxTest.php tests/F
 
 Expected: FAIL on the missing real page and any unbounded/contract gaps; existing recipient scoping should already pass.
 
-- [ ] **Step 2: Write failing focused page tests**
+- [x] **Step 2: Write failing focused page tests**
 
 Prove the page:
 
@@ -277,13 +277,13 @@ pnpm exec vitest run resources/js/Pages/superAdmin/Notifications/__tests__/Admin
 
 Expected: FAIL because the focused page does not exist.
 
-- [ ] **Step 3: Implement the minimum operational inbox**
+- [x] **Step 3: Implement the minimum operational inbox**
 
 Reuse the existing notification hooks where their endpoint contract matches. Add only narrow page-local adaptation for the admin API's `notifications` plus nested `pagination` payload; do not generalize the large customer/ERP `NotificationList`, whose export/archive/preferences controls are unsupported for administrators. Normalize and serialize notification rows in the existing controller through one small private method or API Resource only if the repository already uses that pattern nearby; do not create a service for field selection.
 
 Use `AppLayout`, accessible buttons, explicit pending/error states, and the existing mark/read/delete API. Label deletion as dismissal so the UI does not imply authoritative audit removal.
 
-- [ ] **Step 4: Cut routes and callers over**
+- [x] **Step 4: Cut routes and callers over**
 
 - Render the new page at canonical `/admin/notifications`.
 - Change every duplicate legacy `/superAdmin/notification-communication-tools` declaration to a safe redirect to the canonical inbox.
@@ -291,7 +291,7 @@ Use `AppLayout`, accessible buttons, explicit pending/error states, and the exis
 - Preserve `AppHeader`'s real notification API and canonical View All link.
 - Do not add a sidebar communications item; the header notification center remains the direct inbox entry.
 
-- [ ] **Step 5: Run focused tests and commit**
+- [x] **Step 5: Run focused tests and commit**
 
 ```bash
 php artisan test tests/Feature/SuperAdmin/AdminNotificationInboxTest.php tests/Feature/BusinessScaling/BusinessScalingNotificationTest.php tests/Feature/SuperAdmin/PhaseFourSurfaceBoundaryTest.php
@@ -310,7 +310,7 @@ Do not stage `AppHeader.tsx` if no contract fix was needed.
 - Modify: `resources/js/Pages/superAdmin/Users/__tests__/SuperAdminUserLifecycle.test.tsx`
 - Modify: `tests/Feature/SuperAdmin/PhaseFourSurfaceBoundaryTest.php`
 
-- [ ] **Step 1: Extend frontend tests before editing**
+- [x] **Step 1: Extend frontend tests before editing**
 
 Use fixtures for active, suspended, archived, pending, rejected, and legacy deactivated users. Assert:
 
@@ -330,7 +330,7 @@ pnpm exec vitest run resources/js/Pages/superAdmin/Users/__tests__/SuperAdminUse
 
 Expected: FAIL because fake controls and handlers remain.
 
-- [ ] **Step 2: Delete only fake behavior**
+- [x] **Step 2: Delete only fake behavior**
 
 Remove:
 
@@ -341,7 +341,7 @@ Remove:
 
 Keep legacy statuses in display/filter types where records may still exist. Do not mutate or relabel historical database values and do not invent a migration in this phase.
 
-- [ ] **Step 3: Reverify retained actions**
+- [x] **Step 3: Reverify retained actions**
 
 Run the existing frontend lifecycle test plus the backend account workflow suites so removing fake controls cannot accidentally remove real suspension/archive endpoints:
 
@@ -352,7 +352,7 @@ php artisan test tests/Feature/SuperAdmin/UserLifecycleWorkflowTest.php tests/Fe
 
 If those exact backend filenames differ, select the existing Phase 2 user lifecycle/archive tests by `rg --files tests/Feature/SuperAdmin | rg "User|Archive|Lifecycle"`; do not create duplicate backend coverage merely to satisfy a command name.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add resources/js/Pages/superAdmin/Users/SuperAdminUserManagement.tsx resources/js/Pages/superAdmin/Users/__tests__/SuperAdminUserLifecycle.test.tsx tests/Feature/SuperAdmin/PhaseFourSurfaceBoundaryTest.php
@@ -379,7 +379,7 @@ git commit -m "fix: remove simulated customer management actions"
 - Create: `tests/Feature/SuperAdmin/PrivilegedProfileTest.php`
 - Modify: `tests/Feature/SuperAdmin/PhaseFourSurfaceBoundaryTest.php`
 
-- [ ] **Step 1: Write failing profile and capability-sharing tests**
+- [x] **Step 1: Write failing profile and capability-sharing tests**
 
 Assert:
 
@@ -398,13 +398,13 @@ php artisan test tests/Feature/SuperAdmin/PrivilegedProfileTest.php tests/Featur
 
 Expected: FAIL because canonical profile and shared capabilities are absent.
 
-- [ ] **Step 2: Expose the fixed capability list safely**
+- [x] **Step 2: Expose the fixed capability list safely**
 
 Add a typed read-only model method that returns the current role's existing `CAPABILITIES_BY_ROLE` list. Reuse it in `hasCapability()` and the Inertia share rather than copying the matrix into middleware or TypeScript. Unknown roles return an empty list.
 
 This data controls visibility only; every route keeps backend capability middleware.
 
-- [ ] **Step 3: Canonicalize the profile/security entry**
+- [x] **Step 3: Canonicalize the profile/security entry**
 
 - Add protected `admin.profile` GET using the existing profile controller method.
 - Return a small explicit `admin` array: ID, first/last/display name, email, and role only.
@@ -412,7 +412,7 @@ This data controls visibility only; every route keeps backend capability middlew
 - Make `Profile.tsx` consume only the explicit privileged prop, render "Admin" or "Super Administrator" truthfully, and link password/MFA/recovery management to `/admin/security`.
 - Add Profile and Security links to `SuperAdminDropdown`, remove fake identity fallbacks, and keep logout server-driven. A logout error must not pretend logout succeeded.
 
-- [ ] **Step 4: Write and satisfy monitoring truthfulness tests**
+- [x] **Step 4: Write and satisfy monitoring truthfulness tests**
 
 Frontend tests must prove:
 
@@ -431,7 +431,7 @@ php artisan test tests/Feature/SuperAdmin/SystemMonitoringDashboardTest.php
 pnpm exec vitest run resources/js/Pages/superAdmin/__tests__/SystemMonitoringDashboard.test.tsx
 ```
 
-- [ ] **Step 5: Migrate active navigation to canonical truthful routes**
+- [x] **Step 5: Migrate active navigation to canonical truthful routes**
 
 Update the runtime `AppSidebar.tsx` to:
 
@@ -446,7 +446,7 @@ Update the runtime `AppSidebar.tsx` to:
 
 Do not consolidate or delete the unrelated duplicate sidebar tree in this phase. Record it for Phase 7 after confirming `AppLayout` does not import it.
 
-- [ ] **Step 6: Run focused tests and commit**
+- [x] **Step 6: Run focused tests and commit**
 
 ```bash
 php artisan test tests/Feature/SuperAdmin/PrivilegedProfileTest.php tests/Feature/SuperAdmin/SystemMonitoringDashboardTest.php tests/Feature/SuperAdmin/PhaseFourSurfaceBoundaryTest.php tests/Feature/SuperAdmin/PhaseZeroAuthorizationTest.php
@@ -467,7 +467,7 @@ git commit -m "fix: connect privileged profile monitoring and navigation"
 - Modify: `tests/Feature/SuperAdmin/PrivilegedPhaseThreeBoundaryTest.php`
 - Modify: `tests/Feature/SuperAdmin/PhaseFourSurfaceBoundaryTest.php`
 
-- [ ] **Step 1: Write failing route and state-preservation tests**
+- [x] **Step 1: Write failing route and state-preservation tests**
 
 Assert:
 
@@ -485,7 +485,7 @@ php artisan test tests/Feature/SuperAdmin/SubscriptionInterventionContainmentTes
 
 Expected: FAIL because all three unsafe endpoints still exist.
 
-- [ ] **Step 2: Write failing frontend containment tests**
+- [x] **Step 2: Write failing frontend containment tests**
 
 Prove that the page still supports real plan create/edit/archive/reactivate and read-only subscription/history inspection, but has no Cancel, Deactivate, Upgrade, Downgrade, Refund, or adjustment mutation control for a subscription.
 
@@ -499,7 +499,7 @@ pnpm exec vitest run resources/js/Pages/superAdmin/Shops/__tests__/SubscriptionM
 
 Expected: FAIL because the Deactivate control still posts to the pseudo-refund endpoint.
 
-- [ ] **Step 3: Remove the uncertified mutation surface**
+- [x] **Step 3: Remove the uncertified mutation surface**
 
 - Delete cancel/upgrade/downgrade routes with no legacy mutation aliases.
 - Delete the three controller methods and only imports made orphaned by their removal.
@@ -507,7 +507,7 @@ Expected: FAIL because the Deactivate control still posts to the pseudo-refund e
 - Keep payment/subscription history fields, filters, and plan-management workflows unchanged.
 - Do not repair paid history, reinterpret legacy `deactivated`, or build the Phase 5 service here.
 
-- [ ] **Step 4: Run focused tests and commit**
+- [x] **Step 4: Run focused tests and commit**
 
 ```bash
 php artisan test tests/Feature/SuperAdmin/SubscriptionInterventionContainmentTest.php tests/Feature/SuperAdmin/PremiumPlanWorkflowTest.php tests/Feature/SuperAdmin/PrivilegedPhaseThreeBoundaryTest.php tests/Feature/SuperAdmin/PhaseFourSurfaceBoundaryTest.php
@@ -524,7 +524,7 @@ git commit -m "fix: withdraw unsafe subscription interventions"
 - Create: `docs/runbooks/super-admin-phase-4-surface-inventory.md` only if the final route/surface inventory is not adequately captured by tests and this plan
 - Modify: `docs/ai-learning-log.md` only for a genuinely durable project lesson
 
-- [ ] **Step 1: Run the final fake-surface scan**
+- [x] **Step 1: Run the final fake-surface scan**
 
 ```bash
 rg -n "NotificationCommunicationTools|notification-communication-tools|send announcement|support ticket|Reset Password|handleApproval|handleDeactivate|/superAdmin/users/.*/(approve|reject)|subscriptions\.(cancel|upgrade|downgrade)|/admin/subscriptions/.*/(cancel|upgrade|downgrade)|refunded successfully|paid_amount.*0|See all|See All" app routes resources/js tests --glob '!public/build/**'
@@ -539,7 +539,7 @@ Expected remaining references are limited to:
 
 Investigate every hit before classifying it. Do not delete another role's real report, export, support, password, approval, refund, or notification workflow.
 
-- [ ] **Step 2: Inspect route ownership and generated-route impact**
+- [x] **Step 2: Inspect route ownership and generated-route impact**
 
 ```bash
 php artisan route:list --path=admin
@@ -550,7 +550,7 @@ rg -n "NotificationCommunicationToolsController|SuperAdminAuthController::update
 
 If generated Ziggy data is committed by this repository's normal build/generation workflow, regenerate it through that established command; do not hand-edit `resources/js/ziggy.js`. If route generation is not part of Phase 4's normal workflow, record the stale generated artifact for the existing build process rather than inventing a command.
 
-- [ ] **Step 3: Preserve later-phase boundaries explicitly**
+- [x] **Step 3: Preserve later-phase boundaries explicitly**
 
 Confirm the final diff does not:
 
@@ -560,7 +560,7 @@ Confirm the final diff does not:
 - add a generic notification/communication abstraction;
 - alter customer, Shop Owner, ERP, HR, finance, POS, order, or document routes.
 
-- [ ] **Step 4: Commit only verified cleanup/documentation**
+- [x] **Step 4: Commit only verified cleanup/documentation**
 
 ```bash
 git add <only Phase 4 files changed by verified findings>
@@ -576,7 +576,7 @@ If no files changed, do not create an empty commit or unnecessary runbook.
 - Review all Phase 4 changes since `82f667f56`
 - Modify only files required to resolve verified findings
 
-- [ ] **Step 1: Run the required review stack sequentially**
+- [x] **Step 1: Run the required review stack sequentially**
 
 Record one result for each:
 
@@ -590,21 +590,21 @@ Record one result for each:
 8. **security-review:** inspect notification recipient scoping/IDOR, active/MFA middleware, capability sharing, profile serialization, stored action URLs, CSRF, removed credential path, and subscription endpoint absence.
 9. **reuse/dead-code review:** confirm existing notification API, hooks, capability model, security page, audit page, monitoring controller, layouts, and lifecycle workflows are reused; scan for orphan imports/state/controllers/routes/tests.
 
-- [ ] **Step 2: Run narrow backend/frontend suites**
+- [x] **Step 2: Run narrow backend/frontend suites**
 
 ```bash
 php artisan test tests/Feature/SuperAdmin/PhaseFourSurfaceBoundaryTest.php tests/Feature/SuperAdmin/AdminNotificationInboxTest.php tests/Feature/SuperAdmin/PrivilegedProfileTest.php tests/Feature/SuperAdmin/SystemMonitoringDashboardTest.php tests/Feature/SuperAdmin/SubscriptionInterventionContainmentTest.php tests/Feature/SuperAdmin/PremiumPlanWorkflowTest.php tests/Feature/SuperAdmin/PrivilegedPhaseThreeBoundaryTest.php
 pnpm exec vitest run resources/js/Pages/superAdmin/Notifications/__tests__/AdminNotifications.test.tsx resources/js/Pages/superAdmin/Users/__tests__/SuperAdminUserLifecycle.test.tsx resources/js/Pages/superAdmin/Shops/__tests__/SubscriptionManagementContainment.test.tsx resources/js/Pages/superAdmin/__tests__/SystemMonitoringDashboard.test.tsx resources/js/components/header/__tests__/SuperAdminDropdown.test.tsx resources/js/layout/__tests__/AppSidebar.test.tsx
 ```
 
-- [ ] **Step 3: Run the Super Admin regression suites**
+- [x] **Step 3: Run the Super Admin regression suites**
 
 ```bash
 php artisan test tests/Feature/SuperAdmin
 pnpm exec vitest run resources/js/Pages/superAdmin resources/js/layout/__tests__/AppSidebar.test.tsx resources/js/components/header/__tests__/SuperAdminDropdown.test.tsx
 ```
 
-- [ ] **Step 4: Run broader verification**
+- [x] **Step 4: Run broader verification**
 
 ```bash
 composer test
@@ -617,6 +617,8 @@ git status --short
 Do not report standalone TypeScript type-checking or linting as passed; the repository has no committed scripts for those checks.
 
 - [ ] **Step 5: Browser verification for both retained roles**
+
+Browser verification was not run: this environment has no Python runtime, Playwright package, or local application server.
 
 With the local app running, verify:
 
@@ -631,7 +633,7 @@ With the local app running, verify:
 - direct POSTs to withdrawn subscription URLs do not mutate state;
 - old data-report URLs still redirect to authoritative audit with no export UI.
 
-- [ ] **Step 6: Commit review fixes and final evidence**
+- [x] **Step 6: Commit review fixes and final evidence**
 
 ```bash
 git add <only Phase 4 files changed by verified findings>
@@ -644,21 +646,21 @@ If no files changed after review, do not create an empty commit.
 
 ## Phase 4 Acceptance Checklist
 
-- [ ] No visible Super Admin action reports success without a registered protected endpoint and persisted authoritative result.
-- [ ] Fake announcements, alerts, support tickets, communication settings, exports, and report generation are not reachable or present in runtime navigation.
-- [ ] `/admin/notifications` is a real recipient-scoped operational inbox; dismissal never changes privileged audit history.
-- [ ] The old communications GET is safe compatibility only and never renders the retired page.
-- [ ] Customer approval/rejection, local deactivation, and fake administrator password-reset controls are removed.
-- [ ] Real suspension/reactivation/archive/restore/details/private-document controls still work and remain backend authorized.
-- [ ] Legacy customer statuses remain visible as read-only evidence rather than being silently rewritten.
-- [ ] Profile serialization is allowlisted, role labels are truthful for both roles, and own credential/MFA/recovery management uses `/admin/security` only.
-- [ ] Navigation consumes the server-owned fixed capability list, fails closed for restricted links, and never replaces backend authorization.
-- [ ] Monitoring shows only measured server data, has one real Audit destination, and has no inert detail controls or overstated performance/availability claims.
-- [ ] Premium-plan management and read-only subscription/payment history remain available to authorized Super Admins.
-- [ ] Old Super Admin cancel/upgrade/downgrade routes, methods, and controls are absent; Phase 5 owns any canonical replacement.
-- [ ] No pseudo-refund, paid-history rewrite, direct plan swap, or provider claim remains callable through the Super Admin module.
-- [ ] Existing customer, Shop Owner, ERP, HR, finance, POS, order, and document workflows are unchanged.
-- [ ] Safe data-report aliases still redirect to authoritative audit and no fake export control returns.
+- [x] No visible Super Admin action reports success without a registered protected endpoint and persisted authoritative result.
+- [x] Fake announcements, alerts, support tickets, communication settings, exports, and report generation are not reachable or present in runtime navigation.
+- [x] `/admin/notifications` is a real recipient-scoped operational inbox; dismissal never changes privileged audit history.
+- [x] The old communications GET is safe compatibility only and never renders the retired page.
+- [x] Customer approval/rejection, local deactivation, and fake administrator password-reset controls are removed.
+- [x] Real suspension/reactivation/archive/restore/details/private-document controls still work and remain backend authorized.
+- [x] Legacy customer statuses remain visible as read-only evidence rather than being silently rewritten.
+- [x] Profile serialization is allowlisted, role labels are truthful for both roles, and own credential/MFA/recovery management uses `/admin/security` only.
+- [x] Navigation consumes the server-owned fixed capability list, fails closed for restricted links, and never replaces backend authorization.
+- [x] Monitoring shows only measured server data, has one real Audit destination, and has no inert detail controls or overstated performance/availability claims.
+- [x] Premium-plan management and read-only subscription/payment history remain available to authorized Super Admins.
+- [x] Old Super Admin cancel/upgrade/downgrade routes, methods, and controls are absent; Phase 5 owns any canonical replacement.
+- [x] No pseudo-refund, paid-history rewrite, direct plan swap, or provider claim remains callable through the Super Admin module.
+- [x] Existing customer, Shop Owner, ERP, HR, finance, POS, order, and document workflows are unchanged.
+- [x] Safe data-report aliases still redirect to authoritative audit and no fake export control returns.
 - [ ] Focused backend/frontend tests, full suites, build, route inspection, dependency scan, and browser flows have fresh recorded evidence.
 
 ## Rollback and Recovery Notes
