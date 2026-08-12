@@ -1856,3 +1856,104 @@ html.userside-dark #app .userside-shop-owner-registration-page [class~="text-gra
 .dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="hover:bg-gray-50"]:hover {
   background-color: #1f2d43 !important;
 }
+
+/* Services and article surfaces use the same restrained customer dark palette
+   without changing the light-mode layout or the ERP theme. */
+html.userside-dark #app .userside-services-page {
+  background-color: #0b1220 !important;
+  color: #f8fafc;
+}
+
+html.userside-dark #app .userside-services-page [class~="text-black/40"],
+html.userside-dark #app .userside-services-page [class~="text-black/45"],
+html.userside-dark #app .userside-services-page [class~="text-black/50"],
+html.userside-dark #app .userside-services-page [class~="text-black/65"] {
+  color: #cbd5e1 !important;
+}
+
+html.userside-dark #app .userside-services-page [class~="text-[#16233b]"] {
+  color: #d5e0ff !important;
+}
+
+html.userside-dark #app .userside-services-page [class~="bg-[#f4f5f8]"] {
+  background-color: #0b1220 !important;
+}
+
+html.userside-dark #app .userside-services-page [class~="bg-gray-50/60"] {
+  background-color: #111827 !important;
+}
+
+html.userside-dark #app .userside-services-page [class~="border-gray-200"],
+html.userside-dark #app .userside-services-page [class~="border-gray-300"],
+html.userside-dark #app .userside-services-page [class~="border-gray-400"] {
+  border-color: #2f405a !important;
+}
+
+html.userside-dark #app .userside-shoe-guide-page {
+  background-color: #0b1220 !important;
+  color: #f8fafc;
+}
+
+html.userside-dark #app .userside-shoe-guide-page [class~="text-black/45"],
+html.userside-dark #app .userside-shoe-guide-page [class~="text-black/60"],
+html.userside-dark #app .userside-shoe-guide-page [class~="text-black/65"],
+html.userside-dark #app .userside-shoe-guide-page [class~="text-black/75"],
+html.userside-dark #app .userside-shoe-guide-page [class~="text-black/80"] {
+  color: #e2e8f0 !important;
+}
+
+html.userside-dark #app .userside-shoe-guide-page [class~="text-emerald-900"],
+html.userside-dark #app .userside-shoe-guide-page [class~="text-emerald-800"] {
+  color: #9ae6b4 !important;
+}
+
+html.userside-dark #app .userside-shoe-guide-page [class~="bg-emerald-50"],
+html.userside-dark #app .userside-shoe-guide-page [class*="bg-emerald-50/"] {
+  background-color: #102b1f !important;
+}
+
+html.userside-dark #app .userside-shoe-guide-page [class*="border-emerald-200"] {
+  border-color: #2f624a !important;
+}
+
+html.userside-dark #app .userside-shoe-guide-page [class*="bg-gray-50/"] {
+  background-color: #111827 !important;
+}
+
+html.userside-dark #app .userside-shoe-guide-page [class~="bg-gray-300"] {
+  background-color: #334155 !important;
+}
+
+html.userside-dark #app .userside-shoe-guide-page [class~="bg-linear-to-br"] {
+  background-image: linear-gradient(135deg, #102b1f 0%, #111827 100%) !important;
+}
+
+html.userside-dark #app .userside-shoe-guide-page [class~="bg-linear-to-b"] {
+  background-image: linear-gradient(180deg, #111827 0%, #151f32 100%) !important;
+}
+
+html.userside-dark #app .userside-shoe-guide-page [class~="border-gray-200"],
+html.userside-dark #app .userside-shoe-guide-page [class~="border-gray-300"] {
+  border-color: #2f405a !important;
+}
+
+/* The premium shop-owner page has a few brand/arbitrary utilities that are
+   intentionally outside the shared gray token mappings above. */
+.dark #app .shopowner-premium-page [class~="text-black/35"],
+.dark #app .shopowner-premium-page [class~="text-black/50"] {
+  color: #94a3b8 !important;
+}
+
+.dark #app .shopowner-premium-page [class*="bg-[#16233b]/"] {
+  background-color: #172c47 !important;
+}
+
+.dark #app .shopowner-premium-page [class*="border-[#16233b]/"] {
+  border-color: #385070 !important;
+}
+
+.dark #app .shopowner-premium-page [class~="text-emerald-700"],
+.dark #app .shopowner-premium-page [class~="text-emerald-800"],
+.dark #app .shopowner-premium-page [class~="text-emerald-900"] {
+  color: #72d8a0 !important;
+}
