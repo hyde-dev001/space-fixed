@@ -3,12 +3,8 @@ import { Link, usePage } from "@inertiajs/react";
 
 // Assume these icons are imported from an icon library
 import {
-  CalenderIcon,
   CheckLineIcon,
-  GridIcon,
   HorizontaLDots,
-  UserIcon,
-  UserCircleIcon,
   ShootingStarIcon,
 } from "../icons";
 import { useSidebar } from "../context/SidebarContext";
