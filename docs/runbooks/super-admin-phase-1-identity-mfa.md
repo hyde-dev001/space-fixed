@@ -25,7 +25,8 @@ Complete every item before enabling privileged traffic:
 7. Confirm the `iconv`, `openssl`, and `xmlwriter` PHP extensions are available on the application and queue hosts.
 8. Confirm platform time synchronization is healthy and materially correct using the host or container NTP/time-sync tooling. Do this before enrollment or challenge traffic is enabled; TOTP is time-sensitive.
 9. Confirm at least one named operator has a recoverable current Super Admin password and that the incident escalation path is staffed.
-10. Announce the maintenance window and record the operator, reviewer, deployment revision, backup identifiers, and start time.
+10. Run `composer audit --locked` against the deployed lockfile. Stop on any unresolved advisory affecting production dependencies; if release policy permits an exception, record the advisory, reachability, compensating controls, owner, and expiry before proceeding.
+11. Announce the maintenance window and record the operator, reviewer, deployment revision, backup identifiers, and start time.
 
 Stop immediately and restore the maintenance boundary if any item fails, if mail/queue encryption or delivery cannot be verified, if system time is unhealthy or materially incorrect, if a status migration is unsupported, if no recoverable account exists, or if any Phase 1 security test fails.
 
@@ -144,6 +145,7 @@ The security floor is staged authentication, MFA for operations, registered-sess
 Run these commands from the deployed application revision and attach the output to the change record:
 
 ```powershell
+composer audit --locked
 php artisan help super-admin:bootstrap
 php artisan route:list --path=admin --except-vendor
 php artisan queue:failed
