@@ -407,6 +407,75 @@ class PrivilegedAudit
         );
     }
 
+    public function legacyAccountSuspensionReconciled(
+        Model $subject,
+        string $correlationId,
+        string $accountType,
+        int $accountId,
+        int $suspensionId,
+        ?string $priorStatus,
+        string $newStatus,
+        int $operatorReviewCount,
+    ): void {
+        $this->writeConsoleEvent(
+            event: 'legacy_account_suspension_reconciled',
+            subject: $subject,
+            correlationId: $correlationId,
+            properties: [
+                'account_type' => $accountType,
+                'account_id' => $accountId,
+                'suspension_id' => $suspensionId,
+                'prior_status' => $priorStatus,
+                'new_status' => $newStatus,
+                'operator_review_count' => $operatorReviewCount,
+            ],
+        );
+    }
+
+    public function legacyAppealSuperseded(
+        Model $subject,
+        string $correlationId,
+        string $accountType,
+        int $accountId,
+        int $appealId,
+        string $priorStatus,
+        string $newStatus,
+        int $ambiguityCount,
+    ): void {
+        $this->writeConsoleEvent(
+            event: 'legacy_appeal_superseded',
+            subject: $subject,
+            correlationId: $correlationId,
+            properties: [
+                'account_type' => $accountType,
+                'account_id' => $accountId,
+                'appeal_id' => $appealId,
+                'prior_status' => $priorStatus,
+                'new_status' => $newStatus,
+                'ambiguity_count' => $ambiguityCount,
+            ],
+        );
+    }
+
+    public function legacyWarningStrikeReconciled(
+        Model $subject,
+        string $correlationId,
+        int $shopOwnerId,
+        int $moderationActionId,
+        int $legacyAuditLogId,
+    ): void {
+        $this->writeConsoleEvent(
+            event: 'legacy_warning_strike_reconciled',
+            subject: $subject,
+            correlationId: $correlationId,
+            properties: [
+                'shop_owner_id' => $shopOwnerId,
+                'moderation_action_id' => $moderationActionId,
+                'legacy_audit_log_id' => $legacyAuditLogId,
+            ],
+        );
+    }
+
     private function write(
         string $event,
         SuperAdmin $actor,
@@ -496,16 +565,34 @@ class PrivilegedAudit
         string $correlationId,
         array $properties = [],
     ): void {
+        $this->writeConsoleEvent(
+            event: $event,
+            subject: $subject,
+            correlationId: $correlationId,
+            properties: $properties,
+        );
+    }
+
+    private function writeConsoleEvent(
+        string $event,
+        Model $subject,
+        string $correlationId,
+        array $properties = [],
+    ): void {
         if (! Str::isUuid($correlationId)) {
             throw new InvalidArgumentException('The privileged audit correlation ID must be a UUID.');
         }
+
+        $targetType = $subject instanceof SuperAdmin
+            ? 'super_admin'
+            : Str::snake(class_basename($subject));
 
         $baseProperties = [
             'actor_type' => null,
             'actor_guard' => null,
             'actor_id' => null,
             'event' => $event,
-            'target_type' => 'super_admin',
+            'target_type' => $targetType,
             'target_id' => (int) $subject->getKey(),
             'source' => 'console',
             'correlation_id' => $correlationId,
