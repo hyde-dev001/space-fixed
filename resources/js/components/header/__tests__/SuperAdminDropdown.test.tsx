@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -70,9 +70,12 @@ describe('SuperAdminDropdown', () => {
 
     render(<SuperAdminDropdown />);
     fireEvent.click(screen.getByRole('button', { name: /ada admin/i }));
-    fireEvent.click(screen.getByRole('button', { name: /sign out/i }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /sign out/i }));
+    });
 
     await vi.waitFor(() => expect(mocks.routerPost).toHaveBeenCalled());
+    expect(await screen.findByRole('alert')).toHaveTextContent('Sign out failed. Please try again.');
     expect(mocks.routerVisit).not.toHaveBeenCalled();
   });
 });

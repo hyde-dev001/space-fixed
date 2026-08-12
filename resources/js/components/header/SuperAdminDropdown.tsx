@@ -3,8 +3,14 @@ import { Link, usePage, router } from "@inertiajs/react";
 import { Dropdown } from "../ui/dropdown/Dropdown";
 import Swal from "sweetalert2";
 
+type PrivilegedIdentity = {
+  name: string;
+  email: string;
+  role: 'admin' | 'super_admin';
+};
+
 export default function SuperAdminDropdown() {
-  const { auth } = usePage().props as any;
+  const { auth } = usePage<{ auth?: { super_admin?: PrivilegedIdentity | null } }>().props;
   const [isOpen, setIsOpen] = useState(false);
   const [logoutError, setLogoutError] = useState<string | null>(null);
 
@@ -12,9 +18,9 @@ export default function SuperAdminDropdown() {
   
   if (!superAdmin) return null;
 
-  const userName = superAdmin?.name || "Super Admin";
-  const userEmail = superAdmin?.email || "admin@solespace.com";
-  const roleLabel = superAdmin?.role === "super_admin" ? "Super Administrator" : "Admin";
+  const userName = superAdmin.name;
+  const userEmail = superAdmin.email;
+  const roleLabel = superAdmin.role === "super_admin" ? "Super Administrator" : "Admin";
 
   function toggleDropdown() {
     setIsOpen(!isOpen);
@@ -44,6 +50,7 @@ export default function SuperAdminDropdown() {
         preserveState: false,
         onError: () => {
           setLogoutError('Sign out failed. Please try again.');
+          setIsOpen(true);
         }
       });
     }
