@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Spatie\Permission\Traits\HasRoles;
@@ -38,6 +39,14 @@ class SuperAdmin extends Authenticatable
 {
     use HasFactory, Notifiable, HasRoles;
 
+    public const ROLE_ADMIN = 'admin';
+    public const ROLE_SUPER_ADMIN = 'super_admin';
+
+    public const STATUS_ACTIVE = 'active';
+    public const STATUS_SUSPENDED = 'suspended';
+    public const STATUS_INACTIVE = 'inactive';
+    public const STATUS_PENDING_SETUP = 'pending_setup';
+
     public const CAP_REVIEW_REGISTRATIONS = 'review_registrations';
     public const CAP_INTERVENE_ACCOUNTS = 'intervene_accounts';
     public const CAP_MANAGE_ADMINISTRATORS = 'manage_administrators';
@@ -46,11 +55,11 @@ class SuperAdmin extends Authenticatable
     public const CAP_INTERVENE_SUBSCRIPTIONS = 'intervene_subscriptions';
 
     private const CAPABILITIES_BY_ROLE = [
-        'admin' => [
+        self::ROLE_ADMIN => [
             self::CAP_REVIEW_REGISTRATIONS,
             self::CAP_INTERVENE_ACCOUNTS,
         ],
-        'super_admin' => [
+        self::ROLE_SUPER_ADMIN => [
             self::CAP_REVIEW_REGISTRATIONS,
             self::CAP_INTERVENE_ACCOUNTS,
             self::CAP_MANAGE_ADMINISTRATORS,
@@ -101,6 +110,9 @@ class SuperAdmin extends Authenticatable
     protected $hidden = [
         'password',          // Never expose password hash
         'remember_token',    // Keep session token private
+        'mfa_secret',
+        'mfa_recovery_codes',
+        'bootstrap_marker',
     ];
 
     /**
@@ -113,7 +125,24 @@ class SuperAdmin extends Authenticatable
     protected $casts = [
         'last_login_at' => 'datetime',  // Auto convert to Carbon instance
         'password' => 'hashed',         // Auto hash on creation (Laravel 11+)
+        'mfa_secret' => 'encrypted',
+        'mfa_recovery_codes' => 'array',
+        'mfa_confirmed_at' => 'datetime',
+        'mfa_last_used_timestep' => 'integer',
+        'security_version' => 'integer',
+        'password_changed_at' => 'datetime',
     ];
+
+    protected $attributes = [
+        'security_version' => 1,
+    ];
+
+    public function hasCompletedMfaSetup(): bool
+    {
+        return $this->mfa_confirmed_at !== null
+            && $this->mfa_secret !== null
+            && $this->mfa_recovery_codes !== null;
+    }
 
     public function hasCapability(string $capability): bool
     {
@@ -129,7 +158,7 @@ class SuperAdmin extends Authenticatable
      */
     public function isActive(): bool
     {
-        return $this->status === 'active';
+        return $this->status === self::STATUS_ACTIVE;
     }
 
     /**
@@ -139,7 +168,7 @@ class SuperAdmin extends Authenticatable
      */
     public function isSuspended(): bool
     {
-        return $this->status === 'suspended';
+        return $this->status === self::STATUS_SUSPENDED;
     }
 
     /**
@@ -168,7 +197,7 @@ class SuperAdmin extends Authenticatable
      */
     public function scopeActive($query)
     {
-        return $query->where('status', 'active');
+        return $query->where('status', self::STATUS_ACTIVE);
     }
 
     /**
@@ -179,7 +208,17 @@ class SuperAdmin extends Authenticatable
      */
     public function scopeSuspended($query)
     {
-        return $query->where('status', 'suspended');
+        return $query->where('status', self::STATUS_SUSPENDED);
+    }
+
+    public function securityTokens(): HasMany
+    {
+        return $this->hasMany(PrivilegedSecurityToken::class);
+    }
+
+    public function privilegedSessions(): HasMany
+    {
+        return $this->hasMany(PrivilegedSession::class);
     }
 
     /**
