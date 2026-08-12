@@ -313,14 +313,14 @@ const LandingPage: React.FC<Props> = ({ products = [], stats }) => {
         <div className={`${heroContainerClass} flex min-h-[84svh] items-center pb-12 pt-20 sm:min-h-svh sm:py-24 lg:py-32`}>
           <div className="relative z-10 w-full max-w-[24rem] text-left sm:max-w-152 lg:max-w-4xl">
             <h1 className="hero-headline mb-4 text-[2.35rem] font-bold leading-[0.9] tracking-tight text-white/90 xsm:text-[2.75rem] sm:mb-8 sm:text-[4.4rem] md:text-7xl lg:text-8xl xl:text-9xl">
-              <span className="hero-headline-line hero-line-1">ELEVATE YOUR</span>
-              <span className="hero-headline-line hero-line-2">SIGNATURE</span>
-              <span className="hero-headline-line hero-line-3">STYLE</span>
+              <span className="hero-headline-line hero-line-1 landing-hero-motion">ELEVATE YOUR</span>
+              <span className="hero-headline-line hero-line-2 landing-hero-motion">SIGNATURE</span>
+              <span className="hero-headline-line hero-line-3 landing-hero-motion">STYLE</span>
             </h1>
-            <p className="hero-description mb-7 max-w-xl text-base font-light leading-relaxed text-white/90 sm:mb-12 sm:max-w-2xl sm:text-lg md:text-xl lg:text-2xl">
+            <p className="hero-description landing-hero-motion mb-7 max-w-xl text-base font-light leading-relaxed text-white/90 sm:mb-12 sm:max-w-2xl sm:text-lg md:text-xl lg:text-2xl">
               Discover refined footwear and atelier-grade repair services, curated for people who wear confidence with every step.
             </p>
-            <div data-scroll-reveal data-scroll-delay={220} className="scroll-reveal flex w-full max-w-sm flex-col gap-3 sm:max-w-none sm:flex-row sm:gap-4">
+            <div className="landing-hero-motion hero-actions flex w-full max-w-sm flex-col gap-3 sm:max-w-none sm:flex-row sm:gap-4">
               <Link
                 href={route("products")}
                 className={`${buttonBaseClass} ${buttonLightClass}`}
@@ -676,19 +676,31 @@ const LandingPage: React.FC<Props> = ({ products = [], stats }) => {
           }
 
           .hero-line-2 {
-            animation-delay: 600ms;
+            animation-delay: 160ms;
           }
 
           .hero-line-3 {
-            animation-delay: 1200ms;
+            animation-delay: 320ms;
           }
 
           .hero-description {
             opacity: 0;
             transform: translate3d(0, 20px, 0);
             animation: hero-copy-fade 650ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-            animation-delay: 1900ms;
+            animation-delay: 520ms;
             will-change: transform, opacity;
+          }
+
+          .hero-actions {
+            opacity: 0;
+            transform: translate3d(0, 20px, 0);
+            animation: hero-copy-fade 650ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+            animation-delay: 700ms;
+            will-change: transform, opacity;
+          }
+
+          html.solespace-first-load:not(.solespace-app-ready) .landing-hero-motion {
+            animation-play-state: paused !important;
           }
 
           @keyframes hero-line-rise {
@@ -717,6 +729,15 @@ const LandingPage: React.FC<Props> = ({ products = [], stats }) => {
             .scroll-reveal,
             .scroll-reveal.is-visible {
               transition: none !important;
+              transform: none !important;
+              opacity: 1 !important;
+            }
+
+            .landing-hero-motion,
+            .landing-hero-motion.hero-headline-line,
+            .landing-hero-motion.hero-description,
+            .landing-hero-motion.hero-actions {
+              animation: none !important;
               transform: none !important;
               opacity: 1 !important;
             }
