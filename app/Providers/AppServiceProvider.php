@@ -2,9 +2,13 @@
 
 namespace App\Providers;
 
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
 
 // Inventory Events
 use App\Events\InventoryItemCreated;
@@ -39,6 +43,38 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        RateLimiter::for('privileged-login', static function (Request $request): Limit {
+            $email = Str::lower(trim((string) $request->input('email')));
+
+            return Limit::perMinute(5)->by('privileged-login|'.$email.'|'.$request->ip());
+        });
+
+        RateLimiter::for('privileged-mfa', static function (Request $request): Limit {
+            $adminId = (string) ($request->user('super_admin')?->getAuthIdentifier() ?? 'unknown');
+            $sessionId = $request->hasSession() ? $request->session()->getId() : 'no-session';
+
+            return Limit::perMinute(5)->by('privileged-mfa|'.$adminId.'|'.$sessionId.'|'.$request->ip());
+        });
+
+        RateLimiter::for('privileged-setup', static function (Request $request): Limit {
+            $adminId = (string) ($request->user('super_admin')?->getAuthIdentifier() ?? 'unknown');
+            $sessionId = $request->hasSession() ? $request->session()->getId() : 'no-session';
+
+            return Limit::perMinute(10)->by('privileged-setup|'.$adminId.'|'.$sessionId.'|'.$request->ip());
+        });
+
+        RateLimiter::for('privileged-password-reset', static function (Request $request): Limit {
+            $email = Str::lower(trim((string) $request->input('email')));
+
+            return Limit::perMinute(5)->by('privileged-password-reset|'.$email.'|'.$request->ip());
+        });
+
+        RateLimiter::for('privileged-reauth', static function (Request $request): Limit {
+            $sessionId = $request->hasSession() ? $request->session()->getId() : 'no-session';
+
+            return Limit::perMinute(5)->by('privileged-reauth|'.$sessionId.'|'.$request->ip());
+        });
+
         if (app()->environment('production')
             && (bool) config('shop_modules.owner_erp_workspace_enabled', false)
             && ! (bool) config('shop_modules.enforcement_enabled', false)) {

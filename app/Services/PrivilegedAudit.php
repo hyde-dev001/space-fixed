@@ -13,6 +13,52 @@ use InvalidArgumentException;
 
 class PrivilegedAudit
 {
+    public function privilegedLoginSucceeded(Request $request, SuperAdmin $admin): void
+    {
+        $this->writeSecurity(
+            event: 'privileged_login_password_accepted',
+            request: $request,
+            actor: $admin,
+            subject: $admin,
+            properties: ['stage' => 'mfa_pending'],
+        );
+    }
+
+    public function privilegedLoginFailed(Request $request, ?SuperAdmin $subject = null): void
+    {
+        $this->writeSecurity(
+            event: 'privileged_login_failed',
+            request: $request,
+            subject: $subject,
+            properties: ['reason' => 'invalid_credentials'],
+        );
+    }
+
+    public function privilegedMfaSucceeded(Request $request, SuperAdmin $admin, string $method): void
+    {
+        $this->writeMfaEvent('privileged_mfa_succeeded', $request, $admin, $method);
+    }
+
+    public function privilegedMfaFailed(Request $request, SuperAdmin $subject, string $method): void
+    {
+        $this->assertMfaMethod($method);
+
+        $this->writeSecurity(
+            event: 'privileged_mfa_failed',
+            request: $request,
+            subject: $subject,
+            properties: [
+                'method' => $method,
+                'reason' => 'invalid_code',
+            ],
+        );
+    }
+
+    public function privilegedMfaRecoveryCodeConsumed(Request $request, SuperAdmin $admin): void
+    {
+        $this->writeMfaEvent('privileged_mfa_recovery_code_consumed', $request, $admin, 'recovery_code');
+    }
+
     public function documentAccessInitiated(
         Request $request,
         SuperAdmin $actor,
@@ -105,6 +151,65 @@ class PrivilegedAudit
             ->setEvent($event)
             ->withProperties(array_merge($properties, $baseProperties))
             ->log($event);
+    }
+
+    private function writeMfaEvent(string $event, Request $request, SuperAdmin $admin, string $method): void
+    {
+        $this->assertMfaMethod($method);
+        $this->writeSecurity(
+            event: $event,
+            request: $request,
+            actor: $admin,
+            subject: $admin,
+            properties: ['method' => $method],
+        );
+    }
+
+    private function writeSecurity(
+        string $event,
+        Request $request,
+        ?SuperAdmin $actor = null,
+        ?SuperAdmin $subject = null,
+        array $properties = [],
+    ): void {
+        $ipAddress = $request->ip();
+        $baseProperties = [
+            'actor_type' => $actor instanceof SuperAdmin ? 'super_admin' : null,
+            'actor_guard' => $actor instanceof SuperAdmin ? 'super_admin' : null,
+            'actor_id' => $actor instanceof SuperAdmin ? (int) $actor->getKey() : null,
+            'event' => $event,
+            'source' => 'http',
+            'correlation_id' => $this->correlationId($request),
+            'ip_address' => $ipAddress,
+            'context' => ['ip_address' => $ipAddress],
+        ];
+
+        if ($subject instanceof SuperAdmin) {
+            $baseProperties['target_type'] = 'super_admin';
+            $baseProperties['target_id'] = (int) $subject->getKey();
+        }
+
+        $logger = activity('privileged');
+
+        if ($actor instanceof SuperAdmin) {
+            $logger->causedBy($actor);
+        }
+
+        if ($subject instanceof SuperAdmin) {
+            $logger->performedOn($subject);
+        }
+
+        $logger
+            ->setEvent($event)
+            ->withProperties(array_merge($baseProperties, $properties))
+            ->log($event);
+    }
+
+    private function assertMfaMethod(string $method): void
+    {
+        if (! in_array($method, ['totp', 'recovery_code'], true)) {
+            throw new InvalidArgumentException('The MFA method is not supported.');
+        }
     }
 
     private function correlationId(Request $request): string

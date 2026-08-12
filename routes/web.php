@@ -21,6 +21,7 @@ use App\Http\Controllers\superAdmin\ShopOwnerRegistrationViewController;
 use App\Http\Controllers\superAdmin\ShopOwnerUpgradeRequestController as SuperAdminShopOwnerUpgradeRequestController;
 use App\Http\Controllers\superAdmin\SuperAdminUserManagementController;
 use App\Http\Controllers\superAdmin\SystemMonitoringDashboardController;
+use App\Http\Controllers\PrivilegedMfaController;
 use App\Http\Controllers\SuperAdminAuthController;
 use App\Http\Controllers\SuperAdminController;
 use App\Http\Controllers\UserController;
@@ -1660,8 +1661,16 @@ Route::get('/shop/message', function () {
 
 // Super Admin Authentication Routes (Second set - removed duplicate, fixing authentication flows)
 Route::get('/admin/login', [SuperAdminAuthController::class, 'showLoginForm'])->name('admin.login');
-Route::post('/admin/login', [SuperAdminAuthController::class, 'login'])->name('admin.login.post');
+Route::post('/admin/login', [SuperAdminAuthController::class, 'login'])
+    ->middleware('throttle:privileged-login')
+    ->name('admin.login.post');
 Route::post('/admin/logout', [SuperAdminAuthController::class, 'logout'])->name('admin.logout');
+Route::get('/admin/mfa/challenge', [PrivilegedMfaController::class, 'show'])
+    ->middleware(['super_admin.auth', 'privileged.active', 'privileged.no-store'])
+    ->name('admin.mfa.challenge');
+Route::post('/admin/mfa/challenge', [PrivilegedMfaController::class, 'verify'])
+    ->middleware(['super_admin.auth', 'privileged.active', 'privileged.no-store', 'throttle:privileged-mfa'])
+    ->name('admin.mfa.challenge.verify');
 
 // Admin Protected Routes
 Route::middleware([
