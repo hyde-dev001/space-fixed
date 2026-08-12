@@ -605,32 +605,6 @@ class SuperAdminController extends Controller
         }
 
     /**
-     * Show data reports dashboard (placeholder values for now)
-     */
-    public function showDataReports(): Response
-    {
-        return Inertia::render('superAdmin/Reports/DataReportAccess', [
-            'stats' => [
-                'totalUsers' => 0,
-                'totalShopOwners' => 0,
-                'pendingApprovals' => 0,
-                'approvedShopOwners' => 0,
-                'rejectedShopOwners' => 0,
-                'recentRegistrations' => 0,
-                'recentApprovals' => 0,
-                'totalDocuments' => 0,
-                'pendingDocuments' => 0,
-                'approvedDocuments' => 0,
-                'monthlyGrowth' => [
-                    'current' => 0,
-                    'previous' => 0,
-                    'percentage' => 0,
-                ],
-            ],
-        ]);
-    }
-
-    /**
      * Show user management page (placeholder values for now)
      */
     public function showUserManagement(Request $request): Response

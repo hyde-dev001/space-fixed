@@ -3,18 +3,24 @@
 namespace App\Http\Controllers\superAdmin;
 
 use App\Http\Controllers\Controller;
-use App\Models\AuditLog;
 use App\Models\SuperAdmin;
 use App\Models\User;
+use App\Services\PrivilegedAuditVisibility;
+use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 use Inertia\Response;
+use Spatie\Activitylog\Models\Activity;
 
 class SystemMonitoringDashboardController extends Controller
 {
-    public function index(): Response
+    public function __construct(private readonly PrivilegedAuditVisibility $auditVisibility)
+    {
+    }
+
+    public function index(Request $request): Response
     {
         $now = now();
         $monthStart = $now->copy()->startOfMonth();
@@ -55,31 +61,29 @@ class SystemMonitoringDashboardController extends Controller
             ? (int) DB::table('failed_jobs')->count()
             : 0;
 
-        $activityRows = collect();
-        if (Schema::hasTable('audit_logs')) {
-            $activityRows = AuditLog::query()
-                ->select(['action', 'created_at'])
-                ->whereIn('target_type', ['user', 'super_admin'])
-                ->latest('created_at')
+        $viewer = $request->user('super_admin');
+        $activityRows = $viewer instanceof SuperAdmin && Schema::hasTable('activity_log')
+            ? $this->auditVisibility->visibleQuery($viewer)
+                ->with(['causer', 'subject'])
+                ->orderByDesc('created_at')
+                ->orderByDesc('id')
                 ->limit(5)
-                ->get();
-        } elseif (Schema::hasTable('activity_log')) {
-            $activityRows = DB::table('activity_log')
-                ->select(['description', 'created_at'])
-                ->where('description', 'not like', '%shop%')
-                ->where('description', 'not like', '%subscription%')
-                ->latest('created_at')
-                ->limit(5)
-                ->get();
-        }
+                ->get()
+            : collect();
 
-        $recentActivity = $activityRows->map(function ($row) {
-            $label = (string) ($row->action ?? $row->description ?? 'System activity recorded');
+        $recentActivity = $activityRows->map(function (Activity $row) use ($viewer) {
+            $safe = $viewer instanceof SuperAdmin
+                ? $this->auditVisibility->serialize($row, $viewer)
+                : null;
             $created = $row->created_at ? Carbon::parse($row->created_at) : null;
             return [
-                'activity' => str_replace('_', ' ', ucfirst($label)),
+                'activity' => $safe['event_label'] ?? 'System activity recorded',
                 'time' => $created ? $created->diffForHumans() : 'just now',
-                'status' => 'Info',
+                'status' => in_array($safe['event'] ?? null, [
+                    'privileged_capability_denied',
+                    'privileged_workflow_conflict',
+                    'privileged_workflow_failed',
+                ], true) ? 'Warning' : 'Info',
             ];
         })->all();
 
