@@ -62,15 +62,51 @@ it('renders responsive shipment cards without a wide table', () => {
   expect(screen.getByText('Dasmariñas, Cavite')).toBeInTheDocument();
 });
 
-it('expands shipment details accessibly without mutation permission', () => {
+it('opens shipment details in an accessible modal and restores trigger focus', () => {
   mocks.props.canRecordProof = false;
   render(<Shipments />);
 
   const open = screen.getByRole('button', { name: 'Open delivery' });
-  expect(open).toHaveAttribute('aria-expanded', 'false');
+  expect(open).toHaveAttribute('aria-haspopup', 'dialog');
+  expect(open).not.toHaveAttribute('aria-expanded');
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
   fireEvent.click(open);
-  expect(screen.getByRole('button', { name: 'Close delivery' })).toHaveAttribute('aria-expanded', 'true');
-  expect(screen.getByRole('region', { name: 'Shipment 1 details' })).toBeInTheDocument();
+
+  expect(screen.getByRole('dialog', { name: 'Shipment 1 delivery details' })).toBeInTheDocument();
+  expect(screen.getByText('Delivery details')).toBeInTheDocument();
+  expect(screen.queryByRole('region', { name: 'Shipment 1 details' })).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Close delivery details for Shipment 1' }));
+
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(document.activeElement).toBe(open);
+});
+
+it('closes the selected shipment modal with Escape without changing the shipment list', () => {
+  render(<Shipments />);
+  const open = screen.getByRole('button', { name: 'Open delivery' });
+
+  fireEvent.click(open);
+  expect(screen.getByRole('dialog', { name: 'Shipment 1 delivery details' })).toBeInTheDocument();
+
+  fireEvent.keyDown(document, { key: 'Escape' });
+
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(screen.getByRole('article')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Open delivery' })).toBeInTheDocument();
+});
+
+it('keeps the page scroll locked when the first of multiple shipment modals is open', () => {
+  const second = structuredClone(mocks.props.shipments.data[0]);
+  second.id = 2;
+  mocks.props.shipments.data.push(second);
+  render(<Shipments />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery for Shipment 1' }));
+
+  expect(screen.getAllByRole('dialog')).toHaveLength(1);
+  expect(document.body).toHaveStyle({ overflow: 'hidden' });
 });
 
 it('shows dispatcher pickup and customer arrival checks with reasons', () => {

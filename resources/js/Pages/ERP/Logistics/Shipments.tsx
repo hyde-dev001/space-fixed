@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
-import { CalendarDays, ChevronDown, MapPin, Search, UserRound } from 'lucide-react';
+import { CalendarDays, ExternalLink, MapPin, Search, UserRound, X } from 'lucide-react';
 import Swal from 'sweetalert2';
 import AppLayoutERP from '@/layout/AppLayout_ERP';
+import { Modal } from '@/components/ui/modal';
 import ArrivalSummary from './components/ArrivalSummary';
 import RetailOrderSummary from './components/RetailOrderSummary';
 import { riderResolutionInstruction } from './riderDeliveryPresentation';
@@ -133,7 +134,9 @@ export default function Shipments({ children }: React.PropsWithChildren) {
   const canUpdateStatus = !ownerMode && serverCanUpdateStatus;
   const canRecordProof = !ownerMode && serverCanRecordProof;
   const canApproveProof = !ownerMode && serverCanApproveProof;
-  const [expandedShipmentId, setExpandedShipmentId] = useState<number | null>(null);
+  const [selectedShipmentId, setSelectedShipmentId] = useState<number | null>(null);
+  const returnFocusRef = useRef<HTMLButtonElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const [selectedRiders, setSelectedRiders] = useState<Record<number, string>>({});
   const [deliverySchedules, setDeliverySchedules] = useState<Record<number, { date: string; window: string }>>({});
   const [assigningLegId, setAssigningLegId] = useState<number | null>(null);
@@ -147,6 +150,24 @@ export default function Shipments({ children }: React.PropsWithChildren) {
   const [incidentEvidenceFiles, setIncidentEvidenceFiles] = useState<Record<number, File | null>>({});
   const [deliveryOutcomes, setDeliveryOutcomes] = useState<Record<number, 'proof' | 'issue'>>({});
   const [search, setSearch] = useState(filters.search ?? '');
+
+  const openShipment = (shipmentId: number, trigger: HTMLButtonElement) => {
+    returnFocusRef.current = trigger;
+    setSelectedShipmentId(shipmentId);
+  };
+
+  const closeShipment = () => {
+    const trigger = returnFocusRef.current;
+    setSelectedShipmentId(null);
+    trigger?.focus();
+  };
+
+  useEffect(() => {
+    if (selectedShipmentId === null) return;
+
+    const frame = window.requestAnimationFrame(() => closeButtonRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [selectedShipmentId]);
 
   const updateFilter = (key: keyof ShipmentFilters, value: string) => {
     const next = { ...filters, [key]: value, page: 1 };
@@ -391,6 +412,25 @@ export default function Shipments({ children }: React.PropsWithChildren) {
     void act(() => logisticsApi.resolveIncident(incident.id, form));
   };
 
+  const trapDialogFocus = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Tab') return;
+
+    const focusable = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ));
+    if (focusable.length === 0) return;
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
   const chooseDeliveryOutcome = (legId: number, outcome: 'proof' | 'issue') => {
     setDeliveryOutcomes((current) => ({ ...current, [legId]: outcome }));
 
@@ -505,7 +545,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
             const overdue = legs.some((leg) => Boolean(leg.scheduled_delivery_date)
               && leg.scheduled_delivery_date!.slice(0, 10) < today
               && !['delivered', 'cancelled'].includes(leg.status));
-            const expanded = expandedShipmentId === shipment.id;
+            const selected = selectedShipmentId === shipment.id;
 
             return <article key={shipment.id} className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
               <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] lg:items-center">
@@ -550,23 +590,53 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                 </div>
                 <button
                   type="button"
-                  aria-label={shipments.data.length > 1 ? `${expanded ? 'Close' : 'Open'} delivery for Shipment ${shipment.id}` : undefined}
-                  aria-expanded={expanded}
-                  aria-controls={`shipment-${shipment.id}-details`}
-                  onClick={() => setExpandedShipmentId(expanded ? null : shipment.id)}
-                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100"
+                  aria-label={shipments.data.length > 1 ? `Open delivery for Shipment ${shipment.id}` : undefined}
+                  aria-haspopup="dialog"
+                  onClick={(event) => openShipment(shipment.id, event.currentTarget)}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-300 dark:hover:bg-blue-950/50"
                 >
-                  {expanded ? 'Close delivery' : 'Open delivery'}
-                  <ChevronDown className={`transition-transform ${expanded ? 'rotate-180' : ''}`} size={16} />
+                  Open delivery
+                  <ExternalLink aria-hidden="true" size={16} />
                 </button>
               </div>
-              {expanded && (
+              <Modal
+                isOpen={selected}
+                onClose={closeShipment}
+                size="6xl"
+                showCloseButton={false}
+                className="m-4 max-h-[calc(100dvh-2rem)] overflow-hidden"
+              >
                 <div
-                  id={`shipment-${shipment.id}-details`}
-                  role="region"
-                  aria-label={`Shipment ${shipment.id} details`}
-                  className="space-y-4 border-t border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/40"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby={`shipment-${shipment.id}-details-title`}
+                  onKeyDown={trapDialogFocus}
+                  className="flex max-h-[min(92dvh,60rem)] flex-col overflow-hidden"
                 >
+                  <header className="flex shrink-0 items-start justify-between gap-4 border-b border-gray-200 bg-white px-5 py-4 dark:border-gray-700 dark:bg-gray-800 sm:px-6">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">Shipment #{shipment.id}</p>
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <h2 id={`shipment-${shipment.id}-details-title`} aria-label={`Shipment ${shipment.id} delivery details`} className="text-xl font-bold tracking-tight text-gray-950 dark:text-white">Delivery details</h2>
+                        <span className={`rounded-full px-2 py-1 text-xs font-semibold ${statusClass(shipment.status)}`}>{label(shipment.status)}</span>
+                      </div>
+                      <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                        {shipment.source_type === 'order' && shipment.order_summary?.order_number
+                          ? `Order ${shipment.order_summary.order_number}`
+                          : logisticsSourceLabel(shipment)}
+                      </p>
+                    </div>
+                    <button
+                      ref={closeButtonRef}
+                      type="button"
+                      aria-label={`Close delivery details for Shipment ${shipment.id}`}
+                      onClick={closeShipment}
+                      className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                    >
+                      <X aria-hidden="true" size={20} />
+                    </button>
+                  </header>
+                  <div className="min-h-0 flex-1 overflow-y-auto border-t border-gray-100 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/40 sm:p-6">
                   {shipment.source_type === 'order' && <RetailOrderSummary summary={shipment.order_summary} expanded />}
                   <div className="space-y-3">
                     {(shipment.legs ?? []).map((leg) => {
@@ -865,7 +935,8 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                     {actionError && <p className="text-sm text-red-600">{actionError}</p>}
                   </div>
                 </div>
-              )}
+                </div>
+              </Modal>
             </article>;
           })}
         </div>
