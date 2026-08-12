@@ -7,6 +7,7 @@ import { dispatchCartAddedEvent } from '../../../types/cart-events';
 import NotificationCenter from '../../../components/header/NotificationCenter';
 import NotificationBell from '../../../components/common/NotificationBell';
 import { useBadgeCounts } from '../../../hooks/useBadgeCounts';
+import { getCustomerNavItems } from './navigationItems';
 
 type SearchSuggestionProduct = {
   id: number;
@@ -274,18 +275,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
   const megaMenuHiddenClasses = 'opacity-0 translate-y-2 pointer-events-none';
   const megaMenuVisibleClasses = 'opacity-100 translate-y-0 pointer-events-auto';
 
-  const navItems = [
-    { route: 'landing', label: 'Home' },
-    { route: 'products', label: 'Products', dropdownKey: 'shoes' },
-    { route: 'products', label: 'Men', params: { category: 'men' }, dropdownKey: 'men' },
-    { route: 'products', label: 'Women', params: { category: 'women' }, dropdownKey: 'women' },
-    { route: 'products', label: 'Kids', params: { category: 'kids' }, dropdownKey: 'kids' },
-    { route: 'products', label: 'Sports', params: { category: 'sports' }, dropdownKey: 'sports' },
-    { route: 'repair', label: 'Repair' },
-    { route: 'download', label: 'Download' },
-    ...(isAuthenticated ? [] : [{ route: 'services', label: 'Services' }]),
-    ...(isAuthenticated ? [] : [{ route: 'login', label: 'ACCOUNT' }])
-  ];
+  const navItems = getCustomerNavItems(isAuthenticated);
 
   let activeIndex = -1;
 
@@ -1139,6 +1129,18 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                         </svg>
                         <span>Edit Profile</span>
                       </Link>
+                      <Link
+                        href="/services"
+                        className={`flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium transition-colors ${
+                          isMobileServicesActive ? 'bg-gray-50 text-gray-900' : 'text-gray-900 hover:bg-gray-50'
+                        }`}
+                        onClick={() => setUserDropdownOpen(false)}
+                      >
+                        <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2m8-8a4 4 0 100-8 4 4 0 000 8zm6-3v6m3-3h-6" />
+                        </svg>
+                        <span>Join Our Team</span>
+                      </Link>
                       <button
                         className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
                         onClick={() => { setUserDropdownOpen(false); handleLogout(); }}
@@ -1230,7 +1232,9 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                   <Link href={route('products', { category: 'kids' })} onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClasses(isMobileKidsActive)}>Kids</Link>
                   <Link href={route('products', { category: 'sports' })} onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClasses(isMobileSportsActive)}>Sports</Link>
                   <Link href={route('repair')} onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClasses(isMobileRepairActive)}>Repair</Link>
-                  <Link href={route('services')} onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClasses(isMobileServicesActive)}>Services</Link>
+                  {!isAuthenticated && (
+                    <Link href={route('services')} onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClasses(isMobileServicesActive)}>Services</Link>
+                  )}
                   {isAuthenticated ? (
                     <button
                       type="button"
@@ -1290,6 +1294,18 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                       </svg>
                       <span>Edit Profile</span>
+                    </Link>
+                    <Link
+                      href="/services"
+                      className={`flex items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm font-medium transition-colors ${
+                        isMobileServicesActive ? 'bg-gray-50 text-gray-900' : 'text-gray-900 hover:bg-gray-50'
+                      }`}
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2m8-8a4 4 0 100-8 4 4 0 000 8zm6-3v6m3-3h-6" />
+                      </svg>
+                      <span>Join Our Team</span>
                     </Link>
                     <button
                       type="button"
