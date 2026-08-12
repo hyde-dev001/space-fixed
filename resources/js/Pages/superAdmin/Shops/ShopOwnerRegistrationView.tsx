@@ -80,6 +80,25 @@ interface RegistrationDocument {
 export const areAllDocumentsViewed = (documentCount: number, viewedDocuments = new Set<number>()) =>
   documentCount > 0 && viewedDocuments.size >= documentCount;
 
+export const canDecideRegistration = (status: Registration['status']): boolean => status === 'pending';
+
+export const getRegistrationDecisionErrorMessage = (errors: unknown): string => {
+  if (errors && typeof errors === 'object') {
+    const errorBag = errors as Record<string, unknown>;
+    for (const key of ['message', 'registration', 'rejection_reason', 'status']) {
+      const value = errorBag[key];
+      if (Array.isArray(value) && typeof value[0] === 'string' && value[0].trim()) {
+        return value[0];
+      }
+      if (typeof value === 'string' && value.trim()) {
+        return value;
+      }
+    }
+  }
+
+  return 'The server did not apply this decision. The registration may have changed; refresh the page and try again.';
+};
+
 interface Registration {
   id: number;
   firstName: string;
@@ -179,6 +198,7 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
   const [otherRejectReason, setOtherRejectReason] = useState('');
   const [rejectionReason, setRejectionReason] = useState('');
   const [registrationToReject, setRegistrationToReject] = useState<Registration | null>(null);
+  const [submittingRegistrationId, setSubmittingRegistrationId] = useState<number | null>(null);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(7);
@@ -220,10 +240,15 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
   const buildProfessionalRejectionMessage = (registration: Registration, reason: string) => {
     const registrationTypeLabel = formatRegistrationType(registration.registrationType);
 
-    return `After reviewing your application for ${registration.businessName} (${registrationTypeLabel}), we regret to inform you that we are unable to approve your registration at this time due to ${reason}. Please review the submission requirements, address the concern, and resubmit your application. If you believe this decision was made in error, you may resubmit with updated and complete information for re-evaluation.`;
+    return `After reviewing your application for ${registration.businessName} (${registrationTypeLabel}), we regret to inform you that we are unable to approve your registration at this time due to ${reason}. Please review the submission requirements, address the concern, and resubmit your application for re-evaluation.`.slice(0, 500);
   };
 
   const handleApprove = async (id: number) => {
+    const registration = registrationsState.find((item) => item.id === id);
+    if (!registration || !canDecideRegistration(registration.status) || submittingRegistrationId !== null) {
+      return;
+    }
+
     const result = await Swal.fire({
       title: 'Approve Registration?',
       text: 'Are you sure you want to approve this shop owner registration?',
@@ -236,6 +261,7 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
     });
 
     if (result.isConfirmed) {
+      setSubmittingRegistrationId(id);
       router.post(`/admin/shop-owner-registration/${id}/approve`, {}, {
         onSuccess: () => {
           setRegistrationsState(prev =>
@@ -253,15 +279,22 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
           console.error('Approval error:', errors);
           Swal.fire({
             icon: 'error',
-            title: 'Error',
-            text: 'Failed to approve registration. Please try again.'
+            title: 'Approval not applied',
+            text: getRegistrationDecisionErrorMessage(errors),
           });
+        },
+        onFinish: () => {
+          setSubmittingRegistrationId(null);
         }
       });
     }
   };
 
   const handleReject = (registration: Registration) => {
+    if (!canDecideRegistration(registration.status) || submittingRegistrationId !== null) {
+      return;
+    }
+
     setRegistrationToReject(registration);
     setSelectedRejectReason('');
     setOtherRejectReason('');
@@ -270,7 +303,11 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
   };
 
   const handleConfirmReject = async () => {
-    if (!registrationToReject) return;
+    if (
+      !registrationToReject
+      || !canDecideRegistration(registrationToReject.status)
+      || submittingRegistrationId !== null
+    ) return;
 
     // Close the modal first to avoid z-index conflicts
     setIsRejectModalOpen(false);
@@ -290,6 +327,7 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
     });
 
     if (result.isConfirmed) {
+      setSubmittingRegistrationId(registrationToReject.id);
       router.post(`/admin/shop-owner-registration/${registrationToReject.id}/reject`,
         {
           rejection_reason: rejectionReason
@@ -316,14 +354,18 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
           },
           onError: (errors) => {
             console.error('Rejection error:', errors);
+            setIsRejectModalOpen(true);
             Swal.fire({
               icon: 'error',
-              title: 'Error',
-              text: 'Failed to reject application. Please try again.',
+              title: 'Rejection not applied',
+              text: getRegistrationDecisionErrorMessage(errors),
               customClass: {
                 popup: 'swal2-popup-custom'
               }
             });
+          },
+          onFinish: () => {
+            setSubmittingRegistrationId(null);
           }
         }
       );
@@ -772,10 +814,10 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
                     {/* Action Buttons */}
                     <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
                       <div className="flex justify-end gap-3">
-                        {selectedRegistration.status === 'pending' && (
+                        {canDecideRegistration(selectedRegistration.status) && (
                           <>
                             <Button
-                              disabled={!allDocumentsViewed}
+                              disabled={!allDocumentsViewed || submittingRegistrationId !== null}
                               onClick={() => {
                                 handleReject(selectedRegistration);
                                 setIsViewModalOpen(false);
@@ -783,10 +825,10 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
                               className="bg-red-600 hover:bg-red-700 text-white disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               <AlertIcon className="h-4 w-4 mr-2" />
-                              Reject
+                              {submittingRegistrationId === selectedRegistration.id ? 'Submitting…' : 'Reject'}
                             </Button>
                             <Button
-                              disabled={!allDocumentsViewed}
+                              disabled={!allDocumentsViewed || submittingRegistrationId !== null}
                               onClick={() => {
                                 handleApprove(selectedRegistration.id);
                                 setIsViewModalOpen(false);
@@ -794,7 +836,7 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
                               className="bg-green-600 hover:bg-green-700 text-white disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               <CheckCircleIcon className="h-4 w-4 mr-2" />
-                              Approve
+                              {submittingRegistrationId === selectedRegistration.id ? 'Submitting…' : 'Approve'}
                             </Button>
                           </>
                         )}
@@ -902,9 +944,14 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
                             value={rejectionReason}
                             onChange={(e) => setRejectionReason(e.target.value)}
                             placeholder="Select a reason to auto-generate a professional message"
+                            maxLength={500}
+                            aria-describedby="rejection-reason-limit"
                             rows={5}
                             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent dark:bg-gray-700 dark:text-white resize-none"
                           />
+                          <p id="rejection-reason-limit" className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            {rejectionReason.length}/500 characters
+                          </p>
                         </div>
                       </div>
                     </div>
@@ -912,16 +959,23 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
                       <Button
                         variant="secondary"
                         onClick={() => setIsRejectModalOpen(false)}
+                        disabled={submittingRegistrationId !== null}
                       >
                         Cancel
                       </Button>
                       <Button
                         onClick={handleConfirmReject}
                         className="bg-red-600 hover:bg-red-700 text-white"
-                        disabled={!selectedRejectReason || (selectedRejectReason === 'Other' && !otherRejectReason.trim()) || !rejectionReason.trim()}
+                        disabled={
+                          submittingRegistrationId !== null
+                          || !canDecideRegistration(registrationToReject.status)
+                          || !selectedRejectReason
+                          || (selectedRejectReason === 'Other' && !otherRejectReason.trim())
+                          || !rejectionReason.trim()
+                        }
                       >
                         <AlertIcon className="h-4 w-4 mr-2" />
-                        Reject Application
+                        {submittingRegistrationId === registrationToReject.id ? 'Submitting…' : 'Reject Application'}
                       </Button>
                     </div>
                   </div>

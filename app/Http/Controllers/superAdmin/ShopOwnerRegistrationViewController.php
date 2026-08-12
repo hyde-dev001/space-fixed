@@ -3,20 +3,19 @@
 namespace App\Http\Controllers\superAdmin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\SuperAdmin\RejectShopOwnerRegistrationRequest;
 use App\Models\ShopOwner;
-use App\Notifications\ShopOwnerApproved;
-use App\Notifications\ShopOwnerRejected;
-use App\Services\ShopModuleProvisioningService;
+use App\Models\SuperAdmin;
+use App\Services\ShopOwnerRegistrationDecisionService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 
 class ShopOwnerRegistrationViewController extends Controller
 {
     public function __construct(
-        private readonly ShopModuleProvisioningService $shopModuleProvisioning,
+        private readonly ShopOwnerRegistrationDecisionService $registrationDecisions,
     ) {}
 
     public function index(): Response
@@ -62,69 +61,84 @@ class ShopOwnerRegistrationViewController extends Controller
 
     public function approve(Request $request, $id)
     {
-        // Generate a unique token for password setup
-        $token = Str::random(64);
+        $actor = $request->user('super_admin');
+        abort_unless($actor instanceof SuperAdmin, 403);
 
-        $shopOwner = DB::transaction(function () use ($id, $token): ShopOwner {
-            $shopOwner = ShopOwner::query()->lockForUpdate()->findOrFail($id);
-
-            DB::table('password_reset_tokens')->updateOrInsert(
-                ['email' => $shopOwner->email],
-                [
-                    'email' => $shopOwner->email,
-                    'token' => hash('sha256', $token),
-                    'created_at' => now(),
-                ]
-            );
-
-            $shopOwner->update(['status' => 'approved']);
-            $this->shopModuleProvisioning->initializeMissing(
-                $shopOwner,
-                $this->shopModuleProvisioning->eligibleKeysFor($shopOwner),
-            );
-
-            return $shopOwner->fresh();
-        });
-
-        // Send approval notification with password setup link
-        $shopOwner->notify(new ShopOwnerApproved($shopOwner, $token));
+        try {
+            $outcome = $this->registrationDecisions->approve($request, $actor, (int) $id);
+        } catch (ConflictHttpException $exception) {
+            return $this->conflictResponse($request, $exception->getMessage());
+        }
 
         // If this is an XHR/JSON request (e.g., fetch), return JSON.
         if ($request->wantsJson()) {
             return response()->json([
                 'success' => true,
-                'message' => 'Shop owner registration approved successfully. Password setup email sent.',
+                'applied' => $outcome['applied'],
+                'notification_failed' => $outcome['notification_failed'],
+                'message' => $outcome['applied']
+                    ? ($outcome['notification_failed']
+                        ? 'Shop owner registration approved, but the password setup notification could not be queued.'
+                        : 'Shop owner registration approved successfully. Password setup notification queued.')
+                    : 'Shop owner registration was already approved.',
             ]);
         }
 
         // For Inertia form submissions, redirect back with flash message.
-        return redirect()->back()->with('success', 'Shop owner registration approved successfully. Password setup email sent.');
+        return redirect()->back()->with('success', $outcome['applied']
+            ? ($outcome['notification_failed']
+                ? 'Shop owner registration approved, but the password setup notification could not be queued.'
+                : 'Shop owner registration approved successfully. Password setup notification queued.')
+            : 'Shop owner registration was already approved.');
     }
 
-    public function reject(Request $request, $id)
+    public function reject(RejectShopOwnerRegistrationRequest $request, $id)
     {
-        $validated = $request->validate([
-            'rejection_reason' => 'nullable|string|max:500',
-        ]);
+        $actor = $request->user('super_admin');
+        abort_unless($actor instanceof SuperAdmin, 403);
 
-        $shopOwner = ShopOwner::findOrFail($id);
-        $shopOwner->update([
-            'status' => 'rejected',
-            'rejection_reason' => $validated['rejection_reason'] ?? null,
-        ]);
-
-        // Send rejection notification
-        $shopOwner->notify(new ShopOwnerRejected($shopOwner, $validated['rejection_reason'] ?? null));
+        try {
+            $outcome = $this->registrationDecisions->reject(
+                $request,
+                $actor,
+                (int) $id,
+                (string) $request->validated('rejection_reason'),
+            );
+        } catch (ConflictHttpException $exception) {
+            return $this->conflictResponse($request, $exception->getMessage());
+        }
 
         // If this is an XHR/JSON request (e.g., fetch), return JSON.
         if ($request->wantsJson()) {
             return response()->json([
                 'success' => true,
-                'message' => 'Shop owner registration rejected successfully. Notification email sent.',
+                'applied' => $outcome['applied'],
+                'notification_failed' => $outcome['notification_failed'],
+                'message' => $outcome['applied']
+                    ? ($outcome['notification_failed']
+                        ? 'Shop owner registration rejected, but the rejection notification could not be queued.'
+                        : 'Shop owner registration rejected successfully. Rejection notification queued.')
+                    : 'Shop owner registration was already rejected with the same reason.',
             ]);
         }
 
         // For Inertia form submissions, redirect back with flash message.
-        return redirect()->back()->with('success', 'Shop owner registration rejected successfully. Notification email sent.');
+        return redirect()->back()->with('success', $outcome['applied']
+            ? ($outcome['notification_failed']
+                ? 'Shop owner registration rejected, but the rejection notification could not be queued.'
+                : 'Shop owner registration rejected successfully. Rejection notification queued.')
+            : 'Shop owner registration was already rejected with the same reason.');
+    }
+
+    private function conflictResponse(Request $request, string $message)
+    {
+        if ($request->wantsJson()) {
+            return response()->json([
+                'success' => false,
+                'message' => $message,
+            ], 409);
+        }
+
+        return redirect()->back()->withErrors(['registration' => $message]);
     }
 }

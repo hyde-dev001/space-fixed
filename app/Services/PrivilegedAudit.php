@@ -476,6 +476,65 @@ class PrivilegedAudit
         );
     }
 
+    /**
+     * Record the committed approval transition without recording setup
+     * credentials or private document storage details.
+     *
+     * @param  array<int, int>  $documentIds
+     * @param  array<int, string>  $moduleKeys
+     */
+    public function shopRegistrationApproved(
+        Request $request,
+        SuperAdmin $actor,
+        ShopOwner $shopOwner,
+        array $documentIds = [],
+        array $moduleKeys = [],
+    ): void {
+        $this->write(
+            event: 'shop_registration_approved',
+            actor: $actor,
+            subject: $shopOwner,
+            source: 'http',
+            correlationId: $this->correlationId($request),
+            ipAddress: $request->ip(),
+            properties: [
+                'prior_status' => 'pending',
+                'new_status' => 'approved',
+                'document_ids' => array_values($documentIds),
+                'module_keys' => array_values($moduleKeys),
+            ],
+        );
+    }
+
+    /**
+     * Record the committed rejection transition without copying private
+     * document paths or applicant credentials into the audit payload.
+     *
+     * @param  array<int, int>  $documentIds
+     */
+    public function shopRegistrationRejected(
+        Request $request,
+        SuperAdmin $actor,
+        ShopOwner $shopOwner,
+        string $reason,
+        array $documentIds = [],
+    ): void {
+        $this->write(
+            event: 'shop_registration_rejected',
+            actor: $actor,
+            subject: $shopOwner,
+            source: 'http',
+            correlationId: $this->correlationId($request),
+            ipAddress: $request->ip(),
+            properties: [
+                'prior_status' => 'pending',
+                'new_status' => 'rejected',
+                'reason' => $reason,
+                'document_ids' => array_values($documentIds),
+            ],
+        );
+    }
+
     private function write(
         string $event,
         SuperAdmin $actor,

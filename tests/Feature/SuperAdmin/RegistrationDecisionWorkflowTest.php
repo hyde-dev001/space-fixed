@@ -1,0 +1,322 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Feature\SuperAdmin;
+
+use App\Models\ShopDocument;
+use App\Models\ShopOwner;
+use App\Models\ShopOwnerModule;
+use App\Models\SuperAdmin;
+use App\Notifications\ShopOwnerApproved;
+use App\Notifications\ShopOwnerRejected;
+use App\Services\PrivilegedAudit;
+use App\Services\BusinessAccessControlService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Storage;
+use Inertia\Testing\AssertableInertia as Assert;
+use Tests\Concerns\AuthenticatesPrivilegedUsers;
+use Tests\TestCase;
+
+final class RegistrationDecisionWorkflowTest extends TestCase
+{
+    use AuthenticatesPrivilegedUsers;
+    use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Storage::fake('local');
+        Storage::fake('public');
+        Notification::fake();
+    }
+
+    public function test_pending_registration_approval_commits_documents_token_modules_audit_and_delivery(): void
+    {
+        $admin = SuperAdmin::factory()->admin()->create();
+        $owner = $this->pendingRegistrationWithDocuments();
+
+        $response = $this->actingAsCompletedPrivileged($admin)
+            ->postJson(route('admin.shop-owner-approve', $owner));
+
+        $response->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('applied', true);
+
+        $this->assertDatabaseHas('shop_owners', [
+            'id' => $owner->id,
+            'status' => 'approved',
+            'rejection_reason' => null,
+        ]);
+        $this->assertDatabaseCount('password_reset_tokens', 1);
+        $this->assertDatabaseHas('password_reset_tokens', ['email' => $owner->email]);
+        $this->assertSame(4, ShopDocument::query()->where('shop_owner_id', $owner->id)->where('status', 'approved')->count());
+        $this->assertDatabaseHas('shop_owner_modules', [
+            'shop_owner_id' => $owner->id,
+            'module_key' => 'retail_operations',
+            'enabled' => 1,
+        ]);
+        $this->assertDatabaseHas('activity_log', [
+            'event' => 'shop_registration_approved',
+            'subject_type' => ShopOwner::class,
+            'subject_id' => $owner->id,
+        ]);
+        Notification::assertSentTo($owner->fresh(), ShopOwnerApproved::class);
+    }
+
+    public function test_rejection_requires_a_reason_and_updates_current_documents_atomically(): void
+    {
+        $admin = SuperAdmin::factory()->admin()->create();
+        $owner = $this->pendingRegistrationWithDocuments();
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->postJson(route('admin.shop-owner-reject', $owner), [])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['rejection_reason']);
+
+        $this->assertDatabaseHas('shop_owners', ['id' => $owner->id, 'status' => 'pending']);
+        Notification::assertNothingSent();
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->postJson(route('admin.shop-owner-reject', $owner), [
+                'rejection_reason' => 'The submitted permit is not legible.',
+            ])
+            ->assertOk()
+            ->assertJsonPath('applied', true);
+
+        $this->assertDatabaseHas('shop_owners', [
+            'id' => $owner->id,
+            'status' => 'rejected',
+            'rejection_reason' => 'The submitted permit is not legible.',
+        ]);
+        $this->assertSame(4, ShopDocument::query()->where('shop_owner_id', $owner->id)->where('status', 'rejected')->count());
+        $this->assertDatabaseHas('activity_log', [
+            'event' => 'shop_registration_rejected',
+            'subject_type' => ShopOwner::class,
+            'subject_id' => $owner->id,
+        ]);
+        Notification::assertSentTo($owner->fresh(), ShopOwnerRejected::class);
+    }
+
+    public function test_rejection_retries_are_idempotent_only_for_the_same_reason(): void
+    {
+        $admin = SuperAdmin::factory()->admin()->create();
+        $owner = $this->pendingRegistrationWithDocuments();
+        $reason = 'The submitted permit is not legible.';
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->postJson(route('admin.shop-owner-reject', $owner), ['rejection_reason' => $reason])
+            ->assertOk()
+            ->assertJsonPath('applied', true);
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->postJson(route('admin.shop-owner-reject', $owner->fresh()), ['rejection_reason' => $reason])
+            ->assertOk()
+            ->assertJsonPath('applied', false);
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->postJson(route('admin.shop-owner-reject', $owner->fresh()), ['rejection_reason' => 'A different reason.'])
+            ->assertStatus(409);
+
+        Notification::assertSentToTimes($owner->fresh(), ShopOwnerRejected::class, 1);
+        $this->assertSame(1, $this->activityCount('shop_registration_rejected', $owner));
+    }
+
+    public function test_approval_rejects_missing_stale_and_missing_on_disk_required_documents(): void
+    {
+        $admin = SuperAdmin::factory()->admin()->create();
+
+        $missing = ShopOwner::factory()->pending()->create();
+        $this->createDocuments($missing, ['valid_id']);
+        $this->assertApprovalValidationFailure($admin, $missing, 'mayors_permit');
+
+        $stale = ShopOwner::factory()->pending()->create();
+        $this->createDocuments($stale);
+        $staleDocument = ShopDocument::query()
+            ->where('shop_owner_id', $stale->id)
+            ->where('document_type', 'mayors_permit')
+            ->firstOrFail();
+        $staleDocument->update(['status' => 'rejected']);
+        $this->assertApprovalValidationFailure($admin, $stale, 'mayors_permit');
+
+        $missingOnDisk = ShopOwner::factory()->pending()->create();
+        $this->createDocuments($missingOnDisk, [], ['valid_id' => ['stored' => false]]);
+        $this->assertApprovalValidationFailure($admin, $missingOnDisk, 'valid_id');
+
+        $publicDocument = $this->pendingRegistrationWithDocuments();
+        $publicValidId = ShopDocument::query()
+            ->where('shop_owner_id', $publicDocument->id)
+            ->where('document_type', 'valid_id')
+            ->firstOrFail();
+        Storage::disk('public')->put($publicValidId->file_path, 'public-document');
+        $publicValidId->forceFill(['disk' => 'public'])->save();
+        $this->assertApprovalValidationFailure($admin, $publicDocument, 'valid_id');
+    }
+
+    public function test_approval_is_idempotent_once_and_non_pending_decisions_conflict(): void
+    {
+        $admin = SuperAdmin::factory()->admin()->create();
+        $owner = $this->pendingRegistrationWithDocuments();
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->postJson(route('admin.shop-owner-approve', $owner))
+            ->assertOk()
+            ->assertJsonPath('applied', true);
+
+        $token = (string) $this->assertDatabaseHasAndGetToken($owner);
+        $auditCount = $this->activityCount('shop_registration_approved', $owner);
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->postJson(route('admin.shop-owner-approve', $owner->fresh()))
+            ->assertOk()
+            ->assertJsonPath('applied', false);
+
+        $this->assertSame($token, (string) $this->assertDatabaseHasAndGetToken($owner));
+        $this->assertSame($auditCount, $this->activityCount('shop_registration_approved', $owner));
+        Notification::assertSentToTimes($owner->fresh(), ShopOwnerApproved::class, 1);
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->postJson(route('admin.shop-owner-reject', $owner->fresh()), [
+                'rejection_reason' => 'A conflicting decision must not apply.',
+            ])
+            ->assertStatus(409);
+
+        $rejected = ShopOwner::factory()->rejected()->create();
+        $this->actingAsCompletedPrivileged($admin)
+            ->postJson(route('admin.shop-owner-approve', $rejected), [])
+            ->assertStatus(409);
+    }
+
+    public function test_approval_rolls_back_when_the_mandatory_audit_fails(): void
+    {
+        $admin = SuperAdmin::factory()->admin()->create();
+        $owner = $this->pendingRegistrationWithDocuments();
+
+        $this->mock(PrivilegedAudit::class, function ($mock): void {
+            $mock->shouldReceive('shopRegistrationApproved')
+                ->once()
+                ->andThrow(new \RuntimeException('audit unavailable'));
+        });
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->postJson(route('admin.shop-owner-approve', $owner))
+            ->assertStatus(500);
+
+        $this->assertDatabaseHas('shop_owners', ['id' => $owner->id, 'status' => 'pending']);
+        $this->assertSame(0, ShopDocument::query()->where('shop_owner_id', $owner->id)->where('status', 'approved')->count());
+        $this->assertDatabaseMissing('password_reset_tokens', ['email' => $owner->email]);
+        $this->assertDatabaseMissing('shop_owner_modules', ['shop_owner_id' => $owner->id]);
+        Notification::assertNothingSent();
+    }
+
+    public function test_approval_rolls_back_when_module_provisioning_fails(): void
+    {
+        $admin = SuperAdmin::factory()->admin()->create();
+        $owner = $this->pendingRegistrationWithDocuments();
+
+        $this->mock(BusinessAccessControlService::class, function ($mock): void {
+            $mock->shouldReceive('normalizeBusinessType')
+                ->once()
+                ->andThrow(new \RuntimeException('module provisioning unavailable'));
+        });
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->postJson(route('admin.shop-owner-approve', $owner))
+            ->assertStatus(500);
+
+        $this->assertDatabaseHas('shop_owners', ['id' => $owner->id, 'status' => 'pending']);
+        $this->assertDatabaseMissing('password_reset_tokens', ['email' => $owner->email]);
+        $this->assertDatabaseMissing('shop_owner_modules', ['shop_owner_id' => $owner->id]);
+        Notification::assertNothingSent();
+    }
+
+    public function test_registration_index_keeps_document_urls_protected(): void
+    {
+        $admin = SuperAdmin::factory()->admin()->create();
+        $owner = $this->pendingRegistrationWithDocuments();
+
+        $response = $this->actingAsCompletedPrivileged($admin)
+            ->get(route('admin.shop-owner-registration-view'));
+
+        $response->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('registrations.0.documents.0.url', route('admin.shop-documents.show', [
+                    'shopOwner' => $owner->id,
+                    'document' => $owner->documents()->firstOrFail()->id,
+                ])));
+        $this->assertStringNotContainsString('/storage/', $response->getContent());
+        $this->assertStringNotContainsString('phase-two/', $response->getContent());
+    }
+
+    /**
+     * @param array<int, string> $types
+     * @param array<string, array{stored?: bool, status?: string, type?: string}> $overrides
+     */
+    private function createDocuments(ShopOwner $owner, array $types = [], array $overrides = []): void
+    {
+        $types = $types === []
+            ? ['dti_registration', 'mayors_permit', 'bir_certificate', 'valid_id']
+            : $types;
+
+        foreach ($types as $type) {
+            $options = $overrides[$type] ?? [];
+            $path = "registration/{$owner->id}/{$type}.png";
+
+            if (($options['stored'] ?? true) === true) {
+                Storage::disk('local')->put($path, 'document');
+            }
+
+            $document = ShopDocument::create([
+                'shop_owner_id' => $owner->id,
+                'document_type' => $options['type'] ?? $type,
+                'file_path' => $path,
+                'status' => $options['status'] ?? 'pending',
+            ]);
+            $document->forceFill(['disk' => 'local'])->save();
+        }
+    }
+
+    private function pendingRegistrationWithDocuments(): ShopOwner
+    {
+        $owner = ShopOwner::factory()->pending()->create([
+            'registration_type' => 'individual',
+            'business_type' => 'retail',
+        ]);
+        $this->createDocuments($owner);
+
+        return $owner->fresh();
+    }
+
+    private function assertApprovalValidationFailure(SuperAdmin $admin, ShopOwner $owner, string $type): void
+    {
+        $this->actingAsCompletedPrivileged($admin)
+            ->postJson(route('admin.shop-owner-approve', $owner), [])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors([$type]);
+
+        $this->assertDatabaseHas('shop_owners', ['id' => $owner->id, 'status' => 'pending']);
+        Notification::assertNothingSent();
+    }
+
+    private function assertDatabaseHasAndGetToken(ShopOwner $owner): string
+    {
+        $token = (string) \Illuminate\Support\Facades\DB::table('password_reset_tokens')
+            ->where('email', $owner->email)
+            ->value('token');
+
+        $this->assertNotSame('', $token);
+
+        return $token;
+    }
+
+    private function activityCount(string $event, ShopOwner $owner): int
+    {
+        return (int) \Spatie\Activitylog\Models\Activity::query()
+            ->where('event', $event)
+            ->where('subject_type', ShopOwner::class)
+            ->where('subject_id', $owner->id)
+            ->count();
+    }
+}

@@ -9,6 +9,7 @@ use App\Enums\ShopOwnerStatus;
 use App\Models\ShopDocument;
 use App\Models\Employee;
 use App\Models\User;
+use App\Services\ShopOwnerDocumentRequirementService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Hash;
@@ -24,6 +25,7 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 
 /**
  * ShopOwnerAuthController
@@ -33,6 +35,10 @@ use Illuminate\Support\Facades\Validator;
  */
 class ShopOwnerAuthController extends Controller
 {
+    public function __construct(
+        private readonly ShopOwnerDocumentRequirementService $documentRequirements,
+    ) {}
+
     private const MAX_RESUBMISSION_ATTEMPTS = 3;
     private const REGISTRATION_EMAIL_OTP_TTL_MINUTES = 10;
     private const REGISTRATION_EMAIL_OTP_MAX_ATTEMPTS = 5;
@@ -58,7 +64,12 @@ class ShopOwnerAuthController extends Controller
         $remainingAttempts = max(0, self::MAX_RESUBMISSION_ATTEMPTS - $usedAttempts);
         $limitReached = $remainingAttempts <= 0;
 
-        $documents = $shopOwner->documents()->get()->groupBy('document_type');
+        $documents = $shopOwner->documents()->get();
+        $latestRequiredDocuments = $this->documentRequirements->latestRequiredDocuments($documents);
+        $otherDocuments = $documents
+            ->filter(fn ($document): bool => $this->documentRequirements->normalizeType((string) $document->document_type) === 'other_supporting_document')
+            ->sortByDesc('id')
+            ->values();
         $documentLinkExpiresAt = now()->addDays(14);
         $toDocumentPayload = static function ($document) use ($shopOwner, $documentLinkExpiresAt) {
             if (!$document) {
@@ -110,14 +121,11 @@ class ShopOwnerAuthController extends Controller
                     'shopGeofenceRadius' => (int) ($shopOwner->shop_geofence_radius ?? 90),
                 ],
                 'documents' => [
-                    'dti_registration' => $toDocumentPayload($documents->get('dti_registration')?->sortByDesc('id')->first()),
-                    'mayors_permit' => $toDocumentPayload($documents->get('mayors_permit')?->sortByDesc('id')->first()),
-                    'bir_certificate' => $toDocumentPayload($documents->get('bir_certificate')?->sortByDesc('id')->first()),
-                    'valid_id' => $toDocumentPayload($documents->get('valid_id')?->sortByDesc('id')->first()),
-                    'other_documents' => $documents
-                        ->get('other_supporting_document', collect())
-                        ->sortByDesc('id')
-                        ->values()
+                    'dti_registration' => $toDocumentPayload($latestRequiredDocuments['dti_registration'] ?? null),
+                    'mayors_permit' => $toDocumentPayload($latestRequiredDocuments['mayors_permit'] ?? null),
+                    'bir_certificate' => $toDocumentPayload($latestRequiredDocuments['bir_certificate'] ?? null),
+                    'valid_id' => $toDocumentPayload($latestRequiredDocuments['valid_id'] ?? null),
+                    'other_documents' => $otherDocuments
                         ->map(static function ($document) use ($shopOwner, $documentLinkExpiresAt) {
                             return [
                                 'id' => $document->id,
@@ -170,7 +178,10 @@ class ShopOwnerAuthController extends Controller
             ? $shopOwner->status->value
             : (string) $shopOwner->status;
 
-        if ($statusValue !== ShopOwnerStatus::REJECTED->value) {
+        if (!in_array($statusValue, [
+            ShopOwnerStatus::REJECTED->value,
+            ShopOwnerStatus::PENDING->value,
+        ], true)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Only rejected applications can be resubmitted.',
@@ -178,7 +189,8 @@ class ShopOwnerAuthController extends Controller
         }
 
         $usedAttempts = max(0, (int) ($shopOwner->resubmission_count ?? 0));
-        if ($usedAttempts >= self::MAX_RESUBMISSION_ATTEMPTS) {
+        if ($statusValue === ShopOwnerStatus::REJECTED->value
+            && $usedAttempts >= self::MAX_RESUBMISSION_ATTEMPTS) {
             return response()->json([
                 'success' => false,
                 'message' => 'Resubmission limit reached. You can only resubmit up to ' . self::MAX_RESUBMISSION_ATTEMPTS . ' times.',
@@ -188,12 +200,7 @@ class ShopOwnerAuthController extends Controller
             ], 422);
         }
 
-        $requiredDocumentTypes = [
-            'dti_registration',
-            'mayors_permit',
-            'bir_certificate',
-            'valid_id',
-        ];
+        $requiredDocumentTypes = $this->documentRequirements->requiredTypes();
 
         $createdLocalPaths = [];
         $oldFilesToDelete = [];
@@ -223,17 +230,20 @@ class ShopOwnerAuthController extends Controller
                 'other_documents.*' => 'nullable|file|mimes:jpg,jpeg,png|max:5120',
             ]);
 
+            $currentDocumentState = $this->documentRequirements->evaluate($shopOwner->documents()->get());
+            $documentErrors = [];
             foreach ($requiredDocumentTypes as $documentType) {
-                $hasExistingDocument = $shopOwner
-                    ->documents()
-                    ->where('document_type', $documentType)
-                    ->exists();
-
-                if (!$request->hasFile($documentType) && !$hasExistingDocument) {
-                    throw ValidationException::withMessages([
-                        $documentType => ['This document is required for resubmission.'],
-                    ]);
+                if ($request->hasFile($documentType)) {
+                    continue;
                 }
+
+                $document = $currentDocumentState['latest'][$documentType] ?? null;
+                if ($document === null || !$this->documentRequirements->hasPrivateStoredFile($document)) {
+                    $documentErrors[$documentType] = ['This document is required for resubmission.'];
+                }
+            }
+            if ($documentErrors !== []) {
+                throw ValidationException::withMessages($documentErrors);
             }
 
             $caviteLocationPolicy->assertRegistrationLocation(
@@ -250,10 +260,91 @@ class ShopOwnerAuthController extends Controller
                 ]
             );
 
+            $stagedRequiredPaths = [];
+            foreach ($requiredDocumentTypes as $documentType) {
+                $file = $request->file($documentType);
+                if (!$file) {
+                    continue;
+                }
+
+                $fileName = Str::uuid()->toString() . '.' . ($file->extension() ?: 'bin');
+                $newPath = $file->storeAs('shop_documents', $fileName, 'local');
+                if (! is_string($newPath) || ! Storage::disk('local')->exists($newPath)) {
+                    throw new \RuntimeException('The replacement document could not be stored.');
+                }
+
+                $createdLocalPaths[] = $newPath;
+                $stagedRequiredPaths[$documentType] = $newPath;
+            }
+
+            $stagedOtherPaths = [];
+            if ($request->hasFile('other_documents')) {
+                foreach ((array) $request->file('other_documents') as $file) {
+                    if (!$file) {
+                        continue;
+                    }
+
+                    $fileName = Str::uuid()->toString() . '.' . ($file->extension() ?: 'bin');
+                    $filePath = $file->storeAs('shop_documents', $fileName, 'local');
+                    if (! is_string($filePath) || ! Storage::disk('local')->exists($filePath)) {
+                        throw new \RuntimeException('The supporting document could not be stored.');
+                    }
+
+                    $createdLocalPaths[] = $filePath;
+                    $stagedOtherPaths[] = $filePath;
+                }
+            }
+
             DB::beginTransaction();
             $transactionStarted = true;
 
-            $shopOwner->update([
+            $lockedShopOwner = ShopOwner::query()->lockForUpdate()->findOrFail($shopOwner->id);
+            $lockedStatusValue = $lockedShopOwner->status instanceof ShopOwnerStatus
+                ? $lockedShopOwner->status->value
+                : (string) $lockedShopOwner->status;
+
+            if ($lockedStatusValue === ShopOwnerStatus::PENDING->value) {
+                DB::commit();
+                $transactionStarted = false;
+                $this->deleteLocalFiles($createdLocalPaths);
+
+                return $this->resubmissionResponse($request, true);
+            }
+
+            if ($lockedStatusValue !== ShopOwnerStatus::REJECTED->value) {
+                throw ValidationException::withMessages([
+                    'status' => ['Only rejected applications can be resubmitted.'],
+                ]);
+            }
+
+            $lockedUsedAttempts = max(0, (int) ($lockedShopOwner->resubmission_count ?? 0));
+            if ($lockedUsedAttempts >= self::MAX_RESUBMISSION_ATTEMPTS) {
+                throw ValidationException::withMessages([
+                    'email' => ['Resubmission limit reached. You can only resubmit up to ' . self::MAX_RESUBMISSION_ATTEMPTS . ' times.'],
+                ]);
+            }
+
+            $lockedDocuments = $lockedShopOwner->documents()
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get();
+            $lockedDocumentState = $this->documentRequirements->evaluate($lockedDocuments);
+            $lockedDocumentErrors = [];
+            foreach ($requiredDocumentTypes as $documentType) {
+                if (isset($stagedRequiredPaths[$documentType])) {
+                    continue;
+                }
+
+                $document = $lockedDocumentState['latest'][$documentType] ?? null;
+                if ($document === null || !$this->documentRequirements->hasPrivateStoredFile($document)) {
+                    $lockedDocumentErrors[$documentType] = ['This document is required for resubmission.'];
+                }
+            }
+            if ($lockedDocumentErrors !== []) {
+                throw ValidationException::withMessages($lockedDocumentErrors);
+            }
+
+            $lockedShopOwner->forceFill([
                 'first_name' => $validated['first_name'],
                 'last_name' => $validated['last_name'],
                 'phone' => $validated['phone'],
@@ -269,81 +360,55 @@ class ShopOwnerAuthController extends Controller
                 'shop_geofence_radius' => $validated['shop_geofence_radius'] ?? 100,
                 'status' => ShopOwnerStatus::PENDING->value,
                 'rejection_reason' => null,
-                'resubmission_count' => $usedAttempts + 1,
-            ]);
+                'resubmission_count' => $lockedUsedAttempts + 1,
+            ])->save();
 
-            $shopOwner->documents()->update(['status' => 'pending']);
+            foreach ($lockedDocumentState['latest'] as $document) {
+                $document->forceFill(['status' => 'pending'])->save();
+            }
 
-            foreach ($requiredDocumentTypes as $documentType) {
-                if ($request->hasFile($documentType)) {
-                    $file = $request->file($documentType);
+            foreach ($stagedRequiredPaths as $documentType => $newPath) {
+                $latestDocument = $lockedDocumentState['latest'][$documentType] ?? null;
 
-                    if ($file) {
-                        $fileName = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
-                        $newPath = $file->storeAs('shop_documents', $fileName, 'local');
-                        if (! is_string($newPath) || ! Storage::disk('local')->exists($newPath)) {
-                            throw new \RuntimeException('The replacement document could not be stored.');
-                        }
-                        $createdLocalPaths[] = $newPath;
+                if ($latestDocument) {
+                    $oldPath = (string) $latestDocument->file_path;
+                    $oldDisk = $this->documentDisk($latestDocument);
+                    $latestDocument->forceFill([
+                        'file_path' => $newPath,
+                        'disk' => 'local',
+                        'status' => 'pending',
+                    ])->save();
 
-                        $latestDocument = $shopOwner
-                            ->documents()
-                            ->where('document_type', $documentType)
-                            ->latest('id')
-                            ->first();
-
-                        if ($latestDocument) {
-                            $oldPath = (string) $latestDocument->file_path;
-                            $oldDisk = $this->documentDisk($latestDocument);
-                            $latestDocument->file_path = $newPath;
-                            $latestDocument->disk = 'local';
-                            $latestDocument->status = 'pending';
-                            $latestDocument->save();
-
-                            if ($oldPath !== '') {
-                                $oldFilesToDelete[] = [$oldDisk, $oldPath];
-                            }
-                        } else {
-                            $newDocument = ShopDocument::create([
-                                'shop_owner_id' => $shopOwner->id,
-                                'document_type' => $documentType,
-                                'file_path' => $newPath,
-                                'status' => 'pending',
-                            ]);
-                            $newDocument->disk = 'local';
-                            $newDocument->save();
-                        }
+                    if ($oldPath !== '') {
+                        $oldFilesToDelete[] = [$oldDisk, $oldPath];
                     }
+                } else {
+                    $newDocument = ShopDocument::create([
+                        'shop_owner_id' => $lockedShopOwner->id,
+                        'document_type' => $documentType,
+                        'file_path' => $newPath,
+                        'status' => 'pending',
+                    ]);
+                    $newDocument->forceFill(['disk' => 'local'])->save();
                 }
             }
 
-            if ($request->hasFile('other_documents')) {
-                foreach ((array) $request->file('other_documents') as $file) {
-                    if (!$file) {
-                        continue;
-                    }
-
-                    $fileName = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
-                    $filePath = $file->storeAs('shop_documents', $fileName, 'local');
-                    if (! is_string($filePath) || ! Storage::disk('local')->exists($filePath)) {
-                        throw new \RuntimeException('The supporting document could not be stored.');
-                    }
-                    $createdLocalPaths[] = $filePath;
-
-                    $newDocument = ShopDocument::create([
-                        'shop_owner_id' => $shopOwner->id,
-                        'document_type' => 'other_supporting_document',
-                        'file_path' => $filePath,
-                        'status' => 'pending',
-                    ]);
-                    $newDocument->disk = 'local';
-                    $newDocument->save();
-                }
+            foreach ($stagedOtherPaths as $filePath) {
+                $newDocument = ShopDocument::create([
+                    'shop_owner_id' => $lockedShopOwner->id,
+                    'document_type' => 'other_supporting_document',
+                    'file_path' => $filePath,
+                    'status' => 'pending',
+                ]);
+                $newDocument->forceFill(['disk' => 'local'])->save();
             }
 
             DB::commit();
             $transactionStarted = false;
+            $createdLocalPaths = [];
             $this->deleteDocumentFiles($oldFilesToDelete);
+
+            $shopOwner = $lockedShopOwner->fresh();
 
             Log::info('Shop owner application resubmitted successfully', [
                 'shop_owner_id' => $shopOwner->id,
@@ -355,6 +420,7 @@ class ShopOwnerAuthController extends Controller
             if ($request->expectsJson()) {
                 return response()->json([
                     'success' => true,
+                    'applied' => true,
                     'message' => 'Application resubmitted successfully. Please wait for admin review.',
                 ]);
             }
@@ -397,6 +463,24 @@ class ShopOwnerAuthController extends Controller
 
             return back()->withErrors(['message' => 'Resubmission failed. Please try again.'])->withInput();
         }
+    }
+
+    private function resubmissionResponse(Request $request, bool $idempotent = false)
+    {
+        $message = $idempotent
+            ? 'This application is already pending review.'
+            : 'Application resubmitted successfully. Please wait for admin review.';
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'applied' => !$idempotent,
+                'idempotent' => $idempotent,
+                'message' => $message,
+            ]);
+        }
+
+        return redirect()->route('shop-owner-register')->with('success', $message);
     }
 
     /**

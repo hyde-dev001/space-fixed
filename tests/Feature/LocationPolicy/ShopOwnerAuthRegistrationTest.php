@@ -2,11 +2,14 @@
 
 namespace Tests\Feature\LocationPolicy;
 
+use App\Models\ShopDocument;
+use App\Models\ShopOwner;
 use App\Services\CaviteLocationPolicyService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
 use Tests\TestCase;
 
 class ShopOwnerAuthRegistrationTest extends TestCase
@@ -176,5 +179,139 @@ class ShopOwnerAuthRegistrationTest extends TestCase
 
         $response->assertStatus(422)
             ->assertJsonPath('message', CaviteLocationPolicyService::DENIAL_MESSAGE);
+    }
+
+    public function test_rejected_resubmission_moves_to_pending_once_and_retries_idempotently(): void
+    {
+        Storage::fake('local');
+        $owner = $this->rejectedOwnerWithDocuments();
+        $signedUrl = $this->resubmissionUrl($owner);
+        $payload = $this->payload([
+            'email' => $owner->email,
+            'business_name' => 'Updated Juan Shoes',
+        ]);
+
+        $this->withHeaders(['Accept' => 'application/json'])
+            ->post($signedUrl, $payload)
+            ->assertOk()
+            ->assertJsonPath('applied', true);
+
+        $this->assertDatabaseHas('shop_owners', [
+            'id' => $owner->id,
+            'status' => 'pending',
+            'resubmission_count' => 1,
+            'rejection_reason' => null,
+            'business_name' => 'Updated Juan Shoes',
+        ]);
+        $this->assertSame(4, ShopDocument::query()->where('shop_owner_id', $owner->id)->count());
+        $this->assertSame(4, ShopDocument::query()->where('shop_owner_id', $owner->id)->where('status', 'pending')->count());
+
+        $this->withHeaders(['Accept' => 'application/json'])
+            ->post($signedUrl, $payload)
+            ->assertOk()
+            ->assertJsonPath('applied', false)
+            ->assertJsonPath('idempotent', true);
+
+        $this->assertDatabaseHas('shop_owners', [
+            'id' => $owner->id,
+            'resubmission_count' => 1,
+        ]);
+        $this->assertSame(4, ShopDocument::query()->where('shop_owner_id', $owner->id)->count());
+    }
+
+    public function test_resubmission_fails_closed_for_missing_and_missing_on_disk_documents(): void
+    {
+        Storage::fake('local');
+
+        $missing = $this->rejectedOwnerWithDocuments(['valid_id']);
+        $this->postResubmission($missing)->assertStatus(422)->assertJsonValidationErrors(['mayors_permit']);
+
+        $missingOnDisk = $this->rejectedOwnerWithDocuments([], ['valid_id' => false]);
+        $this->postResubmission($missingOnDisk)->assertStatus(422)->assertJsonValidationErrors(['valid_id']);
+
+        foreach ([$missing, $missingOnDisk] as $owner) {
+            $this->assertDatabaseHas('shop_owners', [
+                'id' => $owner->id,
+                'status' => 'rejected',
+                'resubmission_count' => 0,
+            ]);
+        }
+    }
+
+    public function test_phase_two_resubmission_updates_current_rows_until_phase_six_immutability(): void
+    {
+        Storage::fake('local');
+        $owner = $this->rejectedOwnerWithDocuments();
+        $originalIds = ShopDocument::query()
+            ->where('shop_owner_id', $owner->id)
+            ->orderBy('id')
+            ->pluck('id')
+            ->all();
+
+        $replacement = UploadedFile::fake()->createWithContent('new-valid-id.png', $this->pngBytes());
+        $payload = array_merge($this->payload(['email' => $owner->email]), ['valid_id' => $replacement]);
+
+        $this->withHeaders(['Accept' => 'application/json'])
+            ->post($this->resubmissionUrl($owner), $payload)
+            ->assertOk();
+
+        $currentIds = ShopDocument::query()
+            ->where('shop_owner_id', $owner->id)
+            ->orderBy('id')
+            ->pluck('id')
+            ->all();
+
+        $this->assertSame($originalIds, $currentIds, 'Immutable document rows begin in Phase 6; Phase 2 updates the current row.');
+    }
+
+    /** @param array<int, string> $types */
+    private function rejectedOwnerWithDocuments(array $types = [], array $storedOverrides = []): ShopOwner
+    {
+        $owner = ShopOwner::factory()->rejected()->create([
+            'rejection_reason' => 'Please provide clearer documents.',
+            'resubmission_count' => 0,
+            'business_type' => 'repair',
+            'registration_type' => 'individual',
+        ]);
+        $types = $types === []
+            ? ['dti_registration', 'mayors_permit', 'bir_certificate', 'valid_id']
+            : $types;
+
+        foreach ($types as $type) {
+            $path = "shop_documents/{$owner->id}/{$type}.png";
+            if ($storedOverrides[$type] ?? true) {
+                Storage::disk('local')->put($path, 'document');
+            }
+
+            $document = ShopDocument::create([
+                'shop_owner_id' => $owner->id,
+                'document_type' => $type,
+                'file_path' => $path,
+                'status' => 'rejected',
+            ]);
+            $document->forceFill(['disk' => 'local'])->save();
+        }
+
+        return $owner->fresh();
+    }
+
+    private function resubmissionUrl(ShopOwner $owner): string
+    {
+        return URL::temporarySignedRoute(
+            'shop-owner.resubmission.submit',
+            now()->addDay(),
+            ['shopOwner' => $owner->id],
+        );
+    }
+
+    private function postResubmission(ShopOwner $owner)
+    {
+        return $this->withHeaders(['Accept' => 'application/json'])
+            ->post($this->resubmissionUrl($owner), $this->payload(['email' => $owner->email]));
+    }
+
+    private function pngBytes(): string
+    {
+        return (string) base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
     }
 }
