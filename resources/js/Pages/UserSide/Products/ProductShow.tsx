@@ -1029,7 +1029,7 @@ const ProductShow: React.FC = () => {
   return (
     <>
       <Head title={product.name} />
-      <div className="min-h-screen bg-white font-outfit antialiased">
+      <div className="userside-product-show-page min-h-screen bg-white font-outfit antialiased">
         {/* Desktop Navigation */}
         <div className="hidden xl:block">
           <Navigation />

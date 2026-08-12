@@ -1,8 +1,6 @@
 export type Theme = 'light' | 'dark';
 
-const LIGHT_ONLY_COMPONENTS = new Set([
-  'UserSide/Auth/ShopOwnerRegistration',
-]);
+const LIGHT_ONLY_COMPONENTS = new Set<string>();
 
 const USER_SIDE_COMPONENTS = new Set(['Notifications/CustomerNotifications']);
 

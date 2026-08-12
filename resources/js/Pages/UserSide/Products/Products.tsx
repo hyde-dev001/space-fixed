@@ -505,7 +505,7 @@ const Products: React.FC<Props> = () => {
   return (
     <>
       <Head title="Products" />
-      <div className="min-h-screen bg-white font-outfit antialiased">
+      <div className="userside-products-page min-h-screen bg-white font-outfit antialiased">
         <div className="hidden xl:block">
           <Navigation />
         </div>

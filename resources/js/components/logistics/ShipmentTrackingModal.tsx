@@ -122,7 +122,7 @@ export default function ShipmentTrackingModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="shipment-tracking-title"
-      className="fixed inset-0 z-[90] flex items-center justify-center bg-[#16233b]/55 p-0 sm:p-6"
+      className="userside-tracking-modal fixed inset-0 z-[90] flex items-center justify-center bg-[#16233b]/55 p-0 sm:p-6"
       onClick={(event) => {
         if (event.target === event.currentTarget) closeModal();
       }}
@@ -130,7 +130,7 @@ export default function ShipmentTrackingModal({
     >
       <div
         ref={dialog}
-        className="flex h-full w-full flex-col overflow-hidden bg-gray-50 shadow-2xl sm:max-h-[92vh] sm:max-w-5xl sm:rounded-2xl"
+        className="userside-tracking-modal__surface flex h-full w-full flex-col overflow-hidden bg-gray-50 shadow-2xl sm:max-h-[92vh] sm:max-w-5xl sm:rounded-2xl"
         onClick={(event) => event.stopPropagation()}
       >
         <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-gray-200 bg-white px-4 py-4 sm:px-6">

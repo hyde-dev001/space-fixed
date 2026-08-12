@@ -379,12 +379,12 @@ export default function CustomerAddressManager({
   };
 
   const savedAddressCards = (
-    <div className="grid gap-3 sm:grid-cols-2">
+    <div className="userside-address-card-list grid gap-3 sm:grid-cols-2">
       {addresses.map((address) => {
         const isMutating = mutating?.id === address.id;
 
         return (
-          <div key={address.id} aria-busy={isMutating} className={`rounded-xl border p-3 transition-colors ${selectedId === address.id ? 'border-blue-600 bg-blue-50' : 'border-gray-200 bg-white'}`}>
+          <div key={address.id} aria-busy={isMutating} className={`userside-address-card rounded-xl border p-3 transition-colors ${selectedId === address.id ? 'userside-address-card--selected border-blue-600 bg-blue-50' : 'border-gray-200 bg-white'}`}>
             <button
               type="button"
               aria-label={`Use address at ${address.address_line}`}
@@ -409,7 +409,7 @@ export default function CustomerAddressManager({
                 title="Edit saved address"
                 disabled={disabled || isMutating}
                 onClick={() => openEdit(address)}
-                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-blue-200 bg-white text-blue-700 shadow-sm transition-colors hover:border-blue-400 hover:bg-blue-50 hover:text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
+                className="userside-address-icon-button userside-address-icon-button--edit inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-blue-200 bg-white text-blue-700 shadow-sm transition-colors hover:border-blue-400 hover:bg-blue-50 hover:text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Pencil aria-hidden="true" size={17} strokeWidth={2} />
               </button>
@@ -420,7 +420,7 @@ export default function CustomerAddressManager({
                   title={isMutating && mutating?.action === 'default' ? 'Setting as default address…' : 'Set as default address'}
                   disabled={disabled || isMutating}
                   onClick={() => void setDefault(address)}
-                  className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-800 shadow-sm transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="userside-address-icon-button userside-address-icon-button--default inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-800 shadow-sm transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {isMutating && mutating?.action === 'default'
                     ? <LoaderCircle aria-hidden="true" className="animate-spin" size={17} />
@@ -433,7 +433,7 @@ export default function CustomerAddressManager({
                 title={isMutating && mutating?.action === 'delete' ? 'Deleting saved address…' : 'Delete saved address'}
                 disabled={disabled || isMutating}
                 onClick={() => void remove(address)}
-                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-red-200 bg-white text-red-700 shadow-sm transition-colors hover:border-red-400 hover:bg-red-50 hover:text-red-900 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
+                className="userside-address-icon-button userside-address-icon-button--delete inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-red-200 bg-white text-red-700 shadow-sm transition-colors hover:border-red-400 hover:bg-red-50 hover:text-red-900 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isMutating && mutating?.action === 'delete'
                   ? <LoaderCircle aria-hidden="true" className="animate-spin" size={17} />
@@ -489,9 +489,9 @@ export default function CustomerAddressManager({
             aria-modal="true"
             aria-labelledby="customer-address-modal-title"
             tabIndex={-1}
-            className="flex max-h-[min(92dvh,52rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl"
+            className="userside-address-modal flex max-h-[min(92dvh,52rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl"
           >
-            <div className="flex items-start justify-between gap-4 border-b border-gray-200 px-4 py-4 sm:px-6">
+            <div className="userside-address-modal__header flex items-start justify-between gap-4 border-b border-gray-200 px-4 py-4 sm:px-6">
               <div>
                 <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-blue-700">Delivery address</p>
                 <h2 id="customer-address-modal-title" className="text-xl font-semibold text-gray-950">
@@ -522,13 +522,13 @@ export default function CustomerAddressManager({
                 type="button"
                 aria-label="Close address modal"
                 onClick={closeModal}
-                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full text-2xl leading-none text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="userside-address-modal-close inline-flex min-h-11 min-w-11 items-center justify-center rounded-full text-2xl leading-none text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <span aria-hidden="true">×</span>
                 </button>
               </div>
             </div>
-            <div className="overflow-y-auto p-4 sm:p-6">
+            <div className="userside-address-modal__content overflow-y-auto p-4 sm:p-6">
               {visibleModalView === 'list' ? (
                 <div className="space-y-4">
                   <p className="text-sm font-semibold uppercase tracking-[0.12em] text-gray-500">Your saved addresses</p>

@@ -174,7 +174,9 @@ it('shows saved addresses before opening the add form in an external modal flow'
   await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/user/addresses', expect.any(Object)));
   fireEvent.click(screen.getByRole('button', { name: 'Manage addresses' }));
 
-  expect(await screen.findByRole('dialog', { name: 'Saved delivery addresses' })).toBeInTheDocument();
+  const dialog = await screen.findByRole('dialog', { name: 'Saved delivery addresses' });
+  expect(dialog).toBeInTheDocument();
+  expect(dialog).toHaveClass('userside-address-modal');
   expect(screen.getByText(/126 Ilang-ilang Street/)).toBeInTheDocument();
   expect(screen.queryByLabelText('Full name')).not.toBeInTheDocument();
 

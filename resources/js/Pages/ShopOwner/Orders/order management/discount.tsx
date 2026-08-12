@@ -858,7 +858,7 @@ export default function VouchersDiscountPage() {
 		<Layout>
 			<Head title="Vouchers & Discount - Shop Owner" />
 
-			<div className="space-y-6">
+			<div className="shopowner-vouchers-page space-y-6">
 				<section className="overflow-hidden rounded-[28px] border border-slate-200 bg-[radial-gradient(circle_at_top_left,_rgba(29,78,216,0.12),_transparent_32%),linear-gradient(135deg,#ffffff_0%,#f8fafc_55%,#eef2ff_100%)] p-6 shadow-sm md:p-8">
 					<div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
 						<div className="max-w-2xl">
