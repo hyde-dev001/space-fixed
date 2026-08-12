@@ -976,7 +976,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                       type="button"
                       aria-label="Close delivery proof image"
                       onClick={closeProof}
-                      className="absolute right-4 top-4 z-10 inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-full bg-transparent p-0 text-white transition-colors hover:bg-transparent hover:text-gray-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                      className="absolute right-4 top-4 z-10 inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-full bg-transparent p-0 text-black transition-colors hover:bg-transparent hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black"
                     >
                       <X aria-hidden="true" size={22} />
                     </button>

@@ -518,7 +518,8 @@ it('opens a completed delivery proof in an in-page image modal and restores focu
   const viewer = screen.getByRole('dialog', { name: 'Delivery proof image' });
   expect(viewer).toHaveClass('h-[min(88dvh,56rem)]');
   expect(viewer).not.toHaveClass('bg-gray-950', 'rounded-3xl', 'p-4', 'sm:p-8');
-  expect(close).toHaveClass('right-4', 'top-4', 'bg-transparent');
+  expect(close).toHaveClass('right-4', 'top-4', 'bg-transparent', 'text-black');
+  expect(close).not.toHaveClass('text-white');
   expect(close).not.toHaveClass('bg-black/65', 'backdrop-blur-sm');
   await waitFor(() => expect(document.activeElement).toBe(close));
 
