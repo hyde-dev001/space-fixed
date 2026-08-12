@@ -26,7 +26,6 @@ const navItems: NavItem[] = [
     subItems: [
       { name: "User Registration Management", path: "/superAdmin/super-admin-user-management", pro: false },
       { name: "Shop Owner Registration View", path: "/superAdmin/shop-owner-registration-view", pro: false },
-      { name: "Notification & Communication Tools", path: "/superAdmin/notification-communication-tools", pro: false },
       { name: "System Monitoring Dashboard", path: "/superAdmin/system-monitoring-dashboard", pro: false }
     ],
   },
