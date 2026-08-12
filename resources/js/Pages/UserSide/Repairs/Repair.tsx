@@ -291,7 +291,7 @@ const Repair: React.FC<Props> = ({ shops }) => {
   return (
     <>
       <Head title="Repair Services - SoleSpace" />
-      <div className="min-h-screen bg-white font-outfit antialiased">
+      <div className="userside-repair-list-page min-h-screen bg-white font-outfit antialiased">
         <div className="hidden xl:block">
           <Navigation />
         </div>

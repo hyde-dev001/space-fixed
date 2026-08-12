@@ -46,6 +46,8 @@ describe('ShipmentTrackingModal', () => {
 
     expect(screen.getByText('Loading shipment tracking...')).toBeInTheDocument();
     expect(await screen.findByText('Shipment Movement')).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Shipment tracking' })).toHaveClass('userside-tracking-modal');
+    expect(screen.getByText('Updates').closest('section')).toHaveClass('userside-tracking-section');
     expect(screen.getByText('SHP-12')).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       '/tracking/shipments/12',

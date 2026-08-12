@@ -407,6 +407,224 @@ html.userside-dark #app textarea::placeholder {
   color: #94a3b8;
 }
 
+/* Keep the saved-address and shipment-tracking surfaces aligned with the
+   customer dark theme. These overrides are scoped so ERP/shop-owner panels
+   and the existing light mode keep their original styling. */
+html.userside-dark #app .userside-address-card,
+html.userside-dark #app .userside-address-modal {
+  background-color: #111827 !important;
+  border-color: #2f405a !important;
+  color: #f8fafc;
+}
+
+html.userside-dark #app .userside-address-card--selected {
+  background-color: #1b2f50 !important;
+  border-color: #7da2ff !important;
+  box-shadow: 0 12px 28px -24px rgba(125, 162, 255, 0.85);
+}
+
+html.userside-dark #app .userside-address-modal__header {
+  border-color: #26364d !important;
+}
+
+html.userside-dark #app .userside-address-modal__content {
+  background-color: #111827;
+}
+
+html.userside-dark #app .userside-address-modal [class~="text-gray-950"],
+html.userside-dark #app .userside-address-card [class~="text-gray-950"] {
+  color: #f8fafc !important;
+}
+
+html.userside-dark #app .userside-address-modal [class~="text-gray-800"],
+html.userside-dark #app .userside-address-card [class~="text-gray-800"] {
+  color: #e2e8f0 !important;
+}
+
+html.userside-dark #app .userside-address-modal [class~="text-gray-700"],
+html.userside-dark #app .userside-address-card [class~="text-gray-700"] {
+  color: #cbd5e1 !important;
+}
+
+html.userside-dark #app .userside-address-modal [class~="text-gray-600"],
+html.userside-dark #app .userside-address-modal [class~="text-gray-500"],
+html.userside-dark #app .userside-address-card [class~="text-gray-600"],
+html.userside-dark #app .userside-address-card [class~="text-gray-500"] {
+  color: #a8b6ca !important;
+}
+
+html.userside-dark #app .userside-address-modal [class~="text-blue-700"],
+html.userside-dark #app .userside-address-card [class~="text-blue-700"] {
+  color: #a9c1ff !important;
+}
+
+html.userside-dark #app .userside-address-modal [class~="text-blue-900"],
+html.userside-dark #app .userside-address-card [class~="text-blue-900"] {
+  color: #d5e0ff !important;
+}
+
+html.userside-dark #app .userside-address-modal [class~="text-green-700"],
+html.userside-dark #app .userside-address-card [class~="text-green-700"] {
+  color: #67d391 !important;
+}
+
+html.userside-dark #app .userside-address-modal [class~="text-amber-700"],
+html.userside-dark #app .userside-address-card [class~="text-amber-700"] {
+  color: #f5c66d !important;
+}
+
+html.userside-dark #app .userside-address-modal [class~="border-gray-200"],
+html.userside-dark #app .userside-address-modal [class~="border-gray-300"],
+html.userside-dark #app .userside-address-card [class~="border-gray-200"],
+html.userside-dark #app .userside-address-card [class~="border-gray-300"],
+html.userside-dark #app .userside-address-modal [class*="border-dashed"] {
+  border-color: #2f405a !important;
+}
+
+html.userside-dark #app .userside-address-modal [class~="bg-gray-50"] {
+  background-color: #151f32 !important;
+}
+
+html.userside-dark #app .userside-address-icon-button {
+  background-color: #142238 !important;
+  box-shadow: none;
+}
+
+html.userside-dark #app .userside-address-icon-button--edit {
+  border-color: #496da4 !important;
+  color: #a9c1ff !important;
+}
+
+html.userside-dark #app .userside-address-icon-button--default {
+  border-color: #385070 !important;
+  color: #b6c3d5 !important;
+}
+
+html.userside-dark #app .userside-address-icon-button--delete {
+  border-color: #795163 !important;
+  color: #ff9bb0 !important;
+}
+
+html.userside-dark #app .userside-address-icon-button--edit:hover,
+html.userside-dark #app .userside-address-icon-button--default:hover {
+  background-color: #20385e !important;
+  border-color: #7da2ff !important;
+  color: #e0e8ff !important;
+}
+
+html.userside-dark #app .userside-address-icon-button--delete:hover {
+  background-color: #3c1e2b !important;
+  border-color: #c97991 !important;
+  color: #ffc2cf !important;
+}
+
+html.userside-dark #app .userside-address-modal-close:hover {
+  background-color: #1f2d43 !important;
+  color: #f8fafc !important;
+}
+
+html.userside-dark #app .userside-address-modal input,
+html.userside-dark #app .userside-address-modal select,
+html.userside-dark #app .userside-address-modal textarea {
+  background-color: #111827 !important;
+  border-color: #3a4b64 !important;
+  color: #f8fafc !important;
+}
+
+html.userside-dark #app .userside-address-modal input:focus,
+html.userside-dark #app .userside-address-modal select:focus,
+html.userside-dark #app .userside-address-modal textarea:focus {
+  border-color: #7da2ff !important;
+  box-shadow: 0 0 0 3px rgba(125, 162, 255, 0.18) !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface {
+  background-color: #0f172a !important;
+  border: 1px solid #2f405a;
+  color: #f8fafc;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface > header {
+  background-color: #111827 !important;
+  border-color: #26364d !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="text-[#16233b]"],
+html.userside-dark #app .userside-tracking-panel [class~="text-[#16233b]"],
+html.userside-dark #app .userside-tracking-panel [class~="text-gray-950"],
+html.userside-dark #app .userside-tracking-panel [class~="text-gray-900"] {
+  color: #f8fafc !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="text-gray-800"],
+html.userside-dark #app .userside-tracking-panel [class~="text-gray-800"] {
+  color: #e2e8f0 !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="text-gray-700"],
+html.userside-dark #app .userside-tracking-panel [class~="text-gray-700"] {
+  color: #cbd5e1 !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="text-gray-600"],
+html.userside-dark #app .userside-tracking-modal__surface [class~="text-gray-500"],
+html.userside-dark #app .userside-tracking-panel [class~="text-gray-600"],
+html.userside-dark #app .userside-tracking-panel [class~="text-gray-500"] {
+  color: #a8b6ca !important;
+}
+
+html.userside-dark #app .userside-tracking-panel a[class~="text-[#16233b]"] {
+  color: #b8cdff !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="border-gray-200"],
+html.userside-dark #app .userside-tracking-panel [class~="border-gray-200"] {
+  border-color: #2b3a52 !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="border-gray-300"],
+html.userside-dark #app .userside-tracking-panel [class~="border-gray-300"],
+html.userside-dark #app .userside-tracking-panel [class~="border-gray-900"] {
+  border-color: #3a4b64 !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="bg-white"],
+html.userside-dark #app .userside-tracking-panel [class~="bg-white"] {
+  background-color: #111827 !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="bg-gray-50"],
+html.userside-dark #app .userside-tracking-panel [class~="bg-gray-50"] {
+  background-color: #151f32 !important;
+}
+
+html.userside-dark #app .userside-tracking-panel .userside-tracking-section {
+  background-color: #111827 !important;
+  border-color: #2b3a52 !important;
+}
+
+html.userside-dark #app .userside-tracking-panel [class~="divide-gray-100"] {
+  --tw-divide-color: #26364d !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="border-red-200"] {
+  border-color: #704054 !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="bg-red-50"] {
+  background-color: #2a1820 !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="text-red-950"],
+html.userside-dark #app .userside-tracking-modal__surface [class~="text-red-900"] {
+  color: #ffc2cf !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="hover:bg-gray-50"]:hover,
+html.userside-dark #app .userside-tracking-panel [class~="hover:bg-gray-50"]:hover {
+  background-color: #1f2d43 !important;
+}
+
 /* User authentication pages use a dedicated dark surface so their light-mode
    form utilities cannot leak a white canvas into customer dark mode. */
 .userside-auth-page {
@@ -1274,4 +1492,367 @@ html.userside-dark #app .userside-auth-ghost:hover {
   to {
     opacity: 0;
   }
+}
+
+/* Dark-mode polish for customer review, product, repair, and registration
+   surfaces. These selectors intentionally stay inside the customer theme so
+   ERP and shop-owner dashboard colors remain independent. */
+html.userside-dark #app [class~="text-gray-800"] {
+  color: #e2e8f0;
+}
+
+html.userside-dark #app [class~="text-gray-400"] {
+  color: #94a3b8;
+}
+
+html.userside-dark #app [class~="text-black/35"] {
+  color: #64748b;
+}
+
+html.userside-dark #app [class~="text-black/75"],
+html.userside-dark #app [class~="text-black/80"] {
+  color: #e2e8f0;
+}
+
+html.userside-dark #app [class~="text-slate-900"] {
+  color: #f8fafc;
+}
+
+html.userside-dark #app [class~="text-slate-800"] {
+  color: #e2e8f0;
+}
+
+html.userside-dark #app [class~="text-slate-700"],
+html.userside-dark #app [class~="text-slate-600"] {
+  color: #cbd5e1;
+}
+
+html.userside-dark #app [class~="text-slate-500"],
+html.userside-dark #app [class~="text-slate-400"] {
+  color: #94a3b8;
+}
+
+html.userside-dark #app [class~="text-slate-300"] {
+  color: #cbd5e1;
+}
+
+html.userside-dark #app [class~="bg-slate-50"] {
+  background-color: #151f32;
+}
+
+html.userside-dark #app [class~="bg-slate-100"] {
+  background-color: #1b2a41;
+}
+
+html.userside-dark #app [class~="bg-slate-200"] {
+  background-color: #253550;
+}
+
+html.userside-dark #app [class~="bg-slate-950"] {
+  background-color: #050b17;
+}
+
+html.userside-dark #app [class~="border-slate-100"],
+html.userside-dark #app [class~="border-slate-200"],
+html.userside-dark #app [class~="border-slate-300"],
+html.userside-dark #app [class*="border-slate-200/"] {
+  border-color: #2f405a;
+}
+
+html.userside-dark #app [class~="divide-slate-100"],
+html.userside-dark #app [class~="divide-slate-200"] {
+  --tw-divide-color: #26364d;
+}
+
+html.userside-dark #app [class~="bg-blue-50"],
+html.userside-dark #app [class*="bg-blue-50/"] {
+  background-color: #172c47;
+}
+
+html.userside-dark #app [class~="bg-green-50"],
+html.userside-dark #app [class*="bg-green-50/"] {
+  background-color: #102b1f;
+}
+
+html.userside-dark #app [class~="bg-amber-50"],
+html.userside-dark #app [class*="bg-amber-50/"] {
+  background-color: #302613;
+}
+
+html.userside-dark #app [class~="bg-yellow-50"],
+html.userside-dark #app [class*="bg-yellow-50/"] {
+  background-color: #2a2514;
+}
+
+html.userside-dark #app [class~="text-blue-900"] {
+  color: #d5e0ff;
+}
+
+html.userside-dark #app [class~="text-blue-800"],
+html.userside-dark #app [class~="text-blue-700"] {
+  color: #a9c1ff;
+}
+
+html.userside-dark #app [class~="text-green-900"],
+html.userside-dark #app [class~="text-green-800"],
+html.userside-dark #app [class~="text-green-700"] {
+  color: #76d69b;
+}
+
+html.userside-dark #app [class~="text-amber-900"],
+html.userside-dark #app [class~="text-amber-800"],
+html.userside-dark #app [class~="text-amber-700"] {
+  color: #f5c66d;
+}
+
+html.userside-dark #app [class~="border-blue-100"],
+html.userside-dark #app [class~="border-blue-200"],
+html.userside-dark #app [class~="border-green-100"],
+html.userside-dark #app [class~="border-green-200"],
+html.userside-dark #app [class~="border-amber-100"],
+html.userside-dark #app [class~="border-amber-200"],
+html.userside-dark #app [class~="border-yellow-100"] {
+  border-color: #385070;
+}
+
+html.userside-dark #app [class~="hover:bg-slate-50"]:hover,
+html.userside-dark #app [class~="hover:bg-slate-100"]:hover {
+  background-color: #1f2d43;
+}
+
+html.userside-dark #app [class~="hover:text-slate-800"]:hover,
+html.userside-dark #app [class~="hover:text-black"]:hover,
+html.userside-dark #app [class~="hover:text-[#16233b]"]:hover {
+  color: #f8fafc;
+}
+
+html.userside-dark #app .userside-repair-shop-page,
+html.userside-dark #app .userside-product-show-page,
+html.userside-dark #app .userside-products-page,
+html.userside-dark #app .userside-repair-list-page,
+html.userside-dark #app .userside-shop-owner-registration-page {
+  background-color: #0b1220 !important;
+  color: #f8fafc;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class~="bg-linear-to-br"],
+html.userside-dark #app .userside-product-show-page [class~="bg-linear-to-br"] {
+  background-image: linear-gradient(135deg, #111827 0%, #0f172a 100%) !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class*="from-yellow-50"] {
+  background-image: linear-gradient(135deg, #2a2514 0%, #111827 100%) !important;
+  border-color: #4b4224 !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class*="from-slate-50"],
+html.userside-dark #app .userside-product-show-page [class*="from-slate-50"] {
+  background-image: linear-gradient(90deg, #151f32 0%, #111827 50%, #151f32 100%) !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class~="bg-white/80"],
+html.userside-dark #app .userside-repair-shop-page [class~="bg-blue-50/70"] {
+  background-color: #142238 !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class~="bg-gray-50/70"] {
+  background-color: #151f32 !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class~="text-gray-600"],
+html.userside-dark #app .userside-product-show-page [class~="text-gray-600"] {
+  color: #cbd5e1 !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class~="text-gray-500"],
+html.userside-dark #app .userside-product-show-page [class~="text-gray-500"] {
+  color: #94a3b8 !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class~="border-gray-100"],
+html.userside-dark #app .userside-product-show-page [class~="border-gray-100"] {
+  border-color: #2b3a52 !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class~="bg-gray-200"] {
+  background-color: #253550 !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class~="bg-green-100"] {
+  background-color: #163b2a !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class~="bg-gray-100"] {
+  background-color: #1b2a41 !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class~="text-gray-700"] {
+  color: #e2e8f0 !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [role="menu"] button > span > span:last-child,
+html.userside-dark #app .userside-products-page [role="menu"] button > span > span:last-child,
+html.userside-dark #app .userside-repair-list-page [role="menu"] button > span > span:last-child {
+  background-color: #b8cdff;
+}
+
+html.userside-dark #app .userside-shop-owner-registration-page {
+  background: radial-gradient(circle at top, #18243a 0%, #0b1220 54%, #080e19 100%) !important;
+}
+
+html.userside-dark #app .userside-shop-owner-registration-page [class~="bg-gradient-to-br"] {
+  background-image: none !important;
+}
+
+html.userside-dark #app .userside-shop-owner-registration-page [class~="text-gray-900"] {
+  color: #f8fafc !important;
+}
+
+html.userside-dark #app .userside-shop-owner-registration-page [class~="text-gray-700"],
+html.userside-dark #app .userside-shop-owner-registration-page [class~="text-gray-800"] {
+  color: #e2e8f0 !important;
+}
+
+html.userside-dark #app .userside-shop-owner-registration-page [class~="text-gray-500"] {
+  color: #a8b6ca !important;
+}
+
+/* The shop-owner theme is driven by the shared .dark class rather than the
+   customer userside-dark marker. Keep its premium and voucher pages scoped. */
+.dark #app .shopowner-premium-page,
+.dark #app .shopowner-vouchers-page {
+  color: #f8fafc;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) {
+  background-color: #0f172a !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="bg-white"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class*="bg-white/"] {
+  background-color: #111827 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="bg-slate-50"] {
+  background-color: #151f32 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="bg-slate-100"] {
+  background-color: #1b2a41 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="bg-gray-50"] {
+  background-color: #151f32 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="bg-gray-100"] {
+  background-color: #1b2a41 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="bg-blue-50"] {
+  background-color: #172c47 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="bg-amber-50"] {
+  background-color: #302613 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="bg-red-50"] {
+  background-color: #2a1820 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-black"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-slate-900"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-gray-900"] {
+  color: #f8fafc !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-slate-800"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-gray-800"] {
+  color: #e2e8f0 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-slate-700"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-slate-600"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-gray-700"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-gray-600"] {
+  color: #cbd5e1 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-slate-500"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-slate-400"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-black/55"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-black/60"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-black/65"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-black/70"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-black/75"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-black/80"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-black/40"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-black/45"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-gray-400"] {
+  color: #94a3b8 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-blue-700"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-blue-600"] {
+  color: #a9c1ff !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-amber-700"] {
+  color: #f5c66d !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-red-700"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-red-600"] {
+  color: #ff9bb0 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="border-gray-200"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="border-gray-300"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="border-slate-200"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="border-slate-300"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="border-gray-400"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="border-red-200"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class*="border-white/"] {
+  border-color: #2f405a !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="divide-slate-100"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="divide-slate-200"] {
+  --tw-divide-color: #26364d !important;
+}
+
+.dark #app .shopowner-vouchers-page > section:first-child {
+  background: radial-gradient(circle at top left, rgba(70, 116, 210, 0.2), transparent 34%), linear-gradient(135deg, #142238 0%, #111827 56%, #17203a 100%) !important;
+}
+
+.dark #app .shopowner-vouchers-page input,
+.dark #app .shopowner-vouchers-page select,
+.dark #app .shopowner-vouchers-page textarea,
+.dark #app .shopowner-premium-page input,
+.dark #app .shopowner-premium-page select,
+.dark #app .shopowner-premium-page textarea {
+  background-color: #111827 !important;
+  border-color: #3a4b64 !important;
+  color: #f8fafc !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) option {
+  background-color: #111827;
+  color: #f8fafc;
+}
+
+.dark #app .shopowner-premium-page [class~="text-[#0f1b33]"],
+.dark #app .shopowner-premium-page [class~="text-[#16233b]"],
+.dark #app .shopowner-premium-page [class~="text-[#16233b]/75"] {
+  color: #d5e0ff !important;
+}
+
+.dark #app .shopowner-premium-page [class~="bg-linear-to-r"] {
+  background-image: linear-gradient(135deg, #172c47 0%, #111827 100%) !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="hover:bg-slate-50"]:hover,
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="hover:bg-gray-50"]:hover {
+  background-color: #1f2d43 !important;
 }

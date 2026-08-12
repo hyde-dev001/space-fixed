@@ -370,7 +370,7 @@ const PremiumBenefits: React.FC<Props> = () => {
 	return (
 		<>
 			<Head title="Premium Benefits" />
-			<div className="min-h-screen bg-white font-outfit antialiased">
+			<div className="shopowner-premium-page min-h-screen bg-white font-outfit antialiased">
 				<div className="mx-auto max-w-480 px-6 pb-12 pt-24 lg:px-12 lg:pb-20 lg:pt-28">
 					<section className="w-full bg-white">
 						<div className="mb-8 text-[11px] uppercase tracking-[0.18em] text-black/55 sm:text-xs">Shop Owner / Premium Benefits</div>

@@ -7,8 +7,8 @@ describe('page theme scope', () => {
     localStorage.clear();
   });
 
-  it('keeps only shop owner registration light-only while enabling customer pages', () => {
-    expect(isLightOnlyComponent('UserSide/Auth/ShopOwnerRegistration')).toBe(true);
+  it('enables dark mode for shop owner registration alongside customer pages', () => {
+    expect(isLightOnlyComponent('UserSide/Auth/ShopOwnerRegistration')).toBe(false);
     expect(isLightOnlyComponent('Notifications/CustomerNotifications')).toBe(false);
     expect(isLightOnlyComponent('Notifications/ShopOwnerNotifications')).toBe(false);
     expect(isUserSideComponent('UserSide/Products/LandingPage')).toBe(true);
@@ -16,14 +16,15 @@ describe('page theme scope', () => {
     expect(isUserSideComponent('ERP/Workspace')).toBe(false);
   });
 
-  it('keeps shop owner registration light-only even when dark is saved', () => {
+  it('applies the saved dark theme to shop owner registration', () => {
     localStorage.setItem('theme', 'dark');
 
     syncPageTheme('UserSide/Auth/ShopOwnerRegistration');
 
-    expect(document.documentElement).toHaveClass('light-page');
-    expect(document.documentElement).not.toHaveClass('dark');
-    expect(document.documentElement).not.toHaveClass('userside-dark');
+    expect(document.documentElement).not.toHaveClass('light-page');
+    expect(document.documentElement).toHaveClass('dark');
+    expect(document.documentElement).toHaveClass('userside-theme');
+    expect(document.documentElement).toHaveClass('userside-dark');
   });
 
   it('applies the saved dark theme to customer notifications and user-side pages', () => {

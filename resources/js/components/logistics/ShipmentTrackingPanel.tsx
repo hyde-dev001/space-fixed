@@ -165,7 +165,7 @@ export default function ShipmentTrackingPanel({
   };
 
   return (
-    <div className={compact ? 'space-y-4' : 'space-y-6'}>
+    <div className={`userside-tracking-panel ${compact ? 'space-y-4' : 'space-y-6'}`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-sm font-medium text-gray-500">{itemLabel} #{shipment.id}</p>
@@ -270,7 +270,7 @@ export default function ShipmentTrackingPanel({
           );
         })}
 
-        <section className="rounded-2xl border border-gray-200 bg-white shadow-[0_18px_50px_-35px_rgba(15,23,42,0.25)]">
+        <section className="userside-tracking-section rounded-2xl border border-gray-200 bg-white shadow-[0_18px_50px_-35px_rgba(15,23,42,0.25)]">
           <div className="border-b border-gray-200 px-5 py-4 sm:px-6">
             <h2 className="text-base font-bold tracking-tight text-[#16233b]">{itemLabel} Movement</h2>
           </div>
@@ -310,7 +310,7 @@ export default function ShipmentTrackingPanel({
           </div>
         </section>
 
-        <section className="rounded-2xl border border-gray-200 bg-white shadow-[0_18px_50px_-35px_rgba(15,23,42,0.25)]">
+        <section className="userside-tracking-section rounded-2xl border border-gray-200 bg-white shadow-[0_18px_50px_-35px_rgba(15,23,42,0.25)]">
           <div className="border-b border-gray-200 px-5 py-4 sm:px-6">
             <h2 className="text-base font-bold tracking-tight text-[#16233b]">Updates</h2>
           </div>

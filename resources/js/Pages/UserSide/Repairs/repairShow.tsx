@@ -500,7 +500,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
   return (
     <>
       <Head title={shop.name} />
-      <div className="min-h-screen bg-white font-outfit antialiased">
+      <div className="userside-repair-shop-page min-h-screen bg-white font-outfit antialiased">
         <Navigation />
 
         <div className="max-w-6xl mx-auto px-4 xl:px-12 pt-18 xl:pt-24 pb-28 xl:py-20">

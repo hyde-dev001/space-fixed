@@ -1110,7 +1110,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
   return (
     <>
       <Head title={isResubmission ? "Shop Owner Resubmission" : "Shop Owner Registration"} />
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+      <div className="userside-shop-owner-registration-page min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
         <Navigation />
         <div className="max-w-6xl mx-auto px-4 lg:px-8 pt-24 pb-8 md:pt-28 md:pb-12 lg:pt-32">
           {/* Header Section */}
