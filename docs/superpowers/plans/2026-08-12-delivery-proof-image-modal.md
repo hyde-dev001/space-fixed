@@ -4,7 +4,7 @@
 
 **Goal:** Replace the delivery-proof text link with a full-width image preview and an accessible in-page enlarged-image modal.
 
-**Architecture:** Keep the behavior inside the existing `Shipments` page and reuse its existing `Modal`. A small piece of page state selects a proof URL; while selected, the shipment modal renders the image viewer instead of the details content, avoiding nested-dialog focus and Escape conflicts. Existing proof action endpoints and buttons remain unchanged.
+**Architecture:** Keep the behavior inside the existing `Shipments` page and reuse its existing `Modal`. A small piece of page state selects a proof URL; while selected, the shipment details stay mounted but hidden and the image viewer becomes the only visible dialog. This avoids nested active-dialog and Escape conflicts while preserving the original trigger node for reliable focus restoration. Existing proof action endpoints and buttons remain unchanged.
 
 **Tech Stack:** React 18, TypeScript 5.7, Tailwind CSS 4, Testing Library, Vitest, existing ERP `Modal` component.
 
@@ -105,7 +105,7 @@ Focus `proofCloseButtonRef` when `selectedProofUrl` becomes non-null. Clear proo
 
 - [ ] **Step 4: Render the accessible enlarged viewer**
 
-Conditionally render this viewer in place of the shipment detail dialog when `selectedProofUrl` is active:
+Hide the shipment detail dialog with a conditional `hidden` class and `aria-hidden` while `selectedProofUrl` is active, then conditionally render this viewer as its sibling:
 
 ```tsx
 <div
