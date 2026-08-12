@@ -753,27 +753,10 @@ html.userside-dark #app .userside-auth-ghost:hover {
 
 .solespace-app-loader::before {
   position: absolute;
-  inset: -10%;
+  inset: 0;
   background:
-    radial-gradient(circle at 12% 23%, rgba(22, 35, 59, 0.34) 0 1px, transparent 1.6px),
-    radial-gradient(circle at 21% 72%, rgba(22, 35, 59, 0.22) 0 1px, transparent 1.7px),
-    radial-gradient(circle at 34% 16%, rgba(22, 35, 59, 0.28) 0 1px, transparent 1.8px),
-    radial-gradient(circle at 67% 18%, rgba(22, 35, 59, 0.3) 0 1px, transparent 1.7px),
-    radial-gradient(circle at 79% 69%, rgba(22, 35, 59, 0.22) 0 1px, transparent 1.7px),
-    radial-gradient(circle at 89% 31%, rgba(22, 35, 59, 0.34) 0 1px, transparent 1.5px),
-    radial-gradient(circle at 74% 88%, rgba(22, 35, 59, 0.2) 0 1px, transparent 1.7px),
-    radial-gradient(circle at 7% 86%, rgba(22, 35, 59, 0.18) 0 1px, transparent 1.7px),
-    radial-gradient(circle at 50% 43%, rgba(22, 35, 59, 0.07), transparent 28rem);
-  animation: none;
-  content: "";
-  pointer-events: none;
-}
-
-.solespace-app-loader::after {
-  position: absolute;
-  inset: -15%;
-  background: radial-gradient(ellipse at center, rgba(22, 35, 59, 0.08) 0%, rgba(22, 35, 59, 0.025) 24%, transparent 68%);
-  animation: none;
+    radial-gradient(circle at center, rgba(22, 35, 59, 0.08), transparent min(34rem, 68vw)),
+    radial-gradient(circle, rgba(22, 35, 59, 0.24) 0 1px, transparent 1.4px) 0 0 / 10rem 10rem;
   content: "";
   pointer-events: none;
 }
@@ -815,66 +798,55 @@ html.userside-dark #app .userside-auth-ghost:hover {
   min-width: 0.5em;
   --loader-origin-x: 0rem;
   --loader-origin-y: 0rem;
-  --loader-origin-rotate: 0deg;
-  animation: solespace-loader-letter 840ms linear 1 both;
+  animation: solespace-loader-letter 720ms cubic-bezier(0.22, 1, 0.36, 1) 1 both;
   backface-visibility: hidden;
   transform: translate3d(0, 0, 0);
   transform-origin: center;
-  will-change: transform;
 }
 
 .solespace-app-loader__wordmark span:nth-child(1) {
   --loader-origin-x: -1.8rem;
   --loader-origin-y: -1.2rem;
-  --loader-origin-rotate: -16deg;
 }
 
 .solespace-app-loader__wordmark span:nth-child(2) {
   --loader-origin-x: -0.8rem;
   --loader-origin-y: 1.3rem;
-  --loader-origin-rotate: 12deg;
 }
 
 .solespace-app-loader__wordmark span:nth-child(3) {
   --loader-origin-x: -0.4rem;
   --loader-origin-y: -1.5rem;
-  --loader-origin-rotate: -10deg;
 }
 
 .solespace-app-loader__wordmark span:nth-child(4) {
   --loader-origin-x: -1.9rem;
   --loader-origin-y: 0.5rem;
-  --loader-origin-rotate: 14deg;
 }
 
 .solespace-app-loader__wordmark span:nth-child(5) {
   --loader-origin-x: 1.4rem;
   --loader-origin-y: -1.5rem;
-  --loader-origin-rotate: 11deg;
 }
 
 .solespace-app-loader__wordmark span:nth-child(6) {
   --loader-origin-x: 1.9rem;
   --loader-origin-y: 0.6rem;
-  --loader-origin-rotate: -13deg;
 }
 
 .solespace-app-loader__wordmark span:nth-child(7) {
   --loader-origin-x: 1rem;
   --loader-origin-y: 1.3rem;
-  --loader-origin-rotate: 13deg;
 }
 
 .solespace-app-loader__wordmark span:nth-child(8) {
   --loader-origin-x: 0.4rem;
   --loader-origin-y: -1.2rem;
-  --loader-origin-rotate: -12deg;
 }
 
 .solespace-app-loader__wordmark span:nth-child(9) {
   --loader-origin-x: 1.7rem;
   --loader-origin-y: 1.1rem;
-  --loader-origin-rotate: 10deg;
 }
 
 .solespace-app-loader__line {
@@ -914,13 +886,13 @@ html.userside-dark #app .userside-auth-ghost:hover {
 
 @keyframes solespace-loader-letter {
   0% {
-    opacity: 0.55;
-    transform: translate3d(var(--loader-origin-x), var(--loader-origin-y), 0) scale(0.985) rotate(var(--loader-origin-rotate));
+    transform: translate3d(var(--loader-origin-x), var(--loader-origin-y), 0);
+    will-change: transform;
   }
 
   100% {
-    opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
+    transform: translate3d(0, 0, 0);
+    will-change: auto;
   }
 }
 
@@ -933,10 +905,34 @@ html.userside-dark #app .userside-auth-ghost:hover {
   }
 }
 
+@keyframes solespace-loader-wordmark {
+  0% {
+    transform: translate3d(0, 0.6rem, 0);
+    will-change: transform;
+  }
+
+  100% {
+    transform: translate3d(0, 0, 0);
+    will-change: auto;
+  }
+}
+
+@media (max-width: 640px) and (pointer: coarse) {
+  .solespace-app-loader__wordmark {
+    animation: solespace-loader-wordmark 560ms cubic-bezier(0.22, 1, 0.36, 1) 1 both;
+  }
+
+  .solespace-app-loader__wordmark span {
+    animation: none;
+    transform: none;
+    will-change: auto;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .solespace-app-loader,
   .solespace-app-loader::before,
-  .solespace-app-loader::after,
+  .solespace-app-loader__wordmark,
   .solespace-app-loader__wordmark span,
   .solespace-app-loader__line::after {
     animation: none;

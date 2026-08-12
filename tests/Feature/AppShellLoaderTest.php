@@ -28,12 +28,22 @@ class AppShellLoaderTest extends TestCase
         self::assertStringContainsString('solespace-loader-letter', $styles);
         self::assertStringContainsString('--loader-origin-x', $styles);
         self::assertStringContainsString('radial-gradient', $styles);
-        self::assertStringContainsString('will-change: transform;', $loaderStyles);
         self::assertStringContainsString('backface-visibility: hidden;', $styles);
         self::assertStringContainsString('contain: layout paint;', $styles);
-        self::assertStringContainsString('animation: solespace-loader-letter 840ms linear 1 both;', $loaderStyles);
+        self::assertStringContainsString('animation: solespace-loader-letter 720ms cubic-bezier(0.22, 1, 0.36, 1) 1 both;', $loaderStyles);
+        self::assertStringContainsString('transform: translate3d(var(--loader-origin-x), var(--loader-origin-y), 0);', $loaderStyles);
+        self::assertStringContainsString('will-change: auto;', $loaderStyles);
+        self::assertStringContainsString('@media (max-width: 640px) and (pointer: coarse)', $loaderStyles);
+        self::assertStringContainsString('animation: solespace-loader-wordmark 560ms cubic-bezier(0.22, 1, 0.36, 1) 1 both;', $loaderStyles);
+        self::assertStringContainsString('@media (prefers-reduced-motion: reduce)', $loaderStyles);
+        self::assertLessThanOrEqual(2, substr_count($loaderStyles, 'radial-gradient('));
         self::assertStringContainsString('white-space: nowrap;', $styles);
         self::assertStringContainsString('text-shadow: none;', $loaderStyles);
+        self::assertStringNotContainsString('rotate(', $loaderStyles);
+        self::assertStringNotContainsString('scale(', $loaderStyles);
+        self::assertStringNotContainsString('filter:', $loaderStyles);
+        self::assertStringNotContainsString('box-shadow:', $loaderStyles);
+        self::assertStringNotContainsString('background-position', $loaderStyles);
         self::assertStringNotContainsString('animation-delay:', $loaderStyles);
     }
 
