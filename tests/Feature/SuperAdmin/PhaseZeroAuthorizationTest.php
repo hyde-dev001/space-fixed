@@ -9,10 +9,12 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Concerns\AuthenticatesPrivilegedUsers;
 use Tests\TestCase;
 
 class PhaseZeroAuthorizationTest extends TestCase
 {
+    use AuthenticatesPrivilegedUsers;
     use RefreshDatabase;
 
     public function test_unauthenticated_admin_request_redirects_to_login(): void
@@ -29,8 +31,8 @@ class PhaseZeroAuthorizationTest extends TestCase
     ): void {
         $admin = SuperAdmin::factory()->admin()->create();
 
-        $this->actingAs($admin, 'super_admin')
-            ->call($method, $uri, $payload)
+        $this->actingAsCompletedPrivileged($admin)
+            ->call($method, $uri, $payload, $this->prepareCookiesForRequest())
             ->assertForbidden();
     }
 
@@ -50,11 +52,11 @@ class PhaseZeroAuthorizationTest extends TestCase
         $admin = SuperAdmin::factory()->admin()->create();
         $user = User::factory()->create(['status' => 'suspended']);
 
-        $this->actingAs($admin, 'super_admin')
+        $this->actingAsCompletedPrivileged($admin)
             ->get('/admin/shop-owner-registration-view')
             ->assertOk();
 
-        $this->actingAs($admin, 'super_admin')
+        $this->actingAsCompletedPrivileged($admin)
             ->postJson("/admin/users/{$user->id}/activate")
             ->assertOk();
 
@@ -66,23 +68,23 @@ class PhaseZeroAuthorizationTest extends TestCase
         $admin = SuperAdmin::factory()->superAdmin()->create();
         $user = User::factory()->create(['status' => 'suspended']);
 
-        $this->actingAs($admin, 'super_admin')
+        $this->actingAsCompletedPrivileged($admin)
             ->get('/admin/admin')
             ->assertOk();
 
-        $this->actingAs($admin, 'super_admin')
+        $this->actingAsCompletedPrivileged($admin)
             ->get('/admin/shop-owner-registration-view')
             ->assertOk();
 
-        $this->actingAs($admin, 'super_admin')
+        $this->actingAsCompletedPrivileged($admin)
             ->get('/admin/registered-shops')
             ->assertOk();
 
-        $this->actingAs($admin, 'super_admin')
+        $this->actingAsCompletedPrivileged($admin)
             ->get('/admin/subscription-management')
             ->assertOk();
 
-        $this->actingAs($admin, 'super_admin')
+        $this->actingAsCompletedPrivileged($admin)
             ->postJson("/admin/users/{$user->id}/activate")
             ->assertOk();
     }
@@ -173,7 +175,7 @@ class PhaseZeroAuthorizationTest extends TestCase
         $this->assertSame(['GET', 'HEAD'], $legacyCompatibility->first()->methods());
 
         $admin = SuperAdmin::factory()->admin()->create();
-        $this->actingAs($admin, 'super_admin')
+        $this->actingAsCompletedPrivileged($admin)
             ->get('/superAdmin/shop-owner-registration-view')
             ->assertRedirect(route('admin.shop-owner-registration-view'));
     }
@@ -184,7 +186,7 @@ class PhaseZeroAuthorizationTest extends TestCase
         $shopOwner = ShopOwner::factory()->create(['status' => ShopOwnerStatus::PENDING]);
 
         foreach (['approve', 'reject'] as $decision) {
-            $response = $this->actingAs($admin, 'super_admin')
+            $response = $this->actingAsCompletedPrivileged($admin)
                 ->postJson("/superAdmin/shop-owner-registration/{$shopOwner->id}/{$decision}", [
                     'rejection_reason' => 'Not accepted',
                 ]);

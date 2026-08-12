@@ -47,25 +47,42 @@ class SuperAdmin extends Authenticatable
     public const STATUS_INACTIVE = 'inactive';
     public const STATUS_PENDING_SETUP = 'pending_setup';
 
+    public const CAP_VIEW_MONITORING = 'view_monitoring';
     public const CAP_REVIEW_REGISTRATIONS = 'review_registrations';
     public const CAP_INTERVENE_ACCOUNTS = 'intervene_accounts';
-    public const CAP_MANAGE_ADMINISTRATORS = 'manage_administrators';
+    public const CAP_MODERATE_REPORTS = 'moderate_reports';
+    public const CAP_VIEW_APPEALS = 'view_appeals';
     public const CAP_RESOLVE_APPEALS = 'resolve_appeals';
+    public const CAP_MANAGE_ADMINISTRATORS = 'manage_administrators';
     public const CAP_MANAGE_PLANS = 'manage_plans';
     public const CAP_INTERVENE_SUBSCRIPTIONS = 'intervene_subscriptions';
+    public const CAP_VIEW_PRIVILEGED_AUDIT = 'view_privileged_audit';
+    public const CAP_MANAGE_OWN_SECURITY = 'manage_own_security';
+    public const CAP_MANAGE_PLATFORM_SECURITY = 'manage_platform_security';
 
     private const CAPABILITIES_BY_ROLE = [
         self::ROLE_ADMIN => [
+            self::CAP_VIEW_MONITORING,
             self::CAP_REVIEW_REGISTRATIONS,
             self::CAP_INTERVENE_ACCOUNTS,
+            self::CAP_MODERATE_REPORTS,
+            self::CAP_VIEW_APPEALS,
+            self::CAP_VIEW_PRIVILEGED_AUDIT,
+            self::CAP_MANAGE_OWN_SECURITY,
         ],
         self::ROLE_SUPER_ADMIN => [
+            self::CAP_VIEW_MONITORING,
             self::CAP_REVIEW_REGISTRATIONS,
             self::CAP_INTERVENE_ACCOUNTS,
-            self::CAP_MANAGE_ADMINISTRATORS,
+            self::CAP_MODERATE_REPORTS,
+            self::CAP_VIEW_APPEALS,
             self::CAP_RESOLVE_APPEALS,
+            self::CAP_MANAGE_ADMINISTRATORS,
             self::CAP_MANAGE_PLANS,
             self::CAP_INTERVENE_SUBSCRIPTIONS,
+            self::CAP_VIEW_PRIVILEGED_AUDIT,
+            self::CAP_MANAGE_OWN_SECURITY,
+            self::CAP_MANAGE_PLATFORM_SECURITY,
         ],
     ];
 

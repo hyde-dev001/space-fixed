@@ -16,11 +16,20 @@ use App\Models\SuperAdmin;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
+use Tests\Concerns\AuthenticatesPrivilegedUsers;
 use Tests\TestCase;
 
 class ShopAndCustomerReportFlowTest extends TestCase
 {
+    use AuthenticatesPrivilegedUsers;
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        SuperAdmin::factory()->superAdmin()->create();
+    }
 
     private function extractInertiaPageData(string $html): array
     {
@@ -379,7 +388,7 @@ class ShopAndCustomerReportFlowTest extends TestCase
             ])
             ->assertOk();
 
-        $this->actingAs($superAdmin, 'super_admin');
+        $this->actingAsCompletedPrivileged($superAdmin);
 
         $shopReportsPage = $this->get('/admin/shop-reports');
         $shopReportsPage->assertOk();
@@ -446,7 +455,7 @@ class ShopAndCustomerReportFlowTest extends TestCase
             'email' => 'three-warn-shop@example.com',
         ]);
 
-        $this->actingAs($superAdmin, 'super_admin');
+        $this->actingAsCompletedPrivileged($superAdmin);
 
         for ($strike = 1; $strike <= 3; $strike++) {
             $customer = $this->createEligibleCustomer();
@@ -491,7 +500,7 @@ class ShopAndCustomerReportFlowTest extends TestCase
         $superAdmin = SuperAdmin::query()->firstOrFail();
         $shopOwner = ShopOwner::factory()->approved()->create();
 
-        $this->actingAs($superAdmin, 'super_admin');
+        $this->actingAsCompletedPrivileged($superAdmin);
 
         for ($strike = 1; $strike <= 2; $strike++) {
             $customer = $this->createEligibleCustomer();

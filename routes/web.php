@@ -716,20 +716,36 @@ Route::group([], function () {
 });
 
 // Super Admin Routes
-Route::prefix('superAdmin')->name('superAdmin.')->middleware('auth:super_admin')->group(function () {
+Route::prefix('superAdmin')->name('superAdmin.')->middleware([
+    'super_admin.auth',
+    'privileged.active',
+    'privileged.mfa',
+])->group(function () {
     Route::get('/super-admin-user-management', [SuperAdminUserManagementController::class, 'index'])
         ->middleware('privileged.capability:intervene_accounts')
         ->name('super-admin-user-management');
-    Route::get('/flagged-accounts', [FlaggedAccountsController::class, 'index'])->name('flagged-accounts');
-    Route::post('/flagged-accounts/{id}/mark-reviewed', [FlaggedAccountsController::class, 'markReviewed'])->name('flagged-accounts.mark-reviewed');
-    Route::post('/flagged-accounts/{id}/dismiss', [FlaggedAccountsController::class, 'dismiss'])->name('flagged-accounts.dismiss');
-    Route::post('/flagged-accounts/{id}/ban', [FlaggedAccountsController::class, 'ban'])->name('flagged-accounts.ban');
+    Route::get('/flagged-accounts', [FlaggedAccountsController::class, 'index'])
+        ->middleware('privileged.capability:moderate_reports')
+        ->name('flagged-accounts');
+    Route::post('/flagged-accounts/{id}/mark-reviewed', [FlaggedAccountsController::class, 'markReviewed'])
+        ->middleware('privileged.capability:moderate_reports')
+        ->name('flagged-accounts.mark-reviewed');
+    Route::post('/flagged-accounts/{id}/dismiss', [FlaggedAccountsController::class, 'dismiss'])
+        ->middleware('privileged.capability:moderate_reports')
+        ->name('flagged-accounts.dismiss');
+    Route::post('/flagged-accounts/{id}/ban', [FlaggedAccountsController::class, 'ban'])
+        ->middleware('privileged.capability:moderate_reports')
+        ->name('flagged-accounts.ban');
     Route::get('/shop-owner-registration-view', fn () => redirect()->route('admin.shop-owner-registration-view'))
         ->middleware('privileged.capability:review_registrations')
         ->name('shop-owner-registration-view');
-    Route::get('/system-monitoring-dashboard', [SystemMonitoringDashboardController::class, 'index'])->name('system-monitoring-dashboard');
+    Route::get('/system-monitoring-dashboard', [SystemMonitoringDashboardController::class, 'index'])
+        ->middleware('privileged.capability:view_monitoring')
+        ->name('system-monitoring-dashboard');
     Route::get('/notification-communication-tools', [NotificationCommunicationToolsController::class, 'index'])->name('notification-communication-tools');
-    Route::get('/data-report-access', [DataReportAccessController::class, 'index'])->name('data-report-access');
+    Route::get('/data-report-access', [DataReportAccessController::class, 'index'])
+        ->middleware('privileged.capability:view_privileged_audit')
+        ->name('data-report-access');
 });
 
 // Shop Owner Routes
@@ -1612,7 +1628,11 @@ Route::middleware(['auth:user', 'check.suspension'])->group(function () {
 });
 
 // Super Admin Notification API routes
-Route::middleware('super_admin.auth')->prefix('api/admin/notifications')->group(function () {
+Route::middleware([
+    'super_admin.auth',
+    'privileged.active',
+    'privileged.mfa',
+])->prefix('api/admin/notifications')->group(function () {
     Route::get('/', [\App\Http\Controllers\Api\AdminNotificationController::class, 'index']);
     Route::get('/unread-count', [\App\Http\Controllers\Api\AdminNotificationController::class, 'unreadCount']);
     Route::post('/{id}/read', [\App\Http\Controllers\Api\AdminNotificationController::class, 'markAsRead']);
@@ -1644,11 +1664,17 @@ Route::post('/admin/login', [SuperAdminAuthController::class, 'login'])->name('a
 Route::post('/admin/logout', [SuperAdminAuthController::class, 'logout'])->name('admin.logout');
 
 // Admin Protected Routes
-Route::middleware('super_admin.auth')->prefix('admin')->name('admin.')->group(function () {
+Route::middleware([
+    'super_admin.auth',
+    'privileged.active',
+    'privileged.mfa',
+])->prefix('admin')->name('admin.')->group(function () {
     Route::get('/', function () {
         return redirect()->route('admin.system-monitoring');
     })->name('dashboard');
-    Route::get('/system-monitoring', [SystemMonitoringDashboardController::class, 'index'])->name('system-monitoring');
+    Route::get('/system-monitoring', [SystemMonitoringDashboardController::class, 'index'])
+        ->middleware('privileged.capability:view_monitoring')
+        ->name('system-monitoring');
 
     // Admin management routes
     Route::get('/admin', [SuperAdminController::class, 'showAdminManagement'])
@@ -1740,11 +1766,17 @@ Route::middleware('super_admin.auth')->prefix('admin')->name('admin.')->group(fu
         ->middleware('privileged.capability:intervene_accounts')
         ->name('users.activate');
     // Shop Reports routes
-    Route::get('/shop-reports', [\App\Http\Controllers\superAdmin\ShopReportsController::class, 'index'])->name('shop-reports');
-    Route::post('/shop-reports/{id}/action', [\App\Http\Controllers\superAdmin\ShopReportsController::class, 'action'])->name('shop-reports.action');
+    Route::get('/shop-reports', [\App\Http\Controllers\superAdmin\ShopReportsController::class, 'index'])
+        ->middleware('privileged.capability:moderate_reports')
+        ->name('shop-reports');
+    Route::post('/shop-reports/{id}/action', [\App\Http\Controllers\superAdmin\ShopReportsController::class, 'action'])
+        ->middleware('privileged.capability:moderate_reports')
+        ->name('shop-reports.action');
 
     // Suspension Appeals routes
-    Route::get('/appeals', [\App\Http\Controllers\superAdmin\SuspensionAppealsController::class, 'index'])->name('suspension-appeals');
+    Route::get('/appeals', [\App\Http\Controllers\superAdmin\SuspensionAppealsController::class, 'index'])
+        ->middleware('privileged.capability:view_appeals')
+        ->name('suspension-appeals');
     Route::post('/appeals/{id}/approve', [\App\Http\Controllers\superAdmin\SuspensionAppealsController::class, 'approve'])
         ->middleware('privileged.capability:resolve_appeals')
         ->name('appeals.approve');
@@ -1756,7 +1788,9 @@ Route::middleware('super_admin.auth')->prefix('admin')->name('admin.')->group(fu
     Route::get('/notifications', function () {
         return Inertia::render('superAdmin/Communications/NotificationCommunicationTools');
     })->name('notifications');
-    Route::get('/data-reports', [SuperAdminController::class, 'showDataReports'])->name('data-reports');
+    Route::get('/data-reports', [SuperAdminController::class, 'showDataReports'])
+        ->middleware('privileged.capability:view_privileged_audit')
+        ->name('data-reports');
 });
 
 // Training Routes
@@ -2477,14 +2511,24 @@ Route::group([], function () {
 });
 
 // Super Admin Routes
-Route::prefix('superAdmin')->name('superAdmin.')->middleware('auth:super_admin')->group(function () {
+Route::prefix('superAdmin')->name('superAdmin.')->middleware([
+    'super_admin.auth',
+    'privileged.active',
+    'privileged.mfa',
+])->group(function () {
     Route::get('/super-admin-user-management', [SuperAdminUserManagementController::class, 'index'])
         ->middleware('privileged.capability:intervene_accounts')
         ->name('super-admin-user-management');
-    Route::get('/flagged-accounts', [FlaggedAccountsController::class, 'index'])->name('flagged-accounts');
-    Route::get('/system-monitoring-dashboard', [SystemMonitoringDashboardController::class, 'index'])->name('system-monitoring-dashboard');
+    Route::get('/flagged-accounts', [FlaggedAccountsController::class, 'index'])
+        ->middleware('privileged.capability:moderate_reports')
+        ->name('flagged-accounts');
+    Route::get('/system-monitoring-dashboard', [SystemMonitoringDashboardController::class, 'index'])
+        ->middleware('privileged.capability:view_monitoring')
+        ->name('system-monitoring-dashboard');
     Route::get('/notification-communication-tools', [NotificationCommunicationToolsController::class, 'index'])->name('notification-communication-tools');
-    Route::get('/data-report-access', [DataReportAccessController::class, 'index'])->name('data-report-access');
+    Route::get('/data-report-access', [DataReportAccessController::class, 'index'])
+        ->middleware('privileged.capability:view_privileged_audit')
+        ->name('data-report-access');
 });
 
 // Manager API Routes

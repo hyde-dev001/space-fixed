@@ -10,10 +10,12 @@ use App\Models\UserAddress;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
 use ReflectionClass;
+use Tests\Concerns\AuthenticatesPrivilegedUsers;
 use Tests\TestCase;
 
 class HardDeleteContainmentTest extends TestCase
 {
+    use AuthenticatesPrivilegedUsers;
     use RefreshDatabase;
 
     public function test_routine_hard_delete_route_names_and_controller_methods_are_absent(): void
@@ -52,7 +54,7 @@ class HardDeleteContainmentTest extends TestCase
             'is_default' => true,
         ]);
 
-        $this->actingAs($admin, 'super_admin');
+        $this->actingAsCompletedPrivileged($admin);
 
         foreach ([
             "/admin/admins/{$admin->id}",

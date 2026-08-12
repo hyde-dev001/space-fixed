@@ -19,18 +19,30 @@ class SuperAdminCapabilityTest extends TestCase
     public static function capabilityMatrix(): array
     {
         return [
+            ['admin', SuperAdmin::CAP_VIEW_MONITORING, true],
             ['admin', SuperAdmin::CAP_REVIEW_REGISTRATIONS, true],
             ['admin', SuperAdmin::CAP_INTERVENE_ACCOUNTS, true],
-            ['admin', SuperAdmin::CAP_MANAGE_ADMINISTRATORS, false],
+            ['admin', SuperAdmin::CAP_MODERATE_REPORTS, true],
+            ['admin', SuperAdmin::CAP_VIEW_APPEALS, true],
             ['admin', SuperAdmin::CAP_RESOLVE_APPEALS, false],
+            ['admin', SuperAdmin::CAP_MANAGE_ADMINISTRATORS, false],
             ['admin', SuperAdmin::CAP_MANAGE_PLANS, false],
             ['admin', SuperAdmin::CAP_INTERVENE_SUBSCRIPTIONS, false],
+            ['admin', SuperAdmin::CAP_VIEW_PRIVILEGED_AUDIT, true],
+            ['admin', SuperAdmin::CAP_MANAGE_OWN_SECURITY, true],
+            ['admin', SuperAdmin::CAP_MANAGE_PLATFORM_SECURITY, false],
+            ['super_admin', SuperAdmin::CAP_VIEW_MONITORING, true],
             ['super_admin', SuperAdmin::CAP_REVIEW_REGISTRATIONS, true],
             ['super_admin', SuperAdmin::CAP_INTERVENE_ACCOUNTS, true],
-            ['super_admin', SuperAdmin::CAP_MANAGE_ADMINISTRATORS, true],
+            ['super_admin', SuperAdmin::CAP_MODERATE_REPORTS, true],
+            ['super_admin', SuperAdmin::CAP_VIEW_APPEALS, true],
             ['super_admin', SuperAdmin::CAP_RESOLVE_APPEALS, true],
+            ['super_admin', SuperAdmin::CAP_MANAGE_ADMINISTRATORS, true],
             ['super_admin', SuperAdmin::CAP_MANAGE_PLANS, true],
             ['super_admin', SuperAdmin::CAP_INTERVENE_SUBSCRIPTIONS, true],
+            ['super_admin', SuperAdmin::CAP_VIEW_PRIVILEGED_AUDIT, true],
+            ['super_admin', SuperAdmin::CAP_MANAGE_OWN_SECURITY, true],
+            ['super_admin', SuperAdmin::CAP_MANAGE_PLATFORM_SECURITY, true],
         ];
     }
 }

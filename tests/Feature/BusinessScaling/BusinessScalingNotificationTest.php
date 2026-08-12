@@ -14,10 +14,12 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
+use Tests\Concerns\AuthenticatesPrivilegedUsers;
 use Tests\TestCase;
 
 final class BusinessScalingNotificationTest extends TestCase
 {
+    use AuthenticatesPrivilegedUsers;
     use RefreshDatabase;
 
     protected function setUp(): void
@@ -63,7 +65,7 @@ final class BusinessScalingNotificationTest extends TestCase
             'super_admin_id' => $inactive->id,
             'type' => NotificationType::BUSINESS_UPGRADE_REQUEST_PENDING->value,
         ]);
-        $this->actingAs($active, 'super_admin')
+        $this->actingAsCompletedPrivileged($active)
             ->getJson('/api/admin/notifications/unread-count')
             ->assertOk()
             ->assertJsonPath('count', 1);
@@ -97,7 +99,7 @@ final class BusinessScalingNotificationTest extends TestCase
         $request = ShopOwnerUpgradeRequest::query()->latest('id')->firstOrFail();
         $paths = $request->documents()->pluck('path')->all();
 
-        $this->actingAs($admin, 'super_admin')
+        $this->actingAsCompletedPrivileged($admin)
             ->patchJson(route('admin.business-upgrade-requests.update', $request), ['decision' => 'rejected', 'decision_reason' => 'Please update the permit.'])
             ->assertOk();
 
@@ -116,7 +118,7 @@ final class BusinessScalingNotificationTest extends TestCase
 
     private function admin(string $status): SuperAdmin
     {
-        return SuperAdmin::create([
+        return SuperAdmin::factory()->superAdmin()->state(['status' => $status])->create([
             'first_name' => 'Notification',
             'last_name' => 'Admin',
             'email' => fake()->unique()->safeEmail(),

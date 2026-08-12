@@ -149,6 +149,10 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
         $middleware->alias([
             'super_admin.auth' => \App\Http\Middleware\SuperAdminAuth::class,
+            'privileged.active' => \App\Http\Middleware\EnsurePrivilegedAccountIsActive::class,
+            'privileged.mfa' => \App\Http\Middleware\EnsurePrivilegedMfaComplete::class,
+            'privileged.recent' => \App\Http\Middleware\EnsureRecentPrivilegedReauthentication::class,
+            'privileged.no-store' => \App\Http\Middleware\NoStorePrivilegedSecurityResponse::class,
             'super_admin.role' => \App\Http\Middleware\CheckSuperAdminRole::class,
             'privileged.capability' => \App\Http\Middleware\EnsurePrivilegedCapability::class,
             'shop.isolation' => \App\Http\Middleware\ShopIsolationMiddleware::class,

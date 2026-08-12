@@ -7,10 +7,12 @@ use App\Models\ShopOwner;
 use App\Models\ShopOwnerSubscription;
 use App\Models\SuperAdmin;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\AuthenticatesPrivilegedUsers;
 use Tests\TestCase;
 
 class AdminPremiumPlanManagementTest extends TestCase
 {
+    use AuthenticatesPrivilegedUsers;
     use RefreshDatabase;
 
     private function createPlan(array $overrides = []): PremiumPlan
@@ -28,7 +30,7 @@ class AdminPremiumPlanManagementTest extends TestCase
 
     private function createAdmin(): SuperAdmin
     {
-        return SuperAdmin::create([
+        return SuperAdmin::factory()->superAdmin()->create([
             'first_name' => 'Test',
             'last_name' => 'Admin',
             'email' => 'admin@example.test',
@@ -75,7 +77,7 @@ class AdminPremiumPlanManagementTest extends TestCase
     {
         $admin = $this->createAdmin();
 
-        $this->actingAs($admin, 'super_admin')->post('/admin/premium-plans', [
+        $this->actingAsCompletedPrivileged($admin)->post('/admin/premium-plans', [
             'plan_code' => 'elite',
             'name' => 'Elite',
             'description' => 'Two-room showroom plan',
@@ -88,12 +90,12 @@ class AdminPremiumPlanManagementTest extends TestCase
         $plan = PremiumPlan::where('plan_code', 'elite')->firstOrFail();
         $this->assertSame(['Two connected rooms', 'Image-sequence uploads'], $plan->benefits);
 
-        $this->actingAs($admin, 'super_admin')
+        $this->actingAsCompletedPrivileged($admin)
             ->post("/admin/premium-plans/{$plan->id}/archive")
             ->assertRedirect();
         $this->assertSame('inactive', $plan->fresh()->status);
 
-        $this->actingAs($admin, 'super_admin')
+        $this->actingAsCompletedPrivileged($admin)
             ->post("/admin/premium-plans/{$plan->id}/reactivate")
             ->assertRedirect();
         $this->assertSame('active', $plan->fresh()->status);
@@ -115,13 +117,13 @@ class AdminPremiumPlanManagementTest extends TestCase
             'benefits' => [],
         ];
 
-        $this->actingAs($admin, 'super_admin')
+        $this->actingAsCompletedPrivileged($admin)
             ->put("/admin/premium-plans/{$plan->id}", $payload)
             ->assertRedirect();
         $this->assertSame(100, $subscription->fresh()->showroom_slot_limit);
 
         $payload['showroom_slot_limit'] = 60;
-        $this->actingAs($admin, 'super_admin')
+        $this->actingAsCompletedPrivileged($admin)
             ->put("/admin/premium-plans/{$plan->id}", $payload)
             ->assertRedirect();
 
@@ -135,7 +137,7 @@ class AdminPremiumPlanManagementTest extends TestCase
     {
         $admin = $this->createAdmin();
 
-        $this->actingAs($admin, 'super_admin')->from('/admin/subscription-management')
+        $this->actingAsCompletedPrivileged($admin)->from('/admin/subscription-management')
             ->post('/admin/premium-plans', [
                 'plan_code' => 'oversized',
                 'name' => 'Oversized',

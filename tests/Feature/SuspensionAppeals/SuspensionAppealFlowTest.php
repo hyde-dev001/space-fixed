@@ -12,10 +12,12 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\URL;
+use Tests\Concerns\AuthenticatesPrivilegedUsers;
 use Tests\TestCase;
 
 class SuspensionAppealFlowTest extends TestCase
 {
+    use AuthenticatesPrivilegedUsers;
     use RefreshDatabase;
 
     protected function setUp(): void
@@ -43,7 +45,7 @@ class SuspensionAppealFlowTest extends TestCase
             'email' => 'appeal-customer@example.com',
         ]);
 
-        $response = $this->actingAs($superAdmin, 'super_admin')
+        $response = $this->actingAsCompletedPrivileged($superAdmin)
             ->postWithCsrf("/admin/users/{$customer->id}/suspend", [
                 'suspension_reason' => 'Repeated abusive conduct in transactions.',
             ]);
@@ -76,7 +78,7 @@ class SuspensionAppealFlowTest extends TestCase
             'email' => 'appeal-shop@example.com',
         ]);
 
-        $response = $this->actingAs($superAdmin, 'super_admin')
+        $response = $this->actingAsCompletedPrivileged($superAdmin)
             ->postWithCsrf("/admin/shops/{$shopOwner->id}/suspend", [
                 'suspension_reason' => 'Multiple verified policy violations from customer reports.',
             ]);
@@ -174,7 +176,7 @@ class SuspensionAppealFlowTest extends TestCase
             'expires_at' => now()->addHours(24),
         ]);
 
-        $response = $this->actingAs($superAdmin, 'super_admin')
+        $response = $this->actingAsCompletedPrivileged($superAdmin)
             ->postWithCsrf("/admin/appeals/{$appeal->id}/approve", [
                 'reviewer_notes' => 'Approved after manual review of evidence and account history.',
             ]);

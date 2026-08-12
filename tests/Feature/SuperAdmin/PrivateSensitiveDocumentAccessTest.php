@@ -16,10 +16,12 @@ use Inertia\Testing\AssertableInertia as Assert;
 use Mockery\MockInterface;
 use Spatie\Activitylog\ActivityLogger;
 use Spatie\Activitylog\Models\Activity as ActivityModel;
+use Tests\Concerns\AuthenticatesPrivilegedUsers;
 use Tests\TestCase;
 
 class PrivateSensitiveDocumentAccessTest extends TestCase
 {
+    use AuthenticatesPrivilegedUsers;
     use RefreshDatabase;
 
     protected function setUp(): void
@@ -279,26 +281,26 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
 
         $this->get(route('admin.shop-documents.show', [$owner, $document]))->assertRedirect(route('admin.login'));
 
-        $this->actingAs($admin, 'super_admin')
+        $this->actingAsCompletedPrivileged($admin)
             ->get(route('admin.shop-documents.show', [$owner, $document]))
             ->assertNotFound();
 
-        $this->actingAs($superAdmin, 'super_admin')
-            ->get(route('admin.shop-documents.show', [$owner, $document]))
-            ->assertOk();
+        $superAdminResponse = $this->actingAsCompletedPrivileged($superAdmin)
+            ->get(route('admin.shop-documents.show', [$owner, $document]));
+        $superAdminResponse->assertOk();
 
         $owner->update(['status' => 'pending']);
-        $this->actingAs($admin, 'super_admin')
+        $this->actingAsCompletedPrivileged($admin)
             ->get(route('admin.shop-documents.show', [$owner, $document]))
             ->assertOk();
 
         $owner->update(['status' => 'rejected']);
-        $this->actingAs($admin, 'super_admin')
+        $this->actingAsCompletedPrivileged($admin)
             ->get(route('admin.shop-documents.show', [$owner, $document]))
             ->assertOk();
 
         $otherOwner = ShopOwner::factory()->pending()->create();
-        $this->actingAs($admin, 'super_admin')
+        $this->actingAsCompletedPrivileged($admin)
             ->get(route('admin.shop-documents.show', [$otherOwner, $document]))
             ->assertNotFound();
 
@@ -308,10 +310,10 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
         $customer->save();
         Storage::disk('local')->put($customer->valid_id_path, $this->pngBytes());
 
-        $this->actingAs($admin, 'super_admin')
+        $this->actingAsCompletedPrivileged($admin)
             ->get(route('admin.users.valid-id.show', $customer))
             ->assertOk();
-        $this->actingAs($superAdmin, 'super_admin')
+        $this->actingAsCompletedPrivileged($superAdmin)
             ->get(route('admin.users.valid-id.show', $customer))
             ->assertOk();
     }
@@ -361,7 +363,7 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
         $document = $this->createDocument($owner, 'pending', 'local', 'missing.png', null, false);
         $admin = SuperAdmin::factory()->admin()->create();
 
-        $this->actingAs($admin, 'super_admin')
+        $this->actingAsCompletedPrivileged($admin)
             ->get(route('admin.shop-documents.show', [$owner, $document]))
             ->assertNotFound();
 
@@ -375,7 +377,7 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
         $safe = $this->createDocument($owner, 'valid_id', 'local', 'client-name.png', $this->pngBytes());
         $unsafe = $this->createDocument($owner, 'valid_id', 'local', 'unsafe.jpg', '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
 
-        $safeResponse = $this->actingAs($admin, 'super_admin')
+        $safeResponse = $this->actingAsCompletedPrivileged($admin)
             ->get(route('admin.shop-documents.show', [$owner, $safe]));
         $safeResponse->assertOk()
             ->assertHeader('Content-Type', 'image/png')
@@ -385,7 +387,7 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
         $this->assertStringContainsString("valid_id-{$safe->id}.png", (string) $safeResponse->headers->get('Content-Disposition'));
         $this->assertStringNotContainsString('client-name', (string) $safeResponse->headers->get('Content-Disposition'));
 
-        $unsafeResponse = $this->actingAs($admin, 'super_admin')
+        $unsafeResponse = $this->actingAsCompletedPrivileged($admin)
             ->get(route('admin.shop-documents.show', [$owner, $unsafe]));
         $unsafeResponse->assertOk()->assertHeader('Content-Type', 'application/octet-stream');
         $this->assertStringContainsString('attachment;', (string) $unsafeResponse->headers->get('Content-Disposition'));
@@ -402,7 +404,7 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
             $mock->shouldReceive('documentAccessInitiated')->once()->andThrow(new \RuntimeException('audit unavailable'));
         });
 
-        $response = $this->actingAs($admin, 'super_admin')
+        $response = $this->actingAsCompletedPrivileged($admin)
             ->get(route('admin.shop-documents.show', [$owner, $document]));
 
         $response->assertStatus(500);
@@ -450,7 +452,7 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
         $customer->valid_id_disk = 'local';
         $customer->save();
 
-        $registrationResponse = $this->actingAs($admin, 'super_admin')
+        $registrationResponse = $this->actingAsCompletedPrivileged($admin)
             ->get(route('admin.shop-owner-registration-view'));
         $registrationResponse->assertInertia(fn (Assert $page) => $page
             ->where('registrations.0.documents.0.url', route('admin.shop-documents.show', [$owner, $document]))
@@ -458,19 +460,19 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
         $this->assertStringNotContainsString('/storage/', $registrationResponse->getContent());
         $this->assertStringNotContainsString($document->file_path, $registrationResponse->getContent());
 
-        $detailsResponse = $this->actingAs($admin, 'super_admin')
+        $detailsResponse = $this->actingAsCompletedPrivileged($admin)
             ->get(route('admin.shops.details', $owner));
         $detailsResponse->assertOk()
             ->assertJsonPath('shop.documentUrls.0', route('admin.shop-documents.show', [$owner, $document]));
         $this->assertStringNotContainsString($document->file_path, $detailsResponse->getContent());
 
-        $userManagementResponse = $this->actingAs($admin, 'super_admin')
+        $userManagementResponse = $this->actingAsCompletedPrivileged($admin)
             ->get(route('admin.user-management'));
         $userManagementResponse->assertInertia(fn (Assert $page) => $page
             ->where('users.0.validIdUrl', route('admin.users.valid-id.show', $customer))
             ->missing('users.0.validIdPath'));
 
-        $legacyUserManagementResponse = $this->actingAs($admin, 'super_admin')
+        $legacyUserManagementResponse = $this->actingAsCompletedPrivileged($admin)
             ->get(route('superAdmin.super-admin-user-management'));
         $legacyUserManagementResponse->assertInertia(fn (Assert $page) => $page
             ->where('users.data.0.validIdUrl', route('admin.users.valid-id.show', $customer))

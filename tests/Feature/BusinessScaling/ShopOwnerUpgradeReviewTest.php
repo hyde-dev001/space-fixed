@@ -14,10 +14,12 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
+use Tests\Concerns\AuthenticatesPrivilegedUsers;
 use Tests\TestCase;
 
 final class ShopOwnerUpgradeReviewTest extends TestCase
 {
+    use AuthenticatesPrivilegedUsers;
     use RefreshDatabase;
 
     protected function setUp(): void
@@ -34,7 +36,7 @@ final class ShopOwnerUpgradeReviewTest extends TestCase
         $admin = $this->createAdmin();
         [$owner, $upgradeRequest] = $this->submitRequest();
 
-        $list = $this->actingAs($admin, 'super_admin')
+        $list = $this->actingAsCompletedPrivileged($admin)
             ->getJson(route('admin.business-upgrade-requests.index', ['status' => 'pending', 'search' => $owner->business_name]));
 
         $list->assertOk()
@@ -42,7 +44,7 @@ final class ShopOwnerUpgradeReviewTest extends TestCase
             ->assertJsonMissing(['path' => $upgradeRequest->documents()->firstOrFail()->path]);
 
         $document = $upgradeRequest->documents()->firstOrFail();
-        $download = $this->actingAs($admin, 'super_admin')
+        $download = $this->actingAsCompletedPrivileged($admin)
             ->get(route('admin.business-upgrade-requests.documents.download', [$upgradeRequest, $document]));
 
         $download->assertOk();
@@ -63,7 +65,7 @@ final class ShopOwnerUpgradeReviewTest extends TestCase
             ->patchJson(route('admin.business-upgrade-requests.update', $upgradeRequest), [
                 'decision' => 'approved',
             ])
-            ->assertRedirect(route('admin.login'));
+            ->assertUnauthorized();
 
         $this->actingAs($otherOwner, 'shop_owner')
             ->get(route('admin.business-upgrade-requests.documents.download', [$upgradeRequest, $document]))
@@ -83,7 +85,7 @@ final class ShopOwnerUpgradeReviewTest extends TestCase
             'enabled' => false,
         ]);
 
-        $response = $this->actingAs($admin, 'super_admin')
+        $response = $this->actingAsCompletedPrivileged($admin)
             ->patchJson(route('admin.business-upgrade-requests.update', $upgradeRequest), [
                 'decision' => 'approved',
             ]);
@@ -118,13 +120,13 @@ final class ShopOwnerUpgradeReviewTest extends TestCase
         [$owner, $upgradeRequest] = $this->submitRequest();
         $before = $owner->only(['registration_type', 'business_type']);
 
-        $this->actingAs($admin, 'super_admin')
+        $this->actingAsCompletedPrivileged($admin)
             ->patchJson(route('admin.business-upgrade-requests.update', $upgradeRequest), [
                 'decision' => 'rejected',
             ])
             ->assertUnprocessable();
 
-        $this->actingAs($admin, 'super_admin')
+        $this->actingAsCompletedPrivileged($admin)
             ->patchJson(route('admin.business-upgrade-requests.update', $upgradeRequest), [
                 'decision' => 'rejected',
                 'decision_reason' => 'Evidence did not meet the current requirements.',
@@ -144,7 +146,7 @@ final class ShopOwnerUpgradeReviewTest extends TestCase
         $document = $upgradeRequest->documents()->firstOrFail();
         Storage::disk('local')->put($document->path, 'tampered');
 
-        $this->actingAs($admin, 'super_admin')
+        $this->actingAsCompletedPrivileged($admin)
             ->patchJson(route('admin.business-upgrade-requests.update', $upgradeRequest), [
                 'decision' => 'approved',
             ])
@@ -162,7 +164,7 @@ final class ShopOwnerUpgradeReviewTest extends TestCase
         [$owner, $upgradeRequest] = $this->submitRequest();
         $owner->update(['business_type' => 'repair']);
 
-        $this->actingAs($admin, 'super_admin')
+        $this->actingAsCompletedPrivileged($admin)
             ->patchJson(route('admin.business-upgrade-requests.update', $upgradeRequest), [
                 'decision' => 'approved',
             ])
@@ -172,7 +174,7 @@ final class ShopOwnerUpgradeReviewTest extends TestCase
         Notification::assertSentTo($owner, ShopOwnerUpgradeReviewed::class);
         $this->assertSame('repair', $owner->fresh()->business_type);
 
-        $this->actingAs($admin, 'super_admin')
+        $this->actingAsCompletedPrivileged($admin)
             ->patchJson(route('admin.business-upgrade-requests.update', $upgradeRequest), [
                 'decision' => 'approved',
             ])
@@ -210,7 +212,7 @@ final class ShopOwnerUpgradeReviewTest extends TestCase
 
     private function createAdmin(): SuperAdmin
     {
-        return SuperAdmin::create([
+        return SuperAdmin::factory()->superAdmin()->create([
             'first_name' => 'Review',
             'last_name' => 'Admin',
             'email' => fake()->unique()->safeEmail(),
