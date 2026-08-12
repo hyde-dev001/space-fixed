@@ -10,6 +10,20 @@ const ModalPortal: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return createPortal(children, document.body);
 };
 
+const readLifecycleResponse = async (response) => {
+  const contentType = response.headers?.get?.('content-type') || '';
+  if (response.redirected || (contentType && !contentType.includes('application/json'))) {
+    throw new Error('Recent reauthentication is required. Please reauthenticate and try again.');
+  }
+
+  const payload = await response.json().catch(() => null);
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('The shop lifecycle operation could not be completed.');
+  }
+
+  return payload;
+};
+
 // Icon Components
 const StoreIcon = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -51,6 +65,12 @@ const CheckCircleIcon = ({ className }) => (
 const AlertIcon = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+  </svg>
+);
+
+const ArchiveIcon = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7h18M5 7v12h14V7M9 11h6M4 4h16v3H4V4z" />
   </svg>
 );
 
@@ -146,7 +166,10 @@ function RegisteredShops({ shops, stats }) {
       shop.last_name?.toLowerCase().includes(searchQuery.toLowerCase());
 
     const matchesType = filterType === 'all' || shop.business_type === filterType;
-    const matchesStatus = filterStatus === 'all' || shop.status === filterStatus;
+    const isArchived = shop.archived === true || shop.status === 'archived';
+    const accountStatus = shop.accountStatus || shop.status;
+    const matchesStatus = filterStatus === 'all'
+      || (filterStatus === 'archived' ? isArchived : !isArchived && accountStatus === filterStatus);
 
     return matchesSearch && matchesType && matchesStatus;
   });
@@ -158,13 +181,15 @@ function RegisteredShops({ shops, stats }) {
   const paginatedShops = filteredShops.slice(startIndex, endIndex);
 
   const dashboardStats = React.useMemo(() => {
-    const activeCount = shopRows.filter((shop) => shop.status === 'approved').length;
-    const suspendedCount = shopRows.filter((shop) => shop.status === 'suspended').length;
+    const activeCount = shopRows.filter((shop) => !shop.archived && (shop.accountStatus || shop.status) === 'approved').length;
+    const suspendedCount = shopRows.filter((shop) => !shop.archived && (shop.accountStatus || shop.status) === 'suspended').length;
+    const archivedCount = shopRows.filter((shop) => shop.archived === true || shop.status === 'archived').length;
 
     return {
       total: shopRows.length,
       active: activeCount,
       suspended: suspendedCount,
+      archived: archivedCount,
       thisMonth: stats?.thisMonth || 0,
     };
   }, [shopRows, stats]);
@@ -255,7 +280,7 @@ function RegisteredShops({ shops, stats }) {
         }),
       });
 
-      const payload = await response.json().catch(() => ({}));
+      const payload = await readLifecycleResponse(response);
 
       if (!response.ok) {
         throw new Error(payload?.message || 'Failed to suspend shop. Please try again.');
@@ -267,6 +292,8 @@ function RegisteredShops({ shops, stats }) {
             ? {
                 ...shop,
                 status: 'suspended',
+                accountStatus: 'suspended',
+                archived: false,
                 suspension_reason: reason,
               }
             : shop
@@ -281,6 +308,8 @@ function RegisteredShops({ shops, stats }) {
         return {
           ...prev,
           status: 'suspended',
+          accountStatus: 'suspended',
+          archived: false,
           suspension_reason: reason,
         };
       });
@@ -308,88 +337,133 @@ function RegisteredShops({ shops, stats }) {
     }
   };
 
-  const handleActivateShop = (shopId, shopName) => {
-    Swal.fire({
-      title: 'Activate Shop?',
-      text: `Are you sure you want to activate "${shopName}"?`,
+  const requestLifecycleReason = async (title, text, confirmButtonText) => {
+    const result = await Swal.fire({
+      title,
+      text,
+      input: 'textarea',
+      inputPlaceholder: 'Enter a reason',
+      inputValidator: (value) => value?.trim() ? undefined : 'A reason is required.',
       icon: 'question',
       showCancelButton: true,
       confirmButtonColor: '#10b981',
       cancelButtonColor: '#6b7280',
-      confirmButtonText: 'Yes, activate',
+      confirmButtonText,
       cancelButtonText: 'Cancel',
-    }).then((result) => {
-      if (result.isConfirmed) {
-        (async () => {
-          try {
-            setIsActionSubmitting(true);
-
-            const response = await fetch(`/admin/shops/${shopId}/activate`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Accept: 'application/json',
-                'X-CSRF-TOKEN': csrfToken,
-                'X-Requested-With': 'XMLHttpRequest',
-              },
-              body: JSON.stringify({}),
-            });
-
-            const payload = await response.json().catch(() => ({}));
-
-            if (!response.ok) {
-              throw new Error(payload?.message || 'Failed to activate shop. Please try again.');
-            }
-
-            setShopRows((prev) =>
-              prev.map((shop) =>
-                Number(shop.id) === Number(shopId)
-                  ? {
-                      ...shop,
-                      status: 'approved',
-                      suspension_reason: null,
-                    }
-                  : shop
-              )
-            );
-
-            setSelectedShop((prev) => {
-              if (!prev || Number(prev.id) !== Number(shopId)) {
-                return prev;
-              }
-
-              return {
-                ...prev,
-                status: 'approved',
-                suspension_reason: null,
-              };
-            });
-
-            Swal.fire({
-              title: 'Activated!',
-              text: payload?.message || 'Shop has been activated successfully.',
-              icon: 'success',
-              confirmButtonColor: '#10b981',
-            });
-          } catch (error) {
-            Swal.fire({
-              title: 'Error',
-              text: error instanceof Error ? error.message : 'Failed to activate shop. Please try again.',
-              icon: 'error',
-              confirmButtonColor: '#ef4444',
-            });
-          } finally {
-            setIsActionSubmitting(false);
-          }
-        })();
-      }
     });
+
+    if (!result.isConfirmed || typeof result.value !== 'string' || !result.value.trim()) {
+      return null;
+    }
+
+    return result.value.trim();
+  };
+
+  const performLifecycleAction = async (shop, endpoint, body, successTitle, successText, update) => {
+    try {
+      setIsActionSubmitting(true);
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'X-CSRF-TOKEN': csrfToken,
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        body: JSON.stringify(body),
+      });
+      const payload = await readLifecycleResponse(response);
+
+      if (!response.ok) {
+        throw new Error(payload?.message || 'The shop lifecycle operation could not be completed.');
+      }
+
+      setShopRows((currentShops) => currentShops.map((currentShop) =>
+        Number(currentShop.id) === Number(shop.id) ? { ...currentShop, ...update } : currentShop
+      ));
+      setSelectedShop((currentShop) => {
+        if (!currentShop || Number(currentShop.id) !== Number(shop.id)) return currentShop;
+        return { ...currentShop, ...update };
+      });
+
+      Swal.fire({
+        title: successTitle,
+        text: payload?.message || successText,
+        icon: 'success',
+        confirmButtonColor: '#10b981',
+      });
+    } catch (error) {
+      Swal.fire({
+        title: 'Error',
+        text: error instanceof Error ? error.message : 'The shop lifecycle operation could not be completed.',
+        icon: 'error',
+        confirmButtonColor: '#ef4444',
+      });
+    } finally {
+      setIsActionSubmitting(false);
+    }
+  };
+
+  const handleReactivateShop = async (shop) => {
+    const reason = await requestLifecycleReason(
+      'Activate Shop',
+      `Provide a reason for activating "${shop.business_name}".`,
+      'Activate shop',
+    );
+    if (!reason) return;
+
+    await performLifecycleAction(
+      shop,
+      `/admin/shops/${shop.id}/reactivate`,
+      { reactivation_reason: reason },
+      'Activated!',
+      'Shop has been activated successfully.',
+      { status: 'approved', accountStatus: 'approved', archived: false, suspension_reason: null },
+    );
+  };
+
+  const handleArchiveShop = async (shop) => {
+    const reason = await requestLifecycleReason(
+      'Archive Shop',
+      `Provide a reason for archiving "${shop.business_name}".`,
+      'Archive shop',
+    );
+    if (!reason) return;
+
+    await performLifecycleAction(
+      shop,
+      `/admin/shops/${shop.id}/archive`,
+      { archive_reason: reason },
+      'Shop Archived!',
+      'Shop has been archived successfully.',
+      { status: 'archived', archived: true },
+    );
+  };
+
+  const handleRestoreShop = async (shop) => {
+    const reason = await requestLifecycleReason(
+      'Restore Shop',
+      `Provide a reason for restoring "${shop.business_name}".`,
+      'Restore shop',
+    );
+    if (!reason) return;
+
+    const restoredStatus = shop.accountStatus || 'approved';
+    await performLifecycleAction(
+      shop,
+      `/admin/shops/${shop.id}/restore`,
+      { restore_reason: reason },
+      'Shop Restored!',
+      'Shop has been restored successfully.',
+      { status: restoredStatus, accountStatus: restoredStatus, archived: false },
+    );
   };
 
   const getStatusBadge = (status) => {
     const badges = {
       approved: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300',
       suspended: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300',
+      archived: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300',
       pending: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300',
     };
     return badges[status] || badges.pending;
@@ -412,13 +486,13 @@ function RegisteredShops({ shops, stats }) {
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Registered Shops</h1>
             <p className="text-gray-600 dark:text-gray-400 mt-2">
-              Manage all active and suspended shop accounts
+              Manage active, suspended, and archived shop accounts
             </p>
           </div>
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
           <MetricCard
             title="Total Shops"
             value={dashboardStats.total || 0}
@@ -445,6 +519,15 @@ function RegisteredShops({ shops, stats }) {
             icon={BanIcon}
             color="error"
             description="Temporarily suspended"
+          />
+          <MetricCard
+            title="Archived Shops"
+            value={dashboardStats.archived || 0}
+            change={0}
+            changeType="decrease"
+            icon={ArchiveIcon}
+            color="warning"
+            description="Reversible archived accounts"
           />
           <MetricCard
             title="This Month"
@@ -498,6 +581,7 @@ function RegisteredShops({ shops, stats }) {
                 <option value="all">All Status</option>
                 <option value="approved">Active</option>
                 <option value="suspended">Suspended</option>
+                <option value="archived">Archived Shops</option>
               </select>
             </div>
           </div>
@@ -589,8 +673,13 @@ function RegisteredShops({ shops, stats }) {
                       </td>
                       <td className="px-6 py-4">
                         <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${getStatusBadge(shop.status)}`}>
-                          {shop.status === 'approved' ? 'Active' : shop.status}
+                          {shop.status === 'approved' ? 'Active' : shop.status === 'archived' ? 'Archived' : shop.status}
                         </span>
+                        {(shop.archived === true || shop.status === 'archived') && shop.accountStatus === 'suspended' && (
+                          <span className="ml-2 inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300">
+                            Suspended
+                          </span>
+                        )}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
                         {new Date(shop.created_at).toLocaleDateString()}
@@ -605,25 +694,54 @@ function RegisteredShops({ shops, stats }) {
                           >
                             <EyeIcon className="h-5 w-5" />
                           </button>
-                          {shop.status === 'approved' ? (
+                          {shop.archived === true || shop.status === 'archived' ? (
                             <button
-                              onClick={() => handleSuspendShop(shop.id, shop.business_name)}
+                              onClick={() => handleRestoreShop(shop)}
                               disabled={isActionSubmitting}
-                              className="inline-flex items-center justify-center w-8 h-8 rounded-md text-orange-600 hover:text-orange-800 dark:text-orange-400 dark:hover:text-orange-300 transition-colors"
-                              title="Suspend Shop"
-                            >
-                              <AlertIcon className="h-5 w-5" />
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => handleActivateShop(shop.id, shop.business_name)}
-                              disabled={isActionSubmitting}
-                              className="inline-flex items-center justify-center w-8 h-8 rounded-md text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 transition-colors"
-                              title="Activate Shop"
+                              className="inline-flex items-center justify-center w-8 h-8 rounded-md text-purple-600 hover:text-purple-800 dark:text-purple-400 dark:hover:text-purple-300 transition-colors"
+                              title="Restore Shop"
                             >
                               <CheckCircleIcon className="h-5 w-5" />
                             </button>
-                          )}
+                          ) : shop.accountStatus === 'approved' || shop.status === 'approved' ? (
+                            <>
+                              <button
+                                onClick={() => handleSuspendShop(shop.id, shop.business_name)}
+                                disabled={isActionSubmitting}
+                                className="inline-flex items-center justify-center w-8 h-8 rounded-md text-orange-600 hover:text-orange-800 dark:text-orange-400 dark:hover:text-orange-300 transition-colors"
+                                title="Suspend Shop"
+                              >
+                                <AlertIcon className="h-5 w-5" />
+                              </button>
+                              <button
+                                onClick={() => handleArchiveShop(shop)}
+                                disabled={isActionSubmitting}
+                                className="inline-flex items-center justify-center w-8 h-8 rounded-md text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-300 transition-colors"
+                                title="Archive Shop"
+                              >
+                                <ArchiveIcon className="h-5 w-5" />
+                              </button>
+                            </>
+                          ) : shop.accountStatus === 'suspended' || shop.status === 'suspended' ? (
+                            <>
+                              <button
+                                onClick={() => handleReactivateShop(shop)}
+                                disabled={isActionSubmitting}
+                                className="inline-flex items-center justify-center w-8 h-8 rounded-md text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 transition-colors"
+                                title="Activate Shop"
+                              >
+                                <CheckCircleIcon className="h-5 w-5" />
+                              </button>
+                              <button
+                                onClick={() => handleArchiveShop(shop)}
+                                disabled={isActionSubmitting}
+                                className="inline-flex items-center justify-center w-8 h-8 rounded-md text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-300 transition-colors"
+                                title="Archive Shop"
+                              >
+                                <ArchiveIcon className="h-5 w-5" />
+                              </button>
+                            </>
+                          ) : null}
                         </div>
                       </td>
                     </tr>
@@ -753,8 +871,13 @@ function RegisteredShops({ shops, stats }) {
                             <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">Status</label>
                             <p className="text-sm mt-1">
                               <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${getStatusBadge(selectedShop.status)}`}>
-                                {selectedShop.status === 'approved' ? 'Active' : selectedShop.status}
+                                {selectedShop.status === 'approved' ? 'Active' : selectedShop.status === 'archived' ? 'Archived' : selectedShop.status}
                               </span>
+                              {selectedShop.archived && selectedShop.accountStatus === 'suspended' && (
+                                <span className="ml-2 inline-flex px-3 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300">
+                                  Suspended
+                                </span>
+                              )}
                             </p>
                           </div>
                         </div>

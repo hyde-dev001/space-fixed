@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Head, Link, router } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 import AppLayout from '../../../layout/AppLayout';
 import Swal from 'sweetalert2';
 import Button from '../../../components/ui/button/Button';
@@ -47,6 +47,20 @@ const InfoIcon = ({ className }) => (
   </svg>
 );
 
+const readLifecycleResponse = async (response) => {
+  const contentType = response.headers?.get?.('content-type') || '';
+  if (response.redirected || (contentType && !contentType.includes('application/json'))) {
+    throw new Error('Recent reauthentication is required. Please reauthenticate and try again.');
+  }
+
+  const payload = await response.json().catch(() => null);
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('The account lifecycle operation could not be completed.');
+  }
+
+  return payload;
+};
+
 const ArrowUpIcon = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
@@ -69,7 +83,9 @@ interface User {
   phone: string;
   age: number;
   role?: string | null;
-  status: 'pending' | 'approved' | 'rejected' | 'active' | 'deactivated' | 'suspended';
+  status: 'pending' | 'approved' | 'rejected' | 'active' | 'deactivated' | 'suspended' | 'archived';
+  accountStatus?: 'pending' | 'approved' | 'rejected' | 'active' | 'deactivated' | 'suspended';
+  archived?: boolean;
   createdAt: string;
   lastLogin?: string;
   validIdUrl?: string;
@@ -235,7 +251,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
   const [expandedDocuments, setExpandedDocuments] = useState<Set<number>>(new Set());
   const [imageLoadErrors, setImageLoadErrors] = useState<Set<number>>(new Set());
 
-  const [filterStatus, setFilterStatus] = useState<'pending' | 'approved' | 'rejected' | 'active' | 'deactivated' | 'suspended'>('active');
+  const [filterStatus, setFilterStatus] = useState<'pending' | 'approved' | 'rejected' | 'active' | 'deactivated' | 'suspended' | 'archived'>('active');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [deactivateReason, setDeactivateReason] = useState<string>('');
   const [suspendReason, setSuspendReason] = useState<string>('');
@@ -272,7 +288,10 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
 
   // Filter users based on status, and search term
   const filteredUsers = users.filter(user => {
-    const statusMatch = user.status === filterStatus;
+    const isArchived = user.archived === true || user.status === 'archived';
+    const statusMatch = filterStatus === 'archived'
+      ? isArchived
+      : !isArchived && user.status === filterStatus;
     const searchMatch = searchTerm === '' ||
       user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.email.toLowerCase().includes(searchTerm.toLowerCase());
@@ -379,7 +398,9 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
   // Polling: fetch latest users periodically so Shop Owner changes appear without reload
   const fetchUsersList = async () => {
     try {
-      const res = await fetch(`/admin/users/list?status=${filterStatus}`, {
+      const lifecycle = filterStatus === 'archived' ? 'archived' : 'active';
+      const status = filterStatus === 'archived' ? '' : `&status=${encodeURIComponent(filterStatus)}`;
+      const res = await fetch(`/admin/users/list?lifecycle=${lifecycle}${status}`, {
         headers: { 'Accept': 'application/json' }
       });
       if (!res.ok) return;
@@ -466,7 +487,80 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
     setIsDeactivateModalOpen(true);
   };
 
-  // Handle suspend/activate account
+  const requestLifecycleReason = async (title: string, text: string, confirmButtonText: string) => {
+    const result = await Swal.fire({
+      title,
+      text,
+      input: 'textarea',
+      inputPlaceholder: 'Enter a reason',
+      inputValidator: (value) => value?.trim() ? undefined : 'A reason is required.',
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#10b981',
+      cancelButtonColor: '#6b7280',
+      confirmButtonText,
+      cancelButtonText: 'Cancel',
+    });
+
+    if (!result.isConfirmed || typeof result.value !== 'string' || !result.value.trim()) {
+      return null;
+    }
+
+    return result.value.trim();
+  };
+
+  const performLifecycleAction = async (
+    user: User,
+    endpoint: string,
+    body: Record<string, string>,
+    successTitle: string,
+    successText: string,
+    update: Partial<User>,
+  ) => {
+    try {
+      setIsProcessingId(user.id);
+      setApiError(null);
+      const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-CSRF-TOKEN': csrf,
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        body: JSON.stringify(body),
+      });
+      const payload = await readLifecycleResponse(response);
+
+      if (!response.ok) {
+        throw new Error(payload?.message || 'The account lifecycle operation could not be completed.');
+      }
+
+      setUsers((currentUsers) => currentUsers.map((currentUser) =>
+        currentUser.id === user.id ? { ...currentUser, ...update } : currentUser
+      ));
+
+      Swal.fire({
+        icon: 'success',
+        title: successTitle,
+        text: payload?.message || successText,
+        timer: 2000,
+        showConfirmButton: false,
+      });
+    } catch (error) {
+      const message = error instanceof Error
+        ? error.message
+        : 'The account lifecycle operation could not be completed.';
+      setApiError(message);
+      Swal.fire({ icon: 'error', title: 'Error', text: message });
+    } finally {
+      setIsProcessingId(null);
+    }
+  };
+
+  // Handle suspend account
   const handleSuspend = async () => {
     if (!selectedUser) return;
 
@@ -479,9 +573,6 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
       try {
         setIsProcessingId(userToSuspend.id);
         setApiError(null);
-        const formData = new FormData();
-        formData.append('reason', suspendReason);
-
         // Use fetch for a straightforward AJAX request with CSRF token
         const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
         try {
@@ -494,15 +585,15 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
               'X-CSRF-TOKEN': csrf,
               'X-Requested-With': 'XMLHttpRequest',
             },
-            body: JSON.stringify({ reason: suspendReason }),
+            body: JSON.stringify({ suspension_reason: suspendReason }),
           });
 
-          const data = await res.json().catch(() => ({}));
+          const data = await readLifecycleResponse(res);
 
           if (res.ok) {
-            setUsers(users.map(user =>
+            setUsers((currentUsers) => currentUsers.map(user =>
               user.id === userToSuspend.id
-                ? { ...user, status: 'suspended' }
+                ? { ...user, status: 'suspended', accountStatus: 'suspended', archived: false }
                 : user
             ));
 
@@ -540,74 +631,59 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
   };
 
   // Handle reactivate account
-  const handleReactivate = async (userId: number, userName: string) => {
-    const result = await Swal.fire({
-      title: 'Reactivate Account?',
-      text: `Are you sure you want to reactivate ${userName}'s account?`,
-      icon: 'question',
-      showCancelButton: true,
-      confirmButtonColor: '#10b981',
-      cancelButtonColor: '#6b7280',
-      confirmButtonText: 'Yes, reactivate',
-      cancelButtonText: 'Cancel'
-    });
+  const handleReactivate = async (user: User) => {
+    const reason = await requestLifecycleReason(
+      'Reactivate Account',
+      `Provide a reason for reactivating ${user.name}'s account.`,
+      'Reactivate account',
+    );
+    if (!reason) return;
 
-    if (!result.isConfirmed) return;
+    await performLifecycleAction(
+      user,
+      `/admin/users/${user.id}/reactivate`,
+      { reactivation_reason: reason },
+      'Account Reactivated!',
+      `${user.name}'s account has been reactivated successfully.`,
+      { status: 'active', accountStatus: 'active', archived: false },
+    );
+  };
 
-    try {
-      setIsProcessingId(userId);
-      setApiError(null);
-      // Use fetch to call admin activate endpoint and handle JSON response
-      const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-      try {
-        const res = await fetch(`/admin/users/${userId}/activate`, {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'X-CSRF-TOKEN': csrf,
-            'X-Requested-With': 'XMLHttpRequest',
-          },
-          body: JSON.stringify({}),
-        });
+  const handleArchive = async (user: User) => {
+    const reason = await requestLifecycleReason(
+      'Archive Account',
+      `Provide a reason for archiving ${user.name}'s account.`,
+      'Archive account',
+    );
+    if (!reason) return;
 
-        const data = await res.json().catch(() => ({}));
+    await performLifecycleAction(
+      user,
+      `/admin/users/${user.id}/archive`,
+      { archive_reason: reason },
+      'Account Archived!',
+      `${user.name}'s account has been archived successfully.`,
+      { status: 'archived', archived: true },
+    );
+  };
 
-        if (res.ok) {
-          setUsers(users.map(user =>
-            user.id === userId
-              ? { ...user, status: 'active' }
-              : user
-          ));
+  const handleRestore = async (user: User) => {
+    const reason = await requestLifecycleReason(
+      'Restore Account',
+      `Provide a reason for restoring ${user.name}'s account.`,
+      'Restore account',
+    );
+    if (!reason) return;
 
-          Swal.fire({
-            icon: 'success',
-            title: 'Account Reactivated!',
-            text: `${userName}'s account has been reactivated successfully.`,
-            timer: 2000,
-            showConfirmButton: false
-          });
-        } else {
-          const msg = data?.message || 'Failed to reactivate user';
-          Swal.fire({ icon: 'error', title: 'Error', text: msg });
-        }
-      } catch (err: any) {
-        console.error(err);
-        Swal.fire({ icon: 'error', title: 'Error', text: err?.message || 'Failed to reactivate user' });
-      } finally {
-        setIsProcessingId(null);
-      }
-    } catch (error) {
-      console.error('Error:', error);
-      Swal.fire({
-        icon: 'error',
-        title: 'Error',
-        text: 'An error occurred while reactivating the account',
-      });
-    } finally {
-      setIsProcessingId(null);
-    }
+    const restoredStatus = user.accountStatus || 'active';
+    await performLifecycleAction(
+      user,
+      `/admin/users/${user.id}/restore`,
+      { restore_reason: reason },
+      'Account Restored!',
+      `${user.name}'s account has been restored successfully.`,
+      { status: restoredStatus, accountStatus: restoredStatus, archived: false },
+    );
   };
 
   // Handle reset password
@@ -677,13 +753,13 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
             description="Currently active users"
           />
           <MetricCard
-            title="Deactivated"
-            value={users.filter(u => u.status === 'deactivated').length}
+            title="Archived"
+            value={users.filter(u => u.archived === true || u.status === 'archived').length}
             change={2}
             changeType="increase"
             icon={TrashBinIcon}
             color="error"
-            description="Deactivated accounts"
+            description="Reversible archived accounts"
           />
         </div>
 
@@ -710,7 +786,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
               </label>
               <select
                 value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value as 'pending' | 'approved' | 'rejected' | 'active' | 'deactivated' | 'suspended')}
+                onChange={(e) => setFilterStatus(e.target.value as 'pending' | 'approved' | 'rejected' | 'active' | 'deactivated' | 'suspended' | 'archived')}
                 aria-label="Filter by Status"
                 className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
               >
@@ -720,6 +796,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
                 <option value="rejected">Rejected</option>
                 <option value="suspended">Suspended</option>
                 <option value="deactivated">Deactivated</option>
+                <option value="archived">Archived</option>
               </select>
             </div>
           </div>
@@ -746,7 +823,11 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
                 </tr>
               </thead>
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                {paginatedUsers.map((user) => (
+                {paginatedUsers.map((user) => {
+                  const isArchived = user.archived === true || user.status === 'archived';
+                  const accountStatus = user.accountStatus || user.status;
+
+                  return (
                   <tr key={user.id}>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
@@ -766,10 +847,16 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
                         user.status === 'pending' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
                         user.status === 'approved' || user.status === 'active' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
                         user.status === 'rejected' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
+                        user.status === 'archived' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200' :
                         'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200'
                       }`}>
                         {user.status}
                       </span>
+                      {isArchived && accountStatus === 'suspended' && (
+                        <span className="ml-2 inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200">
+                          suspended
+                        </span>
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                       {new Date(user.createdAt).toLocaleDateString()}
@@ -822,9 +909,19 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
                               <InfoIcon className="h-5 w-5" />
                             </button>
 
-                            {user.status !== 'suspended' && user.status !== 'deactivated' && (
+                            {isArchived ? (
                               <button
-                                onClick={() => {
+                                onClick={() => handleRestore(user)}
+                                disabled={isProcessingId === user.id}
+                                className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-purple-600 hover:text-purple-800 dark:text-purple-400 dark:hover:text-purple-300 transition-colors ${isProcessingId === user.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                title="Restore Account"
+                              >
+                                <CheckCircleIcon className="h-4 w-4" />
+                              </button>
+                            ) : accountStatus === 'active' || accountStatus === 'approved' ? (
+                              <>
+                                <button
+                                  onClick={() => {
                                     setSelectedUser(user);
                                     setIsSuspendModalOpen(true);
                                   }}
@@ -834,24 +931,42 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
                                 >
                                   <AlertIcon className="h-5 w-5" />
                                 </button>
-                            )}
-
-                            {user.status === 'suspended' && (
-                              <button
-                                  onClick={() => handleReactivate(user.id, user.name)}
+                                <button
+                                  onClick={() => handleArchive(user)}
+                                  disabled={isProcessingId === user.id}
+                                  className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-300 transition-colors ${isProcessingId === user.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                  title="Archive Account"
+                                >
+                                  <TrashBinIcon className="h-4 w-4" />
+                                </button>
+                              </>
+                            ) : accountStatus === 'suspended' ? (
+                              <>
+                                <button
+                                  onClick={() => handleReactivate(user)}
                                   disabled={isProcessingId === user.id}
                                   className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 transition-colors ${isProcessingId === user.id ? 'opacity-50 cursor-not-allowed' : ''}`}
                                   title="Reactivate Account"
                                 >
                                   <CheckCircleIcon className="h-4 w-4" />
                                 </button>
-                            )}
+                                <button
+                                  onClick={() => handleArchive(user)}
+                                  disabled={isProcessingId === user.id}
+                                  className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-300 transition-colors ${isProcessingId === user.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                  title="Archive Account"
+                                >
+                                  <TrashBinIcon className="h-4 w-4" />
+                                </button>
+                              </>
+                            ) : null}
                           </>
                         )}
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

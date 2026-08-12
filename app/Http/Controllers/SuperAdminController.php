@@ -107,13 +107,30 @@ class SuperAdminController extends Controller
     /**
      * Show registered shops page
      */
-    public function showRegisteredShops(): Response
+    public function showRegisteredShops(Request $request): Response
     {
+        $lifecycle = $request->query('lifecycle', 'all');
+        if (!in_array($lifecycle, ['active', 'archived', 'all'], true)) {
+            $lifecycle = 'all';
+        }
+
         // Keep list payload lightweight; load document-heavy details on demand.
-        $shops = ShopOwner::whereIn('status', ['approved', 'suspended'])
+        $shopsQuery = ShopOwner::withTrashed()
+            ->whereIn('status', ['approved', 'suspended']);
+
+        if ($lifecycle === 'active') {
+            $shopsQuery->whereNull('deleted_at');
+        } elseif ($lifecycle === 'archived') {
+            $shopsQuery->whereNotNull('deleted_at');
+        }
+
+        $shops = $shopsQuery
             ->orderBy('created_at', 'desc')
             ->get()
             ->map(function ($shopOwner) {
+                $accountStatus = $shopOwner->status;
+                $archived = $shopOwner->trashed();
+
                 return [
                     'id' => $shopOwner->id,
                     'first_name' => $shopOwner->first_name,
@@ -126,7 +143,9 @@ class SuperAdminController extends Controller
                     'business_address' => $shopOwner->business_address,
                     'business_type' => $shopOwner->business_type,
                     'registration_type' => $shopOwner->registration_type,
-                    'status' => $shopOwner->status,
+                    'status' => $archived ? 'archived' : $accountStatus,
+                    'accountStatus' => $accountStatus,
+                    'archived' => $archived,
                     'suspension_reason' => $shopOwner->suspension_reason,
                     'created_at' => $shopOwner->created_at->format('Y-m-d H:i:s'),
                     'approved_at' => $shopOwner->updated_at->format('Y-m-d H:i:s'),
@@ -136,9 +155,10 @@ class SuperAdminController extends Controller
         // Calculate statistics
         $stats = [
             'total' => $shops->count(),
-            'active' => $shops->where('status', 'approved')->count(),
-            'suspended' => $shops->where('status', 'suspended')->count(),
-            'thisMonth' => ShopOwner::whereIn('status', ['approved', 'suspended'])
+            'active' => $shops->where('accountStatus', 'approved')->where('archived', false)->count(),
+            'suspended' => $shops->where('accountStatus', 'suspended')->where('archived', false)->count(),
+            'archived' => $shops->where('archived', true)->count(),
+            'thisMonth' => (clone $shopsQuery)
                 ->whereMonth('created_at', now()->month)
                 ->whereYear('created_at', now()->year)
                 ->count(),
@@ -153,8 +173,12 @@ class SuperAdminController extends Controller
     public function shopDetails(int $id): JsonResponse
     {
         $shopOwner = ShopOwner::query()
+            ->withTrashed()
             ->with('documents')
             ->findOrFail($id);
+
+        $accountStatus = $shopOwner->status;
+        $archived = $shopOwner->trashed();
 
         return response()->json([
             'shop' => [
@@ -170,7 +194,9 @@ class SuperAdminController extends Controller
                 'business_type' => $shopOwner->business_type,
                 'registration_type' => $shopOwner->registration_type,
                 'operating_hours' => is_array($shopOwner->operating_hours) ? $shopOwner->operating_hours : [],
-                'status' => $shopOwner->status,
+                'status' => $archived ? 'archived' : $accountStatus,
+                'accountStatus' => $accountStatus,
+                'archived' => $archived,
                 'suspension_reason' => $shopOwner->suspension_reason,
                 'created_at' => $shopOwner->created_at->format('Y-m-d H:i:s'),
                 'approved_at' => $shopOwner->updated_at->format('Y-m-d H:i:s'),
@@ -601,11 +627,28 @@ class SuperAdminController extends Controller
     /**
      * Show user management page (placeholder values for now)
      */
-    public function showUserManagement(): Response
+    public function showUserManagement(Request $request): Response
     {
+        $lifecycle = $request->query('lifecycle', 'all');
+        if (!in_array($lifecycle, ['active', 'archived', 'all'], true)) {
+            $lifecycle = 'all';
+        }
+
         // Load users with optional employee relation so Shop Owner suspends reflect here
-        $usersQuery = User::orderBy('created_at', 'desc')->with(['employee']);
+        $usersQuery = User::withTrashed()
+            ->orderBy('created_at', 'desc')
+            ->with(['employee']);
+
+        if ($lifecycle === 'active') {
+            $usersQuery->whereNull('deleted_at');
+        } elseif ($lifecycle === 'archived') {
+            $usersQuery->whereNotNull('deleted_at');
+        }
+
         $users = $usersQuery->get()->map(function ($u) {
+            $accountStatus = $u->status ?? 'active';
+            $archived = $u->trashed();
+
             return [
                 'id' => $u->id,
                 'firstName' => $u->first_name ?? null,
@@ -616,7 +659,9 @@ class SuperAdminController extends Controller
                 'phone' => $u->phone ?? null,
                 'age' => $u->age ?? null,
                 'role' => $u->role ?? null,
-                'status' => $u->status ?? 'active',
+                'status' => $archived ? 'archived' : $accountStatus,
+                'accountStatus' => $accountStatus,
+                'archived' => $archived,
                 'validIdUrl' => $u->valid_id_path
                     ? route('admin.users.valid-id.show', ['user' => $u->id])
                     : null,
@@ -639,9 +684,13 @@ class SuperAdminController extends Controller
 
         $stats = [
             'total' => count($users),
-            'active' => collect($users)->where('status', 'active')->count(),
-            'suspended' => collect($users)->where('status', 'suspended')->count(),
-            'thisMonth' => User::whereMonth('created_at', now()->month)->whereYear('created_at', now()->year)->count(),
+            'active' => collect($users)->where('accountStatus', 'active')->where('archived', false)->count(),
+            'suspended' => collect($users)->where('accountStatus', 'suspended')->where('archived', false)->count(),
+            'archived' => collect($users)->where('archived', true)->count(),
+            'thisMonth' => (clone $usersQuery)
+                ->whereMonth('created_at', now()->month)
+                ->whereYear('created_at', now()->year)
+                ->count(),
         ];
 
         return Inertia::render('superAdmin/Users/SuperAdminUserManagement', [
@@ -724,19 +773,37 @@ class SuperAdminController extends Controller
     public function usersList(Request $request)
     {
         $status = $request->query('status');
-        $query = User::orderBy('created_at', 'desc')
+        $lifecycle = $request->query('lifecycle', 'active');
+        if (!in_array($lifecycle, ['active', 'archived', 'all'], true)) {
+            $lifecycle = 'active';
+        }
+
+        $query = User::withTrashed()
+            ->orderBy('created_at', 'desc')
             ->whereNull('shop_owner_id')
             ->with('employee');
-        if ($status) {
+
+        if ($lifecycle === 'active') {
+            $query->whereNull('deleted_at');
+        } elseif ($lifecycle === 'archived') {
+            $query->whereNotNull('deleted_at');
+        }
+
+        if ($status && $status !== 'archived') {
             $query->where('status', $status);
         }
 
         $users = $query->get()->map(function ($u) {
+            $accountStatus = $u->status ?? 'active';
+            $archived = $u->trashed();
+
             return [
                 'id' => $u->id,
                 'name' => $u->name,
                 'email' => $u->email,
-                'status' => $u->status ?? 'active',
+                'status' => $archived ? 'archived' : $accountStatus,
+                'accountStatus' => $accountStatus,
+                'archived' => $archived,
                 'role' => $u->role ?? null,
                 'createdAt' => $u->created_at?->toDateTimeString(),
                 'employee' => $u->employee ? [

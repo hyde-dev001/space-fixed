@@ -313,6 +313,52 @@ final class AccountLifecycleWorkflowTest extends TestCase
         $this->assertSame('approved', $restored->getRawOriginal('status'));
     }
 
+    public function test_privileged_management_reads_include_archived_accounts_without_changing_normal_scopes(): void
+    {
+        $admin = $this->phaseTwoSuperAdmin();
+        $user = $this->activePhaseTwoUser();
+        $shop = $this->approvedPhaseTwoShop();
+        $this->actingAsCompletedPrivileged($admin);
+        $this->markPrivilegedReauthenticated($admin);
+
+        $this->postJson("/admin/users/{$user->id}/archive", [
+            'archive_reason' => 'Archive user for read-model coverage.',
+        ])->assertOk();
+        $this->postJson("/admin/shops/{$shop->id}/archive", [
+            'archive_reason' => 'Archive shop for read-model coverage.',
+        ])->assertOk();
+
+        $this->assertNull(User::query()->find($user->id));
+        $this->assertNull(ShopOwner::query()->find($shop->id));
+
+        $this->get(route('admin.user-management', ['lifecycle' => 'archived']))
+            ->assertInertia(fn ($page) => $page
+                ->where('users.0.id', $user->id)
+                ->where('users.0.status', 'archived')
+                ->where('users.0.accountStatus', 'active')
+                ->where('users.0.archived', true));
+
+        $this->get(route('superAdmin.super-admin-user-management', ['lifecycle' => 'archived']))
+            ->assertInertia(fn ($page) => $page
+                ->where('users.data.0.id', $user->id)
+                ->where('users.data.0.status', 'archived')
+                ->where('users.data.0.accountStatus', 'active')
+                ->where('users.data.0.archived', true));
+
+        $this->get(route('admin.registered-shops', ['lifecycle' => 'archived']))
+            ->assertInertia(fn ($page) => $page
+                ->where('shops.0.id', $shop->id)
+                ->where('shops.0.status', 'archived')
+                ->where('shops.0.accountStatus', 'approved')
+                ->where('shops.0.archived', true)
+                ->where('stats.archived', 1));
+
+        $this->get(route('admin.shops.details', $shop->id))
+            ->assertOk()
+            ->assertJsonPath('shop.archived', true)
+            ->assertJsonPath('shop.accountStatus', 'approved');
+    }
+
     public function test_archive_and_restore_require_recent_reauthentication_and_reason(): void
     {
         $admin = $this->phaseTwoSuperAdmin();

@@ -18,10 +18,21 @@ class SuperAdminUserManagementController extends Controller
         $role = $request->input('role');
         $status = $request->input('status');
         $department = $request->input('department');
+        $lifecycle = $request->input('lifecycle', 'all');
+        if (!in_array($lifecycle, ['active', 'archived', 'all'], true)) {
+            $lifecycle = 'all';
+        }
 
-        $query = User::with(['shopOwner', 'employee'])
+        $query = User::withTrashed()
+            ->with(['shopOwner', 'employee'])
             ->whereNull('shop_owner_id')
             ->orderBy('created_at', 'desc');
+
+        if ($lifecycle === 'active') {
+            $query->whereNull('deleted_at');
+        } elseif ($lifecycle === 'archived') {
+            $query->whereNotNull('deleted_at');
+        }
 
         // Search by name/email/phone
         if ($q) {
@@ -38,7 +49,7 @@ class SuperAdminUserManagementController extends Controller
             $query->where('role', $role);
         }
 
-        if ($status) {
+        if ($status && $status !== 'archived') {
             $query->where('status', $status);
         }
 
@@ -83,6 +94,8 @@ class SuperAdminUserManagementController extends Controller
                 }
 
                 $employee = $user->employee; // eager-loaded
+                $accountStatus = $user->status ?? 'active';
+                $archived = $user->trashed();
 
                 return [
                     'id' => $user->id,
@@ -93,7 +106,9 @@ class SuperAdminUserManagementController extends Controller
                     'phone' => $user->phone,
                     'age' => $user->age,
                     'address' => $user->address,
-                    'status' => $user->status,
+                    'status' => $archived ? 'archived' : $accountStatus,
+                    'accountStatus' => $accountStatus,
+                    'archived' => $archived,
                     'validIdUrl' => $user->valid_id_path
                         ? route('admin.users.valid-id.show', ['user' => $user->id])
                         : null,

@@ -206,4 +206,14 @@ final class PhaseOneRouteSecurityTest extends TestCase
             self::assertContains('privileged.recent', $route->middleware(), $name);
         }
     }
+
+    public function test_administrator_management_has_no_account_archive_or_delete_capability(): void
+    {
+        self::assertNotNull(Route::getRoutes()->getByName('admin.admins.suspend'));
+        self::assertNotNull(Route::getRoutes()->getByName('admin.admins.deactivate'));
+        self::assertNotNull(Route::getRoutes()->getByName('admin.admins.activate'));
+        self::assertNull(Route::getRoutes()->getByName('admin.admins.archive'));
+        self::assertNull(Route::getRoutes()->getByName('admin.admins.restore'));
+        self::assertNull(Route::getRoutes()->getByName('admin.admins.delete'));
+    }
 }
