@@ -26,10 +26,12 @@ use App\Services\AccountLifecycleService;
 use App\Services\PrivilegedMailDispatcher;
 use App\Services\PrivilegedSecurityTokenService;
 use App\Services\PremiumPlanManagementService;
+use App\Support\PrivilegedFailureResponse;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Str;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -46,6 +48,7 @@ class SuperAdminController extends Controller
         private readonly AccountLifecycleService $accountLifecycle,
         private readonly PrivilegedMailDispatcher $privilegedMailDispatcher,
         private readonly PremiumPlanManagementService $premiumPlans,
+        private readonly PrivilegedFailureResponse $failures,
     ) {
     }
 
@@ -348,7 +351,17 @@ class SuperAdminController extends Controller
         $actor = $request->user('super_admin');
         abort_unless($actor instanceof SuperAdmin, 403);
 
-        $this->premiumPlans->create($request->validated(), $actor, $request);
+        try {
+            $this->premiumPlans->create($request->validated(), $actor, $request);
+        } catch (Throwable $exception) {
+            return $this->failures->unexpected(
+                request: $request,
+                operation: 'premium_plan_create',
+                exception: $exception,
+                message: 'The premium plan could not be created.',
+                code: 'premium_plan_create_error',
+            );
+        }
 
         return redirect()->route('admin.subscription-management')->with('success', 'Premium plan created.');
     }
@@ -358,7 +371,17 @@ class SuperAdminController extends Controller
         $actor = $request->user('super_admin');
         abort_unless($actor instanceof SuperAdmin, 403);
 
-        $this->premiumPlans->update($premiumPlan, $request->validated(), $actor, $request);
+        try {
+            $this->premiumPlans->update($premiumPlan, $request->validated(), $actor, $request);
+        } catch (Throwable $exception) {
+            return $this->failures->unexpected(
+                request: $request,
+                operation: 'premium_plan_update',
+                exception: $exception,
+                message: 'The premium plan could not be updated.',
+                code: 'premium_plan_update_error',
+            );
+        }
 
         return redirect()->route('admin.subscription-management')->with('success', 'Premium plan updated.');
     }
@@ -368,7 +391,17 @@ class SuperAdminController extends Controller
         $actor = $request->user('super_admin');
         abort_unless($actor instanceof SuperAdmin, 403);
 
-        $this->premiumPlans->archive($premiumPlan, $actor, $request);
+        try {
+            $this->premiumPlans->archive($premiumPlan, $actor, $request);
+        } catch (Throwable $exception) {
+            return $this->failures->unexpected(
+                request: $request,
+                operation: 'premium_plan_archive',
+                exception: $exception,
+                message: 'The premium plan could not be archived.',
+                code: 'premium_plan_archive_error',
+            );
+        }
 
         return back()->with('success', 'Premium plan archived.');
     }
@@ -378,7 +411,17 @@ class SuperAdminController extends Controller
         $actor = $request->user('super_admin');
         abort_unless($actor instanceof SuperAdmin, 403);
 
-        $this->premiumPlans->reactivate($premiumPlan, $actor, $request);
+        try {
+            $this->premiumPlans->reactivate($premiumPlan, $actor, $request);
+        } catch (Throwable $exception) {
+            return $this->failures->unexpected(
+                request: $request,
+                operation: 'premium_plan_reactivate',
+                exception: $exception,
+                message: 'The premium plan could not be reactivated.',
+                code: 'premium_plan_reactivate_error',
+            );
+        }
 
         return back()->with('success', 'Premium plan reactivated.');
     }
@@ -445,20 +488,16 @@ class SuperAdminController extends Controller
                 }
 
                 return redirect()->back();
-            } catch (\Exception $e) {
-                \Log::error('Error cancelling subscription', [
-                    'subscription_id' => $id,
-                    'error' => $e->getMessage(),
-                ]);
-
-                if ($request->expectsJson()) {
-                    return response()->json([
-                        'message' => 'Failed to cancel subscription',
-                        'error' => $e->getMessage(),
-                    ], 500);
-                }
-
-                return redirect()->back()->with('error', 'Failed to cancel subscription');
+            } catch (ValidationException $exception) {
+                throw $exception;
+            } catch (Throwable $exception) {
+                return $this->failures->unexpected(
+                    request: $request,
+                    operation: 'subscription_cancel',
+                    exception: $exception,
+                    message: 'Failed to cancel subscription',
+                    code: 'subscription_cancel_error',
+                );
             }
         }
 
@@ -501,20 +540,16 @@ class SuperAdminController extends Controller
                 }
 
                 return redirect()->back()->with('success', 'Subscription upgraded successfully');
-            } catch (\Exception $e) {
-                \Log::error('Error upgrading subscription', [
-                    'subscription_id' => $id,
-                    'error' => $e->getMessage(),
-                ]);
-
-                if ($request->expectsJson()) {
-                    return response()->json([
-                        'message' => 'Failed to upgrade subscription',
-                        'error' => $e->getMessage(),
-                    ], 500);
-                }
-
-                return redirect()->back()->with('error', 'Failed to upgrade subscription');
+            } catch (ValidationException $exception) {
+                throw $exception;
+            } catch (Throwable $exception) {
+                return $this->failures->unexpected(
+                    request: $request,
+                    operation: 'subscription_upgrade',
+                    exception: $exception,
+                    message: 'Failed to upgrade subscription',
+                    code: 'subscription_upgrade_error',
+                );
             }
         }
 
@@ -557,20 +592,16 @@ class SuperAdminController extends Controller
                 }
 
                 return redirect()->back()->with('success', 'Subscription downgraded successfully');
-            } catch (\Exception $e) {
-                \Log::error('Error downgrading subscription', [
-                    'subscription_id' => $id,
-                    'error' => $e->getMessage(),
-                ]);
-
-                if ($request->expectsJson()) {
-                    return response()->json([
-                        'message' => 'Failed to downgrade subscription',
-                        'error' => $e->getMessage(),
-                    ], 500);
-                }
-
-                return redirect()->back()->with('error', 'Failed to downgrade subscription');
+            } catch (ValidationException $exception) {
+                throw $exception;
+            } catch (Throwable $exception) {
+                return $this->failures->unexpected(
+                    request: $request,
+                    operation: 'subscription_downgrade',
+                    exception: $exception,
+                    message: 'Failed to downgrade subscription',
+                    code: 'subscription_downgrade_error',
+                );
             }
         }
 
@@ -886,16 +917,35 @@ class SuperAdminController extends Controller
 
     private function identityMutationFailure(Request $request, Throwable $exception)
     {
-        $status = $exception instanceof AuthorizationException ? 403 : 422;
-        $message = $status === 403
-            ? 'The administrator identity operation is not permitted.'
-            : 'The administrator identity operation could not be completed.';
-
-        if ($request->expectsJson()) {
-            return response()->json(['message' => $message], $status);
+        if ($exception instanceof AuthorizationException) {
+            return $this->failures->unexpected(
+                request: $request,
+                operation: 'privileged_identity',
+                exception: $exception,
+                message: 'The administrator identity operation is not permitted.',
+                code: 'privileged_identity_forbidden',
+                forceJson: $request->expectsJson(),
+                status: 403,
+            );
         }
 
-        return redirect()->back()->withErrors(['error' => $message]);
+        if ($exception instanceof ValidationException) {
+            return $this->failures->validation(
+                request: $request,
+                message: 'The administrator identity operation could not be completed.',
+                code: 'privileged_identity_validation',
+                forceJson: $request->expectsJson(),
+            );
+        }
+
+        return $this->failures->unexpected(
+            request: $request,
+            operation: 'privileged_identity',
+            exception: $exception,
+            message: 'The administrator identity operation could not be completed.',
+            code: 'privileged_identity_error',
+            forceJson: $request->expectsJson(),
+        );
     }
 
     private function runAccountLifecycle(Request $request, callable $action, string $successMessage)
@@ -923,32 +973,53 @@ class SuperAdminController extends Controller
 
             return redirect()->back()->with('success', $successMessage);
         } catch (ModelNotFoundException $exception) {
-            return $this->accountLifecycleFailure($request, 404, 'The requested account was not found.');
+            return $this->failures->notFound(
+                request: $request,
+                message: 'The requested account was not found.',
+                code: 'account_lifecycle_not_found',
+                forceJson: $request->expectsJson() || $request->ajax() || (bool) $request->header('X-Inertia'),
+            );
         } catch (HttpExceptionInterface $exception) {
             $status = $exception->getStatusCode();
-            $message = $status === 409
-                ? $exception->getMessage()
-                : 'The account lifecycle operation could not be completed.';
+            $forceJson = $request->expectsJson() || $request->ajax() || (bool) $request->header('X-Inertia');
+            if ($status === 409) {
+                return $this->failures->conflict(
+                    request: $request,
+                    operation: 'account_lifecycle',
+                    message: 'The account lifecycle operation conflicts with current state.',
+                    code: 'account_lifecycle_conflict',
+                    forceJson: $forceJson,
+                );
+            }
 
-            return $this->accountLifecycleFailure($request, $status, $message);
+            if ($status === 422) {
+                return $this->failures->validation(
+                    request: $request,
+                    message: 'The account lifecycle operation could not be completed.',
+                    code: 'account_lifecycle_validation',
+                    forceJson: $forceJson,
+                );
+            }
+
+            return $this->failures->unexpected(
+                request: $request,
+                operation: 'account_lifecycle',
+                exception: $exception,
+                message: 'The account lifecycle operation could not be completed.',
+                code: 'account_lifecycle_error',
+                forceJson: $forceJson,
+                status: $status >= 400 && $status < 500 ? $status : 500,
+            );
         } catch (Throwable $exception) {
-            report($exception);
-
-            return $this->accountLifecycleFailure($request, 500, 'The account lifecycle operation could not be completed.');
+            return $this->failures->unexpected(
+                request: $request,
+                operation: 'account_lifecycle',
+                exception: $exception,
+                message: 'The account lifecycle operation could not be completed.',
+                code: 'account_lifecycle_error',
+                forceJson: $request->expectsJson() || $request->ajax() || (bool) $request->header('X-Inertia'),
+            );
         }
-    }
-
-    private function accountLifecycleFailure(Request $request, int $status, string $message)
-    {
-        if ($request->expectsJson() || $request->ajax() || $request->header('X-Inertia')) {
-            return response()->json([
-                'success' => false,
-                'message' => $message,
-                'code' => $status === 409 ? 'account_lifecycle_conflict' : 'account_lifecycle_error',
-            ], $status);
-        }
-
-        return redirect()->back()->withErrors(['error' => $message])->setStatusCode($status);
     }
 
     public function suspendShop(AccountSuspensionRequest $request, int $id)
@@ -1125,10 +1196,20 @@ class SuperAdminController extends Controller
                     'admin' => $admin,
                 ];
             });
-        } catch (Throwable) {
-            return back()
-                ->withInput($request->except('password', 'password_confirmation'))
-                ->withErrors(['error' => 'Failed to create the administrator invitation.']);
+        } catch (Throwable $exception) {
+            $response = $this->failures->unexpected(
+                request: $request,
+                operation: 'privileged_invitation_create',
+                exception: $exception,
+                message: 'The administrator invitation could not be created.',
+                code: 'privileged_invitation_create_error',
+            );
+
+            if (! $request->expectsJson()) {
+                $response->withInput($request->except('password', 'password_confirmation'));
+            }
+
+            return $response;
         }
 
         return redirect()->route('admin.admin-management')
@@ -1173,9 +1254,14 @@ class SuperAdminController extends Controller
                     'admin' => $admin,
                 ];
             });
-        } catch (Throwable) {
-            return redirect()->route('admin.admin-management')
-                ->withErrors(['error' => 'The setup invitation could not be resent.']);
+        } catch (Throwable $exception) {
+            return $this->failures->unexpected(
+                request: $request,
+                operation: 'privileged_invitation_resend',
+                exception: $exception,
+                message: 'The setup invitation could not be resent.',
+                code: 'privileged_invitation_resend_error',
+            );
         }
 
         return redirect()->route('admin.admin-management')

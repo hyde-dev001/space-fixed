@@ -7,6 +7,7 @@ use App\Http\Requests\SuperAdmin\DecideSuspensionAppealRequest;
 use App\Models\SuperAdmin;
 use App\Models\SuspensionAppeal;
 use App\Services\SuspensionAppealService;
+use App\Support\PrivilegedFailureResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
@@ -71,16 +72,18 @@ class SuspensionAppealsController extends Controller
         DecideSuspensionAppealRequest $request,
         int $id,
         SuspensionAppealService $appealService,
+        PrivilegedFailureResponse $failures,
     ): mixed {
-        return $this->decide($request, $id, 'approve', $appealService);
+        return $this->decide($request, $id, 'approve', $appealService, $failures);
     }
 
     public function reject(
         DecideSuspensionAppealRequest $request,
         int $id,
         SuspensionAppealService $appealService,
+        PrivilegedFailureResponse $failures,
     ): mixed {
-        return $this->decide($request, $id, 'reject', $appealService);
+        return $this->decide($request, $id, 'reject', $appealService, $failures);
     }
 
     private function decide(
@@ -88,6 +91,7 @@ class SuspensionAppealsController extends Controller
         int $id,
         string $decision,
         SuspensionAppealService $appealService,
+        PrivilegedFailureResponse $failures,
     ): mixed {
         $actor = Auth::guard('super_admin')->user();
         abort_unless($actor instanceof SuperAdmin, 403);
@@ -120,29 +124,44 @@ class SuspensionAppealsController extends Controller
             return back()->with('success', $message);
         } catch (HttpExceptionInterface $exception) {
             $status = $exception->getStatusCode();
-            $message = in_array($status, [409, 422], true)
-                ? $exception->getMessage()
-                : 'The appeal decision could not be completed.';
+            $forceJson = $this->usesApiResponse($request);
+            if ($status === 409) {
+                return $failures->conflict(
+                    request: $request,
+                    operation: 'suspension_appeal',
+                    message: 'The appeal decision conflicts with current state.',
+                    code: 'suspension_appeal_conflict',
+                    forceJson: $forceJson,
+                );
+            }
 
-            return $this->decisionFailure($request, $status, $message);
+            if ($status === 422) {
+                return $failures->validation(
+                    request: $request,
+                    message: 'The appeal decision input is invalid.',
+                    code: 'suspension_appeal_validation',
+                    forceJson: $forceJson,
+                );
+            }
+
+            return $failures->unexpected(
+                request: $request,
+                operation: 'suspension_appeal',
+                exception: $exception,
+                message: 'The appeal decision could not be completed.',
+                code: 'suspension_appeal_error',
+                forceJson: $forceJson,
+            );
         } catch (Throwable $exception) {
-            report($exception);
-
-            return $this->decisionFailure($request, 500, 'The appeal decision could not be completed.');
+            return $failures->unexpected(
+                request: $request,
+                operation: 'suspension_appeal',
+                exception: $exception,
+                message: 'The appeal decision could not be completed.',
+                code: 'suspension_appeal_error',
+                forceJson: $this->usesApiResponse($request),
+            );
         }
-    }
-
-    private function decisionFailure(DecideSuspensionAppealRequest $request, int $status, string $message): mixed
-    {
-        if ($this->usesApiResponse($request)) {
-            return response()->json([
-                'success' => false,
-                'message' => $message,
-                'code' => $status === 409 ? 'suspension_appeal_conflict' : 'suspension_appeal_error',
-            ], $status);
-        }
-
-        return back()->withErrors(['error' => $message])->setStatusCode($status);
     }
 
     private function usesApiResponse(Request $request): bool

@@ -9,6 +9,7 @@ use App\Models\ShopReport;
 use App\Models\ShopReportModerationAction;
 use App\Models\SuperAdmin;
 use App\Services\ShopReportModerationService;
+use App\Support\PrivilegedFailureResponse;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -86,7 +87,12 @@ class ShopReportsController extends Controller
         ]);
     }
 
-    public function action(ModerateShopReportsRequest $request, int $id, ShopReportModerationService $moderation): mixed
+    public function action(
+        ModerateShopReportsRequest $request,
+        int $id,
+        ShopReportModerationService $moderation,
+        PrivilegedFailureResponse $failures,
+    ): mixed
     {
         $admin = Auth::guard('super_admin')->user();
         abort_unless($admin instanceof SuperAdmin, 403);
@@ -133,29 +139,35 @@ class ShopReportsController extends Controller
             return back()->with('success', $message);
         } catch (HttpExceptionInterface $exception) {
             $status = $exception->getStatusCode();
-            $message = in_array($status, [409, 422], true)
-                ? $exception->getMessage()
-                : 'The shop report decision could not be completed.';
+            if ($status === 409) {
+                return $failures->conflict(
+                    request: $request,
+                    operation: 'shop_report',
+                    message: 'The shop report decision conflicts with current state.',
+                    code: 'shop_report_conflict',
+                );
+            }
 
-            return $this->moderationFailure($request, $status, $message);
+            if ($status === 422) {
+                return $failures->validation($request, 'The shop report decision input is invalid.', 'shop_report_validation');
+            }
+
+            return $failures->unexpected(
+                request: $request,
+                operation: 'shop_report',
+                exception: $exception,
+                message: 'The shop report decision could not be completed.',
+                code: 'shop_report_error',
+            );
         } catch (Throwable $exception) {
-            report($exception);
-
-            return $this->moderationFailure($request, 500, 'The shop report decision could not be completed.');
+            return $failures->unexpected(
+                request: $request,
+                operation: 'shop_report',
+                exception: $exception,
+                message: 'The shop report decision could not be completed.',
+                code: 'shop_report_error',
+            );
         }
-    }
-
-    private function moderationFailure(ModerateShopReportsRequest $request, int $status, string $message): mixed
-    {
-        if ($request->expectsJson() || $request->ajax()) {
-            return response()->json([
-                'success' => false,
-                'message' => $message,
-                'code' => $status === 409 ? 'shop_report_conflict' : 'shop_report_error',
-            ], $status);
-        }
-
-        return back()->withErrors(['moderation' => $message])->setStatusCode($status);
     }
 
     private static function formatReport(ShopReport $report): array

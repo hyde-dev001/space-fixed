@@ -833,6 +833,57 @@ class PrivilegedAudit
         );
     }
 
+    public function privilegedCapabilityDenied(
+        Request $request,
+        SuperAdmin $actor,
+        string $capability,
+    ): void {
+        $this->writeSecurity(
+            event: 'privileged_capability_denied',
+            request: $request,
+            actor: $actor,
+            subject: $actor,
+            properties: [
+                'capability' => $capability,
+                'route' => $request->route()?->getName(),
+            ],
+        );
+    }
+
+    public function privilegedWorkflowConflict(
+        Request $request,
+        ?SuperAdmin $actor,
+        string $operation,
+    ): void {
+        $this->writeSecurity(
+            event: 'privileged_workflow_conflict',
+            request: $request,
+            actor: $actor,
+            subject: $actor,
+            properties: [
+                'operation' => $operation,
+                'route' => $request->route()?->getName(),
+            ],
+        );
+    }
+
+    public function privilegedWorkflowFailed(
+        Request $request,
+        ?SuperAdmin $actor,
+        string $operation,
+    ): void {
+        $this->writeSecurity(
+            event: 'privileged_workflow_failed',
+            request: $request,
+            actor: $actor,
+            subject: $actor,
+            properties: [
+                'operation' => $operation,
+                'route' => $request->route()?->getName(),
+            ],
+        );
+    }
+
     /**
      * @param array<string, array{from: mixed, to: mixed}> $changes
      */

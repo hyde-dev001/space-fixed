@@ -9,6 +9,7 @@ use App\Http\Requests\SuperAdmin\FlaggedAccountDecisionRequest;
 use App\Models\ReviewReport;
 use App\Models\SuperAdmin;
 use App\Services\FlaggedAccountModerationService;
+use App\Support\PrivilegedFailureResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
@@ -55,24 +56,27 @@ final class FlaggedAccountsController extends Controller
         FlaggedAccountDecisionRequest $request,
         int $id,
         FlaggedAccountModerationService $moderation,
+        PrivilegedFailureResponse $failures,
     ): JsonResponse {
-        return $this->decide($request, $id, 'mark_reviewed', $moderation);
+        return $this->decide($request, $id, 'mark_reviewed', $moderation, $failures);
     }
 
     public function dismiss(
         FlaggedAccountDecisionRequest $request,
         int $id,
         FlaggedAccountModerationService $moderation,
+        PrivilegedFailureResponse $failures,
     ): JsonResponse {
-        return $this->decide($request, $id, 'dismiss', $moderation);
+        return $this->decide($request, $id, 'dismiss', $moderation, $failures);
     }
 
     public function ban(
         FlaggedAccountDecisionRequest $request,
         int $id,
         FlaggedAccountModerationService $moderation,
+        PrivilegedFailureResponse $failures,
     ): JsonResponse {
-        return $this->decide($request, $id, 'account_suspended', $moderation);
+        return $this->decide($request, $id, 'account_suspended', $moderation, $failures);
     }
 
     private function decide(
@@ -80,6 +84,7 @@ final class FlaggedAccountsController extends Controller
         int $id,
         string $action,
         FlaggedAccountModerationService $moderation,
+        PrivilegedFailureResponse $failures,
     ): JsonResponse {
         $actor = Auth::guard('super_admin')->user();
         abort_unless($actor instanceof SuperAdmin, 403);
@@ -105,23 +110,42 @@ final class FlaggedAccountsController extends Controller
             ]);
         } catch (HttpExceptionInterface $exception) {
             $status = $exception->getStatusCode();
-            $message = in_array($status, [409, 422], true)
-                ? $exception->getMessage()
-                : 'The flagged-account decision could not be completed.';
+            if ($status === 409) {
+                return $failures->conflict(
+                    request: $request,
+                    operation: 'flagged_account',
+                    message: 'The flagged-account decision conflicts with current state.',
+                    code: 'flagged_account_conflict',
+                    forceJson: true,
+                );
+            }
 
-            return response()->json([
-                'success' => false,
-                'message' => $message,
-                'code' => $status === 409 ? 'flagged_account_conflict' : 'flagged_account_error',
-            ], $status);
+            if ($status === 422) {
+                return $failures->validation(
+                    request: $request,
+                    message: 'The flagged-account decision input is invalid.',
+                    code: 'flagged_account_validation',
+                    forceJson: true,
+                );
+            }
+
+            return $failures->unexpected(
+                request: $request,
+                operation: 'flagged_account',
+                exception: $exception,
+                message: 'The flagged-account decision could not be completed.',
+                code: 'flagged_account_error',
+                forceJson: true,
+            );
         } catch (Throwable $exception) {
-            report($exception);
-
-            return response()->json([
-                'success' => false,
-                'message' => 'The flagged-account decision could not be completed.',
-                'code' => 'flagged_account_error',
-            ], 500);
+            return $failures->unexpected(
+                request: $request,
+                operation: 'flagged_account',
+                exception: $exception,
+                message: 'The flagged-account decision could not be completed.',
+                code: 'flagged_account_error',
+                forceJson: true,
+            );
         }
     }
 }

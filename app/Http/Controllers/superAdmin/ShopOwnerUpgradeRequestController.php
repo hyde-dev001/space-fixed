@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\superAdmin\ReviewShopOwnerUpgradeRequest as ReviewRequest;
 use App\Models\ShopOwnerUpgradeRequest;
 use App\Models\ShopOwnerUpgradeRequestDocument;
+use App\Support\PrivilegedFailureResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -88,7 +89,12 @@ final class ShopOwnerUpgradeRequestController extends Controller
         ]);
     }
 
-    public function update(ReviewRequest $request, ShopOwnerUpgradeRequest $upgradeRequest, ReviewShopOwnerUpgradeRequest $review): JsonResponse|Response
+    public function update(
+        ReviewRequest $request,
+        ShopOwnerUpgradeRequest $upgradeRequest,
+        ReviewShopOwnerUpgradeRequest $review,
+        PrivilegedFailureResponse $failures,
+    ): JsonResponse|Response
     {
         $validated = $request->validated();
         $reviewer = Auth::guard('super_admin')->user();
@@ -102,17 +108,22 @@ final class ShopOwnerUpgradeRequestController extends Controller
                 request: $request,
             );
         } catch (ShopOwnerUpgradeReviewConflict $exception) {
-            return $this->conflictResponse($request, $exception->getMessage());
+            return $failures->conflict(
+                request: $request,
+                operation: 'shop_owner_upgrade',
+                message: 'The upgrade request conflicts with current state.',
+                code: 'shop_owner_upgrade_conflict',
+            );
         } catch (ValidationException $exception) {
             throw $exception;
         } catch (Throwable $exception) {
-            report($exception);
-
-            if ($request->expectsJson()) {
-                return response()->json(['message' => 'The upgrade request could not be reviewed. Please try again.'], 500);
-            }
-
-            return back()->withErrors(['review' => 'The upgrade request could not be reviewed. Please try again.']);
+            return $failures->unexpected(
+                request: $request,
+                operation: 'shop_owner_upgrade',
+                exception: $exception,
+                message: 'The upgrade request could not be reviewed. Please try again.',
+                code: 'shop_owner_upgrade_error',
+            );
         }
 
         $status = $result['conflict'] ? 409 : 200;
@@ -147,15 +158,6 @@ final class ShopOwnerUpgradeRequestController extends Controller
         return Storage::disk($disk)->download($path, $filename, [
             'Content-Type' => (string) $document->mime_type,
         ]);
-    }
-
-    private function conflictResponse(Request $request, string $message): JsonResponse|Response
-    {
-        if ($request->expectsJson()) {
-            return response()->json(['success' => false, 'message' => $message], 409);
-        }
-
-        return back()->withErrors(['review' => $message]);
     }
 
     /**
