@@ -181,9 +181,7 @@ interface PageProps {
 
 const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) => {
   // Modal refs for focus trapping
-  const passwordModalRef = useRef<HTMLDivElement | null>(null);
   const viewModalRef = useRef<HTMLDivElement | null>(null);
-  const deactivateModalRef = useRef<HTMLDivElement | null>(null);
   const suspendModalRef = useRef<HTMLDivElement | null>(null);
   const detailsModalRef = useRef<HTMLDivElement | null>(null);
 
@@ -242,9 +240,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
       };
     }, [isOpen, modalRef.current]);
   };
-  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
-  const [isDeactivateModalOpen, setIsDeactivateModalOpen] = useState(false);
   const [isSuspendModalOpen, setIsSuspendModalOpen] = useState(false);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -253,7 +249,6 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
 
   const [filterStatus, setFilterStatus] = useState<'pending' | 'approved' | 'rejected' | 'active' | 'deactivated' | 'suspended' | 'archived'>('active');
   const [searchTerm, setSearchTerm] = useState<string>('');
-  const [deactivateReason, setDeactivateReason] = useState<string>('');
   const [suspendReason, setSuspendReason] = useState<string>('');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(7);
@@ -276,9 +271,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
   const [pagination, setPagination] = useState<any>((initialUsers && (initialUsers as any).meta) || null);
 
   // attach focus traps for each modal
-  useFocusTrap(passwordModalRef, isPasswordModalOpen, () => setIsPasswordModalOpen(false));
   useFocusTrap(viewModalRef, isViewModalOpen, () => setIsViewModalOpen(false));
-  useFocusTrap(deactivateModalRef, isDeactivateModalOpen, () => setIsDeactivateModalOpen(false));
   useFocusTrap(suspendModalRef, isSuspendModalOpen, () => setIsSuspendModalOpen(false));
   useFocusTrap(detailsModalRef, isDetailsModalOpen, () => {
     setIsDetailsModalOpen(false);
@@ -309,92 +302,6 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
     setCurrentPage(1);
   }, [searchTerm, filterStatus]);
 
-  // Handle approve/reject user
-  const handleApproval = async (userId: number, action: 'approve' | 'reject') => {
-    let rejectionReason = '';
-    
-    if (action === 'reject') {
-      const { value } = await Swal.fire({
-        title: 'Reject User?',
-        text: 'Are you sure you want to reject this user registration?',
-        input: 'textarea',
-        inputPlaceholder: 'Enter reason for rejection (optional)',
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#ef4444',
-        cancelButtonColor: '#6b7280',
-        confirmButtonText: 'Yes, reject',
-        cancelButtonText: 'Cancel'
-      });
-
-      if (value === undefined) return; // User cancelled
-      rejectionReason = value || '';
-    } else {
-      const result = await Swal.fire({
-        title: 'Approve User?',
-        text: 'Are you sure you want to approve this user registration?',
-        icon: 'question',
-        showCancelButton: true,
-        confirmButtonColor: '#10b981',
-        cancelButtonColor: '#6b7280',
-        confirmButtonText: 'Yes, approve',
-        cancelButtonText: 'Cancel'
-      });
-
-      if (!result.isConfirmed) return;
-    }
-
-    try {
-      setIsProcessingId(userId);
-      setApiError(null);
-      const formData = new FormData();
-      if (rejectionReason) {
-        formData.append('reason', rejectionReason);
-      }
-
-      const response = await fetch(`/superAdmin/users/${userId}/${action}`, {
-        method: 'POST',
-        headers: {
-          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
-          'Accept': 'application/json',
-        },
-        body: formData,
-      });
-
-      if (response.ok) {
-        setUsers(users.map(user =>
-          user.id === userId
-            ? { ...user, status: action === 'approve' ? 'active' : 'rejected' }
-            : user
-        ));
-        Swal.fire({
-          icon: 'success',
-          title: action === 'approve' ? 'Approved!' : 'Rejected!',
-          text: `User has been ${action}d successfully.`,
-          timer: 2000,
-          showConfirmButton: false
-        });
-      } else {
-        const data = await response.json();
-        Swal.fire({
-          icon: 'error',
-          title: 'Error',
-          text: data.message || `Failed to ${action} user`,
-        });
-      }
-    } catch (error: any) {
-      console.error('Error:', error);
-      setApiError(error?.message || 'An error occurred while processing your request');
-      Swal.fire({
-        icon: 'error',
-        title: 'Error',
-        text: error?.message || 'An error occurred while processing your request',
-      });
-    } finally {
-      setIsProcessingId(null);
-    }
-  };
-
   // Polling: fetch latest users periodically so Shop Owner changes appear without reload
   const fetchUsersList = async () => {
     try {
@@ -421,71 +328,6 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
       if (pollingRef.current) clearInterval(pollingRef.current);
     };
   }, [filterStatus]);
-
-  // Handle deactivate account
-  const handleDeactivate = async () => {
-    if (!selectedUser) return;
-
-    const userToDeactivate = selectedUser; // Capture user before closing modal
-
-    // Close modal first to prevent z-index issues
-    setIsDeactivateModalOpen(false);
-    setSelectedUser(null);
-    setDeactivateReason('');
-
-    // Wait for modal to close before showing SweetAlert
-    setTimeout(async () => {
-      const result = await Swal.fire({
-        title: 'Deactivate Account?',
-        text: `Are you sure you want to deactivate ${userToDeactivate.name}'s account? This action can be reversed later.`,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#ef4444',
-        cancelButtonColor: '#6b7280',
-        confirmButtonText: 'Yes, deactivate',
-        cancelButtonText: 'Cancel',
-        customClass: {
-          popup: 'z-[10000]'
-        }
-      });
-
-      if (result.isConfirmed) {
-        try {
-          setIsProcessingId(userToDeactivate.id);
-          setApiError(null);
-          // simulate server processing if needed (replace with real request)
-          await new Promise((r) => setTimeout(r, 300));
-          setUsers(users.map(user =>
-            user.id === userToDeactivate.id
-              ? { ...user, status: 'deactivated' }
-              : user
-          ));
-
-          // Show success message
-          Swal.fire({
-            icon: 'success',
-            title: 'Account Deactivated!',
-            text: `${userToDeactivate.name}'s account has been deactivated successfully.`,
-            timer: 2000,
-            showConfirmButton: false,
-            customClass: {
-              popup: 'z-[10000]'
-            }
-          });
-        } catch (e: any) {
-          setApiError(e?.message || 'Failed to deactivate account');
-          Swal.fire({ icon: 'error', title: 'Error', text: e?.message || 'Failed to deactivate account' });
-        } finally {
-          setIsProcessingId(null);
-        }
-      }
-    }, 100); // Small delay to ensure modal closes
-  };
-
-  const openDeactivateModal = (user: User) => {
-    setSelectedUser(user);
-    setIsDeactivateModalOpen(true);
-  };
 
   const requestLifecycleReason = async (title: string, text: string, confirmButtonText: string) => {
     const result = await Swal.fire({
@@ -686,20 +528,6 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
     );
   };
 
-  // Handle reset password
-  const handleResetPassword = () => {
-    // In real app, this would send a reset email
-    Swal.fire({
-      icon: 'info',
-      title: 'Password Reset',
-      text: 'A password reset link has been sent to the user\'s email.',
-      timer: 3000,
-      showConfirmButton: false
-    });
-  };
-
-
-
   return (
     <AppLayout>
       <Head title="User Registration Management" />
@@ -876,92 +704,69 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex space-x-2 items-center">
-                        {user.status === 'pending' ? (
-                          <>
-                            <button
-                              onClick={() => handleApproval(user.id, 'approve')}
-                              disabled={isProcessingId === user.id}
-                              className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 transition-colors ${isProcessingId === user.id ? 'opacity-50 cursor-not-allowed' : ''}`}
-                              title="Approve User"
-                            >
-                              <CheckCircleIcon className="h-4 w-4" />
-                            </button>
-                            <button
-                              onClick={() => handleApproval(user.id, 'reject')}
-                              disabled={isProcessingId === user.id}
-                              className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 transition-colors ${isProcessingId === user.id ? 'opacity-50 cursor-not-allowed' : ''}`}
-                              title="Reject User"
-                            >
-                              <AlertIcon className="h-4 w-4" />
-                            </button>
-                          </>
-                        ) : (
+                        <button
+                          onClick={() => {
+                            setSelectedUser(user);
+                            setIsDetailsModalOpen(true);
+                          }}
+                          disabled={isProcessingId === user.id}
+                          className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 transition-colors ${isProcessingId === user.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          title="View Registration Details"
+                        >
+                          <InfoIcon className="h-5 w-5" />
+                        </button>
+
+                        {isArchived ? (
+                          <button
+                            onClick={() => handleRestore(user)}
+                            disabled={isProcessingId === user.id}
+                            className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-purple-600 hover:text-purple-800 dark:text-purple-400 dark:hover:text-purple-300 transition-colors ${isProcessingId === user.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            title="Restore Account"
+                          >
+                            <CheckCircleIcon className="h-4 w-4" />
+                          </button>
+                        ) : accountStatus === 'active' || accountStatus === 'approved' ? (
                           <>
                             <button
                               onClick={() => {
                                 setSelectedUser(user);
-                                setIsDetailsModalOpen(true);
+                                setIsSuspendModalOpen(true);
                               }}
                               disabled={isProcessingId === user.id}
-                              className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 transition-colors ${isProcessingId === user.id ? 'opacity-50 cursor-not-allowed' : ''}`}
-                              title="View Registration Details"
+                              className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-orange-600 hover:text-orange-800 dark:text-orange-400 dark:hover:text-orange-300 transition-colors ${isProcessingId === user.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                              title="Suspend Account"
                             >
-                              <InfoIcon className="h-5 w-5" />
+                              <AlertIcon className="h-5 w-5" />
                             </button>
-
-                            {isArchived ? (
-                              <button
-                                onClick={() => handleRestore(user)}
-                                disabled={isProcessingId === user.id}
-                                className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-purple-600 hover:text-purple-800 dark:text-purple-400 dark:hover:text-purple-300 transition-colors ${isProcessingId === user.id ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                title="Restore Account"
-                              >
-                                <CheckCircleIcon className="h-4 w-4" />
-                              </button>
-                            ) : accountStatus === 'active' || accountStatus === 'approved' ? (
-                              <>
-                                <button
-                                  onClick={() => {
-                                    setSelectedUser(user);
-                                    setIsSuspendModalOpen(true);
-                                  }}
-                                  disabled={isProcessingId === user.id}
-                                  className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-orange-600 hover:text-orange-800 dark:text-orange-400 dark:hover:text-orange-300 transition-colors ${isProcessingId === user.id ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                  title="Suspend Account"
-                                >
-                                  <AlertIcon className="h-5 w-5" />
-                                </button>
-                                <button
-                                  onClick={() => handleArchive(user)}
-                                  disabled={isProcessingId === user.id}
-                                  className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-300 transition-colors ${isProcessingId === user.id ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                  title="Archive Account"
-                                >
-                                  <TrashBinIcon className="h-4 w-4" />
-                                </button>
-                              </>
-                            ) : accountStatus === 'suspended' ? (
-                              <>
-                                <button
-                                  onClick={() => handleReactivate(user)}
-                                  disabled={isProcessingId === user.id}
-                                  className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 transition-colors ${isProcessingId === user.id ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                  title="Reactivate Account"
-                                >
-                                  <CheckCircleIcon className="h-4 w-4" />
-                                </button>
-                                <button
-                                  onClick={() => handleArchive(user)}
-                                  disabled={isProcessingId === user.id}
-                                  className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-300 transition-colors ${isProcessingId === user.id ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                  title="Archive Account"
-                                >
-                                  <TrashBinIcon className="h-4 w-4" />
-                                </button>
-                              </>
-                            ) : null}
+                            <button
+                              onClick={() => handleArchive(user)}
+                              disabled={isProcessingId === user.id}
+                              className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-300 transition-colors ${isProcessingId === user.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                              title="Archive Account"
+                            >
+                              <TrashBinIcon className="h-4 w-4" />
+                            </button>
                           </>
-                        )}
+                        ) : accountStatus === 'suspended' ? (
+                          <>
+                            <button
+                              onClick={() => handleReactivate(user)}
+                              disabled={isProcessingId === user.id}
+                              className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 transition-colors ${isProcessingId === user.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                              title="Reactivate Account"
+                            >
+                              <CheckCircleIcon className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => handleArchive(user)}
+                              disabled={isProcessingId === user.id}
+                              className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-300 transition-colors ${isProcessingId === user.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                              title="Archive Account"
+                            >
+                              <TrashBinIcon className="h-4 w-4" />
+                            </button>
+                          </>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
@@ -1037,64 +842,6 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
             </div>
           )}
         </div>
-
-
-
-        {/* Password Reset Modal */}
-        {isPasswordModalOpen && (
-          <>
-              {/* Backdrop */}
-              <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100000] pointer-events-auto" />
-              {/* Modal */}
-              <div ref={passwordModalRef} tabIndex={-1} className="fixed inset-0 flex items-center justify-center z-[100001] p-4 pointer-events-auto">
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
-                <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-                  Reset Password
-                </h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      User: {selectedUser?.name}
-                    </label>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Email: {selectedUser?.email}
-                    </label>
-                  </div>
-                  <div className="bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700 rounded-md p-4">
-                    <div className="flex">
-                      <AlertIcon className="h-5 w-5 text-yellow-400" />
-                      <div className="ml-3">
-                        <h3 className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
-                          Password Reset Confirmation
-                        </h3>
-                        <div className="mt-2 text-sm text-yellow-700 dark:text-yellow-300">
-                          <p>
-                            This will send a password reset link to the user's email address.
-                            The user will be able to set a new password using the link.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-6 flex justify-end space-x-3">
-                  <Button variant="outline" onClick={() => setIsPasswordModalOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button onClick={() => {
-                    if (selectedUser) {
-                      handleResetPassword();
-                      setIsPasswordModalOpen(false);
-                      setSelectedUser(null);
-                    }
-                  }}>
-                    Send Reset Link
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </>
-        )}
 
         {/* View User Details Modal */}
         {isViewModalOpen && (
@@ -1173,37 +920,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
                       </div>
                     </div>
                     <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-                      {selectedUser.status === 'pending' && (
-                        <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-                          Approval Actions
-                        </h4>
-                      )}
                       <div className="flex justify-between items-center">
-                        {selectedUser.status === 'pending' && (
-                          <div className="flex space-x-3">
-                            <Button
-                              onClick={() => {
-                                handleApproval(selectedUser.id, 'approve');
-                                setIsViewModalOpen(false);
-                              }}
-                              className="bg-green-600 hover:bg-green-700 text-white"
-                            >
-                              <CheckCircleIcon className="h-4 w-4 mr-2" />
-                              Approve
-                            </Button>
-                            <Button
-                              onClick={() => {
-                                handleApproval(selectedUser.id, 'reject');
-                                setIsViewModalOpen(false);
-                              }}
-                              variant="outline"
-                              className="border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900"
-                            >
-                              <AlertIcon className="h-4 w-4 mr-2" />
-                              Reject
-                            </Button>
-                          </div>
-                        )}
                         <Button variant="outline" onClick={() => setIsViewModalOpen(false)}>
                           Close
                         </Button>
@@ -1211,75 +928,6 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
                     </div>
                   </div>
                 )}
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* Deactivate Account Modal */}
-        {isDeactivateModalOpen && (
-          <>
-            {/* Backdrop */}
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100000] pointer-events-auto" />
-            {/* Modal */}
-            <div ref={deactivateModalRef} tabIndex={-1} className="fixed inset-0 flex items-center justify-center z-[100001] p-4 pointer-events-auto">
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
-                <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-                  Deactivate Account
-                </h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      User: {selectedUser?.name}
-                    </label>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Reason for Deactivation
-                    </label>
-                    <select
-                      value={deactivateReason}
-                      onChange={(e) => setDeactivateReason(e.target.value)}
-                      aria-label="Select Reason"
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-                    >
-                      <option value="">Select a reason</option>
-                      <option value="Violation of Terms">Violation of Terms</option>
-                      <option value="Suspicious Activity">Suspicious Activity</option>
-                      <option value="Request by User">Request by User</option>
-                      <option value="Inactivity">Inactivity</option>
-                      <option value="Other">Other</option>
-                    </select>
-                  </div>
-                  <div className="bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700 rounded-md p-4">
-                    <div className="flex">
-                      <AlertIcon className="h-5 w-5 text-red-400" />
-                      <div className="ml-3">
-                        <h3 className="text-sm font-medium text-red-800 dark:text-red-200">
-                          Account Deactivation Warning
-                        </h3>
-                        <div className="mt-2 text-sm text-red-700 dark:text-red-300">
-                          <p>
-                            This action will deactivate the user's account. The user will no longer be able to access the system.
-                            This action can be reversed by reactivating the account.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-6 flex justify-end space-x-3">
-                  <Button variant="outline" onClick={() => setIsDeactivateModalOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={handleDeactivate}
-                    disabled={!deactivateReason}
-                    className="bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Deactivate Account
-                  </Button>
-                </div>
               </div>
             </div>
           </>

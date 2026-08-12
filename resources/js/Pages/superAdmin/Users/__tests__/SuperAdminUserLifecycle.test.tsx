@@ -58,6 +58,44 @@ beforeEach(() => {
 });
 
 describe('SuperAdminUserManagement lifecycle controls', () => {
+  it('keeps legacy registration statuses visible but read-only', () => {
+    render(
+      <SuperAdminUserManagement
+        users={[
+          user({ id: 1, name: 'Pending Customer', status: 'pending', accountStatus: 'pending' }),
+          user({ id: 2, name: 'Rejected Customer', status: 'rejected', accountStatus: 'rejected' }),
+          user({ id: 3, name: 'Deactivated Customer', status: 'deactivated', accountStatus: 'deactivated' }),
+        ]}
+      />
+    );
+
+    for (const status of ['pending', 'rejected', 'deactivated']) {
+      fireEvent.change(screen.getByLabelText('Filter by Status'), { target: { value: status } });
+      expect(screen.getByTitle('View Registration Details')).toBeInTheDocument();
+      expect(screen.queryByTitle('Approve User')).not.toBeInTheDocument();
+      expect(screen.queryByTitle('Reject User')).not.toBeInTheDocument();
+      expect(screen.queryByTitle('Deactivate Account')).not.toBeInTheDocument();
+      expect(screen.queryByText('Reset Password')).not.toBeInTheDocument();
+    }
+
+    expect(fetchMock.mock.calls.some(([url]) => String(url).match(/\/superAdmin\/users\/\d+\/(approve|reject)/))).toBe(false);
+  });
+
+  it('does not expose fake controls inside the pending-user details view', () => {
+    render(
+      <SuperAdminUserManagement
+        users={[user({ status: 'pending', accountStatus: 'pending' })]}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText('Filter by Status'), { target: { value: 'pending' } });
+    fireEvent.click(screen.getByTitle('View Registration Details'));
+
+    expect(screen.queryByRole('button', { name: /^approve$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^reject$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /reset password/i })).not.toBeInTheDocument();
+  });
+
   it('keeps rejected users free of general suspend/activate controls and exposes archived state', () => {
     render(
       <SuperAdminUserManagement
