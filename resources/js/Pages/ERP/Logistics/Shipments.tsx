@@ -135,8 +135,11 @@ export default function Shipments({ children }: React.PropsWithChildren) {
   const canRecordProof = !ownerMode && serverCanRecordProof;
   const canApproveProof = !ownerMode && serverCanApproveProof;
   const [selectedShipmentId, setSelectedShipmentId] = useState<number | null>(null);
+  const [selectedProofUrl, setSelectedProofUrl] = useState<string | null>(null);
   const returnFocusRef = useRef<HTMLButtonElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const proofTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const proofCloseButtonRef = useRef<HTMLButtonElement | null>(null);
   const [selectedRiders, setSelectedRiders] = useState<Record<number, string>>({});
   const [deliverySchedules, setDeliverySchedules] = useState<Record<number, { date: string; window: string }>>({});
   const [assigningLegId, setAssigningLegId] = useState<number | null>(null);
@@ -153,13 +156,26 @@ export default function Shipments({ children }: React.PropsWithChildren) {
 
   const openShipment = (shipmentId: number, trigger: HTMLButtonElement) => {
     returnFocusRef.current = trigger;
+    setSelectedProofUrl(null);
     setSelectedShipmentId(shipmentId);
   };
 
   const closeShipment = () => {
     const trigger = returnFocusRef.current;
+    setSelectedProofUrl(null);
     setSelectedShipmentId(null);
     trigger?.focus();
+  };
+
+  const openProof = (url: string, trigger: HTMLButtonElement) => {
+    proofTriggerRef.current = trigger;
+    setSelectedProofUrl(url);
+  };
+
+  const closeProof = () => {
+    const trigger = proofTriggerRef.current;
+    setSelectedProofUrl(null);
+    window.requestAnimationFrame(() => trigger?.focus());
   };
 
   useEffect(() => {
@@ -168,6 +184,13 @@ export default function Shipments({ children }: React.PropsWithChildren) {
     const frame = window.requestAnimationFrame(() => closeButtonRef.current?.focus());
     return () => window.cancelAnimationFrame(frame);
   }, [selectedShipmentId]);
+
+  useEffect(() => {
+    if (selectedProofUrl === null) return;
+
+    const frame = window.requestAnimationFrame(() => proofCloseButtonRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [selectedProofUrl]);
 
   const updateFilter = (key: keyof ShipmentFilters, value: string) => {
     const next = { ...filters, [key]: value, page: 1 };
@@ -601,17 +624,19 @@ export default function Shipments({ children }: React.PropsWithChildren) {
               </div>
               <Modal
                 isOpen={selected}
-                onClose={closeShipment}
+                onClose={selectedProofUrl ? closeProof : closeShipment}
                 size="6xl"
                 showCloseButton={false}
                 className="m-4 max-h-[calc(100dvh-2rem)] overflow-hidden"
               >
+                <>
                 <div
                   role="dialog"
                   aria-modal="true"
+                  aria-hidden={selectedProofUrl !== null}
                   aria-labelledby={`shipment-${shipment.id}-details-title`}
                   onKeyDown={trapDialogFocus}
-                  className="flex max-h-[min(92dvh,60rem)] flex-col overflow-hidden"
+                  className={selectedProofUrl ? 'hidden' : 'flex max-h-[min(92dvh,60rem)] flex-col overflow-hidden'}
                 >
                   <header className="flex shrink-0 items-start justify-between gap-4 border-b border-gray-200 bg-white px-5 py-4 dark:border-gray-700 dark:bg-gray-800 sm:px-6">
                     <div className="min-w-0">
@@ -810,10 +835,12 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                   {!ownerMode && riderMode && isReturnToShop && returnProof?.review_status === 'pending' && <button type="button" onClick={() => void confirmAct(`/api/logistics/legs/${leg.id}/return-proofs/${returnProof.id}/handoff`, 'Confirm return handoff?', 'Confirm that the parcel was handed to shop staff.')} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">Confirm return handoff</button>}
                                   {riderMode && isReturnToShop && returnProof?.review_status === 'rider_confirmed' && <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">Awaiting shop receipt confirmation</p>}
                                   {!riderMode && leg.proofs?.filter((proof) => ['delivery', 'receive'].includes(proof.handoff_type)).map((proof) => (
-                                    <div key={proof.id} className="flex items-center gap-2">
-                                      {proof.proof_url && <a href={proof.proof_url} target="_blank" rel="noreferrer" aria-label="Open uploaded delivery proof" className="inline-flex items-center gap-2 font-semibold text-blue-700 hover:underline dark:text-blue-300"><img src={proof.proof_url} alt="Uploaded delivery proof" className="h-12 w-12 rounded border border-gray-200 object-cover" /><span>View delivery proof</span></a>}
-                                      {canApproveProof && leg.status === 'awaiting_proof_approval' && proof.review_status === 'pending' && <><button type="button" onClick={() => void confirmAct(`/api/logistics/proofs/${proof.id}/approve`, 'Confirm delivery?', 'This will complete the delivery.')} className="rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white">Confirm delivery</button><button type="button" onClick={() => void rejectProof(proof.id)} className="rounded-lg border border-red-600 px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50">Reject proof</button></>}
-                                      {canApproveProof && isReturnToShop && proof.handoff_type === 'receive' && proof.review_status === 'rider_confirmed' && <button type="button" onClick={() => void confirmAct(`/api/logistics/legs/${leg.id}/return-proofs/${proof.id}/receipt`, 'Confirm return received?', 'Confirm the physical parcel handoff. Item inspection continues in the refund workflow.')} className="rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white">Confirm return received</button>}
+                                    <div key={proof.id} className="space-y-2">
+                                      {proof.proof_url && <div className="relative h-48 w-full overflow-hidden rounded-xl border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-900"><img src={proof.proof_url} alt="Uploaded delivery proof" loading="lazy" className="h-full w-full object-cover" /><div className="absolute inset-0 flex items-center justify-center bg-black/15 transition-colors hover:bg-black/25"><button type="button" aria-label="View delivery proof" onClick={(event) => openProof(proof.proof_url!, event.currentTarget)} className="min-h-11 cursor-pointer rounded-lg bg-black/65 px-4 py-2 text-sm font-semibold text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">View</button></div></div>}
+                                      <div className="flex flex-wrap gap-2">
+                                        {canApproveProof && leg.status === 'awaiting_proof_approval' && proof.review_status === 'pending' && <><button type="button" onClick={() => void confirmAct(`/api/logistics/proofs/${proof.id}/approve`, 'Confirm delivery?', 'This will complete the delivery.')} className="rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white">Confirm delivery</button><button type="button" onClick={() => void rejectProof(proof.id)} className="rounded-lg border border-red-600 px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50">Reject proof</button></>}
+                                        {canApproveProof && isReturnToShop && proof.handoff_type === 'receive' && proof.review_status === 'rider_confirmed' && <button type="button" onClick={() => void confirmAct(`/api/logistics/legs/${leg.id}/return-proofs/${proof.id}/receipt`, 'Confirm return received?', 'Confirm the physical parcel handoff. Item inspection continues in the refund workflow.')} className="rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white">Confirm return received</button>}
+                                      </div>
                                     </div>
                                   ))}
                                   {canReportIssue && (!showOutcomeChoice || deliveryOutcome === 'issue') && (
@@ -936,6 +963,27 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                   </div>
                 </div>
                 </div>
+                {selectedProofUrl && (
+                  <div
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="Delivery proof image"
+                    onKeyDown={trapDialogFocus}
+                    className="relative flex h-[min(88dvh,56rem)] items-center justify-center overflow-hidden rounded-3xl bg-gray-950 p-4 sm:p-8"
+                  >
+                    <button
+                      ref={proofCloseButtonRef}
+                      type="button"
+                      aria-label="Close delivery proof image"
+                      onClick={closeProof}
+                      className="absolute left-4 top-4 z-10 inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-full bg-black/65 text-white backdrop-blur-sm transition-colors hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                    >
+                      <X aria-hidden="true" size={22} />
+                    </button>
+                    <img src={selectedProofUrl} alt="Enlarged delivery proof" className="h-full w-full object-contain" />
+                  </div>
+                )}
+                </>
               </Modal>
             </article>;
           })}
