@@ -15,7 +15,6 @@ use App\Http\Controllers\ShopOwnerAuthController;
 use App\Http\Controllers\ShopOwnerPasswordSetupController;
 use App\Http\Controllers\ShopRegistrationController;
 use App\Http\Controllers\superAdmin\FlaggedAccountsController;
-use App\Http\Controllers\superAdmin\NotificationCommunicationToolsController;
 use App\Http\Controllers\superAdmin\ShopOwnerRegistrationViewController;
 use App\Http\Controllers\superAdmin\ShopOwnerUpgradeRequestController as SuperAdminShopOwnerUpgradeRequestController;
 use App\Http\Controllers\superAdmin\SuperAdminUserManagementController;
@@ -749,7 +748,8 @@ Route::prefix('superAdmin')->name('superAdmin.')->middleware([
     Route::get('/system-monitoring-dashboard', [SystemMonitoringDashboardController::class, 'index'])
         ->middleware('privileged.capability:view_monitoring')
         ->name('system-monitoring-dashboard');
-    Route::get('/notification-communication-tools', [NotificationCommunicationToolsController::class, 'index'])->name('notification-communication-tools');
+    Route::get('/notification-communication-tools', fn () => redirect()->route('admin.notifications'))
+        ->name('notification-communication-tools');
     Route::get('/data-report-access', fn () => redirect()->route('admin.audit'))
         ->middleware('privileged.capability:view_privileged_audit')
         ->name('data-report-access');
@@ -1913,7 +1913,7 @@ Route::middleware([
 
     // Additional admin routes
     Route::get('/notifications', function () {
-        return Inertia::render('superAdmin/Communications/NotificationCommunicationTools');
+        return Inertia::render('superAdmin/Notifications/AdminNotifications');
     })->name('notifications');
     Route::get('/data-reports', fn () => redirect()->route('admin.audit'))
         ->middleware('privileged.capability:view_privileged_audit')
@@ -2653,7 +2653,8 @@ Route::prefix('superAdmin')->name('superAdmin.')->middleware([
     Route::get('/system-monitoring-dashboard', [SystemMonitoringDashboardController::class, 'index'])
         ->middleware('privileged.capability:view_monitoring')
         ->name('system-monitoring-dashboard');
-    Route::get('/notification-communication-tools', [NotificationCommunicationToolsController::class, 'index'])->name('notification-communication-tools');
+    Route::get('/notification-communication-tools', fn () => redirect()->route('admin.notifications'))
+        ->name('notification-communication-tools');
     Route::get('/data-report-access', fn () => redirect()->route('admin.audit'))
         ->middleware('privileged.capability:view_privileged_audit')
         ->name('data-report-access');
