@@ -5,16 +5,17 @@ declare(strict_types=1);
 namespace Tests\Feature\BusinessScaling;
 
 use App\Actions\superAdmin\ReviewShopOwnerUpgradeRequest;
+use App\Enums\PrivilegedDeliveryType;
 use App\Exceptions\ShopOwnerUpgradeReviewConflict;
+use App\Jobs\SendPrivilegedWorkflowMail;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerModule;
 use App\Models\ShopOwnerUpgradeRequest;
 use App\Models\SuperAdmin;
-use App\Notifications\ShopOwnerUpgradeReviewed;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -28,7 +29,7 @@ final class ShopOwnerUpgradeConcurrencyTest extends TestCase
 
         Storage::fake('local');
         Storage::fake('public');
-        Notification::fake();
+        Queue::fake();
     }
 
     public function test_stale_review_models_produce_one_terminal_decision_and_one_audit_set(): void
@@ -47,6 +48,7 @@ final class ShopOwnerUpgradeConcurrencyTest extends TestCase
         $review = app(ReviewShopOwnerUpgradeRequest::class);
 
         $review->handle($firstModel, $firstReviewer, ShopOwnerUpgradeRequest::STATUS_APPROVED);
+        DB::commit();
 
         try {
             $review->handle($staleModel, $secondReviewer, ShopOwnerUpgradeRequest::STATUS_REJECTED, 'Too late.');
@@ -57,18 +59,19 @@ final class ShopOwnerUpgradeConcurrencyTest extends TestCase
 
         $this->assertSame(ShopOwnerUpgradeRequest::STATUS_APPROVED, $request->fresh()->status);
         $this->assertSame('company', $owner->fresh()->registration_type);
-        $this->assertSame(1, DB::table('activity_log')->where('description', 'shop_owner_upgrade_approved')->count());
-        $this->assertGreaterThan(0, DB::table('activity_log')->where('description', 'shop_owner_module_initialized')->count());
-        $this->assertSame(1, Notification::sent($owner, ShopOwnerUpgradeReviewed::class)->count());
+        $this->assertSame(1, DB::table('activity_log')->where('description', 'shop_owner_upgrade_reviewed')->count());
+        $this->assertSame(0, DB::table('activity_log')->where('description', 'shop_owner_module_initialized')->count());
+        Queue::assertPushed(SendPrivilegedWorkflowMail::class, function (SendPrivilegedWorkflowMail $job) use ($owner, $request): bool {
+            return $job->deliveryType === PrivilegedDeliveryType::SHOP_OWNER_UPGRADE_REVIEWED
+                && $job->recipientType === 'shop_owner'
+                && $job->recipientId === $owner->id
+                && $job->businessEventId === 'shop-owner-upgrade-reviewed:'.$request->id;
+        });
 
-        $decisionRows = DB::table('activity_log')->where('description', 'shop_owner_upgrade_approved')->get();
-        $moduleRows = DB::table('activity_log')->where('description', 'shop_owner_module_initialized')->get();
+        $decisionRows = DB::table('activity_log')->where('description', 'shop_owner_upgrade_reviewed')->get();
         $this->assertNotEmpty($decisionRows);
         $correlationId = json_decode((string) $decisionRows->first()->properties, true)['correlation_id'] ?? null;
         $this->assertNotEmpty($correlationId);
-        foreach ($moduleRows as $row) {
-            $this->assertSame($correlationId, json_decode((string) $row->properties, true)['correlation_id'] ?? null);
-        }
     }
 
     public function test_mysql_serializes_simultaneous_submissions(): void

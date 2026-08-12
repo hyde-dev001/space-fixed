@@ -4,16 +4,17 @@ namespace App\Actions\superAdmin;
 
 use App\Actions\ShopOwner\SubmitShopOwnerUpgradeRequest;
 use App\Exceptions\ShopOwnerUpgradeReviewConflict;
+use App\Enums\PrivilegedDeliveryType;
 use App\Models\ShopOwner;
-use App\Models\ShopOwnerModule;
 use App\Models\ShopOwnerUpgradeRequest;
 use App\Models\SuperAdmin;
-use App\Notifications\ShopOwnerUpgradeReviewed;
+use App\Services\PrivilegedAudit;
+use App\Services\PrivilegedMailDispatcher;
 use App\Services\ShopModuleProvisioningService;
 use App\Services\ShopOwnerDocumentRequirementService;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Throwable;
 
@@ -23,6 +24,8 @@ final class ReviewShopOwnerUpgradeRequest
         private readonly ShopModuleProvisioningService $shopModuleProvisioning,
         private readonly ShopOwnerDocumentRequirementService $documentRequirements,
         private readonly SubmitShopOwnerUpgradeRequest $submission,
+        private readonly PrivilegedAudit $audit,
+        private readonly PrivilegedMailDispatcher $privilegedMailDispatcher,
     ) {}
 
     /**
@@ -33,6 +36,7 @@ final class ReviewShopOwnerUpgradeRequest
         SuperAdmin $reviewer,
         string $decision,
         ?string $decisionReason = null,
+        ?Request $request = null,
     ): array {
         $decision = strtolower(trim($decision));
         if (! in_array($decision, [ShopOwnerUpgradeRequest::STATUS_APPROVED, ShopOwnerUpgradeRequest::STATUS_REJECTED], true)) {
@@ -47,8 +51,9 @@ final class ReviewShopOwnerUpgradeRequest
             throw ValidationException::withMessages(['decision_reason' => 'A rejection reason is required.']);
         }
 
-        $correlationId = (string) Str::uuid();
-        $result = DB::transaction(function () use ($upgradeRequest, $reviewer, $decision, $decisionReason, $correlationId): array {
+        $httpRequest = $request ?? Request::create('/admin/business-upgrade-requests', 'PATCH');
+        $correlationId = $this->audit->correlationId($httpRequest);
+        $result = DB::transaction(function () use ($upgradeRequest, $reviewer, $decision, $decisionReason, $httpRequest, $correlationId): array {
             $ownerId = (int) $upgradeRequest->shop_owner_id;
             $owner = ShopOwner::query()->lockForUpdate()->findOrFail($ownerId);
             $lockedRequest = ShopOwnerUpgradeRequest::query()
@@ -72,17 +77,17 @@ final class ReviewShopOwnerUpgradeRequest
                     'reviewed_at' => now(),
                 ]);
 
-                $this->recordDecisionActivity(
-                    request: $lockedRequest,
-                    reviewer: $reviewer,
-                    correlationId: $correlationId,
-                    decision: ShopOwnerUpgradeRequest::STATUS_SUPERSEDED,
+                $this->audit->shopOwnerUpgradeSuperseded(
+                    request: $httpRequest,
+                    actor: $reviewer,
+                    upgradeRequest: $lockedRequest,
                     oldRegistrationType: $this->ownerValue($owner, 'registration_type'),
                     oldBusinessType: $this->ownerValue($owner, 'business_type'),
                     newRegistrationType: $lockedRequest->requested_registration_type,
                     newBusinessType: $lockedRequest->requested_business_type,
                     decisionReason: $lockedRequest->decision_reason,
                 );
+                $this->queueReviewNotification($lockedRequest, $owner, $correlationId);
 
                 return [
                     'request' => $lockedRequest->fresh('documents'),
@@ -111,10 +116,10 @@ final class ReviewShopOwnerUpgradeRequest
                     'reviewed_at' => now(),
                 ]);
 
-                $this->recordDecisionActivity(
-                    request: $lockedRequest,
-                    reviewer: $reviewer,
-                    correlationId: $correlationId,
+                $this->audit->shopOwnerUpgradeReviewed(
+                    request: $httpRequest,
+                    actor: $reviewer,
+                    upgradeRequest: $lockedRequest,
                     decision: ShopOwnerUpgradeRequest::STATUS_REJECTED,
                     oldRegistrationType: $currentRegistrationType,
                     oldBusinessType: $currentBusinessType,
@@ -122,6 +127,7 @@ final class ReviewShopOwnerUpgradeRequest
                     newBusinessType: $currentBusinessType,
                     decisionReason: trim((string) $decisionReason),
                 );
+                $this->queueReviewNotification($lockedRequest, $owner, $correlationId);
 
                 return [
                     'request' => $lockedRequest->fresh('documents'),
@@ -153,7 +159,7 @@ final class ReviewShopOwnerUpgradeRequest
                 ->whereIn('module_key', $postEligibleKeys)
                 ->lockForUpdate()
                 ->get();
-            $createdModules = $this->shopModuleProvisioning->initializeMissing($owner, $newlyEligibleKeys);
+            $this->shopModuleProvisioning->initializeMissing($owner, $newlyEligibleKeys);
 
             $lockedRequest->update([
                 'status' => ShopOwnerUpgradeRequest::STATUS_APPROVED,
@@ -162,29 +168,27 @@ final class ReviewShopOwnerUpgradeRequest
                 'reviewed_at' => now(),
             ]);
 
-            $this->recordDecisionActivity(
-                request: $lockedRequest,
-                reviewer: $reviewer,
-                correlationId: $correlationId,
+            $dormantWarning = $this->hasDormantEmployeePermissionWarning($newlyEligibleKeys);
+            $this->audit->shopOwnerUpgradeReviewed(
+                request: $httpRequest,
+                actor: $reviewer,
+                upgradeRequest: $lockedRequest,
                 decision: ShopOwnerUpgradeRequest::STATUS_APPROVED,
                 oldRegistrationType: $currentRegistrationType,
                 oldBusinessType: $currentBusinessType,
                 newRegistrationType: $owner->registration_type,
                 newBusinessType: $owner->business_type,
                 decisionReason: $decisionReason !== null ? trim($decisionReason) : null,
+                newlyEnabledModuleKeys: $newlyEligibleKeys,
+                dormantEmployeePermissionWarning: $dormantWarning,
             );
-
-            foreach ($createdModules as $module) {
-                $this->recordModuleActivity(
-                    module: $module,
-                    reviewer: $reviewer,
-                    request: $lockedRequest,
-                    owner: $owner,
-                    correlationId: $correlationId,
-                );
-            }
-
-            $dormantWarning = $this->hasDormantEmployeePermissionWarning($newlyEligibleKeys);
+            $this->queueReviewNotification(
+                upgradeRequest: $lockedRequest,
+                owner: $owner,
+                correlationId: $correlationId,
+                newlyEnabledModuleKeys: $newlyEligibleKeys,
+                dormantEmployeePermissionWarning: $dormantWarning,
+            );
 
             return [
                 'request' => $lockedRequest->fresh('documents'),
@@ -196,21 +200,30 @@ final class ReviewShopOwnerUpgradeRequest
             ];
         });
 
-        DB::afterCommit(function () use ($result): void {
-            try {
-                $result['owner']->notify(new ShopOwnerUpgradeReviewed(
-                    upgradeRequest: $result['request'],
-                    decision: $result['decision'],
-                    decisionReason: $result['request']->decision_reason,
-                    newlyEnabledModuleKeys: $result['newly_enabled_module_keys'],
-                    dormantEmployeePermissionWarning: $result['dormant_employee_permission_warning'],
-                ));
-            } catch (Throwable $exception) {
-                report($exception);
-            }
-        });
-
         return $result;
+    }
+
+    private function queueReviewNotification(
+        ShopOwnerUpgradeRequest $upgradeRequest,
+        ShopOwner $owner,
+        string $correlationId,
+        array $newlyEnabledModuleKeys = [],
+        bool $dormantEmployeePermissionWarning = false,
+    ): void {
+        $this->privilegedMailDispatcher->dispatch(
+            type: PrivilegedDeliveryType::SHOP_OWNER_UPGRADE_REVIEWED,
+            businessEventId: 'shop-owner-upgrade-reviewed:'.$upgradeRequest->getKey(),
+            recipientType: 'shop_owner',
+            recipientId: (int) $owner->getKey(),
+            payload: [
+                'upgrade_request_id' => (int) $upgradeRequest->getKey(),
+                'decision' => (string) $upgradeRequest->status,
+                'decision_reason' => $upgradeRequest->decision_reason,
+                'newly_enabled_module_keys' => $newlyEnabledModuleKeys,
+                'dormant_employee_permission_warning' => $dormantEmployeePermissionWarning,
+            ],
+            correlationId: $correlationId,
+        );
     }
 
     private function ownerSnapshotChanged(ShopOwner $owner, ShopOwnerUpgradeRequest $request): bool
@@ -275,61 +288,6 @@ final class ReviewShopOwnerUpgradeRequest
             'procurement',
             'logistics',
         ]) !== [];
-    }
-
-    private function recordDecisionActivity(
-        ShopOwnerUpgradeRequest $request,
-        SuperAdmin $reviewer,
-        string $correlationId,
-        string $decision,
-        string $oldRegistrationType,
-        string $oldBusinessType,
-        string $newRegistrationType,
-        string $newBusinessType,
-        ?string $decisionReason,
-    ): void {
-        activity()
-            ->causedBy($reviewer)
-            ->performedOn($request)
-            ->withProperties([
-                'actor_type' => 'super_admin',
-                'actor_guard' => 'super_admin',
-                'actor_id' => (int) $reviewer->id,
-                'shop_owner_id' => (int) $request->shop_owner_id,
-                'upgrade_request_id' => (int) $request->id,
-                'correlation_id' => $correlationId,
-                'decision' => $decision,
-                'old_registration_type' => $oldRegistrationType,
-                'new_registration_type' => $newRegistrationType,
-                'old_business_type' => $oldBusinessType,
-                'new_business_type' => $newBusinessType,
-                'decision_reason' => $decisionReason,
-            ])
-            ->log('shop_owner_upgrade_'.$decision);
-    }
-
-    private function recordModuleActivity(
-        ShopOwnerModule $module,
-        SuperAdmin $reviewer,
-        ShopOwnerUpgradeRequest $request,
-        ShopOwner $owner,
-        string $correlationId,
-    ): void {
-        activity()
-            ->causedBy($reviewer)
-            ->performedOn($module)
-            ->withProperties([
-                'actor_type' => 'super_admin',
-                'actor_guard' => 'super_admin',
-                'actor_id' => (int) $reviewer->id,
-                'shop_owner_id' => (int) $owner->id,
-                'upgrade_request_id' => (int) $request->id,
-                'correlation_id' => $correlationId,
-                'module_key' => (string) $module->module_key,
-                'old_enabled' => null,
-                'new_enabled' => (bool) $module->enabled,
-            ])
-            ->log('shop_owner_module_initialized');
     }
 
     private function normalizeBusinessType(string $value): string

@@ -99,6 +99,7 @@ final class ShopOwnerUpgradeRequestController extends Controller
                 reviewer: $reviewer,
                 decision: (string) $validated['decision'],
                 decisionReason: $validated['decision_reason'] ?? null,
+                request: $request,
             );
         } catch (ShopOwnerUpgradeReviewConflict $exception) {
             return $this->conflictResponse($request, $exception->getMessage());

@@ -10,11 +10,9 @@ use App\Jobs\SendPrivilegedWorkflowMail;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerUpgradeRequest;
 use App\Models\SuperAdmin;
-use App\Notifications\ShopOwnerUpgradeReviewed;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Tests\Concerns\AuthenticatesPrivilegedUsers;
@@ -31,7 +29,6 @@ final class BusinessScalingNotificationTest extends TestCase
 
         Storage::fake('local');
         Storage::fake('public');
-        Notification::fake();
         Queue::fake();
     }
 
@@ -115,12 +112,13 @@ final class BusinessScalingNotificationTest extends TestCase
             ->patchJson(route('admin.business-upgrade-requests.update', $request), ['decision' => 'rejected', 'decision_reason' => 'Please update the permit.'])
             ->assertOk();
 
-        Notification::assertSentTo($owner, ShopOwnerUpgradeReviewed::class, function (ShopOwnerUpgradeReviewed $notification): bool {
-            $payload = $notification->toArray(null);
-
-            return ! array_key_exists('path', $payload)
-                && ! array_key_exists('employee_id', $payload)
-                && $payload['decision'] === ShopOwnerUpgradeRequest::STATUS_REJECTED;
+        Queue::assertPushed(SendPrivilegedWorkflowMail::class, function (SendPrivilegedWorkflowMail $job) use ($owner): bool {
+            return $job->deliveryType === PrivilegedDeliveryType::SHOP_OWNER_UPGRADE_REVIEWED
+                && $job->recipientType === 'shop_owner'
+                && $job->recipientId === $owner->id
+                && $job->payload['decision'] === ShopOwnerUpgradeRequest::STATUS_REJECTED
+                && ! array_key_exists('path', $job->payload)
+                && ! array_key_exists('employee_id', $job->payload);
         });
 
         foreach ($paths as $path) {

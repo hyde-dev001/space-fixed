@@ -5,8 +5,10 @@ namespace App\Services;
 use App\Models\ShopDocument;
 use App\Models\AccountSuspension;
 use App\Models\ReviewReport;
+use App\Models\PremiumPlan;
 use App\Models\ShopOwner;
 use App\Models\ShopReportModerationAction;
+use App\Models\ShopOwnerUpgradeRequest;
 use App\Models\SuperAdmin;
 use App\Models\SuspensionAppeal;
 use App\Models\User;
@@ -720,6 +722,173 @@ class PrivilegedAudit
                 'decision' => $decision,
                 'reviewer_notes' => $reviewerNotes,
                 'suspension_id' => $suspensionId,
+            ],
+        );
+    }
+
+    /**
+     * @param array<string, array{from: mixed, to: mixed}> $changes
+     */
+    public function premiumPlanCreated(
+        Request $request,
+        SuperAdmin $actor,
+        PremiumPlan $plan,
+        array $changes,
+    ): void {
+        $this->writePremiumPlan('premium_plan_created', $request, $actor, $plan, $changes);
+    }
+
+    /**
+     * @param array<string, array{from: mixed, to: mixed}> $changes
+     */
+    public function premiumPlanUpdated(
+        Request $request,
+        SuperAdmin $actor,
+        PremiumPlan $plan,
+        array $changes,
+    ): void {
+        $this->writePremiumPlan('premium_plan_updated', $request, $actor, $plan, $changes);
+    }
+
+    /**
+     * @param array<string, array{from: mixed, to: mixed}> $changes
+     */
+    public function premiumPlanArchived(
+        Request $request,
+        SuperAdmin $actor,
+        PremiumPlan $plan,
+        array $changes,
+    ): void {
+        $this->writePremiumPlan('premium_plan_archived', $request, $actor, $plan, $changes);
+    }
+
+    /**
+     * @param array<string, array{from: mixed, to: mixed}> $changes
+     */
+    public function premiumPlanReactivated(
+        Request $request,
+        SuperAdmin $actor,
+        PremiumPlan $plan,
+        array $changes,
+    ): void {
+        $this->writePremiumPlan('premium_plan_reactivated', $request, $actor, $plan, $changes);
+    }
+
+    /**
+     * @param array<int, string> $newlyEnabledModuleKeys
+     */
+    public function shopOwnerUpgradeReviewed(
+        Request $request,
+        SuperAdmin $actor,
+        ShopOwnerUpgradeRequest $upgradeRequest,
+        string $decision,
+        string $oldRegistrationType,
+        string $oldBusinessType,
+        string $newRegistrationType,
+        string $newBusinessType,
+        ?string $decisionReason,
+        array $newlyEnabledModuleKeys = [],
+        bool $dormantEmployeePermissionWarning = false,
+    ): void {
+        $this->writeUpgradeReview(
+            event: 'shop_owner_upgrade_reviewed',
+            request: $request,
+            actor: $actor,
+            upgradeRequest: $upgradeRequest,
+            decision: $decision,
+            oldRegistrationType: $oldRegistrationType,
+            oldBusinessType: $oldBusinessType,
+            newRegistrationType: $newRegistrationType,
+            newBusinessType: $newBusinessType,
+            decisionReason: $decisionReason,
+            newlyEnabledModuleKeys: $newlyEnabledModuleKeys,
+            dormantEmployeePermissionWarning: $dormantEmployeePermissionWarning,
+        );
+    }
+
+    /**
+     * @param array<int, string> $newlyEnabledModuleKeys
+     */
+    public function shopOwnerUpgradeSuperseded(
+        Request $request,
+        SuperAdmin $actor,
+        ShopOwnerUpgradeRequest $upgradeRequest,
+        string $oldRegistrationType,
+        string $oldBusinessType,
+        string $newRegistrationType,
+        string $newBusinessType,
+        ?string $decisionReason,
+    ): void {
+        $this->writeUpgradeReview(
+            event: 'shop_owner_upgrade_superseded',
+            request: $request,
+            actor: $actor,
+            upgradeRequest: $upgradeRequest,
+            decision: ShopOwnerUpgradeRequest::STATUS_SUPERSEDED,
+            oldRegistrationType: $oldRegistrationType,
+            oldBusinessType: $oldBusinessType,
+            newRegistrationType: $newRegistrationType,
+            newBusinessType: $newBusinessType,
+            decisionReason: $decisionReason,
+        );
+    }
+
+    /**
+     * @param array<string, array{from: mixed, to: mixed}> $changes
+     */
+    private function writePremiumPlan(
+        string $event,
+        Request $request,
+        SuperAdmin $actor,
+        PremiumPlan $plan,
+        array $changes,
+    ): void {
+        $this->write(
+            event: $event,
+            actor: $actor,
+            subject: $plan,
+            source: 'http',
+            correlationId: $this->correlationId($request),
+            ipAddress: $request->ip(),
+            properties: ['changes' => $changes],
+        );
+    }
+
+    /**
+     * @param array<int, string> $newlyEnabledModuleKeys
+     */
+    private function writeUpgradeReview(
+        string $event,
+        Request $request,
+        SuperAdmin $actor,
+        ShopOwnerUpgradeRequest $upgradeRequest,
+        string $decision,
+        string $oldRegistrationType,
+        string $oldBusinessType,
+        string $newRegistrationType,
+        string $newBusinessType,
+        ?string $decisionReason,
+        array $newlyEnabledModuleKeys = [],
+        bool $dormantEmployeePermissionWarning = false,
+    ): void {
+        $this->write(
+            event: $event,
+            actor: $actor,
+            subject: $upgradeRequest,
+            source: 'http',
+            correlationId: $this->correlationId($request),
+            ipAddress: $request->ip(),
+            properties: [
+                'shop_owner_id' => (int) $upgradeRequest->shop_owner_id,
+                'upgrade_request_id' => (int) $upgradeRequest->getKey(),
+                'decision' => $decision,
+                'old_registration_type' => $oldRegistrationType,
+                'new_registration_type' => $newRegistrationType,
+                'old_business_type' => $oldBusinessType,
+                'new_business_type' => $newBusinessType,
+                'decision_reason' => $decisionReason,
+                'newly_enabled_module_keys' => array_values($newlyEnabledModuleKeys),
+                'dormant_employee_permission_warning' => $dormantEmployeePermissionWarning,
             ],
         );
     }

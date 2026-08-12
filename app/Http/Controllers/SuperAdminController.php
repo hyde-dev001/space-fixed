@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\Privileged\InviteAdministratorRequest;
+use App\Http\Requests\Privileged\StorePremiumPlanRequest;
+use App\Http\Requests\Privileged\UpdatePremiumPlanRequest;
 use App\Http\Requests\SuperAdmin\AccountArchiveRequest;
 use App\Http\Requests\SuperAdmin\AccountReactivationRequest;
 use App\Http\Requests\SuperAdmin\AccountRestoreRequest;
@@ -23,6 +25,7 @@ use App\Services\AdministratorIdentityService;
 use App\Services\AccountLifecycleService;
 use App\Services\PrivilegedMailDispatcher;
 use App\Services\PrivilegedSecurityTokenService;
+use App\Services\PremiumPlanManagementService;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
@@ -42,6 +45,7 @@ class SuperAdminController extends Controller
         private readonly AdministratorIdentityService $identity,
         private readonly AccountLifecycleService $accountLifecycle,
         private readonly PrivilegedMailDispatcher $privilegedMailDispatcher,
+        private readonly PremiumPlanManagementService $premiumPlans,
     ) {
     }
 
@@ -339,73 +343,44 @@ class SuperAdminController extends Controller
         ]);
     }
 
-    public function storePremiumPlan(Request $request)
+    public function storePremiumPlan(StorePremiumPlanRequest $request)
     {
-        $data = $this->validatedPremiumPlan($request);
-        $data['benefits'] = $this->normalizeBenefits($data['benefits']);
-        $data['status'] = 'active';
-        PremiumPlan::create($data);
+        $actor = $request->user('super_admin');
+        abort_unless($actor instanceof SuperAdmin, 403);
+
+        $this->premiumPlans->create($request->validated(), $actor, $request);
 
         return redirect()->route('admin.subscription-management')->with('success', 'Premium plan created.');
     }
 
-    public function updatePremiumPlan(Request $request, PremiumPlan $premiumPlan)
+    public function updatePremiumPlan(UpdatePremiumPlanRequest $request, PremiumPlan $premiumPlan)
     {
-        $data = $this->validatedPremiumPlan($request, $premiumPlan);
-        unset($data['plan_code']);
-        $data['benefits'] = $this->normalizeBenefits($data['benefits']);
-        $oldLimit = $premiumPlan->showroom_slot_limit;
+        $actor = $request->user('super_admin');
+        abort_unless($actor instanceof SuperAdmin, 403);
 
-        DB::transaction(function () use ($premiumPlan, $data, $oldLimit) {
-            $premiumPlan->update($data);
-
-            if ($data['showroom_slot_limit'] > $oldLimit) {
-                ShopOwnerSubscription::query()
-                    ->where('premium_plan_id', $premiumPlan->id)
-                    ->showroomEntitled()
-                    ->where('showroom_slot_limit', '<', $data['showroom_slot_limit'])
-                    ->update(['showroom_slot_limit' => $data['showroom_slot_limit']]);
-            }
-        });
+        $this->premiumPlans->update($premiumPlan, $request->validated(), $actor, $request);
 
         return redirect()->route('admin.subscription-management')->with('success', 'Premium plan updated.');
     }
 
-    public function archivePremiumPlan(PremiumPlan $premiumPlan)
+    public function archivePremiumPlan(Request $request, PremiumPlan $premiumPlan)
     {
-        $premiumPlan->update(['status' => 'inactive']);
+        $actor = $request->user('super_admin');
+        abort_unless($actor instanceof SuperAdmin, 403);
+
+        $this->premiumPlans->archive($premiumPlan, $actor, $request);
 
         return back()->with('success', 'Premium plan archived.');
     }
 
-    public function reactivatePremiumPlan(PremiumPlan $premiumPlan)
+    public function reactivatePremiumPlan(Request $request, PremiumPlan $premiumPlan)
     {
-        $premiumPlan->update(['status' => 'active']);
+        $actor = $request->user('super_admin');
+        abort_unless($actor instanceof SuperAdmin, 403);
+
+        $this->premiumPlans->reactivate($premiumPlan, $actor, $request);
 
         return back()->with('success', 'Premium plan reactivated.');
-    }
-
-    private function validatedPremiumPlan(Request $request, ?PremiumPlan $plan = null): array
-    {
-        return $request->validate([
-            'plan_code' => [$plan ? 'sometimes' : 'required', 'string', 'max:50', Rule::unique('premium_plans', 'plan_code')->ignore($plan?->id)],
-            'name' => ['required', 'string', 'max:120'],
-            'description' => ['nullable', 'string', 'max:1000'],
-            'price' => ['required', 'numeric', 'min:0'],
-            'duration_days' => ['required', 'integer', 'between:1,3650'],
-            'showroom_slot_limit' => ['required', 'integer', 'between:1,150'],
-            'benefits' => ['present', 'array', 'max:20'],
-            'benefits.*' => ['required', 'string', 'max:200'],
-        ]);
-    }
-
-    private function normalizeBenefits(array $benefits): array
-    {
-        return collect($benefits)
-            ->map(fn ($benefit) => trim($benefit))
-            ->filter()
-            ->values()
-            ->all();
     }
 
         /**
