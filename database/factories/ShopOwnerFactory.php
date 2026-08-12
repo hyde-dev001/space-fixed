@@ -44,7 +44,7 @@ class ShopOwnerFactory extends Factory
                 'saturday' => ['open' => '09:00', 'close' => '17:00'],
                 'sunday' => ['open' => '10:00', 'close' => '16:00'],
             ]),
-            'status' => $this->faker->randomElement(['pending', 'approved', 'rejected']),
+            'status' => 'approved',
             'rejection_reason' => $this->faker->optional()->sentence,
         ];
     }
