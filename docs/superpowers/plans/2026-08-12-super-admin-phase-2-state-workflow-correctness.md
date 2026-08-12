@@ -4,11 +4,11 @@
 
 **Goal:** Make registration, user/shop lifecycle, report moderation, flagged-account review, and suspension appeals enforce explicit source states, commit atomically, survive retries and races, preserve historical identity, and deny archived or suspended accounts on their next request.
 
-**Architecture:** Keep the Phase 0 fixed-capability and authoritative-audit foundation and the Phase 1 privileged guard/MFA/session foundation. Add one concrete `AccountSuspension` record for stable suspension identity, nullable current-suspension pointers on users and shops, reversible Eloquent soft deletion for users and shops, and one persisted grouped shop-report decision record so warning strikes are business state rather than inferred from logs. Focused workflow services lock aggregate roots in a canonical order and write the state transition plus mandatory privileged audit in one local transaction. Controllers remain request/response orchestrators; notifications are dispatched only after commit. An idempotent operator command reconciles legacy suspended accounts, appeals, and warning strikes without inventing uncertain history.
+**Architecture:** Keep the Phase 0 fixed-capability and authoritative-audit foundation and the Phase 1 privileged guard/MFA/session foundation. Add one concrete `AccountSuspension` record for stable suspension identity, nullable current-suspension pointers on users and shops, one minimal linked-employee suspension-provenance reference, reversible Eloquent soft deletion for users and shops, and one persisted exact-set shop-report decision record so warning strikes are business state rather than inferred from logs. Focused workflow services lock aggregate roots in a canonical order and write the state transition plus mandatory privileged audit in one local transaction. Controllers remain request/response orchestrators; notifications are dispatched only after commit. An idempotent operator command reconciles legacy suspended accounts, appeals, and warning strikes without inventing uncertain history.
 
 **Tech Stack:** PHP 8.2, Laravel 12, Eloquent, MySQL production profile with SQLite test compatibility, Inertia 2, React 18, TypeScript 5.7, PHPUnit 11, Vitest 3, pnpm.
 
-**Status:** DRAFT / READY FOR REVIEW
+**Status:** APPROVED / FROZEN / READY FOR EXECUTION
 
 ---
 
@@ -105,7 +105,7 @@ all final-Super-Admin and self-management invariants remain enforced
 
 ### Stable suspension identity
 
-Each suspension creates one durable `account_suspensions` row with a stable identity; only its explicit closure metadata is later updated. `users.current_suspension_id` and `shop_owners.current_suspension_id` identify the suspension that currently removes authority. `suspension_appeals.suspension_id` identifies the exact suspension being appealed.
+Each suspension creates one durable `account_suspensions` row with a stable identity; only its explicit closure metadata is later updated. `users.current_suspension_id` and `shop_owners.current_suspension_id` identify the suspension that currently removes authority. `suspension_appeals.suspension_id` identifies the exact suspension being appealed. `employees.privileged_suspension_id` identifies the privileged suspension that currently owns a linked employee's synchronized `suspended` state.
 
 ```text
 account status = suspended
@@ -165,16 +165,37 @@ decide submitted appeal twice the same way -> one terminal decision
 approve appeal after manual reactivation -> 409, account unchanged
 ```
 
+### Exact shop-report decision set
+
+The moderator decides only the bounded report IDs actually presented and reviewed. The request carries `shop_id`, a distinct bounded `report_ids` array, requested outcome, and notes. Canonicalize report IDs as ascending integers and derive a server-owned `decision_key = sha256(shop_id + ':' + comma-joined canonical IDs)`. Persist the key with a unique constraint; do not accept a client decision key. `decision_key` may be null only on reconciled legacy warning actions whose report membership cannot be known; every runtime decision requires it.
+
+Inside the transaction:
+
+```text
+lock shop root
+-> lock exactly the requested report IDs ascending
+-> verify every ID exists, belongs to that shop, and has an expected open state
+-> persist submitted -> under_review -> terminal for that exact set
+-> persist exact sorted IDs + server-derived decision_key on the action
+-> audit
+-> commit
+```
+
+A report submitted after page render is not in the request and remains open for a later review. Retrying the same shop + canonical report set + requested outcome returns the existing decision without duplicate effects. Reusing the same set with a conflicting outcome returns `409`. An omitted, foreign, duplicate, over-limit, or partially terminal set cannot be silently widened or reduced.
+
 ### Linked employee synchronization
 
 The existing user-to-employee association is email-based and not guaranteed unique. Under the user row lock, load non-archived employee matches in ascending ID order with `lockForUpdate()`.
 
 - zero matches: the customer/user transition may proceed;
 - more than one match: reject with `409`; do not guess;
-- one active match during suspension: store its ID and prior status on the suspension, then set it to `suspended` in the same transaction;
+- one active match during suspension: store its ID and prior status on the suspension, then set it to `suspended` and set `employees.privileged_suspension_id` to the new suspension ID in the same transaction;
 - one inactive or terminated match: it is already non-operational and is not rewritten;
 - one already-suspended match not attributable to the current operation: reject with `409`;
-- reactivation restores only the employee recorded by that suspension and only when it is still present, non-archived, and `suspended`; otherwise reject so no partial restoration commits.
+- reactivation restores only the employee recorded by that suspension and only when it is still present, non-archived, `suspended`, and its `privileged_suspension_id` equals that exact suspension ID; restoration clears the marker in the same update;
+- every independent employee-status mutation path must set `privileged_suspension_id = null` in the same update, proving that a later HR/shop-owner action superseded privileged ownership even when the resulting status remains `suspended`.
+
+Repository inspection found no existing employee status version or ownership field, so the nullable suspension reference is the minimum reliable provenance mechanism. Do not infer ownership from `updated_at`, audit text, email, or status alone. If marker attribution cannot be proven, return `409` and roll back the entire account restoration.
 
 Any database or audit failure rolls back account, suspension, appeal, report/flag, and employee changes together. Notification failure occurs after commit and cannot roll back or counterfeit the authoritative outcome.
 
@@ -192,6 +213,10 @@ Any database or audit failure rolls back account, suspension, appeal, report/fla
 
 The existing status middleware must additionally deny a current standalone user whose `users.status != active` and a staff user whose parent shop is archived. Keep the existing `check.suspension` middleware alias/class in Phase 2 to avoid broad route churn; broaden its behavior and tests, and reserve naming cleanup for Phase 7.
 
+### HTTP method safety
+
+No GET or HEAD request may suspend, reactivate, archive, restore, expire an appeal, or otherwise mutate lifecycle state. Legacy GET routes, if retained, are navigation/redirect compatibility only. Every lifecycle mutation uses POST/PATCH/PUT/DELETE with Laravel CSRF protection, authentication, active/MFA checks, the required fixed capability, and recent reauthentication where the contract requires it.
+
 ### Legacy reconciliation without guessing
 
 Migrations are additive DDL only. An idempotent `super-admin:reconcile-phase-two-state` command performs a dry run by default and requires `--apply` to mutate.
@@ -205,9 +230,13 @@ For each user/shop:
 5. leave approved/rejected/expired historical appeals unlinked; they remain evidence and can never mutate an account;
 6. never infer a linked employee or prior employee status for a legacy suspension.
 
-For legacy warning strikes, create one `ShopReportModerationAction` compatibility row per unique legacy `AuditLog` `shop_report_warn` record, keyed by `legacy_audit_log_id`. Do not guess which report rows belonged to that historical decision. Re-running the command creates no duplicates.
+For legacy warning strikes, create one `ShopReportModerationAction` compatibility row per unique legacy `AuditLog` `shop_report_warn` record, keyed by `legacy_audit_log_id`. Within each shop, order reliable warning audits by `created_at ASC, id ASC` and assign `warning_strike_number` as 1, 2, 3, and so on. Do not guess which report rows belonged to that historical decision. Re-running the command creates no duplicates or renumbering.
 
-The command prints counts and ambiguous IDs, uses bounded `chunkById()`, wraps each aggregate in a transaction, and writes a console-source authoritative audit event with one operator-generated operation UUID. It sends no customer/shop notifications.
+For runtime warnings, lock the shop root and assign `max(warning_strike_number) + 1`; a requested warning that reaches the threshold still owns that next strike even when its applied outcome is suspension. Enforce unique `(shop_owner_id, warning_strike_number)` for non-null strike numbers where the MySQL/SQLite schema supports the ordinary nullable composite unique constraint, and prove duplicate numbers cannot commit in the real-database concurrency profile.
+
+The command accepts no operation/correlation UUID input. At command start it generates one UUID server-side, prints it once, and uses that same UUID for every authoritative audit event in that execution. A later run always receives a new server-generated UUID; idempotency comes from domain identities such as account IDs and `legacy_audit_log_id`, never from correlation-ID reuse. The command prints counts and ambiguous IDs, uses bounded `chunkById()`, wraps each aggregate in a transaction, and sends no customer/shop notifications.
+
+A legacy suspended account with no safely attributable live appeal remains suspended with a reconstructed current suspension and no fabricated appeal. The command reports it in a dedicated `operator_review_required` list/count. The rollout runbook requires an operator to review those cases; Phase 2 does not invent an expiry date, fabricate appeal history, or silently issue a replacement appeal.
 
 ### Registration and document boundary
 
@@ -228,16 +257,22 @@ Phase 2 is complete only when:
 - registration approval/rejection/resubmission enforce source state, complete documents, duplicate semantics, one setup token, atomic audit, and post-commit delivery;
 - pending/rejected shops cannot be activated through general reactivation;
 - every new user/shop suspension has one stable current identity and at most one linked appeal;
+- linked-employee restoration requires exact suspension provenance, and independent employee status changes clear that provenance;
 - stale, expired, superseded, terminal, or wrong-suspension appeals cannot mutate an account;
 - manual reactivation and appeal approval close the exact current suspension and synchronize an applicable employee atomically;
 - ambiguous employee email links fail closed and no partial account change commits;
 - report and flagged-account state machines reject invalid transitions and terminal reopening;
 - one grouped report decision creates at most one warning strike, suspension, appeal, audit success, and notification under retry/concurrency;
+- grouped report moderation mutates only the exact bounded IDs reviewed by the moderator; later reports remain open, and exact-set conflicting retries fail;
+- warning strikes are numbered deterministically, uniquely per shop, and cannot duplicate under real-database concurrency;
 - user/shop archival preserves status and relations, disables normal authentication/participation, and restores without silently activating a suspended account;
 - current cookies lose authority on the next request after suspension or archival even if physical session cleanup is delayed;
 - regular Admin may view appeals and manage own security but receives `403` from appeal-decision endpoints; Super Admin may decide valid current appeals;
 - Phase 1 administrator lifecycle and final-Super-Admin protections still pass unchanged;
 - the legacy reconciliation command is dry-run by default, idempotent, bounded, auditable, and reports rather than guesses ambiguous history;
+- every reconciliation execution owns a fresh server-generated correlation UUID and accepts no client/operator UUID input;
+- legacy suspended accounts without a safely attributable appeal are reported for operator review without fabricated appeal history;
+- no GET/HEAD compatibility route mutates lifecycle or expiry state;
 - no user/shop/admin hard-delete route, force-delete call, document-version subsystem, generic workflow engine, or Phase 3+ feature is introduced.
 
 ---
@@ -300,6 +335,7 @@ git commit -m "test: define phase two workflow contracts"
 - Create: `app/Models/ShopReportModerationAction.php`
 - Modify: `app/Models/User.php`
 - Modify: `app/Models/ShopOwner.php`
+- Modify: `app/Models/Employee.php`
 - Modify: `app/Models/SuspensionAppeal.php`
 - Modify: `app/Models/ShopReport.php`
 - Modify: `app/Models/ReviewReport.php`
@@ -312,8 +348,9 @@ Assert:
 
 - `account_suspensions` contains bounded account identity, reason/source, actor/timestamps, end metadata, and optional linked-employee snapshot;
 - users/shops have nullable indexed `current_suspension_id` and `deleted_at`;
+- employees have nullable unique `privileged_suspension_id` provenance referencing the suspension that owns their synchronized status; it is guarded from request mass assignment and only the suspension service may assign a non-null value;
 - appeals have nullable unique `suspension_id`, nullable reviewer ID, and a status column that accepts `superseded` while preserving all existing values;
-- `shop_report_moderation_actions` stores shop, actor, requested/applied action, notes, report IDs, optional strike number, source, and unique nullable legacy audit ID;
+- `shop_report_moderation_actions` stores shop, actor, requested/applied action, exact sorted report IDs, a unique server-derived decision key, optional strike number, source, and unique nullable legacy audit ID;
 - model casts, hidden/fillable boundaries, relations, and `SoftDeletes` behave as intended;
 - rollback order drops foreign keys before referenced tables;
 - fresh migration and rollback work on SQLite, with a documented MySQL migration check later.
@@ -326,16 +363,18 @@ Use Artisan-generated migrations. Keep DDL separate from reconciliation DML. Use
 account_suspensions(account_type, account_id, ended_at)
 suspension_appeals(suspension_id unique nullable)
 shop_report_moderation_actions(shop_owner_id, created_at)
-shop_report_moderation_actions(shop_owner_id, warning_strike_number)
+shop_report_moderation_actions(decision_key unique nullable for legacy only)
+shop_report_moderation_actions(shop_owner_id, warning_strike_number unique nullable)
 users(current_suspension_id, deleted_at)
 shop_owners(current_suspension_id, deleted_at)
+employees(privileged_suspension_id unique nullable)
 ```
 
 Change `suspension_appeals.status` from the deployed enum to a bounded string only as needed to support `superseded` portably. Preserve existing values/defaults. Do not change `review_reports.status`.
 
 - [ ] **Step 3: Add the two concrete domain models and relations**
 
-`AccountSuspension` owns explicit helpers/scopes for current/closed state and validates supported account types through constants or an enum local to this domain. `User` and `ShopOwner` add `SoftDeletes`, `currentSuspension()`, and suspension history relations. `SuspensionAppeal` belongs to a suspension and reviewer. `ShopReportModerationAction` is the warning/decision source of truth.
+`AccountSuspension` owns explicit helpers/scopes for current/closed state and validates supported account types through constants or an enum local to this domain. `User` and `ShopOwner` add `SoftDeletes`, `currentSuspension()`, and suspension history relations. `Employee` adds the nullable privileged-suspension provenance relation. `SuspensionAppeal` belongs to a suspension and reviewer. `ShopReportModerationAction` is the exact-set decision/warning source of truth and derives no identity from client input.
 
 Do not add interfaces, repositories, morph maps, observers, or model methods that perform multi-row workflows.
 
@@ -373,19 +412,22 @@ Cover:
 
 - dry run makes no database changes and prints proposed counts;
 - suspended account with no appeal receives one legacy suspension/current pointer with no invented reason;
+- suspended account with no safely attributable live appeal is listed as `operator_review_required` and receives no fabricated appeal;
 - suspended account with exactly one live appeal links it;
 - multiple live appeals become superseded and are reported, not arbitrarily selected;
 - operational account live appeals become superseded;
 - expired appeals become expired before attribution;
 - terminal historical appeals remain unchanged and unlinked;
-- each legacy warning audit becomes one compatibility moderation-action row;
+- each legacy warning audit becomes one compatibility moderation-action row numbered deterministically by shop, `created_at ASC, id ASC`;
+- duplicate `(shop_owner_id, warning_strike_number)` values cannot be produced;
 - a second `--apply` run produces zero additional rows/audits;
+- the command exposes no correlation/operation UUID input option and each execution prints one newly server-generated UUID;
 - chunk boundaries do not skip modified records;
 - command failure in one aggregate rolls back that aggregate and exits non-zero with its ID.
 
 - [ ] **Step 2: Implement bounded dry-run/apply behavior**
 
-Use `chunkById()` and one transaction per account or warning-audit chunk. Lock each account before rechecking. Require an operation UUID (generate server-side when omitted, print it once) and use it for console-source audit correlation. The dry run must use read-only queries and never simulate by opening then rolling back transactions that could trigger observers or external work.
+Use `chunkById()` and one transaction per account or warning-audit chunk. Lock each account before rechecking. Accept no operation/correlation UUID argument; generate it server-side at command start, print it once, and use it for all audit events from that execution. The dry run must use read-only queries and never simulate by opening then rolling back transactions that could trigger observers or external work.
 
 - [ ] **Step 3: Extend `PrivilegedAudit` narrowly**
 
@@ -397,7 +439,7 @@ legacy_appeal_superseded
 legacy_warning_strike_reconciled
 ```
 
-Properties contain only aggregate IDs, prior/new status, ambiguity count, and operation UUID. Do not record appeal tokens, recipient email, private paths, or copied legacy payloads.
+Properties contain only aggregate IDs, prior/new status, ambiguity/operator-review count, and the server-generated operation UUID. Do not record appeal tokens, recipient email, private paths, or copied legacy payloads.
 
 - [ ] **Step 4: Verify idempotency and output**
 
@@ -489,8 +531,16 @@ git commit -m "feat: enforce registration decision states"
 - Modify: `app/Services/PrivilegedAudit.php`
 - Modify: `app/Http/Controllers/SuperAdminController.php`
 - Modify: `app/Http/Middleware/CheckEmployeeSuspension.php`
+- Modify: `app/Models/Employee.php`
+- Modify: `app/Repositories/HR/EmployeeRepository.php`
+- Modify: `app/Http/Controllers/EmployeeController.php`
+- Modify: `app/Http/Controllers/Erp/HR/EmployeeController.php`
+- Modify: `app/Http/Controllers/Erp/HR/SuspensionRequestController.php`
+- Modify: `app/Http/Controllers/Erp/Manager/SuspensionApprovalController.php`
+- Modify: `app/Http/Controllers/ShopOwner/SuspensionFinalApprovalController.php`
 - Modify: `routes/web.php`
 - Create: `tests/Feature/SuperAdmin/AccountLifecycleWorkflowTest.php`
+- Create: `tests/Feature/SuperAdmin/EmployeeSuspensionProvenanceTest.php`
 - Modify: `tests/Feature/Auth/SuspensionSessionEnforcementTest.php`
 - Modify: `tests/Feature/SuperAdmin/HardDeleteContainmentTest.php`
 
@@ -503,6 +553,8 @@ Cover both `User` and `ShopOwner`:
 - one stable suspension/current pointer/appeal;
 - identical retries and conflicting transitions;
 - zero, unique-active, inactive/terminated, already-suspended, missing-on-restore, and ambiguous linked employees;
+- exact linked-employee provenance marker creation, matching restoration/clear, and `409` on missing/mismatched attribution;
+- every existing independent employee suspend/activate/inactivate workflow clears privileged provenance in the same status update, including model/repository, legacy employee controller, ERP HR, manager approval, and shop-owner final approval paths;
 - rollback when employee or mandatory audit write fails;
 - manual reactivation closes exact suspension and supersedes its live appeal;
 - archive/restore preserve status and representative relations;
@@ -514,11 +566,13 @@ Cover both `User` and `ShopOwner`:
 
 - [ ] **Step 2: Implement a transaction-neutral suspension primitive**
 
-`AccountSuspensionService` operates only on caller-supplied locked account rows and owns the bounded invariants for creating/closing `AccountSuspension`, setting/clearing current pointers, creating/superseding the linked appeal, and synchronizing the uniquely resolved employee. Document in method names/PHPDoc that callers must hold the aggregate transaction/lock; do not expose these methods directly to controllers.
+`AccountSuspensionService` operates only on caller-supplied locked account rows and owns the bounded invariants for creating/closing `AccountSuspension`, setting/clearing current pointers, creating/superseding the linked appeal, and synchronizing the uniquely resolved employee. When it suspends an active linked employee, use trusted model assignment (not request mass assignment) to set `privileged_suspension_id` to the new suspension ID. Restore only on exact employee ID + suspended status + marker match, and clear the marker atomically. Document in method names/PHPDoc that callers must hold the aggregate transaction/lock; do not expose these methods directly to controllers.
 
 - [ ] **Step 3: Implement direct lifecycle transactions**
 
 `AccountLifecycleService` resolves explicit user/shop types, begins the transaction, locks the root, calls the suspension primitive, applies archive/restore with `delete()`/`restore()`, and writes one mandatory allowlisted audit event. It must never call `forceDelete()`, delete relations, or swallow exceptions.
+
+Update every repository/controller/model path found by the Employee status-writer inventory so an employee status change outside `AccountSuspensionService` includes `privileged_suspension_id => null`. Keep those changes surgical; do not refactor the surrounding HR approval workflows in Phase 2. A final `rg` verification in Task 11 must catch newly missed writers.
 
 Use events:
 
@@ -531,7 +585,7 @@ Include suspension ID and source/target state; redact private paths and bearer v
 
 - [ ] **Step 4: Keep controllers and routes explicit**
 
-Retain existing suspend/activate route names as safe GET/mutation compatibility where necessary, but make the canonical mutation names/actions `suspend`, `reactivate`, `archive`, and `restore`. Add archive/restore routes with:
+Retain existing mutation route names only where caller compatibility requires them, but make canonical actions `suspend`, `reactivate`, `archive`, and `restore`. Any legacy GET is redirect/navigation-only and must never call a lifecycle service or write state. Add archive/restore mutation routes with:
 
 ```text
 super_admin.auth
@@ -557,11 +611,11 @@ Use generic account-unavailable messages/codes that do not disclose private mode
 - [ ] **Step 6: Verify and commit**
 
 ```powershell
-php artisan test tests/Feature/SuperAdmin/AccountLifecycleWorkflowTest.php tests/Feature/Auth/SuspensionSessionEnforcementTest.php tests/Feature/SuperAdmin/HardDeleteContainmentTest.php
+php artisan test tests/Feature/SuperAdmin/AccountLifecycleWorkflowTest.php tests/Feature/SuperAdmin/EmployeeSuspensionProvenanceTest.php tests/Feature/Auth/SuspensionSessionEnforcementTest.php tests/Feature/SuperAdmin/HardDeleteContainmentTest.php
 php artisan route:list --path=admin/users --except-vendor
 php artisan route:list --path=admin/shops --except-vendor
 git diff --check
-git add -- app/Http/Requests/SuperAdmin app/Services/AccountSuspensionService.php app/Services/AccountLifecycleService.php app/Services/SuspensionAppealService.php app/Services/PrivilegedAudit.php app/Http/Controllers/SuperAdminController.php app/Http/Middleware/CheckEmployeeSuspension.php routes/web.php tests/Feature/SuperAdmin/AccountLifecycleWorkflowTest.php tests/Feature/Auth/SuspensionSessionEnforcementTest.php tests/Feature/SuperAdmin/HardDeleteContainmentTest.php
+git add -- app/Http/Requests/SuperAdmin app/Services/AccountSuspensionService.php app/Services/AccountLifecycleService.php app/Services/SuspensionAppealService.php app/Services/PrivilegedAudit.php app/Http/Controllers/SuperAdminController.php app/Http/Middleware/CheckEmployeeSuspension.php app/Models/Employee.php app/Repositories/HR/EmployeeRepository.php app/Http/Controllers/EmployeeController.php app/Http/Controllers/Erp/HR/EmployeeController.php app/Http/Controllers/Erp/HR/SuspensionRequestController.php app/Http/Controllers/Erp/Manager/SuspensionApprovalController.php app/Http/Controllers/ShopOwner/SuspensionFinalApprovalController.php routes/web.php tests/Feature/SuperAdmin/AccountLifecycleWorkflowTest.php tests/Feature/SuperAdmin/EmployeeSuspensionProvenanceTest.php tests/Feature/Auth/SuspensionSessionEnforcementTest.php tests/Feature/SuperAdmin/HardDeleteContainmentTest.php
 git commit -m "feat: enforce account lifecycle invariants"
 ```
 
@@ -583,24 +637,30 @@ git commit -m "feat: enforce account lifecycle invariants"
 
 Cover deterministic lock order, submitted/under-review to terminal transitions, terminal reopening denial, grouped report IDs, required suspension notes, one action row, warning numbers 1/2/3, third warning applying suspension, one suspension/appeal, retries with no duplicate effect, new reports after a prior decision forming a new group, rollback on audit/suspension failure, and delivery only after commit.
 
+Add the exact-set race explicitly: render IDs `[10, 11, 12]`, insert open report `13` before mutation, submit `[10, 11, 12]`, and prove `13` remains open. Test duplicate/foreign/empty/more-than-100 IDs as `422/409` without mutation, a same-set/same-outcome retry as idempotent, and a same-set/conflicting-outcome retry as `409`. Assert `decision_key` is server-derived and cannot be supplied by the client.
+
 - [ ] **Step 2: Implement the grouped workflow service**
+
+`ModerateShopReportsRequest` requires `report_ids` as an array with 1-100 distinct integer IDs, allowlists the outcome, bounds notes, and prohibits `decision_key`. Ownership/state validation remains under the service transaction because request-time `exists` checks cannot establish the locked decision contract.
 
 Inside one transaction:
 
 1. lock shop root;
-2. select open report IDs and lock rows ascending;
-3. revalidate each status and persist the valid `submitted -> under_review -> terminal` sequence (a newly submitted row may enter review and receive the grouped terminal decision in the same transaction, but code must not write a direct submitted-to-terminal jump);
-4. count persisted warning actions, including reconciled legacy rows;
-5. create one moderation action with exact report IDs and requested/applied outcome;
-6. for suspension, call the locked suspension primitive without opening a nested transaction;
-7. write one mandatory privileged audit event;
-8. commit, then send one warning or suspension notification when applied.
+2. canonicalize the route-bound shop ID plus the request's distinct `report_ids` (1-100), derive the server-owned decision key, and check for an existing exact-set decision;
+3. lock exactly those report IDs ascending--never a transaction-time query for all open reports;
+4. verify every requested row exists, belongs to the route-bound shop, and has an expected state; never silently add, drop, or substitute an ID;
+5. persist the valid `submitted -> under_review -> terminal` sequence (a submitted row may enter review and receive the terminal decision in the same transaction, but code must not write a direct submitted-to-terminal jump);
+6. assign runtime warning number as the locked shop's current maximum plus one, including a threshold warning whose applied outcome becomes suspension;
+7. create one moderation action with the exact sorted IDs, unique decision key, warning number where applicable, and requested/applied outcome;
+8. for suspension, call the locked suspension primitive without opening a nested transaction;
+9. write one mandatory privileged audit event;
+10. commit, then send one warning or suspension notification when applied.
 
-An identical retry after the same group is terminal returns the latest matching action. If new open rows exist, they are a new decision group. Never use `AuditLog` as the strike counter after reconciliation.
+An identical exact-set retry returns the existing matching action even though its reports are now terminal; the same decision key with another outcome returns `409`. Reports absent from the request remain open and form a later decision set. The ordinary nullable composite unique constraint on `(shop_owner_id, warning_strike_number)` is the database defense against duplicate non-null strike numbers; the shop-root lock is the runtime concurrency owner. Never use `AuditLog` as the strike counter after reconciliation.
 
 - [ ] **Step 3: Thin the controller and update the read model**
 
-Inject the service, use the Form Request, and derive warning counts from `ShopReportModerationAction`. Eager load/select bounded columns and paginate or preserve the current bounded response only if measurements confirm it is safe; broad scaling work remains Phase 8.
+Inject the service, use the Form Request, and derive warning counts from `ShopReportModerationAction`. The read model supplies the exact actionable open IDs the moderator is shown; the UI submits those IDs unchanged, with a maximum of 100 per decision. A newly submitted ID is not appended client-side or server-side. Eager load/select bounded columns and paginate or preserve the current bounded response only if measurements confirm it is safe; broad scaling work remains Phase 8.
 
 - [ ] **Step 4: Align UI behavior**
 
@@ -776,7 +836,7 @@ Require:
 - current database backup and tested restore procedure;
 - maintenance window for additive migration + reconciliation;
 - production DB engine/version captured and migration rehearsed on a copy;
-- counts of users/shops by status, live/terminal appeals, duplicate live appeals, legacy warning audits, ambiguous employee emails, and candidate archives;
+- counts of users/shops by status, live/terminal appeals, duplicate live appeals, suspended accounts with no safely attributable appeal, legacy warning audits, ambiguous employee emails, and candidate archives;
 - queue/mail health and failed-job visibility;
 - stop on migration failure, duplicate current references, unresolved command failure, ambiguous employees on a requested transition, failing invariant tests, or count drift not explained by the dry run.
 
@@ -788,7 +848,7 @@ enter maintenance
 -> run migration/status checks
 -> run reconciliation dry run and save output
 -> review ambiguous IDs/counts
--> run reconciliation --apply with recorded operation UUID
+-> run reconciliation --apply; command generates/prints the operation UUID
 -> rerun dry run; expect zero pending changes
 -> run focused state/invariant tests against deployment profile
 -> verify route/schedule inventory and queue worker
@@ -804,6 +864,7 @@ No irreversible cleanup or legacy hard delete occurs in this rollout.
 - after Phase 2 suspension/action rows exist, prefer a forward corrective migration; never erase suspension, appeal, moderation, or audit evidence to force rollback;
 - restoring a database backup also requires restoring matching application code and invalidating affected sessions;
 - reconciliation can be rerun safely; ambiguity requires operator review, not SQL guesswork;
+- `operator_review_required` legacy suspensions without a safely attributable live appeal remain without a fabricated appeal; the operator reviews each case and uses an existing authorized lifecycle decision rather than inventing tokens, expiry, or history;
 - if notifications fail after commit, retry delivery operationally without replaying the state mutation.
 
 - [ ] **Step 4: Verify named commands/routes**
@@ -835,7 +896,7 @@ git commit -m "docs: add phase two workflow rollout runbook"
 - [ ] **Step 1: Run the focused backend Phase 2 suite**
 
 ```powershell
-php artisan test tests/Feature/SuperAdmin/PhaseTwoBaselineContractTest.php tests/Feature/SuperAdmin/PhaseTwoSchemaTest.php tests/Feature/SuperAdmin/PhaseTwoStateReconciliationTest.php tests/Feature/SuperAdmin/RegistrationDecisionWorkflowTest.php tests/Feature/SuperAdmin/AccountLifecycleWorkflowTest.php tests/Feature/SuperAdmin/ShopReportModerationInvariantTest.php tests/Feature/SuperAdmin/FlaggedAccountWorkflowTest.php tests/Feature/SuperAdmin/SuspensionAppealInvariantTest.php tests/Feature/Auth/SuspensionSessionEnforcementTest.php tests/Feature/Reports/ShopAndCustomerReportFlowTest.php tests/Feature/SuspensionAppeals/SuspensionAppealFlowTest.php
+php artisan test tests/Feature/SuperAdmin/PhaseTwoBaselineContractTest.php tests/Feature/SuperAdmin/PhaseTwoSchemaTest.php tests/Feature/SuperAdmin/PhaseTwoStateReconciliationTest.php tests/Feature/SuperAdmin/RegistrationDecisionWorkflowTest.php tests/Feature/SuperAdmin/AccountLifecycleWorkflowTest.php tests/Feature/SuperAdmin/EmployeeSuspensionProvenanceTest.php tests/Feature/SuperAdmin/ShopReportModerationInvariantTest.php tests/Feature/SuperAdmin/FlaggedAccountWorkflowTest.php tests/Feature/SuperAdmin/SuspensionAppealInvariantTest.php tests/Feature/Auth/SuspensionSessionEnforcementTest.php tests/Feature/Reports/ShopAndCustomerReportFlowTest.php tests/Feature/SuspensionAppeals/SuspensionAppealFlowTest.php
 ```
 
 Expected: PASS, zero failures.
@@ -849,13 +910,15 @@ Cover:
 ```text
 two simultaneous registration approvals
 two simultaneous direct suspensions
-two simultaneous warning decisions on one open set
+two simultaneous warning decisions on one exact report set
+new report arrival after render but before exact-set decision
 flag suspension racing direct suspension
 appeal approval racing manual reactivation
 archive racing suspension/reactivation
+independent employee suspension racing linked-account restoration
 ```
 
-Exactly one valid terminal result may commit; there must be one token/decision/strike/current suspension/appeal/audit/notification as applicable. If the CI environment cannot run the MySQL profile, record the exact blocker and require it before production rollout.
+Exactly one valid terminal result may commit; there must be one token/decision/unique strike number/current suspension/appeal/audit/notification as applicable. A report absent from the submitted exact set remains open, and an employee whose provenance marker was cleared cannot be restored by the old account suspension. If the CI environment cannot run the MySQL profile, record the exact blocker and require it before production rollout.
 
 - [ ] **Step 3: Run Phase 0/1 and adjacent regression suites**
 
@@ -892,8 +955,10 @@ Record exact pass/fail/skipped counts. Do not weaken Phase 2 assertions for pre-
 ```powershell
 rg -n "forceDelete|->delete\(|destroy\(|onDelete\('cascade'\)|cascadeOnDelete" app routes database/migrations -g "*.php"
 rg -n "status.*(approved|active|suspended|rejected|banned)|current_suspension_id|suspension_id" app/Http/Controllers app/Services -g "*.php"
+rg -n "Employee|employee|employees" app -g "*.php" | rg "status|suspend|activate|inactive|terminated"
 rg -n "AuditLog::|activity\(|PrivilegedAudit" app/Http/Controllers/superAdmin app/Http/Controllers/SuperAdminController.php app/Services -g "*.php"
 rg -n "Mail::|->notify\(" app/Http/Controllers/superAdmin app/Http/Controllers/SuperAdminController.php app/Services -g "*.php"
+rg -n "Route::(get|match|any).*?(suspend|activate|reactivate|archive|restore|expire)" routes -g "*.php"
 ```
 
 Expected:
@@ -903,6 +968,9 @@ Expected:
 - changed privileged workflows do not write legacy `AuditLog` as their authoritative outcome;
 - notifications occur after transaction commit and no delivery catch hides a state/audit failure;
 - no general activation path can approve pending/rejected shops;
+- every independent employee status writer clears `privileged_suspension_id`, while only `AccountSuspensionService` assigns it;
+- every report mutation uses the submitted exact ID set and a server-derived decision key; warning numbers have a per-shop database uniqueness defense;
+- compatibility GET/HEAD routes are navigation-only and call no mutation service;
 - no GET route expires or otherwise mutates appeals.
 
 - [ ] **Step 7: Perform browser verification for both roles**
@@ -928,13 +996,13 @@ Screenshots are QA evidence only. Verify server responses and database state, no
 
 Record:
 
-1. **simplify/ponytail:** one suspension model, one grouped report-decision model, concrete services, no workflow engine/repository/interface-with-one-implementation, and no Phase 6+ subsystem;
+1. **simplify/ponytail:** one suspension model, one exact-set report-decision model, one nullable employee provenance reference, concrete services, no workflow engine/new repository/interface-with-one-implementation, and no Phase 6+ subsystem;
 2. **standards review:** Form Requests, constructor injection, explicit route middleware, Eloquent relations/casts, additive migrations, canonical row locks, bounded commands, eager loading, and after-commit delivery follow repository conventions;
 3. **spec review:** every Phase 2 acceptance criterion maps to a passing test, deployment command, or browser check;
 4. **TypeScript clean-code review:** changed TSX has typed props/results, no new `any`, focused state, accessible dialogs, and no duplicated response parsing where an existing helper exists;
 5. **code splitting:** N/A unless measured bundle evidence shows a changed management page is genuinely heavy; do not split these controls speculatively;
 6. **gauge improvements:** record before/after counts for unsafe source-state mutations, workflows with stable suspension identity, workflows with transactional audit, archive-capable hard-delete alternatives, and duplicate-effects under concurrency;
-7. **security review:** verify authorization, recent reauthentication, CSRF, input bounds, soft-delete/auth-provider behavior, stale-session denial, fail-closed employee ambiguity, canonical locks, audit redaction, private-document regression, no bearer leakage, and no hard-delete/cascade execution;
+7. **security review:** verify authorization, recent reauthentication, CSRF, exact report-ID bounds/ownership, soft-delete/auth-provider behavior, stale-session denial, fail-closed employee ambiguity/provenance, server-owned correlation/decision identities, canonical locks, audit redaction, private-document regression, GET non-mutation, no bearer leakage, and no hard-delete/cascade execution;
 8. **reuse/dead-code:** reuse Phase 0 audit/private-document and Phase 1 capability/reauth/session helpers; remove only direct mutation/audit code made obsolete by Phase 2;
 9. **verification-before-completion:** no pass/completion claim without fresh command output.
 
@@ -952,14 +1020,15 @@ Attach to the handoff:
 - exact focused/full backend, frontend, build, audit, route, schedule, migration, and browser results;
 - MySQL concurrency evidence for approval, suspension, warning, appeal/reactivation, and archive races;
 - migration rehearsal and rollback/forward-recovery evidence for the production DB engine;
-- reconciliation dry-run/apply/second-dry-run output, operation UUID, counts, and unresolved ambiguous IDs;
+- reconciliation dry-run/apply/second-dry-run output, freshly server-generated operation UUIDs, counts, unresolved ambiguous IDs, and operator-review-required no-appeal cases;
 - database evidence that every suspended account has the intended current pointer and linked appeals cannot cross suspension identity;
-- evidence that one grouped report decision creates one warning strike and one suspension/appeal at threshold;
+- evidence that one exact-set report decision excludes later arrivals, creates one uniquely numbered warning strike, and creates one suspension/appeal at threshold;
 - evidence that archive preserves representative relations/status and removes authority on the next request;
-- evidence that a linked-employee failure rolls back the whole transition;
+- evidence that a linked-employee failure or missing/mismatched provenance rolls back the whole transition and that independent employee status writes clear provenance;
 - route evidence that archive/restore require capability + recent reauthentication and appeal decisions remain Super-Admin-only;
 - audit evidence that each committed changed workflow has one authoritative allowlisted event without private paths/tokens;
 - confirmation that notification failure cannot rewrite committed state and duplicate retries do not fan out again;
+- route evidence that GET/HEAD compatibility is navigation-only and cannot mutate lifecycle/expiry state;
 - confirmation that administrator archival, document versioning/expiry/DTI-SEC split, billing, and generic workflow infrastructure were not introduced;
 - any skipped deployment/browser/concurrency check with exact blocker and owner.
 
