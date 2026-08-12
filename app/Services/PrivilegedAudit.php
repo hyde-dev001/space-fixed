@@ -16,9 +16,59 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
+use Spatie\Activitylog\Models\Activity;
 
 class PrivilegedAudit
 {
+    /**
+     * Persist a normalized historical event produced by the allowlisted
+     * legacy mapper. The record is written directly so provenance and the
+     * original timestamp are part of the same insert.
+     *
+     * @param array<string, mixed> $record
+     */
+    public function importLegacy(array $record): void
+    {
+        $actor = $record['actor'] ?? null;
+        $subject = $record['subject'] ?? null;
+        $event = $record['event'] ?? null;
+        $properties = $record['properties'] ?? null;
+        $legacySource = $record['legacy_source'] ?? null;
+        $legacyId = $record['legacy_id'] ?? null;
+
+        if (! $actor instanceof SuperAdmin || ! $subject instanceof Model) {
+            throw new InvalidArgumentException('A historical privileged event requires valid actor and subject models.');
+        }
+
+        if (! is_string($event) || $event === '' || ! is_array($properties)) {
+            throw new InvalidArgumentException('A historical privileged event requires normalized event data.');
+        }
+
+        if ($legacySource !== 'audit_logs' || ! is_int($legacyId) || $legacyId < 1) {
+            throw new InvalidArgumentException('A historical privileged event requires audit-log provenance.');
+        }
+
+        $correlationId = $properties['correlation_id'] ?? null;
+        if (! is_string($correlationId) || ! Str::isUuid($correlationId)) {
+            throw new InvalidArgumentException('A historical privileged event requires a UUID correlation ID.');
+        }
+
+        Activity::query()->create([
+            'log_name' => 'privileged',
+            'description' => $event,
+            'event' => $event,
+            'subject_type' => $subject->getMorphClass(),
+            'subject_id' => (int) $subject->getKey(),
+            'causer_type' => $actor->getMorphClass(),
+            'causer_id' => (int) $actor->getKey(),
+            'properties' => $properties,
+            'legacy_source' => $legacySource,
+            'legacy_id' => $legacyId,
+            'created_at' => $record['created_at'] ?? null,
+            'updated_at' => $record['updated_at'] ?? ($record['created_at'] ?? null),
+        ]);
+    }
+
     public function privilegedBootstrapCreated(SuperAdmin $admin, string $correlationId): void
     {
         $this->writeConsoleSecurity(

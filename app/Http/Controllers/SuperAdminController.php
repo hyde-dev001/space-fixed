@@ -19,7 +19,6 @@ use App\Models\ShopOwner;
 use App\Models\PremiumPlan;
 use App\Models\ShopOwnerSubscription;
 use App\Models\User;
-use App\Models\AuditLog;
 use App\Services\PrivilegedAudit;
 use App\Services\AdministratorIdentityService;
 use App\Services\AccountLifecycleService;
@@ -1093,50 +1092,6 @@ class SuperAdminController extends Controller
     public function showFlaggedAccounts(): Response
     {
         return Inertia::render('superAdmin/Users/FlaggedAccounts');
-    }
-
-    /**
-     * Approve shop owner registration
-     */
-    public function approveShopOwner(Request $request, $id)
-    {
-        try {
-            $shop = ShopOwner::findOrFail($id);
-
-            $shop->update([
-                'status' => 'approved',
-            ]);
-
-            // Audit log approval action
-            AuditLog::create([
-                'shop_owner_id' => $shop->id,
-                'actor_user_id' => auth('super_admin')->id(),
-                'action' => 'shop_owner_approved',
-                'target_type' => 'shop_owner',
-                'target_id' => $shop->id,
-                'metadata' => [
-                    'email' => $shop->email,
-                    'business_name' => $shop->business_name ?? null,
-                ],
-            ]);
-
-            return back()->with('success', 'Shop owner approved successfully');
-        } catch (\Exception $e) {
-            return back()->withErrors(['error' => 'Failed to approve shop owner']);
-        }
-    }
-
-    /**
-     * Reject shop owner registration
-     */
-    public function rejectShopOwner(Request $request, $id)
-    {
-        $request->validate([
-            'reason' => 'required|string'
-        ]);
-
-        // TODO: Implement rejection logic
-        return back()->with('success', 'Shop owner rejected successfully');
     }
 
     /**
