@@ -513,9 +513,13 @@ it('opens a completed delivery proof in an in-page image modal and restores focu
   expect(screen.queryByRole('dialog', { name: 'Shipment 1 delivery details' })).not.toBeInTheDocument();
   expect(screen.getByAltText('Enlarged delivery proof'))
     .toHaveAttribute('src', '/api/logistics/proofs/17/file');
-  expect(screen.getByAltText('Enlarged delivery proof')).toHaveClass('object-contain');
+  expect(screen.getByAltText('Enlarged delivery proof')).toHaveClass('max-h-full', 'max-w-full', 'object-contain');
   const close = screen.getByRole('button', { name: 'Close delivery proof image' });
-  expect(close).toHaveClass('left-4', 'top-4');
+  const viewer = screen.getByRole('dialog', { name: 'Delivery proof image' });
+  expect(viewer).toHaveClass('h-[min(88dvh,56rem)]');
+  expect(viewer).not.toHaveClass('bg-gray-950', 'rounded-3xl', 'p-4', 'sm:p-8');
+  expect(close).toHaveClass('right-4', 'top-4', 'bg-transparent');
+  expect(close).not.toHaveClass('bg-black/65', 'backdrop-blur-sm');
   await waitFor(() => expect(document.activeElement).toBe(close));
 
   fireEvent.click(close);
