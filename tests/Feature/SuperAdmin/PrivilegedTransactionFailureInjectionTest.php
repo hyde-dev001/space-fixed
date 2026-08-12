@@ -90,6 +90,27 @@ final class PrivilegedTransactionFailureInjectionTest extends TestCase
         Queue::assertNothingPushed();
     }
 
+    public function test_registration_rejection_audit_failure_rolls_back_documents_and_returns_safe_correlation_response(): void
+    {
+        $admin = $this->phaseTwoAdmin();
+        $owner = $this->pendingRegistrationWithRequiredDocuments();
+        $originalRejectionReason = $owner->rejection_reason;
+        $secret = 'registration rejection audit secret';
+        $this->injectAuditFailure('shopRegistrationRejected', $secret);
+
+        $response = $this->actingAsCompletedPrivileged($admin)
+            ->postJson(route('admin.shop-owner-reject', $owner), [
+                'rejection_reason' => 'Failure injection rejection',
+            ]);
+
+        $this->assertSafeFailure($response, 'shop_registration_rejection_error', 'shop_registration', $secret);
+        $this->assertSame('pending', $owner->fresh()->getRawOriginal('status'));
+        $this->assertSame($originalRejectionReason, $owner->fresh()->rejection_reason);
+        $this->assertSame(0, ShopDocument::query()->where('shop_owner_id', $owner->id)->where('status', 'rejected')->count());
+        $this->assertNoSuccessAudit('shop_registration_rejected');
+        Queue::assertNothingPushed();
+    }
+
     public function test_account_suspension_audit_failure_rolls_back_suspension_identity_and_appeal(): void
     {
         $admin = $this->phaseTwoSuperAdmin();

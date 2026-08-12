@@ -62,7 +62,7 @@ class ShopOwnerRegistrationViewController extends Controller
         ]);
     }
 
-    public function approve(Request $request, $id, PrivilegedFailureResponse $failures)
+    public function approve(Request $request, $id, ?PrivilegedFailureResponse $failures = null)
     {
         $actor = $request->user('super_admin');
         abort_unless($actor instanceof SuperAdmin, 403);
@@ -74,7 +74,7 @@ class ShopOwnerRegistrationViewController extends Controller
         } catch (ValidationException $exception) {
             throw $exception;
         } catch (Throwable $exception) {
-            return $failures->unexpected(
+            return ($failures ?? app(PrivilegedFailureResponse::class))->unexpected(
                 request: $request,
                 operation: 'shop_registration',
                 exception: $exception,
@@ -101,7 +101,7 @@ class ShopOwnerRegistrationViewController extends Controller
             : 'Shop owner registration was already approved.');
     }
 
-    public function reject(RejectShopOwnerRegistrationRequest $request, $id)
+    public function reject(RejectShopOwnerRegistrationRequest $request, $id, ?PrivilegedFailureResponse $failures = null)
     {
         $actor = $request->user('super_admin');
         abort_unless($actor instanceof SuperAdmin, 403);
@@ -115,6 +115,17 @@ class ShopOwnerRegistrationViewController extends Controller
             );
         } catch (ConflictHttpException $exception) {
             return $this->conflictResponse($request, $exception->getMessage());
+        } catch (ValidationException $exception) {
+            throw $exception;
+        } catch (Throwable $exception) {
+            return ($failures ?? app(PrivilegedFailureResponse::class))->unexpected(
+                request: $request,
+                operation: 'shop_registration',
+                exception: $exception,
+                message: 'The shop owner registration could not be rejected.',
+                code: 'shop_registration_rejection_error',
+                forceJson: $request->expectsJson() || $request->ajax() || (bool) $request->header('X-Inertia'),
+            );
         }
 
         // If this is an XHR/JSON request (e.g., fetch), return JSON.

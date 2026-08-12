@@ -16,6 +16,7 @@ use Illuminate\Http\Request;
 use Illuminate\Session\ArraySessionHandler;
 use Illuminate\Session\Store;
 use Illuminate\Support\Facades\DB;
+use Mockery;
 use Tests\Concerns\AuthenticatesPrivilegedUsers;
 use Tests\TestCase;
 
@@ -210,14 +211,16 @@ final class AdministratorIdentityLifecycleTest extends TestCase
         $oldVersion = (int) $target->security_version;
         $this->actingAsCompletedPrivileged($actor);
         $this->markRecentlyReauthenticated($actor);
-        $this->mock(\App\Services\PrivilegedAudit::class, function ($mock): void {
-            $mock->shouldReceive('privilegedAdministratorSuspended')
-                ->once()
-                ->andThrow(new \RuntimeException('audit unavailable'));
-        });
+        $audit = Mockery::mock(\App\Services\PrivilegedAudit::class)->makePartial();
+        $audit->shouldReceive('privilegedAdministratorSuspended')
+            ->once()
+            ->andThrow(new \RuntimeException('audit unavailable'));
+        $this->instance(\App\Services\PrivilegedAudit::class, $audit);
 
         $this->postJson("/admin/admins/{$target->id}/suspend")
-            ->assertUnprocessable();
+            ->assertStatus(500)
+            ->assertJsonPath('code', 'privileged_identity_error')
+            ->assertJsonPath('success', false);
 
         self::assertSame(SuperAdmin::STATUS_ACTIVE, $target->fresh()?->status);
         self::assertSame($oldVersion, (int) $target->fresh()?->security_version);
