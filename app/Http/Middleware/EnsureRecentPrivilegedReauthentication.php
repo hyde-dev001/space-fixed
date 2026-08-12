@@ -34,6 +34,8 @@ final class EnsureRecentPrivilegedReauthentication
                 return response()->json(['message' => 'Recent reauthentication required.'], Response::HTTP_LOCKED);
             }
 
+            $request->session()->put('privileged_reauth_intended', $request->getPathInfo());
+
             return redirect('/admin/reauthenticate');
         }
 

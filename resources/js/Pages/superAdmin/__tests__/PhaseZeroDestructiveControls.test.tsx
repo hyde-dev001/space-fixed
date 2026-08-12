@@ -11,6 +11,7 @@ const { deleteMock, getMock, postMock } = vi.hoisted(() => ({
 }));
 
 vi.mock('@inertiajs/react', () => ({
+  Head: () => null,
   Link: ({ children, ...props }: { children?: React.ReactNode; [key: string]: unknown }) => (
     <a {...props}>{children}</a>
   ),
@@ -69,6 +70,41 @@ describe('Phase 0 destructive-control containment', () => {
     expect(screen.queryByTitle(/delete/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/permanently delete/i)).not.toBeInTheDocument();
     expect(deleteMock).not.toHaveBeenCalled();
+  });
+
+  it('renders canonical MFA/setup state and only lifecycle actions backed by the server', () => {
+    render(
+      <AdminManagement
+        admins={[
+          {
+            id: 11,
+            firstName: 'Grace',
+            lastName: 'Hopper',
+            email: 'grace@example.test',
+            role: 'admin',
+            status: 'active',
+            mfa_complete: true,
+            recovery_code_count: 0,
+          },
+          {
+            id: 12,
+            firstName: 'Linus',
+            lastName: 'Torvalds',
+            email: 'linus@example.test',
+            role: 'admin',
+            status: 'pending_setup',
+            mfa_complete: false,
+            recovery_code_count: 0,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText('MFA enabled')).toBeInTheDocument();
+    expect(screen.getByText('MFA setup required')).toBeInTheDocument();
+    expect(screen.getAllByText('0 recovery codes remaining')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: /resend setup/i })).toBeInTheDocument();
+    expect(screen.queryByText(/bypass|disable mfa|hard delete|permanently delete/i)).not.toBeInTheDocument();
   });
 
   it('removes permanent shop deletion controls while retaining suspension', () => {

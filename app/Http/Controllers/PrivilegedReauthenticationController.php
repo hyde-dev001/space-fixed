@@ -35,7 +35,9 @@ final class PrivilegedReauthenticationController extends Controller
         }
 
         return Inertia::render('superAdmin/Auth/PrivilegedReauthenticate', [
-            'intended' => $this->safeDestination($request->query('intended')),
+            'intended' => $this->safeDestination(
+                $request->query('intended') ?? $request->session()->pull('privileged_reauth_intended'),
+            ),
         ]);
     }
 

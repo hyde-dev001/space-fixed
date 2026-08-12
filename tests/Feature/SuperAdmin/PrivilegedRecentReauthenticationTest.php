@@ -8,6 +8,8 @@ use App\Models\PrivilegedSession;
 use App\Models\SuperAdmin;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Route;
+use Inertia\Testing\AssertableInertia as Assert;
 use PragmaRX\Google2FA\Google2FA;
 use Tests\Concerns\AuthenticatesPrivilegedUsers;
 use Tests\TestCase;
@@ -16,6 +18,15 @@ final class PrivilegedRecentReauthenticationTest extends TestCase
 {
     use AuthenticatesPrivilegedUsers;
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Route::middleware(['web', 'super_admin.auth', 'privileged.active', 'privileged.mfa', 'privileged.recent'])
+            ->get('/admin/__tests/privileged-reauth', static fn () => response()->json(['ok' => true]))
+            ->name('tests.privileged.reauth.recent');
+    }
 
     protected function tearDown(): void
     {
@@ -173,6 +184,23 @@ final class PrivilegedRecentReauthenticationTest extends TestCase
         ])->assertStatus(423);
         self::assertNull(session('privileged_reauthenticated_at'));
         self::assertNull(session('privileged_reauthenticated_security_version'));
+    }
+
+    public function test_recent_middleware_preserves_a_safe_destination_for_deliberate_retry(): void
+    {
+        $admin = SuperAdmin::factory()->mfaEnrolled()->create();
+        $this->actingAsCompletedPrivileged($admin);
+
+        $this->get('/admin/__tests/privileged-reauth')->assertRedirect('/admin/reauthenticate');
+        self::assertSame('/admin/__tests/privileged-reauth', session('privileged_reauth_intended'));
+
+        $reauthenticationPage = $this->get('/admin/reauthenticate');
+        self::assertSame(200, $reauthenticationPage->status(), $reauthenticationPage->getContent());
+        $reauthenticationPage->assertInertia(fn (Assert $page) => $page
+            ->component('superAdmin/Auth/PrivilegedReauthenticate')
+            ->where('intended', '/admin/__tests/privileged-reauth'));
+
+        self::assertNull(session('privileged_reauth_intended'));
     }
 
     public function test_reauthentication_audit_failure_rolls_back_totp_consumption_and_grant(): void

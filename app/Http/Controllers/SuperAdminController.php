@@ -64,6 +64,10 @@ class SuperAdminController extends Controller
                     'role' => $admin->role,
                     'email' => $admin->email,
                     'status' => $admin->status,
+                    'mfa_complete' => $admin->hasCompletedMfaSetup(),
+                    'recovery_code_count' => is_array($admin->mfa_recovery_codes)
+                        ? count($admin->mfa_recovery_codes)
+                        : 0,
                     'createdAt' => $admin->created_at->format('Y-m-d H:i:s'),
                     'lastLogin' => $admin->last_login ? $admin->last_login->format('Y-m-d H:i:s') : null,
                 ];
