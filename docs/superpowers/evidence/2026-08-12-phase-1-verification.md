@@ -41,11 +41,11 @@ Result: 3,689 modules transformed; build completed successfully. Generated `publ
 
 ## Broader repository gates
 
-- `composer test` reached the Composer 300-second process timeout. A direct `php artisan test --compact` rerun completed with exit code 0: 38,017 assertions, 1 skipped, and 1,588 existing warnings.
+- `composer test` reached the Composer 300-second process timeout. A direct `php artisan test --compact` rerun completed with exit code 0: 38,017 assertions, 1 skipped, and 1,588 existing warnings. The same full suite completed successfully after the dependency remediation.
 - The full frontend suite completed with 78 passing files and 479 passing tests, but 1 file/3 tests failed in the unrelated `resources/js/utils/__tests__/pageTheme.test.ts`. Each failure was `localStorage.clear is not a function`; the Node runtime also reported an invalid `--localstorage-file` argument. Rerunning the isolated file with a valid process-local Node storage file reproduced the same runtime issue. No Phase 1 test failed.
-- `composer audit` reached Packagist when run with network approval and exited 1 after reporting 40 advisories affecting 14 packages. Notable locked versions include Guzzle 7.10.0, Laravel 12.26.4, CommonMark 2.7.1, and Spatie Media Library 11.18.2. Dependency remediation is outside the Phase 1 implementation scope and must be completed or explicitly accepted before production rollout.
+- The initial `composer audit --locked` reported 40 advisories affecting 14 packages. A targeted update with existing constraints resolved them: Guzzle 7.15.3, Guzzle PSR-7 2.13.0, Laravel 12.66.0, CommonMark 2.10.0, PHPUnit 11.5.56, PsySH 0.12.24, Spatie Media Library 11.23.5, and Symfony 7.4.x security releases. Final `composer audit --locked --no-ansi` exited 0 with `No security vulnerability advisories found.` Only `composer.lock` changed in the source tree; project scripts were disabled during the update.
 - `php artisan help super-admin:bootstrap` and the admin route inventory completed successfully. `php artisan queue:failed` and `php artisan migrate:status` could not run because `database/database.sqlite` is absent in this worktree. No database file was created.
 - The route and secret-boundary inspections completed. The privileged setup/reset mail links use fragment bearers; no Phase 1 UI persistence or raw secret logging path was introduced.
-- `git diff --check` passed and the worktree was clean after verification.
+- `composer validate --strict --no-check-publish --no-ansi` and `git diff --check` passed. The worktree contained only the intended `composer.lock` and evidence-document updates before the final documentation commit.
 
-The scoped Phase 1 implementation gates are green. The full-suite localStorage harness issue and dependency advisories are recorded as separate follow-up release blockers rather than being hidden or weakening Phase 1 assertions.
+The scoped Phase 1 implementation gates are green. The full-suite localStorage harness issue remains a separate frontend test-environment follow-up; the Composer security advisories have been resolved in the updated lockfile.
