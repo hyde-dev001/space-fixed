@@ -6,12 +6,30 @@ namespace Tests\Feature\BusinessScaling;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Routing\Route;
+use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Route as RouteFacade;
 use Tests\TestCase;
 
 final class ShopModuleRouteCoverageTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_session_starts_before_authentication_on_inventory_api_routes(): void
+    {
+        $route = RouteFacade::getRoutes()->getByName('inventory.items.index');
+
+        $this->assertInstanceOf(Route::class, $route);
+
+        $middleware = app('router')->gatherRouteMiddleware($route);
+        $sessionIndex = array_search(StartSession::class, $middleware, true);
+        $authIndex = collect($middleware)->search(
+            static fn (string $value): bool => str_contains($value, 'Authenticate:user'),
+        );
+
+        $this->assertNotFalse($sessionIndex);
+        $this->assertNotFalse($authIndex);
+        $this->assertLessThan($authIndex, $sessionIndex);
+    }
 
     public function test_every_authoritative_route_entry_is_loaded_and_has_a_complete_schema(): void
     {

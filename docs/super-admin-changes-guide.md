@@ -389,6 +389,7 @@ Run reconciliation commands in dry-run/preview mode first where supported and ke
 Before declaring the module production-ready, verify and record:
 
 - production `APP_URL`, HTTPS origin, stable `APP_KEY`, and time synchronization;
+- `SANCTUM_STATEFUL_DOMAINS` includes the deployed browser host when the variable is explicitly configured;
 - scheduler host/process and exactly one effective shop-document reminder schedule;
 - `withoutOverlapping` lock-store suitability;
 - shared atomic cache before adding `onOneServer()` to the shop reminder schedule;
@@ -433,7 +434,7 @@ Do not bypass lifecycle checks, manually change registration status, or partiall
 | Existing cookie stops working | Check administrator status, security version, MFA stage, and privileged-session registry; next-request denial is expected after a security change. |
 | Setup/reset email is missing | Inspect queue worker and failed jobs; resend through the supported flow. Never expose the bearer token. |
 | Initial Super Admin setup says the link is invalid after password submission | Deploy the current setup controller, run `php artisan optimize:clear` and `php artisan config:cache`, issue a fresh setup link, and use it once in a clean browser session. If it persists, inspect `storage/logs/laravel*.log` for `Privileged setup authorization missing from session` or `Privileged setup password completion failed`; share only the correlation ID and exception class. |
-| Customer, staff, or owner appears logged out during navigation | Confirm the deployment includes guard-isolated lifecycle middleware and the matching frontend build. Rebuild caches and restart PHP workers, then retry in a private window. An invalid guard may be removed, but it must not invalidate another valid guard in the same session. |
+| Customer, staff, or owner appears logged out during navigation | Confirm the deployment includes guard-isolated lifecycle middleware and Laravel's cookie/session middleware before authentication. Verify `APP_URL` and any explicit `SANCTUM_STATEFUL_DOMAINS`, rebuild caches, restart PHP workers, then retry in a private window. An invalid guard may be removed, but it must not invalidate another valid guard in the same session. |
 | Registration approval returns `500` and remains pending | Confirm `php artisan migrate --force` completed, rebuild Laravel caches, restart PHP workers, and retry once. Use the new `X-Correlation-ID` to locate the safe server exception; do not edit registration or document rows manually. |
 | Private document returns 404/403 | Verify actor capability, owner/document scope, disk/path existence, and mandatory audit availability. Do not expose a direct storage URL. |
 | Renewal decision returns conflict | Reload the queue and inspect current candidate/predecessor state; another decision or promotion may already have won. |

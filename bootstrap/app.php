@@ -31,16 +31,16 @@ return Application::configure(basePath: dirname(__DIR__))
             Route::middleware('api')
                 ->prefix('api')
                 ->group(base_path('routes/inventory-api.php'));
-            
+
             Route::middleware('api')
                 ->group(base_path('routes/hr-api.php'));
-            
+
             Route::middleware('api')
                 ->group(base_path('routes/finance-api.php'));
-            
+
             Route::middleware('api')
                 ->group(base_path('routes/permission-audit-api.php'));
-            
+
             Route::middleware('api')
                 ->prefix('api')
                 ->group(base_path('routes/procurement-api.php'));
@@ -181,8 +181,14 @@ return Application::configure(basePath: dirname(__DIR__))
             'erp.audience' => EnsureErpAudience::class,
             'erp.actor' => ResolveErpActorContext::class,
         ]);
+        // priority() replaces Laravel's defaults; retain session startup before every authenticator.
         $middleware->priority([
             AttachPrivilegedCorrelationId::class,
+            \Illuminate\Foundation\Http\Middleware\HandlePrecognitiveRequests::class,
+            \Illuminate\Cookie\Middleware\EncryptCookies::class,
+            \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
+            \Illuminate\Session\Middleware\StartSession::class,
+            \Illuminate\View\Middleware\ShareErrorsFromSession::class,
             SuperAdminAuth::class,
             EnsurePrivilegedAccountIsActive::class,
             EnsurePrivilegedMfaComplete::class,
@@ -190,9 +196,14 @@ return Application::configure(basePath: dirname(__DIR__))
             EnsureOwnerErpWorkspaceEnabled::class,
             EnsureErpAudience::class,
             Authenticate::class,
+            \Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests::class,
             ResolveErpActorContext::class,
             EnsureShopModuleEnabled::class,
+            \Illuminate\Routing\Middleware\ThrottleRequests::class,
+            \Illuminate\Routing\Middleware\ThrottleRequestsWithRedis::class,
+            \Illuminate\Contracts\Session\Middleware\AuthenticatesSessions::class,
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
+            \Illuminate\Auth\Middleware\Authorize::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

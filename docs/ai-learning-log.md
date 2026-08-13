@@ -17,3 +17,7 @@
 ## 2026-08-14 - Shared session guard isolation
 
 - Multiple Laravel session guards can coexist in one browser session. Involuntary lifecycle enforcement must remove only the invalid guard, preserve unrelated authenticated guards and session data, rotate the session identifier, and leave route-specific middleware responsible for selecting the required actor.
+
+## 2026-08-14 - Middleware priority preserves framework prerequisites
+
+- Laravel's `Middleware::priority()` replaces the framework priority list. Any custom list must retain cookie decryption and session startup before authentication; otherwise session-backed API routes can return `401` before reading a valid browser session, especially when Sanctum does not classify the production host as stateful.
