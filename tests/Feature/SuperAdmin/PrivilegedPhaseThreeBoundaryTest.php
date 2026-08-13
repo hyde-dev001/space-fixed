@@ -117,10 +117,10 @@ final class PrivilegedPhaseThreeBoundaryTest extends TestCase
             'admin.shop-reports.action' => 'moderate_reports',
             'admin.appeals.approve' => 'resolve_appeals',
             'admin.appeals.reject' => 'resolve_appeals',
-            'admin.premium-plans.store' => 'manage_plans',
-            'admin.premium-plans.update' => 'manage_plans',
-            'admin.premium-plans.archive' => 'manage_plans',
-            'admin.premium-plans.reactivate' => 'manage_plans',
+            'admin.plans.store' => 'manage_plans',
+            'admin.plans.update' => 'manage_plans',
+            'admin.plans.archive' => 'manage_plans',
+            'admin.plans.reactivate' => 'manage_plans',
         ];
 
         foreach ($routes as $name => $capability) {

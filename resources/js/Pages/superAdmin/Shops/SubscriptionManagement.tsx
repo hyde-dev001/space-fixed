@@ -454,7 +454,7 @@ export default function SubscriptionManagement() {
   const submitPlan = (event: React.FormEvent) => {
     event.preventDefault();
     const options = { preserveScroll: true, onSuccess: () => setIsPlanModalOpen(false) };
-    editingPlan ? planForm.put(`/admin/premium-plans/${editingPlan.id}`, options) : planForm.post('/admin/premium-plans', options);
+    editingPlan ? planForm.put(`/admin/plans/${editingPlan.id}`, options) : planForm.post('/admin/plans', options);
   };
 
   const togglePlan = (plan: PremiumPlanItem) => {
@@ -463,7 +463,7 @@ export default function SubscriptionManagement() {
       title: `${action === 'archive' ? 'Archive' : 'Reactivate'} ${plan.name}?`,
       text: action === 'archive' ? 'Existing subscribers keep their current access.' : 'The plan will be available for purchase again.',
       icon: 'question', showCancelButton: true, confirmButtonText: action === 'archive' ? 'Archive' : 'Reactivate',
-    }).then((result) => result.isConfirmed && router.post(`/admin/premium-plans/${plan.id}/${action}`, {}, { preserveScroll: true }));
+    }).then((result) => result.isConfirmed && router.post(`/admin/plans/${plan.id}/${action}`, {}, { preserveScroll: true }));
   };
 
   useEffect(() => {

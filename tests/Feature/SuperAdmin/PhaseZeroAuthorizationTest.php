@@ -42,7 +42,7 @@ class PhaseZeroAuthorizationTest extends TestCase
         return [
             'administrator management' => ['GET', '/admin/administrators'],
             'administrator creation' => ['POST', '/admin/administrators'],
-            'plan management' => ['POST', '/admin/premium-plans'],
+            'plan management' => ['POST', '/admin/plans'],
             'appeal decision' => ['POST', '/admin/appeals/1/approve'],
         ];
     }
@@ -83,7 +83,7 @@ class PhaseZeroAuthorizationTest extends TestCase
             ->assertOk();
 
         $this->actingAsCompletedPrivileged($admin)
-            ->get('/admin/subscription-management')
+            ->get('/admin/subscriptions')
             ->assertOk();
 
         $this->actingAsCompletedPrivileged($admin)
@@ -130,11 +130,11 @@ class PhaseZeroAuthorizationTest extends TestCase
             'admin.users.valid-id.show' => SuperAdmin::CAP_INTERVENE_ACCOUNTS,
             'admin.users.suspend' => SuperAdmin::CAP_INTERVENE_ACCOUNTS,
             'admin.users.reactivate' => SuperAdmin::CAP_INTERVENE_ACCOUNTS,
-            'admin.premium-plans.store' => SuperAdmin::CAP_MANAGE_PLANS,
-            'admin.premium-plans.update' => SuperAdmin::CAP_MANAGE_PLANS,
-            'admin.premium-plans.archive' => SuperAdmin::CAP_MANAGE_PLANS,
-            'admin.premium-plans.reactivate' => SuperAdmin::CAP_MANAGE_PLANS,
-            'admin.subscription-management' => SuperAdmin::CAP_MANAGE_PLANS,
+            'admin.plans.store' => SuperAdmin::CAP_MANAGE_PLANS,
+            'admin.plans.update' => SuperAdmin::CAP_MANAGE_PLANS,
+            'admin.plans.archive' => SuperAdmin::CAP_MANAGE_PLANS,
+            'admin.plans.reactivate' => SuperAdmin::CAP_MANAGE_PLANS,
+            'admin.subscriptions.index' => SuperAdmin::CAP_MANAGE_PLANS,
             'admin.appeals.approve' => SuperAdmin::CAP_RESOLVE_APPEALS,
             'admin.appeals.reject' => SuperAdmin::CAP_RESOLVE_APPEALS,
         ];

@@ -26,6 +26,8 @@ use App\Http\Controllers\superAdmin\SuperAdminUserManagementController;
 use App\Http\Controllers\superAdmin\SystemMonitoringDashboardController;
 use App\Http\Controllers\superAdmin\PrivilegedAuditController;
 use App\Http\Controllers\superAdmin\SubscriptionInterventionController;
+use App\Http\Controllers\superAdmin\SubscriptionManagementController;
+use App\Http\Controllers\superAdmin\PremiumPlanController;
 use App\Http\Controllers\PrivilegedMfaController;
 use App\Http\Controllers\PrivilegedPasswordResetController;
 use App\Http\Controllers\PrivilegedReauthenticationController;
@@ -1875,7 +1877,13 @@ Route::middleware([
     ))
         ->middleware('privileged.capability:intervene_accounts')
         ->name('shops.details');
-    Route::get('/subscription-management', [SuperAdminController::class, 'showSubscriptionManagement'])
+    Route::get('/subscriptions', [SubscriptionManagementController::class, 'index'])
+        ->middleware('privileged.capability:manage_plans')
+        ->name('subscriptions.index');
+    Route::get('/subscription-management', fn () => redirect()->route(
+        'admin.subscriptions.index',
+        request()->query(),
+    ))
         ->middleware('privileged.capability:manage_plans')
         ->name('subscription-management');
     Route::post('/subscriptions/{subscription}/cancel', [SubscriptionInterventionController::class, 'cancel'])
@@ -1897,18 +1905,21 @@ Route::middleware([
             'throttle:privileged-subscription-refund',
         ])
         ->name('subscription-payments.refunds.store');
-    Route::post('/premium-plans', [SuperAdminController::class, 'storePremiumPlan'])
+    Route::post('/plans', [PremiumPlanController::class, 'store'])
         ->middleware('privileged.capability:manage_plans')
-        ->name('premium-plans.store');
-    Route::put('/premium-plans/{premiumPlan}', [SuperAdminController::class, 'updatePremiumPlan'])
+        ->name('plans.store');
+    Route::put('/plans/{premiumPlan}', [PremiumPlanController::class, 'update'])
+        ->whereNumber('premiumPlan')
         ->middleware('privileged.capability:manage_plans')
-        ->name('premium-plans.update');
-    Route::post('/premium-plans/{premiumPlan}/archive', [SuperAdminController::class, 'archivePremiumPlan'])
+        ->name('plans.update');
+    Route::post('/plans/{premiumPlan}/archive', [PremiumPlanController::class, 'archive'])
+        ->whereNumber('premiumPlan')
         ->middleware('privileged.capability:manage_plans')
-        ->name('premium-plans.archive');
-    Route::post('/premium-plans/{premiumPlan}/reactivate', [SuperAdminController::class, 'reactivatePremiumPlan'])
+        ->name('plans.archive');
+    Route::post('/plans/{premiumPlan}/reactivate', [PremiumPlanController::class, 'reactivate'])
+        ->whereNumber('premiumPlan')
         ->middleware('privileged.capability:manage_plans')
-        ->name('premium-plans.reactivate');
+        ->name('plans.reactivate');
     Route::post('/shops/{shopOwner}/suspend', [RegisteredShopController::class, 'suspend'])
         ->whereNumber('shopOwner')
         ->middleware('privileged.capability:intervene_accounts')

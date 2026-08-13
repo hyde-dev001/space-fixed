@@ -439,7 +439,7 @@ class SuperAdminController extends Controller
             );
         }
 
-        return redirect()->route('admin.subscription-management')->with('success', 'Premium plan created.');
+        return redirect()->route('admin.subscriptions.index')->with('success', 'Premium plan created.');
     }
 
     public function updatePremiumPlan(UpdatePremiumPlanRequest $request, PremiumPlan $premiumPlan)
@@ -459,7 +459,7 @@ class SuperAdminController extends Controller
             );
         }
 
-        return redirect()->route('admin.subscription-management')->with('success', 'Premium plan updated.');
+        return redirect()->route('admin.subscriptions.index')->with('success', 'Premium plan updated.');
     }
 
     public function archivePremiumPlan(Request $request, PremiumPlan $premiumPlan)

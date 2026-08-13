@@ -34,7 +34,7 @@ const routeFallbacks: Record<string, string> = {
   'admin.shop-reports': '/admin/shop-reports',
   'admin.suspension-appeals': '/admin/appeals',
   'admin.shops.index': '/admin/shops',
-  'admin.subscription-management': '/admin/subscription-management',
+  'admin.subscriptions.index': '/admin/subscriptions',
   'admin.users.index': '/admin/users',
   landing: '/',
 };
@@ -126,7 +126,7 @@ const AppSidebar: React.FC = () => {
           </svg>
         ),
         name: "Subscription Management",
-        route: "admin.subscription-management",
+        route: "admin.subscriptions.index",
         capability: "manage_plans",
       },
     ];

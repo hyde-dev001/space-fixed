@@ -27,7 +27,7 @@ final class PremiumPlanWorkflowTest extends TestCase
         $admin = $this->createSuperAdmin();
 
         $this->actingAsCompletedPrivileged($admin)
-            ->post('/admin/premium-plans', [
+            ->post('/admin/plans', [
                 'plan_code' => '  elite-plan ',
                 'name' => '  Elite  ',
                 'description' => '  Premium access  ',
@@ -36,7 +36,7 @@ final class PremiumPlanWorkflowTest extends TestCase
                 'showroom_slot_limit' => '100',
                 'benefits' => ['  Priority placement ', 'Dedicated support'],
             ])
-            ->assertRedirect('/admin/subscription-management');
+            ->assertRedirect('/admin/subscriptions');
 
         $plan = PremiumPlan::query()->where('plan_code', 'elite-plan')->firstOrFail();
         $this->assertSame('Elite', $plan->name);
@@ -44,7 +44,7 @@ final class PremiumPlanWorkflowTest extends TestCase
         $this->assertAuditEvent('premium_plan_created', $plan);
 
         $this->actingAsCompletedPrivileged($admin)
-            ->put("/admin/premium-plans/{$plan->id}", [
+            ->put("/admin/plans/{$plan->id}", [
                 'name' => 'Elite Plus',
                 'description' => 'Premium access plus support',
                 'price' => 899,
@@ -52,7 +52,7 @@ final class PremiumPlanWorkflowTest extends TestCase
                 'showroom_slot_limit' => 110,
                 'benefits' => ['Priority placement', 'Dedicated support', 'Analytics'],
             ])
-            ->assertRedirect('/admin/subscription-management');
+            ->assertRedirect('/admin/subscriptions');
 
         $this->assertAuditEvent('premium_plan_updated', $plan);
         $updatedCount = DB::table('activity_log')
@@ -61,7 +61,7 @@ final class PremiumPlanWorkflowTest extends TestCase
             ->count();
 
         $this->actingAsCompletedPrivileged($admin)
-            ->put("/admin/premium-plans/{$plan->id}", [
+            ->put("/admin/plans/{$plan->id}", [
                 'name' => 'Elite Plus',
                 'description' => 'Premium access plus support',
                 'price' => 899,
@@ -69,7 +69,7 @@ final class PremiumPlanWorkflowTest extends TestCase
                 'showroom_slot_limit' => 110,
                 'benefits' => ['Priority placement', 'Dedicated support', 'Analytics'],
             ])
-            ->assertRedirect('/admin/subscription-management');
+            ->assertRedirect('/admin/subscriptions');
 
         $this->assertSame($updatedCount, DB::table('activity_log')
             ->where('description', 'premium_plan_updated')
@@ -77,16 +77,16 @@ final class PremiumPlanWorkflowTest extends TestCase
             ->count());
 
         $this->actingAsCompletedPrivileged($admin)
-            ->post("/admin/premium-plans/{$plan->id}/archive")
+            ->post("/admin/plans/{$plan->id}/archive")
             ->assertRedirect();
         $this->actingAsCompletedPrivileged($admin)
-            ->post("/admin/premium-plans/{$plan->id}/archive")
+            ->post("/admin/plans/{$plan->id}/archive")
             ->assertRedirect();
         $this->actingAsCompletedPrivileged($admin)
-            ->post("/admin/premium-plans/{$plan->id}/reactivate")
+            ->post("/admin/plans/{$plan->id}/reactivate")
             ->assertRedirect();
         $this->actingAsCompletedPrivileged($admin)
-            ->post("/admin/premium-plans/{$plan->id}/reactivate")
+            ->post("/admin/plans/{$plan->id}/reactivate")
             ->assertRedirect();
 
         $this->assertSame('active', $plan->fresh()->status);
@@ -103,7 +103,7 @@ final class PremiumPlanWorkflowTest extends TestCase
         $expired = $this->createSubscription($plan, 'active', now()->subDay());
 
         $this->actingAsCompletedPrivileged($admin)
-            ->put("/admin/premium-plans/{$plan->id}", [
+            ->put("/admin/plans/{$plan->id}", [
                 'name' => $plan->name,
                 'description' => $plan->description,
                 'price' => $plan->price,
@@ -111,7 +111,7 @@ final class PremiumPlanWorkflowTest extends TestCase
                 'showroom_slot_limit' => 100,
                 'benefits' => [],
             ])
-            ->assertRedirect('/admin/subscription-management');
+            ->assertRedirect('/admin/subscriptions');
 
         $this->assertSame(100, $active->fresh()->showroom_slot_limit);
         $this->assertSame(100, $cancelled->fresh()->showroom_slot_limit);
@@ -123,7 +123,7 @@ final class PremiumPlanWorkflowTest extends TestCase
         $admin = $this->createSuperAdmin();
         $plan = $this->createPlan(['showroom_slot_limit' => 48]);
         $subscription = $this->createSubscription($plan, 'active', now()->addDays(10));
-        $request = Request::create('/admin/premium-plans/'.$plan->id, 'PUT');
+        $request = Request::create('/admin/plans/'.$plan->id, 'PUT');
 
         $audit = Mockery::mock(PrivilegedAudit::class);
         $audit->shouldReceive('premiumPlanUpdated')
@@ -161,7 +161,7 @@ final class PremiumPlanWorkflowTest extends TestCase
         $admin = SuperAdmin::factory()->admin()->create();
 
         $this->actingAsCompletedPrivileged($admin)
-            ->post('/admin/premium-plans', [
+            ->post('/admin/plans', [
                 'plan_code' => 'blocked',
                 'name' => 'Blocked',
                 'price' => 1,

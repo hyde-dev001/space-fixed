@@ -84,11 +84,11 @@ final class SubscriptionInterventionContainmentTest extends TestCase
     public function test_plan_management_and_read_only_subscription_inspection_remain_scoped(): void
     {
         foreach ([
-            'admin.subscription-management',
-            'admin.premium-plans.store',
-            'admin.premium-plans.update',
-            'admin.premium-plans.archive',
-            'admin.premium-plans.reactivate',
+            'admin.subscriptions.index',
+            'admin.plans.store',
+            'admin.plans.update',
+            'admin.plans.archive',
+            'admin.plans.reactivate',
         ] as $routeName) {
             $route = Route::getRoutes()->getByName($routeName);
 
@@ -97,17 +97,17 @@ final class SubscriptionInterventionContainmentTest extends TestCase
             $this->assertContains('privileged.capability:manage_plans', $route->middleware(), $routeName);
         }
 
-        $subscriptionRoute = Route::getRoutes()->getByName('admin.subscription-management');
+        $subscriptionRoute = Route::getRoutes()->getByName('admin.subscriptions.index');
         $this->assertSame(['GET', 'HEAD'], $subscriptionRoute?->methods());
 
         $regularAdmin = SuperAdmin::factory()->admin()->create();
         $this->actingAsCompletedPrivileged($regularAdmin)
-            ->get('/admin/subscription-management')
+            ->get('/admin/subscriptions')
             ->assertForbidden();
 
         $superAdmin = SuperAdmin::factory()->superAdmin()->create();
         $this->actingAsCompletedPrivileged($superAdmin)
-            ->get('/admin/subscription-management')
+            ->get('/admin/subscriptions')
             ->assertOk()
             ->assertInertia(fn ($page) => $page
                 ->component('superAdmin/Shops/SubscriptionManagement')
@@ -169,7 +169,7 @@ final class SubscriptionInterventionContainmentTest extends TestCase
         ]);
 
         $this->actingAsCompletedPrivileged($superAdmin)
-            ->get('/admin/subscription-management')
+            ->get('/admin/subscriptions')
             ->assertOk()
             ->assertInertia(function ($page) use ($subscription, $legacy): void {
                 $props = $page->toArray()['props'];

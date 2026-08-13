@@ -27,7 +27,7 @@ final class PrivilegedFailureAuditTest extends TestCase
         $admin = SuperAdmin::factory()->admin()->create();
 
         $response = $this->actingAsCompletedPrivileged($admin)
-            ->postJson('/admin/premium-plans', [])
+            ->postJson('/admin/plans', [])
             ->assertForbidden()
             ->assertJsonPath('code', 'privileged_capability_denied');
 
@@ -43,7 +43,7 @@ final class PrivilegedFailureAuditTest extends TestCase
 
         $properties = json_decode((string) $activity->properties, true);
         $this->assertSame(SuperAdmin::CAP_MANAGE_PLANS, $properties['capability']);
-        $this->assertSame('admin.premium-plans.store', $properties['route']);
+        $this->assertSame('admin.plans.store', $properties['route']);
         $this->assertSame($correlationId, $properties['correlation_id']);
         $this->assertArrayNotHasKey('input', $properties);
         $this->assertArrayNotHasKey('exception', $properties);
@@ -93,7 +93,7 @@ final class PrivilegedFailureAuditTest extends TestCase
         $before = DB::table('activity_log')->where('log_name', 'privileged')->count();
 
         $this->actingAsCompletedPrivileged($admin)
-            ->postJson('/admin/premium-plans', [])
+            ->postJson('/admin/plans', [])
             ->assertUnprocessable();
 
         $this->assertSame($before, DB::table('activity_log')->where('log_name', 'privileged')->count());

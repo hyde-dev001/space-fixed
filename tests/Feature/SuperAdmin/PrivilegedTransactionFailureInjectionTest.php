@@ -229,7 +229,7 @@ final class PrivilegedTransactionFailureInjectionTest extends TestCase
         $this->injectAuditFailure('premiumPlanUpdated', $secret);
 
         $response = $this->actingAsCompletedPrivileged($admin)
-            ->putJson(route('admin.premium-plans.update', $plan), [
+            ->putJson(route('admin.plans.update', $plan), [
                 'name' => 'Failure Plan Updated',
                 'description' => 'Failure injection plan updated',
                 'price' => 899,

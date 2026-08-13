@@ -402,23 +402,23 @@ git commit -m "refactor: isolate privileged account owners"
 - Modify: `tests/Feature/SuperAdmin/PrivilegedFailureAuditTest.php`
 - Modify: `tests/Feature/SuperAdmin/PrivilegedTransactionFailureInjectionTest.php`
 
-- [ ] **Step 1: Add failing billing-owner route tests**
+- [x] **Step 1: Add failing billing-owner route tests**
 
 Assert `/admin/subscriptions` is read-only page ownership, `/admin/plans*` mutations use `PremiumPlanController`, and provider-backed cancellation/refund/correction remain owned by `SubscriptionInterventionController`. Assert no direct plan swap or pseudo-refund route returns.
 
-- [ ] **Step 2: Move the existing subscription page query intact**
+- [x] **Step 2: Move the existing subscription page query intact**
 
 Move `showSubscriptionManagement()` to `SubscriptionManagementController@index` without changing ledger interpretation, provider status, refund presentation, cancellation metadata, or query strategy. Phase 8 owns measured query optimization.
 
-- [ ] **Step 3: Move plan HTTP orchestration intact**
+- [x] **Step 3: Move plan HTTP orchestration intact**
 
 Move create/update/archive/reactivate methods to `PremiumPlanController`, retaining Form Requests, `PremiumPlanManagementService`, `PrivilegedFailureResponse`, capability middleware, audits, and redirects to `admin.subscriptions.index`.
 
-- [ ] **Step 4: Migrate UI and test callers**
+- [x] **Step 4: Migrate UI and test callers**
 
 Replace old `subscription-management` and `premium-plans` route names/URLs with canonical names. Keep `/admin/subscription-management` as GET redirect only; no old plan mutation route remains.
 
-- [ ] **Step 5: Regenerate frontend route metadata**
+- [x] **Step 5: Regenerate frontend route metadata**
 
 ```powershell
 php artisan ziggy:generate resources/js/ziggy.js
@@ -426,7 +426,7 @@ php artisan ziggy:generate resources/js/ziggy.js
 
 Confirm `admin.subscriptions.index` and `admin.plans.*` exist and retired plan mutation names are absent.
 
-- [ ] **Step 6: Verify billing containment**
+- [x] **Step 6: Verify billing containment**
 
 ```powershell
 php artisan test tests/Feature/AdminPremiumPlanManagementTest.php tests/Feature/SuperAdmin/PremiumPlanWorkflowTest.php tests/Feature/SuperAdmin/SubscriptionInterventionContainmentTest.php tests/Feature/SuperAdmin/PrivilegedFailureAuditTest.php tests/Feature/SuperAdmin/PrivilegedTransactionFailureInjectionTest.php tests/Feature/SuperAdmin/PhaseFiveBillingBoundaryTest.php
@@ -434,7 +434,7 @@ php artisan test tests/Feature/AdminPremiumPlanManagementTest.php tests/Feature/
 
 Expected: PASS; authoritative payment/refund history and provider intervention ownership are unchanged.
 
-- [ ] **Step 7: Commit billing controller extraction**
+- [x] **Step 7: Commit billing controller extraction**
 
 ```powershell
 git add -- app/Http/Controllers/superAdmin/SubscriptionManagementController.php app/Http/Controllers/superAdmin/PremiumPlanController.php routes/web.php resources/js/Pages/superAdmin/Shops/SubscriptionManagement.tsx resources/js/ziggy.js tests/Feature/AdminPremiumPlanManagementTest.php tests/Feature/SuperAdmin/PremiumPlanWorkflowTest.php tests/Feature/SuperAdmin/SubscriptionInterventionContainmentTest.php tests/Feature/SuperAdmin/PrivilegedFailureAuditTest.php tests/Feature/SuperAdmin/PrivilegedTransactionFailureInjectionTest.php tests/Feature/SuperAdmin/PhaseSevenStructuralBoundaryTest.php

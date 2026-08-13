@@ -209,6 +209,77 @@ final class PhaseSevenStructuralBoundaryTest extends TestCase
         }
     }
 
+    public function test_billing_pages_and_plan_mutations_have_focused_owners(): void
+    {
+        $this->assertCanonicalRoute(
+            name: 'admin.subscriptions.index',
+            methods: ['GET', 'HEAD'],
+            uri: 'admin/subscriptions',
+            action: 'App\\Http\\Controllers\\superAdmin\\SubscriptionManagementController@index',
+            capability: SuperAdmin::CAP_MANAGE_PLANS,
+        );
+
+        foreach ([
+            'admin.plans.store' => ['POST', 'admin/plans', 'store'],
+            'admin.plans.update' => ['PUT', 'admin/plans/{premiumPlan}', 'update'],
+            'admin.plans.archive' => ['POST', 'admin/plans/{premiumPlan}/archive', 'archive'],
+            'admin.plans.reactivate' => ['POST', 'admin/plans/{premiumPlan}/reactivate', 'reactivate'],
+        ] as $name => [$method, $uri, $action]) {
+            $this->assertCanonicalRoute(
+                name: $name,
+                methods: [$method],
+                uri: $uri,
+                action: 'App\\Http\\Controllers\\superAdmin\\PremiumPlanController@'.$action,
+                capability: SuperAdmin::CAP_MANAGE_PLANS,
+            );
+        }
+
+        foreach ([
+            'admin.premium-plans.store',
+            'admin.premium-plans.update',
+            'admin.premium-plans.archive',
+            'admin.premium-plans.reactivate',
+        ] as $retiredRoute) {
+            self::assertNull(RouteFacade::getRoutes()->getByName($retiredRoute), $retiredRoute);
+        }
+
+        foreach ([
+            'admin.subscriptions.cancel' => 'cancel',
+            'admin.subscriptions.legacy-correction' => 'legacyCorrection',
+            'admin.subscription-payments.refunds.store' => 'refund',
+        ] as $name => $action) {
+            $route = RouteFacade::getRoutes()->getByName($name);
+
+            $this->assertInstanceOf(Route::class, $route, $name);
+            $this->assertSame(
+                'App\\Http\\Controllers\\superAdmin\\SubscriptionInterventionController@'.$action,
+                $route->getActionName(),
+                $name.' owner',
+            );
+        }
+    }
+
+    public function test_subscription_management_page_is_a_get_only_compatibility_redirect(): void
+    {
+        $route = RouteFacade::getRoutes()->getByName('admin.subscription-management');
+
+        $this->assertInstanceOf(Route::class, $route);
+        $this->assertSame(['GET', 'HEAD'], $route->methods());
+        $this->assertSame('admin/subscription-management', $route->uri());
+        $this->assertSame('Closure', $route->getActionName());
+
+        $admin = SuperAdmin::factory()->superAdmin()->create();
+        $this->actingAsCompletedPrivileged($admin);
+
+        $this->get('/admin/subscription-management?status=active&page=2')
+            ->assertRedirect(route('admin.subscriptions.index', [
+                'status' => 'active',
+                'page' => 2,
+            ]));
+
+        $this->post('/admin/subscription-management')->assertStatus(405);
+    }
+
     /**
      * @param array<int, string> $methods
      */
