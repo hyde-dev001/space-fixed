@@ -98,13 +98,13 @@ final class AccountLifecycleWorkflowTest extends TestCase
             'suspension_reason' => 'Shop policy violation',
         ])->assertOk();
 
-        $this->postJson("/admin/shops/{$approved->id}/activate", [
+        $this->postJson("/admin/shops/{$approved->id}/reactivate", [
             'reactivation_reason' => 'Shop policy remediation verified',
         ])->assertOk();
         $this->assertSame('approved', $approved->fresh()->getRawOriginal('status'));
 
         foreach ([$pending, $rejected] as $shop) {
-            $this->postJson("/admin/shops/{$shop->id}/activate", [
+            $this->postJson("/admin/shops/{$shop->id}/reactivate", [
                 'reactivation_reason' => 'Source-state verification',
             ])
                 ->assertStatus(409);
@@ -137,7 +137,7 @@ final class AccountLifecycleWorkflowTest extends TestCase
         $this->assertSame('suspended', $employee->getRawOriginal('status'));
         $this->assertSame($suspension->id, $employee->privileged_suspension_id);
 
-        $this->postJson("/admin/users/{$user->id}/activate", [
+        $this->postJson("/admin/users/{$user->id}/reactivate", [
             'reactivation_reason' => 'Verified remediation',
         ])->assertOk();
 
@@ -190,7 +190,7 @@ final class AccountLifecycleWorkflowTest extends TestCase
 
         $employee->delete();
 
-        $this->postJson("/admin/users/{$user->id}/activate", [
+        $this->postJson("/admin/users/{$user->id}/reactivate", [
             'reactivation_reason' => 'Attempted restore',
         ])->assertStatus(409);
 
@@ -332,21 +332,17 @@ final class AccountLifecycleWorkflowTest extends TestCase
         $this->assertNull(User::query()->find($user->id));
         $this->assertNull(ShopOwner::query()->find($shop->id));
 
-        $this->get(route('admin.user-management', ['lifecycle' => 'archived']))
-            ->assertInertia(fn ($page) => $page
-                ->where('users.0.id', $user->id)
-                ->where('users.0.status', 'archived')
-                ->where('users.0.accountStatus', 'active')
-                ->where('users.0.archived', true));
-
-        $this->get(route('superAdmin.super-admin-user-management', ['lifecycle' => 'archived']))
+        $this->get(route('admin.users.index', ['lifecycle' => 'archived']))
             ->assertInertia(fn ($page) => $page
                 ->where('users.data.0.id', $user->id)
                 ->where('users.data.0.status', 'archived')
                 ->where('users.data.0.accountStatus', 'active')
                 ->where('users.data.0.archived', true));
 
-        $this->get(route('admin.registered-shops', ['lifecycle' => 'archived']))
+        $this->get(route('superAdmin.super-admin-user-management', ['lifecycle' => 'archived']))
+            ->assertRedirect(route('admin.users.index', ['lifecycle' => 'archived']));
+
+        $this->get(route('admin.shops.index', ['lifecycle' => 'archived']))
             ->assertInertia(fn ($page) => $page
                 ->where('shops.0.id', $shop->id)
                 ->where('shops.0.status', 'archived')
@@ -354,7 +350,7 @@ final class AccountLifecycleWorkflowTest extends TestCase
                 ->where('shops.0.archived', true)
                 ->where('stats.archived', 1));
 
-        $this->get(route('admin.shops.details', $shop->id))
+        $this->get(route('admin.shops.show', ['shopOwner' => $shop->id]))
             ->assertOk()
             ->assertJsonPath('shop.archived', true)
             ->assertJsonPath('shop.accountStatus', 'approved');
@@ -421,7 +417,7 @@ final class AccountLifecycleWorkflowTest extends TestCase
         ]);
         $employee->forceFill(['privileged_suspension_id' => $otherSuspension->id])->save();
 
-        $this->postJson("/admin/users/{$user->id}/activate", [
+        $this->postJson("/admin/users/{$user->id}/reactivate", [
             'reactivation_reason' => 'Attempted mismatched restore',
         ])->assertStatus(409);
 

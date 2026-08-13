@@ -118,6 +118,97 @@ final class PhaseSevenStructuralBoundaryTest extends TestCase
         $this->post('/admin/admins/'.$admin->id.'/suspend')->assertStatus(404);
     }
 
+    public function test_account_intervention_has_one_canonical_shop_and_user_owner(): void
+    {
+        $this->assertCanonicalRoute(
+            name: 'admin.shops.index',
+            methods: ['GET', 'HEAD'],
+            uri: 'admin/shops',
+            action: 'App\\Http\\Controllers\\superAdmin\\RegisteredShopController@index',
+            capability: SuperAdmin::CAP_INTERVENE_ACCOUNTS,
+        );
+        $this->assertCanonicalRoute(
+            name: 'admin.shops.show',
+            methods: ['GET', 'HEAD'],
+            uri: 'admin/shops/{shopOwner}',
+            action: 'App\\Http\\Controllers\\superAdmin\\RegisteredShopController@show',
+            capability: SuperAdmin::CAP_INTERVENE_ACCOUNTS,
+        );
+        $this->assertCanonicalRoute(
+            name: 'admin.users.index',
+            methods: ['GET', 'HEAD'],
+            uri: 'admin/users',
+            action: 'App\\Http\\Controllers\\superAdmin\\UserInterventionController@index',
+            capability: SuperAdmin::CAP_INTERVENE_ACCOUNTS,
+        );
+
+        foreach ([
+            'shops.suspend' => ['admin/shops/{shopOwner}/suspend', 'suspend', false],
+            'shops.reactivate' => ['admin/shops/{shopOwner}/reactivate', 'reactivate', false],
+            'shops.archive' => ['admin/shops/{shopOwner}/archive', 'archive', true],
+            'shops.restore' => ['admin/shops/{shopOwner}/restore', 'restore', true],
+            'users.suspend' => ['admin/users/{user}/suspend', 'suspend', false],
+            'users.reactivate' => ['admin/users/{user}/reactivate', 'reactivate', false],
+            'users.archive' => ['admin/users/{user}/archive', 'archive', true],
+            'users.restore' => ['admin/users/{user}/restore', 'restore', true],
+        ] as $suffix => [$uri, $method, $requiresRecent]) {
+            $owner = str_starts_with($suffix, 'shops.')
+                ? 'RegisteredShopController'
+                : 'UserInterventionController';
+
+            $this->assertCanonicalRoute(
+                name: 'admin.'.$suffix,
+                methods: ['POST'],
+                uri: $uri,
+                action: 'App\\Http\\Controllers\\superAdmin\\'.$owner.'@'.$method,
+                capability: SuperAdmin::CAP_INTERVENE_ACCOUNTS,
+                requiresRecentReauthentication: $requiresRecent,
+            );
+        }
+
+        self::assertNull(RouteFacade::getRoutes()->getByName('admin.shops.activate'));
+        self::assertNull(RouteFacade::getRoutes()->getByName('admin.users.activate'));
+    }
+
+    public function test_account_intervention_page_aliases_are_get_only_and_preserve_path_and_query(): void
+    {
+        foreach ([
+            'admin.registered-shops' => 'admin/registered-shops',
+            'admin.shops.details' => 'admin/shops/{id}/details',
+            'admin.user-management' => 'admin/user-management',
+            'superAdmin.super-admin-user-management' => 'superAdmin/super-admin-user-management',
+        ] as $routeName => $uri) {
+            $route = RouteFacade::getRoutes()->getByName($routeName);
+
+            $this->assertInstanceOf(Route::class, $route, "Missing compatibility route {$routeName}");
+            $this->assertSame(['GET', 'HEAD'], $route->methods(), $routeName.' methods');
+            $this->assertSame($uri, $route->uri(), $routeName.' URI');
+            $this->assertSame('Closure', $route->getActionName(), $routeName.' action');
+        }
+
+        $admin = SuperAdmin::factory()->admin()->mfaEnrolled()->create();
+        $this->actingAsCompletedPrivileged($admin);
+
+        $this->get('/admin/registered-shops?lifecycle=archived&page=3')
+            ->assertRedirect(route('admin.shops.index', ['lifecycle' => 'archived', 'page' => 3]));
+        $this->get('/admin/shops/123/details?tab=documents')
+            ->assertRedirect(route('admin.shops.show', [
+                'shopOwner' => 123,
+                'tab' => 'documents',
+            ]));
+        $this->get('/admin/user-management?lifecycle=archived')
+            ->assertRedirect(route('admin.users.index', ['lifecycle' => 'archived']));
+        $this->get('/superAdmin/super-admin-user-management?lifecycle=archived')
+            ->assertRedirect(route('admin.users.index', ['lifecycle' => 'archived']));
+
+        foreach ([
+            '/admin/shops/123/activate',
+            '/admin/users/123/activate',
+        ] as $retiredMutation) {
+            $this->post($retiredMutation)->assertStatus(404);
+        }
+    }
+
     /**
      * @param array<int, string> $methods
      */

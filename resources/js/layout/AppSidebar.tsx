@@ -33,9 +33,9 @@ const routeFallbacks: Record<string, string> = {
   'admin.document-renewals.index': '/admin/document-renewals',
   'admin.shop-reports': '/admin/shop-reports',
   'admin.suspension-appeals': '/admin/appeals',
-  'admin.registered-shops': '/admin/registered-shops',
+  'admin.shops.index': '/admin/shops',
   'admin.subscription-management': '/admin/subscription-management',
-  'superAdmin.super-admin-user-management': '/superAdmin/super-admin-user-management',
+  'admin.users.index': '/admin/users',
   landing: '/',
 };
 
@@ -94,7 +94,7 @@ const AppSidebar: React.FC = () => {
         name: "Account Management",
         subItems: [
           { name: "Admin Management", route: "admin.administrators.index", capability: "manage_administrators", pro: false },
-          { name: "User Management", route: "superAdmin.super-admin-user-management", capability: "intervene_accounts", pro: false },
+          { name: "User Management", route: "admin.users.index", capability: "intervene_accounts", pro: false },
           { name: "Shop Management", route: "admin.shop-owner-registration-view", capability: "review_registrations", pro: false },
           { name: "Document Renewals", route: "admin.document-renewals.index", capability: "review_registrations", pro: false },
           { name: "Business Upgrade Requests", route: "admin.business-upgrade-requests.index", capability: "review_registrations", pro: false },
@@ -113,7 +113,7 @@ const AppSidebar: React.FC = () => {
           </svg>
         ),
         name: "Registered Shops",
-        route: "admin.registered-shops",
+        route: "admin.shops.index",
         capability: "intervene_accounts",
       },
       {

@@ -214,7 +214,7 @@ Do not delete a listed file if a fresh import/route/runtime inspection finds an 
 - Modify: `tests/Feature/SuperAdmin/PhaseOneRouteSecurityTest.php`
 - Modify: `tests/Feature/SuperAdmin/PhaseFourSurfaceBoundaryTest.php`
 
-- [ ] **Step 1: Capture the pre-change route/controller inventory**
+- [x] **Step 1: Capture the pre-change route/controller inventory**
 
 Run and save concise evidence in the execution notes:
 
@@ -227,15 +227,15 @@ rg -n "AuditLog::create|activity\(\)" app/Http/Controllers/SuperAdminController.
 
 Record route counts, legacy mutation routes, monolith public-method count, and privileged legacy-writer count. Do not claim performance improvement; this phase measures ownership/complexity only.
 
-- [ ] **Step 2: Add passing baseline characterization helpers/tests**
+- [x] **Step 2: Add passing baseline characterization helpers/tests**
 
 Create reusable route assertions and characterize the current middleware, response statuses, audit side effects, document immutability, and distinct command signatures without asserting future owners yet. Prefer route/action/middleware and behavioral outcomes over parsing implementation text.
 
-- [ ] **Step 3: Add only the first failing administrator-owner slice**
+- [x] **Step 3: Add only the first failing administrator-owner slice**
 
 Assert the canonical administrator routes from Task 2, their exact methods/URIs/actions/middleware, and mutation uniqueness. Include existing `privileged.recent`, lower-Admin denial, self-management, and final-Super-Admin behavior. Do not add future Task 3-7 ownership assertions yet; expand this same test file immediately before each owning implementation.
 
-- [ ] **Step 4: Add compatibility redirect parity tests**
+- [x] **Step 4: Add compatibility redirect parity tests**
 
 For the aliases introduced by each task, test target-equivalent behavior:
 
@@ -250,11 +250,11 @@ suspended/inactive/setup/not-MFA -> same denial boundary as target
 
 Also assert each compatibility action is a redirect closure/action rather than a domain controller, and has only `GET|HEAD`. These tests verify behavior and route metadata; they must not inspect closure source text.
 
-- [ ] **Step 5: Keep source-pattern checks as execution evidence, not brittle PHPUnit contracts**
+- [x] **Step 5: Keep source-pattern checks as execution evidence, not brittle PHPUnit contracts**
 
 Critical functional tests must prove authorization, state, audit records, notifications, files, and error semantics. Use the final `rg` scans to detect bypasses such as direct legacy audit writes or retired controllers. Do not make PHPUnit assert internal service names or assume how `PrivilegedAudit` persists its own ledger.
 
-- [ ] **Step 6: Run the first red administrator slice**
+- [x] **Step 6: Run the first red administrator slice**
 
 ```powershell
 php artisan test tests/Feature/SuperAdmin/PhaseSevenStructuralBoundaryTest.php tests/Feature/SuperAdmin/PhaseZeroAuthorizationTest.php tests/Feature/SuperAdmin/PhaseOneRouteSecurityTest.php tests/Feature/SuperAdmin/PhaseFourSurfaceBoundaryTest.php
@@ -262,7 +262,7 @@ php artisan test tests/Feature/SuperAdmin/PhaseSevenStructuralBoundaryTest.php t
 
 Expected: baseline characterizations pass and only the new Task 2 administrator ownership assertions fail for the expected old route/controller names.
 
-- [ ] **Step 7: Keep the expected-red changes local and continue directly to Task 2**
+- [x] **Step 7: Keep the expected-red changes local and continue directly to Task 2**
 
 Do not commit the failing tests alone. Task 2 must make this slice green, rerun it, and commit the tests with the administrator implementation. For Tasks 3-7, repeat the same red-then-green pattern one ownership slice at a time so every commit remains bisectable and green.
 
@@ -281,23 +281,23 @@ Do not commit the failing tests alone. Task 2 must make this slice green, rerun 
 - Modify: `tests/Feature/SuperAdmin/PrivilegedBootstrapAndInvitationTest.php`
 - Modify: `tests/Feature/SuperAdmin/PhaseSevenStructuralBoundaryTest.php`
 
-- [ ] **Step 1: Add failing canonical administrator route tests**
+- [x] **Step 1: Add failing canonical administrator route tests**
 
 Cover index/create/store, setup resend, suspend/deactivate/activate, role update, and MFA reset under `/admin/administrators`. Assert lower Admin receives `403` for management actions, self-mutation protections remain, and final-active-Super-Admin invariants remain unchanged.
 
-- [ ] **Step 2: Move invitation transactions into the existing identity service**
+- [x] **Step 2: Move invitation transactions into the existing identity service**
 
 Add narrowly named `invite()` and `resendSetupInvitation()` methods to `AdministratorIdentityService`. Move the existing lock/token/audit/after-commit delivery workflow byte-for-behavior, keeping server-generated password/token material, transaction boundaries, idempotency/state validation, failure sanitization, and final-Super-Admin safeguards. Do not create a second invitation service.
 
-- [ ] **Step 3: Create the focused controller**
+- [x] **Step 3: Create the focused controller**
 
 Move the administrator list/create pages and thin HTTP orchestration to `AdministratorManagementController`. Inject only `AdministratorIdentityService` and `PrivilegedFailureResponse`; the controller must not issue tokens, write audits, dispatch mail, or open transactions directly.
 
-- [ ] **Step 4: Register canonical routes and migrate UI callers**
+- [x] **Step 4: Register canonical routes and migrate UI callers**
 
 Register only the canonical administrator mutations. Temporarily keep old administrator GET paths as query-preserving redirects; do not keep old mutation aliases. Update page submissions, redirects, and tests to canonical names.
 
-- [ ] **Step 5: Regenerate frontend route metadata**
+- [x] **Step 5: Regenerate frontend route metadata**
 
 ```powershell
 php artisan ziggy:generate resources/js/ziggy.js
@@ -305,7 +305,7 @@ php artisan ziggy:generate resources/js/ziggy.js
 
 Confirm `admin.administrators.*` is present and removed mutation names are absent before running frontend or committing.
 
-- [ ] **Step 6: Verify administrator behavior**
+- [x] **Step 6: Verify administrator behavior**
 
 ```powershell
 php artisan test tests/Feature/SuperAdmin/AdministratorIdentityLifecycleTest.php tests/Feature/SuperAdmin/PrivilegedBootstrapAndInvitationTest.php tests/Feature/SuperAdmin/PrivilegedRecentReauthenticationTest.php tests/Feature/SuperAdmin/PhaseSevenStructuralBoundaryTest.php
@@ -313,7 +313,7 @@ php artisan test tests/Feature/SuperAdmin/AdministratorIdentityLifecycleTest.php
 
 Expected: PASS; invitation delivery remains after commit, self/final-Super-Admin protections remain enforced, and only canonical mutations exist.
 
-- [ ] **Step 7: Commit administrator extraction with its now-green boundary tests**
+- [x] **Step 7: Commit administrator extraction with its now-green boundary tests**
 
 ```powershell
 git add -- app/Http/Controllers/superAdmin/AdministratorManagementController.php app/Services/AdministratorIdentityService.php routes/web.php resources/js/Pages/superAdmin/AdminTeam/AdminManagement.tsx resources/js/Pages/superAdmin/AdminTeam/CreateAdmin.tsx resources/js/ziggy.js tests/Feature/SuperAdmin/AdministratorIdentityLifecycleTest.php tests/Feature/SuperAdmin/PrivilegedBootstrapAndInvitationTest.php tests/Feature/SuperAdmin/PhaseSevenStructuralBoundaryTest.php tests/Feature/SuperAdmin/PhaseZeroAuthorizationTest.php tests/Feature/SuperAdmin/PhaseOneRouteSecurityTest.php tests/Feature/SuperAdmin/PhaseFourSurfaceBoundaryTest.php
@@ -337,29 +337,29 @@ git commit -m "refactor: isolate administrator management"
 - Modify: `tests/Feature/SuperAdmin/PrivateSensitiveDocumentAccessTest.php`
 - Modify: `tests/Feature/SuperAdmin/PhaseTwoBaselineContractTest.php`
 
-- [ ] **Step 1: Add the failing shop/user owner slice and characterize both user payloads**
+- [x] **Step 1: Add the failing shop/user owner slice and characterize both user payloads**
 
 Expand `PhaseSevenStructuralBoundaryTest` with only the Task 3 canonical shop/user routes, mutation uniqueness, redirect parity, and owner assertions; run them to confirm the expected old-owner failures. Also write behavioral tests for the actual approved user scope, filters, pagination shape, employee relation, lifecycle fields, private-ID URL, and existing error statuses. Use the current active sidebar page as the contract; do not merge incompatible `SuperAdminController::showUserManagement()` and `SuperAdminUserManagementController::index()` payloads by unioning every field.
 
-- [ ] **Step 2: Measure lifecycle response duplication before extracting a concern**
+- [x] **Step 2: Measure lifecycle response duplication before extracting a concern**
 
 Compare the final shop/user controller mappings after outlining both. Create `RespondsToAccountLifecycle` only if it removes substantial identical success/not-found/conflict/validation/unexpected HTTP code. If it saves only a small catch block, keep the mapping local and omit the concern. If created, it may call `PrivilegedFailureResponse` but must not query models, authorize capabilities, mutate state, audit, or know whether the target is a shop or user.
 
-- [ ] **Step 3: Create the user owner**
+- [x] **Step 3: Create the user owner**
 
 Move the selected canonical list query and user lifecycle orchestration into `UserInterventionController`. Keep mutations delegated to `AccountLifecycleService`; use route model binding only where it does not bypass the service's canonical locking/not-found behavior.
 
-- [ ] **Step 4: Create the registered-shop owner**
+- [x] **Step 4: Create the registered-shop owner**
 
 Move registered-shop list/detail and lifecycle orchestration into `RegisteredShopController`. Preserve private document URLs through `admin.shop-documents.show`, lifecycle/archive semantics, and the existing lightweight-list/detail-on-demand boundary. Do not add Phase 8 pagination or query tuning here.
 
 For both controllers, preserve existing `403`, `404`, `409`, `422`, and sanitized `500` outcomes. Keep target-ID resolution inside `AccountLifecycleService` wherever eager route-model binding would bypass its lock, scope, not-found, or conflict handling.
 
-- [ ] **Step 5: Register canonical routes and migrate callers**
+- [x] **Step 5: Register canonical routes and migrate callers**
 
 Move GET pages to `/admin/users` and `/admin/shops`; keep the existing semantic mutation endpoints beneath those resources. Update all frontend links and tests. Old page/detail GETs become redirects only after direct callers are gone.
 
-- [ ] **Step 6: Regenerate frontend route metadata**
+- [x] **Step 6: Regenerate frontend route metadata**
 
 ```powershell
 php artisan ziggy:generate resources/js/ziggy.js
@@ -367,7 +367,7 @@ php artisan ziggy:generate resources/js/ziggy.js
 
 Confirm canonical shop/user names exist and retired `activate` mutation aliases are absent.
 
-- [ ] **Step 7: Verify lifecycle, private access, and UI contracts**
+- [x] **Step 7: Verify lifecycle, private access, and UI contracts**
 
 ```powershell
 php artisan test tests/Feature/SuperAdmin/AccountLifecycleWorkflowTest.php tests/Feature/SuperAdmin/PrivateSensitiveDocumentAccessTest.php tests/Feature/SuperAdmin/PhaseTwoBaselineContractTest.php tests/Feature/SuperAdmin/PhaseSevenStructuralBoundaryTest.php
@@ -376,7 +376,7 @@ pnpm exec vitest run resources/js/Pages/superAdmin/Users/__tests__/SuperAdminUse
 
 Expected: PASS; lifecycle state/audit behavior and private document authorization are unchanged.
 
-- [ ] **Step 8: Run the ponytail decision and commit account-owner extraction**
+- [x] **Step 8: Run the ponytail decision and commit account-owner extraction**
 
 Delete/omit `RespondsToAccountLifecycle` if the completed controllers do not demonstrate meaningful identical HTTP-only code. Then stage the required files; conditionally stage the concern only when it exists:
 

@@ -57,7 +57,7 @@ class PhaseZeroAuthorizationTest extends TestCase
             ->assertOk();
 
         $this->actingAsCompletedPrivileged($admin)
-            ->postJson("/admin/users/{$user->id}/activate", [
+            ->postJson("/admin/users/{$user->id}/reactivate", [
                 'reactivation_reason' => 'Phase zero capability regression check',
             ])
             ->assertOk();
@@ -79,7 +79,7 @@ class PhaseZeroAuthorizationTest extends TestCase
             ->assertOk();
 
         $this->actingAsCompletedPrivileged($admin)
-            ->get('/admin/registered-shops')
+            ->get('/admin/shops')
             ->assertOk();
 
         $this->actingAsCompletedPrivileged($admin)
@@ -87,7 +87,7 @@ class PhaseZeroAuthorizationTest extends TestCase
             ->assertOk();
 
         $this->actingAsCompletedPrivileged($admin)
-            ->postJson("/admin/users/{$user->id}/activate", [
+            ->postJson("/admin/users/{$user->id}/reactivate", [
                 'reactivation_reason' => 'Phase zero capability regression check',
             ])
             ->assertOk();
@@ -122,14 +122,14 @@ class PhaseZeroAuthorizationTest extends TestCase
             'admin.business-upgrade-requests.index' => SuperAdmin::CAP_REVIEW_REGISTRATIONS,
             'admin.business-upgrade-requests.update' => SuperAdmin::CAP_REVIEW_REGISTRATIONS,
             'admin.business-upgrade-requests.documents.download' => SuperAdmin::CAP_REVIEW_REGISTRATIONS,
-            'admin.registered-shops' => SuperAdmin::CAP_INTERVENE_ACCOUNTS,
-            'admin.shops.details' => SuperAdmin::CAP_INTERVENE_ACCOUNTS,
+            'admin.shops.index' => SuperAdmin::CAP_INTERVENE_ACCOUNTS,
+            'admin.shops.show' => SuperAdmin::CAP_INTERVENE_ACCOUNTS,
             'admin.shops.suspend' => SuperAdmin::CAP_INTERVENE_ACCOUNTS,
-            'admin.shops.activate' => SuperAdmin::CAP_INTERVENE_ACCOUNTS,
-            'admin.user-management' => SuperAdmin::CAP_INTERVENE_ACCOUNTS,
+            'admin.shops.reactivate' => SuperAdmin::CAP_INTERVENE_ACCOUNTS,
+            'admin.users.index' => SuperAdmin::CAP_INTERVENE_ACCOUNTS,
             'admin.users.valid-id.show' => SuperAdmin::CAP_INTERVENE_ACCOUNTS,
             'admin.users.suspend' => SuperAdmin::CAP_INTERVENE_ACCOUNTS,
-            'admin.users.activate' => SuperAdmin::CAP_INTERVENE_ACCOUNTS,
+            'admin.users.reactivate' => SuperAdmin::CAP_INTERVENE_ACCOUNTS,
             'admin.premium-plans.store' => SuperAdmin::CAP_MANAGE_PLANS,
             'admin.premium-plans.update' => SuperAdmin::CAP_MANAGE_PLANS,
             'admin.premium-plans.archive' => SuperAdmin::CAP_MANAGE_PLANS,

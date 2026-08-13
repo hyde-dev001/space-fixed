@@ -492,22 +492,20 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
         $this->assertStringNotContainsString($document->file_path, $registrationResponse->getContent());
 
         $detailsResponse = $this->actingAsCompletedPrivileged($admin)
-            ->get(route('admin.shops.details', $owner));
+            ->get(route('admin.shops.show', ['shopOwner' => $owner->id]));
         $detailsResponse->assertOk()
             ->assertJsonPath('shop.documentUrls.0', route('admin.shop-documents.show', [$owner, $document]));
         $this->assertStringNotContainsString($document->file_path, $detailsResponse->getContent());
 
         $userManagementResponse = $this->actingAsCompletedPrivileged($admin)
-            ->get(route('admin.user-management'));
+            ->get(route('admin.users.index'));
         $userManagementResponse->assertInertia(fn (Assert $page) => $page
-            ->where('users.0.validIdUrl', route('admin.users.valid-id.show', $customer))
-            ->missing('users.0.validIdPath'));
+            ->where('users.data.0.validIdUrl', route('admin.users.valid-id.show', $customer))
+            ->missing('users.data.0.validIdPath'));
 
         $legacyUserManagementResponse = $this->actingAsCompletedPrivileged($admin)
             ->get(route('superAdmin.super-admin-user-management'));
-        $legacyUserManagementResponse->assertInertia(fn (Assert $page) => $page
-            ->where('users.data.0.validIdUrl', route('admin.users.valid-id.show', $customer))
-            ->missing('users.data.0.validIdPath'));
+        $legacyUserManagementResponse->assertRedirect(route('admin.users.index'));
         $this->assertStringNotContainsString('valid_ids/customer.png', $userManagementResponse->getContent());
         $this->assertStringNotContainsString('valid_ids/customer.png', $legacyUserManagementResponse->getContent());
     }

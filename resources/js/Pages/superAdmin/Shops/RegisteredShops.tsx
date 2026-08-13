@@ -202,7 +202,7 @@ function RegisteredShops({ shops, stats }) {
   const handleViewDetails = async (shop) => {
     setIsLoadingDetails(true);
     try {
-      const response = await fetch(`/admin/shops/${shop.id}/details`, {
+      const response = await fetch(`/admin/shops/${shop.id}`, {
         method: 'GET',
         headers: {
           Accept: 'application/json',

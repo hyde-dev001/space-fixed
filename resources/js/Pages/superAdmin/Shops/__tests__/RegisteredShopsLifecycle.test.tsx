@@ -79,6 +79,25 @@ describe('RegisteredShops lifecycle controls', () => {
     expect(screen.queryByTitle('Delete Shop')).not.toBeInTheDocument();
   });
 
+  it('loads shop details from the canonical show route', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ shop: shop({ id: 7 }) }),
+    });
+
+    render(<RegisteredShops shops={[shop()]} stats={stats} />);
+
+    fireEvent.click(screen.getByTitle('View Details'));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      '/admin/shops/7',
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.objectContaining({ Accept: 'application/json' }),
+      }),
+    ));
+  });
+
   it('restores an archived shop with a reason and the canonical route', async () => {
     render(
       <RegisteredShops

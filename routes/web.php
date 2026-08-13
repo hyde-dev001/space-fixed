@@ -17,6 +17,8 @@ use App\Http\Controllers\ShopOwnerPasswordSetupController;
 use App\Http\Controllers\ShopRegistrationController;
 use App\Http\Controllers\superAdmin\FlaggedAccountsController;
 use App\Http\Controllers\superAdmin\AdministratorManagementController;
+use App\Http\Controllers\superAdmin\RegisteredShopController;
+use App\Http\Controllers\superAdmin\UserInterventionController;
 use App\Http\Controllers\superAdmin\ShopOwnerRegistrationViewController;
 use App\Http\Controllers\superAdmin\ShopDocumentRenewalController as SuperAdminShopDocumentRenewalController;
 use App\Http\Controllers\superAdmin\ShopOwnerUpgradeRequestController as SuperAdminShopOwnerUpgradeRequestController;
@@ -731,7 +733,7 @@ Route::prefix('superAdmin')->name('superAdmin.')->middleware([
     'privileged.active',
     'privileged.mfa',
 ])->group(function () {
-    Route::get('/super-admin-user-management', [SuperAdminUserManagementController::class, 'index'])
+    Route::get('/super-admin-user-management', fn () => redirect()->route('admin.users.index', request()->query()))
         ->middleware('privileged.capability:intervene_accounts')
         ->name('super-admin-user-management');
     Route::get('/flagged-accounts', [FlaggedAccountsController::class, 'index'])
@@ -1847,8 +1849,15 @@ Route::middleware([
     Route::post('/shop-owner-registration/{id}/reject', [ShopOwnerRegistrationViewController::class, 'reject'])
         ->middleware('privileged.capability:review_registrations')
         ->name('shop-owner-reject');
-    // Shop management routes
-    Route::get('/registered-shops', [SuperAdminController::class, 'showRegisteredShops'])
+    // Registered-shop management owns shop reads and lifecycle mutations.
+    Route::get('/shops', [RegisteredShopController::class, 'index'])
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('shops.index');
+    Route::get('/shops/{shopOwner}', [RegisteredShopController::class, 'show'])
+        ->whereNumber('shopOwner')
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('shops.show');
+    Route::get('/registered-shops', fn () => redirect()->route('admin.shops.index', request()->query()))
         ->middleware('privileged.capability:intervene_accounts')
         ->name('registered-shops');
     Route::get('/business-upgrade-requests', [SuperAdminShopOwnerUpgradeRequestController::class, 'index'])
@@ -1860,7 +1869,10 @@ Route::middleware([
     Route::get('/business-upgrade-requests/{upgradeRequest}/documents/{document}', [SuperAdminShopOwnerUpgradeRequestController::class, 'download'])
         ->middleware('privileged.capability:review_registrations')
         ->name('business-upgrade-requests.documents.download');
-    Route::get('/shops/{id}/details', [SuperAdminController::class, 'shopDetails'])
+    Route::get('/shops/{id}/details', fn (int $id) => redirect()->route(
+        'admin.shops.show',
+        ['shopOwner' => $id] + request()->query(),
+    ))
         ->middleware('privileged.capability:intervene_accounts')
         ->name('shops.details');
     Route::get('/subscription-management', [SuperAdminController::class, 'showSubscriptionManagement'])
@@ -1897,38 +1909,43 @@ Route::middleware([
     Route::post('/premium-plans/{premiumPlan}/reactivate', [SuperAdminController::class, 'reactivatePremiumPlan'])
         ->middleware('privileged.capability:manage_plans')
         ->name('premium-plans.reactivate');
-    Route::post('/shops/{id}/suspend', [SuperAdminController::class, 'suspendShop'])
+    Route::post('/shops/{shopOwner}/suspend', [RegisteredShopController::class, 'suspend'])
+        ->whereNumber('shopOwner')
         ->middleware('privileged.capability:intervene_accounts')
         ->name('shops.suspend');
-    Route::post('/shops/{id}/activate', [SuperAdminController::class, 'activateShop'])
-        ->middleware('privileged.capability:intervene_accounts')
-        ->name('shops.activate');
-    Route::post('/shops/{id}/reactivate', [SuperAdminController::class, 'reactivateShop'])
+    Route::post('/shops/{shopOwner}/reactivate', [RegisteredShopController::class, 'reactivate'])
+        ->whereNumber('shopOwner')
         ->middleware('privileged.capability:intervene_accounts')
         ->name('shops.reactivate');
-    Route::post('/shops/{id}/archive', [SuperAdminController::class, 'archiveShop'])
+    Route::post('/shops/{shopOwner}/archive', [RegisteredShopController::class, 'archive'])
+        ->whereNumber('shopOwner')
         ->middleware(['privileged.capability:intervene_accounts', 'privileged.recent'])
         ->name('shops.archive');
-    Route::post('/shops/{id}/restore', [SuperAdminController::class, 'restoreShop'])
+    Route::post('/shops/{shopOwner}/restore', [RegisteredShopController::class, 'restore'])
+        ->whereNumber('shopOwner')
         ->middleware(['privileged.capability:intervene_accounts', 'privileged.recent'])
         ->name('shops.restore');
-    // User management routes
-    Route::get('/user-management', [SuperAdminController::class, 'showUserManagement'])
+    // User intervention owns the paginated customer-management read model and lifecycle mutations.
+    Route::get('/users', [UserInterventionController::class, 'index'])
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('users.index');
+    Route::get('/user-management', fn () => redirect()->route('admin.users.index', request()->query()))
         ->middleware('privileged.capability:intervene_accounts')
         ->name('user-management');
-    Route::post('/users/{id}/suspend', [SuperAdminController::class, 'suspendUser'])
+    Route::post('/users/{user}/suspend', [UserInterventionController::class, 'suspend'])
+        ->whereNumber('user')
         ->middleware('privileged.capability:intervene_accounts')
         ->name('users.suspend');
-    Route::post('/users/{id}/activate', [SuperAdminController::class, 'activateUser'])
-        ->middleware('privileged.capability:intervene_accounts')
-        ->name('users.activate');
-    Route::post('/users/{id}/reactivate', [SuperAdminController::class, 'reactivateUser'])
+    Route::post('/users/{user}/reactivate', [UserInterventionController::class, 'reactivate'])
+        ->whereNumber('user')
         ->middleware('privileged.capability:intervene_accounts')
         ->name('users.reactivate');
-    Route::post('/users/{id}/archive', [SuperAdminController::class, 'archiveUser'])
+    Route::post('/users/{user}/archive', [UserInterventionController::class, 'archive'])
+        ->whereNumber('user')
         ->middleware(['privileged.capability:intervene_accounts', 'privileged.recent'])
         ->name('users.archive');
-    Route::post('/users/{id}/restore', [SuperAdminController::class, 'restoreUser'])
+    Route::post('/users/{user}/restore', [UserInterventionController::class, 'restore'])
+        ->whereNumber('user')
         ->middleware(['privileged.capability:intervene_accounts', 'privileged.recent'])
         ->name('users.restore');
     // Shop Reports routes
@@ -2683,7 +2700,7 @@ Route::prefix('superAdmin')->name('superAdmin.')->middleware([
     'privileged.active',
     'privileged.mfa',
 ])->group(function () {
-    Route::get('/super-admin-user-management', [SuperAdminUserManagementController::class, 'index'])
+    Route::get('/super-admin-user-management', fn () => redirect()->route('admin.users.index', request()->query()))
         ->middleware('privileged.capability:intervene_accounts')
         ->name('super-admin-user-management');
     Route::get('/flagged-accounts', [FlaggedAccountsController::class, 'index'])

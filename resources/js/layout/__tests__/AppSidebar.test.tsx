@@ -67,8 +67,8 @@ beforeEach(() => {
       'admin.subscription-management': '/admin/subscription-management',
       'admin.shop-reports': '/admin/shop-reports',
       'admin.suspension-appeals': '/admin/appeals',
-      'superAdmin.super-admin-user-management': '/superAdmin/super-admin-user-management',
-      'admin.registered-shops': '/admin/registered-shops',
+      'admin.users.index': '/admin/users',
+      'admin.shops.index': '/admin/shops',
     };
 
     if (routes[name]) return routes[name];
@@ -95,7 +95,7 @@ it('shows truthful canonical operational links to both privileged roles', () => 
 
   expect(screen.getByRole('link', { name: /dashboard/i })).toHaveAttribute('href', '/admin/system-monitoring');
   expect(screen.getByRole('link', { name: /audit history/i })).toHaveAttribute('href', '/admin/audit');
-  expect(screen.getByRole('link', { name: /user management/i })).toHaveAttribute('href', '/superAdmin/super-admin-user-management');
+  expect(screen.getByRole('link', { name: /user management/i })).toHaveAttribute('href', '/admin/users');
   expect(screen.getByRole('link', { name: /shop management/i })).toHaveAttribute('href', '/admin/shop-owner-registration-view');
   expect(screen.queryByText(/notification & communication tools/i)).not.toBeInTheDocument();
 });

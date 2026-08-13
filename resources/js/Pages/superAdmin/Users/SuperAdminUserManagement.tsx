@@ -255,7 +255,6 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
   // UI state for disabling buttons and showing API errors
   const [isProcessingId, setIsProcessingId] = useState<number | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
-  const pollingRef = useRef<number | null>(null);
 
   // Initialize with data from backend (accept paginated payload or raw array)
   const normalizeUsers = (u: PageProps['users']): User[] => {
@@ -301,33 +300,6 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
   React.useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, filterStatus]);
-
-  // Polling: fetch latest users periodically so Shop Owner changes appear without reload
-  const fetchUsersList = async () => {
-    try {
-      const lifecycle = filterStatus === 'archived' ? 'archived' : 'active';
-      const status = filterStatus === 'archived' ? '' : `&status=${encodeURIComponent(filterStatus)}`;
-      const res = await fetch(`/admin/users/list?lifecycle=${lifecycle}${status}`, {
-        headers: { 'Accept': 'application/json' }
-      });
-      if (!res.ok) return;
-      const data = await res.json();
-      if (data && Array.isArray(data.data)) {
-        setUsers(data.data as User[]);
-      }
-    } catch (e) {
-      // ignore polling errors
-    }
-  };
-
-  useEffect(() => {
-    // start polling every 10 seconds
-    fetchUsersList();
-    pollingRef.current = window.setInterval(fetchUsersList, 10000);
-    return () => {
-      if (pollingRef.current) clearInterval(pollingRef.current);
-    };
-  }, [filterStatus]);
 
   const requestLifecycleReason = async (title: string, text: string, confirmButtonText: string) => {
     const result = await Swal.fire({
