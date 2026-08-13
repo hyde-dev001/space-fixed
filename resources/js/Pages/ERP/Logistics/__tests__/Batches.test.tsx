@@ -618,14 +618,9 @@ it('renders active batches as a table and opens stop details in a modal', async 
   expect(screen.getByRole('row', { name: /Batch #2/ })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'View details for batch 2' })).toBeInTheDocument();
   const activeRow = screen.getByRole('row', { name: /Batch #2/ });
-  const routeTrigger = within(activeRow).getByRole('button', { name: 'View route 2' });
-  expect(routeTrigger).toHaveAttribute('title', 'View route');
+  expect(within(activeRow).queryByRole('button', { name: 'View route 2' })).not.toBeInTheDocument();
   expect(within(activeRow).getByTitle('View details')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Expand batch 2' })).not.toBeInTheDocument();
-
-  fireEvent.click(routeTrigger);
-  expect(screen.getByTestId('batch-workspace')).toBeInTheDocument();
-  expect(screen.getByRole('heading', { name: 'Batch #2' })).toBeInTheDocument();
 
   const detailsTrigger = screen.getByRole('button', { name: 'View details for batch 2' });
   fireEvent.click(detailsTrigger);
@@ -651,7 +646,7 @@ it('opens batch history from the active filter row', () => {
   const history = screen.getByRole('dialog', { name: 'Batch history' });
   expect(history).toBeInTheDocument();
   expect(history).toHaveTextContent('Batch #6');
-  expect(within(history).getByTitle('View summary')).toBeInTheDocument();
+  expect(within(history).queryByTitle('View summary')).not.toBeInTheDocument();
   expect(within(history).getByTitle('View details')).toBeInTheDocument();
 });
 
@@ -677,18 +672,19 @@ it('uses status-aware primary and secondary actions', () => {
   render(<Batches />);
   expect(screen.getByRole('button', { name: 'Edit batch 1' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'View offer 2' })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'View route 3' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'View route 3' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'View details for batch 3' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'View progress 4' })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'History (2)' }));
   const history = screen.getByRole('dialog', { name: 'Batch history' });
-  expect(within(history).getByRole('button', { name: 'View summary 5' })).toBeInTheDocument();
-  expect(within(history).getByRole('button', { name: 'View summary 6' })).toBeInTheDocument();
+  expect(within(history).queryByRole('button', { name: 'View summary 5' })).not.toBeInTheDocument();
+  expect(within(history).queryByRole('button', { name: 'View summary 6' })).not.toBeInTheDocument();
+  expect(within(history).getByRole('button', { name: 'View details for batch 5' })).toBeInTheDocument();
+  expect(within(history).getByRole('button', { name: 'View details for batch 6' })).toBeInTheDocument();
   expect(screen.queryByLabelText('More actions for batch 4')).not.toBeInTheDocument();
 });
 
-it('opens a cancelled batch summary and scrolls the workspace into view', () => {
-  const scrollIntoView = vi.fn();
-  Element.prototype.scrollIntoView = scrollIntoView;
+it('opens cancelled batch details without a summary action', () => {
   mocks.props.batches = [{
     ...batchForStatus(6, 'cancelled'),
     legs: [],
@@ -697,13 +693,12 @@ it('opens a cancelled batch summary and scrolls the workspace into view', () => 
   }];
   render(<Batches />);
   fireEvent.click(screen.getByRole('button', { name: 'History (1)' }));
-  fireEvent.click(within(screen.getByRole('dialog', { name: 'Batch history' })).getByRole('button', { name: 'View summary 6' }));
+  const history = screen.getByRole('dialog', { name: 'Batch history' });
+  expect(within(history).queryByRole('button', { name: 'View summary 6' })).not.toBeInTheDocument();
+  fireEvent.click(within(history).getByRole('button', { name: 'View details for batch 6' }));
 
-  const workspace = within(screen.getByTestId('batch-workspace'));
-  const summary = within(workspace.getByRole('heading', { name: 'Batch #6' }).closest('section')!);
-  expect(summary.getByText('Customer requested another date')).toBeInTheDocument();
-  expect(summary.getByText('Order #81')).toBeInTheDocument();
-  expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+  const details = screen.getByRole('dialog', { name: 'Batch 6 details' });
+  expect(details).toHaveTextContent('Order #81');
 });
 
 it('keeps saved stops visible in a cancelled batch history card', () => {
@@ -742,25 +737,21 @@ it.each(['completed', 'cancelled'])('uses the immutable stop snapshot throughout
   expect(cardRows.map((row) => row.textContent)).toEqual(['Snapshot First', 'Snapshot Second']);
   expect(within(details).queryByText('Mutable cancellation')).not.toBeInTheDocument();
 
-  fireEvent.click(within(history).getByRole('button', { name: 'View summary 6' }));
-  const workspace = within(screen.getByTestId('batch-workspace'));
-  expect(workspace.getByText('2/10 stops')).toBeInTheDocument();
-  expect(workspace.getAllByText(/Snapshot (First|Second)/).map((row) => row.textContent)).toEqual(['Snapshot First', 'Snapshot Second']);
-  expect(workspace.queryByText('Mutable cancellation')).not.toBeInTheDocument();
+  expect(within(details).getByText('2/10 stops')).toBeInTheDocument();
 });
 
-it('uses the persisted batch capacity in a history workspace', () => {
+it('uses the persisted batch capacity in history details', () => {
   mocks.props.dailyRiderCapacity = 1;
   mocks.props.batches = [{
     ...batchForStatus(5, 'completed'), capacity: 3, legs: [], stop_snapshot: historicalStops,
   }];
   render(<Batches />);
   fireEvent.click(screen.getByRole('button', { name: 'History (1)' }));
-  fireEvent.click(within(screen.getByRole('dialog', { name: 'Batch history' })).getByRole('button', { name: 'View summary 5' }));
-  const workspace = within(screen.getByTestId('batch-workspace'));
+  fireEvent.click(within(screen.getByRole('dialog', { name: 'Batch history' })).getByRole('button', { name: 'View details for batch 5' }));
+  const details = screen.getByRole('dialog', { name: 'Batch 5 details' });
 
-  expect(workspace.getByText('2/3 stops')).toBeInTheDocument();
-  expect(workspace.queryByText(/exceeds the daily rider capacity/)).not.toBeInTheDocument();
+  expect(within(details).getByText('2/3 stops')).toBeInTheDocument();
+  expect(within(details).queryByText(/exceeds the daily rider capacity/)).not.toBeInTheDocument();
 });
 
 it('falls back from an empty snapshot to saved cancellation stops', () => {
@@ -801,8 +792,7 @@ it.each(['completed', 'cancelled'])('shows unavailable history details only when
   fireEvent.click(within(history).getByRole('button', { name: 'View details for batch 6' }));
   const details = screen.getByRole('dialog', { name: 'Batch 6 details' });
   expect(details).toHaveTextContent('Historical stop details unavailable');
-  fireEvent.click(within(history).getByRole('button', { name: 'View summary 6' }));
-  expect(within(screen.getByTestId('batch-workspace')).getByText('Historical stop details unavailable')).toBeInTheDocument();
+  expect(details).toHaveTextContent('Historical stop details unavailable');
 });
 
 it.each([null, []])('falls back to live stops when cancelled_stops is %j', (cancelledStops) => {
