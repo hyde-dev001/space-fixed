@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Head, usePage } from "@inertiajs/react";
+import { Head, Link, usePage } from "@inertiajs/react";
 import AppLayout from "../../layout/AppLayout";
 
 // Icon Components
@@ -156,7 +156,7 @@ export default function SystemMonitoringDashboard() {
   const systemHealthRows = dashboard?.system_health || [];
   const recentActivityRows = dashboard?.recent_activity || [];
   const performanceRows = dashboard?.performance_metrics || [];
-  const systemsOperational = dashboard?.systems_operational !== false;
+  const systemsOperational = dashboard?.systems_operational === true;
 
   const metricsData: MetricData[] = [
     {
@@ -200,14 +200,14 @@ export default function SystemMonitoringDashboard() {
               System Monitoring Dashboard
             </h1>
             <p className="text-gray-600 dark:text-gray-400 mt-2">
-              Real-time insights into system performance, user activity, and platform health
+              Current database, queue, failed-job, and account snapshots
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 px-4 py-2 bg-green-100 rounded-lg dark:bg-green-900/30">
-              <div className={`w-2 h-2 rounded-full ${systemsOperational ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
+            <div className={`flex items-center gap-2 rounded-lg px-4 py-2 ${systemsOperational ? 'bg-green-100 dark:bg-green-900/30' : 'bg-red-100 dark:bg-red-900/30'}`}>
+              <div className={`h-2 w-2 rounded-full ${systemsOperational ? 'bg-green-500' : 'bg-red-500'}`}></div>
               <span className={`text-sm font-medium ${systemsOperational ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>
-                {systemsOperational ? 'All Systems Operational' : 'System Attention Required'}
+                {systemsOperational ? 'Database connected' : 'Database attention required'}
               </span>
             </div>
           </div>
@@ -226,11 +226,6 @@ export default function SystemMonitoringDashboard() {
             <div className="flex flex-col gap-2 mb-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h4 className="text-lg font-semibold text-gray-800 dark:text-white/90">System Health</h4>
-              </div>
-              <div className="flex items-center gap-3">
-                <button className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-theme-sm font-medium text-gray-700 shadow-theme-xs hover:bg-gray-50 hover:text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-white/[0.03] dark:hover:text-gray-200">
-                  See all
-                </button>
               </div>
             </div>
             <div className="max-w-full overflow-x-auto">
@@ -262,11 +257,12 @@ export default function SystemMonitoringDashboard() {
               <div>
                 <h4 className="text-lg font-semibold text-gray-800 dark:text-white/90">Recent Activity</h4>
               </div>
-              <div className="flex items-center gap-3">
-                <button className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-theme-sm font-medium text-gray-700 shadow-theme-xs hover:bg-gray-50 hover:text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-white/[0.03] dark:hover:text-gray-200">
-                  See all
-                </button>
-              </div>
+              <Link
+                href="/admin/audit"
+                className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-theme-sm font-medium text-gray-700 shadow-theme-xs hover:bg-gray-50 hover:text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-white/[0.03] dark:hover:text-gray-200"
+              >
+                View Audit History
+              </Link>
             </div>
             <div className="max-w-full overflow-x-auto">
               <Table>
@@ -302,12 +298,7 @@ export default function SystemMonitoringDashboard() {
           <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white px-4 pb-3 pt-4 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6">
             <div className="flex flex-col gap-2 mb-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h4 className="text-lg font-semibold text-gray-800 dark:text-white/90">Performance Metrics</h4>
-              </div>
-              <div className="flex items-center gap-3">
-                <button className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-theme-sm font-medium text-gray-700 shadow-theme-xs hover:bg-gray-50 hover:text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-white/[0.03] dark:hover:text-gray-200">
-                  See all
-                </button>
+                <h4 className="text-lg font-semibold text-gray-800 dark:text-white/90">Current operational snapshots</h4>
               </div>
             </div>
             <div className="max-w-full overflow-x-auto">
@@ -325,7 +316,7 @@ export default function SystemMonitoringDashboard() {
                       <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">{row.metric}</TableCell>
                       <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">{row.value}</TableCell>
                       <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">
-                        <Badge size="sm" color={/warning/i.test(row.status) ? 'warning' : /excellent|high|live|low/i.test(row.status) ? 'success' : 'info'}>{row.status}</Badge>
+                        <Badge size="sm" color={/warning/i.test(row.status) ? 'warning' : /excellent|high|snapshot|low/i.test(row.status) ? 'success' : 'info'}>{row.status}</Badge>
                       </TableCell>
                     </TableRow>
                   ))}

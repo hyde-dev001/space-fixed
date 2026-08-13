@@ -203,7 +203,10 @@ class EmployeeRepository extends BaseRepository
     {
         return $this->model->where('id', $id)
             ->where('shop_owner_id', $shopOwnerId)
-            ->update(['status' => 'suspended']);
+            ->update([
+                'status' => 'suspended',
+                'privileged_suspension_id' => null,
+            ]);
     }
 
     /**
@@ -217,7 +220,10 @@ class EmployeeRepository extends BaseRepository
     {
         return $this->model->where('id', $id)
             ->where('shop_owner_id', $shopOwnerId)
-            ->update(['status' => 'active']);
+            ->update([
+                'status' => 'active',
+                'privileged_suspension_id' => null,
+            ]);
     }
 
     /**

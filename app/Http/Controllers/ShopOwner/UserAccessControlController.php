@@ -629,7 +629,7 @@ class UserAccessControlController extends Controller
             ]);
 
             $updatedEmployee = DB::transaction(function () use ($employee, $validated) {
-                $employee->fill([
+                $employeeData = [
                     'name' => $validated['name'],
                     'email' => $validated['email'],
                     'phone' => $validated['phone'] ?? '',
@@ -639,7 +639,13 @@ class UserAccessControlController extends Controller
                     'salary' => $validated['salary'] ?? 0,
                     'hire_date' => $validated['hire_date'] ?? $employee->hire_date ?? now()->toDateString(),
                     'status' => $validated['status'] ?? $employee->status,
-                ]);
+                ];
+
+                if (array_key_exists('status', $validated)) {
+                    $employeeData['privileged_suspension_id'] = null;
+                }
+
+                $employee->fill($employeeData);
                 $employee->save();
 
                 $user = $employee->user;

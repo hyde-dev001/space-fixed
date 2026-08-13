@@ -5,7 +5,9 @@ namespace App\Models;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Activitylog\Traits\LogsActivity;
@@ -15,7 +17,7 @@ use Spatie\Permission\Traits\HasRoles;
 class User extends Authenticatable implements MustVerifyEmail
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, HasApiTokens, Notifiable, LogsActivity, HasRoles;
+    use HasFactory, HasApiTokens, Notifiable, LogsActivity, HasRoles, SoftDeletes;
     
     /**
      * The guard name for this model (for Spatie Permission)
@@ -67,6 +69,7 @@ class User extends Authenticatable implements MustVerifyEmail
     protected $hidden = [
         'password',
         'remember_token',
+        'valid_id_path',
     ];
 
     /**
@@ -89,6 +92,17 @@ class User extends Authenticatable implements MustVerifyEmail
     public function shopOwner(): BelongsTo
     {
         return $this->belongsTo(ShopOwner::class);
+    }
+
+    public function currentSuspension(): BelongsTo
+    {
+        return $this->belongsTo(AccountSuspension::class, 'current_suspension_id');
+    }
+
+    public function suspensionHistory(): HasMany
+    {
+        return $this->hasMany(AccountSuspension::class, 'account_id')
+            ->where('account_type', AccountSuspension::ACCOUNT_TYPE_CUSTOMER);
     }
 
     /**

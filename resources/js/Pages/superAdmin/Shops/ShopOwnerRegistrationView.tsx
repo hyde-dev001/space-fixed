@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Head, Link, router } from "@inertiajs/react";
 import AppLayout from "../../../layout/AppLayout";
 import Swal from 'sweetalert2';
@@ -72,13 +72,73 @@ interface OperatingHours {
   close: string;
 }
 
-interface RegistrationDocument {
+export type RegistrationExpirationMode = 'dated' | 'none' | '';
+
+export interface RegistrationDocument {
+  id?: number;
   url: string;
   type?: string;
+  documentType?: string;
+  logicalSlot?: string | null;
+  versionNumber?: number | null;
+  issuedOn?: string | null;
+  expirationMode?: RegistrationExpirationMode | null;
+  expiresOn?: string | null;
+  validity?: string;
+  status?: string;
 }
+
+export interface RegistrationReviewMetadata {
+  documentType: string;
+  logicalSlot: string;
+  versionNumber: number;
+  issuedOn: string | null;
+  expirationMode: RegistrationExpirationMode;
+  expiresOn: string | null;
+}
+
+export const buildRegistrationApprovalPayload = (
+  documents: RegistrationDocument[],
+  viewedDocuments: Set<number>,
+  reviewMetadata: Record<number, Partial<RegistrationReviewMetadata>> = {},
+) => ({
+  documents: documents.map((document, index) => {
+    const metadata = reviewMetadata[document.id ?? 0] ?? {};
+
+    return {
+      id: document.id ?? 0,
+      document_type: metadata.documentType ?? document.documentType ?? document.type ?? '',
+      logical_slot: metadata.logicalSlot ?? document.logicalSlot ?? '',
+      version_number: metadata.versionNumber ?? document.versionNumber ?? 0,
+      issued_on: metadata.issuedOn ?? document.issuedOn ?? null,
+      expiration_mode: metadata.expirationMode ?? document.expirationMode ?? '',
+      expires_on: metadata.expiresOn ?? document.expiresOn ?? null,
+      viewed: viewedDocuments.has(index),
+    };
+  }),
+});
 
 export const areAllDocumentsViewed = (documentCount: number, viewedDocuments = new Set<number>()) =>
   documentCount > 0 && viewedDocuments.size >= documentCount;
+
+export const canDecideRegistration = (status: Registration['status']): boolean => status === 'pending';
+
+export const getRegistrationDecisionErrorMessage = (errors: unknown): string => {
+  if (errors && typeof errors === 'object') {
+    const errorBag = errors as Record<string, unknown>;
+    for (const key of ['message', 'registration', 'rejection_reason', 'status']) {
+      const value = errorBag[key];
+      if (Array.isArray(value) && typeof value[0] === 'string' && value[0].trim()) {
+        return value[0];
+      }
+      if (typeof value === 'string' && value.trim()) {
+        return value;
+      }
+    }
+  }
+
+  return 'The server did not apply this decision. The registration may have changed; refresh the page and try again.';
+};
 
 interface Registration {
   id: number;
@@ -97,6 +157,57 @@ interface Registration {
   status: "pending" | "approved" | "rejected";
   createdAt: string;
 }
+
+interface RegistrationPage {
+  data: Registration[];
+  current_page: number;
+  last_page: number;
+  per_page: number;
+  total: number;
+  from: number | null;
+  to: number | null;
+}
+
+interface RegistrationStats {
+  total: number;
+  pending: number;
+  approved: number;
+  rejected: number;
+}
+
+interface RegistrationPageProps {
+  registrations?: Registration[] | RegistrationPage;
+  stats?: RegistrationStats;
+  filters?: {
+    search?: string | null;
+    status?: 'all' | 'pending' | 'approved' | 'rejected' | null;
+  };
+}
+
+const isRegistrationPage = (
+  value: Registration[] | RegistrationPage,
+): value is RegistrationPage => !Array.isArray(value);
+
+const documentsForRegistration = (registration: Registration): RegistrationDocument[] => (
+  registration.documents && registration.documents.length > 0
+    ? registration.documents
+    : (registration.documentUrls || []).map((url) => ({ url }))
+);
+
+const initialReviewMetadata = (documents: RegistrationDocument[]): Record<number, RegistrationReviewMetadata> => (
+  Object.fromEntries(
+    documents
+      .filter((document): document is RegistrationDocument & { id: number } => typeof document.id === 'number')
+      .map((document) => [document.id, {
+        documentType: document.documentType ?? document.type ?? '',
+        logicalSlot: document.logicalSlot ?? '',
+        versionNumber: document.versionNumber ?? 0,
+        issuedOn: document.issuedOn ?? null,
+        expirationMode: document.expirationMode ?? '',
+        expiresOn: document.expiresOn ?? null,
+      }]),
+  )
+);
 
 interface MetricData {
   title: string;
@@ -165,13 +276,23 @@ const MetricCard: React.FC<MetricData> = ({
   );
 };
 
-export default function ShopOwnerRegistrationView({ registrations = [] }: { registrations?: Registration[] }) {
+export default function ShopOwnerRegistrationView({
+  registrations = [],
+  stats,
+  filters,
+}: RegistrationPageProps) {
+  const serverPage = isRegistrationPage(registrations);
+  const serverPaginated = serverPage;
+  const serverRows = serverPage ? registrations.data : registrations;
   const [expandedCardId, setExpandedCardId] = useState<number | null>(null);
   const [expandedDocuments, setExpandedDocuments] = useState<Set<number>>(new Set());
   const [viewedDocuments, setViewedDocuments] = useState<Record<number, Set<number>>>({});
-  const [registrationsState, setRegistrationsState] = useState<Registration[]>(registrations);
-  const [searchTerm, setSearchTerm] = useState<string>('');
-  const [filterStatus, setFilterStatus] = useState<'pending' | 'approved' | 'rejected'>('pending');
+  const [reviewMetadata, setReviewMetadata] = useState<Record<number, Partial<RegistrationReviewMetadata>>>({});
+  const [registrationsState, setRegistrationsState] = useState<Registration[]>(serverRows);
+  const [searchTerm, setSearchTerm] = useState<string>(filters?.search ?? '');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'approved' | 'rejected'>(
+    filters?.status ?? (serverPaginated ? 'all' : 'pending'),
+  );
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [selectedRegistration, setSelectedRegistration] = useState<Registration | null>(null);
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
@@ -179,9 +300,55 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
   const [otherRejectReason, setOtherRejectReason] = useState('');
   const [rejectionReason, setRejectionReason] = useState('');
   const [registrationToReject, setRegistrationToReject] = useState<Registration | null>(null);
+  const [submittingRegistrationId, setSubmittingRegistrationId] = useState<number | null>(null);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(serverPage?.current_page ?? 1);
   const [itemsPerPage] = useState(7);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipInitialSearch = useRef(true);
+
+  useEffect(() => {
+    setRegistrationsState(serverRows);
+    if (serverPage) {
+      setCurrentPage(serverPage.current_page);
+    }
+  }, [registrations]);
+
+  const requestPage = (page: number, nextStatus = filterStatus) => {
+    router.get('/admin/registrations', {
+      search: searchTerm || undefined,
+      status: nextStatus,
+      page,
+    }, {
+      preserveState: true,
+      preserveScroll: true,
+      replace: true,
+    });
+  };
+
+  const goToPage = (page: number) => {
+    if (serverPaginated) {
+      requestPage(page);
+      return;
+    }
+
+    setCurrentPage(page);
+  };
+
+  useEffect(() => {
+    if (!serverPaginated) return;
+    if (skipInitialSearch.current) {
+      skipInitialSearch.current = false;
+      return;
+    }
+
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => requestPage(1), 250);
+
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+  }, [searchTerm]);
 
   const rejectReasonOptions = [
     'Incomplete documentation',
@@ -195,7 +362,9 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
   const getDocumentTypeLabel = (documentType?: string, otherIndex = 1) => {
     const normalized = (documentType || '').toLowerCase();
 
-    if (normalized === 'dti_registration') return 'Business Registration (DTI/SEC)';
+    if (normalized === 'legacy_dti_sec_registration') return 'Legacy Business Registration (DTI/SEC)';
+    if (normalized === 'dti_registration') return 'Business Registration (DTI)';
+    if (normalized === 'sec_registration') return 'Business Registration (SEC)';
     if (normalized === 'mayors_permit') return "Mayor's Permit";
     if (normalized === 'bir_certificate') return 'BIR Certificate';
     if (normalized === 'valid_id') return 'Valid ID';
@@ -220,10 +389,23 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
   const buildProfessionalRejectionMessage = (registration: Registration, reason: string) => {
     const registrationTypeLabel = formatRegistrationType(registration.registrationType);
 
-    return `After reviewing your application for ${registration.businessName} (${registrationTypeLabel}), we regret to inform you that we are unable to approve your registration at this time due to ${reason}. Please review the submission requirements, address the concern, and resubmit your application. If you believe this decision was made in error, you may resubmit with updated and complete information for re-evaluation.`;
+    return `After reviewing your application for ${registration.businessName} (${registrationTypeLabel}), we regret to inform you that we are unable to approve your registration at this time due to ${reason}. Please review the submission requirements, address the concern, and resubmit your application for re-evaluation.`.slice(0, 500);
+  };
+
+  const openRegistration = (registration: Registration) => {
+    const documents = documentsForRegistration(registration);
+
+    setSelectedRegistration(registration);
+    setReviewMetadata(initialReviewMetadata(documents));
+    setIsViewModalOpen(true);
   };
 
   const handleApprove = async (id: number) => {
+    const registration = registrationsState.find((item) => item.id === id);
+    if (!registration || !canDecideRegistration(registration.status) || submittingRegistrationId !== null) {
+      return;
+    }
+
     const result = await Swal.fire({
       title: 'Approve Registration?',
       text: 'Are you sure you want to approve this shop owner registration?',
@@ -236,7 +418,11 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
     });
 
     if (result.isConfirmed) {
-      router.post(`/superAdmin/shop-owner-registration/${id}/approve`, {}, {
+      setSubmittingRegistrationId(id);
+      const documents = documentsForRegistration(registration);
+      const payload = buildRegistrationApprovalPayload(documents, viewedDocuments[id] ?? new Set(), reviewMetadata);
+
+      router.post(`/admin/registrations/${id}/approve`, payload, {
         onSuccess: () => {
           setRegistrationsState(prev =>
             prev.map(reg => reg.id === id ? { ...reg, status: "approved" as const } : reg)
@@ -253,15 +439,22 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
           console.error('Approval error:', errors);
           Swal.fire({
             icon: 'error',
-            title: 'Error',
-            text: 'Failed to approve registration. Please try again.'
+            title: 'Approval not applied',
+            text: getRegistrationDecisionErrorMessage(errors),
           });
+        },
+        onFinish: () => {
+          setSubmittingRegistrationId(null);
         }
       });
     }
   };
 
   const handleReject = (registration: Registration) => {
+    if (!canDecideRegistration(registration.status) || submittingRegistrationId !== null) {
+      return;
+    }
+
     setRegistrationToReject(registration);
     setSelectedRejectReason('');
     setOtherRejectReason('');
@@ -270,7 +463,11 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
   };
 
   const handleConfirmReject = async () => {
-    if (!registrationToReject) return;
+    if (
+      !registrationToReject
+      || !canDecideRegistration(registrationToReject.status)
+      || submittingRegistrationId !== null
+    ) return;
 
     // Close the modal first to avoid z-index conflicts
     setIsRejectModalOpen(false);
@@ -290,7 +487,8 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
     });
 
     if (result.isConfirmed) {
-      router.post(`/superAdmin/shop-owner-registration/${registrationToReject.id}/reject`,
+      setSubmittingRegistrationId(registrationToReject.id);
+      router.post(`/admin/registrations/${registrationToReject.id}/reject`,
         {
           rejection_reason: rejectionReason
         },
@@ -316,14 +514,18 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
           },
           onError: (errors) => {
             console.error('Rejection error:', errors);
+            setIsRejectModalOpen(true);
             Swal.fire({
               icon: 'error',
-              title: 'Error',
-              text: 'Failed to reject application. Please try again.',
+              title: 'Rejection not applied',
+              text: getRegistrationDecisionErrorMessage(errors),
               customClass: {
                 popup: 'swal2-popup-custom'
               }
             });
+          },
+          onFinish: () => {
+            setSubmittingRegistrationId(null);
           }
         }
       );
@@ -334,37 +536,62 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
   };
 
   // Filter registrations based on status and search term
-  const filteredRegistrations = registrationsState.filter(reg => {
-    const statusMatch = reg.status === filterStatus;
-    const searchMatch = searchTerm === '' ||
-      reg.businessName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      reg.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      `${reg.firstName} ${reg.lastName}`.toLowerCase().includes(searchTerm.toLowerCase());
-    return statusMatch && searchMatch;
-  });
+  const filteredRegistrations = serverPaginated
+    ? registrationsState
+    : registrationsState.filter(reg => {
+      const statusMatch = filterStatus === 'all' || reg.status === filterStatus;
+      const searchMatch = searchTerm === '' ||
+        reg.businessName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        reg.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        `${reg.firstName} ${reg.lastName}`.toLowerCase().includes(searchTerm.toLowerCase());
+      return statusMatch && searchMatch;
+    });
 
   // Pagination calculations
-  const totalPages = Math.ceil(filteredRegistrations.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const paginatedRegistrations = filteredRegistrations.slice(startIndex, endIndex);
+  const totalPages = serverPage ? serverPage.last_page : Math.ceil(filteredRegistrations.length / itemsPerPage);
+  const startIndex = serverPage ? Math.max(0, (serverPage.from ?? 1) - 1) : (currentPage - 1) * itemsPerPage;
+  const endIndex = serverPage ? (serverPage.to ?? startIndex + filteredRegistrations.length) : startIndex + itemsPerPage;
+  const paginatedRegistrations = serverPaginated
+    ? filteredRegistrations
+    : filteredRegistrations.slice(startIndex, endIndex);
 
   // Reset to page 1 when filters change
-  React.useEffect(() => {
+  useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, filterStatus]);
 
   const selectedRegistrationDocuments: RegistrationDocument[] = selectedRegistration
-    ? (
-      selectedRegistration.documents && selectedRegistration.documents.length > 0
-        ? selectedRegistration.documents
-        : (selectedRegistration.documentUrls || []).map((url) => ({ url }))
-    )
+    ? documentsForRegistration(selectedRegistration)
     : [];
   const allDocumentsViewed = areAllDocumentsViewed(
     selectedRegistrationDocuments.length,
     selectedRegistration ? viewedDocuments[selectedRegistration.id] : undefined,
   );
+  const reviewMetadataComplete = selectedRegistrationDocuments.length > 0
+    && selectedRegistrationDocuments.every((document) => {
+      const metadata = document.id === undefined ? undefined : reviewMetadata[document.id];
+      const expirationMode = metadata?.expirationMode ?? document.expirationMode;
+
+      return typeof document.id === 'number'
+        && typeof (metadata?.documentType ?? document.documentType) === 'string'
+        && Boolean(metadata?.logicalSlot ?? document.logicalSlot)
+        && (metadata?.versionNumber ?? document.versionNumber ?? 0) > 0
+        && (expirationMode === 'dated' || expirationMode === 'none');
+    });
+  const canSubmitApproval = allDocumentsViewed && reviewMetadataComplete;
+
+  const updateReviewMetadata = (
+    documentId: number,
+    changes: Partial<RegistrationReviewMetadata>,
+  ) => {
+    setReviewMetadata((current) => ({
+      ...current,
+      [documentId]: {
+        ...(current[documentId] ?? {}),
+        ...changes,
+      },
+    }));
+  };
 
   return (
     <AppLayout>
@@ -387,7 +614,7 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
             <MetricCard
               title="Total Applications"
-              value={registrationsState.length}
+              value={stats?.total ?? registrationsState.length}
               change={12}
               changeType="increase"
               icon={UserIcon}
@@ -396,7 +623,7 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
             />
             <MetricCard
               title="Pending Reviews"
-              value={registrationsState.filter(r => r.status === 'pending').length}
+              value={stats?.pending ?? registrationsState.filter(r => r.status === 'pending').length}
               change={5}
               changeType="decrease"
               icon={TimeIcon}
@@ -405,7 +632,7 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
             />
             <MetricCard
               title="Approved"
-              value={registrationsState.filter(r => r.status === 'approved').length}
+              value={stats?.approved ?? registrationsState.filter(r => r.status === 'approved').length}
               change={8}
               changeType="increase"
               icon={CheckCircleIcon}
@@ -414,7 +641,7 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
             />
             <MetricCard
               title="Rejected"
-              value={registrationsState.filter(r => r.status === 'rejected').length}
+              value={stats?.rejected ?? registrationsState.filter(r => r.status === 'rejected').length}
               change={2}
               changeType="increase"
               icon={AlertIcon}
@@ -446,10 +673,17 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
                 </label>
                 <select
                   value={filterStatus}
-                  onChange={(e) => setFilterStatus(e.target.value as 'pending' | 'approved' | 'rejected')}
+                  onChange={(e) => {
+                    const nextStatus = e.target.value as 'all' | 'pending' | 'approved' | 'rejected';
+                    setFilterStatus(nextStatus);
+                    if (serverPaginated) {
+                      requestPage(1, nextStatus);
+                    }
+                  }}
                   aria-label="Filter by Status"
                   className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
                 >
+                  <option value="all">All</option>
                   <option value="pending">Pending</option>
                   <option value="approved">Approved</option>
                   <option value="rejected">Rejected</option>
@@ -462,7 +696,7 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
             <div className="p-6 border-b border-gray-200 dark:border-gray-700">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                Shop Owner Applications ({filteredRegistrations.length})
+                Shop Owner Applications ({serverPage?.total ?? filteredRegistrations.length})
               </h3>
             </div>
             <div className="overflow-auto">
@@ -516,10 +750,7 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
                       <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
                         <div className="flex justify-center space-x-2">
                           <button
-                            onClick={() => {
-                              setSelectedRegistration(reg);
-                              setIsViewModalOpen(true);
-                            }}
+                            onClick={() => openRegistration(reg)}
                             className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300"
                             title="View Details"
                           >
@@ -537,7 +768,7 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
                   <CheckCircleIcon className="mx-auto h-12 w-12 text-gray-400 mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No applications found</h3>
                   <p className="text-gray-600 dark:text-gray-400">
-                    There are no {filterStatus} shop owner registrations to review.
+                    There are no {filterStatus === 'all' ? '' : filterStatus + ' '}shop owner registrations to review.
                   </p>
                 </div>
               )}
@@ -548,16 +779,17 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
               <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
                 <div className="flex items-center justify-between">
                   <div className="text-sm text-gray-700 dark:text-gray-300">
-                    Showing <span className="font-medium">{startIndex + 1}</span> to{" "}
-                    <span className="font-medium">{Math.min(endIndex, filteredRegistrations.length)}</span> of{" "}
-                    <span className="font-medium">{filteredRegistrations.length}</span>
+                    Showing <span className="font-medium">{serverPage?.from ?? startIndex + 1}</span> to{" "}
+                    <span className="font-medium">{serverPage?.to ?? Math.min(endIndex, filteredRegistrations.length)}</span> of{" "}
+                    <span className="font-medium">{serverPage?.total ?? filteredRegistrations.length}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                      onClick={() => goToPage(Math.max(currentPage - 1, 1))}
                       disabled={currentPage === 1}
                       className="p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                       title="Previous page"
+                      aria-label="Previous page"
                     >
                       <svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -574,7 +806,7 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
                         return (
                           <button
                             key={page}
-                            onClick={() => setCurrentPage(page)}
+                            onClick={() => goToPage(page)}
                             className={`min-w-[40px] h-10 px-3 rounded-lg font-medium transition-colors ${
                               currentPage === page
                                 ? "bg-blue-600 text-white"
@@ -595,10 +827,11 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
                     })}
 
                     <button
-                      onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                      onClick={() => goToPage(Math.min(currentPage + 1, totalPages))}
                       disabled={currentPage === totalPages}
                       className="p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                       title="Next page"
+                      aria-label="Next page"
                     >
                       <svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -738,6 +971,77 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
                                     {expandedDocuments.has(index) ? 'Hide' : 'View'}
                                   </button>
                                 </div>
+                                {document.id !== undefined && (
+                                  <div className="mt-3 space-y-3 border-t border-gray-100 pt-3 dark:border-gray-700">
+                                    <p className="text-xs text-gray-600 dark:text-gray-300">
+                                      Owner declaration: issued {document.issuedOn || 'not provided'}; {
+                                        document.expirationMode === 'dated'
+                                          ? `expires ${document.expiresOn || 'date not provided'}`
+                                          : document.expirationMode === 'none'
+                                            ? 'no expiration declared'
+                                            : 'expiration not declared'
+                                      }.
+                                    </p>
+                                    {document.logicalSlot === 'business_registration' && (
+                                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                                        Verified authority
+                                        <select
+                                          value={reviewMetadata[document.id]?.documentType ?? document.documentType ?? ''}
+                                          onChange={(event) => updateReviewMetadata(document.id!, {
+                                            documentType: event.target.value,
+                                          })}
+                                          className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                                        >
+                                          <option value="dti_registration">DTI</option>
+                                          <option value="sec_registration">SEC</option>
+                                        </select>
+                                      </label>
+                                    )}
+                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                                        Verified issue date
+                                        <input
+                                          type="date"
+                                          value={reviewMetadata[document.id]?.issuedOn ?? document.issuedOn ?? ''}
+                                          onChange={(event) => updateReviewMetadata(document.id!, {
+                                            issuedOn: event.target.value || null,
+                                          })}
+                                          className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                                        />
+                                      </label>
+                                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                                        Verified expiration
+                                        <select
+                                          value={reviewMetadata[document.id]?.expirationMode ?? document.expirationMode ?? ''}
+                                          onChange={(event) => updateReviewMetadata(document.id!, {
+                                            expirationMode: event.target.value as RegistrationExpirationMode,
+                                            expiresOn: event.target.value === 'none'
+                                              ? null
+                                              : reviewMetadata[document.id!]?.expiresOn ?? document.expiresOn ?? null,
+                                          })}
+                                          className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                                        >
+                                          <option value="">Select…</option>
+                                          <option value="dated">Dated</option>
+                                          <option value="none">No expiration</option>
+                                        </select>
+                                      </label>
+                                    </div>
+                                    {(reviewMetadata[document.id]?.expirationMode ?? document.expirationMode) === 'dated' && (
+                                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                                        Verified expiration date
+                                        <input
+                                          type="date"
+                                          value={reviewMetadata[document.id]?.expiresOn ?? document.expiresOn ?? ''}
+                                          onChange={(event) => updateReviewMetadata(document.id!, {
+                                            expiresOn: event.target.value || null,
+                                          })}
+                                          className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                                        />
+                                      </label>
+                                    )}
+                                  </div>
+                                )}
                                 {expandedDocuments.has(index) && (
                                   <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
                                     <div className="bg-gray-100 dark:bg-gray-900 rounded border border-gray-300 dark:border-gray-600 flex items-center justify-center" style={{ minHeight: '200px' }}>
@@ -771,11 +1075,21 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
 
                     {/* Action Buttons */}
                     <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                      {!allDocumentsViewed && (
+                        <p className="mb-3 text-right text-xs text-amber-700 dark:text-amber-300">
+                          View every private document before submitting a decision.
+                        </p>
+                      )}
+                      {allDocumentsViewed && !reviewMetadataComplete && (
+                        <p className="mb-3 text-right text-xs text-amber-700 dark:text-amber-300">
+                          Reviewer metadata is unavailable or incomplete for one or more documents.
+                        </p>
+                      )}
                       <div className="flex justify-end gap-3">
-                        {selectedRegistration.status === 'pending' && (
+                        {canDecideRegistration(selectedRegistration.status) && (
                           <>
                             <Button
-                              disabled={!allDocumentsViewed}
+                              disabled={!allDocumentsViewed || submittingRegistrationId !== null}
                               onClick={() => {
                                 handleReject(selectedRegistration);
                                 setIsViewModalOpen(false);
@@ -783,10 +1097,10 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
                               className="bg-red-600 hover:bg-red-700 text-white disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               <AlertIcon className="h-4 w-4 mr-2" />
-                              Reject
+                              {submittingRegistrationId === selectedRegistration.id ? 'Submitting…' : 'Reject'}
                             </Button>
                             <Button
-                              disabled={!allDocumentsViewed}
+                              disabled={!canSubmitApproval || submittingRegistrationId !== null}
                               onClick={() => {
                                 handleApprove(selectedRegistration.id);
                                 setIsViewModalOpen(false);
@@ -794,7 +1108,7 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
                               className="bg-green-600 hover:bg-green-700 text-white disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               <CheckCircleIcon className="h-4 w-4 mr-2" />
-                              Approve
+                              {submittingRegistrationId === selectedRegistration.id ? 'Submitting…' : 'Approve'}
                             </Button>
                           </>
                         )}
@@ -902,9 +1216,14 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
                             value={rejectionReason}
                             onChange={(e) => setRejectionReason(e.target.value)}
                             placeholder="Select a reason to auto-generate a professional message"
+                            maxLength={500}
+                            aria-describedby="rejection-reason-limit"
                             rows={5}
                             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent dark:bg-gray-700 dark:text-white resize-none"
                           />
+                          <p id="rejection-reason-limit" className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            {rejectionReason.length}/500 characters
+                          </p>
                         </div>
                       </div>
                     </div>
@@ -912,16 +1231,23 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
                       <Button
                         variant="secondary"
                         onClick={() => setIsRejectModalOpen(false)}
+                        disabled={submittingRegistrationId !== null}
                       >
                         Cancel
                       </Button>
                       <Button
                         onClick={handleConfirmReject}
                         className="bg-red-600 hover:bg-red-700 text-white"
-                        disabled={!selectedRejectReason || (selectedRejectReason === 'Other' && !otherRejectReason.trim()) || !rejectionReason.trim()}
+                        disabled={
+                          submittingRegistrationId !== null
+                          || !canDecideRegistration(registrationToReject.status)
+                          || !selectedRejectReason
+                          || (selectedRejectReason === 'Other' && !otherRejectReason.trim())
+                          || !rejectionReason.trim()
+                        }
                       >
                         <AlertIcon className="h-4 w-4 mr-2" />
-                        Reject Application
+                        {submittingRegistrationId === registrationToReject.id ? 'Submitting…' : 'Reject Application'}
                       </Button>
                     </div>
                   </div>

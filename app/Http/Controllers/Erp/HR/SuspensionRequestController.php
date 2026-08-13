@@ -122,6 +122,7 @@ class SuspensionRequestController extends Controller
             // Mark as inactive while suspension request is under review.
             $employee->update([
                 'status' => EmployeeStatus::INACTIVE,
+                'privileged_suspension_id' => null,
             ]);
 
             return $createdRequest;

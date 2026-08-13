@@ -4,20 +4,23 @@ declare(strict_types=1);
 
 namespace Tests\Feature\BusinessScaling;
 
+use App\Enums\PrivilegedDeliveryType;
+use App\Jobs\SendPrivilegedWorkflowMail;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerModule;
 use App\Models\ShopOwnerUpgradeRequest;
 use App\Models\SuperAdmin;
-use App\Notifications\ShopOwnerUpgradeRequested;
-use App\Notifications\ShopOwnerUpgradeReviewed;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
+use Tests\Concerns\AuthenticatesPrivilegedUsers;
 use Tests\TestCase;
 
 final class ShopOwnerUpgradeReviewTest extends TestCase
 {
+    use AuthenticatesPrivilegedUsers;
     use RefreshDatabase;
 
     protected function setUp(): void
@@ -26,7 +29,7 @@ final class ShopOwnerUpgradeReviewTest extends TestCase
 
         Storage::fake('local');
         Storage::fake('public');
-        Notification::fake();
+        Queue::fake();
     }
 
     public function test_super_admin_can_list_filter_and_download_private_evidence_without_exposing_paths(): void
@@ -34,7 +37,7 @@ final class ShopOwnerUpgradeReviewTest extends TestCase
         $admin = $this->createAdmin();
         [$owner, $upgradeRequest] = $this->submitRequest();
 
-        $list = $this->actingAs($admin, 'super_admin')
+        $list = $this->actingAsCompletedPrivileged($admin)
             ->getJson(route('admin.business-upgrade-requests.index', ['status' => 'pending', 'search' => $owner->business_name]));
 
         $list->assertOk()
@@ -42,11 +45,68 @@ final class ShopOwnerUpgradeReviewTest extends TestCase
             ->assertJsonMissing(['path' => $upgradeRequest->documents()->firstOrFail()->path]);
 
         $document = $upgradeRequest->documents()->firstOrFail();
-        $download = $this->actingAs($admin, 'super_admin')
+        $download = $this->actingAsCompletedPrivileged($admin)
             ->get(route('admin.business-upgrade-requests.documents.download', [$upgradeRequest, $document]));
 
         $download->assertOk();
         $this->assertStringNotContainsString($document->path, (string) $download->getContent());
+    }
+
+    public function test_upgrade_queue_is_capped_and_deterministic_for_equal_timestamps(): void
+    {
+        $admin = $this->createAdmin();
+        $timestamp = now()->subDays(2);
+        $requests = ShopOwnerUpgradeRequest::factory()->count(3)->create([
+            'created_at' => $timestamp,
+            'updated_at' => $timestamp,
+        ]);
+        $expectedIds = $requests->sortByDesc('id')->values()->pluck('id')->all();
+
+        $pageOne = $this->actingAsCompletedPrivileged($admin)
+            ->getJson(route('admin.business-upgrade-requests.index', ['per_page' => 1, 'page' => 1]));
+        $pageTwo = $this->actingAsCompletedPrivileged($admin)
+            ->getJson(route('admin.business-upgrade-requests.index', ['per_page' => 1, 'page' => 2]));
+
+        $pageOne->assertOk()
+            ->assertJsonPath('meta.per_page', 1)
+            ->assertJsonPath('data.0.id', $expectedIds[0]);
+        $pageTwo->assertOk()->assertJsonPath('data.0.id', $expectedIds[1]);
+
+        foreach ([
+            ['page' => 'abc'],
+            ['page' => 0],
+            ['per_page' => 'abc'],
+            ['per_page' => 0],
+            ['per_page' => 101],
+            ['status' => 'not-a-status'],
+        ] as $query) {
+            $this->actingAsCompletedPrivileged($admin)
+                ->getJson(route('admin.business-upgrade-requests.index', $query))
+                ->assertUnprocessable();
+        }
+    }
+
+    public function test_upgrade_queue_relation_queries_do_not_grow_per_row(): void
+    {
+        $admin = $this->createAdmin();
+        ShopOwnerUpgradeRequest::factory()->create();
+
+        $measure = function () use ($admin): int {
+            DB::connection()->flushQueryLog();
+            DB::connection()->enableQueryLog();
+            $this->actingAsCompletedPrivileged($admin)
+                ->getJson(route('admin.business-upgrade-requests.index'))
+                ->assertOk();
+            $count = count(DB::connection()->getQueryLog());
+            DB::connection()->disableQueryLog();
+
+            return $count;
+        };
+
+        $smallCount = $measure();
+        ShopOwnerUpgradeRequest::factory()->count(30)->create();
+        $largeCount = $measure();
+        self::assertLessThanOrEqual($smallCount + 2, $largeCount);
     }
 
     public function test_owner_or_user_cannot_list_review_or_download_another_shop_evidence(): void
@@ -63,7 +123,7 @@ final class ShopOwnerUpgradeReviewTest extends TestCase
             ->patchJson(route('admin.business-upgrade-requests.update', $upgradeRequest), [
                 'decision' => 'approved',
             ])
-            ->assertRedirect(route('admin.login'));
+            ->assertUnauthorized();
 
         $this->actingAs($otherOwner, 'shop_owner')
             ->get(route('admin.business-upgrade-requests.documents.download', [$upgradeRequest, $document]))
@@ -83,7 +143,7 @@ final class ShopOwnerUpgradeReviewTest extends TestCase
             'enabled' => false,
         ]);
 
-        $response = $this->actingAs($admin, 'super_admin')
+        $response = $this->actingAsCompletedPrivileged($admin)
             ->patchJson(route('admin.business-upgrade-requests.update', $upgradeRequest), [
                 'decision' => 'approved',
             ]);
@@ -103,12 +163,19 @@ final class ShopOwnerUpgradeReviewTest extends TestCase
             'enabled' => 1,
         ]);
 
-        Notification::assertSentTo($owner, ShopOwnerUpgradeReviewed::class);
-        Notification::assertSentTo($admin, ShopOwnerUpgradeRequested::class);
+        DB::commit();
+        Queue::assertPushed(SendPrivilegedWorkflowMail::class, function (SendPrivilegedWorkflowMail $job) use ($owner, $upgradeRequest): bool {
+            return $job->deliveryType === PrivilegedDeliveryType::SHOP_OWNER_UPGRADE_REVIEWED
+                && $job->recipientType === 'shop_owner'
+                && $job->recipientId === $owner->id
+                && $job->businessEventId === 'shop-owner-upgrade-reviewed:'.$upgradeRequest->id
+                && $job->payload['decision'] === ShopOwnerUpgradeRequest::STATUS_APPROVED
+                && $job->payload['dormant_employee_permission_warning'] === true;
+        });
         $this->assertDatabaseHas('activity_log', [
             'subject_type' => ShopOwnerUpgradeRequest::class,
             'subject_id' => $upgradeRequest->id,
-            'description' => 'shop_owner_upgrade_approved',
+            'description' => 'shop_owner_upgrade_reviewed',
         ]);
     }
 
@@ -118,23 +185,29 @@ final class ShopOwnerUpgradeReviewTest extends TestCase
         [$owner, $upgradeRequest] = $this->submitRequest();
         $before = $owner->only(['registration_type', 'business_type']);
 
-        $this->actingAs($admin, 'super_admin')
+        $this->actingAsCompletedPrivileged($admin)
             ->patchJson(route('admin.business-upgrade-requests.update', $upgradeRequest), [
                 'decision' => 'rejected',
             ])
             ->assertUnprocessable();
 
-        $this->actingAs($admin, 'super_admin')
+        $this->actingAsCompletedPrivileged($admin)
             ->patchJson(route('admin.business-upgrade-requests.update', $upgradeRequest), [
                 'decision' => 'rejected',
                 'decision_reason' => 'Evidence did not meet the current requirements.',
             ])
             ->assertOk()
             ->assertJsonPath('request.status', ShopOwnerUpgradeRequest::STATUS_REJECTED);
+        DB::commit();
 
         $this->assertSame($before, $owner->fresh()->only(['registration_type', 'business_type']));
         $this->assertDatabaseCount('shop_owner_modules', 0);
-        Notification::assertSentTo($owner, ShopOwnerUpgradeReviewed::class);
+        Queue::assertPushed(SendPrivilegedWorkflowMail::class, function (SendPrivilegedWorkflowMail $job) use ($owner): bool {
+            return $job->deliveryType === PrivilegedDeliveryType::SHOP_OWNER_UPGRADE_REVIEWED
+                && $job->recipientType === 'shop_owner'
+                && $job->recipientId === $owner->id
+                && $job->payload['decision'] === ShopOwnerUpgradeRequest::STATUS_REJECTED;
+        });
     }
 
     public function test_stale_evidence_blocks_approval_without_changing_owner_state(): void
@@ -144,7 +217,7 @@ final class ShopOwnerUpgradeReviewTest extends TestCase
         $document = $upgradeRequest->documents()->firstOrFail();
         Storage::disk('local')->put($document->path, 'tampered');
 
-        $this->actingAs($admin, 'super_admin')
+        $this->actingAsCompletedPrivileged($admin)
             ->patchJson(route('admin.business-upgrade-requests.update', $upgradeRequest), [
                 'decision' => 'approved',
             ])
@@ -153,7 +226,10 @@ final class ShopOwnerUpgradeReviewTest extends TestCase
         $this->assertSame(ShopOwnerUpgradeRequest::STATUS_PENDING, $upgradeRequest->fresh()->status);
         $this->assertSame('individual', $owner->fresh()->registration_type);
         $this->assertDatabaseCount('shop_owner_modules', 0);
-        Notification::assertNotSentTo($owner, ShopOwnerUpgradeReviewed::class);
+        Queue::assertNotPushed(SendPrivilegedWorkflowMail::class, function (SendPrivilegedWorkflowMail $job) use ($owner): bool {
+            return $job->deliveryType === PrivilegedDeliveryType::SHOP_OWNER_UPGRADE_REVIEWED
+                && $job->recipientId === $owner->id;
+        });
     }
 
     public function test_owner_change_supersedes_a_pending_request_and_replay_returns_conflict(): void
@@ -162,23 +238,36 @@ final class ShopOwnerUpgradeReviewTest extends TestCase
         [$owner, $upgradeRequest] = $this->submitRequest();
         $owner->update(['business_type' => 'repair']);
 
-        $this->actingAs($admin, 'super_admin')
+        $this->actingAsCompletedPrivileged($admin)
             ->patchJson(route('admin.business-upgrade-requests.update', $upgradeRequest), [
                 'decision' => 'approved',
             ])
             ->assertStatus(409)
             ->assertJsonPath('request.status', ShopOwnerUpgradeRequest::STATUS_SUPERSEDED);
+        DB::commit();
 
-        Notification::assertSentTo($owner, ShopOwnerUpgradeReviewed::class);
+        Queue::assertPushed(SendPrivilegedWorkflowMail::class, function (SendPrivilegedWorkflowMail $job) use ($owner): bool {
+            return $job->deliveryType === PrivilegedDeliveryType::SHOP_OWNER_UPGRADE_REVIEWED
+                && $job->recipientId === $owner->id
+                && $job->payload['decision'] === ShopOwnerUpgradeRequest::STATUS_SUPERSEDED;
+        });
         $this->assertSame('repair', $owner->fresh()->business_type);
 
-        $this->actingAs($admin, 'super_admin')
+        $this->actingAsCompletedPrivileged($admin)
             ->patchJson(route('admin.business-upgrade-requests.update', $upgradeRequest), [
                 'decision' => 'approved',
             ])
             ->assertStatus(409);
 
-        Notification::assertSentToTimes($owner, ShopOwnerUpgradeReviewed::class, 1);
+        $this->assertCount(1, Queue::pushed(SendPrivilegedWorkflowMail::class, function (SendPrivilegedWorkflowMail $job) use ($owner): bool {
+            return $job->deliveryType === PrivilegedDeliveryType::SHOP_OWNER_UPGRADE_REVIEWED
+                && $job->recipientId === $owner->id;
+        }));
+        $this->assertDatabaseHas('activity_log', [
+            'subject_type' => ShopOwnerUpgradeRequest::class,
+            'subject_id' => $upgradeRequest->id,
+            'description' => 'shop_owner_upgrade_superseded',
+        ]);
     }
 
     /**
@@ -210,7 +299,7 @@ final class ShopOwnerUpgradeReviewTest extends TestCase
 
     private function createAdmin(): SuperAdmin
     {
-        return SuperAdmin::create([
+        return SuperAdmin::factory()->superAdmin()->create([
             'first_name' => 'Review',
             'last_name' => 'Admin',
             'email' => fake()->unique()->safeEmail(),

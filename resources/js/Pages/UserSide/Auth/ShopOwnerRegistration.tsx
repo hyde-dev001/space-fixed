@@ -10,6 +10,10 @@ import Input from "../../../components/form/input/InputField";
 import Select from "../../../components/form/Select";
 import Radio from "../../../components/form/input/Radio";
 import DropzoneComponent from "../../../components/form/form-elements/DropZone";
+import {
+  appendRegistrationDocuments,
+  type RegistrationDocumentMetadata,
+} from './registrationDocumentPayload';
 
 const CAVITE_CENTER = {
   lat: '14.28140000',
@@ -121,8 +125,16 @@ interface ResubmissionPayload {
 }
 
 export default function ShopOwnerRegistration({ resubmission }: { resubmission?: ResubmissionPayload | null }) {
-  type AdditionalDocument = { id: number; file: File | null; fileName: string; previewUrl: string };
+  type AdditionalDocument = {
+    id: string;
+    file: File | null;
+    fileName: string;
+    previewUrl: string;
+    metadata: RegistrationDocumentMetadata;
+    submissionKey: string;
+  };
   type UploadedDocumentKey = 'dti' | 'mayors_permit' | 'bir' | 'valid_id';
+  type FixedDocumentSlot = 'business_registration' | 'mayors_permit' | 'bir_certificate' | 'valid_id';
 
   const isResubmission = Boolean(resubmission?.isResubmission);
   const resubmissionMaxAttempts = resubmission?.maxAttempts ?? 3;
@@ -161,7 +173,24 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     valid_id: { file: null as File | null, fileName: existingDocuments.valid_id?.fileName ?? '', previewUrl: existingDocuments.valid_id?.url ?? '' },
   });
   const [additionalDocuments, setAdditionalDocuments] = useState<AdditionalDocument[]>([]);
-  const nextAdditionalDocId = useRef(1);
+  const [businessRegistrationType, setBusinessRegistrationType] = useState<'dti_registration' | 'sec_registration'>(
+    existingDocuments.dti?.type === 'sec_registration' ? 'sec_registration' : 'dti_registration',
+  );
+  const businessRegistrationLabel = businessRegistrationType === 'sec_registration'
+    ? 'Shop Registration (SEC)'
+    : 'Shop Registration (DTI)';
+  const [documentMetadata, setDocumentMetadata] = useState<Record<FixedDocumentSlot, RegistrationDocumentMetadata>>({
+    business_registration: { expirationMode: 'none', expiresOn: '', issuedOn: '' },
+    mayors_permit: { expirationMode: 'dated', expiresOn: '', issuedOn: '' },
+    bir_certificate: { expirationMode: 'none', expiresOn: '', issuedOn: '' },
+    valid_id: { expirationMode: 'none', expiresOn: '', issuedOn: '' },
+  });
+  const [submissionKeys] = useState(() => ({
+    businessRegistration: crypto.randomUUID(),
+    mayorsPermit: crypto.randomUUID(),
+    birCertificate: crypto.randomUUID(),
+    validId: crypto.randomUUID(),
+  }));
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -306,9 +335,15 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
       return;
     }
 
-    const newId = nextAdditionalDocId.current;
-    nextAdditionalDocId.current += 1;
-    setAdditionalDocuments((prev) => [...prev, { id: newId, file: null, fileName: '', previewUrl: '' }]);
+    const newId = crypto.randomUUID();
+    setAdditionalDocuments((prev) => [...prev, {
+      id: newId,
+      file: null,
+      fileName: '',
+      previewUrl: '',
+      metadata: { expirationMode: 'none', expiresOn: '', issuedOn: '' },
+      submissionKey: crypto.randomUUID(),
+    }]);
   };
 
   const createPreviewUrl = (file: File) => URL.createObjectURL(file);
@@ -331,6 +366,34 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     });
   };
 
+  const updateDocumentMetadata = (
+    slot: FixedDocumentSlot,
+    updates: Partial<RegistrationDocumentMetadata>,
+  ) => {
+    setDocumentMetadata((previous) => ({
+      ...previous,
+      [slot]: { ...previous[slot], ...updates },
+    }));
+
+    const errorKeys = [slot, `${slot}.expiration_mode`, `${slot}.expires_on`];
+    setErrors((previous) => {
+      const next = { ...previous };
+      errorKeys.forEach((key) => { delete next[key]; });
+      return next;
+    });
+  };
+
+  const updateSupportingMetadata = (
+    id: string,
+    updates: Partial<RegistrationDocumentMetadata>,
+  ) => {
+    setAdditionalDocuments((previous) => previous.map((document) => (
+      document.id === id
+        ? { ...document, metadata: { ...document.metadata, ...updates } }
+        : document
+    )));
+  };
+
   const isAllowedShopOwnerImageFile = (file: File) => {
     const extension = file.name.split('.').pop()?.toLowerCase() ?? '';
     const hasAllowedExtension = SHOP_OWNER_ALLOWED_EXTENSIONS.has(extension);
@@ -349,7 +412,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     });
   };
 
-  const handleAdditionalDocumentDrop = (id: number, files: File[]) => {
+  const handleAdditionalDocumentDrop = (id: string, files: File[]) => {
     if (!files || files.length === 0) {
       return;
     }
@@ -386,7 +449,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     });
   };
 
-  const handleRemoveAdditionalDocument = (id: number) => {
+  const handleRemoveAdditionalDocument = (id: string) => {
     setAdditionalDocuments((prev) => {
       const removed = prev.find((doc) => doc.id === id);
       if (removed?.previewUrl.startsWith('blob:')) {
@@ -662,6 +725,33 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
       if (!uploadedDocuments.valid_id.file && !existingDocuments.valid_id) {
         stepErrors.valid_id = 'Upload a valid government-issued ID of the owner.';
       }
+
+      const metadataSlots: Array<[FixedDocumentSlot, string]> = [
+        ['business_registration', 'dti_registration'],
+        ['mayors_permit', 'mayors_permit'],
+        ['bir_certificate', 'bir_certificate'],
+        ['valid_id', 'valid_id'],
+      ];
+      metadataSlots.forEach(([slot, errorKey]) => {
+        const metadata = documentMetadata[slot];
+        if (!metadata.expirationMode) {
+          stepErrors[errorKey] = 'Choose whether this document has an expiration date.';
+        } else if (metadata.expirationMode === 'dated' && !metadata.expiresOn) {
+          stepErrors[errorKey] = 'Enter an expiration date for this document.';
+        } else if (metadata.expirationMode === 'none' && metadata.expiresOn) {
+          stepErrors[errorKey] = 'Remove the expiration date or choose dated.';
+        }
+      });
+
+      if (documentMetadata.mayors_permit.expirationMode !== 'dated') {
+        stepErrors.mayors_permit = "Mayor's Permit must have a dated expiration.";
+      }
+
+      additionalDocuments.forEach((document) => {
+        if (document.metadata.expirationMode === 'dated' && !document.metadata.expiresOn) {
+          stepErrors[`supporting_document:${document.id}`] = 'Enter an expiration date or choose no expiration.';
+        }
+      });
     }
 
     return stepErrors;
@@ -1014,23 +1104,31 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
 
         // Operating hours removed — nothing to append for operating hours
 
-        // Add document files
-        if (uploadedDocuments.dti.file) {
-          submitData.append('dti_registration', uploadedDocuments.dti.file);
-        }
-        if (uploadedDocuments.mayors_permit.file) {
-          submitData.append('mayors_permit', uploadedDocuments.mayors_permit.file);
-        }
-        if (uploadedDocuments.bir.file) {
-          submitData.append('bir_certificate', uploadedDocuments.bir.file);
-        }
-        if (uploadedDocuments.valid_id.file) {
-          submitData.append('valid_id', uploadedDocuments.valid_id.file);
-        }
-        additionalDocuments.forEach((doc) => {
-          if (doc.file) {
-            submitData.append('other_documents[]', doc.file);
-          }
+        appendRegistrationDocuments(submitData, {
+          businessRegistration: {
+            file: uploadedDocuments.dti.file,
+            metadata: documentMetadata.business_registration,
+          },
+          businessRegistrationType,
+          mayorsPermit: {
+            file: uploadedDocuments.mayors_permit.file,
+            metadata: documentMetadata.mayors_permit,
+          },
+          birCertificate: {
+            file: uploadedDocuments.bir.file,
+            metadata: documentMetadata.bir_certificate,
+          },
+          validId: {
+            file: uploadedDocuments.valid_id.file,
+            metadata: documentMetadata.valid_id,
+          },
+          submissionKeys,
+          supportingDocuments: additionalDocuments.map((document) => ({
+            slotId: document.id,
+            file: document.file,
+            metadata: document.metadata,
+            submissionKey: document.submissionKey,
+          })),
         });
 
         const submitEndpoint = isResubmission ? (resubmission?.submitUrl ?? '') : route('shop-owner.register');
@@ -1100,6 +1198,12 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
   const additionalUploadCount = existingAdditionalCount + additionalDocuments.filter((doc) => !!doc.file).length;
   const hasAdditionalDocuments = additionalDocuments.length > 0 || existingAdditionalCount > 0;
   const hasReachedAdditionalLimit = additionalDocuments.length >= MAX_ADDITIONAL_DOCUMENTS;
+  const documentMetadataFields: Array<[FixedDocumentSlot, string]> = [
+    ['business_registration', 'Business registration'],
+    ['mayors_permit', "Mayor's Permit"],
+    ['bir_certificate', 'BIR Certificate'],
+    ['valid_id', 'Valid ID'],
+  ];
   const registrationSteps = [
     { id: 1, label: 'Personal Info', shortLabel: 'Personal' },
     { id: 2, label: 'Shop Info', shortLabel: 'Shop' },
@@ -1545,7 +1649,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                       Please upload clear photos of the following documents:
                     </p>
                     <ul className="list-disc list-inside text-sm text-gray-600 mb-4 space-y-1">
-                      <li>Shop Registration (DTI/SEC)</li>
+                      <li>Business registration (DTI or SEC; choose the issuing authority below)</li>
                       <li>Mayor's Permit / Shop Permit</li>
                       <li>BIR Certificate of Registration (COR)</li>
                     </ul>
@@ -1571,9 +1675,66 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                     <p className="mb-4 text-xs text-gray-500">
                       Complete all required uploads before proceeding to the review step.
                     </p>
+                    <div className="mb-5 grid grid-cols-1 gap-4 rounded-lg border border-gray-100 bg-gray-50 p-4 md:grid-cols-2">
+                      <div>
+                        <label htmlFor="business_registration_type" className="mb-1 block text-sm font-medium text-gray-700">
+                          Business registration type
+                        </label>
+                        <select
+                          id="business_registration_type"
+                          value={businessRegistrationType}
+                          onChange={(event) => setBusinessRegistrationType(event.target.value as 'dti_registration' | 'sec_registration')}
+                          className="h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                        >
+                          <option value="dti_registration">DTI registration</option>
+                          <option value="sec_registration">SEC registration</option>
+                        </select>
+                      </div>
+                      <p className="self-end text-xs text-gray-600">
+                        Submit exactly one business registration document and identify its issuing authority.
+                      </p>
+                    </div>
+                    <div className="mb-5 rounded-lg border border-gray-100 bg-gray-50 p-4">
+                      <h5 className="text-sm font-semibold text-gray-900">Document validity details</h5>
+                      <p className="mt-1 text-xs text-gray-600">Choose an expiration mode for every document. Mayor&apos;s Permit requires a date.</p>
+                      <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">
+                        {documentMetadataFields.map(([slot, label]) => {
+                          const metadata = documentMetadata[slot];
+
+                          return (
+                            <div key={slot} className="rounded-lg border border-gray-200 bg-white p-3">
+                              <label htmlFor={`${slot}_expiration_mode`} className="mb-1 block text-xs font-semibold text-gray-700">
+                                {label} expiration
+                              </label>
+                              <select
+                                id={`${slot}_expiration_mode`}
+                                value={metadata.expirationMode}
+                                onChange={(event) => updateDocumentMetadata(slot, {
+                                  expirationMode: event.target.value as RegistrationDocumentMetadata['expirationMode'],
+                                  expiresOn: event.target.value === 'none' ? '' : metadata.expiresOn,
+                                })}
+                                className="h-10 w-full rounded-md border border-gray-300 bg-white px-2 text-sm text-gray-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                              >
+                                <option value="dated">Has an expiration date</option>
+                                <option value="none">No expiration</option>
+                              </select>
+                              {metadata.expirationMode === 'dated' && (
+                                <input
+                                  aria-label={`${label} expiration date`}
+                                  type="date"
+                                  value={metadata.expiresOn ?? ''}
+                                  onChange={(event) => updateDocumentMetadata(slot, { expiresOn: event.target.value })}
+                                  className="mt-2 h-10 w-full rounded-md border border-gray-300 px-2 text-sm text-gray-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                                />
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <Label>Shop Registration (DTI) {(uploadedDocuments.dti.file || existingDocuments.dti) && <span className="text-green-600 font-bold ml-2">✓ Ready</span>}</Label>
+                      <Label>{businessRegistrationLabel} {(uploadedDocuments.dti.file || existingDocuments.dti) && <span className="text-green-600 font-bold ml-2">✓ Ready</span>}</Label>
                       {existingDocuments.dti && !uploadedDocuments.dti.file && (
                         <p className="mb-2 text-xs text-blue-700">
                           Existing file: <a href={existingDocuments.dti.url} target="_blank" rel="noreferrer" className="underline">{existingDocuments.dti.fileName}</a>
@@ -1584,7 +1745,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                           if (files && files.length > 0) {
                             const file = files[0];
                             if (!isAllowedShopOwnerImageFile(file)) {
-                              showInvalidImageUploadAlert('Shop Registration (DTI)', file.name);
+                              showInvalidImageUploadAlert(businessRegistrationLabel, file.name);
                               return;
                             }
 
@@ -1593,7 +1754,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                             Swal.fire({
                               icon: 'info',
                               title: 'File Attached',
-                              html: `<p><strong>${file.name}</strong> was added to <strong>Shop Registration (DTI)</strong>.</p><p class="text-sm text-gray-600">Please ensure the correct document is uploaded in this section.</p>`,
+                              html: `<p><strong>${file.name}</strong> was added to <strong>${businessRegistrationLabel}</strong>.</p><p class="text-sm text-gray-600">Please ensure the correct document is uploaded in this section.</p>`,
                               confirmButtonText: 'OK',
                               confirmButtonColor: '#3085d6',
                             });
@@ -1607,13 +1768,13 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                         accept={SHOP_OWNER_IMAGE_ACCEPT}
                         onInvalidFiles={(invalidFiles) => {
                           if (invalidFiles.length > 0) {
-                            showInvalidImageUploadAlert('Shop Registration (DTI)', invalidFiles[0].name);
+                            showInvalidImageUploadAlert(businessRegistrationLabel, invalidFiles[0].name);
                           }
                         }}
                         isUploaded={!!uploadedDocuments.dti.file || !!existingDocuments.dti}
                         fileName={uploadedDocuments.dti.fileName}
                         previewUrl={uploadedDocuments.dti.previewUrl || existingDocuments.dti?.url || undefined}
-                        previewAlt="Shop Registration (DTI) preview"
+                        previewAlt={`${businessRegistrationLabel} preview`}
                       />
                       {(uploadedDocuments.dti.file || existingDocuments.dti) && (
                         <p className="mt-2 text-sm text-green-600 font-semibold flex items-center">
@@ -1835,6 +1996,30 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                                   Remove
                                 </button>
                               </div>
+                              <label htmlFor={`supporting-${doc.id}-expiration-mode`} className="mb-1 block text-xs font-semibold text-gray-700">
+                                Expiration
+                              </label>
+                              <select
+                                id={`supporting-${doc.id}-expiration-mode`}
+                                value={doc.metadata.expirationMode}
+                                onChange={(event) => updateSupportingMetadata(doc.id, {
+                                  expirationMode: event.target.value as RegistrationDocumentMetadata['expirationMode'],
+                                  expiresOn: event.target.value === 'none' ? '' : doc.metadata.expiresOn,
+                                })}
+                                className="h-10 w-full rounded-md border border-gray-300 bg-white px-2 text-sm text-gray-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                              >
+                                <option value="dated">Has an expiration date</option>
+                                <option value="none">No expiration</option>
+                              </select>
+                              {doc.metadata.expirationMode === 'dated' && (
+                                <input
+                                  aria-label={`Supporting document ${index + 1} expiration date`}
+                                  type="date"
+                                  value={doc.metadata.expiresOn ?? ''}
+                                  onChange={(event) => updateSupportingMetadata(doc.id, { expiresOn: event.target.value })}
+                                  className="mt-2 h-10 w-full rounded-md border border-gray-300 px-2 text-sm text-gray-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                                />
+                              )}
                               <DropzoneComponent
                                 onDrop={(files) => handleAdditionalDocumentDrop(doc.id, files)}
                                 accept={SHOP_OWNER_IMAGE_ACCEPT}
@@ -2027,7 +2212,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                       <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                       </svg>
-                      <span className="text-sm text-gray-700">Shop Registration (DTI)</span>
+                      <span className="text-sm text-gray-700">{businessRegistrationLabel}</span>
                     </div>
                     <div className="flex items-center space-x-2">
                       <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">

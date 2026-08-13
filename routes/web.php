@@ -7,21 +7,31 @@ use App\Http\Controllers\ForgotPasswordOtpController;
 use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\ShopOwner\EcommerceController;
 use App\Http\Controllers\ShopOwner\ShopSettingsController;
+use App\Http\Controllers\ShopOwner\ShopOwnerDocumentRenewalController;
 use App\Http\Controllers\ShopOwner\ShopOwnerUpgradeRequestController;
 use App\Http\Controllers\ShopOwner\ShopOwnerModuleController;
 use App\Http\Controllers\ShopOwner\UserAccessControlController;
+use App\Http\Controllers\PrivateSensitiveDocumentController;
 use App\Http\Controllers\ShopOwnerAuthController;
 use App\Http\Controllers\ShopOwnerPasswordSetupController;
-use App\Http\Controllers\ShopRegistrationController;
-use App\Http\Controllers\superAdmin\DataReportAccessController;
 use App\Http\Controllers\superAdmin\FlaggedAccountsController;
-use App\Http\Controllers\superAdmin\NotificationCommunicationToolsController;
+use App\Http\Controllers\superAdmin\AdministratorManagementController;
+use App\Http\Controllers\superAdmin\RegisteredShopController;
+use App\Http\Controllers\superAdmin\UserInterventionController;
 use App\Http\Controllers\superAdmin\ShopOwnerRegistrationViewController;
+use App\Http\Controllers\superAdmin\ShopDocumentRenewalController as SuperAdminShopDocumentRenewalController;
 use App\Http\Controllers\superAdmin\ShopOwnerUpgradeRequestController as SuperAdminShopOwnerUpgradeRequestController;
-use App\Http\Controllers\superAdmin\SuperAdminUserManagementController;
 use App\Http\Controllers\superAdmin\SystemMonitoringDashboardController;
+use App\Http\Controllers\superAdmin\PrivilegedAuditController;
+use App\Http\Controllers\superAdmin\SubscriptionInterventionController;
+use App\Http\Controllers\superAdmin\SubscriptionManagementController;
+use App\Http\Controllers\superAdmin\PremiumPlanController;
+use App\Http\Controllers\PrivilegedMfaController;
+use App\Http\Controllers\PrivilegedPasswordResetController;
+use App\Http\Controllers\PrivilegedReauthenticationController;
+use App\Http\Controllers\PrivilegedSecurityController;
+use App\Http\Controllers\PrivilegedSetupController;
 use App\Http\Controllers\SuperAdminAuthController;
-use App\Http\Controllers\SuperAdminController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\UserProfileController;
 use App\Http\Controllers\UserSide\CartController;
@@ -29,6 +39,7 @@ use App\Http\Controllers\UserSide\CheckoutController;
 use App\Http\Controllers\UserSide\CustomerProfileController;
 use App\Http\Controllers\UserSide\LandingPageController;
 use App\Http\Controllers\UserSide\OrderController;
+use App\Http\Middleware\AttachPrivilegedCorrelationId;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -416,6 +427,10 @@ Route::get('/shop-owner/resubmit/{shopOwner}', [ShopOwnerAuthController::class, 
 Route::post('/shop-owner/resubmit/{shopOwner}', [ShopOwnerAuthController::class, 'resubmit'])
     ->middleware(['signed', 'throttle:10,1'])
     ->name('shop-owner.resubmission.submit');
+Route::get('/shop-owner/resubmit/{shopOwner}/documents/{document}', [PrivateSensitiveDocumentController::class, 'showForSignedResubmission'])
+    ->scopeBindings()
+    ->middleware('signed')
+    ->name('shop-owner.resubmission.document');
 
 // Employee Invitation Routes (Public - No Authentication Required)
 Route::get('/invite/{token}', [InvitationController::class, 'show'])->name('invitation.show');
@@ -711,18 +726,29 @@ Route::group([], function () {
 });
 
 // Super Admin Routes
-Route::prefix('superAdmin')->name('superAdmin.')->middleware('auth:super_admin')->group(function () {
-    Route::get('/super-admin-user-management', [SuperAdminUserManagementController::class, 'index'])->name('super-admin-user-management');
-    Route::get('/flagged-accounts', [FlaggedAccountsController::class, 'index'])->name('flagged-accounts');
-    Route::post('/flagged-accounts/{id}/mark-reviewed', [FlaggedAccountsController::class, 'markReviewed'])->name('flagged-accounts.mark-reviewed');
-    Route::post('/flagged-accounts/{id}/dismiss', [FlaggedAccountsController::class, 'dismiss'])->name('flagged-accounts.dismiss');
-    Route::post('/flagged-accounts/{id}/ban', [FlaggedAccountsController::class, 'ban'])->name('flagged-accounts.ban');
-    Route::get('/shop-owner-registration-view', [ShopOwnerRegistrationViewController::class, 'index'])->name('shop-owner-registration-view');
-    Route::post('/shop-owner-registration/{id}/approve', [ShopOwnerRegistrationViewController::class, 'approve'])->name('shop-owner-approve');
-    Route::post('/shop-owner-registration/{id}/reject', [ShopOwnerRegistrationViewController::class, 'reject'])->name('shop-owner-reject');
-    Route::get('/system-monitoring-dashboard', [SystemMonitoringDashboardController::class, 'index'])->name('system-monitoring-dashboard');
-    Route::get('/notification-communication-tools', [NotificationCommunicationToolsController::class, 'index'])->name('notification-communication-tools');
-    Route::get('/data-report-access', [DataReportAccessController::class, 'index'])->name('data-report-access');
+Route::prefix('superAdmin')->name('superAdmin.')->middleware([
+    AttachPrivilegedCorrelationId::class,
+    'super_admin.auth',
+    'privileged.active',
+    'privileged.mfa',
+])->group(function () {
+    Route::get('/super-admin-user-management', fn () => redirect()->route('admin.users.index', request()->query()))
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('super-admin-user-management');
+    Route::get('/shop-owner-registration-view', fn () => redirect()->route('admin.registrations.index', request()->query()))
+        ->middleware('privileged.capability:review_registrations')
+        ->name('shop-owner-registration-view');
+    Route::get('/flagged-accounts', fn () => redirect()->route('admin.flagged-accounts.index', request()->query()))
+        ->middleware('privileged.capability:moderate_reports')
+        ->name('flagged-accounts');
+    Route::get('/system-monitoring-dashboard', fn () => redirect()->route('admin.system-monitoring', request()->query()))
+        ->middleware('privileged.capability:view_monitoring')
+        ->name('system-monitoring-dashboard');
+    Route::get('/notification-communication-tools', fn () => redirect()->route('admin.notifications', request()->query()))
+        ->name('notification-communication-tools');
+    Route::get('/data-report-access', fn () => redirect()->route('admin.audit', request()->query()))
+        ->middleware('privileged.capability:view_privileged_audit')
+        ->name('data-report-access');
 });
 
 // Shop Owner Routes
@@ -752,6 +778,13 @@ Route::middleware(['auth:shop_owner'])->get('/point-of-sale', function (\Illumin
 })->name('shop-owner.point-of-sale.legacy');
 
 Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')->group(function () {
+    Route::get('/{shopOwner}/documents/{document}', [PrivateSensitiveDocumentController::class, 'showForShopOwner'])
+        ->scopeBindings()
+        ->name('documents.show');
+    Route::post('/compliance-documents/{document}/renewals', [ShopOwnerDocumentRenewalController::class, 'store'])
+        ->whereNumber('document')
+        ->name('compliance-documents.renewals.store');
+
     // Dashboard - Available to ALL shop owners
     Route::get('/dashboard', function () {
         $shopOwner = Auth::guard('shop_owner')->user();
@@ -1601,7 +1634,12 @@ Route::middleware(['auth:user', 'check.suspension'])->group(function () {
 });
 
 // Super Admin Notification API routes
-Route::middleware('super_admin.auth')->prefix('api/admin/notifications')->group(function () {
+Route::middleware([
+    AttachPrivilegedCorrelationId::class,
+    'super_admin.auth',
+    'privileged.active',
+    'privileged.mfa',
+])->prefix('api/admin/notifications')->group(function () {
     Route::get('/', [\App\Http\Controllers\Api\AdminNotificationController::class, 'index']);
     Route::get('/unread-count', [\App\Http\Controllers\Api\AdminNotificationController::class, 'unreadCount']);
     Route::post('/{id}/read', [\App\Http\Controllers\Api\AdminNotificationController::class, 'markAsRead']);
@@ -1611,9 +1649,8 @@ Route::middleware('super_admin.auth')->prefix('api/admin/notifications')->group(
 
 // Shop Registration Routes
 Route::get('/shop/register', function () {
-    return Inertia::render('UserSide/Auth/ShopOwnerRegistration');
+    return redirect()->route('shop-owner-register', request()->query());
 })->name('shop.register.form');
-Route::post('/shop/register-full', [ShopRegistrationController::class, 'storeFullInertia'])->name('shop.register');
 
 // Shop Message Route
 Route::get('/shop/message', function () {
@@ -1628,66 +1665,341 @@ Route::get('/shop/message', function () {
 })->name('shop.message');
 
 // Super Admin Authentication Routes (Second set - removed duplicate, fixing authentication flows)
-Route::get('/admin/login', [SuperAdminAuthController::class, 'showLoginForm'])->name('admin.login');
-Route::post('/admin/login', [SuperAdminAuthController::class, 'login'])->name('admin.login.post');
-Route::post('/admin/logout', [SuperAdminAuthController::class, 'logout'])->name('admin.logout');
+Route::get('/admin/login', [SuperAdminAuthController::class, 'showLoginForm'])
+    ->middleware(AttachPrivilegedCorrelationId::class)
+    ->name('admin.login');
+Route::post('/admin/login', [SuperAdminAuthController::class, 'login'])
+    ->middleware([AttachPrivilegedCorrelationId::class, 'throttle:privileged-login'])
+    ->name('admin.login.post');
+Route::post('/admin/logout', [SuperAdminAuthController::class, 'logout'])
+    ->middleware(AttachPrivilegedCorrelationId::class)
+    ->name('admin.logout');
+Route::get('/admin/setup', [PrivilegedSetupController::class, 'showSetupPage'])
+    ->middleware([AttachPrivilegedCorrelationId::class, 'privileged.no-store'])
+    ->name('admin.setup');
+Route::post('/admin/setup/exchange', [PrivilegedSetupController::class, 'exchange'])
+    ->middleware([AttachPrivilegedCorrelationId::class, 'privileged.no-store', 'throttle:privileged-setup'])
+    ->name('admin.setup.exchange');
+Route::post('/admin/setup/complete', [PrivilegedSetupController::class, 'completePassword'])
+    ->middleware([AttachPrivilegedCorrelationId::class, 'privileged.no-store', 'throttle:privileged-setup'])
+    ->name('admin.setup.complete');
+Route::get('/admin/forgot-password', [PrivilegedPasswordResetController::class, 'showForgotPassword'])
+    ->middleware([AttachPrivilegedCorrelationId::class, 'privileged.no-store'])
+    ->name('admin.password.request');
+Route::post('/admin/forgot-password', [PrivilegedPasswordResetController::class, 'send'])
+    ->middleware([AttachPrivilegedCorrelationId::class, 'throttle:privileged-password-reset'])
+    ->name('admin.password.email');
+Route::get('/admin/reset-password', [PrivilegedPasswordResetController::class, 'showResetPassword'])
+    ->middleware([AttachPrivilegedCorrelationId::class, 'privileged.no-store'])
+    ->name('admin.password.reset');
+Route::post('/admin/reset-password/exchange', [PrivilegedPasswordResetController::class, 'exchange'])
+    ->middleware([AttachPrivilegedCorrelationId::class, 'privileged.no-store', 'throttle:privileged-password-reset'])
+    ->name('admin.password.reset.exchange');
+Route::post('/admin/reset-password/complete', [PrivilegedPasswordResetController::class, 'complete'])
+    ->middleware([AttachPrivilegedCorrelationId::class, 'privileged.no-store', 'throttle:privileged-password-reset'])
+    ->name('admin.password.reset.complete');
+Route::get('/admin/mfa/challenge', [PrivilegedMfaController::class, 'show'])
+    ->middleware([AttachPrivilegedCorrelationId::class, 'super_admin.auth', 'privileged.active', 'privileged.no-store'])
+    ->name('admin.mfa.challenge');
+Route::post('/admin/mfa/challenge', [PrivilegedMfaController::class, 'verify'])
+    ->middleware([AttachPrivilegedCorrelationId::class, 'super_admin.auth', 'privileged.active', 'privileged.no-store', 'throttle:privileged-mfa'])
+    ->name('admin.mfa.challenge.verify');
+Route::get('/admin/mfa/setup', [PrivilegedSetupController::class, 'showEnrollment'])
+    ->middleware([AttachPrivilegedCorrelationId::class, 'super_admin.auth', 'privileged.no-store'])
+    ->name('admin.mfa.setup');
+Route::post('/admin/mfa/setup/verify', [PrivilegedSetupController::class, 'verifyEnrollment'])
+    ->middleware([AttachPrivilegedCorrelationId::class, 'super_admin.auth', 'privileged.no-store', 'throttle:privileged-setup'])
+    ->name('admin.mfa.setup.verify');
+Route::post('/admin/mfa/setup/recovery/acknowledge', [PrivilegedSetupController::class, 'acknowledgeRecovery'])
+    ->middleware([AttachPrivilegedCorrelationId::class, 'super_admin.auth', 'privileged.no-store', 'throttle:privileged-setup'])
+    ->name('admin.mfa.setup.recovery.acknowledge');
 
 // Admin Protected Routes
-Route::middleware('super_admin.auth')->prefix('admin')->name('admin.')->group(function () {
+Route::middleware([
+    AttachPrivilegedCorrelationId::class,
+    'super_admin.auth',
+    'privileged.active',
+    'privileged.mfa',
+])->prefix('admin')->name('admin.')->group(function () {
     Route::get('/', function () {
         return redirect()->route('admin.system-monitoring');
     })->name('dashboard');
-    Route::get('/system-monitoring', [SystemMonitoringDashboardController::class, 'index'])->name('system-monitoring');
+    Route::get('/reauthenticate', [PrivilegedReauthenticationController::class, 'show'])
+        ->middleware('privileged.no-store')
+        ->name('reauthenticate');
+    Route::post('/reauthenticate', [PrivilegedReauthenticationController::class, 'authenticate'])
+        ->middleware(['privileged.no-store', 'throttle:privileged-reauth'])
+        ->name('reauthenticate.submit');
+    Route::get('/security', [PrivilegedSecurityController::class, 'show'])
+        ->middleware(['privileged.capability:manage_own_security', 'privileged.no-store'])
+        ->name('security');
+    Route::get('/profile', [SuperAdminAuthController::class, 'showProfile'])
+        ->middleware(['privileged.capability:manage_own_security', 'privileged.no-store'])
+        ->name('profile');
+    Route::post('/security/password', [PrivilegedSecurityController::class, 'changePassword'])
+        ->middleware([
+            'privileged.capability:manage_own_security',
+            'privileged.recent',
+            'privileged.no-store',
+        ])
+        ->name('security.password');
+    Route::post('/security/recovery/generate', [PrivilegedSecurityController::class, 'generateRecoveryCodes'])
+        ->middleware([
+            'privileged.capability:manage_own_security',
+            'privileged.recent',
+            'privileged.no-store',
+            'throttle:privileged-setup',
+        ])
+        ->name('security.recovery.generate');
+    Route::post('/security/recovery/acknowledge', [PrivilegedSecurityController::class, 'acknowledgeRecovery'])
+        ->middleware([
+            'privileged.capability:manage_own_security',
+            'privileged.recent',
+            'privileged.no-store',
+            'throttle:privileged-setup',
+        ])
+        ->name('security.recovery.acknowledge');
+    Route::post('/security/mfa/reset', [PrivilegedSecurityController::class, 'resetMfa'])
+        ->middleware([
+            'privileged.capability:manage_own_security',
+            'privileged.recent',
+            'privileged.no-store',
+            'throttle:privileged-setup',
+        ])
+        ->name('security.mfa.reset');
+    Route::get('/system-monitoring', [SystemMonitoringDashboardController::class, 'index'])
+        ->middleware('privileged.capability:view_monitoring')
+        ->name('system-monitoring');
+    Route::get('/audit', [PrivilegedAuditController::class, 'index'])
+        ->middleware('privileged.capability:view_privileged_audit')
+        ->name('audit');
 
-    // Admin management routes
-    Route::get('/admin', [SuperAdminController::class, 'showAdminManagement'])->name('admin-management');
-    Route::get('/create-admin', [SuperAdminController::class, 'showCreateAdmin'])->name('create-admin');
-    Route::post('/create-admin', [SuperAdminController::class, 'storeAdmin'])->name('create-admin.store');
-    Route::post('/admins/{id}/suspend', [SuperAdminController::class, 'suspendAdmin'])->name('admins.suspend');
-    Route::post('/admins/{id}/activate', [SuperAdminController::class, 'activateAdmin'])->name('admins.activate');
-    Route::delete('/admins/{id}', [SuperAdminController::class, 'deleteAdmin'])->name('admins.delete');
+    // Administrator management owns all privileged identity mutations.
+    Route::get('/administrators', [AdministratorManagementController::class, 'index'])
+        ->middleware('privileged.capability:manage_administrators')
+        ->name('administrators.index');
+    Route::get('/administrators/create', [AdministratorManagementController::class, 'create'])
+        ->middleware('privileged.capability:manage_administrators')
+        ->name('administrators.create');
+    Route::post('/administrators', [AdministratorManagementController::class, 'store'])
+        ->middleware(['privileged.capability:manage_administrators', 'privileged.recent'])
+        ->name('administrators.store');
+    Route::post('/administrators/{administrator}/setup/resend', [AdministratorManagementController::class, 'resendSetupInvitation'])
+        ->middleware(['privileged.capability:manage_administrators', 'privileged.recent'])
+        ->name('administrators.setup.resend');
+    Route::post('/administrators/{administrator}/suspend', [AdministratorManagementController::class, 'suspend'])
+        ->middleware(['privileged.capability:manage_administrators', 'privileged.recent'])
+        ->name('administrators.suspend');
+    Route::post('/administrators/{administrator}/deactivate', [AdministratorManagementController::class, 'deactivate'])
+        ->middleware(['privileged.capability:manage_administrators', 'privileged.recent'])
+        ->name('administrators.deactivate');
+    Route::post('/administrators/{administrator}/activate', [AdministratorManagementController::class, 'activate'])
+        ->middleware(['privileged.capability:manage_administrators', 'privileged.recent'])
+        ->name('administrators.activate');
+    Route::patch('/administrators/{administrator}/role', [AdministratorManagementController::class, 'updateRole'])
+        ->middleware(['privileged.capability:manage_administrators', 'privileged.recent'])
+        ->name('administrators.role.update');
+    Route::post('/administrators/{administrator}/mfa/reset', [AdministratorManagementController::class, 'resetMfa'])
+        ->middleware(['privileged.capability:manage_platform_security', 'privileged.recent'])
+        ->name('administrators.mfa.reset');
 
-    // Shop management routes
-    Route::get('/registered-shops', [SuperAdminController::class, 'showRegisteredShops'])->name('registered-shops');
+    // Temporary safe GET aliases for existing bookmarks and persisted links.
+    Route::get('/admin', fn () => redirect()->route('admin.administrators.index', request()->query()))
+        ->middleware('privileged.capability:manage_administrators')
+        ->name('admin-management');
+    Route::get('/create-admin', fn () => redirect()->route('admin.administrators.create', request()->query()))
+        ->middleware('privileged.capability:manage_administrators')
+        ->name('create-admin');
+
+    Route::get('/registrations', [ShopOwnerRegistrationViewController::class, 'index'])
+        ->middleware('privileged.capability:review_registrations')
+        ->name('registrations.index');
+    Route::get('/shop-owner-registration-view', fn () => redirect()->route('admin.registrations.index', request()->query()))
+        ->middleware('privileged.capability:review_registrations')
+        ->name('shop-owner-registration-view');
+    Route::get('/document-renewals', [SuperAdminShopDocumentRenewalController::class, 'index'])
+        ->middleware('privileged.capability:review_registrations')
+        ->name('document-renewals.index');
+    Route::post('/document-renewals/{document}/approve', [SuperAdminShopDocumentRenewalController::class, 'approve'])
+        ->whereNumber('document')
+        ->middleware('privileged.capability:review_registrations')
+        ->name('document-renewals.approve');
+    Route::post('/document-renewals/{document}/reject', [SuperAdminShopDocumentRenewalController::class, 'reject'])
+        ->whereNumber('document')
+        ->middleware('privileged.capability:review_registrations')
+        ->name('document-renewals.reject');
+    Route::get('/shop-owners/{shopOwner}/documents/{document}', [PrivateSensitiveDocumentController::class, 'showForPrivileged'])
+        ->scopeBindings()
+        ->middleware('privileged.capability:review_registrations')
+        ->name('shop-documents.show');
+    Route::get('/users/{user}/valid-id', [PrivateSensitiveDocumentController::class, 'showCustomerValidId'])
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('users.valid-id.show');
+    Route::post('/registrations/{shopOwner}/approve', [ShopOwnerRegistrationViewController::class, 'approve'])
+        ->whereNumber('shopOwner')
+        ->middleware('privileged.capability:review_registrations')
+        ->name('registrations.approve');
+    Route::post('/registrations/{shopOwner}/reject', [ShopOwnerRegistrationViewController::class, 'reject'])
+        ->whereNumber('shopOwner')
+        ->middleware('privileged.capability:review_registrations')
+        ->name('registrations.reject');
+    Route::get('/flagged-accounts', [FlaggedAccountsController::class, 'index'])
+        ->middleware('privileged.capability:moderate_reports')
+        ->name('flagged-accounts.index');
+    Route::post('/flagged-accounts/{id}/mark-reviewed', [FlaggedAccountsController::class, 'markReviewed'])
+        ->whereNumber('id')
+        ->middleware('privileged.capability:moderate_reports')
+        ->name('flagged-accounts.mark-reviewed');
+    Route::post('/flagged-accounts/{id}/dismiss', [FlaggedAccountsController::class, 'dismiss'])
+        ->whereNumber('id')
+        ->middleware('privileged.capability:moderate_reports')
+        ->name('flagged-accounts.dismiss');
+    Route::post('/flagged-accounts/{id}/ban', [FlaggedAccountsController::class, 'ban'])
+        ->whereNumber('id')
+        ->middleware('privileged.capability:moderate_reports')
+        ->name('flagged-accounts.ban');
+    // Registered-shop management owns shop reads and lifecycle mutations.
+    Route::get('/shops', [RegisteredShopController::class, 'index'])
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('shops.index');
+    Route::get('/shops/{shopOwner}', [RegisteredShopController::class, 'show'])
+        ->whereNumber('shopOwner')
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('shops.show');
+    Route::get('/registered-shops', fn () => redirect()->route('admin.shops.index', request()->query()))
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('registered-shops');
     Route::get('/business-upgrade-requests', [SuperAdminShopOwnerUpgradeRequestController::class, 'index'])
+        ->middleware('privileged.capability:review_registrations')
         ->name('business-upgrade-requests.index');
     Route::patch('/business-upgrade-requests/{upgradeRequest}', [SuperAdminShopOwnerUpgradeRequestController::class, 'update'])
+        ->middleware('privileged.capability:review_registrations')
         ->name('business-upgrade-requests.update');
     Route::get('/business-upgrade-requests/{upgradeRequest}/documents/{document}', [SuperAdminShopOwnerUpgradeRequestController::class, 'download'])
+        ->middleware('privileged.capability:review_registrations')
         ->name('business-upgrade-requests.documents.download');
-    Route::get('/shops/{id}/details', [SuperAdminController::class, 'shopDetails'])->name('shops.details');
-    Route::get('/subscription-management', [SuperAdminController::class, 'showSubscriptionManagement'])->name('subscription-management');
-    Route::post('/premium-plans', [SuperAdminController::class, 'storePremiumPlan'])->name('premium-plans.store');
-    Route::put('/premium-plans/{premiumPlan}', [SuperAdminController::class, 'updatePremiumPlan'])->name('premium-plans.update');
-    Route::post('/premium-plans/{premiumPlan}/archive', [SuperAdminController::class, 'archivePremiumPlan'])->name('premium-plans.archive');
-    Route::post('/premium-plans/{premiumPlan}/reactivate', [SuperAdminController::class, 'reactivatePremiumPlan'])->name('premium-plans.reactivate');
-    Route::post('/subscriptions/{id}/cancel', [SuperAdminController::class, 'cancelSubscription'])->name('subscriptions.cancel');
-    Route::post('/subscriptions/{id}/upgrade', [SuperAdminController::class, 'upgradeSubscription'])->name('subscriptions.upgrade');
-    Route::post('/subscriptions/{id}/downgrade', [SuperAdminController::class, 'downgradeSubscription'])->name('subscriptions.downgrade');
-    Route::post('/shops/{id}/suspend', [SuperAdminController::class, 'suspendShop'])->name('shops.suspend');
-    Route::post('/shops/{id}/activate', [SuperAdminController::class, 'activateShop'])->name('shops.activate');
-    Route::delete('/shops/{id}', [SuperAdminController::class, 'deleteShop'])->name('shops.delete');
-
-    // User management routes
-    Route::get('/user-management', [SuperAdminController::class, 'showUserManagement'])->name('user-management');
-    Route::post('/users/{id}/suspend', [SuperAdminController::class, 'suspendUser'])->name('users.suspend');
-    Route::post('/users/{id}/activate', [SuperAdminController::class, 'activateUser'])->name('users.activate');
-    Route::delete('/users/{id}', [SuperAdminController::class, 'deleteUser'])->name('users.delete');
-
+    Route::get('/shops/{id}/details', fn (int $id) => redirect()->route(
+        'admin.shops.show',
+        ['shopOwner' => $id] + request()->query(),
+    ))
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('shops.details');
+    Route::get('/subscriptions', [SubscriptionManagementController::class, 'index'])
+        ->middleware('privileged.capability:manage_plans')
+        ->name('subscriptions.index');
+    Route::get('/subscriptions/{subscription}/history', [SubscriptionManagementController::class, 'history'])
+        ->whereNumber('subscription')
+        ->middleware('privileged.capability:manage_plans')
+        ->name('subscriptions.history');
+    Route::get('/subscription-management', fn () => redirect()->route(
+        'admin.subscriptions.index',
+        request()->query(),
+    ))
+        ->middleware('privileged.capability:manage_plans')
+        ->name('subscription-management');
+    Route::post('/subscriptions/{subscription}/cancel', [SubscriptionInterventionController::class, 'cancel'])
+        ->middleware([
+            'privileged.capability:intervene_subscriptions',
+            'privileged.recent',
+        ])
+        ->name('subscriptions.cancel');
+    Route::patch('/subscriptions/{subscription}/legacy-correction', [SubscriptionInterventionController::class, 'legacyCorrection'])
+        ->middleware([
+            'privileged.capability:intervene_subscriptions',
+            'privileged.recent',
+        ])
+        ->name('subscriptions.legacy-correction');
+    Route::post('/subscription-payments/{payment}/refunds', [SubscriptionInterventionController::class, 'refund'])
+        ->middleware([
+            'privileged.capability:intervene_subscriptions',
+            'privileged.recent',
+            'throttle:privileged-subscription-refund',
+        ])
+        ->name('subscription-payments.refunds.store');
+    Route::post('/plans', [PremiumPlanController::class, 'store'])
+        ->middleware('privileged.capability:manage_plans')
+        ->name('plans.store');
+    Route::put('/plans/{premiumPlan}', [PremiumPlanController::class, 'update'])
+        ->whereNumber('premiumPlan')
+        ->middleware('privileged.capability:manage_plans')
+        ->name('plans.update');
+    Route::post('/plans/{premiumPlan}/archive', [PremiumPlanController::class, 'archive'])
+        ->whereNumber('premiumPlan')
+        ->middleware('privileged.capability:manage_plans')
+        ->name('plans.archive');
+    Route::post('/plans/{premiumPlan}/reactivate', [PremiumPlanController::class, 'reactivate'])
+        ->whereNumber('premiumPlan')
+        ->middleware('privileged.capability:manage_plans')
+        ->name('plans.reactivate');
+    Route::post('/shops/{shopOwner}/suspend', [RegisteredShopController::class, 'suspend'])
+        ->whereNumber('shopOwner')
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('shops.suspend');
+    Route::post('/shops/{shopOwner}/reactivate', [RegisteredShopController::class, 'reactivate'])
+        ->whereNumber('shopOwner')
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('shops.reactivate');
+    Route::post('/shops/{shopOwner}/archive', [RegisteredShopController::class, 'archive'])
+        ->whereNumber('shopOwner')
+        ->middleware(['privileged.capability:intervene_accounts', 'privileged.recent'])
+        ->name('shops.archive');
+    Route::post('/shops/{shopOwner}/restore', [RegisteredShopController::class, 'restore'])
+        ->whereNumber('shopOwner')
+        ->middleware(['privileged.capability:intervene_accounts', 'privileged.recent'])
+        ->name('shops.restore');
+    // User intervention owns the paginated customer-management read model and lifecycle mutations.
+    Route::get('/users', [UserInterventionController::class, 'index'])
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('users.index');
+    Route::get('/user-management', fn () => redirect()->route('admin.users.index', request()->query()))
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('user-management');
+    Route::post('/users/{user}/suspend', [UserInterventionController::class, 'suspend'])
+        ->whereNumber('user')
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('users.suspend');
+    Route::post('/users/{user}/reactivate', [UserInterventionController::class, 'reactivate'])
+        ->whereNumber('user')
+        ->middleware('privileged.capability:intervene_accounts')
+        ->name('users.reactivate');
+    Route::post('/users/{user}/archive', [UserInterventionController::class, 'archive'])
+        ->whereNumber('user')
+        ->middleware(['privileged.capability:intervene_accounts', 'privileged.recent'])
+        ->name('users.archive');
+    Route::post('/users/{user}/restore', [UserInterventionController::class, 'restore'])
+        ->whereNumber('user')
+        ->middleware(['privileged.capability:intervene_accounts', 'privileged.recent'])
+        ->name('users.restore');
     // Shop Reports routes
-    Route::get('/shop-reports', [\App\Http\Controllers\superAdmin\ShopReportsController::class, 'index'])->name('shop-reports');
-    Route::post('/shop-reports/{id}/action', [\App\Http\Controllers\superAdmin\ShopReportsController::class, 'action'])->name('shop-reports.action');
+    Route::get('/shop-reports', [\App\Http\Controllers\superAdmin\ShopReportsController::class, 'index'])
+        ->middleware('privileged.capability:moderate_reports')
+        ->name('shop-reports');
+    Route::get('/shop-reports/{shopOwner}', [\App\Http\Controllers\superAdmin\ShopReportsController::class, 'show'])
+        ->whereNumber('shopOwner')
+        ->middleware('privileged.capability:moderate_reports')
+        ->name('shop-reports.show');
+    Route::post('/shop-reports/{id}/action', [\App\Http\Controllers\superAdmin\ShopReportsController::class, 'action'])
+        ->middleware('privileged.capability:moderate_reports')
+        ->name('shop-reports.action');
 
     // Suspension Appeals routes
-    Route::get('/appeals', [\App\Http\Controllers\superAdmin\SuspensionAppealsController::class, 'index'])->name('suspension-appeals');
-    Route::post('/appeals/{id}/approve', [\App\Http\Controllers\superAdmin\SuspensionAppealsController::class, 'approve'])->name('appeals.approve');
-    Route::post('/appeals/{id}/reject', [\App\Http\Controllers\superAdmin\SuspensionAppealsController::class, 'reject'])->name('appeals.reject');
+    Route::get('/appeals', [\App\Http\Controllers\superAdmin\SuspensionAppealsController::class, 'index'])
+        ->middleware('privileged.capability:view_appeals')
+        ->name('suspension-appeals');
+    Route::post('/appeals/{id}/approve', [\App\Http\Controllers\superAdmin\SuspensionAppealsController::class, 'approve'])
+        ->middleware('privileged.capability:resolve_appeals')
+        ->name('appeals.approve');
+    Route::post('/appeals/{id}/reject', [\App\Http\Controllers\superAdmin\SuspensionAppealsController::class, 'reject'])
+        ->middleware('privileged.capability:resolve_appeals')
+        ->name('appeals.reject');
 
     // Additional admin routes
     Route::get('/notifications', function () {
-        return Inertia::render('superAdmin/Communications/NotificationCommunicationTools');
+        return Inertia::render('superAdmin/Notifications/AdminNotifications');
     })->name('notifications');
-    Route::get('/data-reports', [SuperAdminController::class, 'showDataReports'])->name('data-reports');
+    Route::get('/data-reports', fn () => redirect()->route('admin.audit', request()->query()))
+        ->middleware('privileged.capability:view_privileged_audit')
+        ->name('data-reports');
 });
 
 // Training Routes
@@ -2407,18 +2719,6 @@ Route::group([], function () {
     })->name('bar-chart');
 });
 
-// Super Admin Routes
-Route::prefix('superAdmin')->name('superAdmin.')->middleware('auth:super_admin')->group(function () {
-    Route::get('/super-admin-user-management', [SuperAdminUserManagementController::class, 'index'])->name('super-admin-user-management');
-    Route::get('/flagged-accounts', [FlaggedAccountsController::class, 'index'])->name('flagged-accounts');
-    Route::get('/shop-owner-registration-view', [ShopOwnerRegistrationViewController::class, 'index'])->name('shop-owner-registration-view');
-    Route::post('/shop-owner-registration/{id}/approve', [ShopOwnerRegistrationViewController::class, 'approve'])->name('shop-owner-approve');
-    Route::post('/shop-owner-registration/{id}/reject', [ShopOwnerRegistrationViewController::class, 'reject'])->name('shop-owner-reject');
-    Route::get('/system-monitoring-dashboard', [SystemMonitoringDashboardController::class, 'index'])->name('system-monitoring-dashboard');
-    Route::get('/notification-communication-tools', [NotificationCommunicationToolsController::class, 'index'])->name('notification-communication-tools');
-    Route::get('/data-report-access', [DataReportAccessController::class, 'index'])->name('data-report-access');
-});
-
 // Manager API Routes
 Route::prefix('api/manager')->name('api.manager.')->middleware([
     'web',
@@ -2466,9 +2766,5 @@ Route::prefix('api/leave')->name('api.leave.')->middleware(['auth:user'])->group
         ->middleware('role_or_permission:Manager|Finance Manager|Super Admin|Shop Owner|access-leave-approvals')
         ->name('reject');
 });
-
-// Legacy API Routes
-Route::post('/api/shop/register', [ShopRegistrationController::class, 'store']);
-Route::post('/api/shop/register-full', [ShopRegistrationController::class, 'storeFull']);
 
 // Module-specific API routes are registered in bootstrap/app.php via withRouting(... then: ...)

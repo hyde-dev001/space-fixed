@@ -18,7 +18,7 @@ class ShopOwnerUpgradeRequestController extends Controller
         $owner = Auth::guard('shop_owner')->user();
 
         try {
-            $upgradeRequest = $submit->handle($owner, $request->validated());
+            $upgradeRequest = $submit->handle($owner, $request->validated(), $request);
         } catch (ValidationException $exception) {
             throw $exception;
         } catch (Throwable $exception) {

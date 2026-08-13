@@ -48,3 +48,16 @@ Schedule::command('products:process-discount-schedules')
     ->everyTenMinutes()
     ->withoutOverlapping()
     ->onOneServer();
+
+// Suspension appeals own routine expiry detection; queue pages remain read-only.
+Schedule::command('suspension-appeals:expire')
+    ->everyFifteenMinutes()
+    ->withoutOverlapping()
+    ->onOneServer();
+
+// Shop-owner business-document reminders use the local business date and do
+// not mutate document or shop status.
+Schedule::command('shop-documents:send-expiry-reminders')
+    ->dailyAt('01:00')
+    ->timezone(config('app.shop_timezone'))
+    ->withoutOverlapping();

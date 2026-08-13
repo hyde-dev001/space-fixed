@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Head, router } from '@inertiajs/react';
 import Swal from 'sweetalert2';
 import AppLayout from '../../../layout/AppLayout';
@@ -10,7 +10,12 @@ interface AppealItem {
   account_name: string | null;
   recipient_email: string;
   suspension_reason: string | null;
-  status: 'eligible' | 'submitted' | 'approved' | 'rejected' | 'expired';
+  status: 'eligible' | 'submitted' | 'approved' | 'rejected' | 'expired' | 'superseded' | 'stale';
+  persisted_status?: string;
+  state?: string;
+  current?: boolean;
+  actionable?: boolean;
+  suspension_id?: number | null;
   appeal_message: string | null;
   reviewer_notes: string | null;
   submitted_at: string | null;
@@ -25,12 +30,28 @@ interface Stats {
   submitted: number;
   approved: number;
   rejected: number;
+  expired?: number;
+  superseded?: number;
+  stale?: number;
 }
 
 interface Props {
-  appeals: AppealItem[];
+  appeals: AppealItem[] | AppealPage;
   stats: Stats;
+  filters?: { search?: string | null; status?: string };
 }
+
+interface AppealPage {
+  data: AppealItem[];
+  current_page: number;
+  last_page: number;
+  per_page: number;
+  total: number;
+  from: number | null;
+  to: number | null;
+}
+
+const isAppealPage = (value: AppealItem[] | AppealPage): value is AppealPage => !Array.isArray(value);
 
 const SearchIcon = ({ className }: { className?: string }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
@@ -138,16 +159,57 @@ const statusBadgeClasses: Record<AppealItem['status'], string> = {
   rejected: 'bg-rose-100 text-rose-700 border border-rose-200',
   expired: 'bg-slate-200 text-slate-700 border border-slate-300',
   eligible: 'bg-blue-100 text-blue-700 border border-blue-200',
+  superseded: 'bg-gray-200 text-gray-700 border border-gray-300',
+  stale: 'bg-orange-100 text-orange-700 border border-orange-200',
 };
 
-const statusLabel = (status: AppealItem['status']) => status.charAt(0).toUpperCase() + status.slice(1);
+const statusLabel = (status: AppealItem['status'], current = false) => {
+  if (current && (status === 'eligible' || status === 'submitted')) {
+    return `Current / ${status}`;
+  }
 
-export default function SuspensionAppeals({ appeals = [], stats }: Props) {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | AppealItem['status']>('all');
+  return status.charAt(0).toUpperCase() + status.slice(1);
+};
+
+export default function SuspensionAppeals({ appeals = [], stats, filters }: Props) {
+  const serverPage = isAppealPage(appeals) ? appeals : null;
+  const serverPaginated = serverPage !== null;
+  const pageRows = serverPage?.data ?? (Array.isArray(appeals) ? appeals : []);
+  const [searchTerm, setSearchTerm] = useState(filters?.search ?? '');
+  const [statusFilter, setStatusFilter] = useState<'all' | AppealItem['status']>(
+    (filters?.status as 'all' | AppealItem['status'] | undefined) ?? 'all',
+  );
   const [selectedAppeal, setSelectedAppeal] = useState<AppealItem | null>(null);
   const [reviewerNotes, setReviewerNotes] = useState('');
   const [isActionSubmitting, setIsActionSubmitting] = useState(false);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipInitialSearch = useRef(true);
+
+  const requestPage = (page: number, nextStatus = statusFilter) => {
+    router.get('/admin/appeals', {
+      search: searchTerm || undefined,
+      status: nextStatus,
+      page,
+    }, {
+      preserveState: true,
+      preserveScroll: true,
+      replace: true,
+    });
+  };
+
+  useEffect(() => {
+    if (!serverPaginated) return;
+    if (skipInitialSearch.current) {
+      skipInitialSearch.current = false;
+      return;
+    }
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => requestPage(1), 250);
+
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+  }, [searchTerm]);
 
   const safeStats: Stats = {
     total: stats?.total || 0,
@@ -163,7 +225,8 @@ export default function SuspensionAppeals({ appeals = [], stats }: Props) {
   };
 
   const filtered = useMemo(() => {
-    return appeals.filter((item) => {
+    if (serverPaginated) return pageRows;
+    return pageRows.filter((item) => {
       const statusOk = statusFilter === 'all' || item.status === statusFilter;
       const keyword = searchTerm.trim().toLowerCase();
       const searchOk =
@@ -173,7 +236,7 @@ export default function SuspensionAppeals({ appeals = [], stats }: Props) {
         item.account_type.toLowerCase().includes(keyword);
       return statusOk && searchOk;
     });
-  }, [appeals, searchTerm, statusFilter]);
+  }, [pageRows, searchTerm, statusFilter, serverPaginated]);
 
   const openActionModal = (item: AppealItem) => {
     setSelectedAppeal(item);
@@ -209,6 +272,9 @@ export default function SuspensionAppeals({ appeals = [], stats }: Props) {
       onSuccess: () => {
         setIsActionSubmitting(false);
         closeActionModal();
+        if (serverPaginated) {
+          router.reload({ only: ['appeals', 'stats'], preserveScroll: true });
+        }
         Swal.fire({
           icon: 'success',
           title: action === 'approve' ? 'Appeal approved' : 'Appeal rejected',
@@ -216,12 +282,13 @@ export default function SuspensionAppeals({ appeals = [], stats }: Props) {
           showConfirmButton: false,
         });
       },
-      onError: () => {
+      onError: (errors) => {
         setIsActionSubmitting(false);
+        const message = Object.values(errors)[0] || 'The appeal state changed. Refresh the queue and try again.';
         Swal.fire({
           icon: 'error',
           title: 'Action failed',
-          text: 'Please try again.',
+          text: message,
         });
       },
     });
@@ -246,7 +313,7 @@ export default function SuspensionAppeals({ appeals = [], stats }: Props) {
             title="Total Appeals"
             value={safeStats.total}
             subtitle="All records in the appeals queue"
-            chip={`${filtered.length} visible`}
+            chip={`${serverPage?.total ?? filtered.length} visible`}
             tone="blue"
             icon={InboxIcon}
           />
@@ -288,7 +355,7 @@ export default function SuspensionAppeals({ appeals = [], stats }: Props) {
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-600">Search and filters</h2>
             <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600">
-              {filtered.length} result{filtered.length === 1 ? '' : 's'}
+              {serverPage?.total ?? filtered.length} result{(serverPage?.total ?? filtered.length) === 1 ? '' : 's'}
             </span>
           </div>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
@@ -303,7 +370,11 @@ export default function SuspensionAppeals({ appeals = [], stats }: Props) {
             </div>
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as 'all' | AppealItem['status'])}
+              onChange={(e) => {
+                const nextStatus = e.target.value as 'all' | AppealItem['status'];
+                setStatusFilter(nextStatus);
+                if (serverPaginated) requestPage(1, nextStatus);
+              }}
               aria-label="Filter appeals by status"
               className="rounded-xl border border-gray-300 px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             >
@@ -313,6 +384,8 @@ export default function SuspensionAppeals({ appeals = [], stats }: Props) {
               <option value="approved">Approved</option>
               <option value="rejected">Rejected</option>
               <option value="expired">Expired</option>
+              <option value="superseded">Superseded</option>
+              <option value="stale">Stale</option>
             </select>
           </div>
         </div>
@@ -320,7 +393,7 @@ export default function SuspensionAppeals({ appeals = [], stats }: Props) {
         <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-3">
             <p className="text-sm font-semibold text-gray-700">Appeal records</p>
-            <p className="text-xs text-gray-500">Showing {filtered.length} of {appeals.length}</p>
+            <p className="text-xs text-gray-500">Showing {serverPage?.from ?? (filtered.length ? 1 : 0)}-{serverPage?.to ?? filtered.length} of {serverPage?.total ?? filtered.length}</p>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200 text-sm">
@@ -351,7 +424,7 @@ export default function SuspensionAppeals({ appeals = [], stats }: Props) {
                     <td className="px-4 py-3 capitalize text-gray-700">{item.account_type.replace('_', ' ')}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClasses[item.status]}`}>
-                        {statusLabel(item.status)}
+                        {statusLabel(item.status, item.current)}
                       </span>
                     </td>
                     <td className="max-w-xs px-4 py-3 text-gray-700">{item.suspension_reason || '-'}</td>
@@ -369,6 +442,32 @@ export default function SuspensionAppeals({ appeals = [], stats }: Props) {
             </table>
           </div>
         </div>
+
+        {serverPage && serverPage.last_page > 1 && (
+          <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3">
+            <button
+              type="button"
+              title="Previous page"
+              aria-label="Previous page"
+              disabled={serverPage.current_page <= 1}
+              onClick={() => requestPage(Math.max(1, serverPage.current_page - 1))}
+              className="rounded-lg border px-3 py-2 text-sm disabled:opacity-50"
+            >
+              Previous
+            </button>
+            <span className="text-sm text-gray-500">Page {serverPage.current_page} of {serverPage.last_page}</span>
+            <button
+              type="button"
+              title="Next page"
+              aria-label="Next page"
+              disabled={serverPage.current_page >= serverPage.last_page}
+              onClick={() => requestPage(Math.min(serverPage.last_page, serverPage.current_page + 1))}
+              className="rounded-lg border px-3 py-2 text-sm disabled:opacity-50"
+            >
+              Next page
+            </button>
+          </div>
+        )}
 
         {selectedAppeal && (
           <div className="fixed inset-0 z-100000 flex items-center justify-center bg-black/50 p-4">
@@ -397,7 +496,7 @@ export default function SuspensionAppeals({ appeals = [], stats }: Props) {
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Status</p>
                     <span className={`mt-1 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClasses[selectedAppeal.status]}`}>
-                      {statusLabel(selectedAppeal.status)}
+                      {statusLabel(selectedAppeal.status, selectedAppeal.current)}
                     </span>
                   </div>
                 </div>
@@ -412,7 +511,7 @@ export default function SuspensionAppeals({ appeals = [], stats }: Props) {
                   <p className="text-sm text-gray-700">{selectedAppeal.appeal_message || '-'}</p>
                 </div>
 
-                {selectedAppeal.status === 'submitted' ? (
+                {selectedAppeal.status === 'submitted' && selectedAppeal.actionable === true ? (
                   <div>
                     <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Reviewer Notes (Optional)</label>
                     <textarea
@@ -439,7 +538,7 @@ export default function SuspensionAppeals({ appeals = [], stats }: Props) {
                   Close
                 </button>
 
-                {selectedAppeal.status === 'submitted' && (
+                {selectedAppeal.status === 'submitted' && selectedAppeal.actionable === true && (
                   <>
                     <button
                       onClick={() => handleDecision('approve')}

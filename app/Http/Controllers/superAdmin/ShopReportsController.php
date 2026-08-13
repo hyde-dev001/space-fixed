@@ -1,278 +1,405 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Http\Controllers\superAdmin;
 
 use App\Http\Controllers\Controller;
-use App\Mail\ShopReportWarningMail;
-use App\Models\ShopReport;
+use App\Http\Requests\SuperAdmin\ModerateShopReportsRequest;
 use App\Models\ShopOwner;
-use App\Models\AuditLog;
-use App\Services\SuspensionAppealService;
+use App\Models\ShopReport;
+use App\Models\ShopReportModerationAction;
+use App\Models\SuperAdmin;
+use App\Services\ShopReportModerationService;
+use App\Support\PrivilegedFailureResponse;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
+use Throwable;
 
-class ShopReportsController extends Controller
+final class ShopReportsController extends Controller
 {
     private const WARNINGS_BEFORE_SUSPENSION = 3;
 
-    /**
-     * Show the shop reports dashboard.
-     *
-     * Groups reports by shop, attaches report counts and pattern flags.
-     * Sorted so high-priority shops (5+ open reports) appear first.
-     */
-    public function index(): Response
+    public function index(Request $request): Response
     {
-        // ── 1. Load all reports with reporter + shop ───────────────────────
-        $allReports = ShopReport::with(['reporter', 'shop'])
-            ->orderBy('created_at', 'desc')
-            ->get();
+        $validated = $request->validate([
+            'search' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'priority' => ['sometimes', 'nullable', 'string', Rule::in(['all', 'high', 'medium', 'normal'])],
+            'status' => ['sometimes', 'nullable', 'string', Rule::in(['all', 'open', 'resolved'])],
+            'page' => ['sometimes', 'integer', 'min:1'],
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
+        ]);
 
-        $shopOwnerIds = $allReports
+        $openStatuses = ['submitted', 'under_review'];
+        $resolvedStatuses = ['dismissed', 'warned', 'suspended'];
+        $groupQuery = ShopReport::query()
+            ->leftJoin('shop_owners', 'shop_owners.id', '=', 'shop_reports.shop_owner_id')
+            ->select('shop_reports.shop_owner_id')
+            ->selectRaw('COUNT(shop_reports.id) AS total_reports')
+            ->selectRaw(
+                'SUM(CASE WHEN shop_reports.status IN (?, ?) THEN 1 ELSE 0 END) AS open_reports',
+                $openStatuses,
+            )
+            ->selectRaw('MAX(shop_reports.created_at) AS latest_date')
+            ->selectSub(
+                DB::table('shop_reports AS latest_report')
+                    ->select('latest_report.reason')
+                    ->whereColumn('latest_report.shop_owner_id', 'shop_reports.shop_owner_id')
+                    ->orderByDesc('latest_report.created_at')
+                    ->orderByDesc('latest_report.id')
+                    ->limit(1),
+                'latest_reason',
+            )
+            ->addSelect([
+                'shop_owners.business_name AS business_name',
+                'shop_owners.email AS shop_email',
+                'shop_owners.status AS shop_status',
+            ])
+            ->groupBy([
+                'shop_reports.shop_owner_id',
+                'shop_owners.business_name',
+                'shop_owners.email',
+                'shop_owners.status',
+            ]);
+
+        if (($validated['search'] ?? null) !== null && $validated['search'] !== '') {
+            $search = (string) $validated['search'];
+            $groupQuery->where(function (Builder $searchQuery) use ($search): void {
+                $this->whereContains($searchQuery, 'shop_owners.business_name', $search);
+                $this->whereContains($searchQuery, 'shop_owners.email', $search, 'or');
+            });
+        }
+
+        if (($validated['status'] ?? null) === 'open') {
+            $groupQuery->whereIn('shop_reports.status', $openStatuses);
+        } elseif (($validated['status'] ?? null) === 'resolved') {
+            $groupQuery->whereIn('shop_reports.status', $resolvedStatuses);
+        }
+
+        $priority = $validated['priority'] ?? 'all';
+        if ($priority === 'high') {
+            $groupQuery->having('open_reports', '>=', 5);
+        } elseif ($priority === 'medium') {
+            $groupQuery->havingRaw('open_reports BETWEEN ? AND ?', [3, 4]);
+        } elseif ($priority === 'normal') {
+            $groupQuery->having('open_reports', '<', 3);
+        }
+
+        $shopGroups = $groupQuery
+            ->orderByDesc('open_reports')
+            ->orderByDesc('latest_date')
+            ->orderByDesc('shop_reports.shop_owner_id')
+            ->paginate((int) ($validated['per_page'] ?? 25))
+            ->withQueryString();
+
+        $shopOwnerIds = $shopGroups->getCollection()
             ->pluck('shop_owner_id')
-            ->filter()
-            ->unique()
+            ->map(static fn ($id): int => (int) $id)
             ->values();
+        $warningCountsByShop = $this->warningCountsFor($shopOwnerIds);
+        $patternFlagsByShop = $this->patternFlagsFor($shopOwnerIds);
 
-        $warningCountsByShop = AuditLog::query()
-            ->selectRaw('target_id, COUNT(*) AS warning_count')
-            ->where('target_type', 'ShopOwner')
-            ->where('action', 'shop_report_warn')
-            ->when($shopOwnerIds->isNotEmpty(), fn ($query) => $query->whereIn('target_id', $shopOwnerIds->all()))
-            ->groupBy('target_id')
-            ->pluck('warning_count', 'target_id');
+        $shopGroups->setCollection($shopGroups->getCollection()->map(function ($group) use ($warningCountsByShop, $patternFlagsByShop): array {
+            $shopOwnerId = (int) $group->shop_owner_id;
+            $openReports = (int) $group->open_reports;
+            $warningStrike = (int) ($warningCountsByShop->get($shopOwnerId) ?? 0);
+            $warningsUntilSuspension = max(0, self::WARNINGS_BEFORE_SUSPENSION - $warningStrike);
 
-        // ── 2. Group by shop and build summary rows ────────────────────────
-        $shopGroups = $allReports
+            return [
+                'shop_owner_id' => $shopOwnerId,
+                'business_name' => $group->business_name ?? '—',
+                'shop_email' => $group->shop_email ?? '—',
+                'shop_status' => $group->shop_status ?? '—',
+                'total_reports' => (int) $group->total_reports,
+                'open_reports' => $openReports,
+                'latest_reason' => ShopReport::REASON_LABELS[$group->latest_reason] ?? ($group->latest_reason ?? '—'),
+                'latest_date' => $group->latest_date,
+                'pattern_flags' => $patternFlagsByShop->get($shopOwnerId, []),
+                'warning_strike' => $warningStrike,
+                'warning_limit' => self::WARNINGS_BEFORE_SUSPENSION,
+                'warnings_until_suspension' => $warningsUntilSuspension,
+                'next_warn_will_suspend' => $warningsUntilSuspension <= 1,
+                'priority' => $openReports >= 5 ? 'high' : ($openReports >= 3 ? 'medium' : 'normal'),
+            ];
+        }));
+
+        $baseQuery = ShopReport::query();
+        $highPriorityQuery = (clone $baseQuery)
+            ->whereIn('status', $openStatuses)
+            ->select('shop_owner_id')
             ->groupBy('shop_owner_id')
-            ->map(function ($reports, $shopOwnerId) use ($warningCountsByShop) {
-                /** @var \App\Models\ShopOwner|null $shop */
-                $shop = $reports->first()->shop;
-
-                $openReports = $reports->whereIn('status', ['submitted', 'under_review']);
-
-                $warningStrike = (int) ($warningCountsByShop->get((int) $shopOwnerId) ?? 0);
-                $warningsUntilSuspension = max(0, self::WARNINGS_BEFORE_SUSPENSION - $warningStrike);
-
-                $patternFlags = ShopReport::detectPatterns($shopOwnerId);
-
-                return [
-                    'shop_owner_id'   => $shopOwnerId,
-                    'business_name'   => $shop?->business_name ?? '—',
-                    'shop_email'      => $shop?->email ?? '—',
-                    'shop_status'     => $shop?->status ?? '—',
-                    'total_reports'   => $reports->count(),
-                    'open_reports'    => $openReports->count(),
-                    'latest_reason'   => $reports->first() ? ShopReport::REASON_LABELS[$reports->first()->reason] ?? $reports->first()->reason : '—',
-                    'latest_date'     => $reports->first()?->created_at?->toDateTimeString(),
-                    'pattern_flags'   => $patternFlags,
-                    'warning_strike'  => $warningStrike,
-                    'warning_limit'   => self::WARNINGS_BEFORE_SUSPENSION,
-                    'warnings_until_suspension' => $warningsUntilSuspension,
-                    'next_warn_will_suspend' => $warningsUntilSuspension <= 1,
-                    'priority'        => $openReports->count() >= 5 ? 'high'
-                        : ($openReports->count() >= 3 ? 'medium' : 'normal'),
-                    'reports'         => $reports->map(fn($r) => self::formatReport($r))->values(),
-                ];
-            })
-            ->sortByDesc(fn($g) => $g['open_reports'])
-            ->values();
-
-        // ── 3. Stats cards ─────────────────────────────────────────────────
+            ->havingRaw('COUNT(*) >= ?', [5]);
         $stats = [
-            'total_reports'    => $allReports->count(),
-            'pending_review'   => $allReports->whereIn('status', ['submitted', 'under_review'])->count(),
-            'high_priority'    => $shopGroups->where('priority', 'high')->count(),
-            'resolved'         => $allReports->whereIn('status', ['dismissed', 'warned', 'suspended'])->count(),
+            'total_reports' => (clone $baseQuery)->count(),
+            'pending_review' => (clone $baseQuery)->whereIn('status', $openStatuses)->count(),
+            'high_priority' => DB::query()->fromSub($highPriorityQuery, 'high_priority_shops')->count(),
+            'resolved' => (clone $baseQuery)->whereIn('status', $resolvedStatuses)->count(),
         ];
 
         return Inertia::render('superAdmin/Shops/ShopReports', [
             'shopGroups' => $shopGroups,
-            'stats'      => $stats,
-        ]);
-    }
-
-    /**
-     * Take action on a report (dismiss / warn / suspend).
-     *
-     * @param  int  $id  The shop_owner_id (we act on ALL open reports for this shop)
-     */
-    public function action(Request $request, int $id, SuspensionAppealService $suspensionAppealService): \Illuminate\Http\RedirectResponse
-    {
-        $validated = $request->validate([
-            'action'      => ['required', 'in:dismiss,warn,suspend'],
-            'admin_notes' => ['nullable', 'string', 'max:2000'],
-        ]);
-
-        $admin = Auth::guard('super_admin')->user();
-
-        // Fetch all open reports for this shop
-        $openReports = ShopReport::where('shop_owner_id', $id)
-            ->whereIn('status', ['submitted', 'under_review'])
-            ->get();
-
-        if ($openReports->isEmpty()) {
-            return back()->with('error', 'No open reports found for this shop.');
-        }
-
-        $priorWarningActions = AuditLog::query()
-            ->where('target_type', 'ShopOwner')
-            ->where('target_id', $id)
-            ->where('action', 'shop_report_warn')
-            ->count();
-
-        $effectiveAction = $validated['action'];
-        $currentWarningStrike = null;
-
-        if ($validated['action'] === 'warn') {
-            $currentWarningStrike = $priorWarningActions + 1;
-
-            if ($currentWarningStrike >= self::WARNINGS_BEFORE_SUSPENSION) {
-                $effectiveAction = 'suspend';
-            }
-        }
-
-        $newStatus = match ($effectiveAction) {
-            'dismiss'  => 'dismissed',
-            'warn'     => 'warned',
-            'suspend'  => 'suspended',
-        };
-
-        // ── Update all open reports ────────────────────────────────────────
-        ShopReport::where('shop_owner_id', $id)
-            ->whereIn('status', ['submitted', 'under_review'])
-            ->update([
-                'status'      => $newStatus,
-                'admin_notes' => $validated['admin_notes'] ?? null,
-                'reviewed_by' => $admin?->id,
-                'reviewed_at' => now(),
-            ]);
-
-        // ── If warning: notify the shop owner by email ───────────────────
-        if ($effectiveAction === 'warn') {
-            $shopOwner = ShopOwner::query()->find($id);
-            $email = trim((string) ($shopOwner?->email ?? ''));
-
-            if ($shopOwner && $email !== '') {
-                $accountName = trim((string) (
-                    ($shopOwner->business_name ?? '')
-                    ?: (($shopOwner->first_name ?? '') . ' ' . ($shopOwner->last_name ?? ''))
-                ));
-
-                $firstReason = (string) ($openReports->first()?->reason ?? '');
-                $primaryReason = ShopReport::REASON_LABELS[$firstReason] ?? ($firstReason !== '' ? $firstReason : 'Policy violation');
-
-                try {
-                    Mail::to($email)->send(new ShopReportWarningMail(
-                        accountName: $accountName !== '' ? $accountName : 'Shop Owner',
-                        reportCount: $openReports->count(),
-                        primaryReason: $primaryReason,
-                        adminNotes: $validated['admin_notes'] ?? null,
-                        reviewedAtLabel: now()->format('M d, Y h:i A')
-                    ));
-
-                    Log::info('Shop report warning email sent', [
-                        'shop_owner_id' => $shopOwner->id,
-                        'email' => $email,
-                        'report_count' => $openReports->count(),
-                    ]);
-                } catch (\Throwable $e) {
-                    Log::error('Failed to send shop report warning email', [
-                        'shop_owner_id' => $shopOwner->id,
-                        'email' => $email,
-                        'error' => $e->getMessage(),
-                    ]);
-                }
-            }
-        }
-
-        // ── If suspension: update the shop ─────────────────────────────────
-        if ($effectiveAction === 'suspend') {
-            $reason = $validated['admin_notes']
-                ?? (
-                    $validated['action'] === 'warn'
-                        ? 'Suspended automatically after reaching 3 warnings from shop report reviews.'
-                        : 'Suspended due to multiple verified reports from customers.'
-                );
-
-            $shopOwner = ShopOwner::query()->find($id);
-
-            if ($shopOwner) {
-                $shopOwner->update([
-                    'status'            => 'suspended',
-                    'suspension_reason' => $reason,
-                ]);
-
-                $suspensionAppealService->createAndSendForShopOwner(
-                    $shopOwner,
-                    $reason,
-                    $admin?->id
-                );
-            } else {
-                ShopOwner::where('id', $id)->update([
-                    'status'            => 'suspended',
-                    'suspension_reason' => $reason,
-                ]);
-            }
-        }
-
-        // ── Audit log ─────────────────────────────────────────────────────
-        AuditLog::create([
-            'shop_owner_id' => $id,
-            'actor_user_id' => null,
-            'action'        => 'shop_report_' . $effectiveAction,
-            'target_type'   => 'ShopOwner',
-            'target_id'     => $id,
-            'data'          => [
-                'requested_action' => $validated['action'],
-                'applied_action'   => $effectiveAction,
-                'report_count'     => $openReports->count(),
-                'admin_id'         => $admin?->id,
-                'admin_email'      => $admin?->email,
-                'notes'            => $validated['admin_notes'] ?? null,
-                'warning_strike'   => $currentWarningStrike,
-                'warning_limit'    => self::WARNINGS_BEFORE_SUSPENSION,
+            'stats' => $stats,
+            'filters' => [
+                'search' => $validated['search'] ?? null,
+                'priority' => $priority,
+                'status' => $validated['status'] ?? 'all',
             ],
         ]);
-
-        $message = $effectiveAction === 'suspend' && $validated['action'] === 'warn'
-            ? 'Shop reached 3 warnings and has been suspended automatically.'
-            : match ($effectiveAction) {
-                'dismiss' => 'Reports dismissed successfully.',
-                'warn'    => 'Shop has been warned and reports updated.',
-                'suspend' => 'Shop has been suspended and reports resolved.',
-            };
-
-        return back()->with('success', $message);
     }
 
-    // ── Private helpers ────────────────────────────────────────────────────────
+    public function show(Request $request, int $shopOwner): JsonResponse
+    {
+        $validated = $request->validate([
+            'page' => ['sometimes', 'integer', 'min:1'],
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
+        ]);
 
-    private static function formatReport(ShopReport $r): array
+        ShopOwner::withTrashed()->whereKey($shopOwner)->firstOrFail();
+
+        $reports = ShopReport::query()
+            ->where('shop_owner_id', $shopOwner)
+            ->select([
+                'id',
+                'user_id',
+                'shop_owner_id',
+                'reason',
+                'description',
+                'transaction_type',
+                'transaction_id',
+                'status',
+                'admin_notes',
+                'reviewed_at',
+                'ip_address',
+                'created_at',
+            ])
+            ->with([
+                'reporter' => static function ($reporterQuery): void {
+                    $reporterQuery->select(['id', 'first_name', 'last_name', 'email', 'created_at']);
+                },
+            ])
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->paginate((int) ($validated['per_page'] ?? 25))
+            ->withQueryString()
+            ->through(static fn (ShopReport $report): array => self::formatReport($report));
+
+        $openReportIds = collect($reports->items())
+            ->filter(static fn (array $report): bool => in_array($report['status'], ['submitted', 'under_review'], true))
+            ->pluck('id')
+            ->map(static fn ($id): int => (int) $id)
+            ->values()
+            ->all();
+
+        return response()->json([
+            'shop_owner_id' => $shopOwner,
+            'open_report_ids' => $openReportIds,
+            'reports' => $reports,
+        ]);
+    }
+
+    /** @param Collection<int, int> $shopOwnerIds */
+    private function warningCountsFor(Collection $shopOwnerIds): Collection
+    {
+        if ($shopOwnerIds->isEmpty()) {
+            return collect();
+        }
+
+        return ShopReportModerationAction::query()
+            ->selectRaw('shop_owner_id, MAX(warning_strike_number) AS warning_count')
+            ->whereNotNull('warning_strike_number')
+            ->whereIn('shop_owner_id', $shopOwnerIds->all())
+            ->groupBy('shop_owner_id')
+            ->pluck('warning_count', 'shop_owner_id')
+            ->mapWithKeys(static fn ($count, $id): array => [(int) $id => (int) $count]);
+    }
+
+    /** @param Collection<int, int> $shopOwnerIds */
+    private function patternFlagsFor(Collection $shopOwnerIds): Collection
+    {
+        if ($shopOwnerIds->isEmpty()) {
+            return collect();
+        }
+
+        $now = now();
+        $flags = [];
+        foreach ($shopOwnerIds as $shopOwnerId) {
+            $flags[(int) $shopOwnerId] = [];
+        }
+
+        $openStatuses = ['submitted', 'under_review'];
+        $batchCounts = ShopReport::query()
+            ->selectRaw('shop_owner_id, COUNT(*) AS pattern_count')
+            ->whereIn('shop_owner_id', $shopOwnerIds->all())
+            ->whereIn('status', $openStatuses)
+            ->where('created_at', '>', $now->copy()->subHours(3))
+            ->where('created_at', '<', $now->copy()->addHours(3))
+            ->groupBy('shop_owner_id')
+            ->havingRaw('COUNT(*) >= ?', [5])
+            ->pluck('pattern_count', 'shop_owner_id');
+
+        foreach ($batchCounts as $shopOwnerId => $count) {
+            $flags[(int) $shopOwnerId][] = 'batch_reports';
+        }
+
+        $newReporterCounts = ShopReport::query()
+            ->join('users', 'users.id', '=', 'shop_reports.user_id')
+            ->selectRaw('shop_reports.shop_owner_id, COUNT(*) AS pattern_count')
+            ->whereIn('shop_reports.shop_owner_id', $shopOwnerIds->all())
+            ->whereIn('shop_reports.status', $openStatuses)
+            ->where('users.created_at', '>', $now->copy()->subDays(8))
+            ->where('users.created_at', '<', $now->copy()->addDays(8))
+            ->groupBy('shop_reports.shop_owner_id')
+            ->havingRaw('COUNT(*) >= ?', [3])
+            ->pluck('pattern_count', 'shop_reports.shop_owner_id');
+
+        foreach ($newReporterCounts as $shopOwnerId => $count) {
+            $flags[(int) $shopOwnerId][] = 'new_account_reporters';
+        }
+
+        $driver = DB::connection()->getDriverName();
+        $ipPrefix = in_array($driver, ['mysql', 'mariadb'], true)
+            ? "SUBSTRING_INDEX(shop_reports.ip_address, '.', 3)"
+            : "substr(shop_reports.ip_address, 1, instr(shop_reports.ip_address, '.') + instr(substr(shop_reports.ip_address, instr(shop_reports.ip_address, '.') + 1), '.') - 1)";
+        $clusteredShops = ShopReport::query()
+            ->selectRaw("shop_reports.shop_owner_id, {$ipPrefix} AS ip_prefix")
+            ->selectRaw('COUNT(*) AS pattern_count')
+            ->whereIn('shop_reports.shop_owner_id', $shopOwnerIds->all())
+            ->whereIn('shop_reports.status', $openStatuses)
+            ->whereNotNull('shop_reports.ip_address')
+            ->where('shop_reports.ip_address', 'like', '%.%')
+            ->groupBy('shop_reports.shop_owner_id')
+            ->groupByRaw($ipPrefix)
+            ->havingRaw('COUNT(*) >= ?', [3])
+            ->pluck('ip_prefix', 'shop_owner_id');
+
+        foreach ($clusteredShops as $shopOwnerId => $prefix) {
+            $flags[(int) $shopOwnerId][] = 'ip_clustering';
+        }
+
+        return collect($flags);
+    }
+
+    private function whereContains(Builder $query, string $column, string $value, string $boolean = 'and'): void
+    {
+        $escaped = addcslashes($value, "\\%_");
+        $query->whereRaw(
+            "{$column} LIKE ? ESCAPE '\\'",
+            ["%{$escaped}%"],
+            $boolean,
+        );
+    }
+
+    public function action(
+        ModerateShopReportsRequest $request,
+        int $id,
+        ShopReportModerationService $moderation,
+        PrivilegedFailureResponse $failures,
+    ): mixed {
+        $admin = Auth::guard('super_admin')->user();
+        abort_unless($admin instanceof SuperAdmin, 403);
+
+        try {
+            $result = $moderation->moderate(
+                shopOwnerId: $id,
+                reportIds: (array) $request->validated('report_ids'),
+                requestedAction: (string) $request->validated('action'),
+                notes: $request->validated('admin_notes'),
+                actor: $admin,
+                request: $request,
+            );
+
+            $action = $result['action'];
+            $requestedAction = (string) $action->requested_action;
+            $effectiveAction = (string) $action->applied_action;
+            $message = $effectiveAction === 'suspend' && $requestedAction === 'warn'
+                ? 'Shop reached 3 warnings and has been suspended automatically.'
+                : match ($effectiveAction) {
+                    'dismiss' => 'Reports dismissed successfully.',
+                    'warn' => 'Shop has been warned and reports updated.',
+                    'suspend' => 'Shop has been suspended and reports resolved.',
+                };
+
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => $message,
+                    'changed' => $result['changed'],
+                    'action' => [
+                        'id' => (int) $action->getKey(),
+                        'shop_owner_id' => (int) $action->shop_owner_id,
+                        'requested_action' => $requestedAction,
+                        'applied_action' => $effectiveAction,
+                        'report_ids' => array_values(array_map('intval', (array) $action->report_ids)),
+                        'decision_key' => (string) $action->decision_key,
+                        'warning_strike_number' => $action->warning_strike_number,
+                    ],
+                    'suspension_id' => $result['suspension_id'],
+                ]);
+            }
+
+            return back()->with('success', $message);
+        } catch (HttpExceptionInterface $exception) {
+            $status = $exception->getStatusCode();
+            if ($status === 409) {
+                return $failures->conflict(
+                    request: $request,
+                    operation: 'shop_report',
+                    message: 'The shop report decision conflicts with current state.',
+                    code: 'shop_report_conflict',
+                );
+            }
+
+            if ($status === 422) {
+                return $failures->validation($request, 'The shop report decision input is invalid.', 'shop_report_validation');
+            }
+
+            return $failures->unexpected(
+                request: $request,
+                operation: 'shop_report',
+                exception: $exception,
+                message: 'The shop report decision could not be completed.',
+                code: 'shop_report_error',
+            );
+        } catch (Throwable $exception) {
+            return $failures->unexpected(
+                request: $request,
+                operation: 'shop_report',
+                exception: $exception,
+                message: 'The shop report decision could not be completed.',
+                code: 'shop_report_error',
+            );
+        }
+    }
+
+    private static function formatReport(ShopReport $report): array
     {
         return [
-            'id'               => $r->id,
-            'reason'           => $r->reason,
-            'reason_label'     => ShopReport::REASON_LABELS[$r->reason] ?? $r->reason,
-            'description'      => $r->description,
-            'status'           => $r->status,
-            'status_label'     => ShopReport::STATUS_LABELS[$r->status] ?? $r->status,
-            'transaction_type' => $r->transaction_type,
-            'transaction_id'   => $r->transaction_id,
-            'admin_notes'      => $r->admin_notes,
-            'reviewed_at'      => $r->reviewed_at?->toDateTimeString(),
-            'ip_address'       => $r->ip_address,
-            'created_at'       => $r->created_at->toDateTimeString(),
-            'reporter'         => $r->reporter ? [
-                'id'         => $r->reporter->id,
-                'name'       => trim(($r->reporter->first_name ?? '') . ' ' . ($r->reporter->last_name ?? '')),
-                'email'      => $r->reporter->email,
-                'created_at' => $r->reporter->created_at->toDateTimeString(),
-                'days_old'   => $r->reporter->created_at->diffInDays(now()),
+            'id' => $report->id,
+            'reason' => $report->reason,
+            'reason_label' => ShopReport::REASON_LABELS[$report->reason] ?? $report->reason,
+            'description' => $report->description,
+            'status' => $report->status,
+            'status_label' => ShopReport::STATUS_LABELS[$report->status] ?? $report->status,
+            'transaction_type' => $report->transaction_type,
+            'transaction_id' => $report->transaction_id,
+            'admin_notes' => $report->admin_notes,
+            'reviewed_at' => $report->reviewed_at?->toDateTimeString(),
+            'ip_address' => $report->ip_address,
+            'created_at' => $report->created_at?->toDateTimeString(),
+            'reporter' => $report->reporter ? [
+                'id' => $report->reporter->id,
+                'name' => trim(($report->reporter->first_name ?? '') . ' ' . ($report->reporter->last_name ?? '')),
+                'email' => $report->reporter->email,
+                'created_at' => $report->reporter->created_at?->toDateTimeString(),
+                'days_old' => $report->reporter->created_at?->diffInDays(now()),
             ] : null,
         ];
     }

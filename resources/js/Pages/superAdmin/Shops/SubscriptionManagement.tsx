@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { router, useForm, usePage } from '@inertiajs/react';
+import axios from 'axios';
 import Swal from 'sweetalert2';
 import AppLayout from '../../../layout/AppLayout';
 import Button from '../../../components/ui/button/Button';
@@ -9,6 +10,50 @@ const ModalPortal: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   if (typeof document === 'undefined') return null;
   return createPortal(children, document.body);
 };
+
+interface RefundAttempt {
+  id: number;
+  payment_id?: number;
+  local_reference?: string;
+  provider_refund_id?: string | null;
+  amount: number;
+  currency: string;
+  business_reason: string;
+  provider_reason: string;
+  status: string;
+  failure_code?: string | null;
+  initiated_at?: string | null;
+  finalized_at?: string | null;
+  reconciled_at?: string | null;
+  created_at?: string | null;
+}
+
+interface PaymentLedgerRow {
+  id: number;
+  payment_type: string;
+  amount_due: number | null;
+  amount_paid: number | null;
+  currency: string;
+  status: string;
+  paid_at: string | null;
+  created_at?: string | null;
+}
+
+interface Paginator<T> {
+  data: T[];
+  current_page: number;
+  last_page: number;
+  per_page: number;
+  total: number;
+  from?: number | null;
+  to?: number | null;
+}
+
+interface SubscriptionHistory {
+  subscription_id: number;
+  payments: Paginator<PaymentLedgerRow>;
+  refunds: Paginator<RefundAttempt>;
+}
 
 interface SubscriptionItem {
   id: number;
@@ -33,6 +78,13 @@ interface SubscriptionItem {
   next_billing_at: string | null;
   cancellation_reason: string | null;
   cancellation_notes: string | null;
+  refunded_amount?: number;
+  net_collected?: number;
+  can_cancel?: boolean;
+  legacy_correction_available?: boolean;
+  eligible_for_refund?: boolean;
+  refund_payment_id?: number | null;
+  refund_block_reason?: string | null;
   payment_method?: string | null;
   replaces_subscription_id?: number | null;
   previous_plan_name?: string | null;
@@ -44,6 +96,9 @@ interface SubscriptionStats {
   expired: number;
   total_revenue: number;
   expiring_soon: number;
+  gross_collected?: number;
+  refunded_amount?: number;
+  net_collected?: number;
 }
 
 interface PremiumPlanItem {
@@ -72,9 +127,15 @@ type PlanForm = {
 const emptyPlan: PlanForm = { plan_code: '', name: '', description: '', price: '', duration_days: 30, showroom_slot_limit: 48, benefits: [] };
 
 interface PageProps extends Record<string, unknown> {
-  subscriptions: SubscriptionItem[];
+  subscriptions: Paginator<SubscriptionItem> | SubscriptionItem[];
   stats: SubscriptionStats;
   plans: PremiumPlanItem[];
+  filters?: {
+    search?: string | null;
+    status?: string | null;
+    change_type?: string | null;
+    sort?: string | null;
+  };
   success?: string;
   error?: string;
 }
@@ -226,7 +287,7 @@ const MetricCard = ({
             <Icon className="size-7 text-white drop-shadow-sm" />
           </div>
 
-          <span className="rounded-full bg-gray-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:bg-gray-700 dark:text-gray-300">Live</span>
+          <span className="rounded-full bg-gray-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:bg-gray-700 dark:text-gray-300">Snapshot</span>
         </div>
 
         <div className="space-y-2">
@@ -240,20 +301,222 @@ const MetricCard = ({
 };
 
 export default function SubscriptionManagement() {
-  const { subscriptions, stats, plans, success, error: errorMessage } = usePage<PageProps>().props;
-  const itemsPerPage = 6;
+  const { subscriptions, stats, plans, filters, success, error: errorMessage } = usePage<PageProps>().props;
+  const subscriptionPage: Paginator<SubscriptionItem> = Array.isArray(subscriptions)
+    ? {
+      data: subscriptions,
+      current_page: 1,
+      last_page: 1,
+      per_page: subscriptions.length || 25,
+      total: subscriptions.length,
+      from: subscriptions.length > 0 ? 1 : null,
+      to: subscriptions.length || null,
+    }
+    : subscriptions;
+  const subscriptionRows = subscriptionPage.data;
 
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | UiStatus>('all');
-  const [changeTypeFilter, setChangeTypeFilter] = useState<ChangeTypeFilter>('all');
-  const [sortBy, setSortBy] = useState<SortValue>('latest');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [isSubmitting, setIsSubmitting] = useState<number | null>(null);
+  const [search, setSearch] = useState(filters?.search ?? '');
+  const [statusFilter, setStatusFilter] = useState<'all' | UiStatus>((filters?.status as 'all' | UiStatus) || 'all');
+  const [changeTypeFilter, setChangeTypeFilter] = useState<ChangeTypeFilter>((filters?.change_type as ChangeTypeFilter) || 'all');
+  const [sortBy, setSortBy] = useState<SortValue>((filters?.sort as SortValue) || 'latest');
   const [selected, setSelected] = useState<SubscriptionItem | null>(null);
+  const [history, setHistory] = useState<SubscriptionHistory | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [editingPlan, setEditingPlan] = useState<PremiumPlanItem | null>(null);
   const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
   const [planStatusFilter, setPlanStatusFilter] = useState<'active' | 'inactive'>('active');
+  const [mutationPending, setMutationPending] = useState(false);
+  const [mutationError, setMutationError] = useState<string | null>(null);
+  const [mutationNotice, setMutationNotice] = useState<string | null>(null);
+  const [correctionOpen, setCorrectionOpen] = useState(false);
+  const [correctionStatus, setCorrectionStatus] = useState<'cancelled' | 'expired'>('expired');
+  const [correctionDate, setCorrectionDate] = useState('');
+  const [correctionReason, setCorrectionReason] = useState('');
   const planForm = useForm<PlanForm>(emptyPlan);
+  const filterInitialized = useRef(false);
+
+  const reloadBilling = () => router.reload({ only: ['subscriptions', 'stats'], preserveScroll: true });
+
+  const errorMessageFor = (error: unknown) => error instanceof Error
+    ? error.message
+    : 'The billing operation could not be completed.';
+
+  const loadHistory = async (subscriptionId: number, paymentPage = 1, refundPage = 1) => {
+    setHistoryLoading(true);
+    setHistoryError(null);
+
+    try {
+      const response = await axios.get(`/admin/subscriptions/${subscriptionId}/history`, {
+        params: { payment_page: paymentPage, refund_page: refundPage, per_page: 25 },
+      });
+      setHistory(response.data as SubscriptionHistory);
+    } catch (error: unknown) {
+      setHistory(null);
+      setHistoryError(errorMessageFor(error));
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const openSubscription = (subscription: SubscriptionItem) => {
+    setSelected(subscription);
+    setHistory(null);
+    setHistoryError(null);
+    void loadHistory(subscription.id);
+  };
+
+  const navigateSubscriptionPage = (page: number) => {
+    router.get('/admin/subscriptions', {
+      search: search || undefined,
+      status: statusFilter === 'all' ? undefined : statusFilter,
+      change_type: changeTypeFilter === 'all' ? undefined : changeTypeFilter,
+      sort: sortBy,
+      page,
+      per_page: subscriptionPage.per_page || 25,
+    }, { preserveState: true, preserveScroll: true, replace: true });
+  };
+
+  useEffect(() => {
+    if (!filterInitialized.current) {
+      filterInitialized.current = true;
+      return;
+    }
+
+    const timeout = window.setTimeout(() => navigateSubscriptionPage(1), 300);
+    return () => window.clearTimeout(timeout);
+  }, [search, statusFilter, changeTypeFilter, sortBy]);
+
+  const cancelSubscription = async () => {
+    if (!selected?.can_cancel || mutationPending) return;
+
+    const result = await Swal.fire({
+      title: 'Cancel at period end?',
+      text: 'Access remains available through the current paid end date. No refund is issued by this action.',
+      input: 'select',
+      inputOptions: {
+        reduce_costs: 'Reduce costs',
+        low_value: 'Low value',
+        technical_issues: 'Technical issues',
+        missing_features: 'Missing features',
+        subscribed_by_mistake: 'Subscribed by mistake',
+        temporary_pause: 'Temporary pause',
+        others: 'Other',
+        operator_correction: 'Operator correction',
+      },
+      inputPlaceholder: 'Choose a reason',
+      inputValidator: (value) => value ? undefined : 'Choose a cancellation reason.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Cancel at period end',
+    });
+
+    if (!result.isConfirmed || typeof result.value !== 'string' || !result.value) return;
+
+    setMutationPending(true);
+    setMutationError(null);
+    setMutationNotice(null);
+
+    try {
+      const response = await axios.post(`/admin/subscriptions/${selected.id}/cancel`, {
+        cancellation_reason: result.value,
+      });
+
+      if (!response.data?.success) {
+        setMutationError(response.data?.message || 'The subscription was not cancelled.');
+        return;
+      }
+
+      setSelected(null);
+      reloadBilling();
+    } catch (error: unknown) {
+      setMutationError(errorMessageFor(error));
+    } finally {
+      setMutationPending(false);
+    }
+  };
+
+  const refundSubscription = async () => {
+    if (!selected?.eligible_for_refund || !selected.refund_payment_id || mutationPending) return;
+
+    const result = await Swal.fire({
+      title: 'Issue full refund?',
+      text: 'This sends one provider-backed full refund request for the paid ledger entry. The subscription is ended only after provider confirmation.',
+      input: 'textarea',
+      inputPlaceholder: 'Required business reason',
+      inputValidator: (value) => value?.trim() ? undefined : 'Enter a business reason.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Issue full refund',
+    });
+
+    if (!result.isConfirmed || typeof result.value !== 'string' || !result.value.trim()) return;
+
+    setMutationPending(true);
+    setMutationError(null);
+    setMutationNotice(null);
+
+    try {
+      const response = await axios.post(`/admin/subscription-payments/${selected.refund_payment_id}/refunds`, {
+        business_reason: result.value.trim(),
+        provider_reason: 'others',
+      });
+
+      if (!response.data?.success) {
+        setMutationError(response.data?.message || 'The refund was not completed.');
+        return;
+      }
+
+      if (response.data.status !== 'succeeded') {
+        setMutationNotice(response.data.message || 'The refund is still being processed and requires reconciliation.');
+        reloadBilling();
+        void loadHistory(selected.id);
+        return;
+      }
+
+      setSelected(null);
+      reloadBilling();
+    } catch (error: unknown) {
+      setMutationError(errorMessageFor(error));
+    } finally {
+      setMutationPending(false);
+    }
+  };
+
+  const correctLegacySubscription = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selected?.legacy_correction_available || mutationPending) return;
+
+    if (!correctionDate || !correctionReason.trim()) {
+      setMutationError('Choose an effective end date and provide a correction reason.');
+      return;
+    }
+
+    setMutationPending(true);
+    setMutationError(null);
+    setMutationNotice(null);
+
+    try {
+      const response = await axios.patch(`/admin/subscriptions/${selected.id}/legacy-correction`, {
+        target_status: correctionStatus,
+        effective_ends_at: new Date(`${correctionDate}T00:00:00Z`).toISOString(),
+        correction_reason: correctionReason.trim(),
+      });
+
+      if (!response.data?.success) {
+        setMutationError(response.data?.message || 'The legacy state was not corrected.');
+        return;
+      }
+
+      setSelected(null);
+      setCorrectionOpen(false);
+      reloadBilling();
+    } catch (error: unknown) {
+      setMutationError(errorMessageFor(error));
+    } finally {
+      setMutationPending(false);
+    }
+  };
 
   const openPlanModal = (plan?: PremiumPlanItem) => {
     setEditingPlan(plan ?? null);
@@ -273,7 +536,7 @@ export default function SubscriptionManagement() {
   const submitPlan = (event: React.FormEvent) => {
     event.preventDefault();
     const options = { preserveScroll: true, onSuccess: () => setIsPlanModalOpen(false) };
-    editingPlan ? planForm.put(`/admin/premium-plans/${editingPlan.id}`, options) : planForm.post('/admin/premium-plans', options);
+    editingPlan ? planForm.put(`/admin/plans/${editingPlan.id}`, options) : planForm.post('/admin/plans', options);
   };
 
   const togglePlan = (plan: PremiumPlanItem) => {
@@ -282,7 +545,7 @@ export default function SubscriptionManagement() {
       title: `${action === 'archive' ? 'Archive' : 'Reactivate'} ${plan.name}?`,
       text: action === 'archive' ? 'Existing subscribers keep their current access.' : 'The plan will be available for purchase again.',
       icon: 'question', showCancelButton: true, confirmButtonText: action === 'archive' ? 'Archive' : 'Reactivate',
-    }).then((result) => result.isConfirmed && router.post(`/admin/premium-plans/${plan.id}/${action}`, {}, { preserveScroll: true }));
+    }).then((result) => result.isConfirmed && router.post(`/admin/plans/${plan.id}/${action}`, {}, { preserveScroll: true }));
   };
 
   useEffect(() => {
@@ -303,6 +566,16 @@ export default function SubscriptionManagement() {
     };
   }, [selected]);
 
+  useEffect(() => {
+    setMutationError(null);
+    setMutationNotice(null);
+    setHistoryError(null);
+    setCorrectionOpen(false);
+    setCorrectionDate('');
+    setCorrectionReason('');
+    setCorrectionStatus('expired');
+  }, [selected?.id]);
+
   const metrics = [
     {
       title: 'Active Subscriptions',
@@ -312,11 +585,11 @@ export default function SubscriptionManagement() {
       description: 'Currently active plans',
     },
     {
-      title: 'Total Revenue',
-      value: formatMoney(stats.total_revenue),
+      title: 'Gross Collected',
+      value: formatMoney(stats.gross_collected ?? stats.total_revenue),
       icon: CreditCardIcon,
       color: 'info' as const,
-      description: 'From premium subscriptions',
+      description: 'Paid payment-ledger totals',
     },
     {
       title: 'Expiring Soon',
@@ -332,95 +605,28 @@ export default function SubscriptionManagement() {
       color: 'error' as const,
       description: 'Subscriptions ended',
     },
+    {
+      title: 'Net Collected',
+      value: formatMoney(stats.net_collected ?? stats.total_revenue),
+      icon: CalendarIcon,
+      color: 'success' as const,
+      description: `Refunded: ${formatMoney(stats.refunded_amount ?? 0)}`,
+    },
   ];
 
-  const rows = useMemo(() => {
-    const keyword = search.trim().toLowerCase();
-    const filtered = subscriptions.filter((item) => {
-      const uiStatus = resolveUiStatus(item.status, item.ends_at);
-      const matchesSearch =
-        !keyword ||
-        item.shop.business_name?.toLowerCase().includes(keyword) ||
-        item.shop.owner_name?.toLowerCase().includes(keyword) ||
-        item.shop.email?.toLowerCase().includes(keyword) ||
-        item.plan_code?.toLowerCase().includes(keyword);
-      const matchesStatus = statusFilter === 'all' || uiStatus === statusFilter;
-      const upgraded = isUpgradeRecord(item);
-      const matchesChangeType =
-        changeTypeFilter === 'all' ||
-        (changeTypeFilter === 'upgraded' && upgraded) ||
-        (changeTypeFilter === 'regular' && !upgraded);
-
-      return matchesSearch && matchesStatus && matchesChangeType;
-    });
-
-    return filtered.sort((a, b) => {
-      if (sortBy === 'latest') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-      if (sortBy === 'oldest') return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-      if (sortBy === 'amount_high') return b.amount_paid - a.amount_paid;
-      return a.amount_paid - b.amount_paid;
-    });
-  }, [subscriptions, search, statusFilter, changeTypeFilter, sortBy]);
-
-  const totalPages = Math.max(1, Math.ceil(rows.length / itemsPerPage));
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const paginatedRows = rows.slice(startIndex, endIndex);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [search, statusFilter, changeTypeFilter, sortBy]);
-
-  const upgradedCount = useMemo(() => subscriptions.filter(isUpgradeRecord).length, [subscriptions]);
+  const totalPages = Math.max(1, subscriptionPage.last_page || 1);
+  const currentPage = subscriptionPage.current_page || 1;
+  const upgradedCount = useMemo(() => subscriptionRows.filter(isUpgradeRecord).length, [subscriptionRows]);
   const subscriptionById = useMemo(() => {
-    return subscriptions.reduce<Record<number, SubscriptionItem>>((acc, item) => {
+    return subscriptionRows.reduce<Record<number, SubscriptionItem>>((acc, item) => {
       acc[item.id] = item;
       return acc;
     }, {});
-  }, [subscriptions]);
+  }, [subscriptionRows]);
   const selectedPreviousSubscription = useMemo(() => {
     if (!selected?.replaces_subscription_id) return null;
     return subscriptionById[selected.replaces_subscription_id] || null;
   }, [selected, subscriptionById]);
-
-  useEffect(() => {
-    setCurrentPage((prev) => Math.min(prev, totalPages));
-  }, [totalPages]);
-
-  const withSubmitState = (subscriptionId: number, callback: () => void) => {
-    setIsSubmitting(subscriptionId);
-    callback();
-  };
-
-  const deactivateSubscription = (subscription: SubscriptionItem) => {
-    Swal.fire({
-      title: 'Deactivate subscription?',
-      text: `This will deactivate ${subscription.shop.business_name}'s premium subscription renewal.`,
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonText: 'Yes, deactivate',
-      confirmButtonColor: '#dc2626',
-    }).then((result) => {
-      if (!result.isConfirmed) return;
-
-      withSubmitState(subscription.id, () => {
-        router.post(
-          `/admin/subscriptions/${subscription.id}/cancel`,
-          {
-            cancellation_reason: 'admin_deactivated',
-            cancellation_notes: null,
-          },
-          {
-            preserveScroll: true,
-            onFinish: () => {
-              setIsSubmitting(null);
-              setSelected(null);
-            },
-          }
-        );
-      });
-    });
-  };
 
   return (
     <AppLayout>
@@ -522,10 +728,10 @@ export default function SubscriptionManagement() {
             </div>
 
             <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">
-              Showing {rows.length} of {subscriptions.length} subscriptions
+              Showing {subscriptionPage.from ?? 0} to {subscriptionPage.to ?? 0} of {subscriptionPage.total} subscriptions
             </p>
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              Upgrade records: {upgradedCount} total. "Upgraded" means the plan was changed mid-cycle and charged with prorated amount.
+              Upgrade records on this page: {upgradedCount}. "Upgraded" means the plan was changed mid-cycle and charged with prorated amount.
             </p>
           </div>
 
@@ -546,7 +752,7 @@ export default function SubscriptionManagement() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                  {rows.length === 0 && (
+                  {subscriptionRows.length === 0 && (
                     <tr>
                       <td colSpan={9} className="px-6 py-14 text-center">
                         <p className="text-sm font-medium text-gray-700 dark:text-gray-300">No subscriptions found</p>
@@ -555,10 +761,10 @@ export default function SubscriptionManagement() {
                     </tr>
                   )}
 
-                  {paginatedRows.map((subscription) => (
+                  {subscriptionRows.map((subscription) => (
                     <tr
                       key={subscription.id}
-                      onClick={() => setSelected(subscription)}
+                      onClick={() => openSubscription(subscription)}
                       className="cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/50"
                     >
                       <td className="px-6 py-4">
@@ -584,7 +790,7 @@ export default function SubscriptionManagement() {
                           type="button"
                           onClick={(event) => {
                             event.stopPropagation();
-                            setSelected(subscription);
+                            openSubscription(subscription);
                           }}
                           className="inline-flex h-8 w-8 items-center justify-center rounded-md text-blue-600 transition-colors hover:bg-blue-50 hover:text-blue-700 dark:text-blue-400 dark:hover:bg-blue-900/20"
                           aria-label={`View subscription ${subscription.id}`}
@@ -598,15 +804,16 @@ export default function SubscriptionManagement() {
               </table>
             </div>
 
-            {rows.length > 0 && (
+            {subscriptionPage.total > 0 && (
               <div className="border-t border-gray-200 px-6 py-4 dark:border-gray-700">
                 <div className="flex items-center justify-between">
                   <div className="text-sm text-gray-700 dark:text-gray-300">
-                    Showing <span className="font-medium">{startIndex + 1}</span> to <span className="font-medium">{Math.min(endIndex, rows.length)}</span> of <span className="font-medium">{rows.length}</span>
+                    Showing <span className="font-medium">{subscriptionPage.from ?? 0}</span> to <span className="font-medium">{subscriptionPage.to ?? 0}</span> of <span className="font-medium">{subscriptionPage.total}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                      type="button"
+                      onClick={() => navigateSubscriptionPage(Math.max(currentPage - 1, 1))}
                       disabled={currentPage === 1}
                       className="rounded-lg border border-gray-300 bg-white p-2 text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
                       title="Previous page"
@@ -618,8 +825,10 @@ export default function SubscriptionManagement() {
 
                     {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
                       <button
+                        type="button"
                         key={page}
-                        onClick={() => setCurrentPage(page)}
+                        onClick={() => navigateSubscriptionPage(page)}
+                        aria-label={`Go to subscription page ${page}`}
                         className={`h-10 min-w-10 rounded-lg px-3 font-medium transition-colors ${
                           currentPage === page
                             ? 'bg-blue-600 text-white'
@@ -631,7 +840,8 @@ export default function SubscriptionManagement() {
                     ))}
 
                     <button
-                      onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                      type="button"
+                      onClick={() => navigateSubscriptionPage(Math.min(currentPage + 1, totalPages))}
                       disabled={currentPage === totalPages}
                       className="rounded-lg border border-gray-300 bg-white p-2 text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
                       title="Next page"
@@ -704,6 +914,9 @@ export default function SubscriptionManagement() {
                     {selected.premium_plan?.name ?? 'No linked plan'}
                   </p>
                   <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Status: {resolveUiStatus(selected.status, selected.ends_at) === 'ongoing' ? 'Active' : 'Not Active'}</p>
+                  {selected.status === 'deactivated' && (
+                    <p className="mt-1 text-sm font-medium text-amber-700 dark:text-amber-400">Needs correction: legacy state is unresolved.</p>
+                  )}
                   {isUpgradeRecord(selected) ? (
                     <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                       Previous Plan: <span className="font-medium text-gray-700 dark:text-gray-200">{selected.previous_plan_name || selectedPreviousSubscription?.premium_plan?.name || 'Unavailable'}</span>
@@ -740,19 +953,117 @@ export default function SubscriptionManagement() {
                 )}
               </div>
 
+              {historyLoading && <p className="mt-6 text-sm text-gray-500">Loading payment and refund history…</p>}
+              {!historyLoading && historyError && <p className="mt-6 text-sm text-rose-600" role="alert">{historyError}</p>}
+
+              {(history?.payments.data.length ?? 0) > 0 && (
+                <section className="mt-6 rounded-2xl border border-gray-200 p-5 dark:border-gray-700" aria-labelledby="payment-ledger-heading">
+                  <h3 id="payment-ledger-heading" className="text-xs font-semibold uppercase tracking-wide text-gray-400">Payment ledger</h3>
+                  <div className="mt-3 divide-y divide-gray-200 dark:divide-gray-700">
+                    {history?.payments.data.map((payment) => (
+                      <div key={payment.id} className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
+                        <div>
+                          <p className="text-sm font-semibold text-gray-900 dark:text-white">{payment.payment_type.replaceAll('_', ' ')}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">{payment.status} · {formatDate(payment.paid_at)}</p>
+                        </div>
+                        <p className="text-sm font-semibold text-gray-700 dark:text-gray-200">{formatMoney(Number(payment.amount_paid ?? payment.amount_due))}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {!historyLoading && !historyError && history && history.payments.data.length === 0 && (
+                <p className="mt-6 text-sm text-gray-500">No payment records.</p>
+              )}
+
+              {history && history.payments.last_page > 1 && (
+                <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
+                  <span>Payment page {history.payments.current_page} of {history.payments.last_page}</span>
+                  <div className="flex gap-2">
+                    <button type="button" disabled={historyLoading || history.payments.current_page === 1} onClick={() => void loadHistory(selected.id, history.payments.current_page - 1, history.refunds.current_page)} className="rounded border px-2 py-1 disabled:opacity-50">Previous</button>
+                    <button type="button" disabled={historyLoading || history.payments.current_page === history.payments.last_page} onClick={() => void loadHistory(selected.id, history.payments.current_page + 1, history.refunds.current_page)} className="rounded border px-2 py-1 disabled:opacity-50">Next</button>
+                  </div>
+                </div>
+              )}
+
+              {((history?.refunds.data.length ?? 0) > 0 || selected.refund_block_reason) && (
+                <section className="mt-4 rounded-2xl border border-gray-200 p-5 dark:border-gray-700" aria-labelledby="refund-history-heading">
+                  <h3 id="refund-history-heading" className="text-xs font-semibold uppercase tracking-wide text-gray-400">Refund history</h3>
+                  {selected.refund_block_reason && <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">Reconciliation required before another refund can be issued.</p>}
+                  <div className="mt-3 space-y-2">
+                    {history?.refunds.data.map((refund) => (
+                      <p key={refund.id} className="text-sm text-gray-700 dark:text-gray-300">
+                        {refund.status} · {formatMoney(refund.amount)} · {refund.business_reason}
+                      </p>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {!historyLoading && !historyError && history && history.refunds.data.length === 0 && !selected.refund_block_reason && (
+                <p className="mt-3 text-sm text-gray-500">No refund attempts.</p>
+              )}
+
+              {history && history.refunds.last_page > 1 && (
+                <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
+                  <span>Refund page {history.refunds.current_page} of {history.refunds.last_page}</span>
+                  <div className="flex gap-2">
+                    <button type="button" disabled={historyLoading || history.refunds.current_page === 1} onClick={() => void loadHistory(selected.id, history.payments.current_page, history.refunds.current_page - 1)} className="rounded border px-2 py-1 disabled:opacity-50">Previous</button>
+                    <button type="button" disabled={historyLoading || history.refunds.current_page === history.refunds.last_page} onClick={() => void loadHistory(selected.id, history.payments.current_page, history.refunds.current_page + 1)} className="rounded border px-2 py-1 disabled:opacity-50">Next</button>
+                  </div>
+                </div>
+              )}
+
+              {(mutationError || mutationNotice) && (
+                <div className={`mt-4 rounded-xl border px-4 py-3 text-sm ${mutationError ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-900/20 dark:text-rose-400' : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/60 dark:bg-amber-900/20 dark:text-amber-300'}`} role="alert">
+                  {mutationError || mutationNotice}
+                </div>
+              )}
+
+              {correctionOpen && selected.legacy_correction_available && (
+                <form onSubmit={correctLegacySubscription} className="mt-4 rounded-2xl border border-amber-200 bg-amber-50/60 p-5 dark:border-amber-900/60 dark:bg-amber-900/10">
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Correct legacy state</h3>
+                  <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">Only the status, effective end date, and correction reason can change. Billing and paid history stay untouched.</p>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Target status
+                      <select value={correctionStatus} onChange={(event) => setCorrectionStatus(event.target.value as 'cancelled' | 'expired')} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 dark:border-gray-600 dark:bg-gray-700">
+                        <option value="expired">Expired</option>
+                        <option value="cancelled">Cancelled</option>
+                      </select>
+                    </label>
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Effective end date
+                      <input type="date" required value={correctionDate} onChange={(event) => setCorrectionDate(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 dark:border-gray-600 dark:bg-gray-700" />
+                    </label>
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-200 sm:col-span-1">Correction reason
+                      <input type="text" required maxLength={120} value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 dark:border-gray-600 dark:bg-gray-700" />
+                    </label>
+                  </div>
+                  <div className="mt-4 flex justify-end gap-2">
+                    <button type="button" onClick={() => setCorrectionOpen(false)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 dark:border-gray-600 dark:text-gray-200">Close correction</button>
+                    <button type="submit" disabled={mutationPending} className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{mutationPending ? 'Saving…' : 'Save correction'}</button>
+                  </div>
+                </form>
+              )}
+
               <div className="mt-6 flex flex-wrap items-center justify-end gap-2">
+                {selected.can_cancel && (
+                  <button type="button" onClick={cancelSubscription} disabled={mutationPending} className="rounded-lg border border-amber-300 px-3 py-2 text-sm font-semibold text-amber-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-700 dark:text-amber-300">
+                    {mutationPending ? 'Working…' : 'Cancel at period end'}
+                  </button>
+                )}
+                {selected.eligible_for_refund && selected.refund_payment_id && (
+                  <button type="button" onClick={refundSubscription} disabled={mutationPending} className="rounded-lg border border-rose-300 px-3 py-2 text-sm font-semibold text-rose-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-rose-700 dark:text-rose-300">
+                    {mutationPending ? 'Working…' : 'Issue full refund'}
+                  </button>
+                )}
+                {selected.legacy_correction_available && !correctionOpen && (
+                  <button type="button" onClick={() => setCorrectionOpen(true)} disabled={mutationPending} className="rounded-lg border border-blue-300 px-3 py-2 text-sm font-semibold text-blue-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-blue-700 dark:text-blue-300">
+                    Correct legacy state
+                  </button>
+                )}
                 <Button variant="outline" size="sm" onClick={() => setSelected(null)}>
                   Close
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    if (isSubmitting === selected.id || selected.status === 'deactivated') return;
-                    deactivateSubscription(selected);
-                  }}
-                  className="bg-red-600 text-white hover:bg-red-700"
-                >
-                  {isSubmitting === selected.id ? 'Processing...' : 'Deactivate'}
                 </Button>
               </div>
             </div>

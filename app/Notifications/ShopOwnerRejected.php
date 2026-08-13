@@ -2,12 +2,16 @@
 
 namespace App\Notifications;
 
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Facades\URL;
 
-class ShopOwnerRejected extends Notification
+class ShopOwnerRejected extends Notification implements ShouldQueue
 {
+    use Queueable;
+
     private const MAX_RESUBMISSION_ATTEMPTS = 3;
 
     protected $shopOwner;
@@ -20,6 +24,7 @@ class ShopOwnerRejected extends Notification
     {
         $this->shopOwner = $shopOwner;
         $this->rejectionReason = $rejectionReason;
+        $this->afterCommit = true;
     }
 
     /**

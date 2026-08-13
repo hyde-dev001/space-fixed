@@ -5,6 +5,7 @@ namespace App\Http\Controllers\ShopOwner;
 use App\Http\Controllers\Controller;
 use App\Models\HR\BranchPayrollSetting;
 use App\Models\ProcurementSettings;
+use App\Models\ShopDocument;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerSubscription;
 use App\Models\ShopOwnerUpgradeRequest;
@@ -12,6 +13,7 @@ use App\Models\ShopPolicyVersion;
 use App\Services\CaviteLocationPolicyService;
 use App\Services\ShopModuleAccessService;
 use App\Services\ShopOwnerDocumentRequirementService;
+use App\Services\ShopDocumentValidityService;
 use App\Services\ShopPolicyTemplateService;
 use App\Services\ShopPolicyVersionService;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -29,6 +31,7 @@ class ShopSettingsController extends Controller
 {
     public function __construct(
         private readonly ShopOwnerDocumentRequirementService $documentRequirements,
+        private readonly ShopDocumentValidityService $documentValidity,
         private readonly ShopModuleAccessService $shopModuleAccess,
     ) {}
 
@@ -73,6 +76,7 @@ class ShopSettingsController extends Controller
         $isRetailCapable = in_array($businessType, ['retail', 'both'], true);
 
         $requiredDocuments = $this->documentRequirements->settingsPayload($shopOwner->documents);
+        $documentCompliance = $this->documentCompliancePayload($shopOwner);
         $businessScaling = $this->businessScalingPayload($shopOwner, $businessType);
 
         return Inertia::render('ShopOwner/Settings/shopSetting', [
@@ -84,6 +88,7 @@ class ShopSettingsController extends Controller
                 'business_name'          => $shopOwner->business_name,
                 'approval_pages'         => $approvalPages,
                 'required_documents'     => $requiredDocuments,
+                'document_compliance'    => $documentCompliance,
                 'business_scaling'       => $businessScaling,
                 'repair_payment_policy'  => $normalizedRepairPaymentPolicy,
                 'repair_workload_limit'  => (int) ($shopOwner->repair_workload_limit ?? 20),
@@ -113,6 +118,109 @@ class ShopSettingsController extends Controller
                 ],
             ],
         ]);
+    }
+
+    /**
+     * Return the owner-facing lifecycle view without exposing storage details.
+     * The legacy business-registration fallback remains visibly ambiguous.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function documentCompliancePayload(ShopOwner $shopOwner): array
+    {
+        $rows = $shopOwner->documents->sortByDesc('id')->values();
+        $slots = [
+            'business_registration' => 'Business Registration (DTI or SEC)',
+            'mayors_permit' => "Mayor's Permit / Business Permit",
+            'bir_certificate' => 'BIR Certificate of Registration',
+            'valid_id' => 'Valid ID of Owner',
+        ];
+
+        foreach ($rows as $document) {
+            $slot = trim((string) $document->logical_slot);
+            $type = $this->documentRequirements->normalizeType((string) $document->document_type);
+
+            if ($slot === '' && $this->documentRequirements->isLegacyBusinessDocument($document)) {
+                $slot = 'business_registration';
+            }
+
+            if ($slot !== '' && str_starts_with($slot, 'supporting_document:')) {
+                $slots[$slot] ??= 'Supporting Document';
+            }
+        }
+
+        $payload = [];
+        foreach ($slots as $slot => $title) {
+            $slotRows = $rows->filter(function ($document) use ($slot): bool {
+                $documentSlot = trim((string) $document->logical_slot);
+                if ($documentSlot === $slot) {
+                    return true;
+                }
+
+                return $slot === 'business_registration'
+                    && $documentSlot === ''
+                    && in_array($this->documentRequirements->normalizeType((string) $document->document_type), ['dti_registration', 'sec_registration'], true);
+            })->sortByDesc('id')->values();
+            $current = $slotRows->first(function ($document): bool {
+                return (string) $document->status === 'approved' && (bool) $document->is_current;
+            });
+            $legacyCurrent = $current === null && $slot === 'business_registration'
+                ? $slotRows->first(fn ($document): bool => (string) $document->status === 'approved'
+                    && $this->documentRequirements->hasPrivateStoredFile($document)
+                    && $this->isUnreconciledLegacyDocument($document))
+                : null;
+            $current ??= $legacyCurrent;
+            $pending = $slotRows->first(function ($document): bool {
+                return (string) $document->status === 'pending' && ! (bool) $document->is_current;
+            });
+
+            $payload[] = [
+                'logical_slot' => $slot,
+                'title' => $title,
+                'current' => $current ? $this->serializeComplianceDocument(
+                    $current,
+                    $shopOwner,
+                    $legacyCurrent !== null || $this->documentRequirements->isLegacyBusinessDocument($current),
+                ) : null,
+                'pending' => $pending ? $this->serializeComplianceDocument($pending, $shopOwner, false) : null,
+                'history' => $slotRows->map(fn ($document): array => $this->serializeComplianceDocument(
+                    $document,
+                    $shopOwner,
+                    ($legacyCurrent !== null && $document->getKey() === $legacyCurrent->getKey())
+                        || $this->documentRequirements->isLegacyBusinessDocument($document),
+                ))->values()->all(),
+            ];
+        }
+
+        return $payload;
+    }
+
+    /** @return array<string, mixed> */
+    private function serializeComplianceDocument(ShopDocument $document, ShopOwner $shopOwner, bool $legacy): array
+    {
+        $logicalSlot = trim((string) $document->logical_slot);
+        $documentType = str_starts_with($logicalSlot, 'supporting_document:')
+            ? 'supporting_document'
+            : (string) $document->document_type;
+
+        return [
+            'id' => (int) $document->getKey(),
+            'document_type' => $documentType,
+            'logical_slot' => $logicalSlot !== ''
+                ? $logicalSlot
+                : 'business_registration',
+            'version_number' => $document->version_number !== null ? (int) $document->version_number : null,
+            'status' => (string) $document->status,
+            'issued_on' => $document->issued_on?->toDateString(),
+            'expiration_mode' => $document->expiration_mode,
+            'expires_on' => $document->expires_on?->toDateString(),
+            'validity' => $this->documentValidity->classify($document),
+            'legacy_label' => $legacy ? 'Legacy DTI/SEC — classification pending' : null,
+            'url' => route('shop-owner.documents.show', [
+                'shopOwner' => $shopOwner->getKey(),
+                'document' => $document->getKey(),
+            ]),
+        ];
     }
 
     /**
@@ -175,12 +283,9 @@ class ShopSettingsController extends Controller
                 ->first();
         }
 
-        $documentsByType = $shopOwner->documents
-            ->sortByDesc('created_at')
-            ->groupBy(fn ($document): string => $this->documentRequirements->normalizeType((string) $document->document_type));
         $requiredEvidence = [];
         foreach ($this->documentRequirements->requirementSnapshot() as $key => $definition) {
-            $document = $documentsByType->get($key)?->first();
+            $document = $this->selectUpgradeEvidenceDocument($shopOwner, $key);
             $requiredEvidence[] = [
                 'key' => $key,
                 'title' => $definition['title'],
@@ -188,6 +293,9 @@ class ShopSettingsController extends Controller
                 'required' => true,
                 'existing_document_id' => $document?->status === 'approved' ? (int) $document->id : null,
                 'existing_status' => $document?->status,
+                'legacy_label' => $document && $this->documentRequirements->isLegacyBusinessDocument($document)
+                    ? 'Legacy DTI/SEC — classification pending'
+                    : null,
             ];
         }
 
@@ -219,6 +327,49 @@ class ShopSettingsController extends Controller
             'module_catalog' => $moduleCatalog,
             'modules' => $modules,
         ];
+    }
+
+    private function selectUpgradeEvidenceDocument(ShopOwner $shopOwner, string $documentType): ?ShopDocument
+    {
+        $candidates = $shopOwner->documents
+            ->filter(function (ShopDocument $document) use ($documentType): bool {
+                if ((string) $document->status !== 'approved'
+                    || ! $this->documentRequirements->hasPrivateStoredFile($document)) {
+                    return false;
+                }
+
+                if ($documentType === 'dti_registration' && $this->documentRequirements->isLegacyBusinessDocument($document)) {
+                    return true;
+                }
+
+                return (bool) $document->is_current
+                    && (string) $document->logical_slot === $documentType
+                    && $this->documentRequirements->normalizeType((string) $document->document_type) === $documentType;
+            })
+            ->sortByDesc(fn (ShopDocument $document): array => [
+                $document->created_at?->getTimestamp() ?? 0,
+                (int) $document->getKey(),
+            ]);
+
+        if ($documentType !== 'dti_registration') {
+            return $candidates->first();
+        }
+
+        $current = $candidates->first(fn (ShopDocument $document): bool => (bool) $document->is_current);
+        if ($current) {
+            return $current;
+        }
+
+        return $shopOwner->status?->value === 'approved' ? $candidates->first() : null;
+    }
+
+    private function isUnreconciledLegacyDocument(ShopDocument $document): bool
+    {
+        return $this->documentRequirements->isLegacyBusinessDocument($document)
+            && $document->logical_slot === null
+            && $document->version_number === null
+            && $document->expiration_mode === null
+            && $document->is_current === null;
     }
 
     /**

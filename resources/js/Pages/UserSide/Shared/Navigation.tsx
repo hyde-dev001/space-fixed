@@ -297,7 +297,6 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
     '/shop-owner/login': 'login', // Shop Owner Login should highlight ACCOUNT
     '/shop-owner/two-factor': 'login', // Shop Owner 2FA challenge should highlight ACCOUNT
     '/shop-owner-register': 'services', // Shop Owner Registration should highlight Services
-    '/shop/register': 'services', // Alternative Shop Owner Registration URL
     '/shop-owner/register': 'services' // Another possible URL
   };
 

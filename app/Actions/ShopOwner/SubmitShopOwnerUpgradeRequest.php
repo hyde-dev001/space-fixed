@@ -2,16 +2,18 @@
 
 namespace App\Actions\ShopOwner;
 
+use App\Enums\PrivilegedDeliveryType;
 use App\Enums\NotificationType;
 use App\Models\Notification as AdminNotification;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerUpgradeRequest;
 use App\Models\SuperAdmin;
-use App\Notifications\ShopOwnerUpgradeRequested;
+use App\Services\PrivilegedAudit;
+use App\Services\PrivilegedMailDispatcher;
 use App\Services\ShopOwnerDocumentRequirementService;
+use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -21,18 +23,20 @@ final class SubmitShopOwnerUpgradeRequest
 {
     public function __construct(
         private readonly ShopOwnerDocumentRequirementService $documentRequirements,
+        private readonly PrivilegedAudit $audit,
+        private readonly PrivilegedMailDispatcher $privilegedMailDispatcher,
     ) {}
 
     /**
      * @param  array<string, mixed>  $data
      */
-    public function handle(ShopOwner $owner, array $data): ShopOwnerUpgradeRequest
+    public function handle(ShopOwner $owner, array $data, ?Request $request = null): ShopOwnerUpgradeRequest
     {
         $createdPaths = [];
         $requestKey = (string) Str::uuid();
 
         try {
-            $upgradeRequest = DB::transaction(function () use ($owner, $data, $requestKey, &$createdPaths): ShopOwnerUpgradeRequest {
+            $upgradeRequest = DB::transaction(function () use ($owner, $data, $requestKey, $request, &$createdPaths): ShopOwnerUpgradeRequest {
                 $lockedOwner = ShopOwner::query()->lockForUpdate()->findOrFail($owner->getKey());
                 $this->assertApprovedOwner($lockedOwner);
 
@@ -94,41 +98,49 @@ final class SubmitShopOwnerUpgradeRequest
                     ])
                     ->log('shop_owner_upgrade_requested');
 
-                return $upgradeRequest->load('documents');
-            });
-
-            DB::afterCommit(function () use ($upgradeRequest): void {
-                $requestSnapshot = $upgradeRequest->fresh('shopOwner');
-                $recipients = SuperAdmin::query()->active()->get();
-
-                try {
-                    if ($requestSnapshot) {
-                        $businessName = (string) ($requestSnapshot->shopOwner?->business_name ?? 'Shop owner');
-
-                        AdminNotification::notifyAllSuperAdmins(
-                            NotificationType::BUSINESS_UPGRADE_REQUEST_PENDING,
-                            'Business upgrade request',
-                            "{$businessName} submitted a business upgrade request for review.",
-                            '/admin/business-upgrade-requests?status=pending',
-                            [
-                                'upgrade_request_id' => $upgradeRequest->id,
-                                'shop_owner_id' => $upgradeRequest->shop_owner_id,
+                $businessName = (string) ($lockedOwner->business_name ?? 'Shop owner');
+                SuperAdmin::query()
+                    ->active()
+                    ->get()
+                    ->filter(fn (SuperAdmin $recipient): bool => $recipient->hasCompletedMfaSetup()
+                        && $recipient->hasCapability(SuperAdmin::CAP_REVIEW_REGISTRATIONS)
+                        && trim((string) $recipient->email) !== '')
+                    ->each(function (SuperAdmin $recipient) use ($upgradeRequest, $lockedOwner, $businessName, $request): void {
+                        AdminNotification::create([
+                            'super_admin_id' => (int) $recipient->getKey(),
+                            'type' => NotificationType::BUSINESS_UPGRADE_REQUEST_PENDING->value,
+                            'title' => 'Business upgrade request',
+                            'message' => "{$businessName} submitted a business upgrade request for review.",
+                            'action_url' => '/admin/business-upgrade-requests?status=pending',
+                            'data' => [
+                                'upgrade_request_id' => (int) $upgradeRequest->getKey(),
+                                'shop_owner_id' => (int) $lockedOwner->getKey(),
                                 'requested_registration_type' => $upgradeRequest->requested_registration_type,
                                 'requested_business_type' => $upgradeRequest->requested_business_type,
                             ],
-                        );
-                    }
-                } catch (Throwable $exception) {
-                    report($exception);
-                }
+                            'is_read' => false,
+                            'requires_action' => true,
+                            'priority' => 'high',
+                        ]);
 
-                try {
-                    if ($recipients->isNotEmpty() && $requestSnapshot) {
-                        Notification::send($recipients, new ShopOwnerUpgradeRequested($requestSnapshot));
-                    }
-                } catch (Throwable $exception) {
-                    report($exception);
-                }
+                        $this->privilegedMailDispatcher->dispatch(
+                            type: PrivilegedDeliveryType::SHOP_OWNER_UPGRADE_REQUESTED,
+                            businessEventId: 'shop-owner-upgrade-requested:'.$upgradeRequest->getKey(),
+                            recipientType: 'super_admin',
+                            recipientId: (int) $recipient->getKey(),
+                            payload: [
+                                'upgrade_request_id' => (int) $upgradeRequest->getKey(),
+                                'shop_owner_id' => (int) $lockedOwner->getKey(),
+                                'business_name' => $businessName,
+                                'requested_registration_type' => (string) $upgradeRequest->requested_registration_type,
+                                'requested_business_type' => (string) $upgradeRequest->requested_business_type,
+                            ],
+                            correlationId: $request ? $this->audit->correlationId($request) : null,
+                            requiredCapability: SuperAdmin::CAP_REVIEW_REGISTRATIONS,
+                        );
+                    });
+
+                return $upgradeRequest->load('documents');
             });
 
             return $upgradeRequest;
@@ -299,20 +311,28 @@ final class SubmitShopOwnerUpgradeRequest
         array &$createdPaths,
     ): void {
         $source = $owner->documents()->whereKey($documentId)->where('status', 'approved')->first();
-        if (! $source || $this->documentRequirements->normalizeType((string) $source->document_type) !== $documentType) {
+        if (! $source || ! $this->isReusableApprovedDocument($owner, $source, $documentType)) {
             throw ValidationException::withMessages([
                 "reuse_document_ids.{$documentType}" => 'The selected approved document is not valid for this requirement.',
             ]);
         }
 
         $sourcePath = (string) $source->file_path;
-        if ($sourcePath === '' || ! Storage::disk('public')->exists($sourcePath)) {
+        $sourceDisk = trim((string) $source->disk);
+        if ($sourceDisk !== 'local' || ! $this->documentRequirements->hasPrivateStoredFile($source)) {
+            throw ValidationException::withMessages([
+                "reuse_document_ids.{$documentType}" => 'The selected approved document must be current and stored on the private disk.',
+            ]);
+        }
+
+        $sourceStorage = Storage::disk($sourceDisk);
+        if ($sourcePath === '' || ! $sourceStorage->exists($sourcePath)) {
             throw ValidationException::withMessages([
                 "reuse_document_ids.{$documentType}" => 'The selected approved document is no longer available.',
             ]);
         }
 
-        $bytes = Storage::disk('public')->get($sourcePath);
+        $bytes = $sourceStorage->get($sourcePath);
         $extension = strtolower(pathinfo($sourcePath, PATHINFO_EXTENSION)) ?: 'bin';
         $path = "shop-owner-upgrade-evidence/{$requestKey}/{$documentType}-".Str::uuid().".{$extension}";
         $this->putPrivateEvidence($path, $bytes, $createdPaths, $documentType);
@@ -323,7 +343,7 @@ final class SubmitShopOwnerUpgradeRequest
             'disk' => 'local',
             'path' => $path,
             'checksum_sha256' => hash('sha256', $bytes),
-            'mime_type' => (string) (Storage::disk('public')->mimeType($sourcePath) ?: 'application/octet-stream'),
+            'mime_type' => (string) ($sourceStorage->mimeType($sourcePath) ?: 'application/octet-stream'),
             'size' => strlen($bytes),
             'source_status' => (string) $source->status,
         ]);
@@ -351,6 +371,38 @@ final class SubmitShopOwnerUpgradeRequest
         }
 
         return in_array($normalized, ['retail', 'repair'], true) ? $normalized : '';
+    }
+
+    private function isReusableApprovedDocument(
+        ShopOwner $owner,
+        object $source,
+        string $documentType,
+    ): bool {
+        if ((string) $source->status !== 'approved') {
+            return false;
+        }
+
+        if ($this->documentRequirements->isLegacyBusinessDocument($source)) {
+            if ($documentType !== 'dti_registration' || $owner->status?->value !== 'approved') {
+                return false;
+            }
+
+            $latestLegacy = $owner->documents()
+                ->where('status', 'approved')
+                ->get()
+                ->filter(fn ($document): bool => $this->documentRequirements->isLegacyBusinessDocument($document))
+                ->sortByDesc(fn ($document): array => [
+                    $document->created_at?->getTimestamp() ?? 0,
+                    (int) $document->getKey(),
+                ])
+                ->first();
+
+            return $latestLegacy && (int) $latestLegacy->getKey() === (int) $source->getKey();
+        }
+
+        return (bool) $source->is_current
+            && (string) $source->logical_slot === $documentType
+            && $this->documentRequirements->normalizeType((string) $source->document_type) === $documentType;
     }
 
     private function ownerValue(ShopOwner $owner, string $attribute): string

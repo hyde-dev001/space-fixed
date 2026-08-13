@@ -6,7 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\PremiumPlan;
 use App\Models\ShopOwnerSubscription;
 use App\Models\ShopOwnerSubscriptionPayment;
+use App\Models\ShopOwnerSubscriptionRefund;
 use App\Services\PremiumProrationService;
+use App\Services\PremiumSubscriptionCancellationService;
+use DomainException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -182,9 +185,8 @@ class PremiumCheckoutController extends Controller
                     'pending_plan_effective_at' => null,
                 ]);
 
-                ShopOwnerSubscriptionPayment::create([
+                $this->createPaymentRecord($newSubscription, [
                     'shop_owner_id' => $shopOwner->id,
-                    'subscription_id' => $newSubscription->id,
                     'source_subscription_id' => $lockedCurrent->id,
                     'from_premium_plan_id' => $lockedCurrent->premium_plan_id,
                     'to_premium_plan_id' => $targetPlan->id,
@@ -216,37 +218,47 @@ class PremiumCheckoutController extends Controller
             ]);
         }
 
-        $pendingSubscription = ShopOwnerSubscription::create([
-            'shop_owner_id' => $shopOwner->id,
-            'premium_plan_id' => $targetPlan->id,
-            'plan_code' => $targetPlan->plan_code,
-            'showroom_slot_limit' => $targetPlan->showroom_slot_limit,
-            'status' => 'pending',
-            'auto_renew' => true,
-            'auto_renew_status' => ShopOwnerSubscription::AUTO_RENEW_STATUS_ENABLED,
-            'replaces_subscription_id' => $currentSubscription->id,
-            'payment_method' => 'paymongo',
-            'paid_amount' => $finalPrice,
-        ]);
+        [$pendingSubscription, $payment] = DB::transaction(function () use (
+            $shopOwner,
+            $targetPlan,
+            $currentSubscription,
+            $finalPrice,
+            $prorationCredit,
+            $newEndsAt,
+        ) {
+            $pendingSubscription = ShopOwnerSubscription::create([
+                'shop_owner_id' => $shopOwner->id,
+                'premium_plan_id' => $targetPlan->id,
+                'plan_code' => $targetPlan->plan_code,
+                'showroom_slot_limit' => $targetPlan->showroom_slot_limit,
+                'status' => 'pending',
+                'auto_renew' => true,
+                'auto_renew_status' => ShopOwnerSubscription::AUTO_RENEW_STATUS_ENABLED,
+                'replaces_subscription_id' => $currentSubscription->id,
+                'payment_method' => 'paymongo',
+                'paid_amount' => $finalPrice,
+            ]);
 
-        $payment = ShopOwnerSubscriptionPayment::create([
-            'shop_owner_id' => $shopOwner->id,
-            'subscription_id' => $pendingSubscription->id,
-            'source_subscription_id' => $currentSubscription->id,
-            'from_premium_plan_id' => $currentSubscription->premium_plan_id,
-            'to_premium_plan_id' => $targetPlan->id,
-            'payment_type' => 'upgrade',
-            'gateway' => 'paymongo',
-            'currency' => 'PHP',
-            'plan_price' => (float) $targetPlan->price,
-            'proration_credit' => $prorationCredit,
-            'amount_due' => $finalPrice,
-            'status' => 'pending',
-            'metadata' => [
+            $payment = $this->createPaymentRecord($pendingSubscription, [
+                'shop_owner_id' => $shopOwner->id,
                 'source_subscription_id' => $currentSubscription->id,
-                'new_expiry' => $newEndsAt->toISOString(),
-            ],
-        ]);
+                'from_premium_plan_id' => $currentSubscription->premium_plan_id,
+                'to_premium_plan_id' => $targetPlan->id,
+                'payment_type' => 'upgrade',
+                'gateway' => 'paymongo',
+                'currency' => 'PHP',
+                'plan_price' => (float) $targetPlan->price,
+                'proration_credit' => $prorationCredit,
+                'amount_due' => $finalPrice,
+                'status' => 'pending',
+                'metadata' => [
+                    'source_subscription_id' => $currentSubscription->id,
+                    'new_expiry' => $newEndsAt->toISOString(),
+                ],
+            ]);
+
+            return [$pendingSubscription, $payment];
+        });
 
         $checkoutResult = $this->createCheckoutSession(
             amount: $finalPrice,
@@ -262,26 +274,32 @@ class PremiumCheckoutController extends Controller
                 'plan_code' => $targetPlan->plan_code,
                 'proration_credit' => (string) $prorationCredit,
                 'final_price' => (string) $finalPrice,
+                'ledger_key' => $payment->ledger_key,
             ]
         );
 
         if (!($checkoutResult['success'] ?? false)) {
-            $pendingSubscription->update(['status' => 'failed']);
-            $payment->update(['status' => 'failed']);
+            $this->markCheckoutFailed($pendingSubscription->id, $payment->id);
 
             return response()->json([
                 'success' => false,
-                'message' => (string) ($checkoutResult['message'] ?? 'Failed to create checkout session.'),
+                'message' => 'Failed to create checkout session. Please try again.',
             ], 502);
         }
 
-        $pendingSubscription->update([
-            'paymongo_session_id' => $checkoutResult['session_id'],
-        ]);
+        DB::transaction(function () use ($pendingSubscription, $payment, $checkoutResult): void {
+            ShopOwnerSubscriptionPayment::query()
+                ->whereKey($payment->id)
+                ->lockForUpdate()
+                ->firstOrFail()
+                ->update(['paymongo_session_id' => $checkoutResult['session_id']]);
 
-        $payment->update([
-            'paymongo_session_id' => $checkoutResult['session_id'],
-        ]);
+            ShopOwnerSubscription::query()
+                ->whereKey($pendingSubscription->id)
+                ->lockForUpdate()
+                ->firstOrFail()
+                ->update(['paymongo_session_id' => $checkoutResult['session_id']]);
+        });
 
         return response()->json([
             'success' => true,
@@ -392,8 +410,8 @@ class PremiumCheckoutController extends Controller
             ->where('status', 'active')
             ->firstOrFail();
 
-        // Create a pending subscription record before calling PayMongo so we
-        // always have a trace even if the gateway call fails.
+        // Create the subscription and its authoritative pending payment record
+        // before calling PayMongo so every checkout has a durable local fact.
         $hasAutoRenewColumns = $this->hasAutoRenewColumns();
 
         $subscriptionPayload = [
@@ -409,7 +427,23 @@ class PremiumCheckoutController extends Controller
             $subscriptionPayload['auto_renew_status'] = ShopOwnerSubscription::AUTO_RENEW_STATUS_ENABLED;
         }
 
-        $subscription = ShopOwnerSubscription::create($subscriptionPayload);
+        [$subscription, $payment] = DB::transaction(function () use ($subscriptionPayload, $shopOwner, $plan) {
+            $subscription = ShopOwnerSubscription::create($subscriptionPayload);
+            $payment = $this->createPaymentRecord($subscription, [
+                'shop_owner_id' => $shopOwner->id,
+                'payment_type' => 'new_subscription',
+                'gateway' => 'paymongo',
+                'currency' => 'PHP',
+                'plan_price' => (float) $plan->price,
+                'amount_due' => (float) $plan->price,
+                'status' => 'pending',
+                'metadata' => [
+                    'type' => 'premium_subscription',
+                ],
+            ]);
+
+            return [$subscription, $payment];
+        });
 
         $successUrl  = route('shop-owner.premium-success', [
             'subscription_id' => $subscription->id,
@@ -424,53 +458,66 @@ class PremiumCheckoutController extends Controller
 
         $paymentMethodTypes = ['card', 'gcash', 'paymaya', 'grab_pay'];
 
-        $response = Http::withHeaders([
-            'Content-Type'  => 'application/json',
-            'Authorization' => 'Basic ' . base64_encode($apiKey . ':'),
-        ])->post('https://api.paymongo.com/v1/checkout_sessions', [
-            'data' => [
-                'attributes' => [
-                    'success_url'          => $successUrl,
-                    'cancel_url'           => $cancelUrl,
-                    'description'          => $description,
-                    'send_email_receipt'   => true,
-                    'show_description'     => true,
-                    'show_line_items'      => true,
-                    'line_items'           => [[
-                        'currency'    => 'PHP',
-                        'amount'      => (int) ($plan->price * 100), // PayMongo expects centavos
-                        'name'        => 'SoleSpace ' . $plan->name,
-                        'description' => $description,
-                        'quantity'    => 1,
-                    ]],
-                    'payment_method_types' => $paymentMethodTypes,
-                    'metadata'             => [
-                        'type'            => 'premium_subscription',
-                        'subscription_id' => (string) $subscription->id,
-                        'shop_owner_id'   => (string) $shopOwner->id,
-                        'plan_code'       => $plan->plan_code,
+        try {
+            $response = Http::timeout(10)->connectTimeout(3)->withHeaders([
+                'Content-Type'  => 'application/json',
+                'Authorization' => 'Basic ' . base64_encode($apiKey . ':'),
+            ])->post('https://api.paymongo.com/v1/checkout_sessions', [
+                'data' => [
+                    'attributes' => [
+                        'success_url'          => $successUrl,
+                        'cancel_url'           => $cancelUrl,
+                        'description'          => $description,
+                        'send_email_receipt'   => true,
+                        'show_description'     => true,
+                        'show_line_items'      => true,
+                        'line_items'           => [[
+                            'currency'    => 'PHP',
+                            'amount'      => (int) ($plan->price * 100), // PayMongo expects centavos
+                            'name'        => 'SoleSpace ' . $plan->name,
+                            'description' => $description,
+                            'quantity'    => 1,
+                        ]],
+                        'payment_method_types' => $paymentMethodTypes,
+                        'metadata' => [
+                            'type' => 'premium_subscription',
+                            'subscription_id' => (string) $subscription->id,
+                            'shop_owner_id' => (string) $shopOwner->id,
+                            'plan_code' => $plan->plan_code,
+                            'payment_record_id' => (string) $payment->id,
+                            'ledger_key' => $payment->ledger_key,
+                        ],
                     ],
                 ],
-            ],
-        ]);
+            ]);
+        } catch (\Throwable $exception) {
+            $this->markCheckoutFailed($subscription->id, $payment->id);
 
-        if ($response->failed()) {
-            $subscription->update(['status' => 'failed']);
-
-            $errors   = $response->json('errors');
-            $errorMsg = $errors[0]['detail'] ?? $response->json('message') ?? 'PayMongo error';
-
-            Log::error('PayMongo premium checkout session failed', [
-                'shop_owner_id'   => $shopOwner->id,
+            Log::warning('PayMongo premium checkout request failed', [
+                'shop_owner_id' => $shopOwner->id,
                 'subscription_id' => $subscription->id,
-                'plan_code'       => $plan->plan_code,
-                'http_status'     => $response->status(),
-                'body'            => $response->json(),
+                'exception_class' => $exception::class,
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => 'Payment gateway error: ' . $errorMsg,
+                'message' => 'Payment gateway error. Please try again.',
+            ], 502);
+        }
+
+        if ($response->failed()) {
+            $this->markCheckoutFailed($subscription->id, $payment->id);
+
+            Log::warning('PayMongo premium checkout session failed', [
+                'shop_owner_id'   => $shopOwner->id,
+                'subscription_id' => $subscription->id,
+                'plan_code'       => $plan->plan_code,
+                'http_status'     => $response->status(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Payment gateway error. Please try again.',
             ], 502);
         }
 
@@ -479,11 +526,10 @@ class PremiumCheckoutController extends Controller
         $sessionId   = $data['data']['id'] ?? null;
 
         if (!$checkoutUrl || !$sessionId) {
-            $subscription->update(['status' => 'failed']);
+            $this->markCheckoutFailed($subscription->id, $payment->id);
 
             Log::error('Incomplete PayMongo response for premium checkout', [
                 'subscription_id' => $subscription->id,
-                'response'        => $data,
             ]);
 
             return response()->json([
@@ -492,8 +538,20 @@ class PremiumCheckoutController extends Controller
             ], 500);
         }
 
-        // Persist the session ID so the webhook can look up this subscription
-        $subscription->update(['paymongo_session_id' => $sessionId]);
+        // Persist the session on both local billing records atomically.
+        DB::transaction(function () use ($subscription, $payment, $sessionId): void {
+            ShopOwnerSubscriptionPayment::query()
+                ->whereKey($payment->id)
+                ->lockForUpdate()
+                ->firstOrFail()
+                ->update(['paymongo_session_id' => $sessionId]);
+
+            ShopOwnerSubscription::query()
+                ->whereKey($subscription->id)
+                ->lockForUpdate()
+                ->firstOrFail()
+                ->update(['paymongo_session_id' => $sessionId]);
+        });
 
         Log::info('Premium checkout session created', [
             'shop_owner_id'   => $shopOwner->id,
@@ -511,7 +569,7 @@ class PremiumCheckoutController extends Controller
     }
 
     /**
-     * Cancel a pending or active premium subscription for the current shop owner.
+     * Cancel an active premium subscription for the current shop owner.
      *
      * POST /api/shop-owner/premium/cancel
      * Body (optional): {
@@ -520,7 +578,7 @@ class PremiumCheckoutController extends Controller
      *   "cancellation_notes": "optional notes"
      * }
      */
-    public function cancel(Request $request)
+    public function cancel(Request $request, PremiumSubscriptionCancellationService $cancellationService)
     {
         $shopOwner = Auth::guard('shop_owner')->user();
 
@@ -531,8 +589,7 @@ class PremiumCheckoutController extends Controller
         ]);
 
         $subscriptionQuery = ShopOwnerSubscription::with('premiumPlan')
-            ->where('shop_owner_id', $shopOwner->id)
-            ->whereIn('status', ['pending', 'active']);
+            ->where('shop_owner_id', $shopOwner->id);
 
         if (!empty($validated['subscription_id'])) {
             $subscriptionQuery->where('id', (int) $validated['subscription_id']);
@@ -543,50 +600,40 @@ class PremiumCheckoutController extends Controller
         if (!$subscription) {
             return response()->json([
                 'success' => false,
-                'message' => 'No pending or active premium subscription was found to cancel.',
+                'message' => 'No premium subscription was found to cancel.',
             ], 404);
         }
 
-        $effectiveEndsAt = $subscription->ends_at;
-        if ($subscription->status === 'active' && !$effectiveEndsAt && $subscription->starts_at && $subscription->premiumPlan) {
-            $effectiveEndsAt = $subscription->starts_at->copy()->addDays((int) $subscription->premiumPlan->duration_days);
+        if ($subscription->status !== 'active') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only an active paid subscription can be cancelled.',
+            ], 409);
         }
 
         $reason = trim((string) ($validated['cancellation_reason'] ?? ''));
         $notes = trim((string) ($validated['cancellation_notes'] ?? ''));
-        $hasCancellationColumns = Schema::hasColumn('shop_owner_subscriptions', 'cancellation_reason')
-            && Schema::hasColumn('shop_owner_subscriptions', 'cancellation_notes');
-        $hasAutoRenewColumns = $this->hasAutoRenewColumns();
-
-        $updatePayload = [
-            // Cancellation means stop renewal only. Access remains until the original deadline.
-            'status'  => 'cancelled',
-            'ends_at' => $effectiveEndsAt,
-        ];
-
-        if ($hasAutoRenewColumns) {
-            $updatePayload['auto_renew'] = false;
-            $updatePayload['auto_renew_status'] = ShopOwnerSubscription::AUTO_RENEW_STATUS_DISABLED;
+        try {
+            $result = $cancellationService->cancelForShopOwner(
+                subscription: $subscription,
+                owner: $shopOwner,
+                reason: $reason,
+                notes: $notes !== '' ? $notes : null,
+            );
+        } catch (DomainException) {
+            return response()->json([
+                'success' => false,
+                'message' => 'The subscription cannot be cancelled in its current state.',
+            ], 409);
         }
-
-        if ($hasCancellationColumns) {
-            $updatePayload['cancellation_reason'] = $reason !== '' ? $reason : null;
-            $updatePayload['cancellation_notes'] = $notes !== '' ? $notes : null;
-        }
-
-        $subscription->update($updatePayload);
-
-        Log::info('Shop owner cancelled premium subscription', [
-            'shop_owner_id' => $shopOwner->id,
-            'subscription_id' => $subscription->id,
-            'reason' => $reason !== '' ? $reason : null,
-            'notes' => $notes !== '' ? $notes : null,
-        ]);
 
         return response()->json([
-            'success'      => true,
-            'message'      => 'Premium subscription cancelled successfully.',
-            'subscription' => $subscription->fresh('premiumPlan'),
+            'success' => true,
+            'replayed' => $result['replayed'],
+            'message' => $result['replayed']
+                ? 'Premium subscription cancellation was already applied.'
+                : 'Premium subscription cancelled successfully.',
+            'subscription' => $result['subscription'],
         ]);
     }
 
@@ -636,6 +683,27 @@ class PremiumCheckoutController extends Controller
         // If user re-enables auto-renew during remaining paid access,
         // restore status to active so renewal processing can include this subscription.
         if ($enabled && $subscription->status === 'cancelled') {
+            $hasPendingLifecycleChild = ShopOwnerSubscription::query()
+                ->where(function ($query) use ($subscription): void {
+                    $query
+                        ->where('renewal_of_subscription_id', $subscription->id)
+                        ->orWhere('replaces_subscription_id', $subscription->id);
+                })
+                ->where('status', 'pending')
+                ->exists();
+
+            $hasRefundState = ShopOwnerSubscriptionRefund::query()
+                ->where('subscription_id', $subscription->id)
+                ->whereIn('status', ['pending', 'processing', 'unknown', 'succeeded'])
+                ->exists();
+
+            if ($hasPendingLifecycleChild || $hasRefundState) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Auto renewal cannot be re-enabled while another billing operation requires resolution.',
+                ], 409);
+            }
+
             $updatePayload['status'] = 'active';
 
             if (
@@ -753,6 +821,54 @@ class PremiumCheckoutController extends Controller
     }
 
     /**
+     * Create the one local payment fact for a subscription version.
+     *
+     * @param array<string, mixed> $attributes
+     */
+    private function createPaymentRecord(
+        ShopOwnerSubscription $subscription,
+        array $attributes,
+    ): ShopOwnerSubscriptionPayment {
+        $paymentType = (string) ($attributes['payment_type'] ?? 'new_subscription');
+        $ledgerKey = ShopOwnerSubscriptionPayment::ledgerKeyFor((int) $subscription->id, $paymentType);
+        $metadata = is_array($attributes['metadata'] ?? null) ? $attributes['metadata'] : [];
+        $metadata['ledger_key'] = $ledgerKey;
+
+        $payment = ShopOwnerSubscriptionPayment::create(array_merge($attributes, [
+            'subscription_id' => $subscription->id,
+            'ledger_key' => $ledgerKey,
+            'metadata' => $metadata,
+        ]));
+
+        $metadata['payment_record_id'] = (string) $payment->id;
+        $payment->update(['metadata' => $metadata]);
+
+        return $payment->fresh();
+    }
+
+    private function markCheckoutFailed(int $subscriptionId, int $paymentId): void
+    {
+        DB::transaction(function () use ($subscriptionId, $paymentId): void {
+            $payment = ShopOwnerSubscriptionPayment::query()
+                ->whereKey($paymentId)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $subscription = ShopOwnerSubscription::query()
+                ->whereKey($subscriptionId)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($payment->status === 'pending') {
+                $payment->update(['status' => 'failed']);
+            }
+
+            if ($subscription->status === 'pending') {
+                $subscription->update(['status' => 'failed']);
+            }
+        });
+    }
+
+    /**
      * @param array<string, string> $metadata
      * @return array<string, mixed>
      */
@@ -768,44 +884,54 @@ class PremiumCheckoutController extends Controller
 
         $paymentMethodTypes = ['card', 'gcash', 'paymaya', 'grab_pay'];
 
-        $response = Http::withHeaders([
-            'Content-Type' => 'application/json',
-            'Authorization' => 'Basic ' . base64_encode($apiKey . ':'),
-        ])->post('https://api.paymongo.com/v1/checkout_sessions', [
-            'data' => [
-                'attributes' => [
-                    'success_url' => $successUrl,
-                    'cancel_url' => $cancelUrl,
-                    'description' => $description,
-                    'send_email_receipt' => true,
-                    'show_description' => true,
-                    'show_line_items' => true,
-                    'line_items' => [[
-                        'currency' => 'PHP',
-                        'amount' => (int) round($amount * 100),
-                        'name' => $lineItemName,
+        try {
+            $response = Http::timeout(10)->connectTimeout(3)->withHeaders([
+                'Content-Type' => 'application/json',
+                'Authorization' => 'Basic ' . base64_encode($apiKey . ':'),
+            ])->post('https://api.paymongo.com/v1/checkout_sessions', [
+                'data' => [
+                    'attributes' => [
+                        'success_url' => $successUrl,
+                        'cancel_url' => $cancelUrl,
                         'description' => $description,
-                        'quantity' => 1,
-                    ]],
-                    'payment_method_types' => $paymentMethodTypes,
-                    'metadata' => $metadata,
+                        'send_email_receipt' => true,
+                        'show_description' => true,
+                        'show_line_items' => true,
+                        'line_items' => [[
+                            'currency' => 'PHP',
+                            'amount' => (int) round($amount * 100),
+                            'name' => $lineItemName,
+                            'description' => $description,
+                            'quantity' => 1,
+                        ]],
+                        'payment_method_types' => $paymentMethodTypes,
+                        'metadata' => $metadata,
+                    ],
                 ],
-            ],
-        ]);
-
-        if ($response->failed()) {
-            $errors = $response->json('errors');
-            $errorMsg = $errors[0]['detail'] ?? $response->json('message') ?? 'PayMongo error';
-
-            Log::error('PayMongo checkout session failed', [
-                'http_status' => $response->status(),
-                'body' => $response->json(),
-                'metadata' => $metadata,
+            ]);
+        } catch (\Throwable $exception) {
+            Log::warning('PayMongo checkout session request failed', [
+                'payment_type' => $metadata['type'] ?? null,
+                'subscription_id' => $metadata['subscription_id'] ?? null,
+                'exception_class' => $exception::class,
             ]);
 
             return [
                 'success' => false,
-                'message' => 'Payment gateway error: ' . $errorMsg,
+                'message' => 'Payment gateway error. Please try again.',
+            ];
+        }
+
+        if ($response->failed()) {
+            Log::warning('PayMongo checkout session failed', [
+                'http_status' => $response->status(),
+                'payment_type' => $metadata['type'] ?? null,
+                'subscription_id' => $metadata['subscription_id'] ?? null,
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'Payment gateway error. Please try again.',
             ];
         }
 

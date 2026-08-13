@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\superAdmin\ReviewShopOwnerUpgradeRequest as ReviewRequest;
 use App\Models\ShopOwnerUpgradeRequest;
 use App\Models\ShopOwnerUpgradeRequestDocument;
+use App\Support\PrivilegedFailureResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -24,8 +25,26 @@ final class ShopOwnerUpgradeRequestController extends Controller
     {
         $validated = $request->validated();
         $query = ShopOwnerUpgradeRequest::query()
-            ->with(['shopOwner', 'reviewedBySuperAdmin', 'documents'])
-            ->latest('created_at');
+            ->select([
+                'id',
+                'shop_owner_id',
+                'current_registration_type',
+                'current_business_type',
+                'requested_registration_type',
+                'requested_business_type',
+                'status',
+                'decision_reason',
+                'reviewed_by_super_admin_id',
+                'reviewed_at',
+                'created_at',
+            ])
+            ->with([
+                'shopOwner:id,first_name,last_name,business_name,email',
+                'reviewedBySuperAdmin:id,first_name,last_name',
+                'documents:id,shop_owner_upgrade_request_id,document_type,mime_type,size,source_status',
+            ])
+            ->orderByDesc('created_at')
+            ->orderByDesc('id');
 
         if (! empty($validated['status'])) {
             $query->where('status', $validated['status']);
@@ -88,7 +107,12 @@ final class ShopOwnerUpgradeRequestController extends Controller
         ]);
     }
 
-    public function update(ReviewRequest $request, ShopOwnerUpgradeRequest $upgradeRequest, ReviewShopOwnerUpgradeRequest $review): JsonResponse|Response
+    public function update(
+        ReviewRequest $request,
+        ShopOwnerUpgradeRequest $upgradeRequest,
+        ReviewShopOwnerUpgradeRequest $review,
+        PrivilegedFailureResponse $failures,
+    ): JsonResponse|Response
     {
         $validated = $request->validated();
         $reviewer = Auth::guard('super_admin')->user();
@@ -99,19 +123,25 @@ final class ShopOwnerUpgradeRequestController extends Controller
                 reviewer: $reviewer,
                 decision: (string) $validated['decision'],
                 decisionReason: $validated['decision_reason'] ?? null,
+                request: $request,
             );
         } catch (ShopOwnerUpgradeReviewConflict $exception) {
-            return $this->conflictResponse($request, $exception->getMessage());
+            return $failures->conflict(
+                request: $request,
+                operation: 'shop_owner_upgrade',
+                message: 'The upgrade request conflicts with current state.',
+                code: 'shop_owner_upgrade_conflict',
+            );
         } catch (ValidationException $exception) {
             throw $exception;
         } catch (Throwable $exception) {
-            report($exception);
-
-            if ($request->expectsJson()) {
-                return response()->json(['message' => 'The upgrade request could not be reviewed. Please try again.'], 500);
-            }
-
-            return back()->withErrors(['review' => 'The upgrade request could not be reviewed. Please try again.']);
+            return $failures->unexpected(
+                request: $request,
+                operation: 'shop_owner_upgrade',
+                exception: $exception,
+                message: 'The upgrade request could not be reviewed. Please try again.',
+                code: 'shop_owner_upgrade_error',
+            );
         }
 
         $status = $result['conflict'] ? 409 : 200;
@@ -146,15 +176,6 @@ final class ShopOwnerUpgradeRequestController extends Controller
         return Storage::disk($disk)->download($path, $filename, [
             'Content-Type' => (string) $document->mime_type,
         ]);
-    }
-
-    private function conflictResponse(Request $request, string $message): JsonResponse|Response
-    {
-        if ($request->expectsJson()) {
-            return response()->json(['success' => false, 'message' => $message], 409);
-        }
-
-        return back()->withErrors(['review' => $message]);
     }
 
     /**

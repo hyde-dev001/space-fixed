@@ -11,6 +11,8 @@ use Spatie\OpeningHours\OpeningHours;
 use App\Enums\ShopOwnerStatus;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * ShopOwner Model
@@ -30,7 +32,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  */
 class ShopOwner extends Authenticatable implements MustVerifyEmail
 {
-    use HasFactory, Notifiable, HasRoles;
+    use HasFactory, Notifiable, HasRoles, SoftDeletes;
 
     /**
      * The guard name for this model (for Spatie Permission)
@@ -139,6 +141,17 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
     public function documents()
     {
         return $this->hasMany(ShopDocument::class);
+    }
+
+    public function currentSuspension(): BelongsTo
+    {
+        return $this->belongsTo(AccountSuspension::class, 'current_suspension_id');
+    }
+
+    public function suspensionHistory(): HasMany
+    {
+        return $this->hasMany(AccountSuspension::class, 'account_id')
+            ->where('account_type', AccountSuspension::ACCOUNT_TYPE_SHOP_OWNER);
     }
 
     public function upgradeRequests(): HasMany

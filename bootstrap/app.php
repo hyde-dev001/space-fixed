@@ -6,13 +6,20 @@ use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Http\Request;
 use Illuminate\Auth\AuthenticationException;
+use Illuminate\Support\Str;
 use App\Http\Middleware\Authenticate;
+use App\Http\Middleware\AttachPrivilegedCorrelationId;
+use App\Http\Middleware\EnsurePrivilegedAccountIsActive;
+use App\Http\Middleware\EnsurePrivilegedCapability;
+use App\Http\Middleware\EnsurePrivilegedMfaComplete;
 use App\Http\Middleware\EnsureErpAudience;
 use App\Http\Middleware\EnsureOwnerErpWorkspaceEnabled;
 use App\Http\Middleware\ResolveErpActorContext;
 use App\Http\Middleware\EnsureShopModuleEnabled;
+use App\Http\Middleware\SuperAdminAuth;
 use App\Support\Erp\ErpAccessResponder;
 use App\Support\Erp\ErpActorContext;
+use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -149,7 +156,12 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
         $middleware->alias([
             'super_admin.auth' => \App\Http\Middleware\SuperAdminAuth::class,
+            'privileged.active' => \App\Http\Middleware\EnsurePrivilegedAccountIsActive::class,
+            'privileged.mfa' => \App\Http\Middleware\EnsurePrivilegedMfaComplete::class,
+            'privileged.recent' => \App\Http\Middleware\EnsureRecentPrivilegedReauthentication::class,
+            'privileged.no-store' => \App\Http\Middleware\NoStorePrivilegedSecurityResponse::class,
             'super_admin.role' => \App\Http\Middleware\CheckSuperAdminRole::class,
+            'privileged.capability' => \App\Http\Middleware\EnsurePrivilegedCapability::class,
             'shop.isolation' => \App\Http\Middleware\ShopIsolationMiddleware::class,
             'customer.account' => \App\Http\Middleware\EnsureCustomerAccount::class,
             'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
@@ -170,6 +182,11 @@ return Application::configure(basePath: dirname(__DIR__))
             'erp.actor' => ResolveErpActorContext::class,
         ]);
         $middleware->priority([
+            AttachPrivilegedCorrelationId::class,
+            SuperAdminAuth::class,
+            EnsurePrivilegedAccountIsActive::class,
+            EnsurePrivilegedMfaComplete::class,
+            EnsurePrivilegedCapability::class,
             EnsureOwnerErpWorkspaceEnabled::class,
             EnsureErpAudience::class,
             Authenticate::class,
@@ -179,6 +196,16 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->respond(function (SymfonyResponse $response, \Throwable $exception, Request $request): SymfonyResponse {
+            $correlationId = $request->attributes->get(AttachPrivilegedCorrelationId::ATTRIBUTE);
+
+            if (is_string($correlationId) && Str::isUuid($correlationId)) {
+                $response->headers->set(AttachPrivilegedCorrelationId::HEADER, $correlationId);
+            }
+
+            return $response;
+        });
+
         $exceptions->render(function (AuthenticationException $exception, Request $request) {
             $responder = app(ErpAccessResponder::class);
             if (! $responder->isOwnerErpRequest($request)) {

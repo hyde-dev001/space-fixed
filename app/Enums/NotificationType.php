@@ -79,6 +79,9 @@ enum NotificationType: string
     
     // ==================== SUPER ADMIN NOTIFICATIONS ====================
     case SHOP_REGISTRATION_PENDING = 'shop_registration_pending';
+    case SHOP_DOCUMENT_RENEWAL_PENDING = 'shop_document_renewal_pending';
+    case SHOP_DOCUMENT_RENEWAL_REVIEWED = 'shop_document_renewal_reviewed';
+    case SHOP_DOCUMENT_EXPIRING = 'shop_document_expiring';
     case BUSINESS_UPGRADE_REQUEST_PENDING = 'business_upgrade_request_pending';
     case SHOP_REPORT_FILED = 'shop_report_filed';
     case REVIEW_REPORTED = 'review_reported';
@@ -182,6 +185,9 @@ enum NotificationType: string
             
             // Super admin notifications
             self::SHOP_REGISTRATION_PENDING => 'New Shop Registration',
+            self::SHOP_DOCUMENT_RENEWAL_PENDING => 'Document Renewal Pending',
+            self::SHOP_DOCUMENT_RENEWAL_REVIEWED => 'Document Renewal Reviewed',
+            self::SHOP_DOCUMENT_EXPIRING => 'Business Document Expiring',
             self::BUSINESS_UPGRADE_REQUEST_PENDING => 'Business Upgrade Request',
             self::SHOP_REPORT_FILED => 'Shop Report Filed',
             self::REVIEW_REPORTED => 'Review Reported',
@@ -248,7 +254,7 @@ enum NotificationType: string
             self::LOGISTICS_DELIVERY_FAILED, self::LOGISTICS_PROOF_REQUIRED,
             self::LOGISTICS_DELIVERED, self::LOGISTICS_EXCEPTION => 'logistics',
 
-            self::SHOP_REGISTRATION_PENDING, self::BUSINESS_UPGRADE_REQUEST_PENDING,
+            self::SHOP_REGISTRATION_PENDING, self::SHOP_DOCUMENT_RENEWAL_PENDING, self::SHOP_DOCUMENT_RENEWAL_REVIEWED, self::SHOP_DOCUMENT_EXPIRING, self::BUSINESS_UPGRADE_REQUEST_PENDING,
             self::SHOP_REPORT_FILED, self::REVIEW_REPORTED => 'admin',
             
             default => 'general',
@@ -303,6 +309,8 @@ enum NotificationType: string
             self::EMPLOYEE_SUSPENSION_REQUEST,
             self::SALARY_CHANGE_SUBMITTED,
             self::CUSTOMER_MESSAGE,
+            self::SHOP_DOCUMENT_RENEWAL_REVIEWED,
+            self::SHOP_DOCUMENT_EXPIRING,
         ]);
     }
 
@@ -325,6 +333,8 @@ enum NotificationType: string
             self::SUSPENSION_REQUEST_PENDING,
             self::SALARY_CHANGE_SUBMITTED,
             self::SHOP_REGISTRATION_PENDING,
+            self::SHOP_DOCUMENT_RENEWAL_PENDING,
+            self::SHOP_DOCUMENT_EXPIRING,
             self::BUSINESS_UPGRADE_REQUEST_PENDING,
             self::SHOP_REPORT_FILED,
             self::REVIEW_REPORTED,
@@ -338,6 +348,7 @@ enum NotificationType: string
     {
         return in_array($this, [
             self::SHOP_REGISTRATION_PENDING,
+            self::SHOP_DOCUMENT_RENEWAL_PENDING,
             self::BUSINESS_UPGRADE_REQUEST_PENDING,
             self::SHOP_REPORT_FILED,
             self::REVIEW_REPORTED,

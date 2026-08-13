@@ -14,10 +14,12 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Concerns\AuthenticatesPrivilegedUsers;
 use Tests\TestCase;
 
 final class BusinessScalingActorBoundaryRegressionTest extends TestCase
 {
+    use AuthenticatesPrivilegedUsers;
     use RefreshDatabase;
 
     protected function setUp(): void
@@ -38,7 +40,7 @@ final class BusinessScalingActorBoundaryRegressionTest extends TestCase
         $this->get(route('shop-profile', $owner))
             ->assertOk();
 
-        $admin = SuperAdmin::create([
+        $admin = SuperAdmin::factory()->superAdmin()->create([
             'first_name' => 'Support',
             'last_name' => 'Admin',
             'email' => fake()->unique()->safeEmail(),
@@ -48,7 +50,7 @@ final class BusinessScalingActorBoundaryRegressionTest extends TestCase
             'status' => 'active',
         ]);
 
-        $this->actingAs($admin, 'super_admin')
+        $this->actingAsCompletedPrivileged($admin)
             ->getJson(route('admin.business-upgrade-requests.index'))
             ->assertOk();
 

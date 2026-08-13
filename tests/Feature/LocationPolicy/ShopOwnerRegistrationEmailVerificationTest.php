@@ -22,10 +22,17 @@ class ShopOwnerRegistrationEmailVerificationTest extends TestCase
         $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
 
         return [
-            'dti_registration' => UploadedFile::fake()->createWithContent('dti_registration.png', $png),
+            'business_registration' => UploadedFile::fake()->createWithContent('dti_registration.png', $png),
+            'business_registration_type' => 'dti_registration',
             'mayors_permit' => UploadedFile::fake()->createWithContent('mayors_permit.png', $png),
             'bir_certificate' => UploadedFile::fake()->createWithContent('bir_certificate.png', $png),
             'valid_id' => UploadedFile::fake()->createWithContent('valid_id.png', $png),
+            'document_metadata' => [
+                'business_registration' => ['issued_on' => '2026-01-01', 'expiration_mode' => 'none', 'expires_on' => null],
+                'mayors_permit' => ['issued_on' => '2026-01-01', 'expiration_mode' => 'dated', 'expires_on' => '2027-01-01'],
+                'bir_certificate' => ['issued_on' => '2026-01-01', 'expiration_mode' => 'none', 'expires_on' => null],
+                'valid_id' => ['issued_on' => '2026-01-01', 'expiration_mode' => 'none', 'expires_on' => null],
+            ],
         ];
     }
 

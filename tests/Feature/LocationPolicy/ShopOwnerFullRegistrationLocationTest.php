@@ -5,6 +5,7 @@ namespace Tests\Feature\LocationPolicy;
 use App\Services\CaviteLocationPolicyService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -20,50 +21,89 @@ class ShopOwnerFullRegistrationLocationTest extends TestCase
     private function payload(array $overrides = []): array
     {
         return array_merge([
-            'firstName' => 'Maria',
-            'lastName' => 'Reyes',
-            'email' => 'full-register@example.com',
+            'first_name' => 'Maria',
+            'last_name' => 'Reyes',
+            'email' => 'full-register@solespaceph.com',
             'phone' => '09179876543',
-            'businessName' => 'Maria Footwear Works',
-            'businessAddress' => 'Imus, Cavite',
-            'businessType' => 'repair',
-            'registrationType' => 'individual',
-            'operatingHours' => [
-                ['day' => 'Monday', 'open' => '09:00', 'close' => '18:00'],
-                ['day' => 'Tuesday', 'open' => '09:00', 'close' => '18:00'],
-            ],
-            'agreesToRequirements' => true,
+            'business_name' => 'Maria Footwear Works',
+            'business_address' => 'Imus, Cavite',
+            'business_type' => 'repair',
+            'registration_type' => 'individual',
+            'attendance_geofence_enabled' => true,
             'shop_latitude' => self::LAT_DASMARINAS,
             'shop_longitude' => self::LNG_DASMARINAS,
-            'dtiRegistration' => UploadedFile::fake()->create('dti.png', 120, 'image/png'),
-            'mayorsPermit' => UploadedFile::fake()->create('permit.png', 120, 'image/png'),
-            'birCertificate' => UploadedFile::fake()->create('bir.png', 120, 'image/png'),
-            'validId' => UploadedFile::fake()->create('id.png', 120, 'image/png'),
+            'shop_address' => 'Imus, Cavite',
+            'shop_geofence_radius' => 150,
+            'business_registration_type' => 'dti_registration',
+            'business_registration' => UploadedFile::fake()->create('dti.png', 120, 'image/png'),
+            'mayors_permit' => UploadedFile::fake()->create('permit.png', 120, 'image/png'),
+            'bir_certificate' => UploadedFile::fake()->create('bir.png', 120, 'image/png'),
+            'valid_id' => UploadedFile::fake()->create('id.png', 120, 'image/png'),
+            'document_metadata' => [
+                'business_registration' => [
+                    'issued_on' => '2026-01-01',
+                    'expiration_mode' => 'none',
+                    'expires_on' => null,
+                ],
+                'mayors_permit' => [
+                    'issued_on' => '2026-01-01',
+                    'expiration_mode' => 'dated',
+                    'expires_on' => '2027-01-01',
+                ],
+                'bir_certificate' => [
+                    'issued_on' => '2026-01-01',
+                    'expiration_mode' => 'none',
+                    'expires_on' => null,
+                ],
+                'valid_id' => [
+                    'issued_on' => '2026-01-01',
+                    'expiration_mode' => 'none',
+                    'expires_on' => null,
+                ],
+            ],
         ], $overrides);
     }
 
-    /** @test */
-    public function full_registration_with_cavite_coordinates_passes(): void
+    private function register(array $overrides = [])
     {
+        $payload = $this->payload($overrides);
+        $email = strtolower(trim((string) $payload['email']));
+
+        Cache::put(
+            'shop_owner_registration_email_otp:' . sha1($email),
+            [
+                'verified' => true,
+                'verified_at' => now()->timestamp,
+                'attempts' => 0,
+                'expires_at' => now()->addMinutes(60)->timestamp,
+                'otp_hash' => null,
+            ],
+            now()->addMinutes(60),
+        );
+
         Storage::fake('public');
 
-        $response = $this->postJson('/api/shop/register-full', $this->payload());
+        return $this->withHeader('Accept', 'application/json')
+            ->post('/shop-owner/register', $payload);
+    }
 
-        $response->assertStatus(201)
-            ->assertJsonPath('success', true);
+    /** @test */
+    public function canonical_registration_with_cavite_coordinates_succeeds_with_versioned_metadata(): void
+    {
+        $response = $this->register();
+
+        $response->assertStatus(201);
     }
 
     /** @test */
     public function full_registration_with_ncr_coordinates_fails(): void
     {
-        Storage::fake('public');
-
-        $response = $this->postJson('/api/shop/register-full', $this->payload([
-            'email' => 'full-ncr@example.com',
+        $response = $this->register([
+            'email' => 'full-ncr@solespaceph.com',
             'shop_latitude' => self::LAT_MAKATI,
             'shop_longitude' => self::LNG_MAKATI,
-            'businessAddress' => 'Makati, Metro Manila',
-        ]));
+            'business_address' => 'Makati, Metro Manila',
+        ]);
 
         $response->assertStatus(422)
             ->assertJsonPath('message', CaviteLocationPolicyService::DENIAL_MESSAGE);
@@ -72,14 +112,12 @@ class ShopOwnerFullRegistrationLocationTest extends TestCase
     /** @test */
     public function full_registration_without_coordinates_fails_even_with_cavite_address(): void
     {
-        Storage::fake('public');
-
-        $response = $this->postJson('/api/shop/register-full', $this->payload([
-            'email' => 'full-no-coords@example.com',
+        $response = $this->register([
+            'email' => 'full-no-coords@solespaceph.com',
             'shop_latitude' => null,
             'shop_longitude' => null,
-            'businessAddress' => 'Bacoor, Cavite',
-        ]));
+            'business_address' => 'Bacoor, Cavite',
+        ]);
 
         $response->assertStatus(422)
             ->assertJsonPath('message', CaviteLocationPolicyService::DENIAL_MESSAGE);
@@ -88,13 +126,11 @@ class ShopOwnerFullRegistrationLocationTest extends TestCase
     /** @test */
     public function full_registration_tampered_coordinate_payload_is_blocked(): void
     {
-        Storage::fake('public');
-
-        $response = $this->postJson('/api/shop/register-full', $this->payload([
-            'email' => 'full-tampered@example.com',
+        $response = $this->register([
+            'email' => 'full-tampered@solespaceph.com',
             'shop_latitude' => '14.30; DROP TABLE shop_owners; --',
             'shop_longitude' => '120.93',
-        ]));
+        ]);
 
         $response->assertStatus(422);
     }

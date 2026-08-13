@@ -296,6 +296,10 @@ class EmployeeController extends Controller
                 $employeeUpdateData['salary_approved_by']
             );
 
+            if (array_key_exists('status', $employeeUpdateData)) {
+                $employeeUpdateData['privileged_suspension_id'] = null;
+            }
+
             $employee->update($employeeUpdateData);
 
             if ($salaryAuditData) {
@@ -385,7 +389,10 @@ class EmployeeController extends Controller
                 'suspension_reason' => 'nullable|string|max:500',
             ]);
 
-            $employee->update(['status' => 'inactive']);
+            $employee->update([
+                'status' => 'inactive',
+                'privileged_suspension_id' => null,
+            ]);
 
             // Audit log the suspension
             try {
@@ -469,7 +476,10 @@ class EmployeeController extends Controller
                 ], Response::HTTP_NOT_FOUND);
             }
 
-            $employee->update(['status' => 'active']);
+            $employee->update([
+                'status' => 'active',
+                'privileged_suspension_id' => null,
+            ]);
 
             try {
                 AuditLog::create([
