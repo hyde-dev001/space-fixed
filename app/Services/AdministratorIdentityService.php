@@ -50,6 +50,83 @@ final class AdministratorIdentityService
         return $this->finalize($result);
     }
 
+    /**
+     * @param array{first_name: string, last_name: string, email: string, phone: string, role: string} $validated
+     */
+    public function invite(Request $request, SuperAdmin $actor, array $validated): SuperAdmin
+    {
+        return DB::transaction(function () use ($request, $actor, $validated): SuperAdmin {
+            if (! $actor->isActive() || ! $actor->hasCapability(SuperAdmin::CAP_MANAGE_ADMINISTRATORS)) {
+                throw new AuthorizationException('The security operation is not permitted.');
+            }
+
+            if (SuperAdmin::query()->whereRaw('LOWER(email) = ?', [strtolower($validated['email'])])->exists()) {
+                throw new RuntimeException('The administrator email is already registered.');
+            }
+
+            $admin = SuperAdmin::create([
+                'first_name' => $validated['first_name'],
+                'last_name' => $validated['last_name'],
+                'email' => $validated['email'],
+                'phone' => $validated['phone'],
+                'password' => Str::random(64),
+                'role' => $validated['role'],
+                'status' => SuperAdmin::STATUS_PENDING_SETUP,
+            ]);
+            $issued = $this->tokens->issue($admin, PrivilegedSecurityToken::PURPOSE_SETUP, $actor);
+            $this->audit->privilegedInvitationCreated($request, $actor, $admin);
+
+            $this->privilegedMailDispatcher->dispatch(
+                type: PrivilegedDeliveryType::PRIVILEGED_ADMIN_SETUP,
+                businessEventId: 'privileged-admin-setup:'.$admin->getKey().':'.$issued['token']->getKey(),
+                recipientType: 'super_admin',
+                recipientId: (int) $admin->getKey(),
+                payload: [
+                    'recipient_name' => trim($admin->first_name.' '.$admin->last_name),
+                    'email' => (string) $admin->email,
+                    'raw_token' => $issued['raw_token'],
+                ],
+                correlationId: $this->audit->correlationId($request),
+            );
+
+            return $admin;
+        });
+    }
+
+    public function resendSetupInvitation(Request $request, SuperAdmin $actor, int $targetId): SuperAdmin
+    {
+        return DB::transaction(function () use ($request, $actor, $targetId): SuperAdmin {
+            if (! $actor->isActive() || ! $actor->hasCapability(SuperAdmin::CAP_MANAGE_ADMINISTRATORS)) {
+                throw new AuthorizationException('The security operation is not permitted.');
+            }
+
+            $admin = SuperAdmin::query()->lockForUpdate()->find($targetId);
+            if (! $admin instanceof SuperAdmin
+                || $admin->status !== SuperAdmin::STATUS_PENDING_SETUP
+                || $admin->hasCompletedMfaSetup()) {
+                throw new RuntimeException('The administrator is not pending setup.');
+            }
+
+            $issued = $this->tokens->issue($admin, PrivilegedSecurityToken::PURPOSE_SETUP, $actor);
+            $this->audit->privilegedInvitationResent($request, $actor, $admin);
+
+            $this->privilegedMailDispatcher->dispatch(
+                type: PrivilegedDeliveryType::PRIVILEGED_ADMIN_SETUP,
+                businessEventId: 'privileged-admin-setup:'.$admin->getKey().':'.$issued['token']->getKey(),
+                recipientType: 'super_admin',
+                recipientId: (int) $admin->getKey(),
+                payload: [
+                    'recipient_name' => trim($admin->first_name.' '.$admin->last_name),
+                    'email' => (string) $admin->email,
+                    'raw_token' => $issued['raw_token'],
+                ],
+                correlationId: $this->audit->correlationId($request),
+            );
+
+            return $admin;
+        });
+    }
+
     public function deactivate(Request $request, SuperAdmin $actor, int $targetId): SuperAdmin
     {
         $result = $this->mutate(

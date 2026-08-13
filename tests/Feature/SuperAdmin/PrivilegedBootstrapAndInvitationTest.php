@@ -133,7 +133,7 @@ final class PrivilegedBootstrapAndInvitationTest extends TestCase
         $this->actingAsCompletedPrivileged($actor);
         $this->markRecentlyReauthenticated($actor);
 
-        $response = $this->post('/admin/create-admin', [
+        $response = $this->post('/admin/administrators', [
             'first_name' => 'Invited',
             'last_name' => 'Admin',
             'email' => 'invited@example.test',
@@ -141,7 +141,7 @@ final class PrivilegedBootstrapAndInvitationTest extends TestCase
             'role' => SuperAdmin::ROLE_ADMIN,
         ]);
 
-        $response->assertRedirect(route('admin.admin-management'));
+        $response->assertRedirect(route('admin.administrators.index'));
         $invited = SuperAdmin::query()->where('email', 'invited@example.test')->firstOrFail();
         self::assertSame(SuperAdmin::STATUS_PENDING_SETUP, $invited->status);
         self::assertFalse(Hash::check('TestPassword1!', (string) $invited->getRawOriginal('password')));
@@ -154,7 +154,7 @@ final class PrivilegedBootstrapAndInvitationTest extends TestCase
         $adminActor = SuperAdmin::factory()->admin()->create();
         $this->actingAsCompletedPrivileged($adminActor);
         $this->markRecentlyReauthenticated($adminActor);
-        $this->post('/admin/create-admin', [
+        $this->post('/admin/administrators', [
             'first_name' => 'Denied',
             'last_name' => 'Admin',
             'email' => 'denied@example.test',
@@ -171,7 +171,7 @@ final class PrivilegedBootstrapAndInvitationTest extends TestCase
         $this->actingAsCompletedPrivileged($actor);
         $this->markRecentlyReauthenticated($actor);
 
-        $this->post('/admin/create-admin', [
+        $this->post('/admin/administrators', [
             'first_name' => 'Invited',
             'last_name' => 'Admin',
             'email' => 'resend@example.test',
@@ -186,15 +186,15 @@ final class PrivilegedBootstrapAndInvitationTest extends TestCase
             ->where('purpose', PrivilegedSecurityToken::PURPOSE_SETUP)
             ->firstOrFail();
 
-        $this->post("/admin/admins/{$invited->id}/setup/resend")
-            ->assertRedirect(route('admin.admin-management'));
+        $this->post("/admin/administrators/{$invited->id}/setup/resend")
+            ->assertRedirect(route('admin.administrators.index'));
         $this->assertSame(2, Queue::pushed(SendPrivilegedWorkflowMail::class)->count());
 
         self::assertNotNull($oldToken->fresh()?->used_at);
         self::assertSame(2, PrivilegedSecurityToken::query()->where('super_admin_id', $invited->id)->count());
 
-        $this->post("/admin/admins/{$invited->id}/setup/resend")
-            ->assertRedirect(route('admin.admin-management'));
+        $this->post("/admin/administrators/{$invited->id}/setup/resend")
+            ->assertRedirect(route('admin.administrators.index'));
         $this->assertSame(3, Queue::pushed(SendPrivilegedWorkflowMail::class)->count());
         self::assertSame(SuperAdmin::STATUS_PENDING_SETUP, $invited->fresh()?->status);
 

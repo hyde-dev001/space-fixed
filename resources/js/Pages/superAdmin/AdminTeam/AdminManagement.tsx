@@ -73,7 +73,7 @@ export default function AdminManagement({ admins = [], stats = {} }: AdminManage
     const key = `${admin.id}:role`;
     setActionError(undefined);
     setAction({ key });
-    router.patch(`/admin/admins/${admin.id}/role`, { role }, {
+    router.patch(`/admin/administrators/${admin.id}/role`, { role }, {
       preserveScroll: true,
       onError: (errors) => {
         setActionError(errorMessage(errors));
@@ -98,7 +98,7 @@ export default function AdminManagement({ admins = [], stats = {} }: AdminManage
               <h1 className="mt-2 text-3xl font-bold">Admin Management</h1>
               <p className="mt-2 text-gray-600 dark:text-gray-400">Manage administrator status, role, setup, and MFA state.</p>
             </div>
-            <Link href="/admin/create-admin" className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700">
+            <Link href="/admin/administrators/create" className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700">
               Invite Administrator
             </Link>
           </div>
@@ -173,23 +173,23 @@ export default function AdminManagement({ admins = [], stats = {} }: AdminManage
                         <td className="px-5 py-5 align-top">
                           <div className="flex max-w-xs flex-wrap gap-2">
                             {admin.status === 'pending_setup' && (
-                              <button type="button" disabled={actionBusy} onClick={() => runPostAction(admin, 'resend', `/admin/admins/${admin.id}/setup/resend`)} className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold hover:bg-gray-50 disabled:opacity-50">
+                              <button type="button" disabled={actionBusy} onClick={() => runPostAction(admin, 'resend', `/admin/administrators/${admin.id}/setup/resend`)} className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold hover:bg-gray-50 disabled:opacity-50">
                                 {action?.key === `${admin.id}:resend` ? 'Sending…' : 'Resend setup'}
                               </button>
                             )}
                             {admin.status === 'active' && (
                               <>
-                                <button type="button" title="Suspend Admin" disabled={actionBusy} onClick={() => confirmAction(`Suspend ${admin.firstName} ${admin.lastName}?`, () => runPostAction(admin, 'suspend', `/admin/admins/${admin.id}/suspend`))} className="rounded-lg border border-amber-300 px-3 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-50 disabled:opacity-50">Suspend</button>
-                                <button type="button" disabled={actionBusy} onClick={() => confirmAction(`Deactivate ${admin.firstName} ${admin.lastName}?`, () => runPostAction(admin, 'deactivate', `/admin/admins/${admin.id}/deactivate`))} className="rounded-lg border border-red-300 px-3 py-2 text-xs font-semibold text-red-800 hover:bg-red-50 disabled:opacity-50">Deactivate</button>
+                                <button type="button" title="Suspend Admin" disabled={actionBusy} onClick={() => confirmAction(`Suspend ${admin.firstName} ${admin.lastName}?`, () => runPostAction(admin, 'suspend', `/admin/administrators/${admin.id}/suspend`))} className="rounded-lg border border-amber-300 px-3 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-50 disabled:opacity-50">Suspend</button>
+                                <button type="button" disabled={actionBusy} onClick={() => confirmAction(`Deactivate ${admin.firstName} ${admin.lastName}?`, () => runPostAction(admin, 'deactivate', `/admin/administrators/${admin.id}/deactivate`))} className="rounded-lg border border-red-300 px-3 py-2 text-xs font-semibold text-red-800 hover:bg-red-50 disabled:opacity-50">Deactivate</button>
                               </>
                             )}
                             {(admin.status === 'suspended' || admin.status === 'inactive') && (
-                              <button type="button" disabled={actionBusy} onClick={() => runPostAction(admin, 'activate', `/admin/admins/${admin.id}/activate`)} className="rounded-lg border border-emerald-300 px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 disabled:opacity-50">
+                              <button type="button" disabled={actionBusy} onClick={() => runPostAction(admin, 'activate', `/admin/administrators/${admin.id}/activate`)} className="rounded-lg border border-emerald-300 px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 disabled:opacity-50">
                                 {action?.key === `${admin.id}:activate` ? 'Activating…' : admin.status === 'inactive' ? 'Return to setup' : 'Activate'}
                               </button>
                             )}
                             {admin.status !== 'pending_setup' && (
-                              <button type="button" disabled={actionBusy} onClick={() => confirmAction(`Reset MFA for ${admin.firstName} ${admin.lastName}? They will need to enroll again.`, () => runPostAction(admin, 'mfa-reset', `/admin/admins/${admin.id}/mfa/reset`))} className="rounded-lg border border-blue-300 px-3 py-2 text-xs font-semibold text-blue-800 hover:bg-blue-50 disabled:opacity-50">
+                              <button type="button" disabled={actionBusy} onClick={() => confirmAction(`Reset MFA for ${admin.firstName} ${admin.lastName}? They will need to enroll again.`, () => runPostAction(admin, 'mfa-reset', `/admin/administrators/${admin.id}/mfa/reset`))} className="rounded-lg border border-blue-300 px-3 py-2 text-xs font-semibold text-blue-800 hover:bg-blue-50 disabled:opacity-50">
                                 Reset MFA
                               </button>
                             )}

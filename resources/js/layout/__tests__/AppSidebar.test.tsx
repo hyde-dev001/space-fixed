@@ -63,7 +63,7 @@ beforeEach(() => {
       'admin.audit': '/admin/audit',
       'admin.shop-owner-registration-view': '/admin/shop-owner-registration-view',
       'admin.business-upgrade-requests.index': '/admin/business-upgrade-requests',
-      'admin.admin-management': '/admin/admin',
+      'admin.administrators.index': '/admin/administrators',
       'admin.subscription-management': '/admin/subscription-management',
       'admin.shop-reports': '/admin/shop-reports',
       'admin.suspension-appeals': '/admin/appeals',
@@ -116,7 +116,7 @@ it('shows administrator and plan management only to a capable super admin', () =
 
   openAccountManagement();
 
-  expect(screen.getByRole('link', { name: /admin management/i })).toHaveAttribute('href', '/admin/admin');
+  expect(screen.getByRole('link', { name: /admin management/i })).toHaveAttribute('href', '/admin/administrators');
   expect(screen.getByRole('link', { name: /subscription management/i })).toHaveAttribute('href', '/admin/subscription-management');
 });
 

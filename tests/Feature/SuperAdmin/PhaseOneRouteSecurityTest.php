@@ -166,11 +166,11 @@ final class PhaseOneRouteSecurityTest extends TestCase
             'admin.appeals.reject' => SuperAdmin::CAP_RESOLVE_APPEALS,
             'admin.data-reports' => SuperAdmin::CAP_VIEW_PRIVILEGED_AUDIT,
             'superAdmin.data-report-access' => SuperAdmin::CAP_VIEW_PRIVILEGED_AUDIT,
-            'admin.admins.suspend' => SuperAdmin::CAP_MANAGE_ADMINISTRATORS,
-            'admin.admins.deactivate' => SuperAdmin::CAP_MANAGE_ADMINISTRATORS,
-            'admin.admins.activate' => SuperAdmin::CAP_MANAGE_ADMINISTRATORS,
-            'admin.admins.role.update' => SuperAdmin::CAP_MANAGE_ADMINISTRATORS,
-            'admin.admins.mfa.reset' => SuperAdmin::CAP_MANAGE_PLATFORM_SECURITY,
+            'admin.administrators.suspend' => SuperAdmin::CAP_MANAGE_ADMINISTRATORS,
+            'admin.administrators.deactivate' => SuperAdmin::CAP_MANAGE_ADMINISTRATORS,
+            'admin.administrators.activate' => SuperAdmin::CAP_MANAGE_ADMINISTRATORS,
+            'admin.administrators.role.update' => SuperAdmin::CAP_MANAGE_ADMINISTRATORS,
+            'admin.administrators.mfa.reset' => SuperAdmin::CAP_MANAGE_PLATFORM_SECURITY,
             'admin.security' => SuperAdmin::CAP_MANAGE_OWN_SECURITY,
             'admin.security.password' => SuperAdmin::CAP_MANAGE_OWN_SECURITY,
             'admin.security.recovery.generate' => SuperAdmin::CAP_MANAGE_OWN_SECURITY,
@@ -186,13 +186,13 @@ final class PhaseOneRouteSecurityTest extends TestCase
         }
 
         $recentRoutes = [
-            'admin.create-admin.store',
-            'admin.admins.setup.resend',
-            'admin.admins.suspend',
-            'admin.admins.deactivate',
-            'admin.admins.activate',
-            'admin.admins.role.update',
-            'admin.admins.mfa.reset',
+            'admin.administrators.store',
+            'admin.administrators.setup.resend',
+            'admin.administrators.suspend',
+            'admin.administrators.deactivate',
+            'admin.administrators.activate',
+            'admin.administrators.role.update',
+            'admin.administrators.mfa.reset',
             'admin.security.password',
             'admin.security.recovery.generate',
             'admin.security.recovery.acknowledge',
@@ -209,11 +209,11 @@ final class PhaseOneRouteSecurityTest extends TestCase
 
     public function test_administrator_management_has_no_account_archive_or_delete_capability(): void
     {
-        self::assertNotNull(Route::getRoutes()->getByName('admin.admins.suspend'));
-        self::assertNotNull(Route::getRoutes()->getByName('admin.admins.deactivate'));
-        self::assertNotNull(Route::getRoutes()->getByName('admin.admins.activate'));
-        self::assertNull(Route::getRoutes()->getByName('admin.admins.archive'));
-        self::assertNull(Route::getRoutes()->getByName('admin.admins.restore'));
-        self::assertNull(Route::getRoutes()->getByName('admin.admins.delete'));
+        self::assertNotNull(Route::getRoutes()->getByName('admin.administrators.suspend'));
+        self::assertNotNull(Route::getRoutes()->getByName('admin.administrators.deactivate'));
+        self::assertNotNull(Route::getRoutes()->getByName('admin.administrators.activate'));
+        self::assertNull(Route::getRoutes()->getByName('admin.administrators.archive'));
+        self::assertNull(Route::getRoutes()->getByName('admin.administrators.restore'));
+        self::assertNull(Route::getRoutes()->getByName('admin.administrators.delete'));
     }
 }

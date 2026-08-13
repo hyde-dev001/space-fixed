@@ -20,7 +20,7 @@ class PhaseZeroAuthorizationTest extends TestCase
 
     public function test_unauthenticated_admin_request_redirects_to_login(): void
     {
-        $this->get('/admin/admin')
+        $this->get('/admin/administrators')
             ->assertRedirect(route('admin.login'));
     }
 
@@ -40,8 +40,8 @@ class PhaseZeroAuthorizationTest extends TestCase
     public static function restrictedRequests(): array
     {
         return [
-            'administrator management' => ['GET', '/admin/admin'],
-            'administrator creation' => ['POST', '/admin/create-admin'],
+            'administrator management' => ['GET', '/admin/administrators'],
+            'administrator creation' => ['POST', '/admin/administrators'],
             'plan management' => ['POST', '/admin/premium-plans'],
             'appeal decision' => ['POST', '/admin/appeals/1/approve'],
         ];
@@ -71,7 +71,7 @@ class PhaseZeroAuthorizationTest extends TestCase
         $user = $this->suspendedUserWithCurrentIdentity();
 
         $this->actingAsCompletedPrivileged($admin)
-            ->get('/admin/admin')
+            ->get('/admin/administrators')
             ->assertOk();
 
         $this->actingAsCompletedPrivileged($admin)
@@ -111,10 +111,10 @@ class PhaseZeroAuthorizationTest extends TestCase
     public function test_restricted_routes_declare_the_fixed_capability(): void
     {
         $expected = [
-            'admin.admin-management' => SuperAdmin::CAP_MANAGE_ADMINISTRATORS,
-            'admin.create-admin.store' => SuperAdmin::CAP_MANAGE_ADMINISTRATORS,
-            'admin.admins.suspend' => SuperAdmin::CAP_MANAGE_ADMINISTRATORS,
-            'admin.admins.activate' => SuperAdmin::CAP_MANAGE_ADMINISTRATORS,
+            'admin.administrators.index' => SuperAdmin::CAP_MANAGE_ADMINISTRATORS,
+            'admin.administrators.store' => SuperAdmin::CAP_MANAGE_ADMINISTRATORS,
+            'admin.administrators.suspend' => SuperAdmin::CAP_MANAGE_ADMINISTRATORS,
+            'admin.administrators.activate' => SuperAdmin::CAP_MANAGE_ADMINISTRATORS,
             'admin.shop-owner-registration-view' => SuperAdmin::CAP_REVIEW_REGISTRATIONS,
             'admin.shop-documents.show' => SuperAdmin::CAP_REVIEW_REGISTRATIONS,
             'admin.shop-owner-approve' => SuperAdmin::CAP_REVIEW_REGISTRATIONS,

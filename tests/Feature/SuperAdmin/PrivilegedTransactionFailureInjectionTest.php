@@ -56,7 +56,7 @@ final class PrivilegedTransactionFailureInjectionTest extends TestCase
         $this->actingAsCompletedPrivileged($actor);
         $this->markRecentlyReauthenticated($actor);
 
-        $response = $this->postJson('/admin/create-admin', [
+        $response = $this->postJson('/admin/administrators', [
             'first_name' => 'Rollback',
             'last_name' => 'Invite',
             'email' => 'rollback-invite@example.test',

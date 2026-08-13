@@ -27,7 +27,7 @@ type NavItem = {
 const routeFallbacks: Record<string, string> = {
   'admin.system-monitoring': '/admin/system-monitoring',
   'admin.audit': '/admin/audit',
-  'admin.admin-management': '/admin/admin',
+  'admin.administrators.index': '/admin/administrators',
   'admin.business-upgrade-requests.index': '/admin/business-upgrade-requests',
   'admin.shop-owner-registration-view': '/admin/shop-owner-registration-view',
   'admin.document-renewals.index': '/admin/document-renewals',
@@ -93,7 +93,7 @@ const AppSidebar: React.FC = () => {
         ),
         name: "Account Management",
         subItems: [
-          { name: "Admin Management", route: "admin.admin-management", capability: "manage_administrators", pro: false },
+          { name: "Admin Management", route: "admin.administrators.index", capability: "manage_administrators", pro: false },
           { name: "User Management", route: "superAdmin.super-admin-user-management", capability: "intervene_accounts", pro: false },
           { name: "Shop Management", route: "admin.shop-owner-registration-view", capability: "review_registrations", pro: false },
           { name: "Document Renewals", route: "admin.document-renewals.index", capability: "review_registrations", pro: false },

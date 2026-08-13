@@ -16,6 +16,7 @@ use App\Http\Controllers\ShopOwnerAuthController;
 use App\Http\Controllers\ShopOwnerPasswordSetupController;
 use App\Http\Controllers\ShopRegistrationController;
 use App\Http\Controllers\superAdmin\FlaggedAccountsController;
+use App\Http\Controllers\superAdmin\AdministratorManagementController;
 use App\Http\Controllers\superAdmin\ShopOwnerRegistrationViewController;
 use App\Http\Controllers\superAdmin\ShopDocumentRenewalController as SuperAdminShopDocumentRenewalController;
 use App\Http\Controllers\superAdmin\ShopOwnerUpgradeRequestController as SuperAdminShopOwnerUpgradeRequestController;
@@ -1782,34 +1783,42 @@ Route::middleware([
         ->middleware('privileged.capability:view_privileged_audit')
         ->name('audit');
 
-    // Admin management routes
-    Route::get('/admin', [SuperAdminController::class, 'showAdminManagement'])
+    // Administrator management owns all privileged identity mutations.
+    Route::get('/administrators', [AdministratorManagementController::class, 'index'])
+        ->middleware('privileged.capability:manage_administrators')
+        ->name('administrators.index');
+    Route::get('/administrators/create', [AdministratorManagementController::class, 'create'])
+        ->middleware('privileged.capability:manage_administrators')
+        ->name('administrators.create');
+    Route::post('/administrators', [AdministratorManagementController::class, 'store'])
+        ->middleware(['privileged.capability:manage_administrators', 'privileged.recent'])
+        ->name('administrators.store');
+    Route::post('/administrators/{administrator}/setup/resend', [AdministratorManagementController::class, 'resendSetupInvitation'])
+        ->middleware(['privileged.capability:manage_administrators', 'privileged.recent'])
+        ->name('administrators.setup.resend');
+    Route::post('/administrators/{administrator}/suspend', [AdministratorManagementController::class, 'suspend'])
+        ->middleware(['privileged.capability:manage_administrators', 'privileged.recent'])
+        ->name('administrators.suspend');
+    Route::post('/administrators/{administrator}/deactivate', [AdministratorManagementController::class, 'deactivate'])
+        ->middleware(['privileged.capability:manage_administrators', 'privileged.recent'])
+        ->name('administrators.deactivate');
+    Route::post('/administrators/{administrator}/activate', [AdministratorManagementController::class, 'activate'])
+        ->middleware(['privileged.capability:manage_administrators', 'privileged.recent'])
+        ->name('administrators.activate');
+    Route::patch('/administrators/{administrator}/role', [AdministratorManagementController::class, 'updateRole'])
+        ->middleware(['privileged.capability:manage_administrators', 'privileged.recent'])
+        ->name('administrators.role.update');
+    Route::post('/administrators/{administrator}/mfa/reset', [AdministratorManagementController::class, 'resetMfa'])
+        ->middleware(['privileged.capability:manage_platform_security', 'privileged.recent'])
+        ->name('administrators.mfa.reset');
+
+    // Temporary safe GET aliases for existing bookmarks and persisted links.
+    Route::get('/admin', fn () => redirect()->route('admin.administrators.index', request()->query()))
         ->middleware('privileged.capability:manage_administrators')
         ->name('admin-management');
-    Route::get('/create-admin', [SuperAdminController::class, 'showCreateAdmin'])
+    Route::get('/create-admin', fn () => redirect()->route('admin.administrators.create', request()->query()))
         ->middleware('privileged.capability:manage_administrators')
         ->name('create-admin');
-    Route::post('/create-admin', [SuperAdminController::class, 'storeAdmin'])
-        ->middleware(['privileged.capability:manage_administrators', 'privileged.recent'])
-        ->name('create-admin.store');
-    Route::post('/admins/{id}/setup/resend', [SuperAdminController::class, 'resendInvitation'])
-        ->middleware(['privileged.capability:manage_administrators', 'privileged.recent'])
-        ->name('admins.setup.resend');
-    Route::post('/admins/{id}/suspend', [SuperAdminController::class, 'suspendAdmin'])
-        ->middleware(['privileged.capability:manage_administrators', 'privileged.recent'])
-        ->name('admins.suspend');
-    Route::post('/admins/{id}/deactivate', [SuperAdminController::class, 'deactivateAdmin'])
-        ->middleware(['privileged.capability:manage_administrators', 'privileged.recent'])
-        ->name('admins.deactivate');
-    Route::post('/admins/{id}/activate', [SuperAdminController::class, 'activateAdmin'])
-        ->middleware(['privileged.capability:manage_administrators', 'privileged.recent'])
-        ->name('admins.activate');
-    Route::patch('/admins/{id}/role', [SuperAdminController::class, 'updateAdminRole'])
-        ->middleware(['privileged.capability:manage_administrators', 'privileged.recent'])
-        ->name('admins.role.update');
-    Route::post('/admins/{id}/mfa/reset', [SuperAdminController::class, 'resetAdminMfa'])
-        ->middleware(['privileged.capability:manage_platform_security', 'privileged.recent'])
-        ->name('admins.mfa.reset');
 
     Route::get('/shop-owner-registration-view', [ShopOwnerRegistrationViewController::class, 'index'])
         ->middleware('privileged.capability:review_registrations')

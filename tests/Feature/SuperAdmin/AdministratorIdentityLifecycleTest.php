@@ -37,11 +37,11 @@ final class AdministratorIdentityLifecycleTest extends TestCase
         $this->actingAsCompletedPrivileged($admin);
         $this->markRecentlyReauthenticated($admin);
 
-        $this->postJson("/admin/admins/{$admin->id}/suspend")->assertForbidden();
-        $this->postJson("/admin/admins/{$admin->id}/deactivate")->assertForbidden();
-        $this->patchJson("/admin/admins/{$admin->id}/role", ['role' => SuperAdmin::ROLE_ADMIN])
+        $this->postJson("/admin/administrators/{$admin->id}/suspend")->assertForbidden();
+        $this->postJson("/admin/administrators/{$admin->id}/deactivate")->assertForbidden();
+        $this->patchJson("/admin/administrators/{$admin->id}/role", ['role' => SuperAdmin::ROLE_ADMIN])
             ->assertForbidden();
-        $this->postJson("/admin/admins/{$admin->id}/mfa/reset")->assertForbidden();
+        $this->postJson("/admin/administrators/{$admin->id}/mfa/reset")->assertForbidden();
     }
 
     public function test_regular_admin_is_denied_platform_identity_mutations(): void
@@ -51,11 +51,11 @@ final class AdministratorIdentityLifecycleTest extends TestCase
         $this->actingAsCompletedPrivileged($actor);
         $this->markRecentlyReauthenticated($actor);
 
-        $this->postJson("/admin/admins/{$target->id}/suspend")->assertForbidden();
-        $this->postJson("/admin/admins/{$target->id}/deactivate")->assertForbidden();
-        $this->patchJson("/admin/admins/{$target->id}/role", ['role' => SuperAdmin::ROLE_SUPER_ADMIN])
+        $this->postJson("/admin/administrators/{$target->id}/suspend")->assertForbidden();
+        $this->postJson("/admin/administrators/{$target->id}/deactivate")->assertForbidden();
+        $this->patchJson("/admin/administrators/{$target->id}/role", ['role' => SuperAdmin::ROLE_SUPER_ADMIN])
             ->assertForbidden();
-        $this->postJson("/admin/admins/{$target->id}/mfa/reset")->assertForbidden();
+        $this->postJson("/admin/administrators/{$target->id}/mfa/reset")->assertForbidden();
     }
 
     public function test_suspended_target_can_be_activated_without_a_setup_token(): void
@@ -66,7 +66,7 @@ final class AdministratorIdentityLifecycleTest extends TestCase
         $this->actingAsCompletedPrivileged($actor);
         $this->markRecentlyReauthenticated($actor);
 
-        $this->postJson("/admin/admins/{$target->id}/activate")
+        $this->postJson("/admin/administrators/{$target->id}/activate")
             ->assertOk()
             ->assertJson(['status' => SuperAdmin::STATUS_ACTIVE]);
 
@@ -83,7 +83,7 @@ final class AdministratorIdentityLifecycleTest extends TestCase
         $this->actingAsCompletedPrivileged($actor);
         $this->markRecentlyReauthenticated($actor);
 
-        $this->postJson("/admin/admins/{$target->id}/activate")
+        $this->postJson("/admin/administrators/{$target->id}/activate")
             ->assertOk()
             ->assertJson(['status' => SuperAdmin::STATUS_PENDING_SETUP]);
 
@@ -105,11 +105,11 @@ final class AdministratorIdentityLifecycleTest extends TestCase
         $this->actingAsCompletedPrivileged($actor);
         $this->markRecentlyReauthenticated($actor);
 
-        $this->patchJson("/admin/admins/{$target->id}/role", ['role' => 'platform_owner'])
+        $this->patchJson("/admin/administrators/{$target->id}/role", ['role' => 'platform_owner'])
             ->assertUnprocessable();
 
         $oldVersion = (int) $target->security_version;
-        $this->patchJson("/admin/admins/{$target->id}/role", ['role' => SuperAdmin::ROLE_SUPER_ADMIN])
+        $this->patchJson("/admin/administrators/{$target->id}/role", ['role' => SuperAdmin::ROLE_SUPER_ADMIN])
             ->assertOk()
             ->assertJson(['role' => SuperAdmin::ROLE_SUPER_ADMIN]);
 
@@ -127,7 +127,7 @@ final class AdministratorIdentityLifecycleTest extends TestCase
         $this->actingAsCompletedPrivileged($actor);
         $this->markRecentlyReauthenticated($actor);
 
-        $this->postJson("/admin/admins/{$target->id}/mfa/reset")
+        $this->postJson("/admin/administrators/{$target->id}/mfa/reset")
             ->assertOk()
             ->assertJson(['status' => SuperAdmin::STATUS_ACTIVE]);
 
@@ -217,7 +217,7 @@ final class AdministratorIdentityLifecycleTest extends TestCase
             ->andThrow(new \RuntimeException('audit unavailable'));
         $this->instance(\App\Services\PrivilegedAudit::class, $audit);
 
-        $this->postJson("/admin/admins/{$target->id}/suspend")
+        $this->postJson("/admin/administrators/{$target->id}/suspend")
             ->assertStatus(500)
             ->assertJsonPath('code', 'privileged_identity_error')
             ->assertJsonPath('success', false);

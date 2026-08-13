@@ -215,7 +215,7 @@ describe('privileged authentication flows', () => {
     fireEvent.submit(screen.getByRole('button', { name: /send invitation/i }).closest('form')!);
 
     expect(routerPostMock).toHaveBeenCalledWith(
-      '/admin/create-admin',
+      '/admin/administrators',
       {
         first_name: 'Ada',
         last_name: 'Lovelace',
