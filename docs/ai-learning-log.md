@@ -9,3 +9,7 @@
 ## 2026-08-13 - Database ID hydration
 
 - Treat foreign-key IDs as integers at Eloquent model boundaries. MySQL/MariaDB can hydrate integer columns as strings, which breaks strict authorization comparisons unless the model casts those IDs; cover the boundary with a string-hydration regression test.
+
+## 2026-08-13 - Pre-authentication continuation
+
+- When a pre-authentication flow cannot reliably carry authorization through a rotated session, use a short-lived authenticated proof for the next step. Keep the database token authoritative and one-time, and never persist or log the proof.

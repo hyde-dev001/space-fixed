@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { axiosPostMock, routerPostMock, usePageMock } = vi.hoisted(() => ({
@@ -49,6 +49,8 @@ beforeEach(() => {
   routerPostMock.mockReset();
   usePageMock.mockReset();
   usePageMock.mockReturnValue({ props: { errors: {} } });
+  window.localStorage.clear();
+  window.sessionStorage.clear();
   window.history.replaceState(null, '', '/admin/login');
 });
 
@@ -83,7 +85,9 @@ describe('privileged authentication flows', () => {
 
   it('exchanges setup bearer fragments after cleaning the URL', async () => {
     window.history.replaceState(null, '', '/admin/setup?source=email#token=setup-secret');
-    axiosPostMock.mockResolvedValue({ data: { authorized: true } });
+    axiosPostMock.mockResolvedValue({
+      data: { authorized: true, completion_proof: 'opaque-completion-proof' },
+    });
 
     render(<PrivilegedSetup />);
 
@@ -100,6 +104,46 @@ describe('privileged authentication flows', () => {
     expect(window.localStorage?.length ?? 0).toBe(0);
     expect(window.sessionStorage?.length ?? 0).toBe(0);
     expect(screen.queryByText('setup-secret')).not.toBeInTheDocument();
+  });
+
+  it('keeps the setup proof in memory, submits it, and displays token errors', async () => {
+    window.history.replaceState(null, '', '/admin/setup#token=setup-secret');
+    axiosPostMock.mockResolvedValue({
+      data: { authorized: true, completion_proof: 'opaque-completion-proof' },
+    });
+
+    render(<PrivilegedSetup />);
+
+    await screen.findByRole('button', { name: /continue to mfa setup/i });
+    expect(document.body).not.toHaveTextContent('opaque-completion-proof');
+    expect(window.location.href).not.toContain('opaque-completion-proof');
+    expect(window.localStorage.length).toBe(0);
+    expect(window.sessionStorage.length).toBe(0);
+
+    fireEvent.change(screen.getByLabelText(/new password/i), {
+      target: { value: 'LongEnough-Setup1!' },
+    });
+    fireEvent.change(screen.getByLabelText(/confirm password/i), {
+      target: { value: 'LongEnough-Setup1!' },
+    });
+    fireEvent.submit(screen.getByRole('button', { name: /continue to mfa setup/i }).closest('form')!);
+
+    expect(routerPostMock).toHaveBeenCalledWith(
+      '/admin/setup/complete',
+      {
+        completion_proof: 'opaque-completion-proof',
+        password: 'LongEnough-Setup1!',
+        password_confirmation: 'LongEnough-Setup1!',
+      },
+      expect.any(Object),
+    );
+
+    const options = routerPostMock.mock.calls[0][2] as {
+      onError?: (errors: Record<string, string>) => void;
+    };
+    act(() => options.onError?.({ token: 'The setup link is invalid or expired.' }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent('The setup link is invalid or expired.');
   });
 
   it('uses the same clean-fragment exchange for password reset links', async () => {

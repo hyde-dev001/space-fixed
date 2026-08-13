@@ -18,6 +18,7 @@ final class CompleteSetupPasswordRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'completion_proof' => ['required', 'string', 'max:2048'],
             'password' => [
                 'required',
                 'string',
@@ -31,6 +32,9 @@ final class CompleteSetupPasswordRequest extends FormRequest
     public function messages(): array
     {
         return [
+            'completion_proof.required' => 'The setup link is invalid or expired.',
+            'completion_proof.string' => 'The setup link is invalid or expired.',
+            'completion_proof.max' => 'The setup link is invalid or expired.',
             'password.required' => 'The setup password is invalid.',
             'password.confirmed' => 'The setup password is invalid.',
         ];

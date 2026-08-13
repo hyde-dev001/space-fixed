@@ -18,6 +18,7 @@ export default function PrivilegedSetup() {
   const [confirmation, setConfirmation] = useState('');
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string>();
+  const completionProof = exchange.completionProof;
 
   if (exchange.exchanging) {
     return (
@@ -27,10 +28,10 @@ export default function PrivilegedSetup() {
     );
   }
 
-  if (!exchange.authorized) {
+  if (!exchange.authorized || !completionProof) {
     return (
       <PrivilegedAuthShell title="Setup link unavailable" description="This link may have expired or already been used." footer={<BackToLogin />}>
-        <ErrorSummary message={exchange.error} />
+        <ErrorSummary message={exchange.error ?? 'This security link is missing or invalid.'} />
       </PrivilegedAuthShell>
     );
   }
@@ -52,10 +53,11 @@ export default function PrivilegedSetup() {
     setError(undefined);
     setProcessing(true);
     router.post('/admin/setup/complete', {
+      completion_proof: completionProof,
       password,
       password_confirmation: confirmation,
     }, {
-      onError: (errors) => setError(firstError(errors as FieldErrors, ['password', 'password_confirmation', 'error', 'message']) ?? 'Setup could not be completed.'),
+      onError: (errors) => setError(firstError(errors as FieldErrors, ['token', 'completion_proof', 'password', 'password_confirmation', 'error', 'message']) ?? 'Setup could not be completed.'),
       onFinish: () => setProcessing(false),
     });
   };
