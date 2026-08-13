@@ -10,7 +10,7 @@ Keep the approved phone attendance layout through tablet widths, show the SoleSp
 ## Design
 
 - Treat widths below Tailwind's `xl` breakpoint as the compact ERP shell: no persistent sidebar, compact header visible, and no desktop content offset.
-- Render the compact header brand as an inline blue SoleSpace mark and text. This avoids stale TailAdmin artwork while leaving the desktop sidebar branding unchanged.
+- Render the compact header brand as text-only `SoleSpace`; omit the blue mark on phone and tablet widths while leaving the desktop sidebar branding unchanged.
 - Keep the attendance dashboard stacked below `xl`; retain its two-column summary card grid so tablet values have room to wrap.
 - Keep Attendance History in the existing card presentation below `xl`; show the dense table only at `xl` and above.
 - Preserve all attendance state, API calls, controls, modals, filtering, pagination, colors, and accessibility behavior.
@@ -24,7 +24,7 @@ Keep the approved phone attendance layout through tablet widths, show the SoleSp
 
 ## Acceptance criteria
 
-1. The compact ERP header shows `SoleSpace`, not `TailAdmin`, on phone and tablet widths.
+1. The compact ERP header shows text-only `SoleSpace`, not `TailAdmin` or a blue logo mark, on phone and tablet widths.
 2. At 390px, 768px, and 1024px, the attendance clock, summary, and history use the readable compact layout without a persistent sidebar or compressed desktop table.
 3. At 1280px and wider, the existing desktop sidebar, five-column attendance dashboard, stretched summary, and history table remain available.
 4. Existing attendance behavior and accessibility contracts remain unchanged.

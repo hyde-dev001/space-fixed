@@ -84,7 +84,9 @@ it('renders owner identity, mode, server URLs, and portal return action', () => 
   render(<AppHeaderERP />);
 
   expect(screen.getByRole('banner')).toHaveClass('xl:border-b');
-  expect(screen.getByRole('link', { name: 'SoleSpace' })).toHaveClass('xl:hidden');
+  const compactBrand = screen.getByRole('link', { name: 'SoleSpace' });
+  expect(compactBrand).toHaveClass('xl:hidden');
+  expect(compactBrand.querySelector('svg')).not.toBeInTheDocument();
   expect(screen.queryByText('TailAdmin')).not.toBeInTheDocument();
   expect(screen.getByText('North Star Shoes')).toBeInTheDocument();
   expect(screen.getByText('Owner mode')).toBeInTheDocument();

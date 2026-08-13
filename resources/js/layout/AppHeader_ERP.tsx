@@ -105,11 +105,6 @@ const AppHeader_ERP: React.FC = () => {
           </button>
 
           <Link href={route("landing")} className="inline-flex items-center gap-2 xl:hidden" aria-label="SoleSpace">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600" aria-hidden="true">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                <path d="M4.5 4.5V15.5M10 7.5V15.5M15.5 5.5V15.5" stroke="white" strokeWidth="2.25" strokeLinecap="round" />
-              </svg>
-            </span>
             <span className="text-xl font-bold tracking-tight text-gray-900 dark:text-white">SoleSpace</span>
           </Link>
 

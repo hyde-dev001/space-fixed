@@ -4,7 +4,7 @@
 
 **Goal:** Keep the phone attendance experience through tablet widths and guarantee SoleSpace branding in the compact ERP header.
 
-**Architecture:** Move the shared ERP shell and attendance desktop transitions from `lg`/`md` to `xl`, using existing Tailwind classes. Render the compact header brand directly in React so desktop sidebar branding and attendance behavior remain untouched.
+**Architecture:** Move the shared ERP shell and attendance desktop transitions from `lg`/`md` to `xl`, using existing Tailwind classes. Render only the compact `SoleSpace` text in React so desktop sidebar branding and attendance behavior remain untouched.
 
 **Tech Stack:** Laravel 12, Inertia 2, React 18, TypeScript, Tailwind CSS 4, Vitest, Vite 7.
 
@@ -13,6 +13,7 @@
 - No backend, route, attendance-rule, or database changes.
 - No new dependency or component abstraction.
 - Phone and tablet use compact layout below `xl`; desktop starts at `xl`.
+- Compact header branding is text-only; the blue logo mark is desktop/sidebar-only.
 - Include a fresh `public/build` and follow `docs/git-workflow.md` before push.
 
 ---
