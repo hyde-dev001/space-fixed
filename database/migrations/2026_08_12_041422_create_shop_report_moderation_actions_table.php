@@ -11,6 +11,28 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // MySQL executes the table creation before applying the indexes. If a
+        // deployment fails while adding an index, the next attempt must finish
+        // that partial table instead of trying to create it again.
+        if (Schema::hasTable('shop_report_moderation_actions')) {
+            $warningStrikeIndexExists = collect(Schema::getIndexes('shop_report_moderation_actions'))
+                ->contains(static function (array $index): bool {
+                    return ($index['name'] ?? null) === 'shop_report_actions_owner_warning_unique'
+                        || ($index['columns'] ?? []) === ['shop_owner_id', 'warning_strike_number'];
+                });
+
+            if (! $warningStrikeIndexExists) {
+                Schema::table('shop_report_moderation_actions', function (Blueprint $table): void {
+                    $table->unique(
+                        ['shop_owner_id', 'warning_strike_number'],
+                        'shop_report_actions_owner_warning_unique',
+                    );
+                });
+            }
+
+            return;
+        }
+
         Schema::create('shop_report_moderation_actions', function (Blueprint $table) {
             $table->id();
             $table->foreignId('shop_owner_id')->constrained('shop_owners')->restrictOnDelete();
@@ -26,7 +48,10 @@ return new class extends Migration
             $table->timestamps();
 
             $table->index(['shop_owner_id', 'created_at']);
-            $table->unique(['shop_owner_id', 'warning_strike_number']);
+            $table->unique(
+                ['shop_owner_id', 'warning_strike_number'],
+                'shop_report_actions_owner_warning_unique',
+            );
         });
     }
 
