@@ -1317,7 +1317,7 @@ export default function TimeIn() {
                     </div>
                 </div>
 
-                <div data-testid="attendance-dashboard" className="mb-8 grid gap-4 md:grid-cols-2 md:items-start lg:mb-12 lg:grid-cols-5 lg:gap-6">
+                <div data-testid="attendance-dashboard" className="mb-8 grid gap-4 md:grid-cols-2 md:items-start lg:mb-12 lg:grid-cols-5 lg:items-stretch lg:gap-6">
                 {/* Main Clock Section */}
                 <div className="min-w-0 lg:col-span-3">
                     <div className="overflow-hidden rounded-3xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900/50">
@@ -1465,7 +1465,7 @@ export default function TimeIn() {
                     </div>
                 </div>
 
-                <div data-testid="attendance-summary" className="grid min-w-0 grid-cols-2 gap-px overflow-hidden rounded-3xl border border-gray-200 bg-gray-200 lg:col-span-2 dark:border-gray-800 dark:bg-gray-800">
+                <div data-testid="attendance-summary" className="grid min-w-0 grid-cols-2 gap-px overflow-hidden rounded-3xl border border-gray-200 bg-gray-200 lg:col-span-2 lg:h-full dark:border-gray-800 dark:bg-gray-800">
                     <div className="min-w-0 bg-white p-4 dark:bg-gray-900/50 sm:p-5">
                         <div className="mb-3 flex items-center gap-2">
                             <div className="rounded-full bg-gray-100 p-2 dark:bg-gray-800">

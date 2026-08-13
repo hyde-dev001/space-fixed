@@ -46,8 +46,13 @@ it('keeps the attendance page mobile-safe and the live clock accessible', async 
         'text-xl',
         'sm:text-2xl',
     );
-    expect(screen.getByTestId('attendance-dashboard')).toHaveClass('md:grid-cols-2', 'lg:grid-cols-5');
-    expect(screen.getByTestId('attendance-summary')).toHaveClass('grid-cols-2');
+    expect(screen.getByTestId('attendance-dashboard')).toHaveClass(
+        'md:grid-cols-2',
+        'md:items-start',
+        'lg:grid-cols-5',
+        'lg:items-stretch',
+    );
+    expect(screen.getByTestId('attendance-summary')).toHaveClass('grid-cols-2', 'lg:h-full');
     expect(screen.getByTestId('attendance-mobile-history')).toHaveClass('md:hidden');
     expect(screen.getByTestId('attendance-history-table')).toHaveClass('hidden', 'md:block');
     expect(screen.getByRole('button', { name: /clock in/i })).toHaveClass(
