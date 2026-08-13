@@ -2,36 +2,37 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\User;
-use App\Models\UserAddress;
-use App\Models\ShopOwner;
-use App\Models\Employee;
 use App\Enums\EmployeeStatus;
 use App\Enums\ShopOwnerStatus;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Validation\ValidationException;
-use Illuminate\Support\Facades\Validator;
-use Illuminate\Auth\Events\Registered;
+use App\Models\Employee;
+use App\Models\ShopOwner;
+use App\Models\User;
+use App\Models\UserAddress;
 use App\Rules\NotDisposableEmail;
 use App\Services\NominatimService;
-use Inertia\Inertia;
-use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Auth\Events\Registered;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
+use Inertia\Inertia;
 
 /**
  * UserController
- * 
+ *
  * Handles user registration, authentication, and profile management
  * for regular customers on the platform
  */
 class UserController extends Controller
 {
     private const MAX_SHOP_OWNER_RESUBMISSION_ATTEMPTS = 3;
+
     private const SHOP_OWNER_LOGIN_2FA_TTL_MINUTES = 10;
+
     private const SHOP_OWNER_LOGIN_2FA_SESSION_KEY = 'shop_owner_2fa_entry';
 
     /**
@@ -40,7 +41,7 @@ class UserController extends Controller
     public function checkEmailAvailability(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'email' => ['required', 'string', 'email', 'max:255', new NotDisposableEmail()],
+            'email' => ['required', 'string', 'email', 'max:255', new NotDisposableEmail],
         ], [
             'email.required' => 'Please enter your email address.',
             'email.email' => 'Please enter a valid email address (example: name@email.com).',
@@ -87,17 +88,17 @@ class UserController extends Controller
             }
         }
 
-        $available = !($existsInEmployees || $existsInUsers || $existsInShopOwners);
+        $available = ! ($existsInEmployees || $existsInUsers || $existsInShopOwners);
 
-        if (!$available) {
+        if (! $available) {
             if ($isRejectedShopOwnerEmail && $rejectedRemainingAttempts <= 0) {
-                $message = 'Resubmission limit reached. You can only resubmit up to ' . self::MAX_SHOP_OWNER_RESUBMISSION_ATTEMPTS . ' times.';
+                $message = 'Resubmission limit reached. You can only resubmit up to '.self::MAX_SHOP_OWNER_RESUBMISSION_ATTEMPTS.' times.';
             } else {
                 $message = 'This email is already registered';
             }
         } elseif ($isRejectedShopOwnerEmail) {
             $nextAttempt = $rejectedUsedAttempts + 1;
-            $message = 'This email belongs to a previously rejected shop-owner application. Reapply attempt ' . $nextAttempt . ' of ' . self::MAX_SHOP_OWNER_RESUBMISSION_ATTEMPTS . ' is available.';
+            $message = 'This email belongs to a previously rejected shop-owner application. Reapply attempt '.$nextAttempt.' of '.self::MAX_SHOP_OWNER_RESUBMISSION_ATTEMPTS.' is available.';
         } else {
             $message = 'Email is available';
         }
@@ -145,7 +146,7 @@ class UserController extends Controller
         $existsInUsers = User::where('phone', $normalizedPhone)->exists();
         $existsInShopOwners = ShopOwner::where('phone', $normalizedPhone)->exists();
 
-        $available = !($existsInEmployees || $existsInUsers || $existsInShopOwners);
+        $available = ! ($existsInEmployees || $existsInUsers || $existsInShopOwners);
 
         return response()->json([
             'available' => $available,
@@ -158,11 +159,10 @@ class UserController extends Controller
 
     /**
      * Register a new user account
-     * 
+     *
      * Users are automatically activated upon registration
      * No admin approval required for user accounts
-     * 
-     * @param Request $request
+     *
      * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\RedirectResponse
      */
     public function register(Request $request, NominatimService $nominatim)
@@ -172,7 +172,7 @@ class UserController extends Controller
             $validated = $request->validate([
                 'first_name' => 'required|string|max:255|min:2',
                 'last_name' => 'required|string|max:255|min:2',
-                'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email', new NotDisposableEmail()],
+                'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email', new NotDisposableEmail],
                 'phone' => ['required', 'regex:/^\d{11}$/'],
                 'age' => 'required|integer|min:18|max:120',
                 'password' => [
@@ -243,7 +243,7 @@ class UserController extends Controller
 
             if (
                 strtolower((string) ($resolvedAddress['country_code'] ?? '')) !== 'ph'
-                || !$resolvedRegion || !$resolvedProvince || !$resolvedCity || !$resolvedBarangay
+                || ! $resolvedRegion || ! $resolvedProvince || ! $resolvedCity || ! $resolvedBarangay
             ) {
                 throw ValidationException::withMessages([
                     'address_latitude' => 'Please select a verified location within the Philippines.',
@@ -260,7 +260,7 @@ class UserController extends Controller
             $validIdPath = null;
             if ($request->hasFile('valid_id')) {
                 $file = $request->file('valid_id');
-                $fileName = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
+                $fileName = time().'_'.uniqid().'.'.$file->getClientOriginalExtension();
                 $validIdPath = $file->storeAs('valid_ids', $fileName, 'local');
             }
 
@@ -268,7 +268,7 @@ class UserController extends Controller
                 $user = User::create([
                     'first_name' => $validated['first_name'],
                     'last_name' => $validated['last_name'],
-                    'name' => $validated['first_name'] . ' ' . $validated['last_name'],
+                    'name' => $validated['first_name'].' '.$validated['last_name'],
                     'email' => $validated['email'],
                     'phone' => $validated['phone'],
                     'age' => $validated['age'],
@@ -304,7 +304,8 @@ class UserController extends Controller
             event(new Registered($user));
 
             // Auto-login the user so they can access the verification page
-            Auth::guard('web')->login($user);
+            Auth::guard('user')->login($user);
+            $request->session()->regenerate();
 
             // Check if it's an Inertia request
             if ($request->header('X-Inertia')) {
@@ -336,7 +337,7 @@ class UserController extends Controller
         } catch (ValidationException $e) {
             Log::warning('User registration validation failed', [
                 'errors' => $e->errors(),
-                'input' => $request->except(['password', 'password_confirmation', 'valid_id'])
+                'input' => $request->except(['password', 'password_confirmation', 'valid_id']),
             ]);
 
             // For Inertia requests, let Laravel handle validation normally
@@ -357,7 +358,7 @@ class UserController extends Controller
             Log::error('Error registering user', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
-                'input' => $request->except(['password', 'password_confirmation', 'valid_id'])
+                'input' => $request->except(['password', 'password_confirmation', 'valid_id']),
             ]);
 
             // For Inertia requests
@@ -379,8 +380,7 @@ class UserController extends Controller
 
     /**
      * Login a user
-     * 
-     * @param Request $request
+     *
      * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\RedirectResponse
      */
     public function login(Request $request)
@@ -395,10 +395,11 @@ class UserController extends Controller
 
             if ($user && Hash::check($credentials['password'], $user->password)) {
                 // Check if email is verified (only for non-employee users)
-                if (!$user->shop_owner_id && !$user->hasVerifiedEmail()) {
+                if (! $user->shop_owner_id && ! $user->hasVerifiedEmail()) {
                     // Auto-login user so they can access verification page
-                    Auth::guard('web')->login($user);
-                    
+                    Auth::guard('user')->login($user);
+                    $request->session()->regenerate();
+
                     throw ValidationException::withMessages([
                         'email' => ['Please verify your email address before logging in. Check your inbox for the verification link.'],
                     ])->redirectTo(route('verification.notice'));
@@ -427,14 +428,24 @@ class UserController extends Controller
                         }
                     }
 
-                    $employee = Employee::where('email', $user->email)->first();
-                    if ($employee) {
-                        $employeeStatus = $employee->status;
+                    $employees = Employee::where('shop_owner_id', $user->shop_owner_id)
+                        ->whereRaw('LOWER(email) = ?', [strtolower((string) $user->email)])
+                        ->orderBy('id')
+                        ->limit(2)
+                        ->get();
+                    if ($employees->count() > 1) {
+                        throw ValidationException::withMessages([
+                            'email' => ['Your account is unavailable. Please contact support.'],
+                        ]);
+                    }
+
+                    if ($employees->count() === 1) {
+                        $employeeStatus = $employees->first()->status;
                         $isEmployeeActive = $employeeStatus instanceof EmployeeStatus
                             ? $employeeStatus === EmployeeStatus::ACTIVE
                             : (string) $employeeStatus === EmployeeStatus::ACTIVE->value;
 
-                        if (!$isEmployeeActive) {
+                        if (! $isEmployeeActive) {
                             throw ValidationException::withMessages([
                                 'email' => ['Your account has been suspended. Please contact support.'],
                             ]);
@@ -444,7 +455,7 @@ class UserController extends Controller
 
                 Auth::guard('user')->login($user, $request->filled('remember'));
                 $request->session()->regenerate();
-                
+
                 // CRITICAL: Explicitly save the session to ensure it persists
                 $request->session()->save();
 
@@ -459,16 +470,16 @@ class UserController extends Controller
                 // - If user has shop_owner_id -> they are an employee/staff member -> redirect to erp/time-in
                 // - Otherwise -> they are a regular customer -> redirect to landing
                 // We use shop_owner_id as the source of truth because role column is unreliable (contaminated by migrations)
-                
-                $isEmployee = !is_null($user->shop_owner_id);
-                
+
+                $isEmployee = ! is_null($user->shop_owner_id);
+
                 // Default redirect for customers (no shop_owner_id)
                 $redirectUrl = route('landing');
-                
+
                 // If user is an employee, redirect to time-in
                 if ($isEmployee) {
                     $redirectUrl = route('erp.time-in');
-                    
+
                     // Check for password change requirement (staff only)
                     if ($user->force_password_change) {
                         $redirectUrl = route('erp.profile');
@@ -480,7 +491,7 @@ class UserController extends Controller
                     'shop_owner_id' => $user->shop_owner_id,
                     'role' => $user->role,
                     'is_employee' => $isEmployee,
-                    'is_customer' => !$isEmployee,
+                    'is_customer' => ! $isEmployee,
                     'redirect_url' => $redirectUrl,
                 ]);
 
@@ -512,7 +523,7 @@ class UserController extends Controller
             // If not a regular user, attempt to authenticate as ShopOwner
             $shopOwner = ShopOwner::where('email', $credentials['email'])->first();
 
-            if (!$shopOwner) {
+            if (! $shopOwner) {
                 throw ValidationException::withMessages([
                     'email' => ['Invalid email or password.'],
                 ]);
@@ -525,9 +536,9 @@ class UserController extends Controller
             }
 
             if ($shopOwner->status === 'rejected') {
-                $reason = $shopOwner->rejection_reason ? ': ' . $shopOwner->rejection_reason : '';
+                $reason = $shopOwner->rejection_reason ? ': '.$shopOwner->rejection_reason : '';
                 throw ValidationException::withMessages([
-                    'email' => ['Your application was rejected' . $reason . '. Please contact support.'],
+                    'email' => ['Your application was rejected'.$reason.'. Please contact support.'],
                 ]);
             }
 
@@ -537,7 +548,7 @@ class UserController extends Controller
                 ]);
             }
 
-            if (!Hash::check($credentials['password'], $shopOwner->password)) {
+            if (! Hash::check($credentials['password'], $shopOwner->password)) {
                 throw ValidationException::withMessages([
                     'email' => ['Invalid email or password.'],
                 ]);
@@ -635,8 +646,8 @@ class UserController extends Controller
 
             Mail::raw(
                 "Your SoleSpace login verification code is {$otp}. This code expires in "
-                . self::SHOP_OWNER_LOGIN_2FA_TTL_MINUTES
-                . ' minutes.',
+                .self::SHOP_OWNER_LOGIN_2FA_TTL_MINUTES
+                .' minutes.',
                 function ($message) use ($shopOwner) {
                     $message->to($shopOwner->email)
                         ->subject('SoleSpace Login Verification Code');
@@ -659,8 +670,7 @@ class UserController extends Controller
 
     /**
      * Logout a user
-     * 
-     * @param Request $request
+     *
      * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\RedirectResponse
      */
     public function logout(Request $request)
@@ -685,15 +695,14 @@ class UserController extends Controller
 
     /**
      * Get current authenticated user
-     * 
-     * @param Request $request
+     *
      * @return \Illuminate\Http\JsonResponse
      */
     public function me(Request $request)
     {
         $user = Auth::user();
 
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'success' => false,
                 'message' => 'Not authenticated',

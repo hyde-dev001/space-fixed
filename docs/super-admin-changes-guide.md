@@ -401,6 +401,29 @@ Before declaring the module production-ready, verify and record:
 
 Unknown evidence remains unknown and is not a pass.
 
+## Cross-role session reliability deployment
+
+Deploy the backend commit and its matching committed `public/build` assets together. Apply database and cache changes in this order:
+
+```powershell
+php artisan migrate --force
+php artisan optimize:clear
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
+```
+
+Restart long-lived PHP workers, PHP-FPM, or OPcache through the mechanism supported by the production host. This prevents old middleware/controller code from running against new routes or frontend assets.
+
+After deployment, use a private browser window and verify:
+
+1. A customer can register, open saved addresses, choose a current/map location, and continue checkout without an incidental badge request redirecting to login.
+2. An active staff account can open **Add New Product**, call its entitlement endpoint, and navigate to another authorized ERP sidebar page without losing its session.
+3. An approved shop owner can navigate the owner ERP sidebar and complete one owner-scoped read action without losing its session.
+4. A pending shop-owner registration can be approved by an authorized MFA-complete administrator and changes from `pending` to `approved`.
+
+Do not bypass lifecycle checks, manually change registration status, or partially apply approval data. If approval still fails, capture the new `X-Correlation-ID` and inspect the matching server exception class after confirming migrations, caches, and PHP workers are synchronized.
+
 ## Troubleshooting quick reference
 
 | Symptom | First checks |
@@ -410,6 +433,8 @@ Unknown evidence remains unknown and is not a pass.
 | Existing cookie stops working | Check administrator status, security version, MFA stage, and privileged-session registry; next-request denial is expected after a security change. |
 | Setup/reset email is missing | Inspect queue worker and failed jobs; resend through the supported flow. Never expose the bearer token. |
 | Initial Super Admin setup says the link is invalid after password submission | Deploy the current setup controller, run `php artisan optimize:clear` and `php artisan config:cache`, issue a fresh setup link, and use it once in a clean browser session. If it persists, inspect `storage/logs/laravel*.log` for `Privileged setup authorization missing from session` or `Privileged setup password completion failed`; share only the correlation ID and exception class. |
+| Customer, staff, or owner appears logged out during navigation | Confirm the deployment includes guard-isolated lifecycle middleware and the matching frontend build. Rebuild caches and restart PHP workers, then retry in a private window. An invalid guard may be removed, but it must not invalidate another valid guard in the same session. |
+| Registration approval returns `500` and remains pending | Confirm `php artisan migrate --force` completed, rebuild Laravel caches, restart PHP workers, and retry once. Use the new `X-Correlation-ID` to locate the safe server exception; do not edit registration or document rows manually. |
 | Private document returns 404/403 | Verify actor capability, owner/document scope, disk/path existence, and mandatory audit availability. Do not expose a direct storage URL. |
 | Renewal decision returns conflict | Reload the queue and inspect current candidate/predecessor state; another decision or promotion may already have won. |
 | Refund is blocked | Inspect payment eligibility, provider identifiers, unresolved prior attempts, currency/amount, and pending subscription lifecycle children. Do not edit payment history. |

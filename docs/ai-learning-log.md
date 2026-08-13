@@ -13,3 +13,7 @@
 ## 2026-08-13 - Pre-authentication continuation
 
 - When a pre-authentication flow cannot reliably carry authorization through a rotated session, use a short-lived authenticated proof for the next step. Keep the database token authoritative and one-time, and never persist or log the proof.
+
+## 2026-08-14 - Shared session guard isolation
+
+- Multiple Laravel session guards can coexist in one browser session. Involuntary lifecycle enforcement must remove only the invalid guard, preserve unrelated authenticated guards and session data, rotate the session identifier, and leave route-specific middleware responsible for selecting the required actor.
