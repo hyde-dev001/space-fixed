@@ -109,3 +109,44 @@ For every row below, the active first-party caller count is `0` (excluding the a
 On 2026-08-13, a read-only inventory of the local SQLite snapshot found zero matching relative or absolute legacy `/superAdmin/` or `/admin/` notification action URLs and zero `/admin/shops/*/details` action URLs. This is local evidence only; production rows, external bookmarks, and other deployed databases were not available from this worktree. Historical notification URLs were not rewritten, so the aliases remain until Phase 8 has removal evidence.
 
 Phase 8 may retire an alias only after source references are absent, persisted notification URLs are zero across relative, absolute, and query-string variants, redirect/bookmark telemetry has been reviewed, and a route test proves the old path is no longer required. The inventory must be repeated against the deployed database before removal; a non-zero historical-link count is a reason to retain the safe redirect, never to rewrite historical audit or notification evidence.
+
+## Phase 8 scale execution evidence
+
+### Task 1 baseline characterization (2026-08-13)
+
+The baseline was captured in the isolated Phase 7 worktree before any Phase 8 application change. It is characterization evidence, not approval of the current unbounded behavior.
+
+Environment and operational inventory:
+
+- Laravel `12.66.0`, PHP `8.2.12`, Composer `2.9.3`.
+- Local connection: SQLite `3.39.2`; cache `database`; queue `database`; session `database`.
+- Application timezone resolves to `UTC`; shop-compliance timezone resolves to `Asia/Manila`.
+- `route:list --path=admin --except-vendor` reported 90 routes, including the canonical privileged surface and API notification routes. `route:list --path=superAdmin --except-vendor` reported exactly six GET|HEAD compatibility aliases.
+- `schedule:list` reported nine scheduled commands, including one `shop-documents:send-expiry-reminders` entry and no HR expiry entry.
+- No worktree `.env` or `.env.testing` file was read. Test commands used only a process-local disposable `APP_KEY`; no repository environment file was created or changed.
+
+Fixture response and query-count baseline (one current privileged viewer plus the small deterministic fixture described by `PhaseEightScaleBoundaryTest`):
+
+| Surface | Current rows/shape | SQL queries |
+| --- | ---: | ---: |
+| Administrators | 2 full collection rows (current viewer excluded) | 2 |
+| Registrations | 2 full collection rows | 3 |
+| Registered shops | 1 full collection row | 3 |
+| Shop reports | 1 shop group containing 1 full report row | 7 |
+| Flagged accounts | 1 full collection row | 4 |
+| Suspension appeals | 1 full collection row | 2 |
+| Subscriptions | 1 full collection row, including payment/refund collections | 14 |
+| Users | 15 rows, paginator total 16, existing default cap | 4 |
+| Renewal queue | 0 rows, existing default `per_page` 20 | 2 |
+| Privileged audit | at most 25 rows, existing default `per_page` 25 | 2 |
+| Monitoring | at most 5 recent activity rows | 14 |
+
+The query counts are fixture measurements, not CI thresholds. They provide the before reference for relation-query growth and full-table hydration. The baseline suites passed with 174 assertions and four existing test warnings.
+
+SQLite query-plan observations for the current list shapes:
+
+- `shop_owners.status` and `users.shop_owner_id` were used for their respective filters, while their `created_at` ordering used a temporary sort.
+- `shop_reports.created_at` was used for the current report ordering.
+- `activity_log.log_name` was used for the privileged audit base filter, while the compound deterministic ordering used a temporary sort.
+- Administrator, registration, flagged-account, appeal, subscription, renewal, and business-upgrade list shapes scanned their tables and used temporary sort structures where no matching order index existed.
+- These SQLite plans do not justify a production index. MariaDB/MySQL engine/version and production `EXPLAIN` evidence remain unknown until the approved production-compatible database harness is available.
