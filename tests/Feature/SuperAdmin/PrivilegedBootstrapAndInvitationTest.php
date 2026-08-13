@@ -225,6 +225,7 @@ final class PrivilegedBootstrapAndInvitationTest extends TestCase
 
         $response = $this->postJson('/admin/setup/exchange', ['token' => $rawToken]);
         $response->assertOk()
+            ->assertHeader('Cache-Control', 'must-revalidate, no-cache, no-store, private')
             ->assertJson(['authorized' => true])
             ->assertJsonStructure(['authorized', 'completion_proof']);
         $completionProof = $response->json('completion_proof');

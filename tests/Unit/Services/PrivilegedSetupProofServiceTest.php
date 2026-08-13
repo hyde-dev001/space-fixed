@@ -66,4 +66,31 @@ final class PrivilegedSetupProofServiceTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
         app(PrivilegedSetupProofService::class)->authorization($wrongPurposeProof);
     }
+
+    public function test_it_rejects_an_authenticated_payload_with_invalid_shape_or_timestamps(): void
+    {
+        Carbon::setTestNow(Carbon::create(2026, 8, 13, 12, 0, 0, 'UTC'));
+        $service = app(PrivilegedSetupProofService::class);
+        $proof = $service->issue(
+            tokenId: 10,
+            subjectId: 20,
+            tokenExpiresAt: now()->addDay(),
+        );
+        $payload = json_decode(Crypt::decryptString($proof), true, flags: JSON_THROW_ON_ERROR);
+
+        foreach ([
+            array_replace($payload, ['token_id' => '10']),
+            array_replace($payload, ['issued_at' => now()->addSecond()->timestamp]),
+            array_replace($payload, ['expires_at' => now()->addMinutes(16)->timestamp]),
+        ] as $invalidPayload) {
+            $invalidProof = Crypt::encryptString(json_encode($invalidPayload, JSON_THROW_ON_ERROR));
+
+            try {
+                $service->authorization($invalidProof);
+                self::fail('Invalid proof payload was accepted.');
+            } catch (InvalidArgumentException $exception) {
+                self::assertSame('The privileged setup proof is invalid or expired.', $exception->getMessage());
+            }
+        }
+    }
 }
