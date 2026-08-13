@@ -1,0 +1,102 @@
+# SoleSpace Attendance Responsive Layout and Branding Design
+
+**Date:** 2026-08-13  
+**Status:** Approved for implementation
+
+## Goal
+
+Make the ERP Attendance / Time In page comfortable and readable on small phones, large phones, tablets, and desktop widths, while replacing the remaining TailAdmin system branding with SoleSpace.
+
+## Existing context
+
+- The page is rendered by `resources/js/Pages/ERP/STAFF/TimeIn.tsx` inside `AppLayout_ERP`.
+- `TimeIn.tsx` already owns clock-in, lunch, clock-out, overtime, leave, attendance history, filtering, and pagination behavior. Those behaviors must remain unchanged.
+- The ERP header uses `public/images/logo/logo.svg` and `public/images/logo/logo-dark.svg`, which currently contain the TailAdmin wordmark.
+- The ERP sidebar already displays SoleSpace, so the responsive work should align the page with that existing brand rather than introduce another visual system.
+- The repository's `DESIGN.md` favors neutral surfaces, strong typography, an 8px spacing rhythm, restrained shadows, and semantic status colors.
+- UI-UX Pro Max guidance for this screen requires mobile-first breakpoints, no horizontal overflow, 44px or larger touch targets, visible focus states, accessible contrast, and no emoji used as structural icons.
+
+## Approved approach
+
+Use a surgical, CSS-first responsive refresh. Keep the current React state, API calls, event handlers, modal flow, and attendance calculations. Change the page composition and Tailwind classes only where needed to establish a mobile-first layout, and update the shared wordmark assets used by the ERP header.
+
+This approach keeps the diff small and avoids extracting speculative components from the already large `TimeIn.tsx` file. The page remains a single route-level component, while layout responsibility stays with the existing ERP shell.
+
+## Responsive behavior
+
+### Page header
+
+- At phone widths, render the page icon, title, and supporting text as a readable vertical block.
+- Put `Over Time` and `Request Leave` into a two-column or full-width action layout that never competes with the title or clips text. Buttons remain at least 44px tall.
+- At tablet and desktop widths, restore a horizontal header with the actions aligned to the right.
+
+### Current-time card
+
+- Use compact mobile padding and progressively larger padding at tablet and desktop widths.
+- Keep the live time on one line with tabular/monospace figures and a responsive type scale; it must not wrap at approximately 375px to 390px viewport widths.
+- Keep shop hours, date, leave status, clock status, and action controls in a predictable vertical order.
+- Make the action group mobile-first: full-width controls on narrow phones, two-column controls where there is room, and an inline group on larger screens.
+- Preserve semantic success, warning, leave, lunch, and error colors in both light and dark mode.
+- Keep the primary controls visibly disabled while an action is unavailable or processing, with a spinner and accessible labels where the existing behavior already provides loading feedback.
+
+### Summary cards
+
+- Stack summary cards on narrow phones.
+- Use two columns at tablet widths and four columns on large desktop widths.
+- Allow long values such as lunch ranges and status notes to wrap without forcing the page wider than the viewport.
+
+### Overtime, history, and filters
+
+- Convert dense three-column overtime details into a wrapping one- or two-column layout on phones and tablets.
+- Keep search and status filter controls full-width or stacked on phones, then place them inline at larger widths.
+- Prevent attendance history rows or tables from pushing the document wider than the viewport. Where a tabular layout is necessary, constrain it inside an intentional scroll region with a clear mobile affordance; do not allow accidental page-level horizontal scrolling.
+- Keep pagination controls tappable and wrapped on narrow screens.
+
+### Modals and overlays
+
+- Preserve the existing leave and overtime form fields and submission behavior.
+- Use phone-safe viewport padding, full available width, and scrollable content for modal bodies so fields and submit/cancel controls remain reachable.
+- Keep focusable controls at least 44px high and retain the existing cancel/close paths.
+
+## Branding
+
+- Replace the TailAdmin wordmark in `public/images/logo/logo.svg` and `public/images/logo/logo-dark.svg` with a SoleSpace wordmark that keeps a compact blue brand mark and readable light/dark text.
+- Update the ERP header image alt text in `resources/js/layout/AppHeader_ERP.tsx` to identify SoleSpace.
+- Replace visible TailAdmin footer copy in `resources/js/Pages/OtherPage/NotFound.tsx` with SoleSpace.
+- Update the unused template sidebar widget in `resources/js/layout/layout/SidebarWidget.tsx` so it no longer exposes TailAdmin vendor copy or an external TailAdmin purchase link if the component is later mounted.
+- Do not edit generated `public/build` assets; they will be regenerated by the build.
+
+## Visual and accessibility constraints
+
+- Use the existing Tailwind token classes and the project palette; do not add a dependency or a page-specific design system.
+- Follow a 4px/8px spacing rhythm and use responsive gutters that grow from phone to tablet/desktop.
+- Maintain readable body text at 16px or larger on mobile where practical, with smaller sizes reserved for labels and metadata.
+- Keep all interactive targets at least 44px by 44px and provide visible `focus-visible` styles.
+- Use the existing SVG icon language. Do not introduce emoji as icons or structural status markers in rendered UI.
+- Respect `prefers-reduced-motion` by avoiding new decorative animation; existing loading/pulse feedback may remain functional and should not be expanded.
+- Preserve both light and dark mode contrast and do not use color as the only status indicator; retain accompanying text.
+
+## Acceptance criteria
+
+1. At 375px and 390px wide, the page has no page-level horizontal overflow, the header actions do not overlap the title, and the current time remains readable without wrapping.
+2. At 640px and 768px wide, the page uses a balanced tablet layout: controls have comfortable spacing, summary cards use two columns, and overtime/history content wraps without clipping.
+3. At 1024px and wider, the existing desktop information hierarchy remains intact and the page uses the available content width beside the ERP sidebar.
+4. Clock in, lunch start/end, clock out, overtime request, leave request, filtering, pagination, loading states, and modal submission behavior continue to use the existing handlers and API contracts.
+5. The ERP mobile header and any shared logo usage show SoleSpace instead of TailAdmin, in both light and dark modes.
+6. No user-visible source copy in the scoped ERP/utility surfaces refers to TailAdmin, and no TailAdmin external purchase link remains in the scoped sidebar widget.
+7. Frontend tests, the production build, `git diff --check`, and browser verification at phone and tablet widths complete without new failures.
+
+## Verification plan
+
+- Run the focused frontend test command first: `pnpm run test:frontend`.
+- Run the production bundle: `pnpm run build`.
+- Run `git diff --check`.
+- Use the local web-app browser test workflow to inspect `/erp/time-in` at 375px, 390px, 640px, 768px, and 1024px widths, including the mobile menu, clock controls, summary cards, history filters, and the leave/overtime modals.
+- Confirm the generated build is not committed as a hand-edited source change and that unrelated working-tree changes remain untouched.
+
+## Out of scope
+
+- No backend/API/database changes.
+- No change to attendance business rules, time-zone calculations, permissions, or route behavior.
+- No broad redesign of unrelated ERP pages beyond the shared SoleSpace wordmark and the explicitly scoped utility copy.
+- No new icon, UI, or font dependency.
