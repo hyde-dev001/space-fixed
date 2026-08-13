@@ -4,66 +4,32 @@ declare(strict_types=1);
 
 namespace Tests\Feature\ShopDocuments;
 
-use App\Models\ShopOwner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Routing\Route;
+use Illuminate\Support\Facades\Route as RouteFacade;
 use Tests\TestCase;
 
 final class LegacyRegistrationDocumentContractTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_legacy_api_registration_does_not_create_an_owner_without_the_canonical_document_contract(): void
+    public function test_legacy_registration_mutation_routes_are_removed(): void
     {
-        $response = $this->postJson('/api/shop/register', [
-            'firstName' => 'Juan',
-            'lastName' => 'Dela Cruz',
-            'email' => 'legacy-register@example.com',
-            'phone' => '09171234567',
-            'businessName' => 'Legacy Shoes',
-            'businessAddress' => 'Dasmarinas, Cavite',
-            'businessType' => 'repair',
-            'registrationType' => 'individual',
-            'shop_latitude' => 14.3294,
-            'shop_longitude' => 120.9367,
-        ]);
+        foreach (['api/shop/register', 'api/shop/register-full', 'shop/register-full'] as $uri) {
+            $this->postJson('/'.$uri)->assertNotFound();
+        }
 
-        $response->assertStatus(422)->assertJsonValidationErrors(['documents']);
-        $this->assertDatabaseMissing('shop_owners', ['email' => 'legacy-register@example.com']);
+        $this->assertDatabaseCount('shop_owners', 0);
+        $this->assertDatabaseCount('shop_documents', 0);
     }
 
-    public function test_legacy_full_registration_routes_do_not_write_unversioned_documents(): void
+    public function test_canonical_registration_route_is_the_only_registration_write_boundary(): void
     {
-        Storage::fake('public');
+        $route = RouteFacade::getRoutes()->getByName('shop-owner.register');
 
-        $payload = [
-            'firstName' => 'Maria',
-            'lastName' => 'Reyes',
-            'email' => 'legacy-full@example.com',
-            'phone' => '09179876543',
-            'businessName' => 'Legacy Footwear',
-            'businessAddress' => 'Imus, Cavite',
-            'businessType' => 'repair',
-            'registrationType' => 'individual',
-            'operatingHours' => [['day' => 'Monday', 'open' => '09:00', 'close' => '18:00']],
-            'agreesToRequirements' => true,
-            'shop_latitude' => 14.3294,
-            'shop_longitude' => 120.9367,
-            'dtiRegistration' => UploadedFile::fake()->create('dti.png', 120, 'image/png'),
-            'mayorsPermit' => UploadedFile::fake()->create('permit.png', 120, 'image/png'),
-            'birCertificate' => UploadedFile::fake()->create('bir.png', 120, 'image/png'),
-            'validId' => UploadedFile::fake()->create('id.png', 120, 'image/png'),
-        ];
-
-        $this->postJson('/api/shop/register-full', $payload)
-            ->assertStatus(422)
-            ->assertJsonValidationErrors(['documents']);
-
-        $this->post('/shop/register-full', $payload)
-            ->assertSessionHasErrors('documents');
-
-        $this->assertDatabaseMissing('shop_owners', ['email' => 'legacy-full@example.com']);
-        $this->assertDatabaseCount('shop_documents', 0);
+        $this->assertInstanceOf(Route::class, $route);
+        $this->assertSame(['POST'], $route->methods());
+        $this->assertSame('shop-owner/register', $route->uri());
+        $this->assertStringContainsString('ShopOwnerAuthController@register', $route->getActionName());
     }
 }

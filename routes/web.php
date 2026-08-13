@@ -14,7 +14,6 @@ use App\Http\Controllers\ShopOwner\UserAccessControlController;
 use App\Http\Controllers\PrivateSensitiveDocumentController;
 use App\Http\Controllers\ShopOwnerAuthController;
 use App\Http\Controllers\ShopOwnerPasswordSetupController;
-use App\Http\Controllers\ShopRegistrationController;
 use App\Http\Controllers\superAdmin\FlaggedAccountsController;
 use App\Http\Controllers\superAdmin\AdministratorManagementController;
 use App\Http\Controllers\superAdmin\RegisteredShopController;
@@ -1652,9 +1651,8 @@ Route::middleware([
 
 // Shop Registration Routes
 Route::get('/shop/register', function () {
-    return Inertia::render('UserSide/Auth/ShopOwnerRegistration');
+    return redirect()->route('shop-owner-register', request()->query());
 })->name('shop.register.form');
-Route::post('/shop/register-full', [ShopRegistrationController::class, 'storeFullInertia'])->name('shop.register');
 
 // Shop Message Route
 Route::get('/shop/message', function () {
@@ -2785,9 +2783,5 @@ Route::prefix('api/leave')->name('api.leave.')->middleware(['auth:user'])->group
         ->middleware('role_or_permission:Manager|Finance Manager|Super Admin|Shop Owner|access-leave-approvals')
         ->name('reject');
 });
-
-// Legacy API Routes
-Route::post('/api/shop/register', [ShopRegistrationController::class, 'store']);
-Route::post('/api/shop/register-full', [ShopRegistrationController::class, 'storeFull']);
 
 // Module-specific API routes are registered in bootstrap/app.php via withRouting(... then: ...)

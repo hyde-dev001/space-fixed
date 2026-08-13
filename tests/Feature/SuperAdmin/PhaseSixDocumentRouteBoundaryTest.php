@@ -83,4 +83,21 @@ final class PhaseSixDocumentRouteBoundaryTest extends TestCase
         $this->get('/admin/document-renewals')->assertRedirect();
         $this->post('/shop-owner/compliance-documents/1/renewals')->assertRedirect();
     }
+
+    public function test_legacy_registration_mutations_are_not_document_entry_points(): void
+    {
+        foreach (['api/shop/register', 'api/shop/register-full', 'shop/register-full'] as $uri) {
+            $legacyRoutes = collect(Route::getRoutes())
+                ->filter(fn ($candidate): bool => $candidate->uri() === $uri)
+                ->filter(fn ($candidate): bool => in_array('POST', $candidate->methods(), true));
+
+            $this->assertCount(0, $legacyRoutes, 'Legacy registration mutation remains registered: '.$uri);
+        }
+
+        $canonical = Route::getRoutes()->getByName('shop-owner.register');
+
+        $this->assertNotNull($canonical);
+        $this->assertSame('shop-owner/register', $canonical->uri());
+        $this->assertSame(['POST'], $canonical->methods());
+    }
 }

@@ -378,6 +378,42 @@ final class PhaseSevenStructuralBoundaryTest extends TestCase
         $this->post('/superAdmin/flagged-accounts')->assertStatus(405);
     }
 
+    public function test_legacy_shop_registration_mutations_are_absent_and_shop_register_is_a_get_redirect(): void
+    {
+        foreach (['api/shop/register', 'api/shop/register-full', 'shop/register-full'] as $uri) {
+            $routes = collect(RouteFacade::getRoutes())
+                ->filter(fn (Route $route): bool => $route->uri() === $uri)
+                ->filter(fn (Route $route): bool => in_array('POST', $route->methods(), true));
+
+            $this->assertCount(0, $routes, "Retired registration mutation still exists: {$uri}");
+        }
+
+        self::assertStringNotContainsString(
+            'ShopRegistrationController',
+            collect(RouteFacade::getRoutes())
+                ->map(fn (Route $route): string => $route->getActionName())
+                ->implode('|'),
+        );
+
+        $route = RouteFacade::getRoutes()->getByName('shop.register.form');
+
+        $this->assertInstanceOf(Route::class, $route);
+        $this->assertSame(['GET', 'HEAD'], $route->methods());
+        $this->assertSame('shop/register', $route->uri());
+        $this->assertSame('Closure', $route->getActionName());
+
+        $this->get('/shop/register?source=legacy&page=2')
+            ->assertRedirect(route('shop-owner-register', [
+                'source' => 'legacy',
+                'page' => 2,
+            ]));
+
+        $this->post('/shop/register')->assertStatus(405);
+        $this->post('/api/shop/register')->assertStatus(404);
+        $this->post('/api/shop/register-full')->assertStatus(404);
+        $this->post('/shop/register-full')->assertStatus(404);
+    }
+
     /**
      * @param array<int, string> $methods
      */

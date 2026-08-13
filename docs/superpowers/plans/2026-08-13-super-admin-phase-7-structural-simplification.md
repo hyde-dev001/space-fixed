@@ -516,22 +516,23 @@ git commit -m "refactor: canonicalize privileged review routes"
 - Modify: `tests/Feature/ShopDocuments/LegacyRegistrationDocumentContractTest.php`
 - Modify: `tests/Feature/SuperAdmin/PhaseSixDocumentRouteBoundaryTest.php`
 - Modify: `resources/js/ziggy.js`
+- Modify: `resources/js/Pages/UserSide/Shared/Navigation.tsx`
 - Test: `tests/Feature/ShopOwner/ShopDocumentRenewalSubmissionTest.php`
 - Test: `tests/Feature/ShopDocuments/ShopDocumentInvariantTest.php`
 
-- [ ] **Step 1: Prove the canonical registration flow owns all current writes**
+- [x] **Step 1: Prove the canonical registration flow owns all current writes**
 
 Search for `/api/shop/register`, `/api/shop/register-full`, `/shop/register-full`, `ShopRegistrationController`, `dtiRegistration`, and direct `ShopDocument::create` registration callers. Confirm the React form posts only to `shop-owner.register` and the canonical controller uses `ShopDocumentLifecycleService`.
 
-- [ ] **Step 2: Migrate location-policy tests to the real boundary**
+- [x] **Step 2: Migrate location-policy tests to the real boundary**
 
 Exercise `ShopOwnerAuthController::register` or the shared `CaviteLocationPolicyService` with the canonical payload. Keep location-denial assertions, but stop keeping obsolete mutation endpoints alive solely for tests.
 
-- [ ] **Step 3: Remove legacy mutation routes and controller**
+- [x] **Step 3: Remove legacy mutation routes and controller**
 
 Delete all three legacy POSTs and `ShopRegistrationController`. Keep `/shop/register` only as a GET redirect to `shop-owner-register`, preserving query string. Assert POST requests to old URIs return `404|405` and create no owner/document/file.
 
-- [ ] **Step 4: Re-run immutable-history guards**
+- [x] **Step 4: Re-run immutable-history guards**
 
 Search and explain every remaining match:
 
@@ -542,7 +543,7 @@ rg -n -- "Storage::.*delete|->delete\(" app/Http/Controllers/ShopOwnerAuthContro
 
 Only failed staged-upload cleanup may delete a non-authoritative file. No historical/current document row or promoted file may be deleted or overwritten.
 
-- [ ] **Step 5: Regenerate route metadata after removing legacy names**
+- [x] **Step 5: Regenerate route metadata after removing legacy names**
 
 ```powershell
 php artisan ziggy:generate resources/js/ziggy.js
@@ -550,7 +551,7 @@ php artisan ziggy:generate resources/js/ziggy.js
 
 Confirm the canonical `shop-owner.register` remains and retired registration mutation names/URIs are absent.
 
-- [ ] **Step 6: Verify registration and document lifecycle**
+- [x] **Step 6: Verify registration and document lifecycle**
 
 ```powershell
 php artisan test tests/Feature/LocationPolicy/ShopOwnerAuthRegistrationTest.php tests/Feature/LocationPolicy/ShopOwnerRegistrationLocationTest.php tests/Feature/LocationPolicy/ShopOwnerFullRegistrationLocationTest.php tests/Feature/ShopDocuments/LegacyRegistrationDocumentContractTest.php tests/Feature/ShopDocuments/ShopDocumentInvariantTest.php tests/Feature/ShopOwner/ShopDocumentRenewalSubmissionTest.php tests/Feature/SuperAdmin/PhaseSixDocumentRouteBoundaryTest.php
@@ -558,7 +559,7 @@ php artisan test tests/Feature/LocationPolicy/ShopOwnerAuthRegistrationTest.php 
 
 Expected: PASS; canonical registration remains operational, legacy mutations are absent, and immutable history/legacy DTI-SEC continuity remain enforced.
 
-- [ ] **Step 7: Commit legacy registration removal**
+- [x] **Step 7: Commit legacy registration removal**
 
 ```powershell
 git add -- routes/web.php resources/js/ziggy.js tests/Feature/LocationPolicy/ShopOwnerRegistrationLocationTest.php tests/Feature/LocationPolicy/ShopOwnerFullRegistrationLocationTest.php tests/Feature/ShopDocuments/LegacyRegistrationDocumentContractTest.php tests/Feature/SuperAdmin/PhaseSixDocumentRouteBoundaryTest.php app/Http/Controllers/ShopRegistrationController.php
