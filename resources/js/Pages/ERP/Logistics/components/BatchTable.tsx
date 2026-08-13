@@ -1,5 +1,6 @@
-import React from 'react';
-import { AlertTriangle, Eye, MoreHorizontal, Pencil } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Activity, AlertTriangle, Eye, FileText, MoreHorizontal, Pencil, RotateCcw, Send } from 'lucide-react';
 import { logisticsModuleLabel, type DeliveryBatch, type DeliveryBatchStatus } from '@/types/logistics';
 
 const formatDate = (value: string) => new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeZone: 'UTC' })
@@ -9,14 +10,16 @@ const formatRejectionTime = (value?: string | null) => {
   return date && !Number.isNaN(date.getTime()) ? date.toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Manila' }) : null;
 };
 const label = (value: string) => value.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
-const primaryLabel = (status: DeliveryBatchStatus) => ({
-  draft: 'Edit batch', offered: 'View offer', accepted: 'View route', in_progress: 'View progress', completed: 'View summary', cancelled: 'View summary',
-}[status]);
-
+const primaryActions = {
+  offered: { label: 'View offer', Icon: Send },
+  in_progress: { label: 'View progress', Icon: Activity },
+  completed: { label: 'View summary', Icon: FileText },
+  cancelled: { label: 'View summary', Icon: FileText },
+} as const;
 type Props = {
   batches: DeliveryBatch[];
   variant?: 'active' | 'history';
-  onOpen: (batchId: number) => void;
+  onOpen?: (batchId: number) => void;
   onDetails: (batchId: number, trigger: HTMLButtonElement) => void;
   onReview?: (batchId: number) => void;
   onCancel?: (batchId: number) => void;
@@ -31,17 +34,56 @@ function SecondaryActions({ batch, onReview, onCancel, onRestore }: Pick<Props, 
     || (['draft', 'offered', 'accepted'].includes(batch.status) && Boolean(onCancel));
 
   if (batch.status === 'cancelled' && onRestore) {
-    return <button type="button" aria-label={`Restore batch ${batch.id}`} onClick={() => onRestore(batch.id)} className="rounded-lg border border-blue-200 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50">Restore to draft</button>;
+    return <button type="button" aria-label={`Restore batch ${batch.id}`} title="Restore to draft" onClick={() => onRestore(batch.id)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-500 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500"><RotateCcw aria-hidden="true" size={18} /></button>;
   }
   if (!active || !hasActions) return null;
 
-  return <details className="relative">
-    <summary aria-label={`More actions for batch ${batch.id}`} className="flex min-h-10 cursor-pointer list-none items-center rounded-lg border p-2 text-gray-600 hover:bg-gray-50"><MoreHorizontal size={18} /></summary>
-    <div className="absolute right-0 z-10 mt-1 w-44 rounded-lg border bg-white p-1 shadow-lg">
-      {batch.status === 'draft' && onReview && <button type="button" onClick={() => onReview(batch.id)} className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-gray-50">Review &amp; Offer</button>}
-      {['draft', 'offered', 'accepted'].includes(batch.status) && onCancel && <button type="button" onClick={() => onCancel(batch.id)} className="block w-full rounded px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50">Cancel batch</button>}
-    </div>
-  </details>;
+  return <FloatingActions batch={batch} onReview={onReview} onCancel={onCancel} />;
+}
+
+function FloatingActions({ batch, onReview, onCancel }: Pick<Props, 'onReview' | 'onCancel'> & { batch: DeliveryBatch }) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState({ top: 0, left: 0 });
+
+  const close = () => setOpen(false);
+  const toggle = () => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    setPosition({ top: rect.bottom + 8, left: Math.max(8, rect.right - 176) });
+    setOpen((value) => !value);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!triggerRef.current?.contains(target) && !menuRef.current?.contains(target)) close();
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') close();
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [open]);
+
+  const menu = open && typeof document !== 'undefined' ? createPortal(
+    <div ref={menuRef} role="menu" aria-label={`Actions for batch ${batch.id}`} className="fixed z-[100] w-44 rounded-lg border border-gray-200 bg-white p-1 shadow-xl dark:border-gray-700 dark:bg-gray-800" style={{ top: position.top, left: position.left }}>
+      {batch.status === 'draft' && onReview && <button type="button" role="menuitem" onClick={() => { close(); onReview(batch.id); }} className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700">Review &amp; Offer</button>}
+      {['draft', 'offered', 'accepted'].includes(batch.status) && onCancel && <button type="button" role="menuitem" onClick={() => { close(); onCancel(batch.id); }} className="block w-full rounded px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30">Cancel batch</button>}
+    </div>,
+    document.body,
+  ) : null;
+
+  return <>
+    <button ref={triggerRef} type="button" aria-label={`More actions for batch ${batch.id}`} aria-expanded={open} onClick={toggle} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-500 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500"><MoreHorizontal aria-hidden="true" size={18} /></button>
+    {menu}
+  </>;
 }
 
 function BatchSummary({ batch }: { batch: DeliveryBatch }) {
@@ -81,10 +123,9 @@ export default function BatchTable({ batches, variant = 'active', onOpen, onDeta
             <td className="px-4 py-4 align-top text-gray-700 dark:text-gray-200">{batch.rider_profile?.name || 'Not assigned'}</td>
             <td className="px-4 py-4 align-top text-gray-600 dark:text-gray-300">{['completed', 'cancelled'].includes(batch.status) ? legsFor(batch).length : batch.assigned_stop_count}/{batch.capacity}<span className="block text-xs text-gray-500">{legsFor(batch).filter((leg) => leg.urgent_at).length} urgent</span></td>
             <td className="px-4 py-4 align-top"><div className="flex flex-wrap justify-end gap-2">
-              <button type="button" aria-label={`${primaryLabel(batch.status)} ${batch.id}`} title={history ? 'View summary' : primaryLabel(batch.status)} onClick={() => onOpen(batch.id)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                {batch.status === 'draft' ? <Pencil aria-hidden="true" size={18} /> : <Eye aria-hidden="true" size={18} />}
-              </button>
-              <button type="button" aria-label={`View details for batch ${batch.id}`} title="View details" onClick={(event) => onDetails(batch.id, event.currentTarget)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-blue-200 text-blue-700 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500"> <Eye aria-hidden="true" size={18} /></button>
+              {batch.status === 'draft' && onOpen && <button type="button" aria-label={`Edit batch ${batch.id}`} title="Edit batch" onClick={() => onOpen(batch.id)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-500 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500"><Pencil aria-hidden="true" size={18} /></button>}
+              {primaryActions[batch.status as keyof typeof primaryActions] && onOpen && <button type="button" aria-label={`${primaryActions[batch.status as keyof typeof primaryActions].label} ${batch.id}`} title={primaryActions[batch.status as keyof typeof primaryActions].label} onClick={() => onOpen(batch.id)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-500 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500">{React.createElement(primaryActions[batch.status as keyof typeof primaryActions].Icon, { 'aria-hidden': true, size: 18 })}</button>}
+              <button type="button" aria-label={`View details for batch ${batch.id}`} title="View details" onClick={(event) => onDetails(batch.id, event.currentTarget)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-500 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500"><Eye aria-hidden="true" size={18} /></button>
               <SecondaryActions batch={batch} onReview={onReview} onCancel={onCancel} onRestore={onRestore} />
             </div></td>
           </tr>)}
