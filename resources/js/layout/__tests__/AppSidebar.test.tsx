@@ -97,7 +97,9 @@ it('shows truthful canonical operational links to both privileged roles', () => 
   expect(screen.getByRole('link', { name: /audit history/i })).toHaveAttribute('href', '/admin/audit');
   expect(screen.getByRole('link', { name: /user management/i })).toHaveAttribute('href', '/admin/users');
   expect(screen.getByRole('link', { name: /shop management/i })).toHaveAttribute('href', '/admin/registrations');
+  expect(screen.getByRole('link', { name: /registered shops/i })).toHaveAttribute('href', '/admin/shops');
   expect(screen.queryByText(/notification & communication tools/i)).not.toBeInTheDocument();
+  expect(screen.queryAllByRole('link').some((link) => link.getAttribute('href')?.includes('/superAdmin/'))).toBe(false);
 });
 
 it('hides administrator and plan management from a regular admin', () => {

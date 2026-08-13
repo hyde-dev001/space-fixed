@@ -587,11 +587,11 @@ git commit -m "refactor: remove superseded registration mutations"
 - Delete: `resources/js/layout/layout/SidebarWidget.tsx`
 - Modify: `tests/Feature/SuperAdmin/PhaseSevenStructuralBoundaryTest.php`
 
-- [ ] **Step 1: Add the failing retirement and redirect-parity slice**
+- [x] **Step 1: Add the failing retirement and redirect-parity slice**
 
 Expand `PhaseSevenStructuralBoundaryTest` with the final approved GET alias set, target-equivalent middleware/status/query/path behavior, retired-controller absence, `/superAdmin` mutation absence, and canonical navigation expectations. Confirm only the current duplicate groups/retired owners fail.
 
-- [ ] **Step 2: Prove the monolith has no route or direct-test callers**
+- [x] **Step 2: Prove the monolith has no route or direct-test callers**
 
 ```powershell
 rg -n "SuperAdminController|SuperAdminUserManagementController|showShopRegistrations|showFlaggedAccounts|usersList" app routes resources/js tests
@@ -599,7 +599,7 @@ rg -n "SuperAdminController|SuperAdminUserManagementController|showShopRegistrat
 
 Expected before deletion: only class files or structural “must be absent” assertions. Migrate any real caller; do not hide it with a forwarding controller.
 
-- [ ] **Step 3: Inventory persisted compatibility links without rewriting them**
+- [x] **Step 3: Inventory persisted compatibility links without rewriting them**
 
 Against a safe database snapshot/read-only production connection, group `notifications.action_url` values containing `/superAdmin/` or any listed old `/admin/*` alias. Record URL category and count. Use the equivalent of this read-only query for the deployed database:
 
@@ -623,23 +623,23 @@ ORDER BY total DESC, action_url ASC;
 
 Do not update historical rows in Phase 7. A non-zero count is a reason to retain the corresponding safe GET redirect and evidence for Phase 8 retirement.
 
-- [ ] **Step 4: Collapse duplicate `/superAdmin` groups**
+- [x] **Step 4: Collapse duplicate `/superAdmin` groups**
 
 Replace both groups with one compact compatibility group containing only the approved GET redirects and target-equivalent capability middleware. Query strings must survive. No controller class from the retired group may be imported solely for compatibility.
 
-- [ ] **Step 5: Migrate active navigation**
+- [x] **Step 5: Migrate active navigation**
 
 Use canonical route names in `AppSidebar.tsx`; keep capability filtering unchanged for Admin versus Super Admin. Update tests to assert canonical hrefs and absence of `/superAdmin` links.
 
-- [ ] **Step 6: Reconfirm and delete the isolated duplicate layout tree**
+- [x] **Step 6: Reconfirm and delete the isolated duplicate layout tree**
 
 Run import/reference searches for every file under `resources/js/layout/layout/`. If the only references are within that same isolated directory, delete all eight files together. Do not delete active `resources/js/layout/*` files.
 
-- [ ] **Step 7: Delete retired controllers**
+- [x] **Step 7: Delete retired controllers**
 
 Delete `SuperAdminController` and `SuperAdminUserManagementController`; remove imports. Do not leave subclasses, forwarding methods, or aliases.
 
-- [ ] **Step 8: Regenerate Ziggy route metadata**
+- [x] **Step 8: Regenerate Ziggy route metadata**
 
 ```powershell
 php artisan ziggy:generate resources/js/ziggy.js
@@ -647,7 +647,7 @@ php artisan ziggy:generate resources/js/ziggy.js
 
 Confirm canonical route names exist and removed mutation names/URIs do not. Do not manually edit generated output.
 
-- [ ] **Step 9: Verify route and frontend structure**
+- [x] **Step 9: Verify route and frontend structure**
 
 ```powershell
 php artisan route:list --path=admin --except-vendor
@@ -658,7 +658,7 @@ pnpm exec vitest run resources/js/layout/__tests__/AppSidebar.test.tsx
 
 Expected: canonical routes resolve to focused owners; `/superAdmin` contains approved GET aliases only; active sidebar contains no legacy route.
 
-- [ ] **Step 10: Commit runtime cleanup**
+- [x] **Step 10: Commit runtime cleanup**
 
 ```powershell
 git add -- routes/web.php resources/js/layout/AppSidebar.tsx resources/js/layout/__tests__/AppSidebar.test.tsx resources/js/ziggy.js app/Http/Controllers/SuperAdminController.php app/Http/Controllers/superAdmin/SuperAdminUserManagementController.php resources/js/layout/layout tests/Feature/SuperAdmin/PhaseSevenStructuralBoundaryTest.php

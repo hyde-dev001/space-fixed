@@ -9,14 +9,9 @@ use Tests\TestCase;
 
 final class PrivilegedLegacyWriterCutoverTest extends TestCase
 {
-    public function test_super_admin_controller_no_longer_contains_unreachable_legacy_registration_writers(): void
+    public function test_retired_super_admin_controller_is_not_a_runtime_owner(): void
     {
-        $source = file_get_contents(app_path('Http/Controllers/SuperAdminController.php'));
-
-        $this->assertIsString($source);
-        $this->assertStringNotContainsString('use App\\Models\\AuditLog;', $source);
-        $this->assertStringNotContainsString('approveShopOwner', $source);
-        $this->assertStringNotContainsString('rejectShopOwner', $source);
+        $this->assertFileDoesNotExist(app_path('Http/Controllers/SuperAdminController.php'));
     }
 
     public function test_no_route_points_to_removed_legacy_registration_handlers(): void

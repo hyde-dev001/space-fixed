@@ -414,6 +414,72 @@ final class PhaseSevenStructuralBoundaryTest extends TestCase
         $this->post('/shop/register-full')->assertStatus(404);
     }
 
+    public function test_final_compatibility_aliases_are_unique_get_only_redirects(): void
+    {
+        $aliases = [
+            'admin.admin-management' => ['admin/admin', 'admin.administrators.index', 'manage_administrators'],
+            'admin.create-admin' => ['admin/create-admin', 'admin.administrators.create', 'manage_administrators'],
+            'admin.shop-owner-registration-view' => ['admin/shop-owner-registration-view', 'admin.registrations.index', 'review_registrations'],
+            'admin.registered-shops' => ['admin/registered-shops', 'admin.shops.index', 'intervene_accounts'],
+            'admin.shops.details' => ['admin/shops/{id}/details', 'admin.shops.show', 'intervene_accounts'],
+            'admin.user-management' => ['admin/user-management', 'admin.users.index', 'intervene_accounts'],
+            'admin.subscription-management' => ['admin/subscription-management', 'admin.subscriptions.index', 'manage_plans'],
+            'admin.data-reports' => ['admin/data-reports', 'admin.audit', 'view_privileged_audit'],
+            'superAdmin.super-admin-user-management' => ['superAdmin/super-admin-user-management', 'admin.users.index', 'intervene_accounts'],
+            'superAdmin.shop-owner-registration-view' => ['superAdmin/shop-owner-registration-view', 'admin.registrations.index', 'review_registrations'],
+            'superAdmin.flagged-accounts' => ['superAdmin/flagged-accounts', 'admin.flagged-accounts.index', 'moderate_reports'],
+            'superAdmin.system-monitoring-dashboard' => ['superAdmin/system-monitoring-dashboard', 'admin.system-monitoring', 'view_monitoring'],
+            'superAdmin.notification-communication-tools' => ['superAdmin/notification-communication-tools', 'admin.notifications', null],
+            'superAdmin.data-report-access' => ['superAdmin/data-report-access', 'admin.audit', 'view_privileged_audit'],
+        ];
+
+        foreach ($aliases as $name => [$uri, $target, $capability]) {
+            $routes = collect(RouteFacade::getRoutes())
+                ->filter(fn (Route $route): bool => $route->getName() === $name);
+
+            $this->assertCount(1, $routes, $name.' must have one compatibility route');
+            $route = $routes->first();
+
+            $this->assertSame(['GET', 'HEAD'], $route->methods(), $name.' methods');
+            $this->assertSame($uri, $route->uri(), $name.' URI');
+            $this->assertSame('Closure', $route->getActionName(), $name.' action');
+            $this->assertContains('super_admin.auth', $route->middleware(), $name);
+            $this->assertContains('privileged.active', $route->middleware(), $name);
+            $this->assertContains('privileged.mfa', $route->middleware(), $name);
+
+            if ($capability !== null) {
+                $this->assertContains('privileged.capability:'.$capability, $route->middleware(), $name);
+            }
+        }
+
+        $privileged = SuperAdmin::factory()->superAdmin()->mfaEnrolled()->create();
+        $this->actingAsCompletedPrivileged($privileged);
+
+        $this->get('/superAdmin/system-monitoring-dashboard?window=24h')
+            ->assertRedirect(route('admin.system-monitoring', ['window' => '24h']));
+        $this->get('/superAdmin/notification-communication-tools?unread=1')
+            ->assertRedirect(route('admin.notifications', ['unread' => 1]));
+
+        foreach (RouteFacade::getRoutes() as $route) {
+            if (str_starts_with($route->uri(), 'superAdmin/')) {
+                $this->assertSame(['GET', 'HEAD'], $route->methods(), $route->uri());
+            }
+        }
+    }
+
+    public function test_retired_privileged_runtime_owners_are_absent(): void
+    {
+        self::assertFileDoesNotExist(app_path('Http/Controllers/SuperAdminController.php'));
+        self::assertFileDoesNotExist(app_path('Http/Controllers/superAdmin/SuperAdminUserManagementController.php'));
+
+        foreach (RouteFacade::getRoutes() as $route) {
+            $action = $route->getActionName();
+
+            $this->assertStringNotContainsString('SuperAdminController', $action, $route->uri());
+            $this->assertStringNotContainsString('SuperAdminUserManagementController', $action, $route->uri());
+        }
+    }
+
     /**
      * @param array<int, string> $methods
      */

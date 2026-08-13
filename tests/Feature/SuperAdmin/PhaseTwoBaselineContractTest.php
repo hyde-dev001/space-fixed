@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 namespace Tests\Feature\SuperAdmin;
 
-use App\Http\Controllers\SuperAdminController;
 use App\Models\SuperAdmin;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Routing\Route as RoutingRoute;
 use Illuminate\Support\Facades\Route;
-use ReflectionClass;
 use Tests\Concerns\AuthenticatesPrivilegedUsers;
 use Tests\Concerns\BuildsPhaseTwoWorkflowFixtures;
 use Tests\TestCase;
@@ -88,10 +86,7 @@ final class PhaseTwoBaselineContractTest extends TestCase
             self::assertNull(Route::getRoutes()->getByName($routeName), "Forbidden route still exists: {$routeName}");
         }
 
-        $controller = new ReflectionClass(SuperAdminController::class);
-        foreach (['archiveAdmin', 'deleteAdmin', 'deleteShop', 'deleteUser'] as $method) {
-            self::assertFalse($controller->hasMethod($method), "Forbidden controller method still exists: {$method}");
-        }
+        self::assertFileDoesNotExist(app_path('Http/Controllers/SuperAdminController.php'));
 
         foreach (Route::getRoutes()->getRoutes() as $route) {
             if (! $route instanceof RoutingRoute) {

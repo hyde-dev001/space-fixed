@@ -9,7 +9,6 @@ use App\Models\User;
 use App\Models\UserAddress;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
-use ReflectionClass;
 use Tests\Concerns\AuthenticatesPrivilegedUsers;
 use Tests\TestCase;
 
@@ -24,10 +23,7 @@ class HardDeleteContainmentTest extends TestCase
             $this->assertNull(Route::getRoutes()->getByName($routeName), "Forbidden route still exists: {$routeName}");
         }
 
-        $controller = new ReflectionClass(\App\Http\Controllers\SuperAdminController::class);
-        foreach (['deleteAdmin', 'deleteShop', 'deleteUser'] as $method) {
-            $this->assertFalse($controller->hasMethod($method), "Forbidden controller method still exists: {$method}");
-        }
+        $this->assertFileDoesNotExist(app_path('Http/Controllers/SuperAdminController.php'));
     }
 
     public function test_delete_requests_are_not_registered_and_records_remain_untouched(): void
