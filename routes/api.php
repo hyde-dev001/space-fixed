@@ -398,7 +398,7 @@ Route::prefix('repairer/conversations')->middleware(['web', 'auth:user', 'permis
  * Customer Notifications API
  * Middleware: auth:user (for customers only)
  */
-Route::prefix('notifications')->middleware(['auth:user'])->group(function () {
+Route::prefix('notifications')->middleware(['web', 'auth:user'])->group(function () {
     Route::get('/', [\App\Http\Controllers\NotificationController::class, 'index'])->name('api.notifications.index');
     Route::get('/unread-count', [\App\Http\Controllers\NotificationController::class, 'unreadCount'])->name('api.notifications.unread-count');
     Route::get('/recent', [\App\Http\Controllers\NotificationController::class, 'recent'])->name('api.notifications.recent');
