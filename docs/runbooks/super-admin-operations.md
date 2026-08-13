@@ -194,3 +194,19 @@ Growth-independent local query measurements on SQLite were:
 The focused Task 6 infrastructure suite passed with 34 warnings and 286 assertions; the warnings were the repository's existing no-`.env` configuration warning. The renewal concurrency test remains explicitly skipped for SQLite because SQLite cannot prove MariaDB/MySQL row-lock behavior. No production-compatible MariaDB/MySQL engine, final `EXPLAIN`, or lock-concurrency harness was available in this worktree.
 
 Final index decision: `N/A`. No migration was created. Existing local status/order prefixes cover the accepted business-upgrade and audit query families, while renewal/reminder production plans cannot be inferred from the stale local SQLite schema. Production index additions remain pending a migrated MariaDB/MySQL query-plan review; no performance or lock-readiness claim is made from SQLite evidence.
+
+### Task 8 compatibility retirement decision (2026-08-13)
+
+The local source scan found no first-party application or frontend caller for the legacy privileged paths. Remaining matches are the compatibility route declarations, explicit route/negative-path tests, generated route metadata, and one legacy middleware comment. The local SQLite notification inventory grouped zero `notifications.action_url` rows matching the relative or absolute forms of the fifteen retained aliases, including query-string variants matched by path pattern.
+
+This local result is not deployed evidence. No supported production database snapshot, redirect/bookmark telemetry, or defined production observation window was available in this worktree. The telemetry condition is therefore `unknown`, not zero. No alias qualifies for removal.
+
+All fifteen aliases remain protected, read-only GET|HEAD redirects for the next review on 2026-09-13, or sooner after one complete production usage cycle is available:
+
+| Alias group | Count | Decision/reason |
+| --- | ---: | --- |
+| `/superAdmin/super-admin-user-management`, `/superAdmin/shop-owner-registration-view`, `/superAdmin/flagged-accounts`, `/superAdmin/system-monitoring-dashboard`, `/superAdmin/notification-communication-tools`, `/superAdmin/data-report-access` | 6 | Retain: deployed persisted-link and telemetry evidence unknown |
+| `/admin/admin`, `/admin/create-admin`, `/admin/shop-owner-registration-view`, `/admin/registered-shops`, `/admin/shops/{id}/details`, `/admin/user-management`, `/admin/subscription-management`, `/admin/data-reports` | 8 | Retain: deployed persisted-link and telemetry evidence unknown |
+| `/shop/register` | 1 | Retain: deployed bookmark/telemetry evidence unknown |
+
+No route, generated metadata, historical notification URL, or mutation alias was changed during this decision. Any future removal requires zero repository callers, zero deployed persisted links across relative/absolute/query-string forms, and legitimate-traffic telemetry covering a defined deployment-appropriate observation window. Old mutation URLs remain absent.
