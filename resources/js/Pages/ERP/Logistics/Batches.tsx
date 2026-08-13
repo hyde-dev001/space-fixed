@@ -63,6 +63,7 @@ export default function Batches() {
   const [activeStatus, setActiveStatus] = useState<'all' | DeliveryBatchStatus>('all');
   const [detailsBatchId, setDetailsBatchId] = useState<number>();
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [deliveriesCollapsed, setDeliveriesCollapsed] = useState(false);
   const detailsTriggerRef = useRef<HTMLButtonElement | null>(null);
   const historyTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -103,6 +104,7 @@ export default function Batches() {
 
   const startNewBatch = () => {
     setBuilding(true);
+    setDeliveriesCollapsed(false);
     setSelectedBatchId(undefined);
     setSelectedIds([]);
     setScheduledThisAttempt([]);
@@ -111,6 +113,7 @@ export default function Batches() {
   };
   const openBatch = (batchId: number) => {
     setBuilding(false);
+    setDeliveriesCollapsed(true);
     setSelectedBatchId(batchId);
     const workspace = document.getElementById('batch-workspace');
 
@@ -396,10 +399,11 @@ export default function Batches() {
       </div>
     </div>
     {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-red-700">{error}</p>}
-    <div id="batch-workspace" data-testid="batch-workspace" className="grid scroll-mt-28 gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+    <div id="batch-workspace" data-testid="batch-workspace" className={`grid scroll-mt-28 gap-5 ${deliveriesCollapsed ? 'lg:grid-cols-1' : 'lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]'}`}>
       <AvailableDeliveriesPanel
         rows={filteredDeliveries} totalRows={allDeliveries.length} selectedIds={selectedIds} loading={refreshing}
         selectedModule={selectedModule}
+        collapsed={deliveriesCollapsed} onCollapse={() => setDeliveriesCollapsed(true)} onExpand={() => setDeliveriesCollapsed(false)}
         search={search} date={date} window={window} status={status}
         onSearchChange={setSearch} onDateChange={(value) => changeSlot(value, window)} onWindowChange={(value) => changeSlot(date, value)} onStatusChange={setStatus}
         onToggle={toggle} onSelectAll={selectAll} onClearFilters={clearFilters}

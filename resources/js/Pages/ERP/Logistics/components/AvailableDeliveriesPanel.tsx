@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, SlidersHorizontal, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Search, X } from 'lucide-react';
 import {
   logisticsModuleForSourceType,
   logisticsModuleLabel,
@@ -12,6 +12,7 @@ import RetailOrderSummary from './RetailOrderSummary';
 type Props = {
   rows: TrackingShipmentLeg[];
   totalRows: number;
+  collapsed: boolean;
   loading?: boolean;
   selectedIds: number[];
   selectedModule?: LogisticsModule | null;
@@ -20,6 +21,8 @@ type Props = {
   window: string;
   status: string;
   onSearchChange: (value: string) => void;
+  onCollapse: () => void;
+  onExpand: () => void;
   onDateChange: (value: string) => void;
   onWindowChange: (value: string) => void;
   onStatusChange: (value: string) => void;
@@ -29,8 +32,8 @@ type Props = {
 };
 
 export default function AvailableDeliveriesPanel({
-  rows, totalRows, selectedIds, selectedModule, search, date, window, status, loading = false,
-  onSearchChange, onDateChange, onWindowChange, onStatusChange,
+  rows, totalRows, selectedIds, selectedModule, collapsed, search, date, window, status, loading = false,
+  onSearchChange, onCollapse, onExpand, onDateChange, onWindowChange, onStatusChange,
   onToggle, onSelectAll, onClearFilters,
 }: Props) {
   const allSelected = rows.length > 0 && rows.every((leg) => selectedIds.includes(leg.id));
@@ -40,10 +43,22 @@ export default function AvailableDeliveriesPanel({
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="font-bold text-gray-950 dark:text-white">Available deliveries</h2>
-          <p className="mt-1 text-sm text-gray-500">Choose the stops to include in this route.</p>
+          <p className="mt-1 text-sm text-gray-500">{collapsed ? `${totalRows} deliveries available` : 'Choose the stops to include in this route.'}</p>
         </div>
-        <SlidersHorizontal className="text-gray-400" size={20} />
+        <button
+          type="button"
+          aria-label={collapsed ? 'Show available deliveries' : 'Collapse available deliveries'}
+          aria-expanded={!collapsed}
+          aria-controls="available-deliveries-content"
+          title={collapsed ? 'Show available deliveries' : 'Collapse available deliveries'}
+          onClick={collapsed ? onExpand : onCollapse}
+          className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:hover:bg-gray-700 dark:hover:text-white"
+        >
+          {collapsed ? <ChevronDown aria-hidden="true" size={20} /> : <ChevronUp aria-hidden="true" size={20} />}
+        </button>
       </div>
+    </div>
+    <div id="available-deliveries-content" hidden={collapsed} className="p-4">
       <label className="relative mt-4 block">
         <span className="sr-only">Search deliveries</span>
         <Search className="absolute left-3 top-3 text-gray-400" size={18} />
@@ -71,8 +86,7 @@ export default function AvailableDeliveriesPanel({
         </div>
         <button type="button" onClick={onClearFilters} className="inline-flex min-h-10 items-center gap-1 rounded-lg px-2 text-gray-600 hover:bg-gray-50"><X size={15} />Clear filters</button>
       </div>
-    </div>
-    <div className="max-h-[36rem] space-y-2 overflow-y-auto p-3">
+      <div className="max-h-[36rem] space-y-2 overflow-y-auto p-3">
       {loading && Array.from({ length: 3 }, (_, index) => <div key={index} data-testid="delivery-skeleton" className="h-20 animate-pulse rounded-xl bg-gray-100 dark:bg-gray-700" />)}
       {!loading && rows.map((leg) => {
         const destination = leg.destination_snapshot;
@@ -99,6 +113,7 @@ export default function AvailableDeliveriesPanel({
       })}
       {!loading && !totalRows && <p className="p-6 text-center text-sm text-gray-500">No deliveries ready for batching.</p>}
       {!loading && totalRows > 0 && !rows.length && <p className="p-6 text-center text-sm text-gray-500">No deliveries match your filters.</p>}
+      </div>
     </div>
   </section>;
 }
