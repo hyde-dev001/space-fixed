@@ -409,6 +409,7 @@ Unknown evidence remains unknown and is not a pass.
 | High-risk action redirects to reauthentication | Complete password + fresh TOTP, then retry the action within the 15-minute window. |
 | Existing cookie stops working | Check administrator status, security version, MFA stage, and privileged-session registry; next-request denial is expected after a security change. |
 | Setup/reset email is missing | Inspect queue worker and failed jobs; resend through the supported flow. Never expose the bearer token. |
+| Initial Super Admin setup says the link is invalid after password submission | Deploy the current setup controller, run `php artisan optimize:clear` and `php artisan config:cache`, issue a fresh setup link, and use it once in a clean browser session. If it persists, inspect `storage/logs/laravel*.log` for `Privileged setup authorization missing from session` or `Privileged setup password completion failed`; share only the correlation ID and exception class. |
 | Private document returns 404/403 | Verify actor capability, owner/document scope, disk/path existence, and mandatory audit availability. Do not expose a direct storage URL. |
 | Renewal decision returns conflict | Reload the queue and inspect current candidate/predecessor state; another decision or promotion may already have won. |
 | Refund is blocked | Inspect payment eligibility, provider identifiers, unresolved prior attempts, currency/amount, and pending subscription lifecycle children. Do not edit payment history. |

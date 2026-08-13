@@ -9,6 +9,7 @@ use App\Enums\PrivilegedDeliveryType;
 use App\Jobs\SendPrivilegedWorkflowMail;
 use App\Models\PrivilegedSecurityToken;
 use App\Models\SuperAdmin;
+use App\Services\PrivilegedAudit;
 use App\Services\PrivilegedSecurityTokenService;
 use Carbon\Carbon;
 use Illuminate\Contracts\Queue\ShouldBeEncrypted;
@@ -16,6 +17,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
 use PragmaRX\Google2FA\Google2FA;
@@ -268,6 +270,73 @@ final class PrivilegedBootstrapAndInvitationTest extends TestCase
             'password' => 'Another-Setup2!',
             'password_confirmation' => 'Another-Setup2!',
         ])->assertUnprocessable();
+    }
+
+    public function test_setup_password_accepts_numeric_session_values_after_database_session_reload(): void
+    {
+        config(['session.driver' => 'database']);
+
+        $pending = SuperAdmin::factory()->pendingSetup()->create([
+            'email' => 'numeric-session@example.test',
+        ]);
+        $issued = app(PrivilegedSecurityTokenService::class)->issue(
+            $pending,
+            PrivilegedSecurityToken::PURPOSE_SETUP,
+            null,
+        );
+
+        $this->syncSessionCookie($this->postJson('/admin/setup/exchange', [
+            'token' => $issued['raw_token'],
+        ]));
+        session()->put('privileged_setup_authorization', [
+            'token_id' => (string) $issued['token']->id,
+            'subject_id' => (string) $pending->id,
+            'purpose' => PrivilegedSecurityToken::PURPOSE_SETUP,
+            'authorized_at' => (string) now()->timestamp,
+        ]);
+        session()->save();
+
+        $this->post('/admin/setup/complete', [
+            'password' => 'LongEnough-Setup1!',
+            'password_confirmation' => 'LongEnough-Setup1!',
+        ])->assertRedirect('/admin/mfa/setup');
+    }
+
+    public function test_unexpected_setup_completion_failure_is_reported_without_exposing_credentials(): void
+    {
+        $pending = SuperAdmin::factory()->pendingSetup()->create();
+        $issued = app(PrivilegedSecurityTokenService::class)->issue(
+            $pending,
+            PrivilegedSecurityToken::PURPOSE_SETUP,
+            null,
+        );
+        $this->syncSessionCookie($this->postJson('/admin/setup/exchange', [
+            'token' => $issued['raw_token'],
+        ]));
+
+        $this->mock(PrivilegedAudit::class, function ($mock): void {
+            $mock->shouldReceive('privilegedSetupPasswordCompleted')
+                ->once()
+                ->andThrow(new \RuntimeException('audit unavailable'));
+        });
+        Log::spy();
+
+        $response = $this->post('/admin/setup/complete', [
+            'password' => 'LongEnough-Setup1!',
+            'password_confirmation' => 'LongEnough-Setup1!',
+        ]);
+
+        $response->assertRedirect('/admin/setup')->assertSessionHasErrors([
+            'error' => 'Setup could not be completed. Please try again.',
+        ]);
+        Log::shouldHaveReceived('warning')->once()->withArgs(function (string $message, array $context): bool {
+            return $message === 'Privileged setup password completion failed'
+                && ($context['exception_class'] ?? null) === \RuntimeException::class
+                && ! array_key_exists('password', $context)
+                && ! array_key_exists('password_confirmation', $context);
+        });
+        self::assertNull($pending->fresh()?->password_changed_at);
+        self::assertNull($issued['token']->fresh()?->used_at);
     }
 
     public function test_existing_active_account_can_enroll_mfa_and_acknowledge_recovery_codes_without_status_change(): void
