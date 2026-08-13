@@ -74,7 +74,7 @@ final class FlaggedAccountWorkflowTest extends TestCase
         $response->assertOk();
 
         $payload = $this->extractInertiaPageData($response->getContent());
-        $account = collect($payload['props']['flaggedAccounts'] ?? [])
+        $account = collect($payload['props']['flaggedAccounts']['data'] ?? [])
             ->firstWhere('id', (string) $report->id);
 
         $this->assertSame(ReviewReport::STATUS_ACCOUNT_SUSPENDED, $account['status'] ?? null);

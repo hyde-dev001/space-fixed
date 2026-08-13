@@ -3,14 +3,15 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import SuspensionAppeals from '../SuspensionAppeals';
 
-const { postMock, swalFireMock } = vi.hoisted(() => ({
+const { postMock, getMock, swalFireMock } = vi.hoisted(() => ({
   postMock: vi.fn(),
+  getMock: vi.fn(),
   swalFireMock: vi.fn(),
 }));
 
 vi.mock('@inertiajs/react', () => ({
   Head: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
-  router: { post: postMock },
+  router: { post: postMock, get: getMock },
 }));
 
 vi.mock('sweetalert2', () => ({
@@ -56,6 +57,7 @@ const stats = {
 
 beforeEach(() => {
   postMock.mockReset();
+  getMock.mockReset();
   swalFireMock.mockReset();
   swalFireMock.mockResolvedValue({ isConfirmed: true });
   postMock.mockImplementation((_url: string, _data: unknown, options: { onSuccess?: () => void }) => {
@@ -99,5 +101,41 @@ describe('Suspension appeal queue state UI', () => {
       { reviewer_notes: null },
       expect.any(Object),
     ));
+  });
+
+  it('sends search and pagination through a server paginator', async () => {
+    render(
+      <SuspensionAppeals
+        appeals={{
+          data: [appeal()],
+          current_page: 1,
+          last_page: 2,
+          per_page: 1,
+          total: 2,
+          from: 1,
+          to: 1,
+          links: [],
+        } as never}
+        stats={{ ...stats, total: 2 }}
+        filters={{ search: '', status: 'all' }}
+      />
+    );
+
+    fireEvent.change(screen.getByPlaceholderText(/Search account name/), {
+      target: { value: 'Customer' },
+    });
+
+    await waitFor(() => expect(getMock).toHaveBeenCalledWith(
+      '/admin/appeals',
+      { search: 'Customer', status: 'all', page: 1 },
+      expect.any(Object),
+    ));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(getMock).toHaveBeenCalledWith(
+      '/admin/appeals',
+      { search: 'Customer', status: 'all', page: 2 },
+      expect.any(Object),
+    );
   });
 });

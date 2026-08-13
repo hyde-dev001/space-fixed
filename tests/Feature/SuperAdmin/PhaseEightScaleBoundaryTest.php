@@ -12,6 +12,7 @@ use App\Models\ShopReport;
 use App\Models\SuperAdmin;
 use App\Models\SuspensionAppeal;
 use App\Models\User;
+use Illuminate\Support\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
 use Tests\Concerns\AuthenticatesPrivilegedUsers;
@@ -81,10 +82,11 @@ final class PhaseEightScaleBoundaryTest extends TestCase
 
         $registrationProps = $this->inertiaProps($this->get(route('admin.registrations.index')));
         self::assertIsArray($registrationProps['registrations']);
-        self::assertCount(2, $registrationProps['registrations']);
+        self::assertSame(25, $registrationProps['registrations']['per_page']);
+        self::assertCount(2, $registrationProps['registrations']['data']);
         self::assertContains(
             $pendingRegistration->id,
-            array_column($registrationProps['registrations'], 'id'),
+            array_column($registrationProps['registrations']['data'], 'id'),
         );
 
         $shopProps = $this->inertiaProps($this->get(route('admin.shops.index')));
@@ -95,16 +97,19 @@ final class PhaseEightScaleBoundaryTest extends TestCase
 
         $reportProps = $this->inertiaProps($this->get(route('admin.shop-reports')));
         self::assertIsArray($reportProps['shopGroups']);
-        self::assertCount(1, $reportProps['shopGroups']);
-        self::assertCount(1, $reportProps['shopGroups'][0]['reports']);
+        self::assertSame(25, $reportProps['shopGroups']['per_page']);
+        self::assertCount(1, $reportProps['shopGroups']['data']);
+        self::assertArrayNotHasKey('reports', $reportProps['shopGroups']['data'][0]);
 
         $flaggedProps = $this->inertiaProps($this->get(route('admin.flagged-accounts.index')));
         self::assertIsArray($flaggedProps['flaggedAccounts']);
-        self::assertCount(1, $flaggedProps['flaggedAccounts']);
+        self::assertSame(25, $flaggedProps['flaggedAccounts']['per_page']);
+        self::assertCount(1, $flaggedProps['flaggedAccounts']['data']);
 
         $appealProps = $this->inertiaProps($this->get(route('admin.suspension-appeals')));
         self::assertIsArray($appealProps['appeals']);
-        self::assertCount(1, $appealProps['appeals']);
+        self::assertSame(25, $appealProps['appeals']['per_page']);
+        self::assertCount(1, $appealProps['appeals']['data']);
         self::assertArrayHasKey('stats', $appealProps);
 
         $subscriptionProps = $this->inertiaProps($this->get(route('admin.subscriptions.index')));
@@ -350,6 +355,207 @@ final class PhaseEightScaleBoundaryTest extends TestCase
         self::assertSame(0, $adminProps['admins']['total']);
         self::assertSame(0, $shopProps['shops']['total']);
         self::assertSame(0, $userProps['users']['total']);
+    }
+
+    public function test_review_queues_use_capped_server_filters_global_stats_and_detail_boundaries(): void
+    {
+        $viewer = $this->phaseTwoSuperAdmin();
+        $pendingRegistration = ShopOwner::factory()->pending()->create([
+            'business_name' => 'Pending Registration',
+        ]);
+        ShopOwner::factory()->approved()->create([
+            'business_name' => 'Approved Registration',
+        ]);
+
+        $highPriorityShop = $this->approvedPhaseTwoShop(['business_name' => 'High Priority Shop']);
+        $normalPriorityShop = $this->approvedPhaseTwoShop(['business_name' => 'Normal Priority Shop']);
+        $highReports = $this->openPhaseTwoShopReports($highPriorityShop, 5);
+        $this->openPhaseTwoShopReports($normalPriorityShop, 1);
+
+        $archivedCustomer = $this->activePhaseTwoUser(['name' => 'Archived Report Customer']);
+        $archivedReport = $this->flaggedPhaseTwoReviewReport($archivedCustomer, [
+            'shop_owner_id' => $normalPriorityShop->id,
+        ]);
+        $archivedCustomer->delete();
+
+        SuspensionAppeal::create([
+            'account_type' => 'customer',
+            'account_id' => $archivedCustomer->id,
+            'account_name' => $archivedCustomer->name,
+            'recipient_email' => $archivedCustomer->email,
+            'suspension_reason' => 'Archived appeal fixture',
+            'status' => 'rejected',
+            'appeal_token' => 'phase-eight-queue-appeal-1',
+            'appeal_message' => 'The account owner submitted an appeal.',
+            'created_at' => now()->subMinute(),
+            'updated_at' => now()->subMinute(),
+        ]);
+        SuspensionAppeal::create([
+            'account_type' => 'customer',
+            'account_id' => $archivedCustomer->id,
+            'account_name' => $archivedCustomer->name,
+            'recipient_email' => $archivedCustomer->email,
+            'suspension_reason' => 'Second appeal fixture',
+            'status' => 'rejected',
+            'appeal_token' => 'phase-eight-queue-appeal-2',
+            'appeal_message' => 'A second historical appeal record.',
+            'created_at' => now()->subMinute(),
+            'updated_at' => now()->subMinute(),
+        ]);
+
+        $this->actingAsCompletedPrivileged($viewer);
+
+        $registrationProps = $this->inertiaProps($this->get(route('admin.registrations.index', [
+            'status' => 'pending',
+            'search' => 'Pending',
+            'per_page' => 1,
+        ])));
+        self::assertSame(1, $registrationProps['registrations']['per_page']);
+        self::assertSame(1, $registrationProps['registrations']['total']);
+        self::assertSame($pendingRegistration->id, $registrationProps['registrations']['data'][0]['id']);
+        self::assertSame(1, $registrationProps['stats']['pending']);
+
+        $reportProps = $this->inertiaProps($this->get(route('admin.shop-reports', [
+            'priority' => 'high',
+            'per_page' => 1,
+        ])));
+        self::assertSame(1, $reportProps['shopGroups']['per_page']);
+        self::assertSame(1, $reportProps['shopGroups']['total']);
+        self::assertSame($highPriorityShop->id, $reportProps['shopGroups']['data'][0]['shop_owner_id']);
+        self::assertSame(5, $reportProps['shopGroups']['data'][0]['open_reports']);
+        self::assertArrayNotHasKey('open_report_ids', $reportProps['shopGroups']['data'][0]);
+        self::assertArrayNotHasKey('reports', $reportProps['shopGroups']['data'][0]);
+        self::assertSame(6, $reportProps['stats']['total_reports']);
+        self::assertSame(1, $reportProps['stats']['high_priority']);
+
+        $reportDetail = $this->getJson(route('admin.shop-reports.show', [
+            'shopOwner' => $highPriorityShop->id,
+            'per_page' => 2,
+        ]));
+        $reportDetail
+            ->assertOk()
+            ->assertJsonPath('reports.per_page', 2)
+            ->assertJsonCount(2, 'reports.data');
+        self::assertSame($highReports->sortByDesc('id')->values()->all()[0]->id, $reportDetail->json('reports.data.0.id'));
+
+        $flaggedProps = $this->inertiaProps($this->get(route('admin.flagged-accounts.index', [
+            'status' => 'pending_review',
+            'search' => 'Archived Report Customer',
+            'per_page' => 1,
+        ])));
+        self::assertSame(1, $flaggedProps['flaggedAccounts']['per_page']);
+        self::assertSame(1, $flaggedProps['flaggedAccounts']['total']);
+        self::assertSame((string) $archivedReport->id, $flaggedProps['flaggedAccounts']['data'][0]['id']);
+        self::assertSame(1, $flaggedProps['stats']['total']);
+
+        $appealProps = $this->inertiaProps($this->get(route('admin.suspension-appeals', [
+            'status' => 'rejected',
+            'per_page' => 1,
+        ])));
+        self::assertSame(1, $appealProps['appeals']['per_page']);
+        self::assertSame(2, $appealProps['appeals']['total']);
+        self::assertSame(2, $appealProps['stats']['total']);
+    }
+
+    public function test_review_queue_filters_and_caps_reject_invalid_values(): void
+    {
+        $viewer = $this->phaseTwoSuperAdmin();
+        $this->actingAsCompletedPrivileged($viewer);
+
+        $this->getJson(route('admin.registrations.index', [
+            'status' => 'archived',
+            'page' => 'not-an-integer',
+            'per_page' => 101,
+        ]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['status', 'page', 'per_page']);
+
+        $this->getJson(route('admin.shop-reports', [
+            'priority' => 'urgent',
+            'status' => 'unknown',
+            'page' => 0,
+            'per_page' => 101,
+        ]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['priority', 'status', 'page', 'per_page']);
+
+        $this->getJson(route('admin.flagged-accounts.index', [
+            'status' => 'unknown',
+            'page' => 0,
+            'per_page' => 101,
+        ]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['status', 'page', 'per_page']);
+
+        $this->getJson(route('admin.suspension-appeals', [
+            'status' => 'unknown',
+            'page' => 0,
+            'per_page' => 101,
+        ]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['status', 'page', 'per_page']);
+    }
+
+    public function test_shop_report_pattern_characterization_excludes_terminal_reports(): void
+    {
+        $now = Carbon::parse('2026-08-13 12:00:00');
+        Carbon::setTestNow($now);
+
+        try {
+            $viewer = $this->phaseTwoSuperAdmin();
+            $this->actingAsCompletedPrivileged($viewer);
+            $shop = $this->approvedPhaseTwoShop();
+            for ($index = 0; $index < 5; $index++) {
+                $reporter = $this->activePhaseTwoUser([
+                    'created_at' => $now->copy()->subDays(3),
+                    'updated_at' => $now->copy()->subDays(3),
+                ]);
+                ShopReport::create([
+                    'user_id' => $reporter->id,
+                    'shop_owner_id' => $shop->id,
+                    'reason' => 'misconduct',
+                    'description' => "Pattern characterization report {$index}",
+                    'status' => 'submitted',
+                    'ip_address' => "203.0.113.{$index}",
+                    'created_at' => $now->copy()->subMinutes($index * 10),
+                    'updated_at' => $now->copy()->subMinutes($index * 10),
+                ]);
+            }
+
+            self::assertSame([
+                'batch_reports',
+                'new_account_reporters',
+                'ip_clustering',
+            ], ShopReport::detectPatterns($shop->id));
+
+            $props = $this->inertiaProps($this->get(route('admin.shop-reports', ['per_page' => 100])));
+            $group = collect($props['shopGroups']['data'] ?? [])->firstWhere('shop_owner_id', $shop->id);
+            self::assertSame([
+                'batch_reports',
+                'new_account_reporters',
+                'ip_clustering',
+            ], $group['pattern_flags'] ?? null);
+
+            ShopReport::query()
+                ->where('shop_owner_id', $shop->id)
+                ->orderBy('id')
+                ->limit(2)
+                ->update(['status' => 'dismissed']);
+
+            self::assertSame([
+                'new_account_reporters',
+                'ip_clustering',
+            ], ShopReport::detectPatterns($shop->id));
+
+            $props = $this->inertiaProps($this->get(route('admin.shop-reports', ['per_page' => 100])));
+            $group = collect($props['shopGroups']['data'] ?? [])->firstWhere('shop_owner_id', $shop->id);
+            self::assertSame([
+                'new_account_reporters',
+                'ip_clustering',
+            ], $group['pattern_flags'] ?? null);
+        } finally {
+            Carbon::setTestNow();
+        }
     }
 
     /** @return array<string, mixed> */

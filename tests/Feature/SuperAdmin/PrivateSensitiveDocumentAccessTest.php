@@ -486,8 +486,8 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
         $registrationResponse = $this->actingAsCompletedPrivileged($admin)
             ->get(route('admin.registrations.index'));
         $registrationResponse->assertInertia(fn (Assert $page) => $page
-            ->where('registrations.0.documents.0.url', route('admin.shop-documents.show', [$owner, $document]))
-            ->missing('registrations.0.documents.0.file_path'));
+            ->where('registrations.data.0.documents.0.url', route('admin.shop-documents.show', [$owner, $document]))
+            ->missing('registrations.data.0.documents.0.file_path'));
         $this->assertStringNotContainsString('/storage/', $registrationResponse->getContent());
         $this->assertStringNotContainsString($document->file_path, $registrationResponse->getContent());
 

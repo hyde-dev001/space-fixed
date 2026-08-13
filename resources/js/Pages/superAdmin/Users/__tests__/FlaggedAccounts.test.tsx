@@ -3,14 +3,17 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import FlaggedAccounts from '../FlaggedAccounts';
 
-const { postMock, swalFireMock, usePageMock } = vi.hoisted(() => ({
+const { postMock, getMock, reloadMock, swalFireMock, usePageMock } = vi.hoisted(() => ({
   postMock: vi.fn(),
+  getMock: vi.fn(),
+  reloadMock: vi.fn(),
   swalFireMock: vi.fn(),
   usePageMock: vi.fn(),
 }));
 
 vi.mock('@inertiajs/react', () => ({
   Head: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+  router: { get: getMock, reload: reloadMock },
   usePage: () => usePageMock(),
 }));
 
@@ -38,6 +41,8 @@ const account = (status: string) => ({
 
 beforeEach(() => {
   postMock.mockReset();
+  getMock.mockReset();
+  reloadMock.mockReset();
   swalFireMock.mockReset();
   usePageMock.mockReset();
   swalFireMock.mockResolvedValue({ isConfirmed: true, value: 'Confirmed suspension reason.' });
@@ -77,5 +82,50 @@ describe('Flagged account state UI', () => {
       '/admin/flagged-accounts/12/ban',
       { admin_notes: 'Confirmed suspension reason.' },
     ));
+  });
+
+  it('sends filters and pagination through a server paginator', async () => {
+    const item = account('pending_review');
+    usePageMock.mockReturnValue({
+      props: {
+        flaggedAccounts: {
+          data: [item],
+          current_page: 1,
+          last_page: 2,
+          per_page: 1,
+          total: 2,
+          from: 1,
+          to: 1,
+          links: [],
+        },
+        stats: {
+          total: 2,
+          pending_review: 2,
+          under_investigation: 0,
+          dismissed: 0,
+          account_suspended: 0,
+        },
+        filters: { search: '', status: 'all' },
+      },
+    });
+
+    render(<FlaggedAccounts />);
+
+    fireEvent.change(screen.getByPlaceholderText(/Search by username/), {
+      target: { value: 'Customer' },
+    });
+
+    await waitFor(() => expect(getMock).toHaveBeenCalledWith(
+      '/admin/flagged-accounts',
+      { search: 'Customer', status: 'all', page: 1 },
+      expect.any(Object),
+    ));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(getMock).toHaveBeenCalledWith(
+      '/admin/flagged-accounts',
+      { search: 'Customer', status: 'all', page: 2 },
+      expect.any(Object),
+    );
   });
 });

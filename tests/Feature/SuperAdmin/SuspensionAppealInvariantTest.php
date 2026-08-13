@@ -48,7 +48,7 @@ final class SuspensionAppealInvariantTest extends TestCase
         $indexResponse = $this->get('/admin/appeals');
         $indexResponse->assertOk();
         $indexPayload = $this->extractInertiaPageData($indexResponse->getContent());
-        $listed = collect($indexPayload['props']['appeals'] ?? [])->firstWhere('id', $appeal->id);
+        $listed = collect($indexPayload['props']['appeals']['data'] ?? [])->firstWhere('id', $appeal->id);
 
         $this->assertSame('expired', $listed['status'] ?? null);
         $this->assertSame('eligible', $appeal->fresh()->status);

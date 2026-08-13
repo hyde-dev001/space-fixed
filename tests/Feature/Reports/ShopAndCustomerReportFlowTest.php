@@ -396,7 +396,7 @@ class ShopAndCustomerReportFlowTest extends TestCase
         $shopReportsPayload = $this->extractInertiaPageData($shopReportsPage->getContent());
         $this->assertSame('superAdmin/Shops/ShopReports', $shopReportsPayload['component'] ?? null);
 
-        $shopGroups = collect($shopReportsPayload['props']['shopGroups'] ?? []);
+        $shopGroups = collect($shopReportsPayload['props']['shopGroups']['data'] ?? []);
         $this->assertTrue(
             $shopGroups->contains(fn ($group) => (int) ($group['shop_owner_id'] ?? 0) === $shopOwner->id),
             'Expected submitted shop report to be visible in super admin shop reports page.'
@@ -429,7 +429,7 @@ class ShopAndCustomerReportFlowTest extends TestCase
         $flaggedPayload = $this->extractInertiaPageData($flaggedPage->getContent());
         $this->assertSame('superAdmin/Users/FlaggedAccounts', $flaggedPayload['component'] ?? null);
 
-        $flaggedAccounts = collect($flaggedPayload['props']['flaggedAccounts'] ?? []);
+        $flaggedAccounts = collect($flaggedPayload['props']['flaggedAccounts']['data'] ?? []);
         $reviewReport = ReviewReport::query()->firstOrFail();
 
         $this->assertTrue(
@@ -521,7 +521,7 @@ class ShopAndCustomerReportFlowTest extends TestCase
         $shopReportsPage->assertOk();
 
         $shopReportsPayload = $this->extractInertiaPageData($shopReportsPage->getContent());
-        $shopGroups = collect($shopReportsPayload['props']['shopGroups'] ?? []);
+        $shopGroups = collect($shopReportsPayload['props']['shopGroups']['data'] ?? []);
         $targetGroup = $shopGroups->first(fn ($group) => (int) ($group['shop_owner_id'] ?? 0) === $shopOwner->id);
 
         $this->assertIsArray($targetGroup);

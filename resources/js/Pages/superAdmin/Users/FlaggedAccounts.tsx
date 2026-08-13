@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { Head, usePage } from '@inertiajs/react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Head, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import Swal from 'sweetalert2';
 import AppLayout from '../../../layout/AppLayout';
@@ -35,9 +35,33 @@ interface FlaggedAccount {
 }
 
 interface PageProps {
-  flaggedAccounts: FlaggedAccount[];
+  flaggedAccounts: FlaggedAccount[] | FlaggedAccountPage;
+  stats?: FlaggedStats;
+  filters?: { search?: string | null; status?: string };
   [key: string]: unknown;
 }
+
+interface FlaggedAccountPage {
+  data: FlaggedAccount[];
+  current_page: number;
+  last_page: number;
+  per_page: number;
+  total: number;
+  from: number | null;
+  to: number | null;
+}
+
+interface FlaggedStats {
+  total: number;
+  pending_review: number;
+  under_investigation: number;
+  dismissed: number;
+  account_suspended: number;
+}
+
+const isFlaggedAccountPage = (
+  value: FlaggedAccount[] | FlaggedAccountPage,
+): value is FlaggedAccountPage => !Array.isArray(value);
 
 const STATUS_LABELS: Record<string, string> = {
   pending_review: 'Pending review',
@@ -83,21 +107,57 @@ const errorMessage = (error: unknown): string => {
 };
 
 const FlaggedAccounts: React.FC = () => {
-  const { flaggedAccounts: initialAccounts } = usePage<PageProps>().props;
-  const [accounts, setAccounts] = useState<FlaggedAccount[]>(initialAccounts ?? []);
-  const [filterStatus, setFilterStatus] = useState('all');
-  const [searchTerm, setSearchTerm] = useState('');
+  const { flaggedAccounts: initialAccounts, stats, filters } = usePage<PageProps>().props;
+  const serverPage = isFlaggedAccountPage(initialAccounts) ? initialAccounts : null;
+  const serverPaginated = serverPage !== null;
+  const pageRows = serverPage?.data ?? (Array.isArray(initialAccounts) ? initialAccounts : []);
+  const [accounts, setAccounts] = useState<FlaggedAccount[]>(pageRows);
+  const [filterStatus, setFilterStatus] = useState(filters?.status ?? 'all');
+  const [searchTerm, setSearchTerm] = useState(filters?.search ?? '');
   const [detailAccount, setDetailAccount] = useState<FlaggedAccount | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipInitialSearch = useRef(true);
+
+  useEffect(() => {
+    setAccounts(pageRows);
+  }, [initialAccounts]);
+
+  const requestPage = (page: number, nextStatus = filterStatus) => {
+    router.get('/admin/flagged-accounts', {
+      search: searchTerm || undefined,
+      status: nextStatus,
+      page,
+    }, {
+      preserveState: true,
+      preserveScroll: true,
+      replace: true,
+    });
+  };
+
+  useEffect(() => {
+    if (!serverPaginated) return;
+    if (skipInitialSearch.current) {
+      skipInitialSearch.current = false;
+      return;
+    }
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => requestPage(1), 250);
+
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+  }, [searchTerm]);
 
   const filterOptions = useMemo(() => FILTER_OPTIONS.map((option) => ({
     ...option,
     count: option.value === 'all'
-      ? accounts.length
-      : accounts.filter((account) => account.status === option.value).length,
-  })), [accounts]);
+      ? (stats?.total ?? accounts.length)
+      : (stats?.[option.value as keyof FlaggedStats] ?? accounts.filter((account) => account.status === option.value).length),
+  })), [accounts, stats]);
 
   const filteredAccounts = useMemo(() => {
+    if (serverPaginated) return accounts;
     const term = searchTerm.trim().toLowerCase();
 
     return accounts.filter((account) => {
@@ -134,7 +194,11 @@ const FlaggedAccounts: React.FC = () => {
         `/admin/flagged-accounts/${account.id}/${action}`,
         adminNotes === undefined ? {} : { admin_notes: adminNotes },
       );
-      patchStatus(account.id, response.data?.status ?? account.status);
+      if (serverPaginated) {
+        router.reload({ only: ['flaggedAccounts', 'stats'], preserveScroll: true });
+      } else {
+        patchStatus(account.id, response.data?.status ?? account.status);
+      }
       setDetailAccount(null);
       await Swal.fire({
         title: 'Decision saved',
@@ -220,7 +284,7 @@ const FlaggedAccounts: React.FC = () => {
               <p className="text-gray-600 dark:text-gray-400">Review customer reports using the account state workflow.</p>
             </div>
             <div className="text-right">
-              <div className="text-2xl font-bold text-gray-900 dark:text-white">{filteredAccounts.length}</div>
+              <div className="text-2xl font-bold text-gray-900 dark:text-white">{serverPage?.total ?? filteredAccounts.length}</div>
               <div className="text-sm text-gray-500 dark:text-gray-400">Visible reports</div>
             </div>
           </div>
@@ -249,7 +313,10 @@ const FlaggedAccounts: React.FC = () => {
                   <button
                     key={option.value}
                     type="button"
-                    onClick={() => setFilterStatus(option.value)}
+                    onClick={() => {
+                      setFilterStatus(option.value);
+                      if (serverPaginated) requestPage(1, option.value);
+                    }}
                     className={`rounded-lg px-4 py-2 text-sm font-medium ${filterStatus === option.value ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}
                   >
                     {option.label} <span className="ml-1 rounded-full bg-black/10 px-2 py-0.5 text-xs">{option.count}</span>
@@ -310,6 +377,32 @@ const FlaggedAccounts: React.FC = () => {
                 </TableBody>
               </Table>
             </div>
+
+            {serverPage && serverPage.last_page > 1 && (
+              <div className="mt-4 flex items-center justify-between border-t border-gray-200 px-4 py-3 dark:border-gray-700">
+                <button
+                  type="button"
+                  title="Previous page"
+                  aria-label="Previous page"
+                  disabled={serverPage.current_page <= 1}
+                  onClick={() => requestPage(Math.max(1, serverPage.current_page - 1))}
+                  className="rounded-lg border px-3 py-2 text-sm disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <span className="text-sm text-gray-500">Page {serverPage.current_page} of {serverPage.last_page}</span>
+                <button
+                  type="button"
+                  title="Next page"
+                  aria-label="Next page"
+                  disabled={serverPage.current_page >= serverPage.last_page}
+                  onClick={() => requestPage(Math.min(serverPage.last_page, serverPage.current_page + 1))}
+                  className="rounded-lg border px-3 py-2 text-sm disabled:opacity-50"
+                >
+                  Next page
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Head, Link, router } from "@inertiajs/react";
 import AppLayout from "../../../layout/AppLayout";
 import Swal from 'sweetalert2';
@@ -158,6 +158,36 @@ interface Registration {
   createdAt: string;
 }
 
+interface RegistrationPage {
+  data: Registration[];
+  current_page: number;
+  last_page: number;
+  per_page: number;
+  total: number;
+  from: number | null;
+  to: number | null;
+}
+
+interface RegistrationStats {
+  total: number;
+  pending: number;
+  approved: number;
+  rejected: number;
+}
+
+interface RegistrationPageProps {
+  registrations?: Registration[] | RegistrationPage;
+  stats?: RegistrationStats;
+  filters?: {
+    search?: string | null;
+    status?: 'all' | 'pending' | 'approved' | 'rejected' | null;
+  };
+}
+
+const isRegistrationPage = (
+  value: Registration[] | RegistrationPage,
+): value is RegistrationPage => !Array.isArray(value);
+
 const documentsForRegistration = (registration: Registration): RegistrationDocument[] => (
   registration.documents && registration.documents.length > 0
     ? registration.documents
@@ -246,14 +276,23 @@ const MetricCard: React.FC<MetricData> = ({
   );
 };
 
-export default function ShopOwnerRegistrationView({ registrations = [] }: { registrations?: Registration[] }) {
+export default function ShopOwnerRegistrationView({
+  registrations = [],
+  stats,
+  filters,
+}: RegistrationPageProps) {
+  const serverPage = isRegistrationPage(registrations);
+  const serverPaginated = serverPage;
+  const serverRows = serverPage ? registrations.data : registrations;
   const [expandedCardId, setExpandedCardId] = useState<number | null>(null);
   const [expandedDocuments, setExpandedDocuments] = useState<Set<number>>(new Set());
   const [viewedDocuments, setViewedDocuments] = useState<Record<number, Set<number>>>({});
   const [reviewMetadata, setReviewMetadata] = useState<Record<number, Partial<RegistrationReviewMetadata>>>({});
-  const [registrationsState, setRegistrationsState] = useState<Registration[]>(registrations);
-  const [searchTerm, setSearchTerm] = useState<string>('');
-  const [filterStatus, setFilterStatus] = useState<'pending' | 'approved' | 'rejected'>('pending');
+  const [registrationsState, setRegistrationsState] = useState<Registration[]>(serverRows);
+  const [searchTerm, setSearchTerm] = useState<string>(filters?.search ?? '');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'approved' | 'rejected'>(
+    filters?.status ?? (serverPaginated ? 'all' : 'pending'),
+  );
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [selectedRegistration, setSelectedRegistration] = useState<Registration | null>(null);
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
@@ -263,8 +302,53 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
   const [registrationToReject, setRegistrationToReject] = useState<Registration | null>(null);
   const [submittingRegistrationId, setSubmittingRegistrationId] = useState<number | null>(null);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(serverPage?.current_page ?? 1);
   const [itemsPerPage] = useState(7);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipInitialSearch = useRef(true);
+
+  useEffect(() => {
+    setRegistrationsState(serverRows);
+    if (serverPage) {
+      setCurrentPage(serverPage.current_page);
+    }
+  }, [registrations]);
+
+  const requestPage = (page: number, nextStatus = filterStatus) => {
+    router.get('/admin/registrations', {
+      search: searchTerm || undefined,
+      status: nextStatus,
+      page,
+    }, {
+      preserveState: true,
+      preserveScroll: true,
+      replace: true,
+    });
+  };
+
+  const goToPage = (page: number) => {
+    if (serverPaginated) {
+      requestPage(page);
+      return;
+    }
+
+    setCurrentPage(page);
+  };
+
+  useEffect(() => {
+    if (!serverPaginated) return;
+    if (skipInitialSearch.current) {
+      skipInitialSearch.current = false;
+      return;
+    }
+
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => requestPage(1), 250);
+
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+  }, [searchTerm]);
 
   const rejectReasonOptions = [
     'Incomplete documentation',
@@ -452,23 +536,27 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
   };
 
   // Filter registrations based on status and search term
-  const filteredRegistrations = registrationsState.filter(reg => {
-    const statusMatch = reg.status === filterStatus;
-    const searchMatch = searchTerm === '' ||
-      reg.businessName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      reg.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      `${reg.firstName} ${reg.lastName}`.toLowerCase().includes(searchTerm.toLowerCase());
-    return statusMatch && searchMatch;
-  });
+  const filteredRegistrations = serverPaginated
+    ? registrationsState
+    : registrationsState.filter(reg => {
+      const statusMatch = filterStatus === 'all' || reg.status === filterStatus;
+      const searchMatch = searchTerm === '' ||
+        reg.businessName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        reg.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        `${reg.firstName} ${reg.lastName}`.toLowerCase().includes(searchTerm.toLowerCase());
+      return statusMatch && searchMatch;
+    });
 
   // Pagination calculations
-  const totalPages = Math.ceil(filteredRegistrations.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const paginatedRegistrations = filteredRegistrations.slice(startIndex, endIndex);
+  const totalPages = serverPage ? serverPage.last_page : Math.ceil(filteredRegistrations.length / itemsPerPage);
+  const startIndex = serverPage ? Math.max(0, (serverPage.from ?? 1) - 1) : (currentPage - 1) * itemsPerPage;
+  const endIndex = serverPage ? (serverPage.to ?? startIndex + filteredRegistrations.length) : startIndex + itemsPerPage;
+  const paginatedRegistrations = serverPaginated
+    ? filteredRegistrations
+    : filteredRegistrations.slice(startIndex, endIndex);
 
   // Reset to page 1 when filters change
-  React.useEffect(() => {
+  useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, filterStatus]);
 
@@ -526,7 +614,7 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
             <MetricCard
               title="Total Applications"
-              value={registrationsState.length}
+              value={stats?.total ?? registrationsState.length}
               change={12}
               changeType="increase"
               icon={UserIcon}
@@ -535,7 +623,7 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
             />
             <MetricCard
               title="Pending Reviews"
-              value={registrationsState.filter(r => r.status === 'pending').length}
+              value={stats?.pending ?? registrationsState.filter(r => r.status === 'pending').length}
               change={5}
               changeType="decrease"
               icon={TimeIcon}
@@ -544,7 +632,7 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
             />
             <MetricCard
               title="Approved"
-              value={registrationsState.filter(r => r.status === 'approved').length}
+              value={stats?.approved ?? registrationsState.filter(r => r.status === 'approved').length}
               change={8}
               changeType="increase"
               icon={CheckCircleIcon}
@@ -553,7 +641,7 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
             />
             <MetricCard
               title="Rejected"
-              value={registrationsState.filter(r => r.status === 'rejected').length}
+              value={stats?.rejected ?? registrationsState.filter(r => r.status === 'rejected').length}
               change={2}
               changeType="increase"
               icon={AlertIcon}
@@ -585,10 +673,17 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
                 </label>
                 <select
                   value={filterStatus}
-                  onChange={(e) => setFilterStatus(e.target.value as 'pending' | 'approved' | 'rejected')}
+                  onChange={(e) => {
+                    const nextStatus = e.target.value as 'all' | 'pending' | 'approved' | 'rejected';
+                    setFilterStatus(nextStatus);
+                    if (serverPaginated) {
+                      requestPage(1, nextStatus);
+                    }
+                  }}
                   aria-label="Filter by Status"
                   className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
                 >
+                  <option value="all">All</option>
                   <option value="pending">Pending</option>
                   <option value="approved">Approved</option>
                   <option value="rejected">Rejected</option>
@@ -601,7 +696,7 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
             <div className="p-6 border-b border-gray-200 dark:border-gray-700">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                Shop Owner Applications ({filteredRegistrations.length})
+                Shop Owner Applications ({serverPage?.total ?? filteredRegistrations.length})
               </h3>
             </div>
             <div className="overflow-auto">
@@ -673,7 +768,7 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
                   <CheckCircleIcon className="mx-auto h-12 w-12 text-gray-400 mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No applications found</h3>
                   <p className="text-gray-600 dark:text-gray-400">
-                    There are no {filterStatus} shop owner registrations to review.
+                    There are no {filterStatus === 'all' ? '' : filterStatus + ' '}shop owner registrations to review.
                   </p>
                 </div>
               )}
@@ -684,16 +779,17 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
               <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
                 <div className="flex items-center justify-between">
                   <div className="text-sm text-gray-700 dark:text-gray-300">
-                    Showing <span className="font-medium">{startIndex + 1}</span> to{" "}
-                    <span className="font-medium">{Math.min(endIndex, filteredRegistrations.length)}</span> of{" "}
-                    <span className="font-medium">{filteredRegistrations.length}</span>
+                    Showing <span className="font-medium">{serverPage?.from ?? startIndex + 1}</span> to{" "}
+                    <span className="font-medium">{serverPage?.to ?? Math.min(endIndex, filteredRegistrations.length)}</span> of{" "}
+                    <span className="font-medium">{serverPage?.total ?? filteredRegistrations.length}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                      onClick={() => goToPage(Math.max(currentPage - 1, 1))}
                       disabled={currentPage === 1}
                       className="p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                       title="Previous page"
+                      aria-label="Previous page"
                     >
                       <svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -710,7 +806,7 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
                         return (
                           <button
                             key={page}
-                            onClick={() => setCurrentPage(page)}
+                            onClick={() => goToPage(page)}
                             className={`min-w-[40px] h-10 px-3 rounded-lg font-medium transition-colors ${
                               currentPage === page
                                 ? "bg-blue-600 text-white"
@@ -731,10 +827,11 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
                     })}
 
                     <button
-                      onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                      onClick={() => goToPage(Math.min(currentPage + 1, totalPages))}
                       disabled={currentPage === totalPages}
                       className="p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                       title="Next page"
+                      aria-label="Next page"
                     >
                       <svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />

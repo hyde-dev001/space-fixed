@@ -323,7 +323,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
         $response->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('registrations', function ($registrations) use ($document, $owner): bool {
-                    $registration = collect($registrations)->firstWhere('id', $owner->id);
+                    $registration = collect($registrations['data'] ?? [])->firstWhere('id', $owner->id);
                     $payload = collect($registration['documents'] ?? [])->firstWhere('id', $document->id);
 
                     return is_array($payload)

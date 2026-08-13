@@ -1,10 +1,39 @@
-import { describe, expect, it } from 'vitest';
+import React from 'react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import ShopOwnerRegistrationView from '../ShopOwnerRegistrationView';
 import {
   areAllDocumentsViewed,
   buildRegistrationApprovalPayload,
   canDecideRegistration,
   getRegistrationDecisionErrorMessage,
 } from '../ShopOwnerRegistrationView';
+
+const { getMock, postMock, swalFireMock } = vi.hoisted(() => ({
+  getMock: vi.fn(),
+  postMock: vi.fn(),
+  swalFireMock: vi.fn(),
+}));
+
+vi.mock('@inertiajs/react', () => ({
+  Head: ({ children }: { children?: React.ReactNode }) => React.createElement(React.Fragment, null, children),
+  Link: ({ children }: { children?: React.ReactNode }) => React.createElement(React.Fragment, null, children),
+  router: { get: getMock, post: postMock },
+}));
+
+vi.mock('sweetalert2', () => ({
+  default: { fire: swalFireMock },
+}));
+
+vi.mock('../../../../layout/AppLayout', () => ({
+  default: ({ children }: { children?: React.ReactNode }) => React.createElement('div', null, children),
+}));
+
+beforeEach(() => {
+  getMock.mockReset();
+  postMock.mockReset();
+  swalFireMock.mockReset();
+});
 
 describe('areAllDocumentsViewed', () => {
   it('requires every submitted document to be viewed', () => {
@@ -112,5 +141,51 @@ describe('registration decision guards', () => {
 
     expect(payload.documents[0]).not.toHaveProperty('file_path');
     expect(payload.documents[0]).not.toHaveProperty('checksum_sha256');
+  });
+});
+
+describe('registration queue pagination UI', () => {
+  it('sends search through the server paginator', async () => {
+    render(
+      React.createElement(ShopOwnerRegistrationView, {
+        registrations: {
+          data: [{
+            id: 1,
+            firstName: 'Owner',
+            lastName: 'One',
+            email: 'owner@example.test',
+            phone: '09170000000',
+            businessName: 'Sole Space',
+            businessAddress: 'Cavite',
+            businessType: 'Retail',
+            serviceType: 'Retail',
+            operatingHours: [],
+            documents: [],
+            documentUrls: [],
+            status: 'pending',
+            createdAt: '2026-08-12 12:00:00',
+          }],
+          current_page: 1,
+          last_page: 2,
+          per_page: 1,
+          total: 2,
+          from: 1,
+          to: 1,
+          links: [],
+        } as never,
+        stats: { total: 2, pending: 2, approved: 0, rejected: 0 },
+        filters: { search: '', status: 'pending' },
+      } as never)
+    );
+
+    fireEvent.change(screen.getByLabelText('Search Applications'), {
+      target: { value: 'Sole' },
+    });
+
+    await waitFor(() => expect(getMock).toHaveBeenCalledWith(
+      '/admin/registrations',
+      { search: 'Sole', status: 'pending', page: 1 },
+      expect.any(Object),
+    ));
   });
 });

@@ -3,14 +3,15 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ShopReports from '../ShopReports';
 
-const { postMock, swalFireMock, usePageMock } = vi.hoisted(() => ({
+const { postMock, getMock, swalFireMock, usePageMock } = vi.hoisted(() => ({
   postMock: vi.fn(),
+  getMock: vi.fn(),
   swalFireMock: vi.fn(),
   usePageMock: vi.fn(),
 }));
 
 vi.mock('@inertiajs/react', () => ({
-  router: { post: postMock },
+  router: { post: postMock, get: getMock, reload: vi.fn() },
   usePage: () => usePageMock(),
 }));
 
@@ -64,6 +65,7 @@ const page = (openReportIds: number[]) => ({
 
 beforeEach(() => {
   postMock.mockReset();
+  getMock.mockReset();
   swalFireMock.mockReset();
   usePageMock.mockReset();
   usePageMock.mockReturnValue(page([10, 11, 12]));
@@ -99,5 +101,44 @@ describe('ShopReports exact-set moderation UI', () => {
     render(<ShopReports />);
 
     expect(screen.queryByRole('button', { name: 'Take Action' })).not.toBeInTheDocument();
+  });
+
+  it('sends search and pagination through the server paginator', async () => {
+    const base = page([10]);
+    usePageMock.mockReturnValue({
+      props: {
+        ...base.props,
+        shopGroups: {
+          data: base.props.shopGroups,
+          current_page: 1,
+          last_page: 2,
+          per_page: 1,
+          total: 2,
+          from: 1,
+          to: 1,
+          links: [],
+        },
+        filters: { search: '', priority: 'all', status: 'all' },
+      },
+    });
+
+    render(<ShopReports />);
+
+    fireEvent.change(screen.getByPlaceholderText('Search by shop name or email…'), {
+      target: { value: 'Sole' },
+    });
+
+    await waitFor(() => expect(getMock).toHaveBeenCalledWith(
+      '/admin/shop-reports',
+      { search: 'Sole', priority: 'all', status: 'all', page: 1 },
+      expect.any(Object),
+    ));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(getMock).toHaveBeenCalledWith(
+      '/admin/shop-reports',
+      { search: 'Sole', priority: 'all', status: 'all', page: 2 },
+      expect.any(Object),
+    );
   });
 });

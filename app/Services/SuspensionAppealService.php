@@ -154,16 +154,20 @@ class SuspensionAppealService
      *
      * @return array{status: string, persisted_status: string, state: string, current: bool, actionable: bool, suspension_id: int|null}
      */
-    public function presentation(SuspensionAppeal $appeal): array
+    public function presentation(
+        SuspensionAppeal $appeal,
+        User|ShopOwner|null $account = null,
+        ?AccountSuspension $currentSuspension = null,
+    ): array
     {
         $persistedStatus = (string) $appeal->status;
         $status = $this->effectiveStatus($appeal);
         $current = false;
 
         if (in_array($persistedStatus, ['eligible', 'submitted'], true) && $appeal->suspension_id !== null) {
-            $account = $this->findAccountForAppeal($appeal);
+            $account ??= $this->findAccountForAppeal($appeal);
             if ($account && ! $account->trashed()) {
-                $currentSuspension = AccountSuspension::query()
+                $currentSuspension ??= AccountSuspension::query()
                     ->whereKey((int) $account->current_suspension_id)
                     ->whereNull('ended_at')
                     ->first();

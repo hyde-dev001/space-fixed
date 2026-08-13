@@ -1970,6 +1970,10 @@ Route::middleware([
     Route::get('/shop-reports', [\App\Http\Controllers\superAdmin\ShopReportsController::class, 'index'])
         ->middleware('privileged.capability:moderate_reports')
         ->name('shop-reports');
+    Route::get('/shop-reports/{shopOwner}', [\App\Http\Controllers\superAdmin\ShopReportsController::class, 'show'])
+        ->whereNumber('shopOwner')
+        ->middleware('privileged.capability:moderate_reports')
+        ->name('shop-reports.show');
     Route::post('/shop-reports/{id}/action', [\App\Http\Controllers\superAdmin\ShopReportsController::class, 'action'])
         ->middleware('privileged.capability:moderate_reports')
         ->name('shop-reports.action');
