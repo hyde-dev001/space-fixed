@@ -114,7 +114,14 @@ final class PrivilegedSetupController extends Controller
                     return $lockedAdmin;
                 },
             );
-        } catch (InvalidArgumentException) {
+        } catch (InvalidArgumentException $exception) {
+            Log::warning('Privileged setup authorization rejected', [
+                'correlation_id' => $request->attributes->get('privileged_audit_correlation_id'),
+                'token_id' => $authorization['token_id'],
+                'subject_id' => $authorization['subject_id'],
+                'exception_class' => $exception::class,
+            ]);
+
             return $this->invalidSetupLink($request);
         } catch (\Throwable $exception) {
             report($exception);

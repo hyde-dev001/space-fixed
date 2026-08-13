@@ -339,6 +339,34 @@ final class PrivilegedBootstrapAndInvitationTest extends TestCase
         self::assertNull($issued['token']->fresh()?->used_at);
     }
 
+    public function test_rejected_setup_authorization_is_logged_without_sensitive_details(): void
+    {
+        $pending = SuperAdmin::factory()->pendingSetup()->create();
+        $issued = app(PrivilegedSecurityTokenService::class)->issue(
+            $pending,
+            PrivilegedSecurityToken::PURPOSE_SETUP,
+            null,
+        );
+        $this->syncSessionCookie($this->postJson('/admin/setup/exchange', [
+            'token' => $issued['raw_token'],
+        ]));
+        $issued['token']->forceFill(['used_at' => now()])->save();
+        Log::spy();
+
+        $this->post('/admin/setup/complete', [
+            'password' => 'LongEnough-Setup1!',
+            'password_confirmation' => 'LongEnough-Setup1!',
+        ])->assertRedirect('/admin/setup');
+
+        Log::shouldHaveReceived('warning')->once()->withArgs(function (string $message, array $context): bool {
+            return $message === 'Privileged setup authorization rejected'
+                && ($context['exception_class'] ?? null) === \InvalidArgumentException::class
+                && ! array_key_exists('password', $context)
+                && ! array_key_exists('password_confirmation', $context)
+                && ! array_key_exists('exception_message', $context);
+        });
+    }
+
     public function test_existing_active_account_can_enroll_mfa_and_acknowledge_recovery_codes_without_status_change(): void
     {
         Carbon::setTestNow(Carbon::create(2026, 8, 12, 12, 0, 15, 'UTC'));
