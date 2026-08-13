@@ -2,14 +2,14 @@
 
 namespace App\Http\Middleware;
 
-use Closure;
 use App\Enums\EmployeeStatus;
 use App\Enums\ShopOwnerStatus;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use App\Models\Employee;
 use App\Models\ShopOwner;
 use App\Models\User;
+use Closure;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Symfony\Component\HttpFoundation\Response;
 
 class CheckEmployeeSuspension
@@ -22,44 +22,33 @@ class CheckEmployeeSuspension
     public function handle(Request $request, Closure $next): Response
     {
         $routeName = (string) ($request->route()?->getName() ?? '');
-        if (str_starts_with($routeName, 'shop-owner.erp.')
-            || str_starts_with($routeName, 'shop_owner.erp.')) {
-            return $next($request);
-        }
-
-        // Rejected owners must retain access to their own private documents
-        // so the signed resubmission workflow can function. The controller
-        // still enforces exact owner/document identity before serving bytes.
         $authenticatedShopOwner = Auth::guard('shop_owner')->user();
-        if ($routeName === 'shop-owner.documents.show'
-            && $authenticatedShopOwner instanceof ShopOwner
-            && $this->isShopOwnerRejected($authenticatedShopOwner->status)) {
+
+        if ($this->isOwnerLifecycleException($routeName, $authenticatedShopOwner)) {
             return $next($request);
         }
 
-        if ($routeName === 'shop-owner.resubmission.document'
-            && (! ($authenticatedShopOwner instanceof ShopOwner)
-                || $this->isShopOwnerRejected($authenticatedShopOwner->status))) {
-            return $next($request);
-        }
+        $validApplicationGuardPresent = Auth::guard('super_admin')->check();
+        $firstDenial = null;
+        $removedInvalidGuard = false;
 
         if (Auth::guard('shop_owner')->check()) {
-            $authenticatedShopOwner = Auth::guard('shop_owner')->user();
             $shopOwner = $authenticatedShopOwner instanceof ShopOwner
                 ? ShopOwner::withTrashed()->find($authenticatedShopOwner->getKey())
                 : null;
 
-            if ($shopOwner?->trashed() || ! $this->isShopOwnerOperational($shopOwner?->status)) {
-                $this->logoutGuard($request, 'shop_owner');
-
-                return $this->suspendedResponse(
-                    $request,
+            if (! $shopOwner || $shopOwner->trashed() || ! $this->isShopOwnerOperational($shopOwner->status)) {
+                $this->logoutGuard('shop_owner');
+                $removedInvalidGuard = true;
+                $firstDenial ??= [
                     route('shop-owner.login.form'),
                     'Your shop account is unavailable. Please contact support.',
-                    $shopOwner?->trashed() || ! $this->isShopOwnerSuspended($shopOwner?->status)
+                    ! $shopOwner || $shopOwner->trashed() || ! $this->isShopOwnerSuspended($shopOwner->status)
                         ? 'account_unavailable'
                         : 'account_suspended',
-                );
+                ];
+            } else {
+                $validApplicationGuardPresent = true;
             }
         }
 
@@ -69,58 +58,84 @@ class CheckEmployeeSuspension
                 ? User::withTrashed()->find($authenticatedUser->getKey())
                 : null;
 
-            if ($user?->trashed() || ! $this->isUserActive($user?->status)) {
-                $this->logoutGuard($request, 'user');
-
-                return $this->suspendedResponse(
-                    $request,
+            if (! $user || $user->trashed() || ! $this->isUserActive($user->status)) {
+                $this->logoutGuard('user');
+                $removedInvalidGuard = true;
+                $firstDenial ??= [
                     route('login'),
                     'Your account is unavailable. Please contact support.',
-                    $user?->trashed() || ! $this->isUserSuspended($user?->status)
+                    ! $user || $user->trashed() || ! $this->isUserSuspended($user->status)
                         ? 'account_unavailable'
                         : 'account_suspended',
-                );
-            }
-
-            if (!is_null($user->shop_owner_id)) {
+                ];
+            } elseif (! is_null($user->shop_owner_id)) {
                 $shopOwner = ShopOwner::withTrashed()->find($user->shop_owner_id);
 
-                if (!$shopOwner || $shopOwner->trashed() || ! $this->isShopOwnerOperational($shopOwner->status)) {
-                    $this->logoutGuard($request, 'user');
-
-                    return $this->suspendedResponse(
-                        $request,
+                if (! $shopOwner || $shopOwner->trashed() || ! $this->isShopOwnerOperational($shopOwner->status)) {
+                    $this->logoutGuard('user');
+                    $removedInvalidGuard = true;
+                    $firstDenial ??= [
                         route('login'),
                         'Your account is unavailable. Please contact your administrator.',
-                        $shopOwner?->trashed() || ! $this->isShopOwnerSuspended($shopOwner?->status)
+                        ! $shopOwner || $shopOwner->trashed() || ! $this->isShopOwnerSuspended($shopOwner->status)
                             ? 'account_unavailable'
                             : 'account_suspended',
-                    );
+                    ];
+                } else {
+                    $employees = Employee::withTrashed()
+                        ->where('shop_owner_id', $user->shop_owner_id)
+                        ->whereRaw('LOWER(email) = ?', [strtolower((string) $user->email)])
+                        ->orderBy('id')
+                        ->get();
+
+                    if ($employees->count() > 1
+                        || ($employees->count() === 1
+                            && ($employees->first()->trashed() || ! $this->isEmployeeActive($employees->first()->status)))) {
+                        $this->logoutGuard('user');
+                        $removedInvalidGuard = true;
+                        $firstDenial ??= [
+                            route('login'),
+                            'Your account is unavailable. Please contact your administrator.',
+                            $employees->count() === 1 && $this->isEmployeeSuspended($employees->first()->status)
+                                ? 'account_suspended'
+                                : 'account_unavailable',
+                        ];
+                    } else {
+                        $validApplicationGuardPresent = true;
+                    }
                 }
-            }
-
-            $employees = Employee::withTrashed()
-                ->whereRaw('LOWER(email) = ?', [strtolower((string) $user->email)])
-                ->orderBy('id')
-                ->get();
-
-            if ($employees->count() > 1
-                || ($employees->count() === 1
-                    && ($employees->first()->trashed() || ! $this->isEmployeeActive($employees->first()->status)))) {
-                $this->logoutGuard($request, 'user');
-
-                return $this->suspendedResponse(
-                    $request,
-                    route('login'),
-                    'Your account is unavailable. Please contact your administrator.',
-                    $employees->count() === 1 && $this->isEmployeeSuspended($employees->first()->status)
-                        ? 'account_suspended'
-                        : 'account_unavailable',
-                );
+            } else {
+                $validApplicationGuardPresent = true;
             }
         }
 
+        if ($removedInvalidGuard && $request->hasSession()) {
+            $request->session()->regenerate();
+        }
+
+        if (! $validApplicationGuardPresent && is_array($firstDenial)) {
+            return $this->suspendedResponse($request, ...$firstDenial);
+        }
+
         return $next($request);
+    }
+
+    private function isOwnerLifecycleException(string $routeName, mixed $shopOwner): bool
+    {
+        if (! $shopOwner instanceof ShopOwner) {
+            return false;
+        }
+
+        if ($routeName === 'shop-owner.pending-approval') {
+            return $this->isShopOwnerPending($shopOwner->status);
+        }
+
+        return in_array($routeName, [
+            'shop-owner.documents.show',
+            'shop-owner.resubmission.form',
+            'shop-owner.resubmission.submit',
+            'shop-owner.resubmission.document',
+        ], true) && $this->isShopOwnerRejected($shopOwner->status);
     }
 
     private function isEmployeeSuspended(mixed $status): bool
@@ -169,6 +184,15 @@ class CheckEmployeeSuspension
         return (string) $status === ShopOwnerStatus::REJECTED->value;
     }
 
+    private function isShopOwnerPending(mixed $status): bool
+    {
+        if ($status instanceof ShopOwnerStatus) {
+            return $status === ShopOwnerStatus::PENDING;
+        }
+
+        return (string) $status === ShopOwnerStatus::PENDING->value;
+    }
+
     private function isShopOwnerOperational(mixed $status): bool
     {
         if ($status instanceof ShopOwnerStatus) {
@@ -178,14 +202,9 @@ class CheckEmployeeSuspension
         return (string) $status === ShopOwnerStatus::APPROVED->value;
     }
 
-    private function logoutGuard(Request $request, string $guard): void
+    private function logoutGuard(string $guard): void
     {
         Auth::guard($guard)->logout();
-
-        if ($request->hasSession()) {
-            $request->session()->invalidate();
-            $request->session()->regenerateToken();
-        }
     }
 
     private function suspendedResponse(Request $request, string $loginUrl, string $message, string $code = 'account_suspended'): Response

@@ -28,27 +28,40 @@ final class OwnerErpAuthorizationTest extends TestCase
     {
         $this->defineOwnerModuleRoute('account-eligibility', 'retail_operations');
 
+        $individualOwner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'individual',
+            'business_type' => 'retail',
+        ]);
+        ShopOwnerModule::factory()->create([
+            'shop_owner_id' => $individualOwner->id,
+            'module_key' => 'retail_operations',
+            'enabled' => true,
+        ]);
+
+        $this->actingAs($individualOwner, 'shop_owner')
+            ->getJson('/testing/owner-erp/account-eligibility')
+            ->assertForbidden()
+            ->assertJson([
+                'code' => 'OWNER_ERP_ACCOUNT_INELIGIBLE',
+                'error' => 'OWNER_ERP_ACCOUNT_INELIGIBLE',
+                'module_keys' => ['retail_operations'],
+            ]);
+
         foreach ([
-            ['status' => 'approved', 'registration_type' => 'individual'],
-            ['status' => 'pending', 'registration_type' => 'company'],
-            ['status' => 'rejected', 'registration_type' => 'company'],
-            ['status' => 'suspended', 'registration_type' => 'company'],
-        ] as $attributes) {
-            $owner = ShopOwner::factory()->create($attributes + ['business_type' => 'retail']);
-            ShopOwnerModule::factory()->create([
-                'shop_owner_id' => $owner->id,
-                'module_key' => 'retail_operations',
-                'enabled' => true,
+            ['status' => 'pending', 'code' => 'account_unavailable'],
+            ['status' => 'rejected', 'code' => 'account_unavailable'],
+            ['status' => 'suspended', 'code' => 'account_suspended'],
+        ] as $case) {
+            $owner = ShopOwner::factory()->create([
+                'status' => $case['status'],
+                'registration_type' => 'company',
+                'business_type' => 'retail',
             ]);
 
             $this->actingAs($owner, 'shop_owner')
                 ->getJson('/testing/owner-erp/account-eligibility')
                 ->assertForbidden()
-                ->assertJson([
-                    'code' => 'OWNER_ERP_ACCOUNT_INELIGIBLE',
-                    'error' => 'OWNER_ERP_ACCOUNT_INELIGIBLE',
-                    'module_keys' => ['retail_operations'],
-                ]);
+                ->assertJsonPath('code', $case['code']);
         }
     }
 
@@ -145,7 +158,7 @@ final class OwnerErpAuthorizationTest extends TestCase
             ]);
     }
 
-    public function test_suspended_owner_uses_erp_boundary_while_non_erp_suspension_behavior_is_unchanged(): void
+    public function test_suspended_owner_is_denied_consistently_on_erp_and_non_erp_routes(): void
     {
         $this->defineOwnerModuleRoute('suspended-boundary', 'retail_operations');
         $owner = ShopOwner::factory()->create([
@@ -157,7 +170,7 @@ final class OwnerErpAuthorizationTest extends TestCase
         $this->actingAs($owner, 'shop_owner')
             ->getJson('/testing/owner-erp/suspended-boundary')
             ->assertForbidden()
-            ->assertJsonPath('code', 'OWNER_ERP_ACCOUNT_INELIGIBLE');
+            ->assertJsonPath('code', 'account_suspended');
 
         Route::middleware([CheckEmployeeSuspension::class])
             ->get('/testing/non-erp-suspension', fn () => response()->json(['ok' => true]))
