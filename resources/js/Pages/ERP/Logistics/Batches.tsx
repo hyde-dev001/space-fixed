@@ -257,19 +257,6 @@ export default function Batches() {
       setBusyLegId(undefined);
     }
   };
-  const toggleUrgent = async (leg: TrackingShipmentLeg) => {
-    try {
-      setBusyLegId(leg.id);
-      setError('');
-      await logisticsApi.markUrgent(leg.id, !leg.urgent_at);
-      await workflowFeedback.toast('success', 'Urgent state updated');
-      refreshBatchData();
-    } catch (caught) {
-      await handleMutationError(caught);
-    } finally {
-      setBusyLegId(undefined);
-    }
-  };
   const openReview = (batchId: number) => {
     setBuilding(false);
     setSelectedBatchId(batchId);
@@ -412,7 +399,6 @@ export default function Batches() {
         batch={selectedBatch} selectedLegs={selectedLegs} date={date} window={window} dailyRiderCapacity={dailyRiderCapacity}
         overrideReason={overrideReason} submitting={submitting} busyLegId={busyLegId} onOverrideReasonChange={setOverrideReason}
         onMove={selectedBatch ? moveStops : moveLocal} onRemove={removeStop}
-        onToggleUrgent={!selectedBatch || ['draft', 'offered', 'accepted', 'in_progress'].includes(selectedBatch.status) ? toggleUrgent : undefined}
         onSave={saveDraft} onReview={() => selectedBatch && openReview(selectedBatch.id)}
       /> : <section className="grid min-h-72 place-items-center rounded-2xl border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-500">Choose New Batch or open an existing batch to begin.</section>}
     </div>

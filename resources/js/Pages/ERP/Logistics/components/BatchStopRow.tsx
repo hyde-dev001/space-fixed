@@ -18,13 +18,11 @@ type Props = {
   busy?: boolean;
   onMove?: (from: number, to: number) => void;
   onRemove?: (leg: TrackingShipmentLeg, index: number) => void;
-  onToggleUrgent?: (leg: TrackingShipmentLeg) => void;
 };
 
-export default function BatchStopRow({ leg, index, total, editable = false, busy = false, onMove, onRemove, onToggleUrgent }: Props) {
+export default function BatchStopRow({ leg, index, total, editable = false, busy = false, onMove, onRemove }: Props) {
   const { maxDeliveryAttempts = 2 } = usePage<{ maxDeliveryAttempts?: number }>().props;
   const ref = useRef<HTMLDivElement>(null);
-  const terminal = ['delivered', 'cancelled'].includes(leg.status);
   const source = logisticsSourceLabel(leg.shipment);
   const destination = leg.destination_snapshot;
   const failedAttempt = leg.attempts?.[0];
@@ -71,7 +69,6 @@ export default function BatchStopRow({ leg, index, total, editable = false, busy
           <button type="button" aria-label={`Move stop ${index + 1} down`} title="Move down" disabled={busy || index === total - 1} onClick={() => onMove?.(index, index + 1)} className="rounded-lg border p-2 text-gray-600 hover:bg-gray-50 disabled:opacity-30"><ArrowDown size={16} /></button>
           <button type="button" aria-label={`Remove stop ${index + 1}`} title="Remove stop" disabled={busy} onClick={() => onRemove?.(leg, index)} className="rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50 disabled:opacity-30"><Trash2 size={16} /></button>
         </>}
-        {!terminal && onToggleUrgent && <button type="button" aria-label={`${leg.urgent_at ? 'Clear urgent' : 'Mark urgent'} stop ${index + 1}`} title={leg.urgent_at ? 'Clear urgent' : 'Mark urgent'} disabled={busy} onClick={() => onToggleUrgent(leg)} className={`rounded-lg border p-2 disabled:opacity-30 ${leg.urgent_at ? 'border-red-300 bg-red-50 text-red-700' : 'text-gray-600'}`}><Flame size={16} /></button>}
       </div>
     </div>
   </article>;
