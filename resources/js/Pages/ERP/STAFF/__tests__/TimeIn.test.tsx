@@ -43,14 +43,17 @@ it('keeps the attendance page mobile-safe and the live clock accessible', async 
 
     expect(screen.getByTestId('time-in-page')).toHaveClass('min-h-screen', 'overflow-x-hidden');
     expect(screen.getByRole('heading', { name: 'Attendance Tracking' })).toHaveClass(
-        'text-2xl',
-        'sm:text-3xl',
-        'lg:text-4xl',
+        'text-xl',
+        'sm:text-2xl',
     );
+    expect(screen.getByTestId('attendance-dashboard')).toHaveClass('md:grid-cols-2', 'lg:grid-cols-5');
+    expect(screen.getByTestId('attendance-summary')).toHaveClass('grid-cols-2');
+    expect(screen.getByTestId('attendance-mobile-history')).toHaveClass('md:hidden');
+    expect(screen.getByTestId('attendance-history-table')).toHaveClass('hidden', 'md:block');
     expect(screen.getByRole('button', { name: /clock in/i })).toHaveClass(
         'min-h-12',
         'w-full',
-        'sm:w-auto',
+        'rounded-full',
     );
     expect(screen.getByText('Current Time').nextElementSibling).toHaveAttribute('aria-live', 'polite');
 });
