@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Activity, AlertTriangle, Eye, FileText, MoreHorizontal, Pencil, RotateCcw, Route, Send } from 'lucide-react';
+import { Activity, AlertTriangle, Eye, MoreHorizontal, Pencil, RotateCcw, Send } from 'lucide-react';
 import { logisticsModuleLabel, type DeliveryBatch, type DeliveryBatchStatus } from '@/types/logistics';
 
 const formatDate = (value: string) => new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeZone: 'UTC' })
@@ -12,10 +12,7 @@ const formatRejectionTime = (value?: string | null) => {
 const label = (value: string) => value.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 const primaryActions = {
   offered: { label: 'View offer', Icon: Send },
-  accepted: { label: 'View route', Icon: Route },
   in_progress: { label: 'View progress', Icon: Activity },
-  completed: { label: 'View summary', Icon: FileText },
-  cancelled: { label: 'View summary', Icon: FileText },
 } as const;
 type Props = {
   batches: DeliveryBatch[];
