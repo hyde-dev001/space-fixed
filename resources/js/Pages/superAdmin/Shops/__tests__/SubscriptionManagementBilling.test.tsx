@@ -5,7 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   page: {
     props: {
-      subscriptions: [
+      subscriptions: {
+        data: [
         {
           id: 1,
           shop: { id: 10, business_name: 'Eligible Shoes', owner_name: 'Owner One', email: 'owner@example.test' },
@@ -25,8 +26,6 @@ const mocks = vi.hoisted(() => ({
           legacy_correction_available: false,
           eligible_for_refund: true,
           refund_payment_id: 7,
-          refund_attempts: [],
-          payments: [{ id: 7, payment_type: 'new_subscription', amount_paid: 249, status: 'paid', currency: 'PHP', paid_at: '2026-08-01T00:00:00Z', refunds: [] }],
           created_at: '2026-08-01T00:00:00Z',
         },
         {
@@ -48,23 +47,30 @@ const mocks = vi.hoisted(() => ({
           legacy_correction_available: true,
           eligible_for_refund: false,
           refund_payment_id: null,
-          refund_attempts: [],
-          payments: [],
           created_at: '2026-08-02T00:00:00Z',
         },
-      ],
+        ],
+        current_page: 1,
+        last_page: 1,
+        per_page: 25,
+        total: 2,
+        from: 1,
+        to: 2,
+      },
       stats: { active: 1, expired: 1, total_revenue: 249, gross_collected: 249, refunded_amount: 0, net_collected: 249, expiring_soon: 0 },
       plans: [],
     },
   },
   routerPost: vi.fn(),
+  routerGet: vi.fn(),
   routerReload: vi.fn(),
   swalFire: vi.fn(),
   axiosPost: vi.fn(),
+  axiosGet: vi.fn(),
 }));
 
 vi.mock('@inertiajs/react', () => ({
-  router: { post: mocks.routerPost, reload: mocks.routerReload },
+  router: { get: mocks.routerGet, post: mocks.routerPost, reload: mocks.routerReload },
   usePage: () => mocks.page,
   useForm: () => ({
     data: { plan_code: '', name: '', description: '', price: '', duration_days: 30, showroom_slot_limit: 48, benefits: [] },
@@ -77,7 +83,7 @@ vi.mock('@inertiajs/react', () => ({
   }),
 }));
 
-vi.mock('axios', () => ({ default: { post: mocks.axiosPost } }));
+vi.mock('axios', () => ({ default: { get: mocks.axiosGet, post: mocks.axiosPost } }));
 vi.mock('../../../../layout/AppLayout', () => ({ default: ({ children }: { children?: ReactNode }) => <div>{children}</div> }));
 vi.mock('../../../../components/ui/button/Button', () => ({ default: ({ children, onClick }: { children?: ReactNode; onClick?: () => void }) => <button type="button" onClick={onClick}>{children}</button> }));
 vi.mock('sweetalert2', () => ({ default: { fire: mocks.swalFire } }));
@@ -86,18 +92,29 @@ import SubscriptionManagement from '../SubscriptionManagement';
 
 beforeEach(() => {
   mocks.routerPost.mockReset();
+  mocks.routerGet.mockReset();
   mocks.routerReload.mockReset();
   mocks.axiosPost.mockReset();
+  mocks.axiosGet.mockReset();
   mocks.axiosPost.mockResolvedValue({ data: { success: true } });
+  mocks.axiosGet.mockResolvedValue({ data: {
+    subscription_id: 1,
+    payments: { data: [{ id: 7, payment_type: 'new_subscription', amount_due: 249, amount_paid: 249, currency: 'PHP', status: 'paid', paid_at: '2026-08-01T00:00:00Z', created_at: '2026-08-01T00:00:00Z' }], current_page: 1, last_page: 1, per_page: 25, total: 1 },
+    refunds: { data: [], current_page: 1, last_page: 1, per_page: 25, total: 0 },
+  } });
   mocks.swalFire.mockReset();
   mocks.swalFire.mockResolvedValue({ isConfirmed: true, value: 'reduce_costs' });
 });
 
 describe('SubscriptionManagement billing controls', () => {
-  it('shows only server-declared cancellation, correction, and full-refund controls', () => {
+  it('shows only server-declared cancellation, correction, and full-refund controls', async () => {
     render(<SubscriptionManagement />);
 
     fireEvent.click(screen.getByRole('button', { name: 'View subscription 1' }));
+    await waitFor(() => expect(mocks.axiosGet).toHaveBeenCalledWith('/admin/subscriptions/1/history', {
+      params: { payment_page: 1, refund_page: 1, per_page: 25 },
+    }));
+    await waitFor(() => expect(screen.getByText(/new subscription/i)).toBeInTheDocument());
     expect(screen.getByRole('button', { name: /cancel at period end/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /issue full refund/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /upgrade|downgrade|partial refund|adjust paid/i })).not.toBeInTheDocument();
@@ -106,6 +123,19 @@ describe('SubscriptionManagement billing controls', () => {
     fireEvent.click(screen.getByRole('button', { name: 'View subscription 2' }));
     expect(screen.getByRole('button', { name: /correct legacy state/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /issue full refund|cancel at period end/i })).not.toBeInTheDocument();
+    await waitFor(() => expect(mocks.axiosGet).toHaveBeenCalledTimes(2));
+  });
+
+  it('uses the server paginator when a filter changes', async () => {
+    render(<SubscriptionManagement />);
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search subscriptions' }), { target: { value: 'Eligible' } });
+
+    await waitFor(() => expect(mocks.routerGet).toHaveBeenCalledWith('/admin/subscriptions', expect.objectContaining({
+      search: 'Eligible',
+      page: 1,
+      per_page: 25,
+    }), expect.objectContaining({ preserveState: true, replace: true })));
   });
 
   it('waits for the authoritative cancellation response before reloading', async () => {

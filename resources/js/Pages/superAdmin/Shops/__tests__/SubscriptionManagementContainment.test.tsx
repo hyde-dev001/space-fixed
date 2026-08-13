@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   page: {
     props: {
-      subscriptions: [{
+      subscriptions: { data: [{
         id: 1,
         shop: {
           id: 10,
@@ -29,7 +29,7 @@ const mocks = vi.hoisted(() => ({
         cancellation_reason: 'owner_requested',
         cancellation_notes: 'Historical cancellation record',
         created_at: '2026-08-01T00:00:00Z',
-      }],
+      }], current_page: 1, last_page: 1, per_page: 25, total: 1, from: 1, to: 1 },
       stats: { active: 0, expired: 1, total_revenue: 249, expiring_soon: 0 },
       plans: [{
         id: 1,
@@ -46,11 +46,13 @@ const mocks = vi.hoisted(() => ({
     },
   },
   routerPost: vi.fn(),
+  routerGet: vi.fn(),
+  axiosGet: vi.fn(),
   swalFire: vi.fn(),
 }));
 
 vi.mock('@inertiajs/react', () => ({
-  router: { post: mocks.routerPost },
+  router: { get: mocks.routerGet, post: mocks.routerPost },
   usePage: () => mocks.page,
   useForm: () => ({
     data: {
@@ -84,16 +86,24 @@ vi.mock('../../../../components/ui/button/Button', () => ({
 vi.mock('sweetalert2', () => ({
   default: { fire: mocks.swalFire },
 }));
+vi.mock('axios', () => ({ default: { get: mocks.axiosGet } }));
 
 import SubscriptionManagement from '../SubscriptionManagement';
 
 beforeEach(() => {
   mocks.routerPost.mockReset();
+  mocks.routerGet.mockReset();
+  mocks.axiosGet.mockReset();
+  mocks.axiosGet.mockResolvedValue({ data: {
+    subscription_id: 1,
+    payments: { data: [], current_page: 1, last_page: 1, per_page: 25, total: 0 },
+    refunds: { data: [], current_page: 1, last_page: 1, per_page: 25, total: 0 },
+  } });
   mocks.swalFire.mockReset();
 });
 
 describe('SubscriptionManagement containment', () => {
-  it('keeps plan management and historical inspection without subscription intervention controls', () => {
+  it('keeps plan management and historical inspection without subscription intervention controls', async () => {
     render(<SubscriptionManagement />);
 
     expect(screen.getByRole('button', { name: /create plan/i })).toBeInTheDocument();
@@ -103,6 +113,7 @@ describe('SubscriptionManagement containment', () => {
     expect(screen.queryByRole('button', { name: /deactivate|refund|upgrade subscription|downgrade subscription/i })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'View subscription 1' }));
+    await waitFor(() => expect(mocks.axiosGet).toHaveBeenCalled());
 
     expect(screen.getByText('Cancellation Feedback')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /deactivate|refund|upgrade subscription|downgrade subscription|cancel subscription/i })).not.toBeInTheDocument();

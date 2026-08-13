@@ -114,9 +114,10 @@ final class PhaseEightScaleBoundaryTest extends TestCase
 
         $subscriptionProps = $this->inertiaProps($this->get(route('admin.subscriptions.index')));
         self::assertIsArray($subscriptionProps['subscriptions']);
-        self::assertCount(1, $subscriptionProps['subscriptions']);
-        self::assertArrayHasKey('payments', $subscriptionProps['subscriptions'][0]);
-        self::assertArrayHasKey('refund_attempts', $subscriptionProps['subscriptions'][0]);
+        self::assertSame(25, $subscriptionProps['subscriptions']['per_page']);
+        self::assertCount(1, $subscriptionProps['subscriptions']['data']);
+        self::assertArrayNotHasKey('payments', $subscriptionProps['subscriptions']['data'][0]);
+        self::assertArrayNotHasKey('refund_attempts', $subscriptionProps['subscriptions']['data'][0]);
 
     }
 

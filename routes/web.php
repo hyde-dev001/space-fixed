@@ -1887,6 +1887,10 @@ Route::middleware([
     Route::get('/subscriptions', [SubscriptionManagementController::class, 'index'])
         ->middleware('privileged.capability:manage_plans')
         ->name('subscriptions.index');
+    Route::get('/subscriptions/{subscription}/history', [SubscriptionManagementController::class, 'history'])
+        ->whereNumber('subscription')
+        ->middleware('privileged.capability:manage_plans')
+        ->name('subscriptions.history');
     Route::get('/subscription-management', fn () => redirect()->route(
         'admin.subscriptions.index',
         request()->query(),

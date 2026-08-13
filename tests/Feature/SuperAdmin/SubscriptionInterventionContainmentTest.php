@@ -85,6 +85,7 @@ final class SubscriptionInterventionContainmentTest extends TestCase
     {
         foreach ([
             'admin.subscriptions.index',
+            'admin.subscriptions.history',
             'admin.plans.store',
             'admin.plans.update',
             'admin.plans.archive',
@@ -99,10 +100,15 @@ final class SubscriptionInterventionContainmentTest extends TestCase
 
         $subscriptionRoute = Route::getRoutes()->getByName('admin.subscriptions.index');
         $this->assertSame(['GET', 'HEAD'], $subscriptionRoute?->methods());
+        $historyRoute = Route::getRoutes()->getByName('admin.subscriptions.history');
+        $this->assertSame(['GET', 'HEAD'], $historyRoute?->methods());
 
         $regularAdmin = SuperAdmin::factory()->admin()->create();
         $this->actingAsCompletedPrivileged($regularAdmin)
             ->get('/admin/subscriptions')
+            ->assertForbidden();
+        $this->actingAsCompletedPrivileged($regularAdmin)
+            ->get('/admin/subscriptions/1/history')
             ->assertForbidden();
 
         $superAdmin = SuperAdmin::factory()->superAdmin()->create();
@@ -173,7 +179,7 @@ final class SubscriptionInterventionContainmentTest extends TestCase
             ->assertOk()
             ->assertInertia(function ($page) use ($subscription, $legacy): void {
                 $props = $page->toArray()['props'];
-                $rows = collect($props['subscriptions'])->keyBy('id');
+                $rows = collect($props['subscriptions']['data'])->keyBy('id');
 
                 $this->assertSame(249.0, (float) $props['stats']['total_revenue']);
                 $this->assertSame(249.0, (float) $props['stats']['gross_collected']);
@@ -187,8 +193,8 @@ final class SubscriptionInterventionContainmentTest extends TestCase
                 $this->assertSame(0.0, (float) $rows[$subscription->id]['net_collected']);
                 $this->assertFalse($rows[$subscription->id]['eligible_for_refund']);
                 $this->assertTrue($rows[$subscription->id]['can_cancel']);
-                $this->assertCount(1, $rows[$subscription->id]['payments']);
-                $this->assertCount(1, $rows[$subscription->id]['refund_attempts']);
+                $this->assertArrayNotHasKey('payments', $rows[$subscription->id]);
+                $this->assertArrayNotHasKey('refund_attempts', $rows[$subscription->id]);
             });
 
         $this->assertSame('deactivated', $legacy->fresh()->status);

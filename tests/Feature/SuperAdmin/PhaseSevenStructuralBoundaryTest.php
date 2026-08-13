@@ -218,6 +218,13 @@ final class PhaseSevenStructuralBoundaryTest extends TestCase
             action: 'App\\Http\\Controllers\\superAdmin\\SubscriptionManagementController@index',
             capability: SuperAdmin::CAP_MANAGE_PLANS,
         );
+        $this->assertCanonicalRoute(
+            name: 'admin.subscriptions.history',
+            methods: ['GET', 'HEAD'],
+            uri: 'admin/subscriptions/{subscription}/history',
+            action: 'App\\Http\\Controllers\\superAdmin\\SubscriptionManagementController@history',
+            capability: SuperAdmin::CAP_MANAGE_PLANS,
+        );
 
         foreach ([
             'admin.plans.store' => ['POST', 'admin/plans', 'store'],
