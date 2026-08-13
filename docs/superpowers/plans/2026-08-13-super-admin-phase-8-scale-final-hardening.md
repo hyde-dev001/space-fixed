@@ -33,6 +33,9 @@
 13. Production confirmations for scheduler execution, overlap locking, shared-cache suitability, queue workers/retries, failed-job visibility, and `Asia/Manila` are recorded. `onOneServer()` is added only if shared atomic locking is verified.
 14. Improvement claims include before/after row bounds, query counts, relevant query plans/index use, route alias counts, test results, and build output. Wall-clock latency and bundle-size claims remain `not measured` unless measured in a controlled environment.
 15. No permission UI, policy engine, generic report builder, generic pagination service, cache dependency, generic document/expiry abstraction, schema rewrite, or new package is introduced.
+16. Pagination ordering is deterministic for a stable dataset and handles equal timestamps with the ID tie-breaker. Phase 8 does not claim snapshot pagination across concurrent inserts, updates, or deletes.
+17. Lock-dependent concurrency claims use MariaDB/MySQL evidence where the repository harness is available. SQLite may prove invariants/idempotency but is not represented as equivalent row-lock evidence.
+18. Phase 8 distinguishes implementation completion from production readiness. Unknown production-only evidence remains unknown and prevents an `EXECUTED / production-ready` claim.
 
 ### Pagination and filter contract
 
@@ -52,6 +55,26 @@
 | Privileged audit | existing 25 / 100 | existing validated filters | Preserve role/capability visibility before applying filters. |
 
 Search is intentionally simple escaped SQL `LIKE` with bound parameters over the small allowlisted identity fields already displayed. Escape `%`, `_`, and the chosen escape character so user input cannot silently become an arbitrary wildcard pattern. Do not add full-text search, Elasticsearch, a query-builder dependency, arbitrary column sorting, or user-selectable page sizes above 100.
+
+### Validation and metric contract
+
+All privileged list endpoints use one failure contract:
+
+```text
+invalid enum/filter value -> 422
+page present but not an integer >= 1 -> 422
+per_page present but not an integer in 1..100 -> 422
+missing page/per_page -> surface default
+unknown query keys -> ignored and never applied to SQL
+```
+
+Phase 8 normalizes the renewal queue's current clamp/fallback behavior to this validated contract; it does not preserve controller-specific malformed-input behavior.
+
+Dashboard/card metrics are global within the page's authorized base scope and do not change with search, status, lifecycle, priority, sort, or page filters. Paginator `total` and “showing” text are filter-aware. This keeps cards comparable across searches while making the active result count explicit. The current actor remains excluded from the administrator base scope.
+
+### Deterministic pagination boundary
+
+`created_at DESC, id DESC` guarantees stable page membership for an unchanged dataset and deterministic ordering when timestamps are equal. Offset pagination is not a transactional snapshot: concurrent writes may shift later pages. Tests and browser checks for duplicates/omissions freeze the fixture during traversal; Phase 8 does not introduce cursor pagination or snapshot isolation.
 
 ### Measurement contract
 
@@ -78,6 +101,7 @@ Do not use a local wall-clock threshold as a CI acceptance test. Record latency 
 - No background export/reporting subsystem, read replica, cache warming, or queue-based page hydration.
 - No removal of a compatibility alias based only on local repository search.
 - No deletion or rewriting of historical audit, payment, refund, suspension, appeal, notification, or document evidence.
+- No snapshot-pagination guarantee across concurrent writes.
 
 ---
 
@@ -104,7 +128,7 @@ Do not use a local wall-clock threshold as a CI acceptance test. Record latency 
 - `tests/Feature/SuperAdmin/PhaseEightScaleBoundaryTest.php` — pagination, row-bound, deterministic-order, query-count, aggregate, route, and compatibility contracts.
 - `tests/Feature/SuperAdmin/SubscriptionManagementScaleTest.php` — bounded subscription summaries/history and ledger-preservation assertions.
 - `resources/js/Pages/superAdmin/AdminTeam/__tests__/AdminManagement.test.tsx` — administrator server-filter and pagination behavior.
-- Artisan-generated `database/migrations/<timestamp>_add_super_admin_operational_query_indexes.php` — only the measured, named indexes accepted in Task 2; omit this file if existing indexes cover every accepted query.
+- Artisan-generated `database/migrations/<timestamp>_add_super_admin_operational_query_indexes.php` — only the measured, named indexes surviving the Task 6 final-query checkpoint; omit this file if existing indexes cover every accepted query.
 
 ### Modify
 
@@ -157,7 +181,7 @@ Do not use a local wall-clock threshold as a CI acceptance test. Record latency 
 
 ---
 
-## Task 1: Capture Scale Baselines and Freeze Failing Contracts
+## Task 1: Capture Scale Baselines and Freeze Passing Characterization Contracts
 
 **Files:**
 - Create: `tests/Feature/SuperAdmin/PhaseEightScaleBoundaryTest.php`
@@ -180,84 +204,68 @@ Use schema inspection appropriate to the active driver. Never print credentials 
 
 - [ ] **Step 2: Capture before-change query and hydration baselines**
 
-Create deterministic fixtures at small and larger volumes and capture query counts/response row counts for administrators, registrations, shops, users, flags, appeals, subscriptions, renewals, audit, and monitoring. Record the unbounded response sizes and the existing bounded controls. Use Laravel query listeners in tests or a local measurement harness that is deleted before completion.
+Create deterministic fixtures at small and larger volumes and capture query counts/response row counts for administrators, registrations, shops, users, shop reports, flags, appeals, subscriptions, business upgrades, renewals, audit, reminders, and monitoring. Record the unbounded response sizes and the existing bounded controls. Use Laravel query listeners in tests or a local measurement harness that is deleted before completion.
 
 - [ ] **Step 3: Capture SQL and query plans**
 
-Capture the SQL shape and `EXPLAIN` for the accepted production-driver queries: each paginated list/count pair, pending renewals, reminder candidates, audit visibility/filter queries, and subscription aggregate/history queries. SQLite evidence may validate behavior but cannot justify a MariaDB/MySQL production index by itself.
+Capture the current Phase 7 SQL shape and baseline `EXPLAIN` for each list/count path, pending renewals, reminder candidates, audit visibility/filter queries, and current subscription/report hydration. Future paginated/aggregate/history SQL is measured only after Tasks 3-6 implement it. SQLite evidence may validate behavior but cannot justify a MariaDB/MySQL production index by itself.
 
-- [ ] **Step 4: Write failing pagination and aggregate contracts**
+- [ ] **Step 4: Write passing baseline characterization tests**
 
-Assert every surface in the pagination contract returns at most its requested capped page, exposes pagination metadata, preserves filters, and uses an ID tie-breaker when timestamps match. Assert full-scope stats remain the same when moving between pages.
+Assert only behavior that exists before Phase 8: current response sizes, current query counts, existing user/renewal/audit pagination, current metric semantics, existing indexes, and the current subscription/report hydration shape. These tests create reproducible before measurements and must pass on the Phase 7 baseline.
 
-- [ ] **Step 5: Write failing bounded-query contracts**
+- [ ] **Step 5: Record future-state assertions without committing red tests**
 
-Compare small and larger fixtures. Assert query count stays within a justified fixed delta, and assert subscription list hydration excludes unbounded payment/refund collections. Preserve already-green user, renewal, audit, monitoring, and reminder bounds.
+Record the required future assertions in this plan/runbook. Each later task writes its failing assertion immediately before its implementation, then commits test and implementation together only after green. Do not commit known-failing pagination, history, aggregate, or query-bound tests.
 
-- [ ] **Step 6: Run the red scale suites**
+- [ ] **Step 6: Run the green characterization suites**
 
 ```powershell
 php artisan test tests/Feature/SuperAdmin/PhaseEightScaleBoundaryTest.php tests/Feature/SuperAdmin/SubscriptionManagementScaleTest.php
 ```
 
-Expected: assertions for the six current full-table pages and subscription history boundary fail; existing bounded-path assertions pass.
+Expected: PASS on the Phase 7 baseline while recording seven current full-table pages, the full subscription/report hydration behavior, and existing bounded paths. A characterization assertion must describe current behavior without blessing it as the final contract.
 
-- [ ] **Step 7: Commit baseline contracts and evidence**
+- [ ] **Step 7: Commit only passing baseline contracts and evidence**
 
 ```powershell
 git add -- tests/Feature/SuperAdmin/PhaseEightScaleBoundaryTest.php tests/Feature/SuperAdmin/SubscriptionManagementScaleTest.php docs/runbooks/super-admin-operations.md
 git commit -m "test: define phase 8 scale boundaries"
 ```
 
+If either suite is red, do not commit. Fix an incorrect characterization or defer that future-state assertion to its owning implementation task.
+
 ---
 
-## Task 2: Add Only Measured Operational Indexes
+## Task 2: Identify Measured Index Candidates Without Creating Them
 
 **Files:**
-- Create conditionally with Artisan: `database/migrations/<timestamp>_add_super_admin_operational_query_indexes.php`
-- Modify: `tests/Feature/SuperAdmin/PhaseEightScaleBoundaryTest.php`
+- Modify: `docs/runbooks/super-admin-operations.md` — candidate ledger only.
 
-- [ ] **Step 1: Compare accepted queries with existing indexes**
+- [ ] **Step 1: Compare current query families with existing indexes**
 
-Review exact column order, selectivity, sorting, soft-delete predicates, and foreign-key indexes. Candidate areas are administrator status/order, shop status/lifecycle/order, pending registrations, review-report status/order, appeal status/order, subscription status/order, pending renewal order, reminder date candidates, and audit actor/subject filters. A candidate is not an instruction to add an index.
+Review exact column order, selectivity, sorting, soft-delete predicates, and foreign-key indexes for the Phase 7 baseline. Candidate areas are administrator status/order, shop status/lifecycle/order, pending registrations, review-report status/order, appeal status/order, subscription status/order, pending renewal order, reminder date candidates, and audit actor/subject filters. A candidate is not an instruction to add an index and must be re-evaluated against final SQL in Task 6.
 
 - [ ] **Step 2: Reject redundant or low-value indexes**
 
 Do not duplicate an existing unique/index prefix, index every filter independently, optimize leading-wildcard search with a normal B-tree, or add indexes solely to satisfy a structural test. Prefer the smallest composite index serving a demonstrated high-frequency filter/order query.
 
-- [ ] **Step 3: Write failing schema/query-plan assertions for accepted indexes**
+- [ ] **Step 3: Record the candidate ledger**
 
-For every accepted index, record its before `EXPLAIN`, expected query, and stable explicit name. Add portable schema assertions; keep production-driver `EXPLAIN` evidence in execution notes when CI uses SQLite.
+For every candidate, record the current SQL/`EXPLAIN`, expected final query family, existing index coverage, estimated selectivity, and reason to revisit it. Mark rejected candidates and the reason. This is not authorization to create an index.
 
-- [ ] **Step 4: Add one reversible migration if and only if indexes are accepted**
+- [ ] **Step 4: Defer the migration until final SQL exists**
 
-Generate it with:
+Do not generate a migration or commit a schema assertion in this task. Tasks 3-6 finalize query shapes; Task 6 then runs the query-shape checkpoint and creates only indexes justified against that final SQL.
 
-```powershell
-php artisan make:migration add_super_admin_operational_query_indexes
-```
-
-Use `Schema::table()` and explicit names within MySQL/MariaDB identifier limits. `down()` removes only indexes added here. Do not modify old migrations or rebuild tables.
-
-- [ ] **Step 5: Verify migration portability and query plans**
+- [ ] **Step 5: Commit the candidate inventory only if it adds durable evidence**
 
 ```powershell
-php artisan migrate --pretend
-php artisan test tests/Feature/SuperAdmin/PhaseEightScaleBoundaryTest.php
+git add -- docs/runbooks/super-admin-operations.md
+git commit -m "docs: record privileged index candidates"
 ```
 
-On an approved disposable database, also run migrate/rollback/migrate and repeat `EXPLAIN`. Never run rollback against shared or production data.
-
-- [ ] **Step 6: Commit measured indexes or record N/A**
-
-If indexes are justified:
-
-```powershell
-git add -- database/migrations/*_add_super_admin_operational_query_indexes.php tests/Feature/SuperAdmin/PhaseEightScaleBoundaryTest.php docs/runbooks/super-admin-operations.md
-git commit -m "perf: index privileged operational queries"
-```
-
-If none are justified, create no migration and record the existing index/query-plan evidence in the runbook.
+Skip a separate commit if Task 1 already captured the complete candidate inventory without further changes.
 
 ---
 
@@ -274,7 +282,7 @@ If none are justified, create no migration and record the existing index/query-p
 
 - [ ] **Step 1: Add failing filter, cap, tie-breaker, and metric tests**
 
-Cover valid/invalid filters, `per_page=100` and over-limit input, identical timestamps across page boundaries, archived visibility, current-admin exclusion, private-ID URL scope, and aggregate metrics independent of the current page.
+Cover valid filters; invalid enum/search-shape input; `page=abc`, `page=0`, `per_page=hello`, `per_page=0`, `per_page=100`, and `per_page=101`; identical timestamps across page boundaries on a frozen fixture; archived visibility; current-admin exclusion; private-ID URL scope; filter-aware paginator totals; and global authorized-scope metrics independent of filters/current page. Malformed pagination/filter values return `422`.
 
 - [ ] **Step 2: Paginate administrators**
 
@@ -290,7 +298,7 @@ Validate/cap existing filters and `per_page`, select the required user columns, 
 
 - [ ] **Step 5: Update page controls**
 
-Replace client-only whole-dataset filtering with debounced Inertia GET filters and paginator navigation preserving state/scroll. Keep lifecycle mutations and role capability visibility unchanged. Do not add an infinite-scroll abstraction.
+Replace client-only whole-dataset filtering with debounced Inertia GET filters and paginator navigation preserving state/scroll. Keep lifecycle mutations and role capability visibility unchanged. After a mutation reload, if `current_page > last_page`, request the last valid page (minimum 1) once rather than leaving an empty out-of-range page. Do not add an infinite-scroll abstraction or generic paginator framework.
 
 - [ ] **Step 6: Verify account surfaces**
 
@@ -304,7 +312,7 @@ If the administrator test file does not yet exist, create it beside the page wit
 - [ ] **Step 7: Commit bounded account lists**
 
 ```powershell
-git add -- app/Http/Controllers/superAdmin/AdministratorManagementController.php app/Http/Controllers/superAdmin/RegisteredShopController.php app/Http/Controllers/superAdmin/UserInterventionController.php resources/js/Pages/superAdmin/AdminTeam/AdminManagement.tsx resources/js/Pages/superAdmin/Shops/RegisteredShops.tsx resources/js/Pages/superAdmin/Users/SuperAdminUserManagement.tsx resources/js/Pages/superAdmin tests/Feature/SuperAdmin
+git add -- app/Http/Controllers/superAdmin/AdministratorManagementController.php app/Http/Controllers/superAdmin/RegisteredShopController.php app/Http/Controllers/superAdmin/UserInterventionController.php resources/js/Pages/superAdmin/AdminTeam/AdminManagement.tsx resources/js/Pages/superAdmin/AdminTeam/__tests__/AdminManagement.test.tsx resources/js/Pages/superAdmin/Shops/RegisteredShops.tsx resources/js/Pages/superAdmin/Shops/__tests__/RegisteredShopsLifecycle.test.tsx resources/js/Pages/superAdmin/Users/SuperAdminUserManagement.tsx resources/js/Pages/superAdmin/Users/__tests__/SuperAdminUserLifecycle.test.tsx tests/Feature/SuperAdmin/PhaseEightScaleBoundaryTest.php tests/Feature/SuperAdmin/AdministratorIdentityLifecycleTest.php tests/Feature/SuperAdmin/AccountLifecycleWorkflowTest.php tests/Feature/SuperAdmin/PrivateSensitiveDocumentAccessTest.php
 git commit -m "perf: bound privileged account lists"
 ```
 
@@ -329,13 +337,15 @@ Stage only files changed by this task; do not use the broad path arguments if th
 
 Assert capped pages, allowlisted status/search, deterministic order, global stats, bounded eager loading, and unchanged Admin/Super Admin capability behavior. Include aggregate shop-report groups, archived flagged-account targets, and stale appeal presentation.
 
+Before replacing `ShopReport::detectPatterns()`, add golden characterization fixtures for no flags, `batch_reports`, `new_account_reporters`, `ip_clustering`, combined flags, open-versus-terminal status exclusion, and high/medium/normal priority thresholds. Freeze time for the two-hour/seven-day boundaries. These characterization tests must pass against the existing PHP implementation before the aggregate replacement is written.
+
 - [ ] **Step 2: Paginate registration review**
 
 Restrict the base query to the statuses intended for this operational page, apply server filters, paginate owners first, and eager-load only documents for that page with fields required by review. Preserve legacy DTI/SEC `reviewType`, validity classification, private route URLs, and decision-service behavior.
 
 - [ ] **Step 3: Replace full shop-report grouping with bounded aggregates and detail**
 
-Page shop-owner groups from SQL aggregates for total/open/latest report and priority, join or subquery the latest warning strike and latest report fields, and replace `ShopReport::detectPatterns()` per group with bounded aggregate expressions over the page's shop IDs. Add a capability-protected `GET /admin/shop-reports/{shopOwner}` read endpoint that returns one shop's reports with capped deterministic pagination. Keep report moderation POST ownership, the maximum validated report-ID set, warning escalation, locks, audit, and notifications unchanged.
+Page shop-owner groups from SQL aggregates for total/open/latest report and priority, join or subquery the latest warning strike and latest report fields, and replace `ShopReport::detectPatterns()` per group with bounded aggregate evaluation over the page's shop IDs. The new evaluation must produce exactly the golden observable flags/priority results; Phase 8 may optimize evaluation but may not redefine a moderation pattern. Add a capability-protected `GET /admin/shop-reports/{shopOwner}` read endpoint that returns one shop's reports with capped deterministic pagination. Keep report moderation POST ownership, the maximum validated report-ID set, warning escalation, locks, audit, and notifications unchanged.
 
 Update the page to fetch one group's report rows when expanded. Do not send every open report ID in the list payload; build the moderation selection from the bounded detail response and require the server service to revalidate ownership/current status as it already does.
 
@@ -349,7 +359,7 @@ Validate filters, paginate deterministically, and compute stats with aggregate q
 
 - [ ] **Step 6: Update the remaining queue UIs**
 
-Use server filters/pagination while retaining local state updates only for the current page after successful decisions. A decision that removes a row from the active filter should trigger a bounded reload, not pretend the full queue is locally authoritative.
+Use server filters/pagination while retaining local state updates only for the current page after successful decisions. A decision that removes a row from the active filter should trigger a bounded reload, not pretend the full queue is locally authoritative. If that reload reports `current_page > last_page`, navigate once to `max(1, last_page)`.
 
 - [ ] **Step 7: Verify review workflows**
 
@@ -398,9 +408,11 @@ Compute active/expired/expiring-soon counts and gross/refunded/net totals indepe
 
 Register a capability-protected `GET /admin/subscriptions/{subscription}/history` owned by `SubscriptionManagementController`. Return the selected subscription's immutable payments and refunds in independently capped, deterministic paginators. Do not place `privileged.recent` on this read unless the existing private-data policy requires it; all mutations keep their current recent-reauth boundary.
 
+Resolve the route-bound subscription within the same authorized subscription-management scope before querying children. Serialize an explicit allowlist only: business-safe payment/refund identifiers, types, amounts, currency, normalized statuses, and relevant lifecycle timestamps/reasons already approved in Phase 5. Never serialize billing models wholesale or return raw provider responses/requests, provider metadata blobs, payment-method/card details, credentials, tokens, headers, or secret operational metadata.
+
 - [ ] **Step 5: Load history on demand in the modal**
 
-The list payload must not include full `payments` or `refund_attempts` collections. Fetch history after the user opens one subscription, display loading/error/empty states, and paginate within the detail. Continue using the summary's authoritative eligible payment ID for refund mutation and reload summary/history after committed interventions.
+The list payload must not include full `payments` or `refund_attempts` collections. Fetch history after the user opens one subscription, display loading/error/empty states, and paginate within the detail. Continue using the summary's authoritative eligible payment ID for refund mutation and reload summary/history after committed interventions. Correct an out-of-range history page to the last valid page after mutations without broadening the selected subscription scope.
 
 - [ ] **Step 6: Verify bounded billing and transaction containment**
 
@@ -419,13 +431,14 @@ git commit -m "perf: bound privileged billing history"
 
 ---
 
-## Task 6: Prove Audit, Monitoring, Renewal, and Reminder Bounds
+## Task 6: Prove Existing Bounds and Add Final Measured Indexes
 
 **Files:**
 - Modify only if evidence requires: `app/Services/PrivilegedAuditVisibility.php`
 - Modify only if evidence requires: `app/Http/Controllers/superAdmin/ShopDocumentRenewalController.php`
 - Modify only if evidence requires: `app/Http/Controllers/superAdmin/ShopOwnerUpgradeRequestController.php`
 - Modify only if evidence requires: `app/Services/ShopDocumentReminderService.php`
+- Create conditionally with Artisan: `database/migrations/<timestamp>_add_super_admin_operational_query_indexes.php`
 - Modify: `tests/Feature/SuperAdmin/PrivilegedAuditHistoryTest.php`
 - Modify: `tests/Feature/SuperAdmin/SystemMonitoringDashboardTest.php`
 - Modify: `tests/Feature/SuperAdmin/ShopDocumentRenewalReviewTest.php`
@@ -435,7 +448,7 @@ git commit -m "perf: bound privileged billing history"
 
 - [ ] **Step 1: Add growth-independent query tests**
 
-At two fixture volumes, prove audit actor/subject eager loading is bounded, monitoring returns five recent visible events, renewal and business-upgrade list queries do not grow per owner/document, and reminder scanning processes configured chunk sizes without loading all candidates. Add the missing `id DESC` tie-breaker and capped selected/eager-loaded columns to business upgrades without changing review/download behavior.
+At two fixture volumes, prove audit actor/subject eager loading is bounded, monitoring returns five recent visible events, renewal and business-upgrade list queries do not grow per owner/document, and reminder scanning processes configured chunk sizes without loading all candidates. Normalize renewal `page`, `per_page`, and `document_id` validation to the module-wide `422` contract. Add the missing `id DESC` tie-breaker and capped selected/eager-loaded columns to business upgrades without changing review/download behavior.
 
 - [ ] **Step 2: Test every audit filter under both roles**
 
@@ -453,25 +466,50 @@ Run repeated and overlapping attempts for the same document/version/date/thresho
 
 Cover reminder scanning while a renewal is promoted, two simultaneous renewal approvals, approval/rejection collision, stale predecessor, and new expiration replacing old identity. Assert one current version, immutable predecessor, one valid terminal decision, and reminders only for the current approved version.
 
+Run lock-dependent cases against the repository's MariaDB/MySQL concurrency harness where available. SQLite may verify state invariants, unique-constraint idempotency, and retry outcomes, but it cannot be the sole evidence for `lockForUpdate()`/row-lock behavior. If the production-compatible harness is unavailable, record the exact limitation and mark production lock evidence `unknown`, not passed.
+
 - [ ] **Step 6: Apply only measured query-shape improvements**
 
 If tests/query plans reveal excess selected columns, missing eager constraints, or a relation N+1, make the smallest local adjustment in the existing owner. Do not create a general report/query service or merge HR and shop expiry.
 
-- [ ] **Step 7: Verify bounded infrastructure paths**
+- [ ] **Step 7: Run the final query-shape checkpoint**
+
+After Tasks 3-6 query changes are green, capture final SQL and MariaDB/MySQL `EXPLAIN` for every candidate from Task 2. Compare before/final query counts and plans. Reject candidates made obsolete by the final query, covered by an existing index, or unsupported by measured selectivity/use.
+
+- [ ] **Step 8: Add only final justified indexes**
+
+If at least one candidate remains justified, generate one focused migration:
+
+```powershell
+php artisan make:migration add_super_admin_operational_query_indexes
+```
+
+Use `Schema::table()`, explicit names within MySQL/MariaDB limits, and a reversible `down()` that removes only indexes added here. Add portable schema assertions and retain production-driver `EXPLAIN` evidence in the runbook. Do not modify deployed migrations or add an index for leading-wildcard search.
+
+- [ ] **Step 9: Verify migration portability and final plans**
+
+```powershell
+php artisan migrate --pretend
+php artisan test tests/Feature/SuperAdmin/PhaseEightScaleBoundaryTest.php
+```
+
+On an approved disposable MariaDB/MySQL database, run migrate/rollback/migrate and repeat `EXPLAIN`. Never roll back a shared or production database. If no index survives the checkpoint, create no migration and record the N/A decision.
+
+- [ ] **Step 10: Verify bounded infrastructure paths**
 
 ```powershell
 php artisan test tests/Feature/SuperAdmin/PrivilegedAuditHistoryTest.php tests/Feature/SuperAdmin/SystemMonitoringDashboardTest.php tests/Feature/SuperAdmin/ShopDocumentRenewalReviewTest.php tests/Feature/SuperAdmin/ShopDocumentRenewalConcurrencyTest.php tests/Feature/BusinessScaling/ShopOwnerUpgradeReviewTest.php tests/Feature/Console/SendShopDocumentExpiryRemindersTest.php tests/Feature/SuperAdmin/PhaseEightScaleBoundaryTest.php
 php artisan schedule:list
 ```
 
-- [ ] **Step 8: Commit measured hardening**
+- [ ] **Step 11: Commit measured hardening and any final indexes**
 
 ```powershell
-git add -- app/Services/PrivilegedAuditVisibility.php app/Http/Controllers/superAdmin/ShopDocumentRenewalController.php app/Http/Controllers/superAdmin/ShopOwnerUpgradeRequestController.php app/Services/ShopDocumentReminderService.php tests/Feature/SuperAdmin/PrivilegedAuditHistoryTest.php tests/Feature/SuperAdmin/SystemMonitoringDashboardTest.php tests/Feature/SuperAdmin/ShopDocumentRenewalReviewTest.php tests/Feature/SuperAdmin/ShopDocumentRenewalConcurrencyTest.php tests/Feature/BusinessScaling/ShopOwnerUpgradeReviewTest.php tests/Feature/Console/SendShopDocumentExpiryRemindersTest.php tests/Feature/SuperAdmin/PhaseEightScaleBoundaryTest.php
-git commit -m "test: harden privileged bounded workflows"
+git add -- app/Services/PrivilegedAuditVisibility.php app/Http/Controllers/superAdmin/ShopDocumentRenewalController.php app/Http/Controllers/superAdmin/ShopOwnerUpgradeRequestController.php app/Services/ShopDocumentReminderService.php database/migrations/*_add_super_admin_operational_query_indexes.php tests/Feature/SuperAdmin/PrivilegedAuditHistoryTest.php tests/Feature/SuperAdmin/SystemMonitoringDashboardTest.php tests/Feature/SuperAdmin/ShopDocumentRenewalReviewTest.php tests/Feature/SuperAdmin/ShopDocumentRenewalConcurrencyTest.php tests/Feature/BusinessScaling/ShopOwnerUpgradeReviewTest.php tests/Feature/Console/SendShopDocumentExpiryRemindersTest.php tests/Feature/SuperAdmin/PhaseEightScaleBoundaryTest.php docs/runbooks/super-admin-operations.md
+git commit -m "perf: finalize privileged query bounds"
 ```
 
-Stage only modified files; omit unchanged optional application files.
+Stage only modified files; omit unchanged optional application files and the migration glob when Task 6 records an N/A index decision.
 
 ---
 
@@ -539,7 +577,9 @@ Run a read-only, bounded count/group query against each deployed database or app
 
 - [ ] **Step 3: Review redirect/bookmark telemetry**
 
-For an agreed observation window, count requests to each of the six `/superAdmin` aliases, eight old `/admin` aliases, and `/shop/register` by path/status, and distinguish known automated probes. Do not log query-string contents containing sensitive filters. If telemetry does not exist, record `unknown`; do not infer zero.
+Define and record the observation window before evaluating traffic. It must cover at least one normal business/usage cycle for this deployment; the owner may document a different period based on deployment history. An undefined, unavailable, or incomplete window is `unknown` and requires retention.
+
+For that recorded window, count requests to each of the six `/superAdmin` aliases, eight old `/admin` aliases, and `/shop/register` by path/status, and distinguish known automated probes. Do not log query-string contents containing sensitive filters. If telemetry does not exist, record `unknown`; do not infer zero.
 
 - [ ] **Step 4: Decide each alias independently**
 
@@ -657,13 +697,14 @@ The repository has no committed TypeScript compiler configuration or frontend li
 
 - [ ] **Step 8: Browser-verify integrated role and scale flows**
 
-Using realistic multi-page fixtures, verify desktop/mobile, browser console, and network behavior:
+Using realistic multi-page fixtures held unchanged while traversing pages, verify desktop/mobile, browser console, and network behavior:
 
 ```text
 Admin -> paginated authorized monitoring, registrations, shops, users, flags, own audit scope
 Admin -> denied administrator management, plan/intervention actions, security administration, full audit
 Super Admin -> every canonical page/filter/page/action/detail history
-same-timestamp rows -> no duplicates or omissions between pages
+same-timestamp rows in stable fixture -> no duplicates or omissions between pages
+mutation removes final row on page -> reload/navigate to last valid page
 subscription modal -> bounded history, retry, cancellation/refund conflicts
 private document -> authorized stream; cross-owner and audit-failure denial
 renewal -> private review, concurrent decision conflict, immutable promotion
@@ -672,35 +713,58 @@ retained alias -> protected query-preserving redirect
 removed alias -> 404; every old mutation -> 404/405 and no side effect
 ```
 
-- [ ] **Step 9: Record final measurements and close the program**
+- [ ] **Step 9: Record final measurements and completion state**
 
-Set this plan to `EXECUTED` only after all applicable evidence is recorded. Include before/after per-surface row limits/query counts, accepted/rejected index candidates and query plans, production operating confirmations, alias decisions, focused/full tests, build, browser flows, and unresolved external prerequisites. Phase 8 is the final planned phase; remaining unrelated product work becomes separately scoped work rather than Phase 9.
+Use two explicit completion states:
+
+```text
+IMPLEMENTATION COMPLETE
+-> code, migrations, local/CI tests, production-compatible DB checks available to the team, build, and browser flows are complete
+-> external production prerequisites may remain explicitly unknown
+
+EXECUTED / PRODUCTION-READY
+-> every production-only criterion is verified or explicitly marked not applicable by the documented deployment architecture
+-> no required criterion remains unknown
+```
+
+Record unknown scheduler, cache, queue-worker, deployed-link, telemetry, production-engine, or lock-harness evidence as unknown; never convert it to a pass. Set this plan to `EXECUTED / PRODUCTION-READY` only after all applicable evidence is recorded. If implementation is complete but external evidence remains unknown, set `IMPLEMENTATION COMPLETE — PRODUCTION EVIDENCE PENDING` and list the exact owner/prerequisite.
+
+Include before/after per-surface row limits/query counts, accepted/rejected index candidates and query plans, production operating confirmations, alias decisions, focused/full tests, build, browser flows, and unresolved external prerequisites. Phase 8 is the final planned phase; remaining unrelated product work becomes separately scoped work rather than Phase 9.
 
 ---
 
 ## Acceptance Checklist
 
 - [ ] Every operational list named by the design is server-paginated, capped, scoped, and deterministically ordered.
+- [ ] Invalid enum filters, invalid pages, and `per_page` outside `1..100` consistently return `422`; defaults apply only when parameters are absent.
+- [ ] Deterministic pagination tests use a stable dataset and make no snapshot guarantee across concurrent writes.
 - [ ] Full-scope stats use database aggregates and do not count only current-page rows.
+- [ ] Cards remain global to the authorized base scope while paginator totals remain filter-aware.
 - [ ] Shop-report grouping/pattern detection is aggregate and bounded; report detail is one-shop paginated and moderation revalidates selected IDs.
+- [ ] Golden fixtures prove shop-report pattern/priority semantics are unchanged from `ShopReport::detectPatterns()`.
 - [ ] Larger fixtures do not increase relation-query counts per row.
 - [ ] Subscription list hydration is bounded and complete history is one-subscription, server-paginated, and capability-protected.
+- [ ] Subscription history uses an explicit safe field allowlist and exposes no raw provider/payment-method/secret metadata or wholesale model serialization.
 - [ ] Billing history, refund outcomes, cancellation entitlement, and provider intervention ownership remain authoritative.
 - [ ] Audit visibility applies before filters; regular Admin cannot broaden scope.
 - [ ] Monitoring uses bounded aggregates/recent activity and reports only measurable health state.
 - [ ] Renewal queue and reminder scan remain bounded with deterministic date/order behavior.
 - [ ] Reminder retries/concurrency create one delivery/notification and never mutate shop status.
 - [ ] Renewal concurrency preserves one current version and immutable predecessors.
+- [ ] Lock-dependent claims have MariaDB/MySQL evidence or an explicit production-evidence limitation; SQLite is not treated as equivalent lock proof.
 - [ ] Legacy DTI/SEC evidence continues to satisfy approved-shop continuity until safely classified or renewed.
 - [ ] Private document and valid-ID access remains object-scoped, private, and mandatory-audited.
 - [ ] Fixed capabilities, active/MFA middleware, recent reauthentication, and final-Super-Admin invariants remain enforced.
 - [ ] New indexes have measured query-plan justification; redundant candidates were rejected.
 - [ ] Production timezone, scheduler, overlap locks, cache assumptions, queue workers, retries, and failed-job visibility are recorded.
 - [ ] Each compatibility alias is either removed with complete deployed evidence or retained with an explicit reason/review date.
+- [ ] Alias telemetry was evaluated only after a deployment-appropriate observation window was defined and recorded.
 - [ ] `/admin` remains the only privileged mutation prefix; old mutations remain `404|405` without side effects.
 - [ ] Every visible Admin/Super Admin action and negative path is feature- and browser-verified.
+- [ ] Mutations that empty the current page correct to the last valid page instead of leaving an out-of-range empty result.
 - [ ] Before/after measurements, focused/full suites, build, route/schedule inspection, and diff hygiene are recorded.
 - [ ] No generic framework, new dependency, automatic compliance enforcement, destructive history change, or unrelated feature was introduced.
+- [ ] Final status distinguishes implementation completion from verified production readiness; unknown external evidence remains unknown.
 
 ## Rollout and Rollback Notes
 
