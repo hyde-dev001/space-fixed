@@ -73,25 +73,16 @@ createInertiaApp({
         
         const component = props.initialPage.component ?? '';
         const isUserSidePage = component.startsWith('UserSide/');
-        const usesCustomerCart = isUserSidePage && !component.startsWith('UserSide/Auth/');
         syncPagePresentation(component);
 
         // Always wrap with QueryProvider for global state management
-        if (usesCustomerCart) {
+        if (isUserSidePage) {
             root.render(
                 <QueryProvider>
                     <ThemeProvider>
                         <CartProvider>
                             <App {...props} />
                         </CartProvider>
-                    </ThemeProvider>
-                </QueryProvider>
-            );
-        } else if (isUserSidePage) {
-            root.render(
-                <QueryProvider>
-                    <ThemeProvider>
-                        <App {...props} />
                     </ThemeProvider>
                 </QueryProvider>
             );
