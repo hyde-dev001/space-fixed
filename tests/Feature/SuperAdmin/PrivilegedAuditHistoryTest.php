@@ -11,6 +11,7 @@ use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -257,6 +258,42 @@ final class PrivilegedAuditHistoryTest extends TestCase
 
         $this->assertCount(1, $auditRoutes);
         $this->assertSame(['GET', 'HEAD'], $auditRoutes->first()->methods());
+    }
+
+    public function test_audit_order_and_relation_queries_remain_bounded_for_equal_timestamps(): void
+    {
+        $viewer = SuperAdmin::factory()->superAdmin()->create();
+        $user = User::factory()->create();
+        $timestamp = '2026-08-12 12:00:00';
+        $activities = collect([
+            $this->activity('user_suspended', $viewer, User::class, $user->id, [], $timestamp),
+            $this->activity('user_reactivated', $viewer, User::class, $user->id, [], $timestamp),
+            $this->activity('user_archived', $viewer, User::class, $user->id, [], $timestamp),
+        ]);
+
+        $this->actingAsCompletedPrivileged($viewer)
+            ->get('/admin/audit?per_page=1&page=1')
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('entries.0.id', $activities->sortByDesc('id')->first()->id));
+
+        $measure = function () use ($viewer): int {
+            DB::connection()->flushQueryLog();
+            DB::connection()->enableQueryLog();
+            $this->actingAsCompletedPrivileged($viewer)
+                ->get('/admin/audit')
+                ->assertOk();
+            $count = count(DB::connection()->getQueryLog());
+            DB::connection()->disableQueryLog();
+
+            return $count;
+        };
+
+        $smallCount = $measure();
+        foreach (range(1, 30) as $index) {
+            $this->activity('user_suspended', $viewer, User::class, $user->id, [], $timestamp);
+        }
+        $largeCount = $measure();
+        self::assertLessThanOrEqual($smallCount + 2, $largeCount);
     }
 
     /**

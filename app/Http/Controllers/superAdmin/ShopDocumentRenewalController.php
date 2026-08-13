@@ -42,22 +42,44 @@ final class ShopDocumentRenewalController extends Controller
 
     public function index(Request $request): JsonResponse|InertiaResponse
     {
-        $perPage = $this->perPage($request->query('per_page'));
+        $validated = $request->validate([
+            'document_id' => ['sometimes', 'integer', 'min:1'],
+            'page' => ['sometimes', 'integer', 'min:1'],
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
+        ]);
+
+        $perPage = (int) ($validated['per_page'] ?? 20);
         $query = ShopDocument::query()
+            ->select([
+                'id',
+                'shop_owner_id',
+                'document_type',
+                'logical_slot',
+                'version_number',
+                'predecessor_document_id',
+                'status',
+                'is_current',
+                'issued_on',
+                'expiration_mode',
+                'expires_on',
+                'reviewed_by_super_admin_id',
+                'reviewed_at',
+                'created_at',
+            ])
             ->with([
                 'shopOwner:id,first_name,last_name,email,business_name,status',
-                'predecessor',
+                'predecessor:id,shop_owner_id,document_type,logical_slot,version_number,status,is_current,issued_on,expiration_mode,expires_on,reviewed_by_super_admin_id,reviewed_at',
             ])
             ->pendingRenewals()
             ->whereHas('shopOwner', fn ($ownerQuery) => $ownerQuery->where('status', 'approved'))
             ->orderByDesc('created_at')
             ->orderByDesc('id');
 
-        if (is_numeric($request->query('document_id'))) {
-            $query->whereKey((int) $request->query('document_id'));
+        if (isset($validated['document_id'])) {
+            $query->whereKey((int) $validated['document_id']);
         }
 
-        $paginator = $query->paginate($perPage);
+        $paginator = $query->paginate($perPage)->withQueryString();
         $rows = collect($paginator->items())
             ->map(fn (ShopDocument $document): array => $this->serializeRenewal($document))
             ->values()
@@ -80,7 +102,7 @@ final class ShopDocumentRenewalController extends Controller
             'renewals' => $rows,
             'pagination' => $pagination,
             'filters' => [
-                'document_id' => $request->query('document_id'),
+                'document_id' => $validated['document_id'] ?? null,
             ],
         ]);
     }
@@ -464,13 +486,6 @@ final class ShopDocumentRenewalController extends Controller
                 'document' => $document->getKey(),
             ]),
         ];
-    }
-
-    private function perPage(mixed $raw): int
-    {
-        $value = is_numeric($raw) ? (int) $raw : 20;
-
-        return max(1, min(100, $value));
     }
 
     private function statusValue(mixed $status): string

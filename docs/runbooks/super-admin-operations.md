@@ -178,3 +178,19 @@ Rejected candidates:
 - Indexes on tiny configuration sets such as premium plans were rejected.
 
 The final query-shape checkpoint in Task 6 is the only point at which a migration may be generated. If the production-compatible harness remains unavailable or existing indexes cover the final SQL, the Phase 8 index decision remains `N/A` and no migration is created.
+
+### Task 6 bounded-infrastructure verification (2026-08-13)
+
+The final local query-shape check covered the already-bounded audit, monitoring, renewal, upgrade-review, and reminder paths. The renewal queue now validates `document_id`, `page`, and `per_page` with the Phase 8 `422` contract, selects only review fields, constrains its relations, and orders deterministically by `created_at DESC, id DESC`. Business-upgrade review now selects only review/download fields, constrains its relations, and adds the same ID tie-breaker. Existing reminder scanning retained its `Asia/Manila` thresholds, `chunkById` cap, database deduplication, and no-status-mutation behavior.
+
+Growth-independent local query measurements on SQLite were:
+
+| Surface | Small fixture | Larger fixture | Observed result |
+| --- | ---: | ---: | --- |
+| Business-upgrade review | 7 | 7 | Relation query count did not grow with 30 additional requests |
+| Privileged audit history | 6 | 6 | Relation query count did not grow with 30 additional events |
+| Monitoring recent activity | 18 | 17 | Recent-activity query count remained bounded with 30 additional events |
+
+The focused Task 6 infrastructure suite passed with 34 warnings and 286 assertions; the warnings were the repository's existing no-`.env` configuration warning. The renewal concurrency test remains explicitly skipped for SQLite because SQLite cannot prove MariaDB/MySQL row-lock behavior. No production-compatible MariaDB/MySQL engine, final `EXPLAIN`, or lock-concurrency harness was available in this worktree.
+
+Final index decision: `N/A`. No migration was created. Existing local status/order prefixes cover the accepted business-upgrade and audit query families, while renewal/reminder production plans cannot be inferred from the stale local SQLite schema. Production index additions remain pending a migrated MariaDB/MySQL query-plan review; no performance or lock-readiness claim is made from SQLite evidence.

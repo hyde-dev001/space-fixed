@@ -52,6 +52,63 @@ final class ShopOwnerUpgradeReviewTest extends TestCase
         $this->assertStringNotContainsString($document->path, (string) $download->getContent());
     }
 
+    public function test_upgrade_queue_is_capped_and_deterministic_for_equal_timestamps(): void
+    {
+        $admin = $this->createAdmin();
+        $timestamp = now()->subDays(2);
+        $requests = ShopOwnerUpgradeRequest::factory()->count(3)->create([
+            'created_at' => $timestamp,
+            'updated_at' => $timestamp,
+        ]);
+        $expectedIds = $requests->sortByDesc('id')->values()->pluck('id')->all();
+
+        $pageOne = $this->actingAsCompletedPrivileged($admin)
+            ->getJson(route('admin.business-upgrade-requests.index', ['per_page' => 1, 'page' => 1]));
+        $pageTwo = $this->actingAsCompletedPrivileged($admin)
+            ->getJson(route('admin.business-upgrade-requests.index', ['per_page' => 1, 'page' => 2]));
+
+        $pageOne->assertOk()
+            ->assertJsonPath('meta.per_page', 1)
+            ->assertJsonPath('data.0.id', $expectedIds[0]);
+        $pageTwo->assertOk()->assertJsonPath('data.0.id', $expectedIds[1]);
+
+        foreach ([
+            ['page' => 'abc'],
+            ['page' => 0],
+            ['per_page' => 'abc'],
+            ['per_page' => 0],
+            ['per_page' => 101],
+            ['status' => 'not-a-status'],
+        ] as $query) {
+            $this->actingAsCompletedPrivileged($admin)
+                ->getJson(route('admin.business-upgrade-requests.index', $query))
+                ->assertUnprocessable();
+        }
+    }
+
+    public function test_upgrade_queue_relation_queries_do_not_grow_per_row(): void
+    {
+        $admin = $this->createAdmin();
+        ShopOwnerUpgradeRequest::factory()->create();
+
+        $measure = function () use ($admin): int {
+            DB::connection()->flushQueryLog();
+            DB::connection()->enableQueryLog();
+            $this->actingAsCompletedPrivileged($admin)
+                ->getJson(route('admin.business-upgrade-requests.index'))
+                ->assertOk();
+            $count = count(DB::connection()->getQueryLog());
+            DB::connection()->disableQueryLog();
+
+            return $count;
+        };
+
+        $smallCount = $measure();
+        ShopOwnerUpgradeRequest::factory()->count(30)->create();
+        $largeCount = $measure();
+        self::assertLessThanOrEqual($smallCount + 2, $largeCount);
+    }
+
     public function test_owner_or_user_cannot_list_review_or_download_another_shop_evidence(): void
     {
         [$owner, $upgradeRequest] = $this->submitRequest();

@@ -54,6 +54,25 @@ final class ShopDocumentRenewalReviewTest extends TestCase
         $this->assertStringNotContainsString('checksum_sha256', $response->getContent());
     }
 
+    public function test_renewal_queue_rejects_malformed_pagination_and_document_filters(): void
+    {
+        $admin = SuperAdmin::factory()->admin()->create();
+
+        foreach ([
+            ['page' => 'abc'],
+            ['page' => 0],
+            ['per_page' => 'abc'],
+            ['per_page' => 0],
+            ['per_page' => 101],
+            ['document_id' => 'abc'],
+            ['document_id' => 0],
+        ] as $query) {
+            $this->actingAsCompletedPrivileged($admin)
+                ->getJson(route('admin.document-renewals.index', $query))
+                ->assertUnprocessable();
+        }
+    }
+
     public function test_admin_can_approve_a_pending_renewal_and_notifies_the_owner_after_commit(): void
     {
         $admin = SuperAdmin::factory()->admin()->create();

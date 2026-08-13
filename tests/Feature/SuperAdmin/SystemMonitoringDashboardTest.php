@@ -8,6 +8,7 @@ use App\Models\AuditLog;
 use App\Models\SuperAdmin;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use Spatie\Activitylog\Models\Activity;
@@ -51,6 +52,32 @@ final class SystemMonitoringDashboardTest extends TestCase
         $this->assertIsString($source);
         $this->assertStringNotContainsString('AuditLog', $source);
         $this->assertStringContainsString("where('log_name', 'privileged')", file_get_contents(app_path('Services/PrivilegedAuditVisibility.php')));
+    }
+
+    public function test_monitoring_recent_activity_query_count_is_independent_of_history_size(): void
+    {
+        $viewer = SuperAdmin::factory()->superAdmin()->create();
+        $user = User::factory()->create();
+        $this->activity('user_reactivated', $viewer, User::class, $user->id);
+
+        $measure = function () use ($viewer): int {
+            DB::connection()->flushQueryLog();
+            DB::connection()->enableQueryLog();
+            $this->actingAsCompletedPrivileged($viewer)
+                ->get('/admin/system-monitoring')
+                ->assertOk();
+            $count = count(DB::connection()->getQueryLog());
+            DB::connection()->disableQueryLog();
+
+            return $count;
+        };
+
+        $smallCount = $measure();
+        foreach (range(1, 30) as $index) {
+            $this->activity('user_reactivated', $viewer, User::class, $user->id);
+        }
+        $largeCount = $measure();
+        self::assertLessThanOrEqual($smallCount + 2, $largeCount);
     }
 
     /**

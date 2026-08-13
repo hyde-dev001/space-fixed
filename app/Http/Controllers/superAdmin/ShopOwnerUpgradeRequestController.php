@@ -25,8 +25,26 @@ final class ShopOwnerUpgradeRequestController extends Controller
     {
         $validated = $request->validated();
         $query = ShopOwnerUpgradeRequest::query()
-            ->with(['shopOwner', 'reviewedBySuperAdmin', 'documents'])
-            ->latest('created_at');
+            ->select([
+                'id',
+                'shop_owner_id',
+                'current_registration_type',
+                'current_business_type',
+                'requested_registration_type',
+                'requested_business_type',
+                'status',
+                'decision_reason',
+                'reviewed_by_super_admin_id',
+                'reviewed_at',
+                'created_at',
+            ])
+            ->with([
+                'shopOwner:id,first_name,last_name,business_name,email',
+                'reviewedBySuperAdmin:id,first_name,last_name',
+                'documents:id,shop_owner_upgrade_request_id,document_type,mime_type,size,source_status',
+            ])
+            ->orderByDesc('created_at')
+            ->orderByDesc('id');
 
         if (! empty($validated['status'])) {
             $query->where('status', $validated['status']);
