@@ -2,6 +2,7 @@
 import '../css/app.css';
 
 import { createRoot } from 'react-dom/client';
+import { useEffect, useState } from 'react';
 import { createInertiaApp, router } from '@inertiajs/react';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { ThemeProvider } from './context/ThemeContext';
@@ -23,6 +24,33 @@ const syncUserSideScrollbar = (componentName = '') => {
 const syncPagePresentation = (componentName = '') => {
     syncUserSideScrollbar(componentName);
     syncPageTheme(componentName);
+};
+
+const ApplicationProviders = ({ initialComponent, children }) => {
+    const [component, setComponent] = useState(initialComponent);
+
+    useEffect(() => router.on('navigate', (event) => {
+        setComponent(event.detail?.page?.component ?? '');
+    }), []);
+
+    const isUserSidePage = component.startsWith('UserSide/');
+    const isUserAuthPage = component.startsWith('UserSide/Auth/');
+
+    return (
+        <QueryProvider>
+            <ThemeProvider>
+                {isUserSidePage ? (
+                    <CartProvider syncEnabled={!isUserAuthPage}>
+                        {children}
+                    </CartProvider>
+                ) : (
+                    <SidebarProvider>
+                        {children}
+                    </SidebarProvider>
+                )}
+            </ThemeProvider>
+        </QueryProvider>
+    );
 };
 
 // Update CSRF token after each Inertia navigation
@@ -72,31 +100,13 @@ createInertiaApp({
         const root = createRoot(el);
         
         const component = props.initialPage.component ?? '';
-        const isUserSidePage = component.startsWith('UserSide/');
         syncPagePresentation(component);
 
-        // Always wrap with QueryProvider for global state management
-        if (isUserSidePage) {
-            root.render(
-                <QueryProvider>
-                    <ThemeProvider>
-                        <CartProvider>
-                            <App {...props} />
-                        </CartProvider>
-                    </ThemeProvider>
-                </QueryProvider>
-            );
-        } else {
-            root.render(
-                <QueryProvider>
-                    <ThemeProvider>
-                        <SidebarProvider>
-                            <App {...props} />
-                        </SidebarProvider>
-                    </ThemeProvider>
-                </QueryProvider>
-            );
-        }
+        root.render(
+            <ApplicationProviders initialComponent={component}>
+                <App {...props} />
+            </ApplicationProviders>
+        );
 
         dismissAppLoader();
     },
