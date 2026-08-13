@@ -129,8 +129,9 @@ it('keeps supplier orders under Inventory without showing Procurement pages', ()
     'procurement.receive_purchase_orders',
   ];
 
-  render(<AppSidebarERP />);
+  const { container } = render(<AppSidebarERP />);
 
+  expect(container.querySelector('aside')).toHaveClass('xl:mt-0', 'xl:translate-x-0');
   expect(screen.getByRole('link', { name: /supplier orders/i })).toBeInTheDocument();
   expect(screen.queryByRole('link', { name: /purchase requests/i })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: /purchase orders/i })).not.toBeInTheDocument();

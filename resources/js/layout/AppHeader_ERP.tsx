@@ -34,7 +34,7 @@ const AppHeader_ERP: React.FC = () => {
       : '/api/hr/notifications';
 
   const handleToggle = () => {
-    if (window.innerWidth >= 1024) {
+    if (window.innerWidth >= 1280) {
       toggleSidebar();
     } else {
       toggleMobileSidebar();
@@ -63,11 +63,11 @@ const AppHeader_ERP: React.FC = () => {
   }, []);
 
   return (
-    <header className="sticky top-0 flex w-full bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-gray-200 z-99999 dark:border-gray-800 lg:border-b">
-      <div className="flex flex-col items-center justify-between grow lg:flex-row lg:px-6">
-        <div className="flex items-center justify-between w-full gap-2 px-3 py-3 border-b border-gray-200 dark:border-gray-800 sm:gap-4 lg:justify-normal lg:border-b-0 lg:px-0 lg:py-4">
+    <header className="sticky top-0 flex w-full bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-gray-200 z-99999 dark:border-gray-800 xl:border-b">
+      <div className="flex flex-col items-center justify-between grow xl:flex-row xl:px-6">
+        <div className="flex items-center justify-between w-full gap-2 px-3 py-3 border-b border-gray-200 dark:border-gray-800 sm:gap-4 xl:justify-normal xl:border-b-0 xl:px-0 xl:py-4">
           <button
-            className="items-center justify-center w-10 h-10 text-gray-500 border-gray-200 rounded-lg z-99999 dark:border-gray-800 lg:flex dark:text-gray-400 lg:h-11 lg:w-11 lg:border"
+            className="items-center justify-center w-10 h-10 text-gray-500 border-gray-200 rounded-lg z-99999 dark:border-gray-800 xl:flex dark:text-gray-400 xl:h-11 xl:w-11 xl:border"
             onClick={handleToggle}
             aria-label="Toggle Sidebar"
           >
@@ -104,22 +104,18 @@ const AppHeader_ERP: React.FC = () => {
             )}
           </button>
 
-          <Link href={route("landing")} className="lg:hidden">
-            <img
-              className="dark:hidden"
-              src="/images/logo/logo.svg"
-              alt="SoleSpace logo"
-            />
-            <img
-              className="hidden dark:block"
-              src="/images/logo/logo-dark.svg"
-              alt="SoleSpace logo"
-            />
+          <Link href={route("landing")} className="inline-flex items-center gap-2 xl:hidden" aria-label="SoleSpace">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                <path d="M4.5 4.5V15.5M10 7.5V15.5M15.5 5.5V15.5" stroke="white" strokeWidth="2.25" strokeLinecap="round" />
+              </svg>
+            </span>
+            <span className="text-xl font-bold tracking-tight text-gray-900 dark:text-white">SoleSpace</span>
           </Link>
 
           <button
             onClick={toggleApplicationMenu}
-            className="flex items-center justify-center w-10 h-10 text-gray-700 rounded-lg z-99999 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 lg:hidden"
+            className="flex items-center justify-center w-10 h-10 text-gray-700 rounded-lg z-99999 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 xl:hidden"
             aria-label="Toggle Application Menu"
           >
             <svg
@@ -138,7 +134,7 @@ const AppHeader_ERP: React.FC = () => {
             </svg>
           </button>
 
-          <div className="hidden lg:block">
+          <div className="hidden xl:block">
             <form>
               <div className="relative">
                 <span className="absolute -translate-y-1/2 pointer-events-none left-4 top-1/2">
@@ -175,7 +171,7 @@ const AppHeader_ERP: React.FC = () => {
         </div>
 
         <div
-          className={`${isApplicationMenuOpen ? "flex" : "hidden"} items-center justify-between w-full gap-4 px-5 py-4 lg:flex lg:justify-end lg:px-0 lg:shadow-none`}
+          className={`${isApplicationMenuOpen ? "flex" : "hidden"} items-center justify-between w-full gap-4 px-5 py-4 xl:flex xl:justify-end xl:px-0 xl:shadow-none`}
         >
           {/* Right Side Actions */}
           <div className="flex items-center gap-2 2xsm:gap-3">
@@ -192,7 +188,7 @@ const AppHeader_ERP: React.FC = () => {
             {ownerMode && erpUrls?.portal && (
               <Link
                 href={erpUrls.portal}
-                className="hidden min-h-11 items-center rounded-lg px-3 text-sm font-semibold text-gray-600 transition hover:bg-gray-100 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-blue-200 lg:inline-flex"
+                className="hidden min-h-11 items-center rounded-lg px-3 text-sm font-semibold text-gray-600 transition hover:bg-gray-100 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-blue-200 xl:inline-flex"
               >
                 Back to Shop Owner Portal
               </Link>

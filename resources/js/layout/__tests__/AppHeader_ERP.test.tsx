@@ -83,7 +83,9 @@ beforeEach(() => {
 it('renders owner identity, mode, server URLs, and portal return action', () => {
   render(<AppHeaderERP />);
 
-  expect(screen.getAllByAltText('SoleSpace logo')).toHaveLength(2);
+  expect(screen.getByRole('banner')).toHaveClass('xl:border-b');
+  expect(screen.getByRole('link', { name: 'SoleSpace' })).toHaveClass('xl:hidden');
+  expect(screen.queryByText('TailAdmin')).not.toBeInTheDocument();
   expect(screen.getByText('North Star Shoes')).toBeInTheDocument();
   expect(screen.getByText('Owner mode')).toBeInTheDocument();
   expect(screen.getByRole('link', { name: /back to shop owner portal/i })).toHaveAttribute(
