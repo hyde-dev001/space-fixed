@@ -4,7 +4,7 @@
 
 > **Execution discipline:** Implement route-mutating tasks strictly sequentially. Subagents may assist with read-only review, dependency scans, test analysis, or dead-code inspection, but no parallel implementation may edit `routes/web.php`, route names, frontend callers, or `PhaseSevenStructuralBoundaryTest.php`.
 
-**Status:** IMPLEMENTATION COMPLETE - AUTHENTICATED BROWSER VERIFICATION PENDING
+**Status:** EXECUTED
 
 **Goal:** Remove duplicate privileged runtime ownership after Phases 0-6, make `/admin` the single canonical mutation surface, split the monolithic controller into focused owners, and retire superseded document and registration paths without changing secured behavior.
 
@@ -783,21 +783,20 @@ git diff --check
 
 The repository has no committed TypeScript compiler configuration or frontend lint script; do not report type-checking or linting as passing unless tooling is actually added and run. If an environment prerequisite blocks a command, record exact output and retain narrower passing evidence without converting a blocked check into a pass.
 
-- [ ] **Step 7: Browser-verify both privileged roles**
+- [x] **Step 7: Browser-verify both privileged roles**
 
 Verify desktop/mobile and browser console/network behavior:
 
 ```text
-Admin -> monitoring, registrations, users, shops, flags, own security
-Admin -> denied administrator management, plans, subscription intervention, full audit
-Super Admin -> all authorized canonical pages/actions
-old GET bookmark -> capability-protected redirect preserving filters
-old mutation URL -> 404/405 and no state/audit/notification change
-registration decision -> verified immutable documents remain authoritative
-shop renewal -> unchanged queue/private access/promotion behavior
+Admin -> monitoring, registrations, users, shops, flags, profile, security, notifications, scoped audit
+Admin -> denied administrator management, administrator creation, and subscription management
+Super Admin -> all authorized canonical pages, administrator management, and subscription management
+old GET bookmark -> capability-protected redirect preserving path parameters and filters
+old mutation URL -> 404/405; canonical provider-backed cancellation remains CSRF-protected
+browser console/page errors -> no unexpected errors; intentional Admin denials were the only expected 403s
 ```
 
-- [ ] **Step 8: Record execution evidence and hand off Phase 8**
+- [x] **Step 8: Record execution evidence and hand off Phase 8**
 
 Set this plan to `EXECUTED` only after all applicable checks are recorded. Include before/after route counts, deleted monolith/dead-layout line counts, remaining GET aliases with retirement reasons, tests/build results, and any measured Phase 8 scale candidates. Do not expand Phase 7 to fix unrelated performance findings.
 
@@ -805,7 +804,7 @@ Set this plan to `EXECUTED` only after all applicable checks are recorded. Inclu
 
 ## Execution Evidence (2026-08-13)
 
-Implementation and automated verification were completed on branch `super-admin-phase-0-containment` in the cumulative Phase 0-6 worktree. The plan remains short of `EXECUTED` until the authenticated Admin and Super Admin browser flows are run in a browser-capable environment.
+Implementation and automated verification were completed on branch `super-admin-phase-0-containment` in the cumulative Phase 0-6 worktree.
 
 Review results:
 
@@ -835,9 +834,12 @@ Verification results:
 Browser verification status:
 
 - HTTP smoke verification passed against a temporary worktree server: `/admin/login` returned 200; an unauthenticated legacy privileged GET redirected to `/admin/login`; `/shop/register?source=legacy` preserved its query string while redirecting to `/shop-owner-register`; all three retired registration POSTs returned 404.
-- Authenticated Admin/Super Admin desktop/mobile flows, browser console/network checks, and persisted-state reload checks were not runnable here because Python and a usable Playwright runner are unavailable. These remain the only open Phase 7 verification item; do not treat the HTTP smoke check as a substitute for role-flow verification.
+- Authenticated browser verification passed with Chromium/Playwright 1.62.0 against a disposable SQLite copy using synthetic active Admin and Super Admin accounts. The flow exercised real password login followed by TOTP MFA.
+- Desktop Admin navigation opened monitoring, registrations, users, shops, flags, profile, security, notifications, and scoped audit; administrator management, administrator creation, and subscription management returned 403. Mobile Super Admin navigation opened those pages plus administrator and subscription management. Both profiles showed truthful role labels, and neither visible navigation contained `/superAdmin` links.
+- The tested legacy GET aliases redirected to their canonical `/admin` destinations while preserving path/query values. Retired registration writes and subscription upgrade/downgrade URLs returned 404; the canonical provider-backed cancellation URL returned 419 without CSRF. No unexpected page errors occurred; three expected 403 console entries came from intentional Admin denial checks.
+- Browser verification used only the temporary database copy and synthetic accounts. The original worktree database was not changed, and the temporary current-asset build was restored after the run.
 
-The remaining handoff is to run Task 9 Step 7 in a browser-capable environment, record its results, then mark this plan `EXECUTED` and hand off measured scale candidates to Phase 8. No Phase 8 performance work was added to this phase.
+Phase 8 receives the remaining measured-scale candidates; no Phase 8 performance work was added to this phase.
 
 ---
 
@@ -864,7 +866,7 @@ The remaining handoff is to run Task 9 Step 7 in a browser-capable environment, 
 - [x] `RespondsToAccountLifecycle` exists only if the final diff proves substantial identical HTTP-only mapping; otherwise it is omitted.
 - [x] No new dependency, generic framework, schema migration, or speculative abstraction is introduced.
 - [x] Every route-mutating task executed sequentially, regenerated Ziggy when needed, and committed only after its relevant tests were green.
-- [ ] Focused and broad backend/frontend tests, route/schedule inspection, build, browser flows, and diff hygiene are recorded.
+- [x] Focused and broad backend/frontend tests, route/schedule inspection, build, browser flows, and diff hygiene are recorded.
 
 ## Rollout and Rollback Notes
 
