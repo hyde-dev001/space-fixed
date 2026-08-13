@@ -86,6 +86,7 @@ class CheckEmployeeSuspension
                         ->where('shop_owner_id', $user->shop_owner_id)
                         ->whereRaw('LOWER(email) = ?', [strtolower((string) $user->email)])
                         ->orderBy('id')
+                        ->limit(2)
                         ->get();
 
                     if ($employees->count() > 1

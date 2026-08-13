@@ -38,6 +38,8 @@ export function useBadgeCounts(enabled: boolean = true, initialCounts: InitialBa
           },
         });
 
+        if (stopped) return;
+
         if (response.status === 401) {
           stopped = true;
           setCounts({
