@@ -349,6 +349,66 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
             ->assertOk();
     }
 
+    public function test_suspended_privileged_actor_cannot_reach_private_documents_or_create_access_audit(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create();
+        $document = $this->createDocument($owner, 'valid_id', 'local', 'shop_documents/suspended-admin.png');
+        $admin = SuperAdmin::factory()->admin()->suspended()->create();
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->get(route('admin.shop-documents.show', [$owner, $document]))
+            ->assertRedirect(route('admin.login'));
+
+        $this->assertSame(0, ActivityModel::query()->where('event', 'document_access_initiated')->count());
+    }
+
+    public function test_invalid_private_paths_and_missing_customer_files_fail_closed_without_audit(): void
+    {
+        $owner = ShopOwner::factory()->pending()->create();
+        $document = $this->createDocument(
+            $owner,
+            'valid_id',
+            'local',
+            '../outside-private-document.png',
+            null,
+            false,
+        );
+        $customer = User::factory()->create([
+            'valid_id_path' => 'valid_ids/missing-customer-id.png',
+            'valid_id_disk' => 'local',
+        ]);
+        $admin = SuperAdmin::factory()->admin()->create();
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->get(route('admin.shop-documents.show', [$owner, $document]))
+            ->assertNotFound();
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->get(route('admin.users.valid-id.show', $customer))
+            ->assertNotFound();
+
+        $this->assertSame(0, ActivityModel::query()->where('event', 'document_access_initiated')->count());
+    }
+
+    public function test_range_requests_keep_private_download_headers_and_do_not_bypass_content_inspection(): void
+    {
+        $owner = ShopOwner::factory()->pending()->create();
+        $document = $this->createDocument($owner, 'valid_id', 'local', 'shop_documents/range.png');
+        $admin = SuperAdmin::factory()->admin()->create();
+
+        $response = $this->actingAsCompletedPrivileged($admin)
+            ->withHeader('Range', 'bytes=0-1')
+            ->get(route('admin.shop-documents.show', [$owner, $document]));
+
+        $response->assertOk()
+            ->assertHeader('Content-Type', 'image/png')
+            ->assertHeader('Cache-Control', 'no-store, private')
+            ->assertHeader('X-Content-Type-Options', 'nosniff');
+        $this->assertStringContainsString('inline;', (string) $response->headers->get('Content-Disposition'));
+        $this->assertNull($response->headers->get('Content-Range'));
+        $this->assertSame($this->pngBytes(), $response->getContent());
+    }
+
     public function test_shop_owner_and_signed_resubmission_access_are_scoped_and_audited(): void
     {
         $owner = ShopOwner::factory()->rejected()->create();
