@@ -110,6 +110,11 @@ final class PrivilegedIdentitySchemaTest extends TestCase
         ]);
 
         self::assertSame(64, mb_strlen($token->token_hash));
+        $token->setRawAttributes(array_merge(
+            $token->getAttributes(),
+            ['super_admin_id' => (string) $admin->id],
+        ));
+        self::assertSame($admin->id, $token->super_admin_id);
         self::assertSame('session_id', $session->getKeyName());
         self::assertFalse($session->getIncrementing());
         self::assertSame('privileged-session-test', $session->getKey());
