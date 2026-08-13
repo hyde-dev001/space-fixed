@@ -16,14 +16,17 @@ const CartContext = createContext<CartContextType | undefined>(undefined);
 
 interface CartProviderProps {
   children: ReactNode;
+  syncEnabled?: boolean;
 }
 
-export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
+export const CartProvider: React.FC<CartProviderProps> = ({ children, syncEnabled = true }) => {
   const [cartCount, setCartCount] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
   // Load cart count from API
   const refreshCart = async () => {
+    if (!syncEnabled) return;
+
     setIsLoading(true);
     try {
       const response = await fetch('/api/cart', {
@@ -60,6 +63,8 @@ export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
 
   // Validate cart - check for invalid items, stock issues, and sync with server
   const validateCart = async () => {
+    if (!syncEnabled) return;
+
     try {
       // Get localStorage cart for comparison
       const raw = localStorage.getItem('ss_cart');
@@ -175,13 +180,17 @@ export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
 
   // Initial load
   useEffect(() => {
+    if (!syncEnabled) return;
+
     refreshCart();
     // Validate cart on initial load to catch any stale data
     validateCart();
-  }, []);
+  }, [syncEnabled]);
 
   // Listen to cart events
   useEffect(() => {
+    if (!syncEnabled) return;
+
     const handler = (e: CartAddedEvent) => {
       // Trigger pulse animation
       triggerPulse();
@@ -197,10 +206,12 @@ export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
 
     addCartAddedListener(handler);
     return () => removeCartAddedListener(handler);
-  }, []);
+  }, [syncEnabled]);
 
   // Sync cart when page becomes visible (user returns to tab)
   useEffect(() => {
+    if (!syncEnabled) return;
+
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         // Refresh cart when user returns to the tab
@@ -213,7 +224,7 @@ export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, []);
+  }, [syncEnabled]);
 
   const value: CartContextType = {
     cartCount,
