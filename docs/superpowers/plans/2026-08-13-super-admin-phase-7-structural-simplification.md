@@ -4,7 +4,7 @@
 
 > **Execution discipline:** Implement route-mutating tasks strictly sequentially. Subagents may assist with read-only review, dependency scans, test analysis, or dead-code inspection, but no parallel implementation may edit `routes/web.php`, route names, frontend callers, or `PhaseSevenStructuralBoundaryTest.php`.
 
-**Status:** DRAFT FOR APPROVAL
+**Status:** IMPLEMENTATION COMPLETE - AUTHENTICATED BROWSER VERIFICATION PENDING
 
 **Goal:** Remove duplicate privileged runtime ownership after Phases 0-6, make `/admin` the single canonical mutation surface, split the monolithic controller into focused owners, and retire superseded document and registration paths without changing secured behavior.
 
@@ -722,7 +722,7 @@ git commit -m "docs: record privileged runtime ownership"
 - Modify: `docs/superpowers/plans/2026-08-13-super-admin-phase-7-structural-simplification.md` — execution evidence/status only.
 - Create: `docs/ai-learning-log.md` — only for a durable lesson; otherwise do not add the file.
 
-- [ ] **Step 1: Run the sequential required review stack**
+- [x] **Step 1: Run the sequential required review stack**
 
 Record each result once:
 
@@ -736,7 +736,7 @@ Record each result once:
 8. **security review:** canonical middleware and object scope must match or strengthen prior routes; old mutation URLs must be absent;
 9. **verification-before-completion:** all completion claims require fresh command output; confirm every implementation commit was green and route-mutating tasks ran sequentially.
 
-- [ ] **Step 2: Run reuse and dead-code scans**
+- [x] **Step 2: Run reuse and dead-code scans**
 
 ```powershell
 rg -n "SuperAdminController|SuperAdminUserManagementController|ShopRegistrationController" app routes resources/js tests
@@ -748,19 +748,19 @@ rg -n "AuditLog::create|activity\(\)" app/Http/Controllers/superAdmin app/Servic
 
 Every remaining match must be an approved GET alias, historical test/fixture, non-privileged domain writer, or explicit reconciliation path. Remove stale imports, dead methods, abandoned TODOs created by this phase, and obsolete route names.
 
-- [ ] **Step 3: Run focused backend suites**
+- [x] **Step 3: Run focused backend suites**
 
 ```powershell
 php artisan test tests/Feature/SuperAdmin/PhaseSevenStructuralBoundaryTest.php tests/Feature/SuperAdmin/PhaseZeroAuthorizationTest.php tests/Feature/SuperAdmin/PhaseOneRouteSecurityTest.php tests/Feature/SuperAdmin/AccountLifecycleWorkflowTest.php tests/Feature/SuperAdmin/AdministratorIdentityLifecycleTest.php tests/Feature/SuperAdmin/RegistrationDecisionWorkflowTest.php tests/Feature/SuperAdmin/FlaggedAccountWorkflowTest.php tests/Feature/SuperAdmin/PremiumPlanWorkflowTest.php tests/Feature/SuperAdmin/SubscriptionInterventionContainmentTest.php tests/Feature/SuperAdmin/PrivateSensitiveDocumentAccessTest.php tests/Feature/SuperAdmin/PhaseSixDocumentRouteBoundaryTest.php
 ```
 
-- [ ] **Step 4: Run focused frontend suites**
+- [x] **Step 4: Run focused frontend suites**
 
 ```powershell
 pnpm exec vitest run resources/js/layout/__tests__/AppSidebar.test.tsx resources/js/Pages/superAdmin/Users/__tests__/FlaggedAccounts.test.tsx resources/js/Pages/superAdmin/Users/__tests__/SuperAdminUserLifecycle.test.tsx resources/js/Pages/superAdmin/Shops/__tests__/RegisteredShopsLifecycle.test.tsx resources/js/Pages/superAdmin/Shops/__tests__/SubscriptionManagementBilling.test.tsx resources/js/Pages/superAdmin/Shops/__tests__/ShopOwnerRegistrationView.test.ts
 ```
 
-- [ ] **Step 5: Run route/schedule/generated-file inspection**
+- [x] **Step 5: Run route/schedule/generated-file inspection**
 
 ```powershell
 php artisan route:list --path=admin --except-vendor
@@ -772,7 +772,7 @@ git diff --check
 
 Verify one mutation route per semantic action, only approved GET aliases under `/superAdmin`, one shop reminder schedule, separate HR/shop command signatures, and no generated route drift.
 
-- [ ] **Step 6: Run broad quality gates**
+- [x] **Step 6: Run broad quality gates**
 
 ```powershell
 composer test
@@ -803,29 +803,67 @@ Set this plan to `EXECUTED` only after all applicable checks are recorded. Inclu
 
 ---
 
+## Execution Evidence (2026-08-13)
+
+Implementation and automated verification were completed on branch `super-admin-phase-0-containment` in the cumulative Phase 0-6 worktree. The plan remains short of `EXECUTED` until the authenticated Admin and Super Admin browser flows are run in a browser-capable environment.
+
+Review results:
+
+1. **Simplify / ponytail:** Passed. Duplicate route groups, forwarding handlers, the monolithic privileged controllers, and the isolated duplicate layout tree were removed. The only retained shared lifecycle concern is HTTP-only response mapping for materially identical shop/user outcomes. No generic domain abstraction or dependency was added.
+2. **Standards:** Passed. PHP syntax, focused Laravel suites, route ownership, middleware, generated route metadata, and diff hygiene passed.
+3. **Spec:** Passed after fixing audit compatibility redirects to preserve query strings. The frozen canonical owner, mutation, immutable-document, audit, expiry, and compatibility boundaries are covered by tests and route inspection.
+4. **Correctness/risk:** Passed in focused workflow, audit, failure-injection, document-access, and full backend tests. Staged-upload cleanup is the only remaining document-file deletion path; historical/current document rows and promoted files are not deleted or overwritten.
+5. **TypeScript/React:** Passed through focused and full Vitest suites plus the production build. No repository TypeScript or frontend lint script exists, so neither was reported as passed.
+6. **Code splitting:** N/A. No heavy dependency or bundle behavior was introduced; dead layout files were deleted.
+7. **Gauge:** The Phase 6 baseline monolith was 983 lines and 32 public methods. The final runtime has one `/superAdmin` compatibility group instead of two, six `/superAdmin` GET aliases, zero retired-controller runtime references, zero legacy mutation runtime references, and eight duplicate layout files deleted. Latency and bundle-size improvements were not measured.
+8. **Security:** Passed. Canonical routes retain privileged authentication, active-state, MFA, recent-reauthentication, capability, private-object, audit, and subscription-containment checks. Old privileged mutation URLs are absent.
+9. **Verification:** All route-mutating tasks were executed sequentially and committed only after their relevant tests passed. Fresh command evidence is listed below.
+
+Verification results:
+
+- Focused backend Phase 7 suite: exit 0, 4,067 assertions, 105 warnings.
+- Audit/security/failure suite: exit 0, 334 assertions, 27 warnings.
+- Full direct backend suite (`php artisan config:clear --ansi` followed by `php artisan test`): exit 0, 48,246 assertions, 1,851 warnings, 3 skipped. The `composer test` wrapper exceeded Composer's internal 300-second process limit; the underlying test command completed successfully in about 424 seconds.
+- Focused frontend suite: 6 files and 23 tests passed.
+- Full frontend suite: 93 files and 528 tests passed.
+- Production build: passed; Vite transformed 3,692 modules.
+- Route inspection: focused `/admin` owners are present; `/superAdmin` contains exactly six GET|HEAD compatibility redirects and no mutations.
+- Schedule inspection: one shop-document reminder schedule is registered; the HR expiry command is not scheduled there.
+- Ziggy regeneration and `git diff --check`: passed with no generated route drift.
+- Local notification compatibility inventory: zero matching relative, absolute, or query-string legacy action URLs. Historical/external production counts remain unknown and are intentionally not rewritten.
+
+Browser verification status:
+
+- HTTP smoke verification passed against a temporary worktree server: `/admin/login` returned 200; an unauthenticated legacy privileged GET redirected to `/admin/login`; `/shop/register?source=legacy` preserved its query string while redirecting to `/shop-owner-register`; all three retired registration POSTs returned 404.
+- Authenticated Admin/Super Admin desktop/mobile flows, browser console/network checks, and persisted-state reload checks were not runnable here because Python and a usable Playwright runner are unavailable. These remain the only open Phase 7 verification item; do not treat the HTTP smoke check as a substitute for role-flow verification.
+
+The remaining handoff is to run Task 9 Step 7 in a browser-capable environment, record its results, then mark this plan `EXECUTED` and hand off measured scale candidates to Phase 8. No Phase 8 performance work was added to this phase.
+
+---
+
 ## Acceptance Checklist
 
-- [ ] `/admin` is the only first-party privileged mutation prefix.
-- [ ] Every semantic privileged mutation has exactly one route and focused owner.
-- [ ] `/superAdmin` contains only the approved capability-protected GET redirects.
-- [ ] Compatibility redirects preserve authentication, status/MFA, capability, path parameters, and query strings while calling no model/controller/service.
-- [ ] Old mutation routes return `404|405` and cannot create state, audit, or notification side effects.
-- [ ] `SuperAdminController`, `SuperAdminUserManagementController`, and `ShopRegistrationController` are absent.
-- [ ] Administrator, shop, user, plan, subscription, registration, flag, document, notification, and audit ownership matches the frozen design.
-- [ ] Fixed capabilities, active/MFA middleware, recent reauthentication, and object scope are unchanged or stronger.
-- [ ] No runtime privileged workflow writes legacy `audit_logs` or unnamed activity.
-- [ ] Legacy audit import/provenance remains available and historical source rows are preserved.
-- [ ] Canonical registration is the sole current shop/document submission path.
-- [ ] No destructive shop-document replacement path remains.
-- [ ] Legacy DTI/SEC evidence still satisfies approved-shop continuity until classified or renewed.
-- [ ] Shop-document and HR-document expiry remain separate commands/services.
-- [ ] Expiration never mutates shop status.
-- [ ] Active navigation and server-generated action URLs contain no `/superAdmin` mutation links.
-- [ ] Persisted legacy `notifications.action_url` values are inventoried but not rewritten; retained alias reasons are recorded for Phase 8.
-- [ ] Duplicate isolated layout files are removed only after a fresh import proof.
-- [ ] `RespondsToAccountLifecycle` exists only if the final diff proves substantial identical HTTP-only mapping; otherwise it is omitted.
-- [ ] No new dependency, generic framework, schema migration, or speculative abstraction is introduced.
-- [ ] Every route-mutating task executed sequentially, regenerated Ziggy when needed, and committed only after its relevant tests were green.
+- [x] `/admin` is the only first-party privileged mutation prefix.
+- [x] Every semantic privileged mutation has exactly one route and focused owner.
+- [x] `/superAdmin` contains only the approved capability-protected GET redirects.
+- [x] Compatibility redirects preserve authentication, status/MFA, capability, path parameters, and query strings while calling no model/controller/service.
+- [x] Old mutation routes return `404|405` and cannot create state, audit, or notification side effects.
+- [x] `SuperAdminController`, `SuperAdminUserManagementController`, and `ShopRegistrationController` are absent.
+- [x] Administrator, shop, user, plan, subscription, registration, flag, document, notification, and audit ownership matches the frozen design.
+- [x] Fixed capabilities, active/MFA middleware, recent reauthentication, and object scope are unchanged or stronger.
+- [x] No runtime privileged workflow writes legacy `audit_logs` or unnamed activity.
+- [x] Legacy audit import/provenance remains available and historical source rows are preserved.
+- [x] Canonical registration is the sole current shop/document submission path.
+- [x] No destructive shop-document replacement path remains.
+- [x] Legacy DTI/SEC evidence still satisfies approved-shop continuity until classified or renewed.
+- [x] Shop-document and HR-document expiry remain separate commands/services.
+- [x] Expiration never mutates shop status.
+- [x] Active navigation and server-generated action URLs contain no `/superAdmin` mutation links.
+- [x] Persisted legacy `notifications.action_url` values are inventoried but not rewritten; retained alias reasons are recorded for Phase 8.
+- [x] Duplicate isolated layout files are removed only after a fresh import proof.
+- [x] `RespondsToAccountLifecycle` exists only if the final diff proves substantial identical HTTP-only mapping; otherwise it is omitted.
+- [x] No new dependency, generic framework, schema migration, or speculative abstraction is introduced.
+- [x] Every route-mutating task executed sequentially, regenerated Ziggy when needed, and committed only after its relevant tests were green.
 - [ ] Focused and broad backend/frontend tests, route/schedule inspection, build, browser flows, and diff hygiene are recorded.
 
 ## Rollout and Rollback Notes
