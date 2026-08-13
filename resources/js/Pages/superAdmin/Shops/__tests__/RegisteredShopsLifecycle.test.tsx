@@ -75,7 +75,7 @@ describe('RegisteredShops lifecycle controls', () => {
     );
 
     expect(screen.getAllByTitle('Activate Shop')).toHaveLength(1);
-    expect(screen.getByText('Archived')).toBeInTheDocument();
+    expect(screen.getAllByText('Archived').length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByTitle('Delete Shop')).not.toBeInTheDocument();
   });
 

@@ -14,8 +14,10 @@ use App\Models\SuperAdmin;
 use App\Models\User;
 use App\Services\AccountLifecycleService;
 use App\Support\PrivilegedFailureResponse;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -31,19 +33,60 @@ final class UserInterventionController extends Controller
 
     public function index(Request $request): Response
     {
-        $q = $request->input('q');
-        $role = $request->input('role');
-        $status = $request->input('status');
-        $department = $request->input('department');
-        $lifecycle = $request->input('lifecycle', 'all');
-        if (! in_array($lifecycle, ['active', 'archived', 'all'], true)) {
-            $lifecycle = 'all';
-        }
+        $validated = $request->validate([
+            'q' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'role' => ['sometimes', 'nullable', 'string', Rule::in([
+                'MANAGER',
+                'FINANCE',
+                'HR',
+                'CRM',
+                'REPAIRER',
+                'INVENTORY',
+                'INVENTORY_MANAGER',
+                'STAFF',
+                'SUPER_ADMIN',
+            ])],
+            'status' => ['sometimes', 'nullable', 'string', Rule::in([
+                'active',
+                'suspended',
+                'inactive',
+                'pending',
+                'approved',
+                'rejected',
+                'deactivated',
+                'archived',
+            ])],
+            'department' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'lifecycle' => ['sometimes', 'nullable', Rule::in(['active', 'archived', 'all'])],
+            'page' => ['sometimes', 'integer', 'min:1'],
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
+        ]);
 
-        $query = User::withTrashed()
-            ->with(['shopOwner', 'employee'])
-            ->whereNull('shop_owner_id')
-            ->orderBy('created_at', 'desc');
+        $lifecycle = $validated['lifecycle'] ?? 'all';
+
+        $baseQuery = User::withTrashed()->whereNull('shop_owner_id');
+        $query = (clone $baseQuery)
+            ->select([
+                'id',
+                'first_name',
+                'last_name',
+                'name',
+                'email',
+                'phone',
+                'age',
+                'address',
+                'valid_id_path',
+                'role',
+                'status',
+                'shop_owner_id',
+                'created_at',
+                'last_login_at',
+                'deleted_at',
+            ])
+            ->with([
+                'shopOwner:id,first_name,last_name,business_name',
+                'employee:id,email,name,phone,position,department,branch,functional_role,salary,hire_date,status',
+            ]);
 
         if ($lifecycle === 'active') {
             $query->whereNull('deleted_at');
@@ -51,31 +94,40 @@ final class UserInterventionController extends Controller
             $query->whereNotNull('deleted_at');
         }
 
-        if ($q) {
-            $query->where(function ($sub) use ($q): void {
-                $sub->where('first_name', 'like', "%{$q}%")
-                    ->orWhere('last_name', 'like', "%{$q}%")
-                    ->orWhere('name', 'like', "%{$q}%")
-                    ->orWhere('email', 'like', "%{$q}%")
-                    ->orWhere('phone', 'like', "%{$q}%");
+        if (($validated['q'] ?? null) !== null && $validated['q'] !== '') {
+            $query->where(function (Builder $searchQuery) use ($validated): void {
+                $search = (string) $validated['q'];
+                $this->whereContains($searchQuery, 'first_name', $search);
+                $this->whereContains($searchQuery, 'last_name', $search, 'or');
+                $this->whereContains($searchQuery, 'name', $search, 'or');
+                $this->whereContains($searchQuery, 'email', $search, 'or');
+                $this->whereContains($searchQuery, 'phone', $search, 'or');
             });
         }
 
-        if ($role) {
-            $query->where('role', $role);
+        if (($validated['role'] ?? null) !== null && $validated['role'] !== '') {
+            $query->where('role', $validated['role']);
         }
 
-        if ($status && $status !== 'archived') {
-            $query->where('status', $status);
+        if (($validated['status'] ?? null) === 'archived') {
+            $query->whereNotNull('deleted_at');
+        } elseif (($validated['status'] ?? null) !== null && $validated['status'] !== '') {
+            $query->where('status', $validated['status']);
         }
 
-        if ($department) {
-            $query->whereHas('employee', function ($employeeQuery) use ($department): void {
-                $employeeQuery->where('department', 'like', "%{$department}%");
+        if (($validated['department'] ?? null) !== null && $validated['department'] !== '') {
+            $department = (string) $validated['department'];
+            $query->whereHas('employee', function (Builder $employeeQuery) use ($department): void {
+                $this->whereContains($employeeQuery, 'department', $department);
             });
         }
 
-        $users = $query->paginate(15)->withQueryString()->through(function (User $user): array {
+        $users = $query
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->paginate((int) ($validated['per_page'] ?? 15))
+            ->withQueryString()
+            ->through(function (User $user): array {
             $roleLabel = $user->role ?: null;
             switch (strtoupper($roleLabel ?? '')) {
                 case 'HR':
@@ -150,9 +202,35 @@ final class UserInterventionController extends Controller
             ];
         });
 
+        $stats = [
+            'total' => (clone $baseQuery)->count(),
+            'pending' => (clone $baseQuery)->where('status', 'pending')->whereNull('deleted_at')->count(),
+            'active' => (clone $baseQuery)->whereIn('status', ['active', 'approved'])->whereNull('deleted_at')->count(),
+            'suspended' => (clone $baseQuery)->where('status', 'suspended')->whereNull('deleted_at')->count(),
+            'archived' => (clone $baseQuery)->whereNotNull('deleted_at')->count(),
+        ];
+
         return Inertia::render('superAdmin/Users/SuperAdminUserManagement', [
             'users' => $users,
+            'stats' => $stats,
+            'filters' => [
+                'q' => $validated['q'] ?? null,
+                'role' => $validated['role'] ?? null,
+                'status' => $validated['status'] ?? null,
+                'department' => $validated['department'] ?? null,
+                'lifecycle' => $validated['lifecycle'] ?? 'all',
+            ],
         ]);
+    }
+
+    private function whereContains(Builder $query, string $column, string $value, string $boolean = 'and'): void
+    {
+        $escaped = addcslashes($value, "\\%_");
+        $query->whereRaw(
+            "{$column} LIKE ? ESCAPE '\\'",
+            ["%{$escaped}%"],
+            $boolean,
+        );
     }
 
     public function suspend(AccountSuspensionRequest $request, int $user)

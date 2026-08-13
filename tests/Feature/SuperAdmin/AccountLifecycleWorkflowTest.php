@@ -344,10 +344,10 @@ final class AccountLifecycleWorkflowTest extends TestCase
 
         $this->get(route('admin.shops.index', ['lifecycle' => 'archived']))
             ->assertInertia(fn ($page) => $page
-                ->where('shops.0.id', $shop->id)
-                ->where('shops.0.status', 'archived')
-                ->where('shops.0.accountStatus', 'approved')
-                ->where('shops.0.archived', true)
+                ->where('shops.data.0.id', $shop->id)
+                ->where('shops.data.0.status', 'archived')
+                ->where('shops.data.0.accountStatus', 'approved')
+                ->where('shops.data.0.archived', true)
                 ->where('stats.archived', 1));
 
         $this->get(route('admin.shops.show', ['shopOwner' => $shop->id]))

@@ -10,6 +10,7 @@ use App\Models\SuperAdmin;
 use App\Services\AdministratorIdentityService;
 use App\Support\PrivilegedFailureResponse;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -25,14 +26,60 @@ final class AdministratorManagementController extends Controller
     ) {
     }
 
-    public function index(): Response
+    public function index(Request $request): Response
     {
         $currentAdminId = auth('super_admin')->id();
+        $validated = $request->validate([
+            'search' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'role' => ['sometimes', 'nullable', 'string', Rule::in([
+                SuperAdmin::ROLE_ADMIN,
+                SuperAdmin::ROLE_SUPER_ADMIN,
+            ])],
+            'status' => ['sometimes', 'nullable', 'string', Rule::in([
+                SuperAdmin::STATUS_ACTIVE,
+                SuperAdmin::STATUS_PENDING_SETUP,
+                SuperAdmin::STATUS_SUSPENDED,
+                SuperAdmin::STATUS_INACTIVE,
+            ])],
+            'page' => ['sometimes', 'integer', 'min:1'],
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
+        ]);
 
-        $admins = SuperAdmin::where('id', '!=', $currentAdminId)
-            ->orderBy('created_at', 'desc')
-            ->get()
-            ->map(function (SuperAdmin $admin): array {
+        $baseQuery = SuperAdmin::query()->whereKeyNot($currentAdminId);
+        $query = (clone $baseQuery)
+            ->select([
+                'id',
+                'first_name',
+                'last_name',
+                'role',
+                'email',
+                'status',
+                'mfa_secret',
+                'mfa_recovery_codes',
+                'mfa_confirmed_at',
+                'created_at',
+                'last_login_at',
+            ]);
+
+        if (($validated['search'] ?? null) !== null && $validated['search'] !== '') {
+            $search = (string) $validated['search'];
+            $query->where(function (Builder $searchQuery) use ($search): void {
+                $this->whereContains($searchQuery, 'first_name', $search);
+                $this->whereContains($searchQuery, 'last_name', $search, 'or');
+                $this->whereContains($searchQuery, 'email', $search, 'or');
+            });
+        }
+
+        $query
+            ->when($validated['role'] ?? null, fn (Builder $builder, string $role) => $builder->where('role', $role))
+            ->when($validated['status'] ?? null, fn (Builder $builder, string $status) => $builder->where('status', $status))
+            ->orderByDesc('created_at')
+            ->orderByDesc('id');
+
+        $admins = $query
+            ->paginate((int) ($validated['per_page'] ?? 25))
+            ->withQueryString()
+            ->through(function (SuperAdmin $admin): array {
                 return [
                     'id' => $admin->id,
                     'firstName' => $admin->first_name,
@@ -50,16 +97,31 @@ final class AdministratorManagementController extends Controller
             });
 
         $stats = [
-            'total' => $admins->count(),
-            'active' => $admins->where('status', 'active')->count(),
-            'suspended' => $admins->where('status', 'suspended')->count(),
-            'inactive' => $admins->where('status', 'inactive')->count(),
+            'total' => (clone $baseQuery)->count(),
+            'active' => (clone $baseQuery)->where('status', SuperAdmin::STATUS_ACTIVE)->count(),
+            'suspended' => (clone $baseQuery)->where('status', SuperAdmin::STATUS_SUSPENDED)->count(),
+            'inactive' => (clone $baseQuery)->where('status', SuperAdmin::STATUS_INACTIVE)->count(),
         ];
 
         return Inertia::render('superAdmin/AdminTeam/AdminManagement', [
             'admins' => $admins,
             'stats' => $stats,
+            'filters' => [
+                'search' => $validated['search'] ?? null,
+                'role' => $validated['role'] ?? null,
+                'status' => $validated['status'] ?? null,
+            ],
         ]);
+    }
+
+    private function whereContains(Builder $query, string $column, string $value, string $boolean = 'and'): void
+    {
+        $escaped = addcslashes($value, "\\%_");
+        $query->whereRaw(
+            "{$column} LIKE ? ESCAPE '\\'",
+            ["%{$escaped}%"],
+            $boolean,
+        );
     }
 
     public function create(): Response

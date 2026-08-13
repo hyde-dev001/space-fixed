@@ -135,12 +135,29 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
   );
 };
 
-function RegisteredShops({ shops, stats }) {
-  const [shopRows, setShopRows] = useState(() => (Array.isArray(shops) ? shops : []));
-  
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterType, setFilterType] = useState('all');
-  const [filterStatus, setFilterStatus] = useState('all');
+function RegisteredShops({ shops, stats, filters = {} }) {
+  const isServerPaginated = !Array.isArray(shops);
+  const shopPage = isServerPaginated
+    ? shops
+    : { data: shops || [], meta: { current_page: 1, from: shops?.length ? 1 : null, last_page: 1, per_page: shops?.length || 25, to: shops?.length || null, total: shops?.length || 0 } };
+  const pageMeta = {
+    current_page: 1,
+    from: null,
+    last_page: 1,
+    per_page: 25,
+    to: null,
+    total: 0,
+    ...(shopPage?.meta || {}),
+  };
+  const [shopRows, setShopRows] = useState(() => shopPage?.data || []);
+
+  React.useEffect(() => {
+    setShopRows(shopPage?.data || []);
+  }, [shops]);
+
+  const [searchQuery, setSearchQuery] = useState(() => filters.search || '');
+  const [filterStatus, setFilterStatus] = useState(() => filters.status || 'all');
+  const [filterLifecycle, setFilterLifecycle] = useState(() => filters.lifecycle || 'all');
   const [selectedShop, setSelectedShop] = useState(null);
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   const [isSuspendModalOpen, setIsSuspendModalOpen] = useState(false);
@@ -149,36 +166,27 @@ function RegisteredShops({ shops, stats }) {
   const [otherReasonText, setOtherReasonText] = useState('');
   const [isActionSubmitting, setIsActionSubmitting] = useState(false);
   const [expandedDocuments, setExpandedDocuments] = useState(new Set());
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(7);
+  const searchTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const csrfToken =
     typeof document !== 'undefined'
       ? document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
       : '';
 
-  // Filter shops based on search and filters
-  const filteredShops = shopRows.filter(shop => {
-    const matchesSearch = 
-      shop.business_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      shop.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      shop.first_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      shop.last_name?.toLowerCase().includes(searchQuery.toLowerCase());
+  const paginatedShops = shopRows;
 
-    const matchesType = filterType === 'all' || shop.business_type === filterType;
-    const isArchived = shop.archived === true || shop.status === 'archived';
-    const accountStatus = shop.accountStatus || shop.status;
-    const matchesStatus = filterStatus === 'all'
-      || (filterStatus === 'archived' ? isArchived : !isArchived && accountStatus === filterStatus);
+  const visitShopPage = (nextSearch = searchQuery, nextStatus = filterStatus, nextLifecycle = filterLifecycle, page = 1) => {
+    const params: Record<string, string | number> = { page };
+    if (nextSearch.trim()) params.search = nextSearch.trim();
+    if (nextStatus !== 'all') params.status = nextStatus;
+    if (nextLifecycle !== 'all') params.lifecycle = nextLifecycle;
 
-    return matchesSearch && matchesType && matchesStatus;
-  });
-
-  // Pagination calculations
-  const totalPages = Math.ceil(filteredShops.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const paginatedShops = filteredShops.slice(startIndex, endIndex);
+    router.get('/admin/shops', params, {
+      preserveState: true,
+      preserveScroll: true,
+      replace: true,
+    });
+  };
 
   const dashboardStats = React.useMemo(() => {
     const activeCount = shopRows.filter((shop) => !shop.archived && (shop.accountStatus || shop.status) === 'approved').length;
@@ -186,18 +194,13 @@ function RegisteredShops({ shops, stats }) {
     const archivedCount = shopRows.filter((shop) => shop.archived === true || shop.status === 'archived').length;
 
     return {
-      total: shopRows.length,
-      active: activeCount,
-      suspended: suspendedCount,
-      archived: archivedCount,
+      total: stats?.total ?? (isServerPaginated ? pageMeta.total : shopRows.length),
+      active: stats?.active ?? activeCount,
+      suspended: stats?.suspended ?? suspendedCount,
+      archived: stats?.archived ?? archivedCount,
       thisMonth: stats?.thisMonth || 0,
     };
-  }, [shopRows, stats]);
-
-  // Reset to page 1 when filters change
-  React.useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery, filterType, filterStatus]);
+  }, [isServerPaginated, pageMeta.total, shopRows, stats]);
 
   const handleViewDetails = async (shop) => {
     setIsLoadingDetails(true);
@@ -550,23 +553,30 @@ function RegisteredShops({ shops, stats }) {
                 type="text"
                 placeholder="Search by shop name, owner, or email..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  if (searchTimer.current) clearTimeout(searchTimer.current);
+                  searchTimer.current = setTimeout(() => visitShopPage(e.target.value, filterStatus, filterLifecycle), 250);
+                }}
                 className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent text-gray-900 dark:text-white"
               />
             </div>
 
-            {/* Business Type Filter */}
+            {/* Lifecycle Filter */}
             <div className="relative">
               <FilterIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
               <select
-                value={filterType}
-                onChange={(e) => setFilterType(e.target.value)}
+                aria-label="Filter by Lifecycle"
+                value={filterLifecycle}
+                onChange={(e) => {
+                  setFilterLifecycle(e.target.value);
+                  visitShopPage(searchQuery, filterStatus, e.target.value);
+                }}
                 className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent text-gray-900 dark:text-white appearance-none"
               >
-                <option value="all">All Business Types</option>
-                <option value="retail">Retail Only</option>
-                <option value="repair">Repair Only</option>
-                <option value="both">Both (Retail & Repair)</option>
+                <option value="all">All Lifecycles</option>
+                <option value="active">Active</option>
+                <option value="archived">Archived</option>
               </select>
             </div>
 
@@ -575,7 +585,10 @@ function RegisteredShops({ shops, stats }) {
               <FilterIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
               <select
                 value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
+                onChange={(e) => {
+                  setFilterStatus(e.target.value);
+                  visitShopPage(searchQuery, e.target.value, filterLifecycle);
+                }}
                 className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent text-gray-900 dark:text-white appearance-none"
               >
                 <option value="all">All Status</option>
@@ -588,14 +601,15 @@ function RegisteredShops({ shops, stats }) {
 
           <div className="mt-4 flex items-center justify-between text-sm">
             <p className="text-gray-600 dark:text-gray-400">
-              Showing {filteredShops.length} of {shopRows.length} shops
+              Showing {pageMeta.from ?? 0} to {pageMeta.to ?? 0} of {pageMeta.total} shops
             </p>
-            {(searchQuery || filterType !== 'all' || filterStatus !== 'all') && (
+            {(searchQuery || filterLifecycle !== 'all' || filterStatus !== 'all') && (
               <button
                 onClick={() => {
                   setSearchQuery('');
-                  setFilterType('all');
                   setFilterStatus('all');
+                  setFilterLifecycle('all');
+                  visitShopPage('', 'all', 'all');
                 }}
                 className="text-blue-600 dark:text-blue-400 hover:underline"
               >
@@ -640,7 +654,7 @@ function RegisteredShops({ shops, stats }) {
                     <td colSpan="7" className="px-6 py-12 text-center">
                       <StoreIcon className="w-12 h-12 mx-auto text-gray-400 mb-4" />
                       <p className="text-gray-500 dark:text-gray-400">
-                        {searchQuery || filterType !== 'all' || filterStatus !== 'all'
+                        {searchQuery || filterLifecycle !== 'all' || filterStatus !== 'all'
                           ? 'No shops found matching your filters'
                           : 'No registered shops yet'}
                       </p>
@@ -752,18 +766,18 @@ function RegisteredShops({ shops, stats }) {
           </div>
 
           {/* Pagination */}
-          {filteredShops.length > 0 && (
+          {pageMeta.total > 0 && (
             <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
               <div className="flex items-center justify-between">
                 <div className="text-sm text-gray-700 dark:text-gray-300">
-                  Showing <span className="font-medium">{startIndex + 1}</span> to{" "}
-                  <span className="font-medium">{Math.min(endIndex, filteredShops.length)}</span> of{" "}
-                  <span className="font-medium">{filteredShops.length}</span>
+                  Showing <span className="font-medium">{pageMeta.from ?? 0}</span> to{" "}
+                  <span className="font-medium">{pageMeta.to ?? 0}</span> of{" "}
+                  <span className="font-medium">{pageMeta.total}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                    disabled={currentPage === 1}
+                    onClick={() => visitShopPage(searchQuery, filterStatus, filterLifecycle, pageMeta.current_page - 1)}
+                    disabled={pageMeta.current_page === 1}
                     className="p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     title="Previous page"
                   >
@@ -772,39 +786,13 @@ function RegisteredShops({ shops, stats }) {
                     </svg>
                   </button>
 
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
-                    // Show first page, last page, current page, and pages around current
-                    if (
-                      page === 1 ||
-                      page === totalPages ||
-                      (page >= currentPage - 1 && page <= currentPage + 1)
-                    ) {
-                      return (
-                        <button
-                          key={page}
-                          onClick={() => setCurrentPage(page)}
-                          className={`min-w-[40px] h-10 px-3 rounded-lg font-medium transition-colors ${
-                            currentPage === page
-                              ? "bg-blue-600 text-white"
-                              : "border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
-                          }`}
-                        >
-                          {page}
-                        </button>
-                      );
-                    } else if (page === currentPage - 2 || page === currentPage + 2) {
-                      return (
-                        <span key={page} className="px-2 text-gray-500 dark:text-gray-400">
-                          ...
-                        </span>
-                      );
-                    }
-                    return null;
-                  })}
+                  <span className="px-2 text-sm text-gray-500" aria-label="Current page">
+                    Page {pageMeta.current_page} of {pageMeta.last_page}
+                  </span>
 
                   <button
-                    onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-                    disabled={currentPage === totalPages}
+                    onClick={() => visitShopPage(searchQuery, filterStatus, filterLifecycle, pageMeta.current_page + 1)}
+                    disabled={pageMeta.current_page === pageMeta.last_page}
                     className="p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     title="Next page"
                   >

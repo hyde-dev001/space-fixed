@@ -75,7 +75,8 @@ final class PhaseEightScaleBoundaryTest extends TestCase
 
         $adminProps = $this->inertiaProps($this->get(route('admin.administrators.index')));
         self::assertIsArray($adminProps['admins']);
-        self::assertCount(2, $adminProps['admins']);
+        self::assertSame(25, $adminProps['admins']['per_page']);
+        self::assertCount(2, $adminProps['admins']['data']);
         self::assertArrayHasKey('stats', $adminProps);
 
         $registrationProps = $this->inertiaProps($this->get(route('admin.registrations.index')));
@@ -88,7 +89,8 @@ final class PhaseEightScaleBoundaryTest extends TestCase
 
         $shopProps = $this->inertiaProps($this->get(route('admin.shops.index')));
         self::assertIsArray($shopProps['shops']);
-        self::assertCount(1, $shopProps['shops']);
+        self::assertSame(25, $shopProps['shops']['per_page']);
+        self::assertCount(1, $shopProps['shops']['data']);
         self::assertArrayHasKey('stats', $shopProps);
 
         $reportProps = $this->inertiaProps($this->get(route('admin.shop-reports')));
@@ -134,6 +136,220 @@ final class PhaseEightScaleBoundaryTest extends TestCase
 
         $monitoringProps = $this->inertiaProps($this->get(route('admin.system-monitoring')));
         self::assertLessThanOrEqual(5, count($monitoringProps['dashboard']['recent_activity']));
+    }
+
+    public function test_administrator_list_uses_server_filters_caps_and_global_metrics(): void
+    {
+        $viewer = $this->phaseTwoSuperAdmin();
+        $timestamp = now()->subDay();
+
+        $olderActive = SuperAdmin::factory()->admin()->mfaEnrolled()->create([
+            'first_name' => 'Older',
+            'last_name' => 'Active',
+            'status' => SuperAdmin::STATUS_ACTIVE,
+            'created_at' => $timestamp,
+            'updated_at' => $timestamp,
+        ]);
+        $newerActive = SuperAdmin::factory()->admin()->mfaEnrolled()->create([
+            'first_name' => 'Newer',
+            'last_name' => 'Active',
+            'status' => SuperAdmin::STATUS_ACTIVE,
+            'created_at' => $timestamp,
+            'updated_at' => $timestamp,
+        ]);
+        SuperAdmin::factory()->admin()->suspended()->create([
+            'first_name' => 'Suspended',
+            'last_name' => 'Admin',
+            'created_at' => $timestamp,
+            'updated_at' => $timestamp,
+        ]);
+
+        $this->actingAsCompletedPrivileged($viewer);
+
+        $response = $this->get(route('admin.administrators.index', [
+            'status' => SuperAdmin::STATUS_ACTIVE,
+            'per_page' => 1,
+        ]));
+        $props = $this->inertiaProps($response);
+
+        self::assertSame(1, $props['admins']['per_page']);
+        self::assertSame(2, $props['admins']['total']);
+        self::assertSame($newerActive->id, $props['admins']['data'][0]['id']);
+        self::assertSame(3, $props['stats']['total']);
+        self::assertSame(2, $props['stats']['active']);
+        self::assertSame(1, $props['stats']['suspended']);
+        self::assertNotContains($viewer->id, array_column($props['admins']['data'], 'id'));
+
+        $secondPage = $this->inertiaProps($this->get(route('admin.administrators.index', [
+            'status' => SuperAdmin::STATUS_ACTIVE,
+            'per_page' => 1,
+            'page' => 2,
+        ])));
+        self::assertSame($olderActive->id, $secondPage['admins']['data'][0]['id']);
+    }
+
+    public function test_administrator_filters_and_pagination_reject_invalid_values(): void
+    {
+        $viewer = $this->phaseTwoSuperAdmin();
+        $this->actingAsCompletedPrivileged($viewer);
+
+        $this->getJson(route('admin.administrators.index', [
+            'role' => 'platform_owner',
+            'status' => 'unknown',
+            'page' => 'not-an-integer',
+            'per_page' => 101,
+        ]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['role', 'status', 'page', 'per_page']);
+    }
+
+    public function test_registered_shop_list_uses_server_filters_caps_and_global_metrics(): void
+    {
+        $viewer = $this->phaseTwoSuperAdmin();
+        $timestamp = now()->subDay();
+
+        $olderActive = ShopOwner::factory()->approved()->create([
+            'business_name' => 'Older Active Shop',
+            'created_at' => $timestamp,
+            'updated_at' => $timestamp,
+        ]);
+        $newerActive = ShopOwner::factory()->approved()->create([
+            'business_name' => 'Newer Active Shop',
+            'created_at' => $timestamp,
+            'updated_at' => $timestamp,
+        ]);
+        $suspended = $this->suspendedPhaseTwoShop([
+            'business_name' => 'Suspended Shop',
+            'created_at' => $timestamp,
+            'updated_at' => $timestamp,
+        ]);
+        $archived = ShopOwner::factory()->approved()->create([
+            'business_name' => 'Archived Shop',
+            'created_at' => $timestamp,
+            'updated_at' => $timestamp,
+        ]);
+        $archived->delete();
+
+        $this->actingAsCompletedPrivileged($viewer);
+
+        $props = $this->inertiaProps($this->get(route('admin.shops.index', [
+            'status' => 'approved',
+            'lifecycle' => 'active',
+            'per_page' => 1,
+        ])));
+
+        self::assertSame(1, $props['shops']['per_page']);
+        self::assertSame(2, $props['shops']['total']);
+        self::assertSame($newerActive->id, $props['shops']['data'][0]['id']);
+        self::assertSame(4, $props['stats']['total']);
+        self::assertSame(2, $props['stats']['active']);
+        self::assertSame(1, $props['stats']['suspended']);
+        self::assertSame(1, $props['stats']['archived']);
+        self::assertNotContains($suspended->id, array_column($props['shops']['data'], 'id'));
+
+        $secondPage = $this->inertiaProps($this->get(route('admin.shops.index', [
+            'status' => 'approved',
+            'lifecycle' => 'active',
+            'per_page' => 1,
+            'page' => 2,
+        ])));
+        self::assertSame($olderActive->id, $secondPage['shops']['data'][0]['id']);
+    }
+
+    public function test_registered_shop_filters_and_pagination_reject_invalid_values(): void
+    {
+        $viewer = $this->phaseTwoSuperAdmin();
+        $this->actingAsCompletedPrivileged($viewer);
+
+        $this->getJson(route('admin.shops.index', [
+            'status' => 'pending',
+            'lifecycle' => 'retired',
+            'page' => 0,
+            'per_page' => 101,
+        ]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['status', 'lifecycle', 'page', 'per_page']);
+    }
+
+    public function test_user_list_validates_server_filters_preserves_scope_and_uses_global_metrics(): void
+    {
+        $viewer = $this->phaseTwoSuperAdmin();
+        $older = $this->activePhaseTwoUser([
+            'name' => 'Older Customer',
+            'first_name' => 'Older',
+            'last_name' => 'Customer',
+            'role' => 'STAFF',
+        ]);
+        $newer = $this->activePhaseTwoUser([
+            'name' => 'Newer Customer',
+            'first_name' => 'Newer',
+            'last_name' => 'Customer',
+            'role' => 'STAFF',
+        ]);
+        $this->activePhaseTwoUser(['status' => 'suspended', 'name' => 'Suspended Customer']);
+        $archived = $this->activePhaseTwoUser(['name' => 'Archived Customer']);
+        $archived->delete();
+
+        $this->actingAsCompletedPrivileged($viewer);
+
+        $props = $this->inertiaProps($this->get(route('admin.users.index', [
+            'q' => 'Customer',
+            'role' => 'STAFF',
+            'status' => 'active',
+            'lifecycle' => 'active',
+            'per_page' => 1,
+        ])));
+
+        self::assertSame(1, $props['users']['per_page']);
+        self::assertSame(2, $props['users']['total']);
+        self::assertSame($newer->id, $props['users']['data'][0]['id']);
+        self::assertSame(4, $props['stats']['total']);
+        self::assertSame(2, $props['stats']['active']);
+        self::assertSame(1, $props['stats']['suspended']);
+        self::assertSame(1, $props['stats']['archived']);
+        self::assertNotContains($older->id, array_column($props['users']['data'], 'id'));
+    }
+
+    public function test_user_filters_and_pagination_reject_invalid_values(): void
+    {
+        $viewer = $this->phaseTwoSuperAdmin();
+        $this->actingAsCompletedPrivileged($viewer);
+
+        $this->getJson(route('admin.users.index', [
+            'role' => 'platform_owner',
+            'status' => 'unknown',
+            'lifecycle' => 'retired',
+            'page' => 'not-an-integer',
+            'per_page' => 101,
+        ]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['role', 'status', 'lifecycle', 'page', 'per_page']);
+    }
+
+    public function test_account_search_treats_like_wildcards_as_literal_input(): void
+    {
+        $viewer = $this->phaseTwoSuperAdmin();
+        SuperAdmin::factory()->admin()->mfaEnrolled()->create(['first_name' => 'Plain']);
+        ShopOwner::factory()->approved()->create(['business_name' => 'Plain Shop']);
+        $this->activePhaseTwoUser(['name' => 'Plain Customer']);
+        $this->actingAsCompletedPrivileged($viewer);
+
+        $adminProps = $this->inertiaProps($this->get(route('admin.administrators.index', [
+            'search' => '%',
+            'per_page' => 100,
+        ])));
+        $shopProps = $this->inertiaProps($this->get(route('admin.shops.index', [
+            'search' => '_',
+            'per_page' => 100,
+        ])));
+        $userProps = $this->inertiaProps($this->get(route('admin.users.index', [
+            'q' => '%',
+            'per_page' => 100,
+        ])));
+
+        self::assertSame(0, $adminProps['admins']['total']);
+        self::assertSame(0, $shopProps['shops']['total']);
+        self::assertSame(0, $userProps['users']['total']);
     }
 
     /** @return array<string, mixed> */

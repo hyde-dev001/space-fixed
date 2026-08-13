@@ -13,7 +13,7 @@ vi.stubGlobal('fetch', fetchMock);
 vi.mock('@inertiajs/react', () => ({
   Head: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
   Link: ({ children }: { children?: React.ReactNode }) => <a href="#">{children}</a>,
-  router: { post: vi.fn() },
+  router: { get: vi.fn(), post: vi.fn() },
 }));
 
 vi.mock('sweetalert2', () => ({

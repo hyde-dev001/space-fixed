@@ -1,5 +1,5 @@
 import { Head, Link, router } from '@inertiajs/react';
-import { useMemo, useState } from 'react';
+import { useRef, useState } from 'react';
 
 interface Administrator {
   id: number;
@@ -14,9 +14,25 @@ interface Administrator {
   lastLogin?: string | null;
 }
 
+interface PaginationMeta {
+  current_page: number;
+  from: number | null;
+  last_page: number;
+  per_page: number;
+  to: number | null;
+  total: number;
+}
+
+interface AdministratorPage {
+  data: Administrator[];
+  meta?: Partial<PaginationMeta>;
+  links?: Record<string, string | null>;
+}
+
 interface AdminManagementProps {
-  admins?: Administrator[];
+  admins?: Administrator[] | AdministratorPage;
   stats?: Record<string, number>;
+  filters?: { search?: string | null; role?: string | null; status?: string | null };
 }
 
 type ActionState = { key: string; error?: string } | null;
@@ -37,22 +53,50 @@ function errorMessage(errors: unknown): string {
   return typeof first === 'string' ? first : 'The administrator action could not be completed.';
 }
 
-export default function AdminManagement({ admins = [], stats = {} }: AdminManagementProps) {
-  const [filter, setFilter] = useState('all');
-  const [search, setSearch] = useState('');
+const emptyPage: AdministratorPage = {
+  data: [],
+  meta: { current_page: 1, from: null, last_page: 1, per_page: 25, to: null, total: 0 },
+  links: {},
+};
+
+export default function AdminManagement({ admins = [], stats = {}, filters = {} }: AdminManagementProps) {
+  const [filter, setFilter] = useState(filters.status || 'all');
+  const [roleFilter, setRoleFilter] = useState(filters.role || 'all');
+  const [search, setSearch] = useState(filters.search || '');
   const [action, setAction] = useState<ActionState>(null);
   const [actionError, setActionError] = useState<string>();
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const visibleAdmins = useMemo(() => {
-    const normalizedSearch = search.trim().toLowerCase();
-    return admins.filter((admin) => {
-      const matchesSearch = !normalizedSearch
+  const isServerPaginated = !Array.isArray(admins);
+  const adminPage: AdministratorPage = isServerPaginated
+    ? (admins as AdministratorPage)
+    : { ...emptyPage, data: admins as Administrator[] };
+  const pageMeta = {
+    ...emptyPage.meta,
+    ...(adminPage.meta ?? {}),
+  } as PaginationMeta;
+  const visibleAdmins = isServerPaginated
+    ? adminPage.data
+    : (admins as Administrator[]).filter((admin) => {
+      const normalizedSearch = search.trim().toLowerCase();
+      return (!normalizedSearch
         || `${admin.firstName} ${admin.lastName}`.toLowerCase().includes(normalizedSearch)
-        || admin.email.toLowerCase().includes(normalizedSearch);
-      const matchesFilter = filter === 'all' || admin.status === filter;
-      return matchesSearch && matchesFilter;
+        || admin.email.toLowerCase().includes(normalizedSearch))
+        && (filter === 'all' || admin.status === filter);
     });
-  }, [admins, filter, search]);
+
+  const visitAdminPage = (nextSearch = search, nextFilter = filter, page = 1, nextRole = roleFilter) => {
+    const params: Record<string, string | number> = { page };
+    if (nextSearch.trim()) params.search = nextSearch.trim();
+    if (nextFilter !== 'all') params.status = nextFilter;
+    if (nextRole !== 'all') params.role = nextRole;
+
+    router.get('/admin/administrators', params, {
+      preserveState: true,
+      preserveScroll: true,
+      replace: true,
+    });
+  };
 
   const runPostAction = (admin: Administrator, actionName: string, path: string) => {
     const key = `${admin.id}:${actionName}`;
@@ -105,10 +149,10 @@ export default function AdminManagement({ admins = [], stats = {} }: AdminManage
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {[
-              ['Total administrators', stats.total ?? admins.length],
-              ['Active', stats.active ?? admins.filter((admin) => admin.status === 'active').length],
-              ['Suspended', stats.suspended ?? admins.filter((admin) => admin.status === 'suspended').length],
-              ['Inactive', stats.inactive ?? admins.filter((admin) => admin.status === 'inactive').length],
+              ['Total administrators', stats.total ?? pageMeta.total],
+              ['Active', stats.active ?? visibleAdmins.filter((admin) => admin.status === 'active').length],
+              ['Suspended', stats.suspended ?? visibleAdmins.filter((admin) => admin.status === 'suspended').length],
+              ['Inactive', stats.inactive ?? visibleAdmins.filter((admin) => admin.status === 'inactive').length],
             ].map(([label, value]) => (
               <div key={label as string} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-800">
                 <p className="text-sm text-gray-500 dark:text-gray-400">{label}</p>
@@ -120,10 +164,27 @@ export default function AdminManagement({ admins = [], stats = {} }: AdminManage
           <div className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-800">
             <div className="flex flex-col gap-4 border-b border-gray-200 p-5 dark:border-gray-700 lg:flex-row lg:items-center lg:justify-between">
               <label className="sr-only" htmlFor="admin-search">Search administrators</label>
-              <input id="admin-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by name or email" className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-gray-900 outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 lg:max-w-sm" />
+              <input id="admin-search" type="search" value={search} onChange={(event) => {
+                const value = event.target.value;
+                setSearch(value);
+                if (searchTimer.current) clearTimeout(searchTimer.current);
+                searchTimer.current = setTimeout(() => visitAdminPage(value, filter, 1, roleFilter), 250);
+              }} placeholder="Search by name or email" className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-gray-900 outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 lg:max-w-sm" />
+              <label className="sr-only" htmlFor="admin-role-filter">Filter administrators by role</label>
+              <select id="admin-role-filter" value={roleFilter} onChange={(event) => {
+                setRoleFilter(event.target.value);
+                visitAdminPage(search, filter, 1, event.target.value);
+              }} className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white">
+                <option value="all">All roles</option>
+                <option value="admin">Admin</option>
+                <option value="super_admin">Super Admin</option>
+              </select>
               <div className="flex flex-wrap gap-2" aria-label="Filter administrators">
                 {['all', 'active', 'pending_setup', 'suspended', 'inactive'].map((value) => (
-                  <button key={value} type="button" onClick={() => setFilter(value)} className={`rounded-lg px-3 py-2 text-sm font-semibold ${filter === value ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200'}`}>
+                  <button key={value} type="button" onClick={() => {
+                    setFilter(value);
+                    visitAdminPage(search, value, 1, roleFilter);
+                  }} className={`rounded-lg px-3 py-2 text-sm font-semibold ${filter === value ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200'}`}>
                     {value === 'all' ? 'All' : statusLabel(value)}
                   </button>
                 ))}
@@ -202,6 +263,34 @@ export default function AdminManagement({ admins = [], stats = {} }: AdminManage
               </table>
               {visibleAdmins.length === 0 && <p className="p-8 text-center text-sm text-gray-500">No administrators match this filter.</p>}
             </div>
+            {pageMeta.total > 0 && (
+              <div className="flex items-center justify-between border-t border-gray-200 px-5 py-4 text-sm dark:border-gray-700">
+                <span className="text-gray-500 dark:text-gray-400">
+                  Showing {pageMeta.from ?? 0} to {pageMeta.to ?? 0} of {pageMeta.total}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    aria-label="Previous page"
+                    disabled={pageMeta.current_page <= 1}
+                    onClick={() => visitAdminPage(search, filter, pageMeta.current_page - 1, roleFilter)}
+                    className="rounded-lg border border-gray-300 px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Previous
+                  </button>
+                  <span aria-label="Current page">Page {pageMeta.current_page} of {pageMeta.last_page}</span>
+                  <button
+                    type="button"
+                    aria-label="Next page"
+                    disabled={pageMeta.current_page >= pageMeta.last_page}
+                    onClick={() => visitAdminPage(search, filter, pageMeta.current_page + 1, roleFilter)}
+                    className="rounded-lg border border-gray-300 px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <p className="text-sm text-gray-500 dark:text-gray-400">

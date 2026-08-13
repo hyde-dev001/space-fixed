@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
 import AppLayout from '../../../layout/AppLayout';
 import Swal from 'sweetalert2';
 import Button from '../../../components/ui/button/Button';
@@ -175,11 +175,43 @@ const MetricCard: React.FC<MetricData> = ({
 
 
 
-interface PageProps {
-  users: User[] | { data?: User[]; meta?: any; links?: any } | null;
+interface PaginationMeta {
+  current_page: number;
+  from: number | null;
+  last_page: number;
+  per_page: number;
+  to: number | null;
+  total: number;
 }
 
-const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) => {
+interface UserPage {
+  data?: User[];
+  meta?: Partial<PaginationMeta>;
+  links?: Record<string, string | null>;
+}
+
+interface PageProps {
+  users: User[] | UserPage | null;
+  stats?: Record<string, number>;
+  filters?: {
+    q?: string | null;
+    role?: string | null;
+    status?: User['status'] | 'all' | null;
+    department?: string | null;
+    lifecycle?: 'active' | 'archived' | 'all' | null;
+  };
+}
+
+const emptyPagination: PaginationMeta = {
+  current_page: 1,
+  from: null,
+  last_page: 1,
+  per_page: 15,
+  to: null,
+  total: 0,
+};
+
+const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, stats = {}, filters = {} }) => {
   // Modal refs for focus trapping
   const viewModalRef = useRef<HTMLDivElement | null>(null);
   const suspendModalRef = useRef<HTMLDivElement | null>(null);
@@ -247,27 +279,45 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
   const [expandedDocuments, setExpandedDocuments] = useState<Set<number>>(new Set());
   const [imageLoadErrors, setImageLoadErrors] = useState<Set<number>>(new Set());
 
-  const [filterStatus, setFilterStatus] = useState<'pending' | 'approved' | 'rejected' | 'active' | 'deactivated' | 'suspended' | 'archived'>('active');
-  const [searchTerm, setSearchTerm] = useState<string>('');
+  const initialServerPaginated = !!initialUsers && !Array.isArray(initialUsers);
+  type UserStatusFilter = 'all' | 'pending' | 'approved' | 'rejected' | 'active' | 'deactivated' | 'suspended' | 'archived';
+  const [filterStatus, setFilterStatus] = useState<UserStatusFilter>(
+    initialServerPaginated ? (filters.status || 'all') : 'active',
+  );
+  const [filterRole, setFilterRole] = useState(filters.role || 'all');
+  const [filterDepartment, setFilterDepartment] = useState(filters.department || '');
+  const [filterLifecycle, setFilterLifecycle] = useState(filters.lifecycle || 'all');
+  const [searchTerm, setSearchTerm] = useState<string>(initialServerPaginated ? (filters.q || '') : '');
   const [suspendReason, setSuspendReason] = useState<string>('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(7);
   // UI state for disabling buttons and showing API errors
   const [isProcessingId, setIsProcessingId] = useState<number | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Initialize with data from backend (accept paginated payload or raw array)
   const normalizeUsers = (u: PageProps['users']): User[] => {
     if (!u) return [];
     if (Array.isArray(u)) return u as User[];
-    if ((u as any).data && Array.isArray((u as any).data)) return (u as any).data as User[];
+    if (u.data && Array.isArray(u.data)) return u.data;
     return [];
   };
 
   const [users, setUsers] = useState<User[]>(normalizeUsers(initialUsers));
 
-  // preserve pagination metadata when available
-  const [pagination, setPagination] = useState<any>((initialUsers && (initialUsers as any).meta) || null);
+  const isServerPaginated = initialServerPaginated;
+  const [pagination, setPagination] = useState<PaginationMeta>({
+    ...emptyPagination,
+    ...(!Array.isArray(initialUsers) ? (initialUsers?.meta || {}) : {}),
+  });
+
+  React.useEffect(() => {
+    setUsers(normalizeUsers(initialUsers));
+    setPagination({
+      ...emptyPagination,
+      ...(!Array.isArray(initialUsers) ? (initialUsers?.meta || {}) : {}),
+    });
+  }, [initialUsers]);
 
   // attach focus traps for each modal
   useFocusTrap(viewModalRef, isViewModalOpen, () => setIsViewModalOpen(false));
@@ -278,28 +328,57 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
     setImageLoadErrors(new Set());
   });
 
-  // Filter users based on status, and search term
+  const visitUserPage = (
+    nextSearch = searchTerm,
+    nextStatus = filterStatus,
+    page = 1,
+    nextRole = filterRole,
+    nextDepartment = filterDepartment,
+    nextLifecycle = filterLifecycle,
+  ) => {
+    const params: Record<string, string | number> = { page };
+    if (nextSearch.trim()) params.q = nextSearch.trim();
+    if (nextStatus !== 'all') params.status = nextStatus;
+    if (nextRole !== 'all') params.role = nextRole;
+    if (nextDepartment.trim()) params.department = nextDepartment.trim();
+    if (nextLifecycle !== 'all') params.lifecycle = nextLifecycle;
+
+    router.get('/admin/users', params, {
+      preserveState: true,
+      preserveScroll: true,
+      replace: true,
+    });
+  };
+
+  // Arrays remain supported for focused legacy component tests; live Inertia pages use server pagination.
   const filteredUsers = users.filter(user => {
     const isArchived = user.archived === true || user.status === 'archived';
-    const statusMatch = filterStatus === 'archived'
+    const statusMatch = filterStatus === 'all'
+      ? true
+      : filterStatus === 'archived'
       ? isArchived
       : !isArchived && user.status === filterStatus;
+    const roleMatch = filterRole === 'all' || user.role === filterRole;
+    const lifecycleMatch = filterLifecycle === 'all'
+      || (filterLifecycle === 'archived' ? isArchived : !isArchived);
+    const departmentMatch = !filterDepartment.trim()
+      || user.employee?.department?.toLowerCase().includes(filterDepartment.trim().toLowerCase());
     const searchMatch = searchTerm === '' ||
       user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.email.toLowerCase().includes(searchTerm.toLowerCase());
-    return statusMatch && searchMatch;
+    return statusMatch && roleMatch && lifecycleMatch && departmentMatch && searchMatch;
   });
 
-  // Pagination calculations
-  const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const paginatedUsers = filteredUsers.slice(startIndex, endIndex);
+  const effectivePage = isServerPaginated ? pagination.current_page : currentPage;
+  const totalPages = isServerPaginated ? pagination.last_page : Math.ceil(filteredUsers.length / 7);
+  const startIndex = isServerPaginated ? Math.max((pagination.from || 1) - 1, 0) : (currentPage - 1) * 7;
+  const endIndex = isServerPaginated ? (pagination.to || 0) : startIndex + 7;
+  const paginatedUsers = isServerPaginated ? users : filteredUsers.slice(startIndex, endIndex);
 
   // Reset to page 1 when filters change
   React.useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm, filterStatus]);
+    if (!isServerPaginated) setCurrentPage(1);
+  }, [isServerPaginated, searchTerm, filterStatus]);
 
   const requestLifecycleReason = async (title: string, text: string, confirmButtonText: string) => {
     const result = await Swal.fire({
@@ -355,6 +434,10 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
       setUsers((currentUsers) => currentUsers.map((currentUser) =>
         currentUser.id === user.id ? { ...currentUser, ...update } : currentUser
       ));
+
+      if (isServerPaginated) {
+        visitUserPage(searchTerm, filterStatus, effectivePage, filterRole, filterDepartment, filterLifecycle);
+      }
 
       Swal.fire({
         icon: 'success',
@@ -527,7 +610,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <MetricCard
             title="Total Users"
-            value={users.length}
+            value={stats.total ?? (isServerPaginated ? pagination.total : users.length)}
             change={12}
             changeType="increase"
             icon={UserCircleIcon}
@@ -536,7 +619,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
           />
           <MetricCard
             title="Pending Approvals"
-            value={users.filter(u => u.status === 'pending').length}
+            value={stats.pending ?? users.filter(u => u.status === 'pending').length}
             change={-5}
             changeType="decrease"
             icon={AlertIcon}
@@ -545,7 +628,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
           />
           <MetricCard
             title="Active Users"
-            value={users.filter(u => u.status === 'active' || u.status === 'approved').length}
+            value={stats.active ?? users.filter(u => u.status === 'active' || u.status === 'approved').length}
             change={8}
             changeType="increase"
             icon={CheckCircleIcon}
@@ -554,7 +637,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
           />
           <MetricCard
             title="Archived"
-            value={users.filter(u => u.archived === true || u.status === 'archived').length}
+            value={stats.archived ?? users.filter(u => u.archived === true || u.status === 'archived').length}
             change={2}
             changeType="increase"
             icon={TrashBinIcon}
@@ -573,7 +656,11 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
               <input
                 type="text"
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  if (searchTimer.current) clearTimeout(searchTimer.current);
+                  searchTimer.current = setTimeout(() => visitUserPage(e.target.value, filterStatus, 1, filterRole, filterDepartment, filterLifecycle), 250);
+                }}
                 placeholder="Search by name or email..."
                 aria-label="Search Users"
                 className="px-9 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
@@ -586,10 +673,15 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
               </label>
               <select
                 value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value as 'pending' | 'approved' | 'rejected' | 'active' | 'deactivated' | 'suspended' | 'archived')}
+                onChange={(e) => {
+                  const value = e.target.value as UserStatusFilter;
+                  setFilterStatus(value);
+                  visitUserPage(searchTerm, value, 1, filterRole, filterDepartment, filterLifecycle);
+                }}
                 aria-label="Filter by Status"
                 className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
               >
+                <option value="all">All Statuses</option>
                 <option value="pending">Pending</option>
                 <option value="active">Active</option>
                 <option value="approved">Approved</option>
@@ -599,6 +691,65 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
                 <option value="archived">Archived</option>
               </select>
             </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" htmlFor="filter-user-role">
+                Filter by Role
+              </label>
+              <select
+                id="filter-user-role"
+                value={filterRole}
+                onChange={(e) => {
+                  setFilterRole(e.target.value);
+                  visitUserPage(searchTerm, filterStatus, 1, e.target.value, filterDepartment, filterLifecycle);
+                }}
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+              >
+                <option value="all">All Roles</option>
+                <option value="MANAGER">Manager</option>
+                <option value="STAFF">Staff</option>
+                <option value="HR">HR</option>
+                <option value="CRM">CRM</option>
+                <option value="FINANCE">Finance</option>
+                <option value="REPAIRER">Repairer</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" htmlFor="filter-user-lifecycle">
+                Filter by Lifecycle
+              </label>
+              <select
+                id="filter-user-lifecycle"
+                value={filterLifecycle}
+                onChange={(e) => {
+                  setFilterLifecycle(e.target.value);
+                  visitUserPage(searchTerm, filterStatus, 1, filterRole, filterDepartment, e.target.value);
+                }}
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+              >
+                <option value="all">All Lifecycles</option>
+                <option value="active">Active</option>
+                <option value="archived">Archived</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" htmlFor="filter-user-department">
+                Filter by Department
+              </label>
+              <input
+                id="filter-user-department"
+                type="search"
+                value={filterDepartment}
+                onChange={(e) => {
+                  setFilterDepartment(e.target.value);
+                  visitUserPage(searchTerm, filterStatus, 1, filterRole, e.target.value, filterLifecycle);
+                }}
+                placeholder="Department"
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+              />
+            </div>
           </div>
         </div>
 
@@ -606,7 +757,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
           <div className="p-6 border-b border-gray-200 dark:border-gray-700">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-              New Register Users ({filteredUsers.length})
+              New Register Users ({isServerPaginated ? pagination.total : filteredUsers.length})
             </h3>
           </div>
           <div className="overflow-auto">
@@ -749,18 +900,20 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
           </div>
 
           {/* Pagination */}
-          {filteredUsers.length > 0 && (
+          {paginatedUsers.length > 0 && (
             <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
               <div className="flex items-center justify-between">
                 <div className="text-sm text-gray-700 dark:text-gray-300">
-                  Showing <span className="font-medium">{startIndex + 1}</span> to{" "}
-                  <span className="font-medium">{Math.min(endIndex, filteredUsers.length)}</span> of{" "}
-                  <span className="font-medium">{filteredUsers.length}</span>
+                  Showing <span className="font-medium">{isServerPaginated ? (pagination.from || 0) : startIndex + 1}</span> to{" "}
+                  <span className="font-medium">{isServerPaginated ? (pagination.to || 0) : Math.min(endIndex, filteredUsers.length)}</span> of{" "}
+                  <span className="font-medium">{isServerPaginated ? pagination.total : filteredUsers.length}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                    disabled={currentPage === 1}
+                    onClick={() => isServerPaginated
+                      ? visitUserPage(searchTerm, filterStatus, effectivePage - 1, filterRole, filterDepartment, filterLifecycle)
+                      : setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                    disabled={effectivePage === 1}
                     className="p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     title="Previous page"
                   >
@@ -774,14 +927,16 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
                     if (
                       page === 1 ||
                       page === totalPages ||
-                      (page >= currentPage - 1 && page <= currentPage + 1)
+                      (page >= effectivePage - 1 && page <= effectivePage + 1)
                     ) {
                       return (
                         <button
                           key={page}
-                          onClick={() => setCurrentPage(page)}
+                          onClick={() => isServerPaginated
+                            ? visitUserPage(searchTerm, filterStatus, page, filterRole, filterDepartment, filterLifecycle)
+                            : setCurrentPage(page)}
                           className={`min-w-[40px] h-10 px-3 rounded-lg font-medium transition-colors ${
-                            currentPage === page
+                            effectivePage === page
                               ? "bg-blue-600 text-white"
                               : "border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
                           }`}
@@ -789,7 +944,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
                           {page}
                         </button>
                       );
-                    } else if (page === currentPage - 2 || page === currentPage + 2) {
+                    } else if (page === effectivePage - 2 || page === effectivePage + 2) {
                       return (
                         <span key={page} className="px-2 text-gray-500 dark:text-gray-400">
                           ...
@@ -800,8 +955,10 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers }) 
                   })}
 
                   <button
-                    onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-                    disabled={currentPage === totalPages}
+                    onClick={() => isServerPaginated
+                      ? visitUserPage(searchTerm, filterStatus, effectivePage + 1, filterRole, filterDepartment, filterLifecycle)
+                      : setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                    disabled={effectivePage === totalPages}
                     className="p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     title="Next page"
                   >

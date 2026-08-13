@@ -14,8 +14,10 @@ use App\Models\ShopOwner;
 use App\Models\SuperAdmin;
 use App\Services\AccountLifecycleService;
 use App\Support\PrivilegedFailureResponse;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -31,13 +33,19 @@ final class RegisteredShopController extends Controller
 
     public function index(Request $request): Response
     {
-        $lifecycle = $request->query('lifecycle', 'all');
-        if (! in_array($lifecycle, ['active', 'archived', 'all'], true)) {
-            $lifecycle = 'all';
-        }
+        $validated = $request->validate([
+            'search' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'status' => ['sometimes', 'nullable', 'string', Rule::in(['approved', 'suspended'])],
+            'lifecycle' => ['sometimes', 'nullable', Rule::in(['active', 'archived', 'all'])],
+            'page' => ['sometimes', 'integer', 'min:1'],
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
+        ]);
 
-        $shopsQuery = ShopOwner::withTrashed()
+        $lifecycle = $validated['lifecycle'] ?? 'all';
+
+        $baseQuery = ShopOwner::withTrashed()
             ->whereIn('status', ['approved', 'suspended']);
+        $shopsQuery = clone $baseQuery;
 
         if ($lifecycle === 'active') {
             $shopsQuery->whereNull('deleted_at');
@@ -45,10 +53,42 @@ final class RegisteredShopController extends Controller
             $shopsQuery->whereNotNull('deleted_at');
         }
 
+        if (($validated['status'] ?? null) !== null) {
+            $shopsQuery->where('status', $validated['status']);
+        }
+
+        if (($validated['search'] ?? null) !== null && $validated['search'] !== '') {
+            $search = (string) $validated['search'];
+            $shopsQuery->where(function (Builder $searchQuery) use ($search): void {
+                $this->whereContains($searchQuery, 'business_name', $search);
+                $this->whereContains($searchQuery, 'first_name', $search, 'or');
+                $this->whereContains($searchQuery, 'last_name', $search, 'or');
+                $this->whereContains($searchQuery, 'email', $search, 'or');
+            });
+        }
+
         $shops = $shopsQuery
-            ->orderBy('created_at', 'desc')
-            ->get()
-            ->map(function (ShopOwner $shopOwner): array {
+            ->select([
+                'id',
+                'first_name',
+                'last_name',
+                'email',
+                'phone',
+                'business_name',
+                'business_address',
+                'business_type',
+                'registration_type',
+                'status',
+                'suspension_reason',
+                'created_at',
+                'updated_at',
+                'deleted_at',
+            ])
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->paginate((int) ($validated['per_page'] ?? 25))
+            ->withQueryString()
+            ->through(function (ShopOwner $shopOwner): array {
                 $accountStatus = $shopOwner->status;
                 $archived = $shopOwner->trashed();
 
@@ -74,11 +114,11 @@ final class RegisteredShopController extends Controller
             });
 
         $stats = [
-            'total' => $shops->count(),
-            'active' => $shops->where('accountStatus', 'approved')->where('archived', false)->count(),
-            'suspended' => $shops->where('accountStatus', 'suspended')->where('archived', false)->count(),
-            'archived' => $shops->where('archived', true)->count(),
-            'thisMonth' => (clone $shopsQuery)
+            'total' => (clone $baseQuery)->count(),
+            'active' => (clone $baseQuery)->where('status', 'approved')->whereNull('deleted_at')->count(),
+            'suspended' => (clone $baseQuery)->where('status', 'suspended')->whereNull('deleted_at')->count(),
+            'archived' => (clone $baseQuery)->whereNotNull('deleted_at')->count(),
+            'thisMonth' => (clone $baseQuery)
                 ->whereMonth('created_at', now()->month)
                 ->whereYear('created_at', now()->year)
                 ->count(),
@@ -87,7 +127,22 @@ final class RegisteredShopController extends Controller
         return Inertia::render('superAdmin/Shops/RegisteredShops', [
             'shops' => $shops,
             'stats' => $stats,
+            'filters' => [
+                'search' => $validated['search'] ?? null,
+                'status' => $validated['status'] ?? null,
+                'lifecycle' => $validated['lifecycle'] ?? 'all',
+            ],
         ]);
+    }
+
+    private function whereContains(Builder $query, string $column, string $value, string $boolean = 'and'): void
+    {
+        $escaped = addcslashes($value, "\\%_");
+        $query->whereRaw(
+            "{$column} LIKE ? ESCAPE '\\'",
+            ["%{$escaped}%"],
+            $boolean,
+        );
     }
 
     public function show(int $shopOwner): JsonResponse
