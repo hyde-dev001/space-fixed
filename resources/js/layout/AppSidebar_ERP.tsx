@@ -1727,8 +1727,8 @@ const EmployeeSidebarERP: React.FC = () => {
                       : "menu-item-inactive"
                   } cursor-pointer ${
                     !isExpanded && !isHovered
-                      ? "lg:justify-center"
-                      : "lg:justify-start"
+                      ? "xl:justify-center"
+                      : "xl:justify-start"
                   }`}
                 >
                   <span
@@ -1853,7 +1853,7 @@ const EmployeeSidebarERP: React.FC = () => {
 
   return (
     <aside
-      className={`fixed mt-16 flex flex-col lg:mt-0 top-0 px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-50 border-r border-gray-200
+      className={`fixed mt-16 flex flex-col xl:mt-0 top-0 px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-50 border-r border-gray-200
         ${
           isExpanded || isMobileOpen
             ? "w-[290px]"
@@ -1862,13 +1862,13 @@ const EmployeeSidebarERP: React.FC = () => {
             : "w-[90px]"
         }
         ${isMobileOpen ? "translate-x-0" : "-translate-x-full"}
-        lg:translate-x-0`}
+        xl:translate-x-0`}
       onMouseEnter={() => !isExpanded && setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
       <div
         className={`py-8 flex ${
-          !isExpanded && !isHovered ? "lg:justify-center" : "justify-start"
+          !isExpanded && !isHovered ? "xl:justify-center" : "justify-start"
         }`}
       >
         <Link href={route("landing")} className="flex items-center gap-2 hover:scale-105 transition-transform duration-200">
@@ -1894,7 +1894,7 @@ const EmployeeSidebarERP: React.FC = () => {
                 <h2
                   className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
                     !isExpanded && !isHovered
-                      ? "lg:justify-center"
+                      ? "xl:justify-center"
                       : "justify-start"
                   }`}
                 >
@@ -1917,7 +1917,7 @@ const EmployeeSidebarERP: React.FC = () => {
                 <h2
                   className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
                     !isExpanded && !isHovered
-                      ? "lg:justify-center"
+                      ? "xl:justify-center"
                       : "justify-start"
                   }`}
                 >
@@ -1939,7 +1939,7 @@ const EmployeeSidebarERP: React.FC = () => {
                 <h2
                   className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
                     !isExpanded && !isHovered
-                      ? "lg:justify-center"
+                      ? "xl:justify-center"
                       : "justify-start"
                   }`}
                 >
@@ -1965,7 +1965,7 @@ const EmployeeSidebarERP: React.FC = () => {
                   <h2
                     className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
                       !isExpanded && !isHovered
-                        ? "lg:justify-center"
+                        ? "xl:justify-center"
                         : "justify-start"
                     }`}
                   >
@@ -1991,7 +1991,7 @@ const EmployeeSidebarERP: React.FC = () => {
                   <h2
                     className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
                       !isExpanded && !isHovered
-                        ? "lg:justify-center"
+                        ? "xl:justify-center"
                         : "justify-start"
                     }`}
                   >
@@ -2013,7 +2013,7 @@ const EmployeeSidebarERP: React.FC = () => {
                   <h2
                     className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
                       !isExpanded && !isHovered
-                        ? "lg:justify-center"
+                        ? "xl:justify-center"
                         : "justify-start"
                     }`}
                   >
@@ -2035,7 +2035,7 @@ const EmployeeSidebarERP: React.FC = () => {
                 <h2
                   className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
                     !isExpanded && !isHovered
-                      ? "lg:justify-center"
+                      ? "xl:justify-center"
                       : "justify-start"
                   }`}
                 >
@@ -2060,7 +2060,7 @@ const EmployeeSidebarERP: React.FC = () => {
                 <h2
                   className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
                     !isExpanded && !isHovered
-                      ? "lg:justify-center"
+                      ? "xl:justify-center"
                       : "justify-start"
                   }`}
                 >
@@ -2082,7 +2082,7 @@ const EmployeeSidebarERP: React.FC = () => {
                 <h2
                   className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
                     !isExpanded && !isHovered
-                      ? "lg:justify-center"
+                      ? "xl:justify-center"
                       : "justify-start"
                   }`}
                 >
@@ -2104,7 +2104,7 @@ const EmployeeSidebarERP: React.FC = () => {
                 <h2
                   className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
                     !isExpanded && !isHovered
-                      ? "lg:justify-center"
+                      ? "xl:justify-center"
                       : "justify-start"
                   }`}
                 >

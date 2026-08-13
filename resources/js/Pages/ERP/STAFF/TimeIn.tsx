@@ -1276,7 +1276,7 @@ export default function TimeIn() {
                 <>
                 {/* Header Section */}
                 <div className="mb-6 sm:mb-8">
-                    <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
                         <div className="flex min-w-0 items-start gap-3">
                             <div className="shrink-0 rounded-full bg-gray-100 p-2.5 text-gray-900 dark:bg-gray-800 dark:text-white">
                                 <ClockIcon />
@@ -1290,7 +1290,7 @@ export default function TimeIn() {
                                 </p>
                             </div>
                         </div>
-                        <div className="grid w-full grid-cols-2 gap-2 sm:w-auto sm:min-w-[280px]">
+                        <div className="grid w-full grid-cols-2 gap-2 xl:w-auto xl:min-w-[280px]">
                             <button
                                 onClick={handleOvertimeClick}
                                 disabled={isOnApprovedLeaveToday || todayOvertimeRequests.some(ot => ['pending', 'approved', 'assigned'].includes(ot.status))}
@@ -1317,17 +1317,17 @@ export default function TimeIn() {
                     </div>
                 </div>
 
-                <div data-testid="attendance-dashboard" className="mb-8 grid gap-4 md:grid-cols-2 md:items-start lg:mb-12 lg:grid-cols-5 lg:items-stretch lg:gap-6">
+                <div data-testid="attendance-dashboard" className="mb-8 grid gap-4 xl:mb-12 xl:grid-cols-5 xl:items-stretch xl:gap-6">
                 {/* Main Clock Section */}
-                <div className="min-w-0 lg:col-span-3">
+                <div className="min-w-0 xl:col-span-3">
                     <div className="overflow-hidden rounded-3xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900/50">
-                        <div className="p-5 sm:p-7 md:p-8 lg:p-10">
+                        <div className="p-5 sm:p-7 md:p-8 xl:p-10">
                             <div className="text-center">
                                 <div>
                                     <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
                                         Current Time
                                     </p>
-                                    <div aria-live="polite" className={`mb-3 whitespace-nowrap font-mono text-[2.15rem] font-semibold leading-none tabular-nums tracking-[-0.055em] min-[380px]:text-[2.45rem] sm:text-5xl lg:text-6xl ${
+                                    <div aria-live="polite" className={`mb-3 whitespace-nowrap font-mono text-[2.15rem] font-semibold leading-none tabular-nums tracking-[-0.055em] min-[380px]:text-[2.45rem] sm:text-5xl xl:text-6xl ${
                                         isClockedIn 
                                             ? todayAttendance?.is_late 
                                                 ? 'text-red-600 dark:text-red-400' 
@@ -1465,7 +1465,7 @@ export default function TimeIn() {
                     </div>
                 </div>
 
-                <div data-testid="attendance-summary" className="grid min-w-0 grid-cols-2 gap-px overflow-hidden rounded-3xl border border-gray-200 bg-gray-200 lg:col-span-2 lg:h-full dark:border-gray-800 dark:bg-gray-800">
+                <div data-testid="attendance-summary" className="grid min-w-0 grid-cols-2 gap-px overflow-hidden rounded-3xl border border-gray-200 bg-gray-200 xl:col-span-2 xl:h-full dark:border-gray-800 dark:bg-gray-800">
                     <div className="min-w-0 bg-white p-4 dark:bg-gray-900/50 sm:p-5">
                         <div className="mb-3 flex items-center gap-2">
                             <div className="rounded-full bg-gray-100 p-2 dark:bg-gray-800">
@@ -1583,7 +1583,7 @@ export default function TimeIn() {
                                 </div>
                             </div>
                             
-                            <div className="mt-5 grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 lg:mt-6 lg:grid-cols-3 lg:gap-4">
+                            <div className="mt-5 grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 xl:mt-6 xl:grid-cols-3 xl:gap-4">
                                 <div className="min-w-0 overflow-hidden rounded-lg bg-white p-4 dark:bg-gray-800/50">
                                     <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">Regular Shift Ends</p>
                                     <p className="text-xl font-bold text-gray-900 dark:text-white">
@@ -1634,7 +1634,7 @@ export default function TimeIn() {
                 {/* Attendance Records */}
                 <div className="min-w-0 overflow-hidden rounded-3xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900/50">
                     <div className="border-b border-gray-200 p-4 dark:border-gray-800 sm:p-6">
-                        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
                             <h2 className="flex items-center gap-3 text-xl font-semibold tracking-tight text-gray-900 dark:text-white sm:text-2xl">
                                 <div className="rounded-full bg-gray-100 p-2.5 dark:bg-gray-800">
                                     <CalendarIcon />
@@ -1642,20 +1642,20 @@ export default function TimeIn() {
                                 Attendance History
                             </h2>
 
-                            <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:flex lg:w-auto">
+                            <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 xl:flex xl:w-auto">
                                 <input
                                     type="text"
                                     value={attendanceSearchQuery}
                                     onChange={(e) => setAttendanceSearchQuery(e.target.value)}
                                     placeholder="Search date, time, hours, status..."
-                                    className="min-h-12 w-full rounded-full border border-gray-300 bg-white px-4 py-2 text-sm text-gray-900 transition-colors focus:border-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900/20 dark:border-gray-700 dark:bg-gray-800 dark:text-white lg:w-72"
+                                    className="min-h-12 w-full rounded-full border border-gray-300 bg-white px-4 py-2 text-sm text-gray-900 transition-colors focus:border-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900/20 dark:border-gray-700 dark:bg-gray-800 dark:text-white xl:w-72"
                                 />
                                 <select
                                     value={attendanceStatusFilter}
                                     onChange={(e) => setAttendanceStatusFilter(e.target.value)}
                                     aria-label="Filter attendance history by status"
                                     title="Filter attendance history by status"
-                                    className="min-h-12 w-full rounded-full border border-gray-300 bg-white px-4 py-2 text-sm text-gray-900 transition-colors focus:border-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900/20 dark:border-gray-700 dark:bg-gray-800 dark:text-white lg:w-auto"
+                                    className="min-h-12 w-full rounded-full border border-gray-300 bg-white px-4 py-2 text-sm text-gray-900 transition-colors focus:border-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900/20 dark:border-gray-700 dark:bg-gray-800 dark:text-white xl:w-auto"
                                 >
                                     {attendanceStatusOptions.map((statusOption) => (
                                         <option key={statusOption} value={statusOption}>
@@ -1666,7 +1666,7 @@ export default function TimeIn() {
                             </div>
                         </div>
                     </div>
-                    <div data-testid="attendance-mobile-history" className="divide-y divide-gray-200 md:hidden dark:divide-gray-800">
+                    <div data-testid="attendance-mobile-history" className="divide-y divide-gray-200 xl:hidden dark:divide-gray-800">
                         {filteredAttendanceRecords.length === 0 ? (
                             <div className="px-5 py-10 text-center">
                                 <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
@@ -1713,7 +1713,7 @@ export default function TimeIn() {
                             ))
                         )}
                     </div>
-                    <div data-testid="attendance-history-table" className="hidden overflow-x-auto overscroll-x-contain md:block">
+                    <div data-testid="attendance-history-table" className="hidden overflow-x-auto overscroll-x-contain xl:block">
                         <table className="min-w-[720px] w-full">
                             <thead className="bg-gray-50 dark:bg-gray-800/50">
                                 <tr>
@@ -1834,7 +1834,7 @@ export default function TimeIn() {
                 {/* Leave Request Modal */}
                 {showLeaveModal && (
                     <div className="fixed inset-0 z-[999999] flex items-start justify-center overflow-y-auto bg-black/60 p-3 backdrop-blur-sm sm:items-center sm:p-4">
-                        <div className="my-3 max-h-[calc(100dvh-1.5rem)] w-full max-w-4xl overflow-y-auto rounded-3xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-800 dark:bg-gray-900 sm:my-4 sm:max-h-[calc(100dvh-2rem)] sm:p-6 md:p-8 lg:p-10">
+                        <div className="my-3 max-h-[calc(100dvh-1.5rem)] w-full max-w-4xl overflow-y-auto rounded-3xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-gray-800 dark:bg-gray-900 sm:my-4 sm:max-h-[calc(100dvh-2rem)] sm:p-6 md:p-8 xl:p-10">
                             <div className="mb-6 flex items-start justify-between gap-4">
                                 <div>
                                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
@@ -1859,8 +1859,8 @@ export default function TimeIn() {
                                 </button>
                             </div>
 
-                            <div className="grid grid-cols-1 gap-4 lg:grid-cols-5 lg:gap-6">
-                                <div className="lg:col-span-3 rounded-2xl border border-gray-200 dark:border-gray-700 p-4 md:p-5">
+                            <div className="grid grid-cols-1 gap-4 xl:grid-cols-5 xl:gap-6">
+                                <div className="rounded-2xl border border-gray-200 p-4 dark:border-gray-700 md:p-5 xl:col-span-3">
                                     <div className="flex items-center justify-between mb-4">
                                         <button
                                             type="button"
@@ -1950,7 +1950,7 @@ export default function TimeIn() {
                                     </div>
                                 </div>
 
-                                <div className="lg:col-span-2 space-y-4">
+                                <div className="space-y-4 xl:col-span-2">
                                     <div className="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/70 dark:bg-blue-900/20 p-4">
                                         <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">Request Summary</p>
                                         <p className="mt-1 text-sm text-blue-700/90 dark:text-blue-200">

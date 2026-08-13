@@ -29,10 +29,10 @@
 - Consumes: existing `SidebarContext` state and ERP shell components.
 - Produces: compact shell below `xl`, desktop shell at `xl`, and visible `SoleSpace` compact branding.
 
-- [ ] **Step 1: Write failing assertions** for `SoleSpace`, `xl:hidden`, `xl:block`, and `xl:translate-x-0` responsive contracts.
-- [ ] **Step 2: Run focused shell tests** with the local Vitest binary and verify failure is caused by the old `lg` boundary or image-only brand.
-- [ ] **Step 3: Implement the minimal shell change** by replacing only responsive boundary classes and compact header markup.
-- [ ] **Step 4: Re-run focused shell tests** and confirm they pass.
+- [x] **Step 1: Write failing assertions** for `SoleSpace`, `xl:hidden`, `xl:block`, and `xl:translate-x-0` responsive contracts.
+- [x] **Step 2: Run focused shell tests** with the local Vitest binary and verify failure is caused by the old `lg` boundary or image-only brand.
+- [x] **Step 3: Implement the minimal shell change** by replacing only responsive boundary classes and compact header markup.
+- [x] **Step 4: Re-run focused shell tests** and confirm they pass.
 
 ### Task 2: Keep attendance compact through tablet widths
 
@@ -44,10 +44,10 @@
 - Consumes: existing attendance markup, state, handlers, and records.
 - Produces: stacked dashboard and card history below `xl`; desktop grid and table at `xl`.
 
-- [ ] **Step 1: Write failing assertions** requiring `xl:grid-cols-5`, `xl:items-stretch`, `xl:h-full`, `xl:hidden`, and `xl:block`, while rejecting the old tablet desktop transitions.
-- [ ] **Step 2: Run the focused attendance test** and verify it fails for the expected breakpoint mismatch.
-- [ ] **Step 3: Implement the minimal responsive class changes** without changing behavior or data flow.
-- [ ] **Step 4: Re-run the focused attendance test** and confirm it passes.
+- [x] **Step 1: Write failing assertions** requiring `xl:grid-cols-5`, `xl:items-stretch`, `xl:h-full`, `xl:hidden`, and `xl:block`, while rejecting the old tablet desktop transitions.
+- [x] **Step 2: Run the focused attendance test** and verify it fails for the expected breakpoint mismatch.
+- [x] **Step 3: Implement the minimal responsive class changes** without changing behavior or data flow.
+- [x] **Step 4: Re-run the focused attendance test** and confirm it passes.
 
 ### Task 3: Verify, build, and deliver
 
@@ -59,10 +59,10 @@
 - Consumes: completed source and test changes.
 - Produces: verified source commit and fresh production assets on `fix/attendance-responsive-branding`.
 
-- [ ] **Step 1: Run focused tests, then the full frontend suite.** Expected: all test files and tests pass.
-- [ ] **Step 2: Run the Vite production build.** Expected: successful build and fresh `public/build` manifest/assets.
-- [ ] **Step 3: Run `git diff --check` and scope review.** Expected: no whitespace errors, unrelated files, or unexpected deletions outside generated build rotation.
-- [ ] **Step 4: Commit intended files, fetch/rebase `origin/solespace-b`, rebuild if necessary, and push the feature branch.** Expected: local and remote feature tips match; no PR is created.
+- [x] **Step 1: Run focused tests, then the full frontend suite.** Expected: all test files and tests pass.
+- [x] **Step 2: Run the Vite production build.** Expected: successful build and fresh `public/build` manifest/assets.
+- [x] **Step 3: Run `git diff --check` and scope review.** Expected: no whitespace errors, unrelated files, or unexpected deletions outside generated build rotation.
+- [x] **Step 4: Commit intended files, fetch/rebase `origin/solespace-b`, rebuild if necessary, and push the feature branch.** Expected: local and remote feature tips match; no PR is created.
 
 ## Plan self-review
 

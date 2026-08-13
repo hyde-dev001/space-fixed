@@ -21,7 +21,7 @@ const LayoutContent: React.FC<{ children: ReactNode; hideHeader?: boolean; fullB
       </div>
       <div
         className={`flex-1 transition-all duration-300 ease-in-out bg-gray-50 dark:bg-gray-950 ${
-          isExpanded || isHovered ? "lg:ml-[290px]" : "lg:ml-[90px]"
+          isExpanded || isHovered ? "xl:ml-[290px]" : "xl:ml-[90px]"
         } ${isMobileOpen ? "ml-0" : ""}`}
       >
         {!hideHeader && <AppHeader_ERP />}
