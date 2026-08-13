@@ -11,11 +11,13 @@ use App\Models\PrivilegedSecurityToken;
 use App\Models\SuperAdmin;
 use App\Services\PrivilegedAudit;
 use App\Services\PrivilegedSecurityTokenService;
+use App\Services\PrivilegedSetupProofService;
 use Carbon\Carbon;
 use Illuminate\Contracts\Queue\ShouldBeEncrypted;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
@@ -206,7 +208,7 @@ final class PrivilegedBootstrapAndInvitationTest extends TestCase
         });
     }
 
-    public function test_setup_exchange_is_token_free_in_the_page_and_stores_only_non_secret_authorization(): void
+    public function test_setup_exchange_returns_an_opaque_proof_without_storing_authorization_in_session(): void
     {
         $pending = SuperAdmin::factory()->pendingSetup()->create();
         $issued = app(PrivilegedSecurityTokenService::class)->issue(
@@ -222,18 +224,18 @@ final class PrivilegedBootstrapAndInvitationTest extends TestCase
             ->assertSee('PrivilegedSetup', false);
 
         $response = $this->postJson('/admin/setup/exchange', ['token' => $rawToken]);
-        $response->assertOk()->assertJson(['authorized' => true]);
-        self::assertStringNotContainsString($rawToken, $response->getContent());
+        $response->assertOk()
+            ->assertJson(['authorized' => true])
+            ->assertJsonStructure(['authorized', 'completion_proof']);
+        $completionProof = $response->json('completion_proof');
 
-        $authorization = session('privileged_setup_authorization');
-        self::assertIsArray($authorization);
-        self::assertSame([
-            'token_id',
-            'subject_id',
-            'purpose',
-            'authorized_at',
-        ], array_keys($authorization));
+        self::assertIsString($completionProof);
+        self::assertNotSame('', $completionProof);
+        self::assertNotSame($rawToken, $completionProof);
+        self::assertStringNotContainsString($rawToken, $response->getContent());
+        self::assertNull(session('privileged_setup_authorization'));
         self::assertStringNotContainsString($rawToken, serialize(session()->all()));
+        self::assertStringNotContainsString($completionProof, serialize(session()->all()));
     }
 
     public function test_setup_password_consumes_the_authorized_token_atomically_and_enters_mfa_setup(): void
@@ -249,8 +251,9 @@ final class PrivilegedBootstrapAndInvitationTest extends TestCase
         $rawToken = $issued['raw_token'];
         $token = $issued['token'];
 
-        $this->syncSessionCookie($this->postJson('/admin/setup/exchange', ['token' => $rawToken]));
+        $completionProof = $this->exchangeSetupProof($rawToken);
         $response = $this->post('/admin/setup/complete', [
+            'completion_proof' => $completionProof,
             'password' => 'LongEnough-Setup1!',
             'password_confirmation' => 'LongEnough-Setup1!',
         ]);
@@ -267,17 +270,16 @@ final class PrivilegedBootstrapAndInvitationTest extends TestCase
         self::assertDatabaseCount('privileged_sessions', 0);
 
         $this->postJson('/admin/setup/complete', [
+            'completion_proof' => $completionProof,
             'password' => 'Another-Setup2!',
             'password_confirmation' => 'Another-Setup2!',
         ])->assertUnprocessable();
     }
 
-    public function test_setup_password_accepts_numeric_session_values_after_database_session_reload(): void
+    public function test_setup_password_completes_without_exchange_session_authorization(): void
     {
-        config(['session.driver' => 'database']);
-
         $pending = SuperAdmin::factory()->pendingSetup()->create([
-            'email' => 'numeric-session@example.test',
+            'email' => 'session-independent@example.test',
         ]);
         $issued = app(PrivilegedSecurityTokenService::class)->issue(
             $pending,
@@ -285,21 +287,86 @@ final class PrivilegedBootstrapAndInvitationTest extends TestCase
             null,
         );
 
-        $this->syncSessionCookie($this->postJson('/admin/setup/exchange', [
-            'token' => $issued['raw_token'],
-        ]));
-        session()->put('privileged_setup_authorization', [
-            'token_id' => (string) $issued['token']->id,
-            'subject_id' => (string) $pending->id,
-            'purpose' => PrivilegedSecurityToken::PURPOSE_SETUP,
-            'authorized_at' => (string) now()->timestamp,
-        ]);
+        $proof = $this->exchangeSetupProof($issued['raw_token']);
+        self::assertNull(session('privileged_setup_authorization'));
+        session()->forget('privileged_setup_authorization');
         session()->save();
 
         $this->post('/admin/setup/complete', [
+            'completion_proof' => $proof,
             'password' => 'LongEnough-Setup1!',
             'password_confirmation' => 'LongEnough-Setup1!',
         ])->assertRedirect('/admin/mfa/setup');
+
+        self::assertNotNull($pending->fresh()?->password_changed_at);
+        self::assertNotNull($pending->fresh()?->mfa_secret);
+        self::assertNotNull($issued['token']->fresh()?->used_at);
+    }
+
+    public function test_invalid_completion_proofs_do_not_change_setup_state_or_expose_credentials(): void
+    {
+        Carbon::setTestNow(Carbon::create(2026, 8, 13, 12, 0, 0, 'UTC'));
+        $pending = SuperAdmin::factory()->pendingSetup()->create();
+        $otherPending = SuperAdmin::factory()->pendingSetup()->create();
+        $issued = app(PrivilegedSecurityTokenService::class)->issue(
+            $pending,
+            PrivilegedSecurityToken::PURPOSE_SETUP,
+            null,
+        );
+        $proof = $this->exchangeSetupProof($issued['raw_token']);
+        $modifiedProof = substr_replace($proof, $proof[10] === 'A' ? 'B' : 'A', 10, 1);
+        $payload = json_decode(Crypt::decryptString($proof), true, flags: JSON_THROW_ON_ERROR);
+        $payload['purpose'] = PrivilegedSecurityToken::PURPOSE_PASSWORD_RESET;
+        $wrongPurposeProof = Crypt::encryptString(json_encode($payload, JSON_THROW_ON_ERROR));
+        $wrongSubjectProof = app(PrivilegedSetupProofService::class)->issue(
+            tokenId: (int) $issued['token']->id,
+            subjectId: (int) $otherPending->id,
+            tokenExpiresAt: $issued['token']->expires_at,
+        );
+        Log::spy();
+
+        $this->postJson('/admin/setup/complete', [
+            'password' => 'LongEnough-Setup1!',
+            'password_confirmation' => 'LongEnough-Setup1!',
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors('completion_proof');
+
+        foreach ([$modifiedProof, $wrongPurposeProof, $wrongSubjectProof] as $invalidProof) {
+            $response = $this->postJson('/admin/setup/complete', [
+                'completion_proof' => $invalidProof,
+                'password' => 'LongEnough-Setup1!',
+                'password_confirmation' => 'LongEnough-Setup1!',
+            ])->assertUnprocessable();
+
+            self::assertStringNotContainsString($invalidProof, $response->getContent());
+        }
+
+        Carbon::setTestNow(now()->addMinutes(16));
+        $expiredResponse = $this->postJson('/admin/setup/complete', [
+            'completion_proof' => $proof,
+            'password' => 'LongEnough-Setup1!',
+            'password_confirmation' => 'LongEnough-Setup1!',
+        ])->assertUnprocessable();
+
+        self::assertStringNotContainsString($proof, $expiredResponse->getContent());
+        self::assertNull($pending->fresh()?->password_changed_at);
+        self::assertNull($pending->fresh()?->mfa_secret);
+        self::assertNull($issued['token']->fresh()?->used_at);
+        Log::shouldHaveReceived('warning')->times(4)->withArgs(
+            function (string $message, array $context) use ($proof, $modifiedProof, $wrongPurposeProof, $wrongSubjectProof): bool {
+                $serializedContext = serialize($context);
+
+                return in_array($message, [
+                    'Privileged setup completion proof rejected',
+                    'Privileged setup authorization rejected',
+                ], true)
+                    && ! str_contains($serializedContext, 'LongEnough-Setup1!')
+                    && ! str_contains($serializedContext, $proof)
+                    && ! str_contains($serializedContext, $modifiedProof)
+                    && ! str_contains($serializedContext, $wrongPurposeProof)
+                    && ! str_contains($serializedContext, $wrongSubjectProof);
+            },
+        );
     }
 
     public function test_unexpected_setup_completion_failure_is_reported_without_exposing_credentials(): void
@@ -310,9 +377,7 @@ final class PrivilegedBootstrapAndInvitationTest extends TestCase
             PrivilegedSecurityToken::PURPOSE_SETUP,
             null,
         );
-        $this->syncSessionCookie($this->postJson('/admin/setup/exchange', [
-            'token' => $issued['raw_token'],
-        ]));
+        $completionProof = $this->exchangeSetupProof($issued['raw_token']);
 
         $this->mock(PrivilegedAudit::class, function ($mock): void {
             $mock->shouldReceive('privilegedSetupPasswordCompleted')
@@ -322,6 +387,7 @@ final class PrivilegedBootstrapAndInvitationTest extends TestCase
         Log::spy();
 
         $response = $this->post('/admin/setup/complete', [
+            'completion_proof' => $completionProof,
             'password' => 'LongEnough-Setup1!',
             'password_confirmation' => 'LongEnough-Setup1!',
         ]);
@@ -333,7 +399,8 @@ final class PrivilegedBootstrapAndInvitationTest extends TestCase
             return $message === 'Privileged setup password completion failed'
                 && ($context['exception_class'] ?? null) === \RuntimeException::class
                 && ! array_key_exists('password', $context)
-                && ! array_key_exists('password_confirmation', $context);
+                && ! array_key_exists('password_confirmation', $context)
+                && ! array_key_exists('completion_proof', $context);
         });
         self::assertNull($pending->fresh()?->password_changed_at);
         self::assertNull($issued['token']->fresh()?->used_at);
@@ -347,13 +414,12 @@ final class PrivilegedBootstrapAndInvitationTest extends TestCase
             PrivilegedSecurityToken::PURPOSE_SETUP,
             null,
         );
-        $this->syncSessionCookie($this->postJson('/admin/setup/exchange', [
-            'token' => $issued['raw_token'],
-        ]));
+        $completionProof = $this->exchangeSetupProof($issued['raw_token']);
         $issued['token']->forceFill(['used_at' => now()])->save();
         Log::spy();
 
         $this->post('/admin/setup/complete', [
+            'completion_proof' => $completionProof,
             'password' => 'LongEnough-Setup1!',
             'password_confirmation' => 'LongEnough-Setup1!',
         ])->assertRedirect('/admin/setup');
@@ -363,6 +429,7 @@ final class PrivilegedBootstrapAndInvitationTest extends TestCase
                 && ($context['exception_class'] ?? null) === \InvalidArgumentException::class
                 && ! array_key_exists('password', $context)
                 && ! array_key_exists('password_confirmation', $context)
+                && ! array_key_exists('completion_proof', $context)
                 && ! array_key_exists('exception_message', $context);
         });
     }
@@ -430,8 +497,9 @@ final class PrivilegedBootstrapAndInvitationTest extends TestCase
         );
         $rawToken = $issued['raw_token'];
 
-        $this->syncSessionCookie($this->postJson('/admin/setup/exchange', ['token' => $rawToken]));
+        $completionProof = $this->exchangeSetupProof($rawToken);
         $this->post('/admin/setup/complete', [
+            'completion_proof' => $completionProof,
             'password' => 'LongEnough-Setup1!',
             'password_confirmation' => 'LongEnough-Setup1!',
         ])->assertRedirect('/admin/mfa/setup');
@@ -464,12 +532,12 @@ final class PrivilegedBootstrapAndInvitationTest extends TestCase
             ->assertUnprocessable()
             ->assertJson(['message' => 'The setup link is invalid or expired.']);
 
-        $this->postJson('/admin/setup/exchange', ['token' => $rawToken])->assertOk();
-        $this->postJson('/admin/setup/exchange', ['token' => $rawToken])
-            ->assertOk();
+        $completionProof = $this->exchangeSetupProof($rawToken);
+        $this->exchangeSetupProof($rawToken);
 
         $pending->forceFill(['status' => SuperAdmin::STATUS_ACTIVE])->save();
         $this->postJson('/admin/setup/complete', [
+            'completion_proof' => $completionProof,
             'password' => 'LongEnough-Setup1!',
             'password_confirmation' => 'LongEnough-Setup1!',
         ])->assertUnprocessable();
@@ -533,5 +601,19 @@ final class PrivilegedBootstrapAndInvitationTest extends TestCase
         if ($cookie !== null) {
             $this->withCredentials()->withUnencryptedCookie($cookie->getName(), $cookie->getValue());
         }
+    }
+
+    private function exchangeSetupProof(string $rawToken): string
+    {
+        $response = $this->postJson('/admin/setup/exchange', ['token' => $rawToken]);
+        $response->assertOk()->assertJsonStructure(['authorized', 'completion_proof']);
+        $completionProof = $response->json('completion_proof');
+
+        self::assertIsString($completionProof);
+        self::assertNotSame('', $completionProof);
+        self::assertNotSame($rawToken, $completionProof);
+        self::assertNull(session('privileged_setup_authorization'));
+
+        return $completionProof;
     }
 }

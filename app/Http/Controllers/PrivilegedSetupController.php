@@ -13,6 +13,7 @@ use App\Services\PrivilegedAudit;
 use App\Services\PrivilegedMfaService;
 use App\Services\PrivilegedSecurityTokenService;
 use App\Services\PrivilegedSessionService;
+use App\Services\PrivilegedSetupProofService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -27,6 +28,7 @@ final class PrivilegedSetupController extends Controller
         private readonly PrivilegedMfaService $mfa,
         private readonly PrivilegedSecurityTokenService $tokens,
         private readonly PrivilegedSessionService $sessions,
+        private readonly PrivilegedSetupProofService $setupProofs,
         private readonly PrivilegedAudit $audit,
     ) {
     }
@@ -48,15 +50,11 @@ final class PrivilegedSetupController extends Controller
                 throw new InvalidArgumentException('Invalid security token.');
             }
 
-            $request->session()->regenerate();
-            $request->session()->put([
-                'privileged_setup_authorization' => [
-                    'token_id' => (int) $authorization['token_id'],
-                    'subject_id' => (int) $authorization['subject_id'],
-                    'purpose' => PrivilegedSecurityToken::PURPOSE_SETUP,
-                    'authorized_at' => now()->timestamp,
-                ],
-            ]);
+            $completionProof = $this->setupProofs->issue(
+                tokenId: $authorization['token_id'],
+                subjectId: $authorization['subject_id'],
+                tokenExpiresAt: $authorization['expires_at'],
+            );
             $this->audit->privilegedSetupExchangeSucceeded($request, $subject);
         } catch (InvalidArgumentException) {
             $this->audit->privilegedSetupExchangeFailed($request);
@@ -64,18 +62,22 @@ final class PrivilegedSetupController extends Controller
             return $this->invalidSetupLink($request);
         }
 
-        // Persist the rotated authorization session before the browser can submit the password step.
-        $request->session()->save();
-
-        return response()->json(['authorized' => true]);
+        return response()->json([
+            'authorized' => true,
+            'completion_proof' => $completionProof,
+        ]);
     }
 
     public function completePassword(CompleteSetupPasswordRequest $request)
     {
-        $authorization = $this->setupAuthorization($request);
-        if ($authorization === null) {
-            Log::warning('Privileged setup authorization missing from session', [
+        try {
+            $authorization = $this->setupProofs->authorization(
+                (string) $request->validated('completion_proof'),
+            );
+        } catch (InvalidArgumentException $exception) {
+            Log::warning('Privileged setup completion proof rejected', [
                 'correlation_id' => $request->attributes->get('privileged_audit_correlation_id'),
+                'exception_class' => $exception::class,
             ]);
 
             return $this->invalidSetupLink($request);
@@ -135,7 +137,6 @@ final class PrivilegedSetupController extends Controller
             return $this->setupCompletionFailed($request);
         }
 
-        $request->session()->forget('privileged_setup_authorization');
         $request->session()->regenerate();
         Auth::guard('super_admin')->login($admin, false);
         $request->session()->put([
@@ -291,55 +292,6 @@ final class PrivilegedSetupController extends Controller
         $this->sessions->establish($request, $completedAdmin);
 
         return redirect()->intended(route('admin.system-monitoring'));
-    }
-
-    /** @return array{token_id: int, subject_id: int, purpose: string, authorized_at: int}|null */
-    private function setupAuthorization(Request $request): ?array
-    {
-        $authorization = $request->session()->get('privileged_setup_authorization');
-        $tokenId = is_array($authorization)
-            ? $this->positiveSessionInteger($authorization['token_id'] ?? null)
-            : null;
-        $subjectId = is_array($authorization)
-            ? $this->positiveSessionInteger($authorization['subject_id'] ?? null)
-            : null;
-        $authorizedAt = is_array($authorization)
-            ? $this->positiveSessionInteger($authorization['authorized_at'] ?? null)
-            : null;
-        $purpose = is_array($authorization)
-            ? ($authorization['purpose'] ?? null)
-            : null;
-
-        if (! is_array($authorization)
-            || $tokenId === null
-            || $subjectId === null
-            || $authorizedAt === null
-            || $purpose !== PrivilegedSecurityToken::PURPOSE_SETUP
-            || $authorizedAt < now()->subMinutes((int) config('privileged_security.setup_token_minutes', 1440))->timestamp) {
-            return null;
-        }
-
-        return [
-            'token_id' => $tokenId,
-            'subject_id' => $subjectId,
-            'purpose' => $purpose,
-            'authorized_at' => $authorizedAt,
-        ];
-    }
-
-    private function positiveSessionInteger(mixed $value): ?int
-    {
-        if (is_int($value)) {
-            return $value > 0 ? $value : null;
-        }
-
-        if (! is_string($value) || preg_match('/^[1-9][0-9]*$/D', $value) !== 1) {
-            return null;
-        }
-
-        $parsed = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
-
-        return is_int($parsed) ? $parsed : null;
     }
 
     private function isSetupStage(Request $request, SuperAdmin $admin): bool
