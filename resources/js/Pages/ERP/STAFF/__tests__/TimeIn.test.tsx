@@ -1,5 +1,5 @@
 import type { PropsWithChildren } from 'react';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import TimeIn from '../TimeIn';
 
@@ -36,8 +36,10 @@ afterEach(() => {
     vi.unstubAllGlobals();
 });
 
-it('keeps the attendance page mobile-safe and the live clock accessible', () => {
+it('keeps the attendance page mobile-safe and the live clock accessible', async () => {
     render(<TimeIn />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
 
     expect(screen.getByTestId('time-in-page')).toHaveClass('min-h-screen', 'overflow-x-hidden');
     expect(screen.getByRole('heading', { name: 'Attendance Tracking' })).toHaveClass(
