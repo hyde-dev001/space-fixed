@@ -8,10 +8,9 @@ use App\Enums\PrivilegedDeliveryType;
 use App\Jobs\SendPrivilegedWorkflowMail;
 use App\Models\ShopDocument;
 use App\Models\ShopOwner;
-use App\Models\ShopOwnerModule;
 use App\Models\SuperAdmin;
-use App\Services\PrivilegedAudit;
 use App\Services\BusinessAccessControlService;
+use App\Services\PrivilegedAudit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
@@ -277,11 +276,25 @@ final class RegistrationDecisionWorkflowTest extends TestCase
             $mock->shouldReceive('shopRegistrationApproved')
                 ->once()
                 ->andThrow(new \RuntimeException('audit unavailable'));
+            $mock->shouldReceive('correlationId')
+                ->once()
+                ->andReturn('11111111-1111-4111-8111-111111111111');
+            $mock->shouldReceive('privilegedWorkflowFailed')
+                ->once();
         });
 
-        $this->actingAsCompletedPrivileged($admin)
-            ->postJson(route('admin.registrations.approve', $owner), $this->approvalPayload($owner))
-            ->assertStatus(500);
+        $response = $this->actingAsCompletedPrivileged($admin)
+            ->withHeaders([
+                'Accept' => 'text/html, application/xhtml+xml',
+                'X-Inertia' => 'true',
+                'X-Requested-With' => 'XMLHttpRequest',
+            ])
+            ->post(route('admin.registrations.approve', $owner), $this->approvalPayload($owner));
+
+        $response->assertStatus(500)
+            ->assertHeader('X-Correlation-ID')
+            ->assertJsonPath('code', 'shop_registration_approval_error');
+        $this->assertStringNotContainsString('audit unavailable', $response->getContent());
 
         $this->assertDatabaseHas('shop_owners', ['id' => $owner->id, 'status' => 'pending']);
         $this->assertSame(0, ShopDocument::query()->where('shop_owner_id', $owner->id)->where('status', 'approved')->count());
@@ -349,8 +362,8 @@ final class RegistrationDecisionWorkflowTest extends TestCase
     }
 
     /**
-     * @param array<int, string> $types
-     * @param array<string, array{stored?: bool, status?: string, type?: string}> $overrides
+     * @param  array<int, string>  $types
+     * @param  array<string, array{stored?: bool, status?: string, type?: string}>  $overrides
      */
     private function createDocuments(ShopOwner $owner, array $types = [], array $overrides = []): void
     {
@@ -450,7 +463,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
     }
 
     /**
-     * @param array<int, string> $requiredPayloadKeys
+     * @param  array<int, string>  $requiredPayloadKeys
      */
     private function assertDeliveryQueued(
         PrivilegedDeliveryType $type,
