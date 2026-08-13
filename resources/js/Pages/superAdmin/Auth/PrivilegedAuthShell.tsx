@@ -126,6 +126,7 @@ export default function PrivilegedAuthShell({
 interface BearerExchangeState {
   exchanging: boolean;
   authorized: boolean;
+  completionProof?: string;
   error?: string;
 }
 
@@ -165,8 +166,15 @@ export function usePrivilegedBearerExchange(endpoint: string): BearerExchangeSta
     axios.post(endpoint, { token: rawToken }, {
       headers: { Accept: 'application/json' },
       withCredentials: true,
-    }).then(() => {
-      if (mounted) setState({ exchanging: false, authorized: true });
+    }).then((response) => {
+      if (!mounted) return;
+
+      const completionProof = typeof response.data?.completion_proof === 'string'
+        && response.data.completion_proof !== ''
+        ? response.data.completion_proof
+        : undefined;
+
+      setState({ exchanging: false, authorized: true, completionProof });
     }).catch((error: unknown) => {
       if (mounted) {
         setState({
