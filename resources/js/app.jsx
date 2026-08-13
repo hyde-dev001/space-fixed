@@ -71,12 +71,13 @@ createInertiaApp({
     setup({ el, App, props }) {
         const root = createRoot(el);
         
-        // UserSide pages use the customer navigation and cart providers.
-        const isUserSidePage = props.initialPage.component.startsWith('UserSide/');
-        syncPagePresentation(props.initialPage.component ?? '');
+        const component = props.initialPage.component ?? '';
+        const isUserSidePage = component.startsWith('UserSide/');
+        const usesCustomerCart = isUserSidePage && !component.startsWith('UserSide/Auth/');
+        syncPagePresentation(component);
 
         // Always wrap with QueryProvider for global state management
-        if (isUserSidePage) {
+        if (usesCustomerCart) {
             root.render(
                 <QueryProvider>
                     <ThemeProvider>
@@ -86,14 +87,20 @@ createInertiaApp({
                     </ThemeProvider>
                 </QueryProvider>
             );
+        } else if (isUserSidePage) {
+            root.render(
+                <QueryProvider>
+                    <ThemeProvider>
+                        <App {...props} />
+                    </ThemeProvider>
+                </QueryProvider>
+            );
         } else {
             root.render(
                 <QueryProvider>
                     <ThemeProvider>
                         <SidebarProvider>
-                            <CartProvider>
-                                <App {...props} />
-                            </CartProvider>
+                            <App {...props} />
                         </SidebarProvider>
                     </ThemeProvider>
                 </QueryProvider>
