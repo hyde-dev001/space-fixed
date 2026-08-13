@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Execution discipline:** Implement route-mutating tasks strictly sequentially. Subagents may assist with read-only review, dependency scans, test analysis, or dead-code inspection, but no parallel implementation may edit `routes/web.php`, route names, frontend callers, or `PhaseSevenStructuralBoundaryTest.php`.
+
 **Status:** DRAFT FOR APPROVAL
 
 **Goal:** Remove duplicate privileged runtime ownership after Phases 0-6, make `/admin` the single canonical mutation surface, split the monolithic controller into focused owners, and retire superseded document and registration paths without changing secured behavior.
@@ -22,12 +24,15 @@
 2. `/admin` is the canonical privileged prefix. No first-party frontend, notification, controller, or test calls a `/superAdmin` mutation.
 3. Temporary compatibility consists only of named `GET|HEAD` redirects to canonical pages. Redirects preserve relevant path parameters and query strings; no compatibility closure performs a query or mutation.
 4. `SuperAdminController`, `SuperAdminUserManagementController`, and `ShopRegistrationController` are deleted after their live behavior moves to focused owners or is proven obsolete.
-5. Registration, administrator management, registered shops, users, plans, subscriptions, flags, documents, notifications, and audit each have one runtime owner.
+5. Every privileged runtime responsibility has exactly one authoritative owner; no semantic operation is duplicated across controllers or route groups. Document creation, renewal submission, registration review, renewal review, and private-byte access remain intentionally separate focused responsibilities.
 6. Legacy `/api/shop/register`, `/api/shop/register-full`, and `/shop/register-full` writes are removed. `/shop/register` may remain only as a safe GET redirect to the canonical registration form.
 7. No current or historical `ShopDocument` row/file is overwritten or deleted. DTI/SEC distinction, legacy DTI/SEC continuity, stable supporting slots, reviewer verification, and renewal promotion remain unchanged.
 8. `hr:check-document-expiry` remains HR-only and `shop-documents:send-expiry-reminders` remains shop-compliance-only. Neither command calls the other or shares a generic expiry service.
 9. Runtime privileged operations write only through `PrivilegedAudit`. The bounded legacy audit importer remains available as historical reconciliation tooling and is not mistaken for a runtime writer.
 10. No schema migration, permission UI, generic repository, base-controller hierarchy, route compatibility package, or new dependency is introduced.
+11. Controller extraction must not change existing `403`, `404`, `409`, `422`, or sanitized `500` behavior solely because of route-model binding. Service-owned resolution remains service-owned where locking, object scope, or conflict semantics require it.
+12. Every commit is green. A failing test is run to prove the intended red state, then committed only with the implementation that makes its relevant scope pass.
+13. Whenever a task changes route names consumed by first-party frontend code, regenerate `resources/js/ziggy.js` before that task's frontend verification and commit.
 
 ### Canonical route contract
 
@@ -83,6 +88,8 @@ After all first-party callers move, keep one compact compatibility group for the
 
 Each alias must use the same authentication/capability boundary as its target when privileged. It must be `GET|HEAD` only, preserve the query string, and redirect without loading domain data. Phase 8 owns evidence-based removal of these final aliases.
 
+Compatibility actions are behavior-only redirects: they must not resolve models, call a domain controller/service, transform payloads, or make business decisions. Before declaring an alias unused, inspect both source references and persisted `notifications.action_url` values. Phase 7 records persisted-link counts/categories but does not rewrite historical notification URLs.
+
 ### Explicit non-goals
 
 - No route versioning layer or configurable alias registry.
@@ -91,6 +98,21 @@ Each alias must use the same authentication/capability boundary as its target wh
 - No pagination/index/performance expansion; Phase 8 owns measured scale work.
 - No deletion of legacy audit rows, import provenance, historical document rows/files, or reconciliation commands.
 - No rename of the `super_admin` guard/model or the React `superAdmin` page directory merely for casing/style.
+
+### Execution checkpoints
+
+```text
+Phase 7A — ownership extraction
+Tasks 1-5, sequential and green after each commit
+        ↓
+Ownership checkpoint
+one canonical mutation + security/response parity + workflow tests green
+        ↓
+Phase 7B — retirement
+Tasks 6-9, sequential deletion, evidence, and final verification
+```
+
+These are diagnostic checkpoints within one roadmap phase, not separate product phases.
 
 ---
 
@@ -117,8 +139,11 @@ Each alias must use the same authentication/capability boundary as its target wh
 - `app/Http/Controllers/superAdmin/UserInterventionController.php` — canonical user list and user lifecycle endpoints.
 - `app/Http/Controllers/superAdmin/SubscriptionManagementController.php` — read-only subscription/plan management payload.
 - `app/Http/Controllers/superAdmin/PremiumPlanController.php` — premium-plan mutations through `PremiumPlanManagementService`.
-- `app/Http/Controllers/Concerns/RespondsToAccountLifecycle.php` — HTTP-only success/error mapping shared by the shop and user controllers; no queries or business rules.
 - `tests/Feature/SuperAdmin/PhaseSevenStructuralBoundaryTest.php` — canonical ownership, legacy alias, mutation uniqueness, dead-handler, audit, and expiry-boundary contract.
+
+### Create only if the measured extraction justifies it
+
+- `app/Http/Controllers/Concerns/RespondsToAccountLifecycle.php` — shared HTTP-only response mapping, but only if the two extracted controllers would otherwise contain substantial identical mapping. Delete/omit it during ponytail review if it merely saves a small catch block. It may contain no queries, authorization, mutations, audits, or shop/user business knowledge.
 
 ### Modify
 
@@ -140,7 +165,7 @@ Each alias must use the same authentication/capability boundary as its target wh
 - `resources/js/Pages/superAdmin/AdminTeam/AdminManagement.tsx` — canonical administrator endpoints.
 - `resources/js/Pages/superAdmin/AdminTeam/CreateAdmin.tsx` — canonical administrator store/index routes.
 - `resources/js/Pages/superAdmin/Shops/ShopOwnerRegistrationView.tsx` — canonical registration decision endpoints.
-- `resources/js/ziggy.js` — regenerate from Laravel routes; never hand-edit.
+- `resources/js/ziggy.js` — regenerate after each frontend-consumed route-name change and once at final verification; never hand-edit.
 - `tests/Feature/SuperAdmin/PhaseZeroAuthorizationTest.php`
 - `tests/Feature/SuperAdmin/PhaseOneRouteSecurityTest.php`
 - `tests/Feature/SuperAdmin/PhaseTwoBaselineContractTest.php`
@@ -202,44 +227,44 @@ rg -n "AuditLog::create|activity\(\)" app/Http/Controllers/SuperAdminController.
 
 Record route counts, legacy mutation routes, monolith public-method count, and privileged legacy-writer count. Do not claim performance improvement; this phase measures ownership/complexity only.
 
-- [ ] **Step 2: Write the canonical route-map test**
+- [ ] **Step 2: Add passing baseline characterization helpers/tests**
 
-Assert every route in the canonical contract exists with exact method, URI, action class/method, middleware, and route name. Include capability checks and existing `privileged.recent` requirements for administrator security, archive/restore, and financial interventions.
+Create reusable route assertions and characterize the current middleware, response statuses, audit side effects, document immutability, and distinct command signatures without asserting future owners yet. Prefer route/action/middleware and behavioral outcomes over parsing implementation text.
 
-- [ ] **Step 3: Write mutation-uniqueness tests**
+- [ ] **Step 3: Add only the first failing administrator-owner slice**
 
-Iterate the route collection by semantic action and assert exactly one mutation route for administrator invitations/lifecycle, registration decisions, shop/user lifecycle, flag decisions, plans, subscription interventions, and document renewals. Assert every `/superAdmin/*` route and every registration compatibility route has only `GET|HEAD` or is absent.
+Assert the canonical administrator routes from Task 2, their exact methods/URIs/actions/middleware, and mutation uniqueness. Include existing `privileged.recent`, lower-Admin denial, self-management, and final-Super-Admin behavior. Do not add future Task 3-7 ownership assertions yet; expand this same test file immediately before each owning implementation.
 
-- [ ] **Step 4: Write focused-owner and dead-handler tests**
+- [ ] **Step 4: Add compatibility redirect parity tests**
 
-Assert canonical actions do not reference `SuperAdminController`, `SuperAdminUserManagementController`, or `ShopRegistrationController`. Assert the shop/user `activate` forwarding handlers are absent while the distinct administrator activation transition remains; canonical compatibility belongs at the safe GET route layer, not as a second mutation handler.
-
-- [ ] **Step 5: Write document/audit/expiry separation tests**
-
-Assert:
+For the aliases introduced by each task, test target-equivalent behavior:
 
 ```text
-shop document mutations -> lifecycle/review services only
-shop expiry command -> ShopDocumentReminderService only
-HR expiry command -> EmployeeDocument only
-runtime privileged paths -> PrivilegedAudit, never AuditLog::create
-legacy audit import -> retained and read/import-only
+allowed Admin/Super Admin -> redirect
+insufficient capability -> 403
+unauthenticated -> canonical authentication behavior
+suspended/inactive/setup/not-MFA -> same denial boundary as target
+?page=3&status=suspended -> Location preserves both query values
+/admin/shops/123/details -> /admin/shops/123
 ```
 
-- [ ] **Step 6: Run the red structural suite**
+Also assert each compatibility action is a redirect closure/action rather than a domain controller, and has only `GET|HEAD`. These tests verify behavior and route metadata; they must not inspect closure source text.
+
+- [ ] **Step 5: Keep source-pattern checks as execution evidence, not brittle PHPUnit contracts**
+
+Critical functional tests must prove authorization, state, audit records, notifications, files, and error semantics. Use the final `rg` scans to detect bypasses such as direct legacy audit writes or retired controllers. Do not make PHPUnit assert internal service names or assume how `PrivilegedAudit` persists its own ledger.
+
+- [ ] **Step 6: Run the first red administrator slice**
 
 ```powershell
 php artisan test tests/Feature/SuperAdmin/PhaseSevenStructuralBoundaryTest.php tests/Feature/SuperAdmin/PhaseZeroAuthorizationTest.php tests/Feature/SuperAdmin/PhaseOneRouteSecurityTest.php tests/Feature/SuperAdmin/PhaseFourSurfaceBoundaryTest.php
 ```
 
-Expected: new canonical ownership assertions fail against the current monolith and `/superAdmin` mutations; unchanged security assertions continue passing.
+Expected: baseline characterizations pass and only the new Task 2 administrator ownership assertions fail for the expected old route/controller names.
 
-- [ ] **Step 7: Commit the failing boundary tests**
+- [ ] **Step 7: Keep the expected-red changes local and continue directly to Task 2**
 
-```powershell
-git add -- tests/Feature/SuperAdmin/PhaseSevenStructuralBoundaryTest.php tests/Feature/SuperAdmin/PhaseZeroAuthorizationTest.php tests/Feature/SuperAdmin/PhaseOneRouteSecurityTest.php tests/Feature/SuperAdmin/PhaseFourSurfaceBoundaryTest.php
-git commit -m "test: define phase 7 structural boundaries"
-```
+Do not commit the failing tests alone. Task 2 must make this slice green, rerun it, and commit the tests with the administrator implementation. For Tasks 3-7, repeat the same red-then-green pattern one ownership slice at a time so every commit remains bisectable and green.
 
 ---
 
@@ -251,8 +276,10 @@ git commit -m "test: define phase 7 structural boundaries"
 - Modify: `routes/web.php`
 - Modify: `resources/js/Pages/superAdmin/AdminTeam/AdminManagement.tsx`
 - Modify: `resources/js/Pages/superAdmin/AdminTeam/CreateAdmin.tsx`
+- Modify: `resources/js/ziggy.js`
 - Modify: `tests/Feature/SuperAdmin/AdministratorIdentityLifecycleTest.php`
 - Modify: `tests/Feature/SuperAdmin/PrivilegedBootstrapAndInvitationTest.php`
+- Modify: `tests/Feature/SuperAdmin/PhaseSevenStructuralBoundaryTest.php`
 
 - [ ] **Step 1: Add failing canonical administrator route tests**
 
@@ -270,7 +297,15 @@ Move the administrator list/create pages and thin HTTP orchestration to `Adminis
 
 Register only the canonical administrator mutations. Temporarily keep old administrator GET paths as query-preserving redirects; do not keep old mutation aliases. Update page submissions, redirects, and tests to canonical names.
 
-- [ ] **Step 5: Verify administrator behavior**
+- [ ] **Step 5: Regenerate frontend route metadata**
+
+```powershell
+php artisan ziggy:generate resources/js/ziggy.js
+```
+
+Confirm `admin.administrators.*` is present and removed mutation names are absent before running frontend or committing.
+
+- [ ] **Step 6: Verify administrator behavior**
 
 ```powershell
 php artisan test tests/Feature/SuperAdmin/AdministratorIdentityLifecycleTest.php tests/Feature/SuperAdmin/PrivilegedBootstrapAndInvitationTest.php tests/Feature/SuperAdmin/PrivilegedRecentReauthenticationTest.php tests/Feature/SuperAdmin/PhaseSevenStructuralBoundaryTest.php
@@ -278,10 +313,10 @@ php artisan test tests/Feature/SuperAdmin/AdministratorIdentityLifecycleTest.php
 
 Expected: PASS; invitation delivery remains after commit, self/final-Super-Admin protections remain enforced, and only canonical mutations exist.
 
-- [ ] **Step 6: Commit administrator extraction**
+- [ ] **Step 7: Commit administrator extraction with its now-green boundary tests**
 
 ```powershell
-git add -- app/Http/Controllers/superAdmin/AdministratorManagementController.php app/Services/AdministratorIdentityService.php routes/web.php resources/js/Pages/superAdmin/AdminTeam/AdminManagement.tsx resources/js/Pages/superAdmin/AdminTeam/CreateAdmin.tsx tests/Feature/SuperAdmin/AdministratorIdentityLifecycleTest.php tests/Feature/SuperAdmin/PrivilegedBootstrapAndInvitationTest.php tests/Feature/SuperAdmin/PhaseSevenStructuralBoundaryTest.php
+git add -- app/Http/Controllers/superAdmin/AdministratorManagementController.php app/Services/AdministratorIdentityService.php routes/web.php resources/js/Pages/superAdmin/AdminTeam/AdminManagement.tsx resources/js/Pages/superAdmin/AdminTeam/CreateAdmin.tsx resources/js/ziggy.js tests/Feature/SuperAdmin/AdministratorIdentityLifecycleTest.php tests/Feature/SuperAdmin/PrivilegedBootstrapAndInvitationTest.php tests/Feature/SuperAdmin/PhaseSevenStructuralBoundaryTest.php tests/Feature/SuperAdmin/PhaseZeroAuthorizationTest.php tests/Feature/SuperAdmin/PhaseOneRouteSecurityTest.php tests/Feature/SuperAdmin/PhaseFourSurfaceBoundaryTest.php
 git commit -m "refactor: isolate administrator management"
 ```
 
@@ -290,24 +325,25 @@ git commit -m "refactor: isolate administrator management"
 ## Task 3: Extract Registered-Shop and User Intervention Owners
 
 **Files:**
-- Create: `app/Http/Controllers/Concerns/RespondsToAccountLifecycle.php`
+- Create if justified: `app/Http/Controllers/Concerns/RespondsToAccountLifecycle.php`
 - Create: `app/Http/Controllers/superAdmin/RegisteredShopController.php`
 - Create: `app/Http/Controllers/superAdmin/UserInterventionController.php`
 - Modify: `routes/web.php`
 - Modify: `resources/js/Pages/superAdmin/Shops/RegisteredShops.tsx`
 - Modify: `resources/js/Pages/superAdmin/Users/SuperAdminUserManagement.tsx`
 - Modify: `resources/js/Pages/superAdmin/Users/__tests__/SuperAdminUserLifecycle.test.tsx`
+- Modify: `resources/js/ziggy.js`
 - Modify: `tests/Feature/SuperAdmin/AccountLifecycleWorkflowTest.php`
 - Modify: `tests/Feature/SuperAdmin/PrivateSensitiveDocumentAccessTest.php`
 - Modify: `tests/Feature/SuperAdmin/PhaseTwoBaselineContractTest.php`
 
-- [ ] **Step 1: Characterize both current user-list payloads before choosing one**
+- [ ] **Step 1: Add the failing shop/user owner slice and characterize both user payloads**
 
-Write tests for the actual approved user scope, filters, pagination shape, employee relation, lifecycle fields, and private-ID URL. Use the current active sidebar page as the contract; do not merge incompatible `SuperAdminController::showUserManagement()` and `SuperAdminUserManagementController::index()` payloads by unioning every field.
+Expand `PhaseSevenStructuralBoundaryTest` with only the Task 3 canonical shop/user routes, mutation uniqueness, redirect parity, and owner assertions; run them to confirm the expected old-owner failures. Also write behavioral tests for the actual approved user scope, filters, pagination shape, employee relation, lifecycle fields, private-ID URL, and existing error statuses. Use the current active sidebar page as the contract; do not merge incompatible `SuperAdminController::showUserManagement()` and `SuperAdminUserManagementController::index()` payloads by unioning every field.
 
-- [ ] **Step 2: Extract HTTP-only lifecycle response mapping**
+- [ ] **Step 2: Measure lifecycle response duplication before extracting a concern**
 
-Move the existing success/not-found/conflict/validation/unexpected HTTP mapping into `RespondsToAccountLifecycle`. The concern may call `PrivilegedFailureResponse`, but it must not query models, authorize capabilities, mutate state, audit, or know whether the target is a shop or user.
+Compare the final shop/user controller mappings after outlining both. Create `RespondsToAccountLifecycle` only if it removes substantial identical success/not-found/conflict/validation/unexpected HTTP code. If it saves only a small catch block, keep the mapping local and omit the concern. If created, it may call `PrivilegedFailureResponse` but must not query models, authorize capabilities, mutate state, audit, or know whether the target is a shop or user.
 
 - [ ] **Step 3: Create the user owner**
 
@@ -317,11 +353,21 @@ Move the selected canonical list query and user lifecycle orchestration into `Us
 
 Move registered-shop list/detail and lifecycle orchestration into `RegisteredShopController`. Preserve private document URLs through `admin.shop-documents.show`, lifecycle/archive semantics, and the existing lightweight-list/detail-on-demand boundary. Do not add Phase 8 pagination or query tuning here.
 
+For both controllers, preserve existing `403`, `404`, `409`, `422`, and sanitized `500` outcomes. Keep target-ID resolution inside `AccountLifecycleService` wherever eager route-model binding would bypass its lock, scope, not-found, or conflict handling.
+
 - [ ] **Step 5: Register canonical routes and migrate callers**
 
 Move GET pages to `/admin/users` and `/admin/shops`; keep the existing semantic mutation endpoints beneath those resources. Update all frontend links and tests. Old page/detail GETs become redirects only after direct callers are gone.
 
-- [ ] **Step 6: Verify lifecycle, private access, and UI contracts**
+- [ ] **Step 6: Regenerate frontend route metadata**
+
+```powershell
+php artisan ziggy:generate resources/js/ziggy.js
+```
+
+Confirm canonical shop/user names exist and retired `activate` mutation aliases are absent.
+
+- [ ] **Step 7: Verify lifecycle, private access, and UI contracts**
 
 ```powershell
 php artisan test tests/Feature/SuperAdmin/AccountLifecycleWorkflowTest.php tests/Feature/SuperAdmin/PrivateSensitiveDocumentAccessTest.php tests/Feature/SuperAdmin/PhaseTwoBaselineContractTest.php tests/Feature/SuperAdmin/PhaseSevenStructuralBoundaryTest.php
@@ -330,10 +376,13 @@ pnpm exec vitest run resources/js/Pages/superAdmin/Users/__tests__/SuperAdminUse
 
 Expected: PASS; lifecycle state/audit behavior and private document authorization are unchanged.
 
-- [ ] **Step 7: Commit account-owner extraction**
+- [ ] **Step 8: Run the ponytail decision and commit account-owner extraction**
+
+Delete/omit `RespondsToAccountLifecycle` if the completed controllers do not demonstrate meaningful identical HTTP-only code. Then stage the required files; conditionally stage the concern only when it exists:
 
 ```powershell
-git add -- app/Http/Controllers/Concerns/RespondsToAccountLifecycle.php app/Http/Controllers/superAdmin/RegisteredShopController.php app/Http/Controllers/superAdmin/UserInterventionController.php routes/web.php resources/js/Pages/superAdmin/Shops/RegisteredShops.tsx resources/js/Pages/superAdmin/Users/SuperAdminUserManagement.tsx resources/js/Pages/superAdmin/Users/__tests__/SuperAdminUserLifecycle.test.tsx tests/Feature/SuperAdmin/AccountLifecycleWorkflowTest.php tests/Feature/SuperAdmin/PrivateSensitiveDocumentAccessTest.php tests/Feature/SuperAdmin/PhaseTwoBaselineContractTest.php tests/Feature/SuperAdmin/PhaseSevenStructuralBoundaryTest.php
+git add -- app/Http/Controllers/superAdmin/RegisteredShopController.php app/Http/Controllers/superAdmin/UserInterventionController.php routes/web.php resources/js/Pages/superAdmin/Shops/RegisteredShops.tsx resources/js/Pages/superAdmin/Users/SuperAdminUserManagement.tsx resources/js/Pages/superAdmin/Users/__tests__/SuperAdminUserLifecycle.test.tsx resources/js/ziggy.js tests/Feature/SuperAdmin/AccountLifecycleWorkflowTest.php tests/Feature/SuperAdmin/PrivateSensitiveDocumentAccessTest.php tests/Feature/SuperAdmin/PhaseTwoBaselineContractTest.php tests/Feature/SuperAdmin/PhaseSevenStructuralBoundaryTest.php
+if (Test-Path 'app/Http/Controllers/Concerns/RespondsToAccountLifecycle.php') { git add -- app/Http/Controllers/Concerns/RespondsToAccountLifecycle.php }
 git commit -m "refactor: isolate privileged account owners"
 ```
 
@@ -346,6 +395,7 @@ git commit -m "refactor: isolate privileged account owners"
 - Create: `app/Http/Controllers/superAdmin/PremiumPlanController.php`
 - Modify: `routes/web.php`
 - Modify: `resources/js/Pages/superAdmin/Shops/SubscriptionManagement.tsx`
+- Modify: `resources/js/ziggy.js`
 - Modify: `tests/Feature/AdminPremiumPlanManagementTest.php`
 - Modify: `tests/Feature/SuperAdmin/PremiumPlanWorkflowTest.php`
 - Modify: `tests/Feature/SuperAdmin/SubscriptionInterventionContainmentTest.php`
@@ -368,7 +418,15 @@ Move create/update/archive/reactivate methods to `PremiumPlanController`, retain
 
 Replace old `subscription-management` and `premium-plans` route names/URLs with canonical names. Keep `/admin/subscription-management` as GET redirect only; no old plan mutation route remains.
 
-- [ ] **Step 5: Verify billing containment**
+- [ ] **Step 5: Regenerate frontend route metadata**
+
+```powershell
+php artisan ziggy:generate resources/js/ziggy.js
+```
+
+Confirm `admin.subscriptions.index` and `admin.plans.*` exist and retired plan mutation names are absent.
+
+- [ ] **Step 6: Verify billing containment**
 
 ```powershell
 php artisan test tests/Feature/AdminPremiumPlanManagementTest.php tests/Feature/SuperAdmin/PremiumPlanWorkflowTest.php tests/Feature/SuperAdmin/SubscriptionInterventionContainmentTest.php tests/Feature/SuperAdmin/PrivilegedFailureAuditTest.php tests/Feature/SuperAdmin/PrivilegedTransactionFailureInjectionTest.php tests/Feature/SuperAdmin/PhaseFiveBillingBoundaryTest.php
@@ -376,10 +434,10 @@ php artisan test tests/Feature/AdminPremiumPlanManagementTest.php tests/Feature/
 
 Expected: PASS; authoritative payment/refund history and provider intervention ownership are unchanged.
 
-- [ ] **Step 6: Commit billing controller extraction**
+- [ ] **Step 7: Commit billing controller extraction**
 
 ```powershell
-git add -- app/Http/Controllers/superAdmin/SubscriptionManagementController.php app/Http/Controllers/superAdmin/PremiumPlanController.php routes/web.php resources/js/Pages/superAdmin/Shops/SubscriptionManagement.tsx tests/Feature/AdminPremiumPlanManagementTest.php tests/Feature/SuperAdmin/PremiumPlanWorkflowTest.php tests/Feature/SuperAdmin/SubscriptionInterventionContainmentTest.php tests/Feature/SuperAdmin/PrivilegedFailureAuditTest.php tests/Feature/SuperAdmin/PrivilegedTransactionFailureInjectionTest.php tests/Feature/SuperAdmin/PhaseSevenStructuralBoundaryTest.php
+git add -- app/Http/Controllers/superAdmin/SubscriptionManagementController.php app/Http/Controllers/superAdmin/PremiumPlanController.php routes/web.php resources/js/Pages/superAdmin/Shops/SubscriptionManagement.tsx resources/js/ziggy.js tests/Feature/AdminPremiumPlanManagementTest.php tests/Feature/SuperAdmin/PremiumPlanWorkflowTest.php tests/Feature/SuperAdmin/SubscriptionInterventionContainmentTest.php tests/Feature/SuperAdmin/PrivilegedFailureAuditTest.php tests/Feature/SuperAdmin/PrivilegedTransactionFailureInjectionTest.php tests/Feature/SuperAdmin/PhaseSevenStructuralBoundaryTest.php
 git commit -m "refactor: isolate privileged billing controllers"
 ```
 
@@ -396,28 +454,41 @@ git commit -m "refactor: isolate privileged billing controllers"
 - Modify: `resources/js/Pages/superAdmin/Users/FlaggedAccounts.tsx`
 - Modify: `resources/js/Pages/superAdmin/Users/SuperAdminUserManagement.tsx`
 - Modify: `resources/js/Pages/superAdmin/Users/__tests__/FlaggedAccounts.test.tsx`
+- Modify: `resources/js/ziggy.js`
 - Modify: `tests/Feature/SuperAdmin/RegistrationDecisionWorkflowTest.php`
 - Modify: `tests/Feature/SuperAdmin/FlaggedAccountWorkflowTest.php`
 - Modify: `tests/Feature/Reports/ShopAndCustomerReportFlowTest.php`
 - Modify: `tests/Feature/SuperAdmin/PrivilegedPhaseThreeBoundaryTest.php`
 
-- [ ] **Step 1: Register canonical registration routes**
+- [ ] **Step 1: Add the failing registration/flag ownership slice**
+
+Expand `PhaseSevenStructuralBoundaryTest` and the workflow tests with only the Task 5 canonical route/action/middleware, redirect parity, mutation uniqueness, and old-mutation absence assertions. Run the focused tests and confirm failures identify the current `/superAdmin` ownership rather than unrelated workflow behavior.
+
+- [ ] **Step 2: Register canonical registration routes**
 
 Map queue and decisions to `admin.registrations.index|approve|reject`, preserving `review_registrations`, scoped private access, decision-service transactions, verified document metadata, idempotency, and `409` conflicts. Do not merge registration review and approved-shop renewal review.
 
-- [ ] **Step 2: Register canonical flagged-account routes**
+- [ ] **Step 3: Register canonical flagged-account routes**
 
 Move GET and POST routes under `/admin/flagged-accounts`, preserving `moderate_reports`, `FlaggedAccountModerationService`, suspension provenance, appeal creation, audit, and notification behavior.
 
-- [ ] **Step 3: Migrate every server and client caller**
+- [ ] **Step 4: Migrate every server and client caller**
 
 Update Inertia requests, sidebar/detail links, review-generated action URLs, tests, and notifications. Search both route names and literal strings; no first-party `/superAdmin/flagged-accounts` or old registration decision URL may remain.
 
-- [ ] **Step 4: Convert old GETs and remove old mutations**
+- [ ] **Step 5: Convert old GETs and remove old mutations**
 
 Keep old registration/flagged GET pages as capability-protected redirects. Remove all `/superAdmin` registration and flagged POST routes; submitting to them must return `404|405`, never redirect/replay the mutation.
 
-- [ ] **Step 5: Verify workflows and negative paths**
+- [ ] **Step 6: Regenerate frontend route metadata**
+
+```powershell
+php artisan ziggy:generate resources/js/ziggy.js
+```
+
+Confirm canonical registration/flag names are present and `/superAdmin` mutation names are absent.
+
+- [ ] **Step 7: Verify workflows and negative paths**
 
 ```powershell
 php artisan test tests/Feature/SuperAdmin/RegistrationDecisionWorkflowTest.php tests/Feature/SuperAdmin/FlaggedAccountWorkflowTest.php tests/Feature/Reports/ShopAndCustomerReportFlowTest.php tests/Feature/SuperAdmin/PrivilegedPhaseThreeBoundaryTest.php tests/Feature/SuperAdmin/PhaseSevenStructuralBoundaryTest.php
@@ -426,10 +497,10 @@ pnpm exec vitest run resources/js/Pages/superAdmin/Users/__tests__/FlaggedAccoun
 
 Expected: PASS; old mutation URLs are absent and canonical decisions preserve all transaction/audit behavior.
 
-- [ ] **Step 6: Commit canonical workflow routes**
+- [ ] **Step 8: Commit canonical workflow routes**
 
 ```powershell
-git add -- routes/web.php app/Http/Controllers/superAdmin/ShopOwnerRegistrationViewController.php app/Http/Controllers/ShopOwner/CustomerReviewController.php app/Http/Controllers/Api/CRM/CRMReviewController.php resources/js/Pages/superAdmin/Shops/ShopOwnerRegistrationView.tsx resources/js/Pages/superAdmin/Users/FlaggedAccounts.tsx resources/js/Pages/superAdmin/Users/SuperAdminUserManagement.tsx resources/js/Pages/superAdmin/Users/__tests__/FlaggedAccounts.test.tsx tests/Feature/SuperAdmin/RegistrationDecisionWorkflowTest.php tests/Feature/SuperAdmin/FlaggedAccountWorkflowTest.php tests/Feature/Reports/ShopAndCustomerReportFlowTest.php tests/Feature/SuperAdmin/PrivilegedPhaseThreeBoundaryTest.php tests/Feature/SuperAdmin/PhaseSevenStructuralBoundaryTest.php
+git add -- routes/web.php app/Http/Controllers/superAdmin/ShopOwnerRegistrationViewController.php app/Http/Controllers/ShopOwner/CustomerReviewController.php app/Http/Controllers/Api/CRM/CRMReviewController.php resources/js/Pages/superAdmin/Shops/ShopOwnerRegistrationView.tsx resources/js/Pages/superAdmin/Users/FlaggedAccounts.tsx resources/js/Pages/superAdmin/Users/SuperAdminUserManagement.tsx resources/js/Pages/superAdmin/Users/__tests__/FlaggedAccounts.test.tsx resources/js/ziggy.js tests/Feature/SuperAdmin/RegistrationDecisionWorkflowTest.php tests/Feature/SuperAdmin/FlaggedAccountWorkflowTest.php tests/Feature/Reports/ShopAndCustomerReportFlowTest.php tests/Feature/SuperAdmin/PrivilegedPhaseThreeBoundaryTest.php tests/Feature/SuperAdmin/PhaseSevenStructuralBoundaryTest.php
 git commit -m "refactor: canonicalize privileged review routes"
 ```
 
@@ -444,6 +515,7 @@ git commit -m "refactor: canonicalize privileged review routes"
 - Modify: `tests/Feature/LocationPolicy/ShopOwnerFullRegistrationLocationTest.php`
 - Modify: `tests/Feature/ShopDocuments/LegacyRegistrationDocumentContractTest.php`
 - Modify: `tests/Feature/SuperAdmin/PhaseSixDocumentRouteBoundaryTest.php`
+- Modify: `resources/js/ziggy.js`
 - Test: `tests/Feature/ShopOwner/ShopDocumentRenewalSubmissionTest.php`
 - Test: `tests/Feature/ShopDocuments/ShopDocumentInvariantTest.php`
 
@@ -470,7 +542,15 @@ rg -n -- "Storage::.*delete|->delete\(" app/Http/Controllers/ShopOwnerAuthContro
 
 Only failed staged-upload cleanup may delete a non-authoritative file. No historical/current document row or promoted file may be deleted or overwritten.
 
-- [ ] **Step 5: Verify registration and document lifecycle**
+- [ ] **Step 5: Regenerate route metadata after removing legacy names**
+
+```powershell
+php artisan ziggy:generate resources/js/ziggy.js
+```
+
+Confirm the canonical `shop-owner.register` remains and retired registration mutation names/URIs are absent.
+
+- [ ] **Step 6: Verify registration and document lifecycle**
 
 ```powershell
 php artisan test tests/Feature/LocationPolicy/ShopOwnerAuthRegistrationTest.php tests/Feature/LocationPolicy/ShopOwnerRegistrationLocationTest.php tests/Feature/LocationPolicy/ShopOwnerFullRegistrationLocationTest.php tests/Feature/ShopDocuments/LegacyRegistrationDocumentContractTest.php tests/Feature/ShopDocuments/ShopDocumentInvariantTest.php tests/Feature/ShopOwner/ShopDocumentRenewalSubmissionTest.php tests/Feature/SuperAdmin/PhaseSixDocumentRouteBoundaryTest.php
@@ -478,10 +558,10 @@ php artisan test tests/Feature/LocationPolicy/ShopOwnerAuthRegistrationTest.php 
 
 Expected: PASS; canonical registration remains operational, legacy mutations are absent, and immutable history/legacy DTI-SEC continuity remain enforced.
 
-- [ ] **Step 6: Commit legacy registration removal**
+- [ ] **Step 7: Commit legacy registration removal**
 
 ```powershell
-git add -- routes/web.php tests/Feature/LocationPolicy/ShopOwnerRegistrationLocationTest.php tests/Feature/LocationPolicy/ShopOwnerFullRegistrationLocationTest.php tests/Feature/ShopDocuments/LegacyRegistrationDocumentContractTest.php tests/Feature/SuperAdmin/PhaseSixDocumentRouteBoundaryTest.php app/Http/Controllers/ShopRegistrationController.php
+git add -- routes/web.php resources/js/ziggy.js tests/Feature/LocationPolicy/ShopOwnerRegistrationLocationTest.php tests/Feature/LocationPolicy/ShopOwnerFullRegistrationLocationTest.php tests/Feature/ShopDocuments/LegacyRegistrationDocumentContractTest.php tests/Feature/SuperAdmin/PhaseSixDocumentRouteBoundaryTest.php app/Http/Controllers/ShopRegistrationController.php
 git commit -m "refactor: remove superseded registration mutations"
 ```
 
@@ -506,7 +586,11 @@ git commit -m "refactor: remove superseded registration mutations"
 - Delete: `resources/js/layout/layout/SidebarWidget.tsx`
 - Modify: `tests/Feature/SuperAdmin/PhaseSevenStructuralBoundaryTest.php`
 
-- [ ] **Step 1: Prove the monolith has no route or direct-test callers**
+- [ ] **Step 1: Add the failing retirement and redirect-parity slice**
+
+Expand `PhaseSevenStructuralBoundaryTest` with the final approved GET alias set, target-equivalent middleware/status/query/path behavior, retired-controller absence, `/superAdmin` mutation absence, and canonical navigation expectations. Confirm only the current duplicate groups/retired owners fail.
+
+- [ ] **Step 2: Prove the monolith has no route or direct-test callers**
 
 ```powershell
 rg -n "SuperAdminController|SuperAdminUserManagementController|showShopRegistrations|showFlaggedAccounts|usersList" app routes resources/js tests
@@ -514,23 +598,47 @@ rg -n "SuperAdminController|SuperAdminUserManagementController|showShopRegistrat
 
 Expected before deletion: only class files or structural “must be absent” assertions. Migrate any real caller; do not hide it with a forwarding controller.
 
-- [ ] **Step 2: Collapse duplicate `/superAdmin` groups**
+- [ ] **Step 3: Inventory persisted compatibility links without rewriting them**
+
+Against a safe database snapshot/read-only production connection, group `notifications.action_url` values containing `/superAdmin/` or any listed old `/admin/*` alias. Record URL category and count. Use the equivalent of this read-only query for the deployed database:
+
+```sql
+SELECT action_url, COUNT(*) AS total
+FROM notifications
+WHERE action_url LIKE '%/superAdmin/%'
+   OR action_url IN (
+       '/admin/admin',
+       '/admin/create-admin',
+       '/admin/shop-owner-registration-view',
+       '/admin/registered-shops',
+       '/admin/user-management',
+       '/admin/subscription-management',
+       '/admin/data-reports'
+   )
+   OR action_url LIKE '/admin/shops/%/details%'
+GROUP BY action_url
+ORDER BY total DESC, action_url ASC;
+```
+
+Do not update historical rows in Phase 7. A non-zero count is a reason to retain the corresponding safe GET redirect and evidence for Phase 8 retirement.
+
+- [ ] **Step 4: Collapse duplicate `/superAdmin` groups**
 
 Replace both groups with one compact compatibility group containing only the approved GET redirects and target-equivalent capability middleware. Query strings must survive. No controller class from the retired group may be imported solely for compatibility.
 
-- [ ] **Step 3: Migrate active navigation**
+- [ ] **Step 5: Migrate active navigation**
 
 Use canonical route names in `AppSidebar.tsx`; keep capability filtering unchanged for Admin versus Super Admin. Update tests to assert canonical hrefs and absence of `/superAdmin` links.
 
-- [ ] **Step 4: Reconfirm and delete the isolated duplicate layout tree**
+- [ ] **Step 6: Reconfirm and delete the isolated duplicate layout tree**
 
 Run import/reference searches for every file under `resources/js/layout/layout/`. If the only references are within that same isolated directory, delete all eight files together. Do not delete active `resources/js/layout/*` files.
 
-- [ ] **Step 5: Delete retired controllers**
+- [ ] **Step 7: Delete retired controllers**
 
 Delete `SuperAdminController` and `SuperAdminUserManagementController`; remove imports. Do not leave subclasses, forwarding methods, or aliases.
 
-- [ ] **Step 6: Regenerate Ziggy route metadata**
+- [ ] **Step 8: Regenerate Ziggy route metadata**
 
 ```powershell
 php artisan ziggy:generate resources/js/ziggy.js
@@ -538,7 +646,7 @@ php artisan ziggy:generate resources/js/ziggy.js
 
 Confirm canonical route names exist and removed mutation names/URIs do not. Do not manually edit generated output.
 
-- [ ] **Step 7: Verify route and frontend structure**
+- [ ] **Step 9: Verify route and frontend structure**
 
 ```powershell
 php artisan route:list --path=admin --except-vendor
@@ -549,7 +657,7 @@ pnpm exec vitest run resources/js/layout/__tests__/AppSidebar.test.tsx
 
 Expected: canonical routes resolve to focused owners; `/superAdmin` contains approved GET aliases only; active sidebar contains no legacy route.
 
-- [ ] **Step 8: Commit runtime cleanup**
+- [ ] **Step 10: Commit runtime cleanup**
 
 ```powershell
 git add -- routes/web.php resources/js/layout/AppSidebar.tsx resources/js/layout/__tests__/AppSidebar.test.tsx resources/js/ziggy.js app/Http/Controllers/SuperAdminController.php app/Http/Controllers/superAdmin/SuperAdminUserManagementController.php resources/js/layout/layout tests/Feature/SuperAdmin/PhaseSevenStructuralBoundaryTest.php
@@ -587,7 +695,7 @@ Legacy audit import      -> ImportLegacyPrivilegedAudit (bounded reconciliation 
 
 - [ ] **Step 2: Document compatibility retirement criteria**
 
-List every retained GET alias, target, capability, known external/stored-link reason, and Phase 8 removal evidence. Make explicit that aliases cannot accept mutations and are not permanent public API.
+List every retained GET alias, target, capability, source-reference count, persisted `notifications.action_url` count/category, known external/bookmark reason, and Phase 8 removal evidence. Include relative and absolute persisted URL forms and query-string variants. Make explicit that aliases cannot accept mutations, cannot query/call domain code, are not permanent public API, and historical notification rows were not rewritten.
 
 - [ ] **Step 3: Verify no ownership regression**
 
@@ -625,7 +733,7 @@ Record each result once:
 6. **code splitting:** `N/A` unless imports/bundle behavior changed beyond deleting dead files;
 7. **gauge improvements:** report before/after monolith lines/methods, duplicate route/mutation counts, legacy first-party caller count, and deleted dead-file count; latency/bundle improvement is `not measured` unless measured;
 8. **security review:** canonical middleware and object scope must match or strengthen prior routes; old mutation URLs must be absent;
-9. **verification-before-completion:** all completion claims require fresh command output.
+9. **verification-before-completion:** all completion claims require fresh command output; confirm every implementation commit was green and route-mutating tasks ran sequentially.
 
 - [ ] **Step 2: Run reuse and dead-code scans**
 
@@ -699,6 +807,7 @@ Set this plan to `EXECUTED` only after all applicable checks are recorded. Inclu
 - [ ] `/admin` is the only first-party privileged mutation prefix.
 - [ ] Every semantic privileged mutation has exactly one route and focused owner.
 - [ ] `/superAdmin` contains only the approved capability-protected GET redirects.
+- [ ] Compatibility redirects preserve authentication, status/MFA, capability, path parameters, and query strings while calling no model/controller/service.
 - [ ] Old mutation routes return `404|405` and cannot create state, audit, or notification side effects.
 - [ ] `SuperAdminController`, `SuperAdminUserManagementController`, and `ShopRegistrationController` are absent.
 - [ ] Administrator, shop, user, plan, subscription, registration, flag, document, notification, and audit ownership matches the frozen design.
@@ -711,8 +820,11 @@ Set this plan to `EXECUTED` only after all applicable checks are recorded. Inclu
 - [ ] Shop-document and HR-document expiry remain separate commands/services.
 - [ ] Expiration never mutates shop status.
 - [ ] Active navigation and server-generated action URLs contain no `/superAdmin` mutation links.
+- [ ] Persisted legacy `notifications.action_url` values are inventoried but not rewritten; retained alias reasons are recorded for Phase 8.
 - [ ] Duplicate isolated layout files are removed only after a fresh import proof.
+- [ ] `RespondsToAccountLifecycle` exists only if the final diff proves substantial identical HTTP-only mapping; otherwise it is omitted.
 - [ ] No new dependency, generic framework, schema migration, or speculative abstraction is introduced.
+- [ ] Every route-mutating task executed sequentially, regenerated Ziggy when needed, and committed only after its relevant tests were green.
 - [ ] Focused and broad backend/frontend tests, route/schedule inspection, build, browser flows, and diff hygiene are recorded.
 
 ## Rollout and Rollback Notes
