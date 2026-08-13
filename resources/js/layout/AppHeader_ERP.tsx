@@ -108,12 +108,12 @@ const AppHeader_ERP: React.FC = () => {
             <img
               className="dark:hidden"
               src="/images/logo/logo.svg"
-              alt="Logo"
+              alt="SoleSpace logo"
             />
             <img
               className="hidden dark:block"
               src="/images/logo/logo-dark.svg"
-              alt="Logo"
+              alt="SoleSpace logo"
             />
           </Link>
 
