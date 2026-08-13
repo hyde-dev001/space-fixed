@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Head, router } from "@inertiajs/react";
 import { route } from 'ziggy-js';
 import Swal from '@/Pages/UserSide/Shared/UserModal';
+import { getFreshCsrfToken } from '@/utils/csrf';
 import 'leaflet/dist/leaflet.css';
 import Navigation from "../Shared/Navigation";
 import ComponentCard from "../../../components/common/ComponentCard";
@@ -876,11 +877,12 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     setEmailVerificationMessage('');
 
     try {
+      const csrfToken = await getFreshCsrfToken();
       const response = await fetch('/shop-owner/email-verification/send-code', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+          'X-CSRF-TOKEN': csrfToken,
           Accept: 'application/json',
         },
         body: JSON.stringify({ email: trimmedEmail }),
@@ -946,11 +948,12 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     setIsVerifyingEmailCode(true);
 
     try {
+      const csrfToken = await getFreshCsrfToken();
       const response = await fetch('/shop-owner/email-verification/verify-code', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+          'X-CSRF-TOKEN': csrfToken,
           Accept: 'application/json',
         },
         body: JSON.stringify({ email: trimmedEmail, otp: trimmedCode }),
@@ -1143,9 +1146,14 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
           return;
         }
 
+        const csrfToken = await getFreshCsrfToken();
+
         // Submit to backend
         router.post(submitEndpoint, submitData, {
           forceFormData: true,
+          headers: {
+            'X-CSRF-TOKEN': csrfToken,
+          },
           onSuccess: () => {
             setIsSubmitting(false);
             Swal.fire({
