@@ -12,6 +12,7 @@ use App\Models\ShopReport;
 use App\Models\ShopReportModerationAction;
 use App\Models\SuspensionAppeal;
 use App\Models\User;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -67,6 +68,10 @@ final class PhaseTwoSchemaTest extends TestCase
             ->pluck('columns')
             ->map(static fn (array $columns): string => implode(',', $columns));
         self::assertTrue($actionIndexes->contains('shop_owner_id,warning_strike_number'));
+
+        $warningStrikeIndex = collect(Schema::getIndexes('shop_report_moderation_actions'))
+            ->firstWhere('name', 'shop_report_actions_owner_warning_unique');
+        self::assertNotNull($warningStrikeIndex);
     }
 
     public function test_phase_two_models_expose_safe_casts_and_relations(): void
@@ -84,6 +89,24 @@ final class PhaseTwoSchemaTest extends TestCase
         self::assertInstanceOf(BelongsTo::class, (new SuspensionAppeal)->suspension());
         self::assertInstanceOf(HasMany::class, (new ShopReport)->moderationActions());
         self::assertInstanceOf(BelongsTo::class, (new ReviewReport)->customer());
+    }
+
+    public function test_moderation_action_migration_repairs_a_partial_table(): void
+    {
+        Schema::table('shop_report_moderation_actions', function (Blueprint $table): void {
+            $table->dropUnique('shop_report_actions_owner_warning_unique');
+        });
+
+        $migration = require base_path(
+            'database/migrations/2026_08_12_041422_create_shop_report_moderation_actions_table.php',
+        );
+        $migration->up();
+
+        $warningStrikeIndex = collect(Schema::getIndexes('shop_report_moderation_actions'))
+            ->firstWhere('name', 'shop_report_actions_owner_warning_unique');
+
+        self::assertNotNull($warningStrikeIndex);
+        self::assertTrue(Schema::hasColumns('shop_report_moderation_actions', ['requested_action', 'notes']));
     }
 
     public function test_employee_provenance_is_not_request_mass_assignable(): void
