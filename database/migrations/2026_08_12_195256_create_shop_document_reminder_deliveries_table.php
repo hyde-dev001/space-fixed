@@ -11,6 +11,27 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // A failed MySQL index statement leaves the table in place while the
+        // migration remains pending. Finish that partial table on retry.
+        if (Schema::hasTable('shop_document_reminder_deliveries')) {
+            $recipientIndexExists = collect(Schema::getIndexes('shop_document_reminder_deliveries'))
+                ->contains(static function (array $index): bool {
+                    return ($index['name'] ?? null) === 'shop_doc_reminder_recipient_index'
+                        || ($index['columns'] ?? []) === ['recipient_type', 'recipient_id'];
+                });
+
+            if (! $recipientIndexExists) {
+                Schema::table('shop_document_reminder_deliveries', function (Blueprint $table): void {
+                    $table->index(
+                        ['recipient_type', 'recipient_id'],
+                        'shop_doc_reminder_recipient_index',
+                    );
+                });
+            }
+
+            return;
+        }
+
         Schema::create('shop_document_reminder_deliveries', function (Blueprint $table) {
             $table->id();
             $table->foreignId('shop_document_id')
@@ -25,7 +46,10 @@ return new class extends Migration
                 ['shop_document_id', 'expiration_identity', 'threshold_days', 'recipient_type', 'recipient_id'],
                 'shop_doc_reminder_delivery_unique',
             );
-            $table->index(['recipient_type', 'recipient_id']);
+            $table->index(
+                ['recipient_type', 'recipient_id'],
+                'shop_doc_reminder_recipient_index',
+            );
             $table->timestamps();
         });
     }

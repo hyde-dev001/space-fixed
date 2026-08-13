@@ -6,6 +6,7 @@ namespace Tests\Feature\ShopDocuments;
 
 use App\Models\ShopDocument;
 use App\Services\ShopOwnerDocumentRequirementService;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
@@ -33,6 +34,36 @@ final class ShopDocumentLifecycleSchemaTest extends TestCase
         ]));
 
         $this->assertTrue(Schema::hasTable('shop_document_reminder_deliveries'));
+
+        $recipientIndex = collect(Schema::getIndexes('shop_document_reminder_deliveries'))
+            ->firstWhere('name', 'shop_doc_reminder_recipient_index');
+        $this->assertNotNull($recipientIndex);
+    }
+
+    public function test_reminder_delivery_migration_repairs_a_partial_table(): void
+    {
+        $existingRecipientIndex = collect(Schema::getIndexes('shop_document_reminder_deliveries'))
+            ->first(static fn (array $index): bool => ($index['columns'] ?? []) === ['recipient_type', 'recipient_id']);
+        $this->assertNotNull($existingRecipientIndex);
+
+        Schema::table('shop_document_reminder_deliveries', function (Blueprint $table) use ($existingRecipientIndex): void {
+            $table->dropIndex($existingRecipientIndex['name']);
+        });
+
+        $migration = require base_path(
+            'database/migrations/2026_08_12_195256_create_shop_document_reminder_deliveries_table.php',
+        );
+        $migration->up();
+
+        $recipientIndex = collect(Schema::getIndexes('shop_document_reminder_deliveries'))
+            ->firstWhere('name', 'shop_doc_reminder_recipient_index');
+
+        $this->assertNotNull($recipientIndex);
+        $this->assertTrue(Schema::hasColumns('shop_document_reminder_deliveries', [
+            'shop_document_id',
+            'expiration_identity',
+            'notification_id',
+        ]));
     }
 
     public function test_shop_document_exposes_private_lifecycle_fields_safely(): void
