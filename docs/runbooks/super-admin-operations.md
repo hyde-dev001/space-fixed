@@ -86,6 +86,8 @@ Private document bytes remain available only through scoped routes that enforce 
 
 The following aliases are temporary, capability-protected `GET|HEAD` redirects. They preserve path parameters and query strings, do not resolve models, call controllers/services, or make business decisions, and have no mutation aliases.
 
+For every row below, the active first-party caller count is `0` (excluding the alias route definition and explicit compatibility/negative tests), and the local persisted `notifications.action_url` count is `0` across relative, absolute, and query-string variants. The known retention reason is legacy bookmarks and deployed historical links; production telemetry and the deployed database were not available to prove those external counts are zero.
+
 | Legacy path | Canonical target | Capability |
 | --- | --- | --- |
 | `/admin/admin` | `/admin/administrators` | `manage_administrators` |

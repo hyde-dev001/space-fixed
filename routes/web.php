@@ -746,7 +746,7 @@ Route::prefix('superAdmin')->name('superAdmin.')->middleware([
         ->name('system-monitoring-dashboard');
     Route::get('/notification-communication-tools', fn () => redirect()->route('admin.notifications', request()->query()))
         ->name('notification-communication-tools');
-    Route::get('/data-report-access', fn () => redirect()->route('admin.audit'))
+    Route::get('/data-report-access', fn () => redirect()->route('admin.audit', request()->query()))
         ->middleware('privileged.capability:view_privileged_audit')
         ->name('data-report-access');
 });
@@ -1989,7 +1989,7 @@ Route::middleware([
     Route::get('/notifications', function () {
         return Inertia::render('superAdmin/Notifications/AdminNotifications');
     })->name('notifications');
-    Route::get('/data-reports', fn () => redirect()->route('admin.audit'))
+    Route::get('/data-reports', fn () => redirect()->route('admin.audit', request()->query()))
         ->middleware('privileged.capability:view_privileged_audit')
         ->name('data-reports');
 });

@@ -467,6 +467,24 @@ final class PhaseSevenStructuralBoundaryTest extends TestCase
         }
     }
 
+    public function test_audit_compatibility_aliases_preserve_query_strings(): void
+    {
+        $privileged = SuperAdmin::factory()->superAdmin()->mfaEnrolled()->create();
+        $this->actingAsCompletedPrivileged($privileged);
+
+        $this->get('/admin/data-reports?event=user_suspended&page=3')
+            ->assertRedirect(route('admin.audit', [
+                'event' => 'user_suspended',
+                'page' => 3,
+            ]));
+
+        $this->get('/superAdmin/data-report-access?event=user_suspended&page=3')
+            ->assertRedirect(route('admin.audit', [
+                'event' => 'user_suspended',
+                'page' => 3,
+            ]));
+    }
+
     public function test_retired_privileged_runtime_owners_are_absent(): void
     {
         self::assertFileDoesNotExist(app_path('Http/Controllers/SuperAdminController.php'));
