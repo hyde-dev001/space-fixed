@@ -92,6 +92,7 @@ beforeEach(() => {
     unscheduled: [unscheduledLeg],
     dailyRiderCapacity: 10,
     maxDeliveryAttempts: 2,
+    today: '2026-07-01',
     filters: { module: 'all', date: null, window: 'all' },
     availableModules: ['retail'],
     showModuleFilter: false,
@@ -125,6 +126,34 @@ it('opens a responsive two-column new-batch workspace', () => {
   expect(screen.getByTestId('batch-workspace')).toHaveClass('lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]');
   expect(screen.getByRole('heading', { name: 'Available deliveries' })).toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'New batch' })).toBeInTheDocument();
+});
+
+it('disables past dates in the delivery date calendar', () => {
+  mocks.props = { ...mocks.props, today: '2026-08-13' };
+  render(<Batches />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery date picker' }));
+
+  expect(screen.getByRole('dialog', { name: 'Delivery date calendar' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Select August 12, 2026' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Select August 13, 2026' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Select August 15, 2026' })).toBeEnabled();
+});
+
+it('selects and clears a delivery date from the calendar', () => {
+  mocks.props = { ...mocks.props, today: '2026-08-13' };
+  render(<Batches />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery date picker' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Select August 15, 2026' }));
+
+  expect(screen.getByRole('button', { name: 'Open delivery date picker' })).toHaveTextContent('08/15/2026');
+  expect(mocks.get).toHaveBeenCalledWith('/erp/logistics/batches', expect.objectContaining({ date: '2026-08-15' }), expect.anything());
+
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery date picker' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Clear date' }));
+
+  expect(screen.getByRole('button', { name: 'Open delivery date picker' })).toHaveTextContent('mm/dd/yyyy');
 });
 
 it('shows prior failed-attempt context on a reassigned pool stop', () => {

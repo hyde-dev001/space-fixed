@@ -8,6 +8,7 @@ import {
   type TrackingShipmentLeg,
 } from '@/types/logistics';
 import RetailOrderSummary from './RetailOrderSummary';
+import DeliveryDatePicker from './DeliveryDatePicker';
 
 type Props = {
   rows: TrackingShipmentLeg[];
@@ -18,6 +19,7 @@ type Props = {
   selectedModule?: LogisticsModule | null;
   search: string;
   date: string;
+  today: string;
   window: string;
   status: string;
   onSearchChange: (value: string) => void;
@@ -32,13 +34,13 @@ type Props = {
 };
 
 export default function AvailableDeliveriesPanel({
-  rows, totalRows, selectedIds, selectedModule, collapsed, search, date, window, status, loading = false,
+  rows, totalRows, selectedIds, selectedModule, collapsed, search, date, today, window, status, loading = false,
   onSearchChange, onCollapse, onExpand, onDateChange, onWindowChange, onStatusChange,
   onToggle, onSelectAll, onClearFilters,
 }: Props) {
   const allSelected = rows.length > 0 && rows.every((leg) => selectedIds.includes(leg.id));
 
-  return <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+  return <section className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
     <div className="border-b border-gray-100 p-4 dark:border-gray-700">
       <div className="flex items-center justify-between gap-3">
         <div>
@@ -65,7 +67,7 @@ export default function AvailableDeliveriesPanel({
         <input aria-label="Search deliveries" value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Order, customer, phone, address, or product" className="min-h-11 w-full rounded-xl border border-gray-300 py-2 pl-10 pr-3 text-sm" />
       </label>
       <div className="mt-3 grid gap-2 sm:grid-cols-3">
-        <input aria-label="Delivery date" type="date" value={date} onChange={(event) => onDateChange(event.target.value)} className="min-h-11 rounded-xl border border-gray-300 px-3 text-sm" />
+        <DeliveryDatePicker value={date} minDate={today} onChange={onDateChange} />
         <select aria-label="Delivery window" value={window} onChange={(event) => onWindowChange(event.target.value)} className="min-h-11 rounded-xl border border-gray-300 px-3 text-sm">
           <option value="morning">Morning</option>
           <option value="afternoon">Afternoon</option>

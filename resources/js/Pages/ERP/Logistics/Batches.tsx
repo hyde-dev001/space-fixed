@@ -38,6 +38,7 @@ export default function Batches() {
     filters = {},
     availableModules = [],
     showModuleFilter = false,
+    today = '',
   } = usePage<DeliveryBatchPageProps & { auth?: any }>().props;
   const ownerMode = (auth as any)?.erpActor?.ownerMode === true;
   const batchesPath = ownerMode ? '/shop-owner/erp/logistics/batches' : '/erp/logistics/batches';
@@ -391,7 +392,7 @@ export default function Batches() {
         rows={filteredDeliveries} totalRows={allDeliveries.length} selectedIds={selectedIds} loading={refreshing}
         selectedModule={selectedModule}
         collapsed={deliveriesCollapsed} onCollapse={() => setDeliveriesCollapsed(true)} onExpand={() => setDeliveriesCollapsed(false)}
-        search={search} date={date} window={window} status={status}
+        search={search} date={date} today={today} window={window} status={status}
         onSearchChange={setSearch} onDateChange={(value) => changeSlot(value, window)} onWindowChange={(value) => changeSlot(date, value)} onStatusChange={setStatus}
         onToggle={toggle} onSelectAll={selectAll} onClearFilters={clearFilters}
       />
