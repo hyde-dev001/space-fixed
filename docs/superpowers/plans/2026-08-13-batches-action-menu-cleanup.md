@@ -4,7 +4,7 @@
 
 **Goal:** Remove the urgent stop action, eliminate duplicate view icons, and render the three-dot menu outside the table clipping context.
 
-**Architecture:** Keep existing batch callbacks and API behavior. Render only the draft edit action plus the details action in `BatchTable`; use unboxed Lucide icon buttons. Replace the native in-row details menu with a small body-level fixed portal anchored to the three-dot button.
+**Architecture:** Keep existing batch callbacks and API behavior. Render status-specific pure icon actions plus the details action in `BatchTable`; use unboxed Lucide icon buttons. Preserve the accepted-batch route workspace action with a Route icon. Replace the native in-row details menu with a small body-level fixed portal anchored to the three-dot button.
 
 **Tech Stack:** React 18, TypeScript, Tailwind CSS, Lucide React, Vitest, Vite.
 
@@ -27,7 +27,7 @@
 
 - [ ] Remove the stop urgent-toggle prop/button and its now-unused page handler/wiring.
 - [ ] Keep urgent labels and counts unchanged.
-- [ ] Render the Pencil edit action only for drafts; remove non-draft View route/offer/progress/summary primary actions.
+- [ ] Render the Pencil edit action only for drafts; preserve status-specific workspace actions, including View route for accepted batches, with distinct Lucide icons.
 - [ ] Keep one Eye details action for every row, including history.
 - [ ] Remove colored backgrounds/borders from Pencil, Eye, and More actions; use hover text color and focus rings.
 

@@ -618,9 +618,14 @@ it('renders active batches as a table and opens stop details in a modal', async 
   expect(screen.getByRole('row', { name: /Batch #2/ })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'View details for batch 2' })).toBeInTheDocument();
   const activeRow = screen.getByRole('row', { name: /Batch #2/ });
-  expect(within(activeRow).queryByTitle('View route')).not.toBeInTheDocument();
+  const routeTrigger = within(activeRow).getByRole('button', { name: 'View route 2' });
+  expect(routeTrigger).toHaveAttribute('title', 'View route');
   expect(within(activeRow).getByTitle('View details')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Expand batch 2' })).not.toBeInTheDocument();
+
+  fireEvent.click(routeTrigger);
+  expect(screen.getByTestId('batch-workspace')).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Batch #2' })).toBeInTheDocument();
 
   const detailsTrigger = screen.getByRole('button', { name: 'View details for batch 2' });
   fireEvent.click(detailsTrigger);
@@ -672,8 +677,7 @@ it('uses status-aware primary and secondary actions', () => {
   render(<Batches />);
   expect(screen.getByRole('button', { name: 'Edit batch 1' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'View offer 2' })).toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: 'View route 3' })).not.toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'View details for batch 3' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'View route 3' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'View progress 4' })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'History (2)' }));
   const history = screen.getByRole('dialog', { name: 'Batch history' });
