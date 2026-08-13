@@ -150,3 +150,31 @@ SQLite query-plan observations for the current list shapes:
 - `activity_log.log_name` was used for the privileged audit base filter, while the compound deterministic ordering used a temporary sort.
 - Administrator, registration, flagged-account, appeal, subscription, renewal, and business-upgrade list shapes scanned their tables and used temporary sort structures where no matching order index existed.
 - These SQLite plans do not justify a production index. MariaDB/MySQL engine/version and production `EXPLAIN` evidence remain unknown until the approved production-compatible database harness is available.
+
+### Task 2 index candidate ledger (2026-08-13)
+
+No migration is authorized by this ledger. Candidates must be re-evaluated against the final Phase 8 SQL and a production-compatible `EXPLAIN` before any migration is created.
+
+| Query family | Existing local coverage | Candidate to revisit after implementation | Current decision |
+| --- | --- | --- | --- |
+| Administrator list: optional status/role plus `created_at DESC, id DESC` | Email/bootstrap/MFA indexes only | `(status, created_at, id)` only if the final status-filtered list is frequent and selective | Defer; current admin population is small and the local plan is SQLite-only |
+| Registration queue: status plus deterministic creation order | `shop_owners_status_index` | `(status, created_at, id)` | Defer until status scope and search SQL are finalized |
+| Registered shops: status/lifecycle plus deterministic creation order | `shop_owners_status_index`; no lifecycle/order composite | `(status, deleted_at, created_at, id)` if both lifecycle branches use it | Defer; verify soft-delete selectivity on production data |
+| User list: base `shop_owner_id IS NULL`, optional role/status/lifecycle, creation order | Separate shop-owner, role, and status indexes | A narrow base/order composite only if final plans show a scan; do not index every optional filter | Defer; existing `shop_owner_id` index serves the base scope |
+| Shop reports: status/shop grouping and detail order | `shop_reports_shop_owner_id_status_index`, `shop_reports_created_at_index`, status index | `(status, created_at, id)` for global pending/detail order if final SQL cannot use existing indexes | Defer; existing shop/status index covers moderation ownership |
+| Flagged accounts: status plus creation order | Separate status and shop/user indexes | `(status, created_at, id)` | Defer; no final SQL yet |
+| Suspension appeals: status plus creation order | `suspension_appeals_status_created_at_index` | Extend to `(status, created_at, id)` only if the final tie-breaker plan needs it | Defer; existing prefix may already cover the final query |
+| Subscription summaries: status plus creation order | Shop/status, status/auto-renew, starts/ends, renewal, and plan indexes | `(status, created_at, id)` only if filtered summary plans show a material scan | Defer; billing history remains a separate detail query |
+| Renewal queue: current/pending/owner scope plus deterministic order | Local worktree database predates lifecycle columns; no production-compatible plan available | Composite over the final current/pending/owner/order predicates | Unknown; requires migrated Phase 6 schema and MariaDB/MySQL `EXPLAIN` |
+| Business upgrades: status plus creation order | `shop_owner_upgrade_requests_status_created_at_index` | Add `id` tie-breaker only if the final `(status, created_at, id)` plan is not covered | Defer; existing status/created prefix is likely sufficient |
+| Privileged audit: visibility/event/actor/subject plus deterministic order | Phase 3 audit indexes are present in the migrated test schema; local snapshot is older | No new index unless final visibility/filter plans demonstrate a missing prefix | Reject for now; preserve existing audit indexes |
+| Reminder candidates: dated current approved documents | Local snapshot predates Phase 6 reminder columns | Date/current/status/owner composite only after the actual reminder SQL and production plan are captured | Unknown; do not infer from SQLite |
+
+Rejected candidates:
+
+- A normal B-tree index for escaped leading-wildcard identity search would not serve the `LIKE '%term%'` contract; no full-text or search dependency is introduced.
+- One index per optional filter was rejected as redundant write/storage cost and because the final query uses only a small subset at a time.
+- Separate indexes duplicating an existing indexed prefix, foreign key, or unique constraint were rejected.
+- Indexes on tiny configuration sets such as premium plans were rejected.
+
+The final query-shape checkpoint in Task 6 is the only point at which a migration may be generated. If the production-compatible harness remains unavailable or existing indexes cover the final SQL, the Phase 8 index decision remains `N/A` and no migration is created.
