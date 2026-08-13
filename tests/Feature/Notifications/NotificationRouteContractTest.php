@@ -8,6 +8,18 @@ use Tests\TestCase;
 class NotificationRouteContractTest extends TestCase
 {
     #[Test]
+    public function customer_notification_routes_start_the_session_before_authentication(): void
+    {
+        $source = file_get_contents(dirname(__DIR__, 3).'/routes/api.php');
+
+        $this->assertIsString($source);
+        $this->assertStringContainsString(
+            "Route::prefix('notifications')->middleware(['web', 'auth:user'])",
+            $source,
+        );
+    }
+
+    #[Test]
     public function notification_namespaces_have_unique_and_canonical_endpoints(): void
     {
         $routes = collect(app('router')->getRoutes()->getRoutes())
