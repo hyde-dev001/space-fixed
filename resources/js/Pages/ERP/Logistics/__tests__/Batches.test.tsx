@@ -611,6 +611,26 @@ const batchForStatus = (id: number, status: string) => ({
   legs: [{ ...unscheduledLeg, id: id * 10, status: status === 'completed' ? 'delivered' : 'pending', stop_sequence: 1, scheduled_delivery_date: '2026-07-15', delivery_window: 'morning' }],
 });
 
+it('collapses available deliveries while editing and reopens it for a new batch', () => {
+  mocks.props.batches = [batchForStatus(1, 'draft')];
+  render(<Batches />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Edit batch 1' }));
+  expect(screen.getByTestId('batch-workspace')).toHaveClass('lg:grid-cols-1');
+  expect(screen.getByRole('heading', { name: 'Batch #1' })).toBeInTheDocument();
+  expect(screen.getByLabelText('Search deliveries')).not.toBeVisible();
+  expect(screen.getByRole('button', { name: 'Show available deliveries' })).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Show available deliveries' }));
+  expect(screen.getByLabelText('Search deliveries')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Collapse available deliveries' })).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'New Batch' }));
+  expect(screen.getByRole('heading', { name: 'New batch' })).toBeInTheDocument();
+  expect(screen.getByLabelText('Search deliveries')).toBeInTheDocument();
+  expect(screen.getByTestId('batch-workspace')).toHaveClass('lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]');
+});
+
 const historicalStops = [
   { ...scheduledLeg, id: 91, stop_sequence: 1, status: 'delivered', urgent_at: '2026-07-15T08:00:00Z', shipment: { id: 91, source_type: 'order', source_id: 901 }, destination_snapshot: { name: 'Snapshot First', phone: '0901', address: 'First saved address' } },
   { ...scheduledLeg, id: 92, stop_sequence: 2, status: 'delivered', urgent_at: null, shipment: { id: 92, source_type: 'order', source_id: 902 }, destination_snapshot: { name: 'Snapshot Second', phone: '0902', address: 'Second saved address' } },
@@ -624,6 +644,9 @@ it('renders active batches as a table and opens stop details in a modal', async 
   expect(screen.getByRole('columnheader', { name: 'Batch' })).toBeInTheDocument();
   expect(screen.getByRole('row', { name: /Batch #2/ })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'View details for batch 2' })).toBeInTheDocument();
+  const activeRow = screen.getByRole('row', { name: /Batch #2/ });
+  expect(within(activeRow).getByTitle('View route')).toBeInTheDocument();
+  expect(within(activeRow).getByTitle('View details')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Expand batch 2' })).not.toBeInTheDocument();
 
   const detailsTrigger = screen.getByRole('button', { name: 'View details for batch 2' });
@@ -650,7 +673,8 @@ it('opens batch history from the active filter row', () => {
   const history = screen.getByRole('dialog', { name: 'Batch history' });
   expect(history).toBeInTheDocument();
   expect(history).toHaveTextContent('Batch #6');
-  expect(history).toHaveTextContent('View summary');
+  expect(within(history).getByTitle('View summary')).toBeInTheDocument();
+  expect(within(history).getByTitle('View details')).toBeInTheDocument();
 });
 
 it('filters active batches by status and keeps history collapsed separately', () => {
@@ -856,6 +880,7 @@ it('shows the no-riders state without allowing an offer', () => {
 it('shows delivery-pool skeletons while refreshed props are pending', async () => {
   mocks.reload.mockImplementation(() => undefined);
   openDraft();
+  fireEvent.click(screen.getByRole('button', { name: 'Show available deliveries' }));
   fireEvent.click(screen.getByRole('button', { name: 'Mark urgent stop 1' }));
 
   expect(await screen.findAllByTestId('delivery-skeleton')).toHaveLength(3);

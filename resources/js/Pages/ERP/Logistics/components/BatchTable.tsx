@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, MoreHorizontal } from 'lucide-react';
+import { AlertTriangle, Eye, MoreHorizontal, Pencil } from 'lucide-react';
 import { logisticsModuleLabel, type DeliveryBatch, type DeliveryBatchStatus } from '@/types/logistics';
 
 const formatDate = (value: string) => new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeZone: 'UTC' })
@@ -81,8 +81,10 @@ export default function BatchTable({ batches, variant = 'active', onOpen, onDeta
             <td className="px-4 py-4 align-top text-gray-700 dark:text-gray-200">{batch.rider_profile?.name || 'Not assigned'}</td>
             <td className="px-4 py-4 align-top text-gray-600 dark:text-gray-300">{['completed', 'cancelled'].includes(batch.status) ? legsFor(batch).length : batch.assigned_stop_count}/{batch.capacity}<span className="block text-xs text-gray-500">{legsFor(batch).filter((leg) => leg.urgent_at).length} urgent</span></td>
             <td className="px-4 py-4 align-top"><div className="flex flex-wrap justify-end gap-2">
-              <button type="button" aria-label={`${primaryLabel(batch.status)} ${batch.id}`} onClick={() => onOpen(batch.id)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700">{history ? 'View summary' : primaryLabel(batch.status)}</button>
-              <button type="button" aria-label={`View details for batch ${batch.id}`} onClick={(event) => onDetails(batch.id, event.currentTarget)} className="rounded-lg border border-blue-200 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50">View details</button>
+              <button type="button" aria-label={`${primaryLabel(batch.status)} ${batch.id}`} title={history ? 'View summary' : primaryLabel(batch.status)} onClick={() => onOpen(batch.id)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                {batch.status === 'draft' ? <Pencil aria-hidden="true" size={18} /> : <Eye aria-hidden="true" size={18} />}
+              </button>
+              <button type="button" aria-label={`View details for batch ${batch.id}`} title="View details" onClick={(event) => onDetails(batch.id, event.currentTarget)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-blue-200 text-blue-700 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500"> <Eye aria-hidden="true" size={18} /></button>
               <SecondaryActions batch={batch} onReview={onReview} onCancel={onCancel} onRestore={onRestore} />
             </div></td>
           </tr>)}
