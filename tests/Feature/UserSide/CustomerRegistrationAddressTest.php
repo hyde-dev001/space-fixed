@@ -2,10 +2,12 @@
 
 namespace Tests\Feature\UserSide;
 
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
 use Tests\TestCase;
 
 class CustomerRegistrationAddressTest extends TestCase
@@ -41,20 +43,26 @@ class CustomerRegistrationAddressTest extends TestCase
             'lat' => '14.5832',
             'lon' => '120.9822',
             'address' => [
-            'country_code' => 'ph',
-            'region' => 'National Capital Region',
-            'state' => 'Metro Manila',
-            'city' => 'Manila',
-            'suburb' => 'Ermita',
-            'postcode' => '1000',
-        ]])]);
+                'country_code' => 'ph',
+                'region' => 'National Capital Region',
+                'state' => 'Metro Manila',
+                'city' => 'Manila',
+                'suburb' => 'Ermita',
+                'postcode' => '1000',
+            ]])]);
 
         $this->post('/user/register', $this->payload())
             ->assertRedirect(route('verification.notice'));
 
-        $userId = (int) auth('web')->id();
+        $user = User::query()
+            ->where('email', 'juan.dela.cruz@gmail.com')
+            ->firstOrFail();
+
+        $this->assertAuthenticatedAs($user, 'user');
+        $this->assertGuest('web');
+
         $this->assertDatabaseHas('user_addresses', [
-            'user_id' => $userId,
+            'user_id' => $user->id,
             'name' => 'Juan Dela Cruz',
             'phone' => '09171234567',
             'region' => 'National Capital Region',
@@ -67,6 +75,44 @@ class CustomerRegistrationAddressTest extends TestCase
             'longitude' => 120.9822,
             'is_default' => true,
         ]);
+
+        $this->getJson(route('user.addresses.index'))
+            ->assertOk();
+    }
+
+    public function test_signed_verification_authenticates_customer_on_user_guard(): void
+    {
+        $user = User::factory()->unverified()->create([
+            'status' => 'active',
+        ]);
+        $verificationUrl = URL::temporarySignedRoute(
+            'verification.verify',
+            now()->addHour(),
+            ['id' => $user->id, 'hash' => sha1($user->email)],
+        );
+
+        $this->get($verificationUrl)->assertOk();
+
+        $this->assertTrue($user->fresh()->hasVerifiedEmail());
+        $this->assertAuthenticatedAs($user, 'user');
+        $this->assertGuest('web');
+    }
+
+    public function test_unverified_customer_login_uses_user_guard_for_verification_notice(): void
+    {
+        $user = User::factory()->unverified()->create([
+            'email' => 'unverified.customer@example.test',
+            'status' => 'active',
+        ]);
+
+        $this->post('/user/login', [
+            'email' => $user->email,
+            'password' => 'password',
+        ])->assertRedirect(route('verification.notice'));
+
+        $this->assertAuthenticatedAs($user, 'user');
+        $this->assertGuest('web');
+        $this->get(route('verification.notice'))->assertOk();
     }
 
     public function test_registration_requires_a_complete_map_location(): void
@@ -121,13 +167,13 @@ class CustomerRegistrationAddressTest extends TestCase
             'lat' => '14.5832',
             'lon' => '120.9822',
             'address' => [
-            'country_code' => 'ph',
-            'region' => 'National Capital Region',
-            'state' => 'Metro Manila',
-            'city' => 'Manila',
-            'suburb' => 'Ermita',
-            'postcode' => '1000',
-        ]])]);
+                'country_code' => 'ph',
+                'region' => 'National Capital Region',
+                'state' => 'Metro Manila',
+                'city' => 'Manila',
+                'suburb' => 'Ermita',
+                'postcode' => '1000',
+            ]])]);
 
         $this->post('/user/register', $this->payload([
             'address_region' => 'Forged Region',

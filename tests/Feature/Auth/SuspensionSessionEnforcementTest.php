@@ -150,6 +150,60 @@ class SuspensionSessionEnforcementTest extends TestCase
         $this->assertGuest('user');
     }
 
+    public function test_employee_login_ignores_same_email_record_from_another_shop(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create();
+        $otherOwner = ShopOwner::factory()->approved()->create();
+        $user = User::factory()->create([
+            'email' => 'tenant.login@example.test',
+            'password' => Hash::make('Password123!'),
+            'status' => 'active',
+            'shop_owner_id' => $owner->id,
+            'email_verified_at' => now(),
+        ]);
+
+        Employee::factory()->suspended()->create([
+            'shop_owner_id' => $otherOwner->id,
+            'email' => strtoupper($user->email),
+        ]);
+        Employee::factory()->active()->create([
+            'shop_owner_id' => $owner->id,
+            'email' => $user->email,
+        ]);
+
+        $this->postJson('/user/login', [
+            'email' => $user->email,
+            'password' => 'Password123!',
+        ])->assertOk();
+
+        $this->assertAuthenticatedAs($user, 'user');
+    }
+
+    public function test_employee_login_denies_duplicate_records_in_the_same_shop(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create();
+        $user = User::factory()->create([
+            'email' => 'duplicate.login@example.test',
+            'password' => Hash::make('Password123!'),
+            'status' => 'active',
+            'shop_owner_id' => $owner->id,
+            'email_verified_at' => now(),
+        ]);
+
+        Employee::factory()->count(2)->active()->create([
+            'shop_owner_id' => $owner->id,
+            'email' => $user->email,
+        ]);
+
+        $this->postJson('/user/login', [
+            'email' => $user->email,
+            'password' => 'Password123!',
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors('email');
+
+        $this->assertGuest('user');
+    }
+
     public function test_suspended_shop_owner_is_forced_logged_out_on_next_request(): void
     {
         $shopOwner = ShopOwner::factory()->create([

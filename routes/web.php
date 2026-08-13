@@ -5,32 +5,32 @@ use App\Http\Controllers\Api\ManagerController;
 use App\Http\Controllers\EmailVerificationController;
 use App\Http\Controllers\ForgotPasswordOtpController;
 use App\Http\Controllers\InvitationController;
-use App\Http\Controllers\ShopOwner\EcommerceController;
-use App\Http\Controllers\ShopOwner\ShopSettingsController;
-use App\Http\Controllers\ShopOwner\ShopOwnerDocumentRenewalController;
-use App\Http\Controllers\ShopOwner\ShopOwnerUpgradeRequestController;
-use App\Http\Controllers\ShopOwner\ShopOwnerModuleController;
-use App\Http\Controllers\ShopOwner\UserAccessControlController;
 use App\Http\Controllers\PrivateSensitiveDocumentController;
-use App\Http\Controllers\ShopOwnerAuthController;
-use App\Http\Controllers\ShopOwnerPasswordSetupController;
-use App\Http\Controllers\superAdmin\FlaggedAccountsController;
-use App\Http\Controllers\superAdmin\AdministratorManagementController;
-use App\Http\Controllers\superAdmin\RegisteredShopController;
-use App\Http\Controllers\superAdmin\UserInterventionController;
-use App\Http\Controllers\superAdmin\ShopOwnerRegistrationViewController;
-use App\Http\Controllers\superAdmin\ShopDocumentRenewalController as SuperAdminShopDocumentRenewalController;
-use App\Http\Controllers\superAdmin\ShopOwnerUpgradeRequestController as SuperAdminShopOwnerUpgradeRequestController;
-use App\Http\Controllers\superAdmin\SystemMonitoringDashboardController;
-use App\Http\Controllers\superAdmin\PrivilegedAuditController;
-use App\Http\Controllers\superAdmin\SubscriptionInterventionController;
-use App\Http\Controllers\superAdmin\SubscriptionManagementController;
-use App\Http\Controllers\superAdmin\PremiumPlanController;
 use App\Http\Controllers\PrivilegedMfaController;
 use App\Http\Controllers\PrivilegedPasswordResetController;
 use App\Http\Controllers\PrivilegedReauthenticationController;
 use App\Http\Controllers\PrivilegedSecurityController;
 use App\Http\Controllers\PrivilegedSetupController;
+use App\Http\Controllers\ShopOwner\EcommerceController;
+use App\Http\Controllers\ShopOwner\ShopOwnerDocumentRenewalController;
+use App\Http\Controllers\ShopOwner\ShopOwnerModuleController;
+use App\Http\Controllers\ShopOwner\ShopOwnerUpgradeRequestController;
+use App\Http\Controllers\ShopOwner\ShopSettingsController;
+use App\Http\Controllers\ShopOwner\UserAccessControlController;
+use App\Http\Controllers\ShopOwnerAuthController;
+use App\Http\Controllers\ShopOwnerPasswordSetupController;
+use App\Http\Controllers\superAdmin\AdministratorManagementController;
+use App\Http\Controllers\superAdmin\FlaggedAccountsController;
+use App\Http\Controllers\superAdmin\PremiumPlanController;
+use App\Http\Controllers\superAdmin\PrivilegedAuditController;
+use App\Http\Controllers\superAdmin\RegisteredShopController;
+use App\Http\Controllers\superAdmin\ShopDocumentRenewalController as SuperAdminShopDocumentRenewalController;
+use App\Http\Controllers\superAdmin\ShopOwnerRegistrationViewController;
+use App\Http\Controllers\superAdmin\ShopOwnerUpgradeRequestController as SuperAdminShopOwnerUpgradeRequestController;
+use App\Http\Controllers\superAdmin\SubscriptionInterventionController;
+use App\Http\Controllers\superAdmin\SubscriptionManagementController;
+use App\Http\Controllers\superAdmin\SystemMonitoringDashboardController;
+use App\Http\Controllers\superAdmin\UserInterventionController;
 use App\Http\Controllers\SuperAdminAuthController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\UserProfileController;
@@ -59,28 +59,28 @@ use Inertia\Inertia;
 
 // Email Verification Routes
 Route::get('/email/verify', function (Request $request) {
-    $user = Auth::guard('web')->user() ?? Auth::guard('shop_owner')->user();
+    $user = Auth::guard('user')->user() ?? Auth::guard('shop_owner')->user();
 
     return Inertia::render('UserSide/Auth/VerificationNotice', [
         'status' => session('status'),
         'email' => $user ? $user->email : null,
     ]);
-})->middleware('auth')->name('verification.notice');
+})->middleware('auth:user,shop_owner')->name('verification.notice');
 
 Route::get('/email/verify/{id}/{hash}', [EmailVerificationController::class, 'verify'])
     ->middleware(['signed'])
     ->name('verification.verify');
 
 Route::post('/email/verification-notification', function (Request $request) {
-    // Support both regular user (web guard) and shop owner guard
-    $user = Auth::guard('web')->user() ?? Auth::guard('shop_owner')->user();
+    // Support both regular user and shop owner guards.
+    $user = Auth::guard('user')->user() ?? Auth::guard('shop_owner')->user();
 
     if ($user && ! $user->hasVerifiedEmail()) {
         $user->sendEmailVerificationNotification();
     }
 
     return back()->with('status', 'verification-link-sent');
-})->middleware(['auth:web,shop_owner', 'throttle:6,1'])->name('verification.send');
+})->middleware(['auth:user,shop_owner', 'throttle:6,1'])->name('verification.send');
 
 // Public Routes (User Side)
 Route::get('/', [LandingPageController::class, 'index'])->name('landing');
