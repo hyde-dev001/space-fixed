@@ -29,7 +29,7 @@ const routeFallbacks: Record<string, string> = {
   'admin.audit': '/admin/audit',
   'admin.administrators.index': '/admin/administrators',
   'admin.business-upgrade-requests.index': '/admin/business-upgrade-requests',
-  'admin.shop-owner-registration-view': '/admin/shop-owner-registration-view',
+  'admin.registrations.index': '/admin/registrations',
   'admin.document-renewals.index': '/admin/document-renewals',
   'admin.shop-reports': '/admin/shop-reports',
   'admin.suspension-appeals': '/admin/appeals',
@@ -95,7 +95,7 @@ const AppSidebar: React.FC = () => {
         subItems: [
           { name: "Admin Management", route: "admin.administrators.index", capability: "manage_administrators", pro: false },
           { name: "User Management", route: "admin.users.index", capability: "intervene_accounts", pro: false },
-          { name: "Shop Management", route: "admin.shop-owner-registration-view", capability: "review_registrations", pro: false },
+          { name: "Shop Management", route: "admin.registrations.index", capability: "review_registrations", pro: false },
           { name: "Document Renewals", route: "admin.document-renewals.index", capability: "review_registrations", pro: false },
           { name: "Business Upgrade Requests", route: "admin.business-upgrade-requests.index", capability: "review_registrations", pro: false },
           { name: "Shop Reports", route: "admin.shop-reports", capability: "moderate_reports", pro: false },

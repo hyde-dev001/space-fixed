@@ -62,7 +62,7 @@ describe('Flagged account state UI', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Mark under investigation' }));
 
     await waitFor(() => expect(postMock).toHaveBeenCalledWith(
-      '/superAdmin/flagged-accounts/12/mark-reviewed',
+      '/admin/flagged-accounts/12/mark-reviewed',
       {},
     ));
 
@@ -74,7 +74,7 @@ describe('Flagged account state UI', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Suspend account' }));
 
     await waitFor(() => expect(postMock).toHaveBeenCalledWith(
-      '/superAdmin/flagged-accounts/12/ban',
+      '/admin/flagged-accounts/12/ban',
       { admin_notes: 'Confirmed suspension reason.' },
     ));
   });

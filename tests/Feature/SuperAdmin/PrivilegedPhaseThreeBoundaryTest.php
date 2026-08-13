@@ -107,14 +107,17 @@ final class PrivilegedPhaseThreeBoundaryTest extends TestCase
     public function test_canonical_phase_three_mutations_keep_the_privileged_boundary(): void
     {
         $routes = [
-            'admin.shop-owner-approve' => 'review_registrations',
-            'admin.shop-owner-reject' => 'review_registrations',
+            'admin.registrations.approve' => 'review_registrations',
+            'admin.registrations.reject' => 'review_registrations',
             'admin.business-upgrade-requests.update' => 'review_registrations',
             'admin.users.suspend' => 'intervene_accounts',
             'admin.users.reactivate' => 'intervene_accounts',
             'admin.shops.suspend' => 'intervene_accounts',
             'admin.shops.reactivate' => 'intervene_accounts',
             'admin.shop-reports.action' => 'moderate_reports',
+            'admin.flagged-accounts.mark-reviewed' => 'moderate_reports',
+            'admin.flagged-accounts.dismiss' => 'moderate_reports',
+            'admin.flagged-accounts.ban' => 'moderate_reports',
             'admin.appeals.approve' => 'resolve_appeals',
             'admin.appeals.reject' => 'resolve_appeals',
             'admin.plans.store' => 'manage_plans',

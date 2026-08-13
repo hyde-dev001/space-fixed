@@ -460,27 +460,27 @@ git commit -m "refactor: isolate privileged billing controllers"
 - Modify: `tests/Feature/Reports/ShopAndCustomerReportFlowTest.php`
 - Modify: `tests/Feature/SuperAdmin/PrivilegedPhaseThreeBoundaryTest.php`
 
-- [ ] **Step 1: Add the failing registration/flag ownership slice**
+- [x] **Step 1: Add the failing registration/flag ownership slice**
 
 Expand `PhaseSevenStructuralBoundaryTest` and the workflow tests with only the Task 5 canonical route/action/middleware, redirect parity, mutation uniqueness, and old-mutation absence assertions. Run the focused tests and confirm failures identify the current `/superAdmin` ownership rather than unrelated workflow behavior.
 
-- [ ] **Step 2: Register canonical registration routes**
+- [x] **Step 2: Register canonical registration routes**
 
 Map queue and decisions to `admin.registrations.index|approve|reject`, preserving `review_registrations`, scoped private access, decision-service transactions, verified document metadata, idempotency, and `409` conflicts. Do not merge registration review and approved-shop renewal review.
 
-- [ ] **Step 3: Register canonical flagged-account routes**
+- [x] **Step 3: Register canonical flagged-account routes**
 
 Move GET and POST routes under `/admin/flagged-accounts`, preserving `moderate_reports`, `FlaggedAccountModerationService`, suspension provenance, appeal creation, audit, and notification behavior.
 
-- [ ] **Step 4: Migrate every server and client caller**
+- [x] **Step 4: Migrate every server and client caller**
 
 Update Inertia requests, sidebar/detail links, review-generated action URLs, tests, and notifications. Search both route names and literal strings; no first-party `/superAdmin/flagged-accounts` or old registration decision URL may remain.
 
-- [ ] **Step 5: Convert old GETs and remove old mutations**
+- [x] **Step 5: Convert old GETs and remove old mutations**
 
 Keep old registration/flagged GET pages as capability-protected redirects. Remove all `/superAdmin` registration and flagged POST routes; submitting to them must return `404|405`, never redirect/replay the mutation.
 
-- [ ] **Step 6: Regenerate frontend route metadata**
+- [x] **Step 6: Regenerate frontend route metadata**
 
 ```powershell
 php artisan ziggy:generate resources/js/ziggy.js
@@ -488,7 +488,7 @@ php artisan ziggy:generate resources/js/ziggy.js
 
 Confirm canonical registration/flag names are present and `/superAdmin` mutation names are absent.
 
-- [ ] **Step 7: Verify workflows and negative paths**
+- [x] **Step 7: Verify workflows and negative paths**
 
 ```powershell
 php artisan test tests/Feature/SuperAdmin/RegistrationDecisionWorkflowTest.php tests/Feature/SuperAdmin/FlaggedAccountWorkflowTest.php tests/Feature/Reports/ShopAndCustomerReportFlowTest.php tests/Feature/SuperAdmin/PrivilegedPhaseThreeBoundaryTest.php tests/Feature/SuperAdmin/PhaseSevenStructuralBoundaryTest.php
@@ -497,7 +497,7 @@ pnpm exec vitest run resources/js/Pages/superAdmin/Users/__tests__/FlaggedAccoun
 
 Expected: PASS; old mutation URLs are absent and canonical decisions preserve all transaction/audit behavior.
 
-- [ ] **Step 8: Commit canonical workflow routes**
+- [x] **Step 8: Commit canonical workflow routes**
 
 ```powershell
 git add -- routes/web.php app/Http/Controllers/superAdmin/ShopOwnerRegistrationViewController.php app/Http/Controllers/ShopOwner/CustomerReviewController.php app/Http/Controllers/Api/CRM/CRMReviewController.php resources/js/Pages/superAdmin/Shops/ShopOwnerRegistrationView.tsx resources/js/Pages/superAdmin/Users/FlaggedAccounts.tsx resources/js/Pages/superAdmin/Users/SuperAdminUserManagement.tsx resources/js/Pages/superAdmin/Users/__tests__/FlaggedAccounts.test.tsx resources/js/ziggy.js tests/Feature/SuperAdmin/RegistrationDecisionWorkflowTest.php tests/Feature/SuperAdmin/FlaggedAccountWorkflowTest.php tests/Feature/Reports/ShopAndCustomerReportFlowTest.php tests/Feature/SuperAdmin/PrivilegedPhaseThreeBoundaryTest.php tests/Feature/SuperAdmin/PhaseSevenStructuralBoundaryTest.php

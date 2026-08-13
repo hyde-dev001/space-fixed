@@ -280,6 +280,104 @@ final class PhaseSevenStructuralBoundaryTest extends TestCase
         $this->post('/admin/subscription-management')->assertStatus(405);
     }
 
+    public function test_registration_and_flagged_account_routes_have_canonical_owners(): void
+    {
+        $this->assertCanonicalRoute(
+            name: 'admin.registrations.index',
+            methods: ['GET', 'HEAD'],
+            uri: 'admin/registrations',
+            action: 'App\\Http\\Controllers\\superAdmin\\ShopOwnerRegistrationViewController@index',
+            capability: SuperAdmin::CAP_REVIEW_REGISTRATIONS,
+        );
+
+        foreach ([
+            'admin.registrations.approve' => ['admin/registrations/{shopOwner}/approve', 'approve'],
+            'admin.registrations.reject' => ['admin/registrations/{shopOwner}/reject', 'reject'],
+        ] as $name => [$uri, $action]) {
+            $this->assertCanonicalRoute(
+                name: $name,
+                methods: ['POST'],
+                uri: $uri,
+                action: 'App\\Http\\Controllers\\superAdmin\\ShopOwnerRegistrationViewController@'.$action,
+                capability: SuperAdmin::CAP_REVIEW_REGISTRATIONS,
+            );
+        }
+
+        $this->assertCanonicalRoute(
+            name: 'admin.flagged-accounts.index',
+            methods: ['GET', 'HEAD'],
+            uri: 'admin/flagged-accounts',
+            action: 'App\\Http\\Controllers\\superAdmin\\FlaggedAccountsController@index',
+            capability: SuperAdmin::CAP_MODERATE_REPORTS,
+        );
+
+        foreach ([
+            'mark-reviewed' => 'markReviewed',
+            'dismiss' => 'dismiss',
+            'ban' => 'ban',
+        ] as $suffix => $action) {
+            $this->assertCanonicalRoute(
+                name: 'admin.flagged-accounts.'.$suffix,
+                methods: ['POST'],
+                uri: 'admin/flagged-accounts/{id}/'.$suffix,
+                action: 'App\\Http\\Controllers\\superAdmin\\FlaggedAccountsController@'.$action,
+                capability: SuperAdmin::CAP_MODERATE_REPORTS,
+            );
+        }
+
+        foreach ([
+            'admin.shop-owner-approve',
+            'admin.shop-owner-reject',
+            'superAdmin.flagged-accounts.mark-reviewed',
+            'superAdmin.flagged-accounts.dismiss',
+            'superAdmin.flagged-accounts.ban',
+        ] as $retiredRoute) {
+            self::assertNull(RouteFacade::getRoutes()->getByName($retiredRoute), $retiredRoute);
+        }
+
+        $oldMutationRoutes = collect(RouteFacade::getRoutes())
+            ->filter(fn (Route $route): bool => in_array('POST', $route->methods(), true))
+            ->filter(fn (Route $route): bool => str_starts_with($route->uri(), 'admin/shop-owner-registration/')
+                || str_starts_with($route->uri(), 'superAdmin/flagged-accounts/'));
+
+        $this->assertCount(0, $oldMutationRoutes);
+    }
+
+    public function test_registration_and_flagged_account_legacy_pages_are_get_only_redirects(): void
+    {
+        foreach ([
+            'admin.shop-owner-registration-view' => 'admin/shop-owner-registration-view',
+            'superAdmin.shop-owner-registration-view' => 'superAdmin/shop-owner-registration-view',
+            'superAdmin.flagged-accounts' => 'superAdmin/flagged-accounts',
+        ] as $routeName => $uri) {
+            $routes = collect(RouteFacade::getRoutes())
+                ->filter(fn (Route $route): bool => $route->getName() === $routeName);
+
+            $this->assertNotEmpty($routes, "Missing compatibility route {$routeName}");
+            foreach ($routes as $route) {
+                $this->assertSame(['GET', 'HEAD'], $route->methods(), $routeName.' methods');
+                $this->assertSame($uri, $route->uri(), $routeName.' URI');
+                $this->assertSame('Closure', $route->getActionName(), $routeName.' action');
+            }
+        }
+
+        $admin = SuperAdmin::factory()->superAdmin()->create();
+        $this->actingAsCompletedPrivileged($admin);
+
+        $this->get('/admin/shop-owner-registration-view?status=pending&page=2')
+            ->assertRedirect(route('admin.registrations.index', [
+                'status' => 'pending',
+                'page' => 2,
+            ]));
+        $this->get('/superAdmin/shop-owner-registration-view?status=approved')
+            ->assertRedirect(route('admin.registrations.index', ['status' => 'approved']));
+        $this->get('/superAdmin/flagged-accounts?status=pending')
+            ->assertRedirect(route('admin.flagged-accounts.index', ['status' => 'pending']));
+
+        $this->post('/admin/shop-owner-registration-view')->assertStatus(405);
+        $this->post('/superAdmin/flagged-accounts')->assertStatus(405);
+    }
+
     /**
      * @param array<int, string> $methods
      */

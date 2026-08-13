@@ -40,7 +40,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
         $owner = $this->pendingRegistrationWithDocuments();
 
         $response = $this->actingAsCompletedPrivileged($admin)
-            ->postJson(route('admin.shop-owner-approve', $owner), $this->approvalPayload($owner));
+            ->postJson(route('admin.registrations.approve', $owner), $this->approvalPayload($owner));
 
         $response->assertOk()
             ->assertJsonPath('success', true)
@@ -78,7 +78,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
         $owner = $this->pendingRegistrationWithDocuments();
 
         $this->actingAsCompletedPrivileged($admin)
-            ->postJson(route('admin.shop-owner-approve', $owner), [
+            ->postJson(route('admin.registrations.approve', $owner), [
                 'documents' => [],
             ])
             ->assertStatus(422);
@@ -101,7 +101,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
         $payload['documents'][0]['viewed'] = false;
 
         $this->actingAsCompletedPrivileged($admin)
-            ->postJson(route('admin.shop-owner-approve', $owner), $payload)
+            ->postJson(route('admin.registrations.approve', $owner), $payload)
             ->assertStatus(422)
             ->assertJsonValidationErrors(['documents.0.viewed']);
 
@@ -125,7 +125,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
         $payload['documents'][$businessRegistrationIndex]['document_type'] = 'sec_registration';
 
         $this->actingAsCompletedPrivileged($admin)
-            ->postJson(route('admin.shop-owner-approve', $owner), $payload)
+            ->postJson(route('admin.registrations.approve', $owner), $payload)
             ->assertOk()
             ->assertJsonPath('applied', true);
 
@@ -144,7 +144,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
         $owner = $this->pendingRegistrationWithDocuments();
 
         $this->actingAsCompletedPrivileged($admin)
-            ->postJson(route('admin.shop-owner-reject', $owner), [])
+            ->postJson(route('admin.registrations.reject', $owner), [])
             ->assertStatus(422)
             ->assertJsonValidationErrors(['rejection_reason']);
 
@@ -152,7 +152,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
         Queue::assertNothingPushed();
 
         $this->actingAsCompletedPrivileged($admin)
-            ->postJson(route('admin.shop-owner-reject', $owner), [
+            ->postJson(route('admin.registrations.reject', $owner), [
                 'rejection_reason' => 'The submitted permit is not legible.',
             ])
             ->assertOk()
@@ -184,18 +184,18 @@ final class RegistrationDecisionWorkflowTest extends TestCase
         $reason = 'The submitted permit is not legible.';
 
         $this->actingAsCompletedPrivileged($admin)
-            ->postJson(route('admin.shop-owner-reject', $owner), ['rejection_reason' => $reason])
+            ->postJson(route('admin.registrations.reject', $owner), ['rejection_reason' => $reason])
             ->assertOk()
             ->assertJsonPath('applied', true);
         DB::commit();
 
         $this->actingAsCompletedPrivileged($admin)
-            ->postJson(route('admin.shop-owner-reject', $owner->fresh()), ['rejection_reason' => $reason])
+            ->postJson(route('admin.registrations.reject', $owner->fresh()), ['rejection_reason' => $reason])
             ->assertOk()
             ->assertJsonPath('applied', false);
 
         $this->actingAsCompletedPrivileged($admin)
-            ->postJson(route('admin.shop-owner-reject', $owner->fresh()), ['rejection_reason' => 'A different reason.'])
+            ->postJson(route('admin.registrations.reject', $owner->fresh()), ['rejection_reason' => 'A different reason.'])
             ->assertStatus(409);
 
         Queue::assertPushed(SendPrivilegedWorkflowMail::class, 1);
@@ -239,7 +239,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
         $owner = $this->pendingRegistrationWithDocuments();
 
         $this->actingAsCompletedPrivileged($admin)
-            ->postJson(route('admin.shop-owner-approve', $owner), $this->approvalPayload($owner))
+            ->postJson(route('admin.registrations.approve', $owner), $this->approvalPayload($owner))
             ->assertOk()
             ->assertJsonPath('applied', true);
         DB::commit();
@@ -248,7 +248,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
         $auditCount = $this->activityCount('shop_registration_approved', $owner);
 
         $this->actingAsCompletedPrivileged($admin)
-            ->postJson(route('admin.shop-owner-approve', $owner->fresh()))
+            ->postJson(route('admin.registrations.approve', $owner->fresh()))
             ->assertOk()
             ->assertJsonPath('applied', false);
 
@@ -257,14 +257,14 @@ final class RegistrationDecisionWorkflowTest extends TestCase
         Queue::assertPushed(SendPrivilegedWorkflowMail::class, 1);
 
         $this->actingAsCompletedPrivileged($admin)
-            ->postJson(route('admin.shop-owner-reject', $owner->fresh()), [
+            ->postJson(route('admin.registrations.reject', $owner->fresh()), [
                 'rejection_reason' => 'A conflicting decision must not apply.',
             ])
             ->assertStatus(409);
 
         $rejected = ShopOwner::factory()->rejected()->create();
         $this->actingAsCompletedPrivileged($admin)
-            ->postJson(route('admin.shop-owner-approve', $rejected), [])
+            ->postJson(route('admin.registrations.approve', $rejected), [])
             ->assertStatus(409);
     }
 
@@ -280,7 +280,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
         });
 
         $this->actingAsCompletedPrivileged($admin)
-            ->postJson(route('admin.shop-owner-approve', $owner), $this->approvalPayload($owner))
+            ->postJson(route('admin.registrations.approve', $owner), $this->approvalPayload($owner))
             ->assertStatus(500);
 
         $this->assertDatabaseHas('shop_owners', ['id' => $owner->id, 'status' => 'pending']);
@@ -302,7 +302,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
         });
 
         $this->actingAsCompletedPrivileged($admin)
-            ->postJson(route('admin.shop-owner-approve', $owner), $this->approvalPayload($owner))
+            ->postJson(route('admin.registrations.approve', $owner), $this->approvalPayload($owner))
             ->assertStatus(500);
 
         $this->assertDatabaseHas('shop_owners', ['id' => $owner->id, 'status' => 'pending']);
@@ -318,7 +318,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
         $document = $owner->documents()->orderBy('id')->firstOrFail();
 
         $response = $this->actingAsCompletedPrivileged($admin)
-            ->get(route('admin.shop-owner-registration-view'));
+            ->get(route('admin.registrations.index'));
 
         $response->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -421,7 +421,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
     private function assertApprovalValidationFailure(SuperAdmin $admin, ShopOwner $owner, string $type): void
     {
         $this->actingAsCompletedPrivileged($admin)
-            ->postJson(route('admin.shop-owner-approve', $owner), $this->approvalPayload($owner))
+            ->postJson(route('admin.registrations.approve', $owner), $this->approvalPayload($owner))
             ->assertStatus(422)
             ->assertJsonValidationErrors([$type]);
 

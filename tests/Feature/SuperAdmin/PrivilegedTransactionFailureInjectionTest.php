@@ -79,7 +79,7 @@ final class PrivilegedTransactionFailureInjectionTest extends TestCase
         $this->injectAuditFailure('shopRegistrationApproved', $secret);
 
         $response = $this->actingAsCompletedPrivileged($admin)
-            ->postJson(route('admin.shop-owner-approve', $owner), $this->approvalPayloadFor($owner));
+            ->postJson(route('admin.registrations.approve', $owner), $this->approvalPayloadFor($owner));
 
         $this->assertSafeFailure($response, 'shop_registration_approval_error', 'shop_registration', $secret);
         $this->assertSame('pending', $owner->fresh()->getRawOriginal('status'));
@@ -99,7 +99,7 @@ final class PrivilegedTransactionFailureInjectionTest extends TestCase
         $this->injectAuditFailure('shopRegistrationRejected', $secret);
 
         $response = $this->actingAsCompletedPrivileged($admin)
-            ->postJson(route('admin.shop-owner-reject', $owner), [
+            ->postJson(route('admin.registrations.reject', $owner), [
                 'rejection_reason' => 'Failure injection rejection',
             ]);
 

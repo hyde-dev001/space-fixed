@@ -35,30 +35,30 @@ final class FlaggedAccountWorkflowTest extends TestCase
         $report = $this->flaggedReport($customer);
         $this->actingAsCompletedPrivileged($admin);
 
-        $this->postJson("/superAdmin/flagged-accounts/{$report->id}/dismiss", [
+        $this->postJson("/admin/flagged-accounts/{$report->id}/dismiss", [
             'admin_notes' => 'Not investigated yet.',
         ])->assertStatus(409);
 
-        $this->postJson("/superAdmin/flagged-accounts/{$report->id}/ban", [
+        $this->postJson("/admin/flagged-accounts/{$report->id}/ban", [
             'admin_notes' => 'Not investigated yet.',
         ])->assertStatus(409);
 
-        $this->postJson("/superAdmin/flagged-accounts/{$report->id}/mark-reviewed")
+        $this->postJson("/admin/flagged-accounts/{$report->id}/mark-reviewed")
             ->assertOk()
             ->assertJson(['status' => 'under_investigation', 'changed' => true]);
 
-        $this->postJson("/superAdmin/flagged-accounts/{$report->id}/mark-reviewed")
+        $this->postJson("/admin/flagged-accounts/{$report->id}/mark-reviewed")
             ->assertOk()
             ->assertJson(['status' => 'under_investigation', 'changed' => false]);
 
-        $this->postJson("/superAdmin/flagged-accounts/{$report->id}/dismiss", [
+        $this->postJson("/admin/flagged-accounts/{$report->id}/dismiss", [
             'admin_notes' => 'Reviewed and dismissed.',
         ])->assertOk()->assertJson(['status' => 'dismissed', 'changed' => true]);
 
-        $this->postJson("/superAdmin/flagged-accounts/{$report->id}/mark-reviewed")
+        $this->postJson("/admin/flagged-accounts/{$report->id}/mark-reviewed")
             ->assertStatus(409);
 
-        $this->postJson("/superAdmin/flagged-accounts/{$report->id}/ban", [
+        $this->postJson("/admin/flagged-accounts/{$report->id}/ban", [
             'admin_notes' => 'Attempted reopen.',
         ])->assertStatus(409);
     }
@@ -70,7 +70,7 @@ final class FlaggedAccountWorkflowTest extends TestCase
         $report = $this->flaggedReport($customer, ['status' => ReviewReport::STATUS_LEGACY_BANNED]);
         $this->actingAsCompletedPrivileged($admin);
 
-        $response = $this->get('/superAdmin/flagged-accounts');
+        $response = $this->get('/admin/flagged-accounts');
         $response->assertOk();
 
         $payload = $this->extractInertiaPageData($response->getContent());
@@ -88,8 +88,8 @@ final class FlaggedAccountWorkflowTest extends TestCase
         $report = $this->flaggedReport($customer);
         $this->actingAsCompletedPrivileged($admin);
 
-        $this->postJson("/superAdmin/flagged-accounts/{$report->id}/mark-reviewed")->assertOk();
-        $first = $this->postJson("/superAdmin/flagged-accounts/{$report->id}/ban", [
+        $this->postJson("/admin/flagged-accounts/{$report->id}/mark-reviewed")->assertOk();
+        $first = $this->postJson("/admin/flagged-accounts/{$report->id}/ban", [
             'admin_notes' => 'Customer review manipulation confirmed.',
         ]);
 
@@ -107,7 +107,7 @@ final class FlaggedAccountWorkflowTest extends TestCase
         $this->assertSame(1, SuspensionAppeal::query()->count());
         $this->assertSame($suspension->id, (int) SuspensionAppeal::query()->value('suspension_id'));
 
-        $second = $this->postJson("/superAdmin/flagged-accounts/{$report->id}/ban", [
+        $second = $this->postJson("/admin/flagged-accounts/{$report->id}/ban", [
             'admin_notes' => 'Customer review manipulation confirmed.',
         ]);
 
@@ -132,20 +132,20 @@ final class FlaggedAccountWorkflowTest extends TestCase
         $report = $this->flaggedReport($customer);
         $this->actingAsCompletedPrivileged($admin);
 
-        $this->postJson("/superAdmin/flagged-accounts/{$report->id}/mark-reviewed")->assertOk();
-        $this->postJson("/superAdmin/flagged-accounts/{$report->id}/ban", [
+        $this->postJson("/admin/flagged-accounts/{$report->id}/mark-reviewed")->assertOk();
+        $this->postJson("/admin/flagged-accounts/{$report->id}/ban", [
             'admin_notes' => 'Original reason.',
         ])->assertOk();
 
-        $this->postJson("/superAdmin/flagged-accounts/{$report->id}/ban", [
+        $this->postJson("/admin/flagged-accounts/{$report->id}/ban", [
             'admin_notes' => 'Conflicting reason.',
         ])->assertStatus(409);
 
         $inactiveCustomer = $this->activePhaseTwoUser(['status' => 'inactive']);
         $inactiveReport = $this->flaggedReport($inactiveCustomer);
-        $this->postJson("/superAdmin/flagged-accounts/{$inactiveReport->id}/mark-reviewed")->assertOk();
+        $this->postJson("/admin/flagged-accounts/{$inactiveReport->id}/mark-reviewed")->assertOk();
 
-        $this->postJson("/superAdmin/flagged-accounts/{$inactiveReport->id}/ban", [
+        $this->postJson("/admin/flagged-accounts/{$inactiveReport->id}/ban", [
             'admin_notes' => 'Inactive customer cannot receive a new suspension.',
         ])->assertStatus(409);
 
@@ -163,8 +163,8 @@ final class FlaggedAccountWorkflowTest extends TestCase
         Employee::factory()->active()->create(['email' => $customer->email]);
         $this->actingAsCompletedPrivileged($admin);
 
-        $this->postJson("/superAdmin/flagged-accounts/{$report->id}/mark-reviewed")->assertOk();
-        $this->postJson("/superAdmin/flagged-accounts/{$report->id}/ban", [
+        $this->postJson("/admin/flagged-accounts/{$report->id}/mark-reviewed")->assertOk();
+        $this->postJson("/admin/flagged-accounts/{$report->id}/ban", [
             'admin_notes' => 'Employee ambiguity rollback.',
         ])->assertStatus(409);
 
@@ -182,13 +182,13 @@ final class FlaggedAccountWorkflowTest extends TestCase
         $report = $this->flaggedReport($customer);
         $this->actingAsCompletedPrivileged($admin);
 
-        $this->postJson("/superAdmin/flagged-accounts/{$report->id}/mark-reviewed")->assertOk();
+        $this->postJson("/admin/flagged-accounts/{$report->id}/mark-reviewed")->assertOk();
 
         $audit = Mockery::mock(PrivilegedAudit::class);
         $audit->shouldReceive('flaggedAccountModerated')->once()->andThrow(new \RuntimeException('audit unavailable'));
         app()->instance(PrivilegedAudit::class, $audit);
 
-        $this->postJson("/superAdmin/flagged-accounts/{$report->id}/ban", [
+        $this->postJson("/admin/flagged-accounts/{$report->id}/ban", [
             'admin_notes' => 'Audit rollback.',
         ])->assertStatus(500);
 
@@ -206,9 +206,9 @@ final class FlaggedAccountWorkflowTest extends TestCase
         $report = $this->flaggedReport($customer);
         $this->actingAsCompletedPrivileged($admin);
 
-        $this->postJson("/superAdmin/flagged-accounts/{$report->id}/mark-reviewed")
+        $this->postJson("/admin/flagged-accounts/{$report->id}/mark-reviewed")
             ->assertOk();
-        $this->postJson("/superAdmin/flagged-accounts/{$report->id}/dismiss", [
+        $this->postJson("/admin/flagged-accounts/{$report->id}/dismiss", [
             'admin_notes' => 'Admin moderation is permitted.',
         ])->assertOk();
 

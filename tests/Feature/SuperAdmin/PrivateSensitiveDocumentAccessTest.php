@@ -484,7 +484,7 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
         $customer->save();
 
         $registrationResponse = $this->actingAsCompletedPrivileged($admin)
-            ->get(route('admin.shop-owner-registration-view'));
+            ->get(route('admin.registrations.index'));
         $registrationResponse->assertInertia(fn (Assert $page) => $page
             ->where('registrations.0.documents.0.url', route('admin.shop-documents.show', [$owner, $document]))
             ->missing('registrations.0.documents.0.file_path'));

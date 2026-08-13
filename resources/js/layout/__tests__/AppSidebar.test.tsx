@@ -61,7 +61,7 @@ beforeEach(() => {
       landing: '/',
       'admin.system-monitoring': '/admin/system-monitoring',
       'admin.audit': '/admin/audit',
-      'admin.shop-owner-registration-view': '/admin/shop-owner-registration-view',
+      'admin.registrations.index': '/admin/registrations',
       'admin.business-upgrade-requests.index': '/admin/business-upgrade-requests',
       'admin.administrators.index': '/admin/administrators',
       'admin.subscriptions.index': '/admin/subscriptions',
@@ -96,7 +96,7 @@ it('shows truthful canonical operational links to both privileged roles', () => 
   expect(screen.getByRole('link', { name: /dashboard/i })).toHaveAttribute('href', '/admin/system-monitoring');
   expect(screen.getByRole('link', { name: /audit history/i })).toHaveAttribute('href', '/admin/audit');
   expect(screen.getByRole('link', { name: /user management/i })).toHaveAttribute('href', '/admin/users');
-  expect(screen.getByRole('link', { name: /shop management/i })).toHaveAttribute('href', '/admin/shop-owner-registration-view');
+  expect(screen.getByRole('link', { name: /shop management/i })).toHaveAttribute('href', '/admin/registrations');
   expect(screen.queryByText(/notification & communication tools/i)).not.toBeInTheDocument();
 });
 

@@ -53,7 +53,7 @@ class PhaseZeroAuthorizationTest extends TestCase
         $user = $this->suspendedUserWithCurrentIdentity();
 
         $this->actingAsCompletedPrivileged($admin)
-            ->get('/admin/shop-owner-registration-view')
+            ->get('/admin/registrations')
             ->assertOk();
 
         $this->actingAsCompletedPrivileged($admin)
@@ -75,7 +75,7 @@ class PhaseZeroAuthorizationTest extends TestCase
             ->assertOk();
 
         $this->actingAsCompletedPrivileged($admin)
-            ->get('/admin/shop-owner-registration-view')
+            ->get('/admin/registrations')
             ->assertOk();
 
         $this->actingAsCompletedPrivileged($admin)
@@ -115,10 +115,10 @@ class PhaseZeroAuthorizationTest extends TestCase
             'admin.administrators.store' => SuperAdmin::CAP_MANAGE_ADMINISTRATORS,
             'admin.administrators.suspend' => SuperAdmin::CAP_MANAGE_ADMINISTRATORS,
             'admin.administrators.activate' => SuperAdmin::CAP_MANAGE_ADMINISTRATORS,
-            'admin.shop-owner-registration-view' => SuperAdmin::CAP_REVIEW_REGISTRATIONS,
+            'admin.registrations.index' => SuperAdmin::CAP_REVIEW_REGISTRATIONS,
             'admin.shop-documents.show' => SuperAdmin::CAP_REVIEW_REGISTRATIONS,
-            'admin.shop-owner-approve' => SuperAdmin::CAP_REVIEW_REGISTRATIONS,
-            'admin.shop-owner-reject' => SuperAdmin::CAP_REVIEW_REGISTRATIONS,
+            'admin.registrations.approve' => SuperAdmin::CAP_REVIEW_REGISTRATIONS,
+            'admin.registrations.reject' => SuperAdmin::CAP_REVIEW_REGISTRATIONS,
             'admin.business-upgrade-requests.index' => SuperAdmin::CAP_REVIEW_REGISTRATIONS,
             'admin.business-upgrade-requests.update' => SuperAdmin::CAP_REVIEW_REGISTRATIONS,
             'admin.business-upgrade-requests.documents.download' => SuperAdmin::CAP_REVIEW_REGISTRATIONS,
@@ -151,16 +151,16 @@ class PhaseZeroAuthorizationTest extends TestCase
     public function test_registration_mutations_have_one_canonical_owner_and_no_legacy_mutation(): void
     {
         $approvalRoutes = collect(Route::getRoutes())
-            ->filter(fn ($route) => $route->uri() === 'admin/shop-owner-registration/{id}/approve')
+            ->filter(fn ($route) => $route->uri() === 'admin/registrations/{shopOwner}/approve')
             ->filter(fn ($route) => in_array('POST', $route->methods(), true));
         $rejectionRoutes = collect(Route::getRoutes())
-            ->filter(fn ($route) => $route->uri() === 'admin/shop-owner-registration/{id}/reject')
+            ->filter(fn ($route) => $route->uri() === 'admin/registrations/{shopOwner}/reject')
             ->filter(fn ($route) => in_array('POST', $route->methods(), true));
 
         $this->assertCount(1, $approvalRoutes);
         $this->assertCount(1, $rejectionRoutes);
-        $this->assertSame('admin.shop-owner-approve', $approvalRoutes->first()->getName());
-        $this->assertSame('admin.shop-owner-reject', $rejectionRoutes->first()->getName());
+        $this->assertSame('admin.registrations.approve', $approvalRoutes->first()->getName());
+        $this->assertSame('admin.registrations.reject', $rejectionRoutes->first()->getName());
 
         $shopOwner = ShopOwner::factory()->create(['status' => 'pending']);
 
@@ -176,11 +176,11 @@ class PhaseZeroAuthorizationTest extends TestCase
     public function test_registration_route_compatibility_is_get_only_and_redirects_to_admin(): void
     {
         $canonicalIndex = collect(Route::getRoutes())
-            ->filter(fn ($route) => $route->getName() === 'admin.shop-owner-registration-view');
+            ->filter(fn ($route) => $route->getName() === 'admin.registrations.index');
         $canonicalApproval = collect(Route::getRoutes())
-            ->filter(fn ($route) => $route->getName() === 'admin.shop-owner-approve');
+            ->filter(fn ($route) => $route->getName() === 'admin.registrations.approve');
         $canonicalRejection = collect(Route::getRoutes())
-            ->filter(fn ($route) => $route->getName() === 'admin.shop-owner-reject');
+            ->filter(fn ($route) => $route->getName() === 'admin.registrations.reject');
         $legacyCompatibility = collect(Route::getRoutes())
             ->filter(fn ($route) => $route->uri() === 'superAdmin/shop-owner-registration-view');
 
@@ -193,7 +193,7 @@ class PhaseZeroAuthorizationTest extends TestCase
         $admin = SuperAdmin::factory()->admin()->create();
         $this->actingAsCompletedPrivileged($admin)
             ->get('/superAdmin/shop-owner-registration-view')
-            ->assertRedirect(route('admin.shop-owner-registration-view'));
+            ->assertRedirect(route('admin.registrations.index'));
     }
 
     public function test_legacy_registration_mutations_are_not_registered_for_authenticated_admins(): void

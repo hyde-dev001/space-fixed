@@ -338,7 +338,7 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
       const documents = documentsForRegistration(registration);
       const payload = buildRegistrationApprovalPayload(documents, viewedDocuments[id] ?? new Set(), reviewMetadata);
 
-      router.post(`/admin/shop-owner-registration/${id}/approve`, payload, {
+      router.post(`/admin/registrations/${id}/approve`, payload, {
         onSuccess: () => {
           setRegistrationsState(prev =>
             prev.map(reg => reg.id === id ? { ...reg, status: "approved" as const } : reg)
@@ -404,7 +404,7 @@ export default function ShopOwnerRegistrationView({ registrations = [] }: { regi
 
     if (result.isConfirmed) {
       setSubmittingRegistrationId(registrationToReject.id);
-      router.post(`/admin/shop-owner-registration/${registrationToReject.id}/reject`,
+      router.post(`/admin/registrations/${registrationToReject.id}/reject`,
         {
           rejection_reason: rejectionReason
         },

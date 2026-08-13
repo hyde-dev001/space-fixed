@@ -423,7 +423,7 @@ class ShopAndCustomerReportFlowTest extends TestCase
             'reviewed_by' => $superAdmin->id,
         ]);
 
-        $flaggedPage = $this->get('/superAdmin/flagged-accounts');
+        $flaggedPage = $this->get('/admin/flagged-accounts');
         $flaggedPage->assertOk();
 
         $flaggedPayload = $this->extractInertiaPageData($flaggedPage->getContent());
@@ -437,11 +437,11 @@ class ShopAndCustomerReportFlowTest extends TestCase
             'Expected reported customer review to be visible in flagged accounts page.'
         );
 
-        $this->postWithCsrf("/superAdmin/flagged-accounts/{$reviewReport->id}/mark-reviewed")
+        $this->postWithCsrf("/admin/flagged-accounts/{$reviewReport->id}/mark-reviewed")
             ->assertOk()
             ->assertJson(['status' => 'under_investigation']);
 
-        $this->postWithCsrf("/superAdmin/flagged-accounts/{$reviewReport->id}/dismiss", [
+        $this->postWithCsrf("/admin/flagged-accounts/{$reviewReport->id}/dismiss", [
             'admin_notes' => 'Reviewed and dismissed after investigation.',
         ])->assertOk()->assertJson(['status' => 'dismissed']);
 

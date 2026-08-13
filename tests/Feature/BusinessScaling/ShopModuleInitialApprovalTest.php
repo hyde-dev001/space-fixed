@@ -86,7 +86,7 @@ final class ShopModuleInitialApprovalTest extends TestCase
         $admin = SuperAdmin::factory()->admin()->create();
         $this->actingAsCompletedPrivileged($admin);
         $request = ApproveShopOwnerRegistrationRequest::create(
-            '/superAdmin/shop-owner-registration/'.$owner->id.'/approve',
+            '/admin/registrations/'.$owner->id.'/approve',
             'POST',
             $this->approvalPayloadFor($owner),
         );

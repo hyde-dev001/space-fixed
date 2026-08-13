@@ -131,7 +131,7 @@ const FlaggedAccounts: React.FC = () => {
 
     try {
       const response = await axios.post(
-        `/superAdmin/flagged-accounts/${account.id}/${action}`,
+        `/admin/flagged-accounts/${account.id}/${action}`,
         adminNotes === undefined ? {} : { admin_notes: adminNotes },
       );
       patchStatus(account.id, response.data?.status ?? account.status);

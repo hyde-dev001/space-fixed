@@ -87,13 +87,13 @@ class ShopOwnerRegistrationViewController extends Controller
         return (string) $document->document_type;
     }
 
-    public function approve(ApproveShopOwnerRegistrationRequest $request, $id, ?PrivilegedFailureResponse $failures = null)
+    public function approve(ApproveShopOwnerRegistrationRequest $request, int $shopOwner, ?PrivilegedFailureResponse $failures = null)
     {
         $actor = $request->user('super_admin');
         abort_unless($actor instanceof SuperAdmin, 403);
 
         try {
-            $outcome = $this->registrationDecisions->approve($request, $actor, (int) $id);
+            $outcome = $this->registrationDecisions->approve($request, $actor, $shopOwner);
         } catch (ConflictHttpException $exception) {
             return $this->conflictResponse($request, $exception->getMessage());
         } catch (ValidationException $exception) {
@@ -126,7 +126,7 @@ class ShopOwnerRegistrationViewController extends Controller
             : 'Shop owner registration was already approved.');
     }
 
-    public function reject(RejectShopOwnerRegistrationRequest $request, $id, ?PrivilegedFailureResponse $failures = null)
+    public function reject(RejectShopOwnerRegistrationRequest $request, int $shopOwner, ?PrivilegedFailureResponse $failures = null)
     {
         $actor = $request->user('super_admin');
         abort_unless($actor instanceof SuperAdmin, 403);
@@ -135,7 +135,7 @@ class ShopOwnerRegistrationViewController extends Controller
             $outcome = $this->registrationDecisions->reject(
                 $request,
                 $actor,
-                (int) $id,
+                $shopOwner,
                 (string) $request->validated('rejection_reason'),
             );
         } catch (ConflictHttpException $exception) {

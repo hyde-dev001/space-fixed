@@ -738,19 +738,10 @@ Route::prefix('superAdmin')->name('superAdmin.')->middleware([
     Route::get('/super-admin-user-management', fn () => redirect()->route('admin.users.index', request()->query()))
         ->middleware('privileged.capability:intervene_accounts')
         ->name('super-admin-user-management');
-    Route::get('/flagged-accounts', [FlaggedAccountsController::class, 'index'])
+    Route::get('/flagged-accounts', fn () => redirect()->route('admin.flagged-accounts.index', request()->query()))
         ->middleware('privileged.capability:moderate_reports')
         ->name('flagged-accounts');
-    Route::post('/flagged-accounts/{id}/mark-reviewed', [FlaggedAccountsController::class, 'markReviewed'])
-        ->middleware('privileged.capability:moderate_reports')
-        ->name('flagged-accounts.mark-reviewed');
-    Route::post('/flagged-accounts/{id}/dismiss', [FlaggedAccountsController::class, 'dismiss'])
-        ->middleware('privileged.capability:moderate_reports')
-        ->name('flagged-accounts.dismiss');
-    Route::post('/flagged-accounts/{id}/ban', [FlaggedAccountsController::class, 'ban'])
-        ->middleware('privileged.capability:moderate_reports')
-        ->name('flagged-accounts.ban');
-    Route::get('/shop-owner-registration-view', fn () => redirect()->route('admin.shop-owner-registration-view'))
+    Route::get('/shop-owner-registration-view', fn () => redirect()->route('admin.registrations.index', request()->query()))
         ->middleware('privileged.capability:review_registrations')
         ->name('shop-owner-registration-view');
     Route::get('/system-monitoring-dashboard', [SystemMonitoringDashboardController::class, 'index'])
@@ -1824,7 +1815,10 @@ Route::middleware([
         ->middleware('privileged.capability:manage_administrators')
         ->name('create-admin');
 
-    Route::get('/shop-owner-registration-view', [ShopOwnerRegistrationViewController::class, 'index'])
+    Route::get('/registrations', [ShopOwnerRegistrationViewController::class, 'index'])
+        ->middleware('privileged.capability:review_registrations')
+        ->name('registrations.index');
+    Route::get('/shop-owner-registration-view', fn () => redirect()->route('admin.registrations.index', request()->query()))
         ->middleware('privileged.capability:review_registrations')
         ->name('shop-owner-registration-view');
     Route::get('/document-renewals', [SuperAdminShopDocumentRenewalController::class, 'index'])
@@ -1845,12 +1839,29 @@ Route::middleware([
     Route::get('/users/{user}/valid-id', [PrivateSensitiveDocumentController::class, 'showCustomerValidId'])
         ->middleware('privileged.capability:intervene_accounts')
         ->name('users.valid-id.show');
-    Route::post('/shop-owner-registration/{id}/approve', [ShopOwnerRegistrationViewController::class, 'approve'])
+    Route::post('/registrations/{shopOwner}/approve', [ShopOwnerRegistrationViewController::class, 'approve'])
+        ->whereNumber('shopOwner')
         ->middleware('privileged.capability:review_registrations')
-        ->name('shop-owner-approve');
-    Route::post('/shop-owner-registration/{id}/reject', [ShopOwnerRegistrationViewController::class, 'reject'])
+        ->name('registrations.approve');
+    Route::post('/registrations/{shopOwner}/reject', [ShopOwnerRegistrationViewController::class, 'reject'])
+        ->whereNumber('shopOwner')
         ->middleware('privileged.capability:review_registrations')
-        ->name('shop-owner-reject');
+        ->name('registrations.reject');
+    Route::get('/flagged-accounts', [FlaggedAccountsController::class, 'index'])
+        ->middleware('privileged.capability:moderate_reports')
+        ->name('flagged-accounts.index');
+    Route::post('/flagged-accounts/{id}/mark-reviewed', [FlaggedAccountsController::class, 'markReviewed'])
+        ->whereNumber('id')
+        ->middleware('privileged.capability:moderate_reports')
+        ->name('flagged-accounts.mark-reviewed');
+    Route::post('/flagged-accounts/{id}/dismiss', [FlaggedAccountsController::class, 'dismiss'])
+        ->whereNumber('id')
+        ->middleware('privileged.capability:moderate_reports')
+        ->name('flagged-accounts.dismiss');
+    Route::post('/flagged-accounts/{id}/ban', [FlaggedAccountsController::class, 'ban'])
+        ->whereNumber('id')
+        ->middleware('privileged.capability:moderate_reports')
+        ->name('flagged-accounts.ban');
     // Registered-shop management owns shop reads and lifecycle mutations.
     Route::get('/shops', [RegisteredShopController::class, 'index'])
         ->middleware('privileged.capability:intervene_accounts')
@@ -2714,7 +2725,7 @@ Route::prefix('superAdmin')->name('superAdmin.')->middleware([
     Route::get('/super-admin-user-management', fn () => redirect()->route('admin.users.index', request()->query()))
         ->middleware('privileged.capability:intervene_accounts')
         ->name('super-admin-user-management');
-    Route::get('/flagged-accounts', [FlaggedAccountsController::class, 'index'])
+    Route::get('/flagged-accounts', fn () => redirect()->route('admin.flagged-accounts.index', request()->query()))
         ->middleware('privileged.capability:moderate_reports')
         ->name('flagged-accounts');
     Route::get('/system-monitoring-dashboard', [SystemMonitoringDashboardController::class, 'index'])
