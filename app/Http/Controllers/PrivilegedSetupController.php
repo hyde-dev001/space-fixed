@@ -16,6 +16,7 @@ use App\Services\PrivilegedSessionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Inertia\Inertia;
 use InvalidArgumentException;
@@ -63,6 +64,9 @@ final class PrivilegedSetupController extends Controller
             return $this->invalidSetupLink($request);
         }
 
+        // Persist the rotated authorization session before the browser can submit the password step.
+        $request->session()->save();
+
         return response()->json(['authorized' => true]);
     }
 
@@ -70,6 +74,10 @@ final class PrivilegedSetupController extends Controller
     {
         $authorization = $this->setupAuthorization($request);
         if ($authorization === null) {
+            Log::warning('Privileged setup authorization missing from session', [
+                'correlation_id' => $request->attributes->get('privileged_audit_correlation_id'),
+            ]);
+
             return $this->invalidSetupLink($request);
         }
 
@@ -106,8 +114,18 @@ final class PrivilegedSetupController extends Controller
                     return $lockedAdmin;
                 },
             );
-        } catch (\Throwable) {
+        } catch (InvalidArgumentException) {
             return $this->invalidSetupLink($request);
+        } catch (\Throwable $exception) {
+            report($exception);
+            Log::warning('Privileged setup password completion failed', [
+                'correlation_id' => $request->attributes->get('privileged_audit_correlation_id'),
+                'token_id' => $authorization['token_id'],
+                'subject_id' => $authorization['subject_id'],
+                'exception_class' => $exception::class,
+            ]);
+
+            return $this->setupCompletionFailed($request);
         }
 
         $request->session()->forget('privileged_setup_authorization');
@@ -272,23 +290,49 @@ final class PrivilegedSetupController extends Controller
     private function setupAuthorization(Request $request): ?array
     {
         $authorization = $request->session()->get('privileged_setup_authorization');
+        $tokenId = is_array($authorization)
+            ? $this->positiveSessionInteger($authorization['token_id'] ?? null)
+            : null;
+        $subjectId = is_array($authorization)
+            ? $this->positiveSessionInteger($authorization['subject_id'] ?? null)
+            : null;
+        $authorizedAt = is_array($authorization)
+            ? $this->positiveSessionInteger($authorization['authorized_at'] ?? null)
+            : null;
+        $purpose = is_array($authorization)
+            ? ($authorization['purpose'] ?? null)
+            : null;
 
         if (! is_array($authorization)
-            || ! isset($authorization['token_id'], $authorization['subject_id'], $authorization['purpose'], $authorization['authorized_at'])
-            || ! is_int($authorization['token_id'])
-            || ! is_int($authorization['subject_id'])
-            || ! is_int($authorization['authorized_at'])
-            || $authorization['purpose'] !== PrivilegedSecurityToken::PURPOSE_SETUP
-            || $authorization['authorized_at'] < now()->subMinutes((int) config('privileged_security.setup_token_minutes', 1440))->timestamp) {
+            || $tokenId === null
+            || $subjectId === null
+            || $authorizedAt === null
+            || $purpose !== PrivilegedSecurityToken::PURPOSE_SETUP
+            || $authorizedAt < now()->subMinutes((int) config('privileged_security.setup_token_minutes', 1440))->timestamp) {
             return null;
         }
 
         return [
-            'token_id' => $authorization['token_id'],
-            'subject_id' => $authorization['subject_id'],
-            'purpose' => $authorization['purpose'],
-            'authorized_at' => $authorization['authorized_at'],
+            'token_id' => $tokenId,
+            'subject_id' => $subjectId,
+            'purpose' => $purpose,
+            'authorized_at' => $authorizedAt,
         ];
+    }
+
+    private function positiveSessionInteger(mixed $value): ?int
+    {
+        if (is_int($value)) {
+            return $value > 0 ? $value : null;
+        }
+
+        if (! is_string($value) || preg_match('/^[1-9][0-9]*$/D', $value) !== 1) {
+            return null;
+        }
+
+        $parsed = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+
+        return is_int($parsed) ? $parsed : null;
     }
 
     private function isSetupStage(Request $request, SuperAdmin $admin): bool
@@ -308,6 +352,19 @@ final class PrivilegedSetupController extends Controller
 
         return redirect('/admin/setup')->withErrors([
             'token' => 'The setup link is invalid or expired.',
+        ]);
+    }
+
+    private function setupCompletionFailed(Request $request)
+    {
+        $message = 'Setup could not be completed. Please try again.';
+
+        if ($request->expectsJson()) {
+            return response()->json(['message' => $message], 500);
+        }
+
+        return redirect('/admin/setup')->withErrors([
+            'error' => $message,
         ]);
     }
 
