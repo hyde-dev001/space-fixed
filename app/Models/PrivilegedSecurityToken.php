@@ -27,6 +27,8 @@ final class PrivilegedSecurityToken extends Model
     ];
 
     protected $casts = [
+        'super_admin_id' => 'integer',
+        'created_by_super_admin_id' => 'integer',
         'expires_at' => 'datetime',
         'used_at' => 'datetime',
     ];
