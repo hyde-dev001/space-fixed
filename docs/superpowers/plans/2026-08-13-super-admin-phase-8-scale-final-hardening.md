@@ -2,7 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** DRAFT FOR APPROVAL
+**Status:** IMPLEMENTATION COMPLETE — PRODUCTION EVIDENCE PENDING
+
+### Execution evidence (2026-08-13)
+
+Tasks 1-9 were executed sequentially in the Phase 7 worktree. Focused Phase 8 backend verification passed with 3,861 assertions; the integrated negative-path suite passed with 337 assertions; focused frontend verification passed 43 tests across 13 files; the full frontend suite and Vite build exited successfully; the full Laravel suite passed directly with 48,806 assertions, 1,875 warnings, and 3 skipped; and browser verification confirmed protected/query-preserving redirects, old mutation `405` responses, and zero console/page errors on a fresh local server. `git diff --check`, route/schedule inspection, Ziggy generation, and forced migration-pretend verification also passed.
+
+The `composer test` wrapper did not complete within its 300-second process timeout, but the equivalent direct Laravel suite completed successfully outside that wrapper with the disposable process-local `APP_KEY`. Local production-only evidence remains unavailable: deployed notification-link counts, redirect telemetry and its observation window, MariaDB/MySQL `EXPLAIN` and lock-harness results, scheduler/cache/queue confirmations, and authenticated Admin/Super Admin browser credentials. No compatibility alias was removed and no Phase 8 index migration was created. The implementation is complete, but the plan is not production-ready until those external prerequisites are verified; the detailed record is in `docs/runbooks/super-admin-operations.md`.
 
 **Goal:** Bound every operational Super Admin query and hydration path, prove the document reminder and renewal workflows remain deterministic under scale and concurrency, retire compatibility aliases only when deployed evidence makes removal safe, and complete integrated negative-path verification for the hardened module.
 

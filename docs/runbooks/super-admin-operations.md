@@ -210,3 +210,48 @@ All fifteen aliases remain protected, read-only GET|HEAD redirects for the next 
 | `/shop/register` | 1 | Retain: deployed bookmark/telemetry evidence unknown |
 
 No route, generated metadata, historical notification URL, or mutation alias was changed during this decision. Any future removal requires zero repository callers, zero deployed persisted links across relative/absolute/query-string forms, and legitimate-traffic telemetry covering a defined deployment-appropriate observation window. Old mutation URLs remain absent.
+
+### Task 9 final verification and production-evidence boundary (2026-08-13)
+
+Phase 8 implementation verification is complete locally. This section deliberately separates local implementation evidence from production readiness.
+
+Environment and production assumptions:
+
+- Local `php artisan about` reported Laravel `12.66.0`, PHP `8.2.12`, Composer `2.9.3`, SQLite `3.39.2`, application timezone `UTC`, and shop timezone `Asia/Manila`. The worktree has no `.env` or `.env.testing`; no credentials or environment-file contents were read.
+- Local `schedule:list` reported nine scheduled entries and one `shop-documents:send-expiry-reminders` entry. The exact production scheduler host/process, overlap-lock suitability, shared atomic cache support, queue worker/retry/backoff/timeout configuration, and failed-job monitoring remain unknown. No `onOneServer()` change was made.
+- Local route/config inspection and `migrate --pretend --force` completed successfully. The production route/config cache rebuild process and database engine/version remain deployment-owner confirmations. No Phase 8 index migration was created.
+- MariaDB/MySQL production `EXPLAIN` output and a production-compatible row-lock concurrency harness were unavailable. SQLite evidence is retained for invariants and bounded-query behavior only and is not treated as equivalent lock or index evidence.
+
+Review stack results:
+
+1. **Simplify / ponytail:** completed. Direct bounded queries and existing paginator conventions were retained; no generic pagination, repository, report-builder, cache, dependency, or shared-expiry abstraction was added.
+2. **Standards:** completed. Laravel validation, selected columns, constrained eager loading, aggregate queries, deterministic ordering, route ownership, and Inertia/React conventions were reviewed.
+3. **Spec:** completed against the Phase 8 contracts. Compatibility aliases were retained because deployed-link and telemetry evidence is unknown; no production-ready claim is made.
+4. **Correctness/risk:** completed locally. Focused workflow, stale-state, billing, private-document, reminder, renewal, audit, and negative-path suites passed; MariaDB/MySQL lock evidence remains unknown.
+5. **TypeScript/React:** completed. Focused frontend verification passed 43 tests across 13 files, and the full frontend suite exited successfully. Node emitted the existing `--localstorage-file was provided without a valid path` warning. The repository has no committed TypeScript type-check or lint script, so neither is claimed.
+6. **Code splitting:** N/A. Pagination and bounded history did not add a heavy conditional dependency.
+7. **Gauge improvements:** measured row caps, paginator bounds, baseline/final query counts, bounded relation growth, route alias counts, and build output. Controlled latency, bundle-size improvement, deployed traffic, and production query-plan improvements were not measured.
+8. **Security review:** completed locally for capability and active/MFA boundaries, private-object scope, explicit history serialization, audit-failure behavior, old mutation absence, and stale/race negative paths.
+9. **Verification before completion:** completed with fresh route, schedule, migration-pretend, frontend, build, focused backend, browser, direct full-suite, and diff-hygiene evidence. The Composer wrapper remains timeout-limited as described below.
+
+Verification commands and results:
+
+- Focused Phase 8/privileged backend suite: exit `0`, 73 warning-level tests, 3,861 assertions. Warnings were the existing no-`.env` configuration warning; the SQLite lock-dependent case remains explicitly skipped where applicable.
+- Integrated billing/transaction/upgrade negative-path suite: exit `0`, 34 warnings, 1 skipped, 337 assertions. The skipped MySQL refund race requires unavailable `MYSQL_TEST_DATABASE` configuration.
+- Focused frontend Phase 8 suite: exit `0`, 13 files and 43 tests passed.
+- `pnpm run test:frontend`: exit `0`; no test failure was reported. The existing Node localStorage harness warning was emitted.
+- `pnpm run build`: exit `0`; Vite transformed 3,692 modules and completed in 25.62 seconds. Generated `public/build` output was restored after verification and is not part of the Phase 8 source change.
+- `php artisan route:list`, `php artisan schedule:list`, `php artisan migrate --pretend --force`, `php artisan ziggy:generate resources/js/ziggy.js`, and `git diff --check`: completed successfully.
+- `composer test`: the wrapper was attempted with 120-second and 300-second command limits and did not complete; the exact APP_KEY-backed attempt reached Composer's own 300-second process timeout (exit `1`). The underlying suite was then run directly with `APP_KEY` set only for the process: `php artisan test --compact` exited `0` with 48,806 assertions, 1,875 warnings, 3 skipped, and a 391.70-second duration. Therefore the Laravel suite passed; the Composer wrapper itself is recorded as timeout-limited rather than passed. The warnings include the repository's existing PHPUnit doc-comment metadata and no-`.env` configuration warnings.
+
+Browser verification on a fresh local server at `127.0.0.1:8011`:
+
+- `/admin/users?page=2&per_page=15`, `/superAdmin/notification-communication-tools?unread=1`, and `/superAdmin/data-report-access?event=user_suspended&page=3` followed their authentication boundary to `/admin/login` with status `200` after the redirect.
+- `/shop/register?source=legacy&page=2` redirected to `/shop-owner-register?source=legacy&page=2`, preserving both query values.
+- `POST /admin/subscription-management` and `POST /superAdmin/flagged-accounts` returned `405` without following a redirect.
+- Browser console errors: `0`; page errors: `0`.
+- Authenticated Admin and Super Admin browser flows were not run because this worktree has no safe seeded privileged credentials or configured environment. This is an explicit production-evidence gap, not a pass.
+
+Final status: **IMPLEMENTATION COMPLETE — PRODUCTION EVIDENCE PENDING**.
+
+The remaining prerequisites are production scheduler/queue/cache confirmations, deployed persisted-link counts, a defined redirect/bookmark telemetry window, MariaDB/MySQL query plans and lock-harness evidence, and authenticated browser verification for both privileged roles. Until those are supplied, the Phase 8 plan must not be marked `EXECUTED / PRODUCTION-READY`.
