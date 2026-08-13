@@ -259,6 +259,7 @@ export type DeliveryBatch = {
 };
 
 export type DeliveryBatchPageProps = {
+  today?: string;
   batches: DeliveryBatch[];
   pool: TrackingShipmentLeg[];
   unscheduled: TrackingShipmentLeg[];
