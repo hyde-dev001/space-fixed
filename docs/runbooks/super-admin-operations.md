@@ -60,3 +60,50 @@ php artisan shop-documents:reconcile-legacy --apply --shop-owner-id=123 --chunk=
 The reconciler may assign stable slots, versions, predecessor links, and `expiration_mode=unknown` when ordering is deterministic. It never infers DTI versus SEC, expiration dates, missing files, or a current row from public/ambiguous evidence. Unresolved IDs require operator review; do not manually rewrite historical rows or delete their files.
 
 Re-run the same reviewed batch to verify it is inert. Approved shops retain a private legacy DTI/SEC compatibility label until a concrete DTI or SEC renewal is reviewed. Upgrade evidence reuse remains limited to current approved private documents; public, missing, or superseded files must be uploaded again.
+
+## Privileged runtime ownership
+
+Each responsibility has one runtime owner. Phase 7 extracts HTTP orchestration without changing the existing services, authorization boundaries, audit semantics, or document lifecycle rules.
+
+| Responsibility | Runtime owner |
+| --- | --- |
+| Owner registration | `ShopOwnerAuthController` + `ShopDocumentLifecycleService` |
+| Owner renewal submission | `ShopOwnerDocumentRenewalController` + `ShopDocumentLifecycleService` |
+| Registration review | `superAdmin/ShopOwnerRegistrationViewController` + registration decision service |
+| Renewal review | `superAdmin/ShopDocumentRenewalController` + `ShopDocumentLifecycleService` |
+| Private document access | `PrivateSensitiveDocumentController` |
+| Shop expiry detection and reminders | `SendShopDocumentExpiryReminders` + `ShopDocumentReminderService` |
+| HR expiry processing | `CheckDocumentExpiry` (`EmployeeDocument` only) |
+| Notification persistence | Existing `Notification` model and notification infrastructure |
+| Privileged audit writes | `PrivilegedAudit` |
+| Legacy audit import | `ImportLegacyPrivilegedAudit` (bounded reconciliation only) |
+
+The shop-document reminder command and `hr:check-document-expiry` are separate workflows. Neither command calls the other or uses a shared generic expiry service. The shop reminder command is scheduled once daily at `01:00` in the configured shop timezone, operates on shop-document eligibility, and does not mutate shop status. The HR command remains responsible for employee-document expiry only.
+
+Private document bytes remain available only through scoped routes that enforce the existing actor, status, object, and audit rules. Runtime privileged operations write through `PrivilegedAudit`; the legacy importer is dry-run by default, applies only a bounded reviewed batch, records provenance, and preserves the source `audit_logs` rows.
+
+## Compatibility GET alias inventory
+
+The following aliases are temporary, capability-protected `GET|HEAD` redirects. They preserve path parameters and query strings, do not resolve models, call controllers/services, or make business decisions, and have no mutation aliases.
+
+| Legacy path | Canonical target | Capability |
+| --- | --- | --- |
+| `/admin/admin` | `/admin/administrators` | `manage_administrators` |
+| `/admin/create-admin` | `/admin/administrators/create` | `manage_administrators` |
+| `/admin/shop-owner-registration-view` | `/admin/registrations` | `review_registrations` |
+| `/admin/registered-shops` | `/admin/shops` | `intervene_accounts` |
+| `/admin/shops/{id}/details` | `/admin/shops/{id}` | `intervene_accounts` |
+| `/admin/user-management` | `/admin/users` | `intervene_accounts` |
+| `/admin/subscription-management` | `/admin/subscriptions` | `manage_plans` |
+| `/admin/data-reports` | `/admin/audit` | `view_privileged_audit` |
+| `/superAdmin/super-admin-user-management` | `/admin/users` | `intervene_accounts` |
+| `/superAdmin/shop-owner-registration-view` | `/admin/registrations` | `review_registrations` |
+| `/superAdmin/flagged-accounts` | `/admin/flagged-accounts` | `moderate_reports` |
+| `/superAdmin/system-monitoring-dashboard` | `/admin/system-monitoring` | `view_monitoring` |
+| `/superAdmin/notification-communication-tools` | `/admin/notifications` | Canonical route boundary |
+| `/superAdmin/data-report-access` | `/admin/audit` | `view_privileged_audit` |
+| `/shop/register` | `/shop-owner-register` | Public registration boundary |
+
+On 2026-08-13, a read-only inventory of the local SQLite snapshot found zero matching relative or absolute legacy `/superAdmin/` or `/admin/` notification action URLs and zero `/admin/shops/*/details` action URLs. This is local evidence only; production rows, external bookmarks, and other deployed databases were not available from this worktree. Historical notification URLs were not rewritten, so the aliases remain until Phase 8 has removal evidence.
+
+Phase 8 may retire an alias only after source references are absent, persisted notification URLs are zero across relative, absolute, and query-string variants, redirect/bookmark telemetry has been reviewed, and a route test proves the old path is no longer required. The inventory must be repeated against the deployed database before removal; a non-zero historical-link count is a reason to retain the safe redirect, never to rewrite historical audit or notification evidence.

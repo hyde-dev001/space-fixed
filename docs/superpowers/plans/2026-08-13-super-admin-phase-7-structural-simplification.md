@@ -677,7 +677,7 @@ git commit -m "refactor: remove duplicate privileged runtime ownership"
 - Test: `tests/Feature/SuperAdmin/PrivilegedLegacyWriterCutoverTest.php`
 - Test: `tests/Feature/SuperAdmin/PrivateSensitiveDocumentAccessTest.php`
 
-- [ ] **Step 1: Document the final runtime owner inventory**
+- [x] **Step 1: Document the final runtime owner inventory**
 
 Record:
 
@@ -694,11 +694,11 @@ Privileged audit writes  -> PrivilegedAudit
 Legacy audit import      -> ImportLegacyPrivilegedAudit (bounded reconciliation only)
 ```
 
-- [ ] **Step 2: Document compatibility retirement criteria**
+- [x] **Step 2: Document compatibility retirement criteria**
 
 List every retained GET alias, target, capability, source-reference count, persisted `notifications.action_url` count/category, known external/bookmark reason, and Phase 8 removal evidence. Include relative and absolute persisted URL forms and query-string variants. Make explicit that aliases cannot accept mutations, cannot query/call domain code, are not permanent public API, and historical notification rows were not rewritten.
 
-- [ ] **Step 3: Verify no ownership regression**
+- [x] **Step 3: Verify no ownership regression**
 
 ```powershell
 php artisan test tests/Feature/Console/SendShopDocumentExpiryRemindersTest.php tests/Feature/SuperAdmin/PrivilegedAuditHistoryTest.php tests/Feature/SuperAdmin/PrivilegedLegacyWriterCutoverTest.php tests/Feature/SuperAdmin/PrivateSensitiveDocumentAccessTest.php tests/Feature/SuperAdmin/PhaseSevenStructuralBoundaryTest.php
@@ -707,7 +707,7 @@ php artisan schedule:list
 
 Expected: PASS; schedule output contains the shop reminder schedule once, and no shop-compliance schedule points at the HR command.
 
-- [ ] **Step 4: Commit ownership documentation**
+- [x] **Step 4: Commit ownership documentation**
 
 ```powershell
 git add -- docs/runbooks/super-admin-operations.md tests/Feature/SuperAdmin/PhaseSevenStructuralBoundaryTest.php
