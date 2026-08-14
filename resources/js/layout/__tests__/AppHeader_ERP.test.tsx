@@ -80,7 +80,7 @@ beforeEach(() => {
   };
 });
 
-it('renders owner identity, mode, server URLs, and portal return action', () => {
+it('renders owner identity and server URLs without a navbar portal action', () => {
   render(<AppHeaderERP />);
 
   expect(screen.getByRole('banner')).toHaveClass('xl:border-b');
@@ -90,10 +90,7 @@ it('renders owner identity, mode, server URLs, and portal return action', () => 
   expect(screen.queryByText('TailAdmin')).not.toBeInTheDocument();
   expect(screen.getByText('North Star Shoes')).toBeInTheDocument();
   expect(screen.getByText('Owner mode')).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: /back to shop owner portal/i })).toHaveAttribute(
-    'href',
-    '/shop-owner/dashboard',
-  );
+  expect(screen.queryByRole('link', { name: /back to shop owner portal/i })).not.toBeInTheDocument();
   expect(screen.getByTestId('notification-bell')).toHaveAttribute('data-base-path', '/api/shop-owner/notifications');
   expect(screen.getByTestId('shop-owner-dropdown')).toHaveAttribute('data-profile-url', '/shop-owner/shop-profile');
   expect(screen.getByTestId('shop-owner-dropdown')).toHaveAttribute('data-logout-url', '/shop-owner/logout');

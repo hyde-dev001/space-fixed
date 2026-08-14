@@ -180,14 +180,6 @@ const AppHeader_ERP: React.FC = () => {
                 </span>
               </div>
             )}
-            {ownerMode && erpUrls?.portal && (
-              <Link
-                href={erpUrls.portal}
-                className="hidden min-h-11 items-center rounded-lg px-3 text-sm font-semibold text-gray-600 transition hover:bg-gray-100 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-blue-200 xl:inline-flex"
-              >
-                Back to Shop Owner Portal
-              </Link>
-            )}
             <NotificationBell 
               basePath={notificationBasePath}
               iconSize={24}
