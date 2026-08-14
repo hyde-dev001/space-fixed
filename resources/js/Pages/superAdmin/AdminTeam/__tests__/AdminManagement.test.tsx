@@ -22,7 +22,7 @@ vi.mock('@inertiajs/react', () => ({
 }));
 
 vi.mock('../../../../layout/AppLayout', () => ({
-  default: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+  default: ({ children }: { children?: React.ReactNode }) => <div data-testid="admin-management-layout">{children}</div>,
 }));
 
 const admin = (overrides: Record<string, unknown> = {}) => ({
@@ -51,6 +51,13 @@ const page = {
 };
 
 describe('AdminManagement server pagination', () => {
+  it('mounts inside the shared app layout for privileged navigation', () => {
+    render(<AdminManagement admins={[]} />);
+
+    const layout = screen.getByTestId('admin-management-layout');
+    expect(layout.contains(screen.getByRole('heading', { name: 'Admin Management' }))).toBe(true);
+  });
+
   it('renders server metrics and requests filters through Inertia', async () => {
     render(
       <AdminManagement

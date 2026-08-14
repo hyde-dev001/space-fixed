@@ -1,5 +1,6 @@
 import { Head, Link, router } from '@inertiajs/react';
 import { useRef, useState } from 'react';
+import AppLayout from '../../../layout/AppLayout';
 
 interface Administrator {
   id: number;
@@ -132,7 +133,7 @@ export default function AdminManagement({ admins = [], stats = {}, filters = {} 
   };
 
   return (
-    <>
+    <AppLayout>
       <Head title="Administrator management" />
       <main className="min-h-screen bg-gray-50 p-6 text-gray-900 dark:bg-gray-900 dark:text-white md:p-8">
         <div className="mx-auto max-w-7xl space-y-8">
@@ -298,6 +299,6 @@ export default function AdminManagement({ admins = [], stats = {}, filters = {} 
           </p>
         </div>
       </main>
-    </>
+    </AppLayout>
   );
 }
