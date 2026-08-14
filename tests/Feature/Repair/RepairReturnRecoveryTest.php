@@ -355,6 +355,7 @@ class RepairReturnRecoveryTest extends TestCase
         $newLeg = $shipment->fresh()->legs()->where('sequence', 3)->firstOrFail();
         $this->assertSame(3, $newLeg->sequence);
         $this->assertSame('pending', $newLeg->status->value);
+        $this->assertSame('scheduled', $newLeg->schedule_status);
         $this->assertSame($deliveryDate, $newLeg->scheduled_delivery_date?->toDateString());
         $this->assertSame('afternoon', $newLeg->delivery_window);
         $this->assertSame('returned', $original->fresh()->resolution_type);

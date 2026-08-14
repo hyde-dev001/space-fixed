@@ -440,6 +440,10 @@ final class RepairDeliveryService
                     ->latest('sequence')
                     ->first();
                 $address = is_array($lockedRepair->intake_address) ? $lockedRepair->intake_address : [];
+                $recoveryDate = data_get($recovery, 'scheduled_delivery_date');
+                $recoveryWindow = data_get($recovery, 'delivery_window');
+                $hasExplicitSchedule = filled($recoveryDate)
+                    && in_array($recoveryWindow, ['morning', 'afternoon'], true);
                 $leg = $existing->legs()->create([
                     'sequence' => ((int) $existing->legs()->max('sequence')) + 1,
                     'leg_type' => 'inbound',
@@ -462,14 +466,12 @@ final class RepairDeliveryService
                     'destination_snapshot' => $existing->legs()->first()?->destination_snapshot,
                     'requires_pickup_proof' => false,
                     'requires_delivery_proof' => true,
-                    'scheduled_delivery_date' => data_get($recovery, 'scheduled_delivery_date')
-                        ?? $previousLeg?->scheduled_delivery_date,
-                    'delivery_window' => data_get($recovery, 'delivery_window')
-                        ?? $previousLeg?->delivery_window,
-                    'schedule_status' => 'scheduled',
+                    'scheduled_delivery_date' => $hasExplicitSchedule ? $recoveryDate : null,
+                    'delivery_window' => $hasExplicitSchedule ? $recoveryWindow : null,
+                    'schedule_status' => $hasExplicitSchedule ? 'scheduled' : 'unscheduled',
                     'distance_km' => data_get($recovery, 'quote.distance_km')
                         ?? $previousLeg?->distance_km,
-                    'estimated_at' => now(),
+                    'estimated_at' => $hasExplicitSchedule ? now() : null,
                 ]);
                 $existing->update([
                     'status' => 'requested',
@@ -479,8 +481,17 @@ final class RepairDeliveryService
                 $this->events->record($existing, $leg, [
                     'event_type' => 'shipment_pickup_retry_requested',
                     'visibility' => 'customer',
-                    'message' => 'Your new pickup has been scheduled.',
+                    'message' => $hasExplicitSchedule
+                        ? 'Your new pickup has been scheduled.'
+                        : 'Your new pickup is awaiting dispatcher scheduling.',
                 ]);
+                if (! $hasExplicitSchedule) {
+                    $this->events->record($existing, $leg, [
+                        'event_type' => 'delivery_schedule_attention',
+                        'message' => 'Delivery schedule requires dispatcher attention.',
+                        'metadata' => ['schedule_status' => 'unscheduled'],
+                    ]);
+                }
 
                 return $existing->fresh(['legs', 'events']);
             }

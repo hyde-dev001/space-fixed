@@ -29,13 +29,15 @@ class SourceShipmentService
 
             $order->loadMissing('shopOwner', 'address');
             $address = $order->address;
-            $schedule = strtolower(trim((string) $order->carrier_company)) === 'shop-owned logistics'
-                ? $this->schedules->estimate(
+            $coverage = strtolower(trim((string) $order->carrier_company)) === 'shop-owned logistics'
+                ? $this->schedules->coverage(
                     $order->shopOwner,
-                    $order->updated_at ?? now(),
                     $address?->latitude !== null ? (float) $address->latitude : null,
                     $address?->longitude !== null ? (float) $address->longitude : null,
                 )
+                : null;
+            $schedule = $coverage !== null
+                ? $this->unscheduledSchedule($coverage['distance_km'] ?? null)
                 : [];
 
             $shipment = $this->shipments->requestShipment([
@@ -66,7 +68,7 @@ class SourceShipmentService
                         'delivery_instructions' => $address?->delivery_instructions,
                     ],
                     ...$schedule,
-                    'estimated_at' => $schedule ? now() : null,
+                    'estimated_at' => ($schedule['schedule_status'] ?? null) === 'scheduled' ? now() : null,
                 ]],
             ]);
 
@@ -168,12 +170,7 @@ class SourceShipmentService
                 ]);
             }
 
-            $schedule = $this->schedules->estimate(
-                $shop,
-                $lockedRepair->intake_logistics_locked_at ?? $lockedRepair->updated_at ?? now(),
-                isset($snapshot['latitude']) ? (float) $snapshot['latitude'] : null,
-                isset($snapshot['longitude']) ? (float) $snapshot['longitude'] : null,
-            );
+            $schedule = $this->unscheduledSchedule($coverage['distance_km'] ?? null);
             $legData = [
                 'leg_type' => 'inbound',
                 'origin_snapshot' => [
@@ -193,7 +190,7 @@ class SourceShipmentService
                     'longitude' => $shop->shop_longitude !== null ? (float) $shop->shop_longitude : null,
                 ],
                 ...$schedule,
-                'estimated_at' => $schedule ? now() : null,
+                'estimated_at' => ($schedule['schedule_status'] ?? null) === 'scheduled' ? now() : null,
             ];
 
             if ($existing) {
@@ -288,12 +285,7 @@ class SourceShipmentService
                 ]);
             }
 
-            $schedule = $this->schedules->estimate(
-                $shop,
-                $lockedRepair->return_logistics_locked_at ?? $lockedRepair->updated_at ?? now(),
-                isset($snapshot['latitude']) ? (float) $snapshot['latitude'] : null,
-                isset($snapshot['longitude']) ? (float) $snapshot['longitude'] : null,
-            );
+            $schedule = $this->unscheduledSchedule($coverage['distance_km'] ?? null);
             if (! empty($requestedSchedule['scheduled_delivery_date'])
                 && in_array($requestedSchedule['delivery_window'] ?? null, ['morning', 'afternoon'], true)) {
                 $schedule = [
@@ -322,7 +314,7 @@ class SourceShipmentService
                     'coverage' => $coverage,
                 ],
                 ...$schedule,
-                'estimated_at' => $schedule ? now() : null,
+                'estimated_at' => ($schedule['schedule_status'] ?? null) === 'scheduled' ? now() : null,
             ];
 
             if ($existing) {
@@ -427,5 +419,15 @@ class SourceShipmentService
                 'metadata' => ['schedule_status' => $schedule['schedule_status']],
             ]);
         }
+    }
+
+    private function unscheduledSchedule(?float $distance = null): array
+    {
+        return [
+            'scheduled_delivery_date' => null,
+            'delivery_window' => null,
+            'schedule_status' => 'unscheduled',
+            'distance_km' => $distance,
+        ];
     }
 }

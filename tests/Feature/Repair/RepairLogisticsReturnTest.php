@@ -341,8 +341,15 @@ class RepairLogisticsReturnTest extends TestCase
         $this->assertSame(12.0, (float) data_get($leg->destination_snapshot, 'coverage.coverage_radius_km'));
         $this->assertSame(14.5995, data_get($leg->origin_snapshot, 'latitude'));
         $this->assertSame(120.9842, data_get($leg->origin_snapshot, 'longitude'));
-        $this->assertNotNull($leg->schedule_status);
-        $this->assertNotNull($leg->estimated_at);
+        $this->assertSame('unscheduled', $leg->schedule_status);
+        $this->assertNull($leg->scheduled_delivery_date);
+        $this->assertNull($leg->delivery_window);
+        $this->assertNull($leg->estimated_at);
+        $this->assertDatabaseHas('delivery_events', [
+            'shipment_id' => $shipment->id,
+            'event_type' => 'delivery_schedule_attention',
+            'visibility' => 'internal',
+        ]);
 
         [$outsideRepair, , $outsideShop] = $this->coveredRepair();
         $outsideRepair->update([
