@@ -15,6 +15,7 @@ import {
   appendRegistrationDocuments,
   type RegistrationDocumentMetadata,
 } from './registrationDocumentPayload';
+import RegistrationDocumentMetadataFields from '@/components/form/RegistrationDocumentMetadataFields';
 
 const CAVITE_CENTER = {
   lat: '14.28140000',
@@ -1704,37 +1705,19 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                     </div>
                     <div className="mb-5 rounded-lg border border-gray-100 bg-gray-50 p-4">
                       <h5 className="text-sm font-semibold text-gray-900">Document validity details</h5>
-                      <p className="mt-1 text-xs text-gray-600">Choose an expiration mode for every document. Mayor&apos;s Permit requires a date.</p>
+                      <p className="mt-1 text-xs text-gray-600">Add an issued date when available. Choose an expiration mode for every document. Mayor&apos;s Permit requires a date.</p>
                       <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">
                         {documentMetadataFields.map(([slot, label]) => {
                           const metadata = documentMetadata[slot];
 
                           return (
                             <div key={slot} className="rounded-lg border border-gray-200 bg-white p-3">
-                              <label htmlFor={`${slot}_expiration_mode`} className="mb-1 block text-xs font-semibold text-gray-700">
-                                {label} expiration
-                              </label>
-                              <select
-                                id={`${slot}_expiration_mode`}
-                                value={metadata.expirationMode}
-                                onChange={(event) => updateDocumentMetadata(slot, {
-                                  expirationMode: event.target.value as RegistrationDocumentMetadata['expirationMode'],
-                                  expiresOn: event.target.value === 'none' ? '' : metadata.expiresOn,
-                                })}
-                                className="h-10 w-full rounded-md border border-gray-300 bg-white px-2 text-sm text-gray-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                              >
-                                <option value="dated">Has an expiration date</option>
-                                <option value="none">No expiration</option>
-                              </select>
-                              {metadata.expirationMode === 'dated' && (
-                                <input
-                                  aria-label={`${label} expiration date`}
-                                  type="date"
-                                  value={metadata.expiresOn ?? ''}
-                                  onChange={(event) => updateDocumentMetadata(slot, { expiresOn: event.target.value })}
-                                  className="mt-2 h-10 w-full rounded-md border border-gray-300 px-2 text-sm text-gray-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                                />
-                              )}
+                              <RegistrationDocumentMetadataFields
+                                idPrefix={slot}
+                                label={label}
+                                metadata={metadata}
+                                onChange={(updates) => updateDocumentMetadata(slot, updates)}
+                              />
                             </div>
                           );
                         })}
@@ -2004,30 +1987,12 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                                   Remove
                                 </button>
                               </div>
-                              <label htmlFor={`supporting-${doc.id}-expiration-mode`} className="mb-1 block text-xs font-semibold text-gray-700">
-                                Expiration
-                              </label>
-                              <select
-                                id={`supporting-${doc.id}-expiration-mode`}
-                                value={doc.metadata.expirationMode}
-                                onChange={(event) => updateSupportingMetadata(doc.id, {
-                                  expirationMode: event.target.value as RegistrationDocumentMetadata['expirationMode'],
-                                  expiresOn: event.target.value === 'none' ? '' : doc.metadata.expiresOn,
-                                })}
-                                className="h-10 w-full rounded-md border border-gray-300 bg-white px-2 text-sm text-gray-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                              >
-                                <option value="dated">Has an expiration date</option>
-                                <option value="none">No expiration</option>
-                              </select>
-                              {doc.metadata.expirationMode === 'dated' && (
-                                <input
-                                  aria-label={`Supporting document ${index + 1} expiration date`}
-                                  type="date"
-                                  value={doc.metadata.expiresOn ?? ''}
-                                  onChange={(event) => updateSupportingMetadata(doc.id, { expiresOn: event.target.value })}
-                                  className="mt-2 h-10 w-full rounded-md border border-gray-300 px-2 text-sm text-gray-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                                />
-                              )}
+                              <RegistrationDocumentMetadataFields
+                                idPrefix={`supporting-${doc.id}`}
+                                label={`Supporting document ${index + 1}`}
+                                metadata={doc.metadata}
+                                onChange={(updates) => updateSupportingMetadata(doc.id, updates)}
+                              />
                               <DropzoneComponent
                                 onDrop={(files) => handleAdditionalDocumentDrop(doc.id, files)}
                                 accept={SHOP_OWNER_IMAGE_ACCEPT}
