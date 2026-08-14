@@ -8,7 +8,7 @@ import Input from '../../../components/form/input/InputField';
 import DropzoneComponent from '../../../components/form/form-elements/DropZone';
 import { MailIcon, LockIcon, UserIcon } from '../../../icons';
 import { parsePhilippineAddress, type RegistrationAddress } from './registrationAddress';
-import { GPS_POSITION_OPTIONS } from '@/utils/geolocation';
+import { GPS_POSITION_OPTIONS, getCurrentPositionWithTimeout } from '@/utils/geolocation';
 
 type FormErrors = Record<string, string>;
 
@@ -263,7 +263,7 @@ export default function Register() {
         ? [addressLocation.latitude, addressLocation.longitude]
         : PHILIPPINES_CENTER;
       const map = L.map(mapRef.current).setView(initial, addressLocation ? 16 : 5);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors',
       }).addTo(map);
       const marker = L.marker(initial, { draggable: true }).addTo(map);
@@ -330,7 +330,7 @@ export default function Register() {
     }
   };
 
-  const handleUseMyGPS = () => {
+  const handleUseMyGPS = async () => {
     if (!navigator.geolocation) {
       setGeoError('Geolocation is not supported by your browser.');
       return;
@@ -340,26 +340,27 @@ export default function Register() {
     const requestId = ++locationRequestRef.current;
     setAddressLocation(null);
     setGeoError('');
-    navigator.geolocation.getCurrentPosition(
-      async ({ coords }) => {
-        try {
-          await reverseGeocode(coords.latitude, coords.longitude, requestId);
-        } catch {
-          if (requestId === locationRequestRef.current) {
-            setGeoError('Could not identify your GPS address. Please try searching instead.');
-          }
-        } finally {
-          setGettingGPS(false);
-        }
-      },
-      () => {
+    try {
+      const { coords } = await getCurrentPositionWithTimeout(GPS_POSITION_OPTIONS);
+      if (requestId !== locationRequestRef.current) return;
+      setGettingGPS(false);
+
+      try {
+        await reverseGeocode(coords.latitude, coords.longitude, requestId);
+      } catch {
         if (requestId === locationRequestRef.current) {
-          setGeoError('Could not get your location. Please allow location access.');
+          setGeoError('Could not identify your GPS address. Please try searching instead.');
         }
+      }
+    } catch {
+      if (requestId === locationRequestRef.current) {
+        setGeoError('Could not get your location. Please allow location access.');
+      }
+    } finally {
+      if (requestId === locationRequestRef.current) {
         setGettingGPS(false);
-      },
-      GPS_POSITION_OPTIONS,
-    );
+      }
+    }
   };
 
   const handleNext = async () => {

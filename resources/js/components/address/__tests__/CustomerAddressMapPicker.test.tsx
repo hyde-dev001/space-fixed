@@ -352,6 +352,26 @@ describe('CustomerAddressMapPicker', () => {
     });
   });
 
+  it('stops locating when the browser never returns a GPS callback', async () => {
+    vi.useFakeTimers();
+    const getCurrentPosition = vi.fn();
+    Object.defineProperty(navigator, 'geolocation', {
+      configurable: true,
+      value: { getCurrentPosition },
+    });
+    render(<CustomerAddressMapPicker value={null} onChange={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Use My Location' }));
+    expect(screen.getByRole('button', { name: 'Locating…' })).toBeDisabled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+
+    expect(screen.getByRole('button', { name: 'Use My Location' })).toBeEnabled();
+    expect(screen.getByRole('status')).toHaveTextContent(/could not get your location/i);
+  });
+
   it('keeps the location action readable on the light address form', () => {
     render(<CustomerAddressMapPicker value={null} onChange={vi.fn()} />);
 

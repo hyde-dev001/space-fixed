@@ -16,7 +16,7 @@ import {
   type RegistrationDocumentMetadata,
 } from './registrationDocumentPayload';
 import RegistrationDocumentMetadataFields from '@/components/form/RegistrationDocumentMetadataFields';
-import { GPS_POSITION_OPTIONS } from '@/utils/geolocation';
+import { GPS_POSITION_OPTIONS, getCurrentPositionWithTimeout } from '@/utils/geolocation';
 
 const CAVITE_CENTER = {
   lat: '14.28140000',
@@ -521,7 +521,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
       const initLng = parseFloat(geoLng) || parseFloat(CAVITE_CENTER.lng);
 
       const map = L.map(mapRef.current).setView([initLat, initLng], 16);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors',
       }).addTo(map);
 
@@ -580,7 +580,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     circleRef.current.setLatLng([lat, lng]);
   }, [geoLat, geoLng]);
 
-  const handleUseMyGPS = () => {
+  const handleUseMyGPS = async () => {
     if (!navigator.geolocation) {
       setGeoError('Geolocation is not supported by your browser.');
       return;
@@ -589,36 +589,33 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     setGettingGPS(true);
     setGeoError('');
 
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const lat = pos.coords.latitude.toFixed(8);
-        const lng = pos.coords.longitude.toFixed(8);
-        setGeoLat(lat);
-        setGeoLng(lng);
+    try {
+      const pos = await getCurrentPositionWithTimeout(GPS_POSITION_OPTIONS);
+      const lat = pos.coords.latitude.toFixed(8);
+      const lng = pos.coords.longitude.toFixed(8);
+      setGeoLat(lat);
+      setGeoLng(lng);
+      setGettingGPS(false);
 
-        try {
-          const res = await fetch(
-            `/api/address/geocode?latitude=${lat}&longitude=${lng}`,
-          );
-          if (!res.ok) throw new Error('Address lookup failed');
-          const data = await res.json();
-          if (data.display_name) {
-            setGeoAddress(data.display_name);
-            setFormData(prev => ({ ...prev, businessAddress: data.display_name }));
-            setSelectedCity(inferCaviteCity(data.display_name));
-          }
-        } catch {
-          // Keep coordinates even if reverse geocoding fails.
+      try {
+        const res = await fetch(
+          `/api/address/geocode?latitude=${lat}&longitude=${lng}`,
+        );
+        if (!res.ok) throw new Error('Address lookup failed');
+        const data = await res.json();
+        if (data.display_name) {
+          setGeoAddress(data.display_name);
+          setFormData(prev => ({ ...prev, businessAddress: data.display_name }));
+          setSelectedCity(inferCaviteCity(data.display_name));
         }
-
-        setGettingGPS(false);
-      },
-      () => {
-        setGeoError('Could not get your location. Please allow location access.');
-        setGettingGPS(false);
-      },
-      GPS_POSITION_OPTIONS,
-    );
+      } catch {
+        // Keep coordinates even if reverse geocoding fails.
+      }
+    } catch {
+      setGeoError('Could not get your location. Please allow location access.');
+    } finally {
+      setGettingGPS(false);
+    }
   };
 
   const handleSaveAddress = async () => {

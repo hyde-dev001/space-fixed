@@ -8,7 +8,9 @@ import BusinessScalingSettings, { type BusinessScalingPayload } from './componen
 import BusinessDocumentCompliance, { type ComplianceSlot } from './components/BusinessDocumentCompliance';
 import { requiredPolicySectionKeys } from '../../../utils/policySectionResolver';
 import type { PolicySectionKey, ShopPolicyEditorStateResponse, ShopPolicySections } from '../../../types/shopPolicy';
-import { GPS_POSITION_OPTIONS } from '../../../utils/geolocation';
+import { GPS_POSITION_OPTIONS, getCurrentPositionWithTimeout } from '../../../utils/geolocation';
+
+const GEOLOCATION_LOOKUP_TIMEOUT_MS = 10_000;
 
 type ApprovalSetting = {
 	enabled: boolean;
@@ -453,15 +455,21 @@ const ShopSetting: React.FC = () => {
 	const circleRef = useRef<any>(null);
 
 	const reverseGeocode = async (lat: string | number, lng: string | number): Promise<string | null> => {
+		const controller = new AbortController();
+		const timeoutId = window.setTimeout(() => controller.abort(), GEOLOCATION_LOOKUP_TIMEOUT_MS);
+
 		try {
 			const res = await fetch(
 				`/api/address/geocode?latitude=${lat}&longitude=${lng}`,
+				{ signal: controller.signal },
 			);
 			if (!res.ok) throw new Error('Address lookup failed');
 			const data = await res.json();
 			return typeof data?.display_name === 'string' && data.display_name.trim() !== '' ? data.display_name : null;
 		} catch {
 			return null;
+		} finally {
+			window.clearTimeout(timeoutId);
 		}
 	};
 
@@ -1496,9 +1504,10 @@ const ShopSetting: React.FC = () => {
 			const initLng = parseFloat(geoLng) || 120.9842;
 
 			const map = L.map(mapRef.current!).setView([initLat, initLng], 16);
-			L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+			L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
 				attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
 			}).addTo(map);
+			window.setTimeout(() => map.invalidateSize(), 0);
 
 			const marker = L.marker([initLat, initLng], { draggable: true }).addTo(map);
 			const circle = L.circle([initLat, initLng], { radius: geoRadius, color: '#2563eb', fillOpacity: 0.08 }).addTo(map);
@@ -1553,38 +1562,32 @@ const ShopSetting: React.FC = () => {
 		}
 	}, [geoLat, geoLng]);
 
-	const handleUseMyGPS = () => {
+	const handleUseMyGPS = async () => {
 		if (!navigator.geolocation) {
 			setGeoError('Geolocation is not supported by your browser.');
 			return;
 		}
 		setGettingGPS(true);
 		setGeoError(null);
-		navigator.geolocation.getCurrentPosition(
-			async (pos) => {
-				try {
-					const lat = pos.coords.latitude.toFixed(8);
-					const lng = pos.coords.longitude.toFixed(8);
-					setGeoLat(lat);
-					setGeoLng(lng);
 
-					const detectedAddress = await reverseGeocode(lat, lng);
-					if (detectedAddress) {
-						setGeoAddress(detectedAddress);
-						setAddressSearch(detectedAddress);
-					}
-				} catch {
-					setGeoError('Could not identify your GPS address. Please try searching instead.');
-				} finally {
-					setGettingGPS(false);
-				}
-			},
-			() => {
-				setGeoError('Could not get your location. Please allow location access.');
-				setGettingGPS(false);
-			},
-			GPS_POSITION_OPTIONS,
-		);
+		try {
+			const pos = await getCurrentPositionWithTimeout(GPS_POSITION_OPTIONS);
+			const lat = pos.coords.latitude.toFixed(8);
+			const lng = pos.coords.longitude.toFixed(8);
+			setGeoLat(lat);
+			setGeoLng(lng);
+			setGettingGPS(false);
+
+			const detectedAddress = await reverseGeocode(lat, lng);
+			if (detectedAddress) {
+				setGeoAddress(detectedAddress);
+				setAddressSearch(detectedAddress);
+			}
+		} catch {
+			setGeoError('Could not get your location. Please allow location access and try again.');
+		} finally {
+			setGettingGPS(false);
+		}
 	};
 
 	const handleAddressSearch = async () => {
