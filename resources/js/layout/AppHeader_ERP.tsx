@@ -170,16 +170,6 @@ const AppHeader_ERP: React.FC = () => {
         >
           {/* Right Side Actions */}
           <div className="flex items-center gap-2 2xsm:gap-3">
-            {ownerMode && erpActor && (
-              <div className="hidden items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 dark:border-blue-500/20 dark:bg-blue-500/10 sm:flex">
-                <span className="max-w-40 truncate text-sm font-semibold text-gray-800 dark:text-white">
-                  {erpActor.name}
-                </span>
-                <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[11px] font-semibold text-white">
-                  Owner mode
-                </span>
-              </div>
-            )}
             <NotificationBell 
               basePath={notificationBasePath}
               iconSize={24}
