@@ -72,12 +72,6 @@ export default function UserDropdown() {
     if (result.isConfirmed) {
       router.post('/user/logout', {}, {
         preserveState: false,
-        onSuccess: () => {
-          setTimeout(() => { router.visit('/user/login'); }, 200);
-        },
-        onError: () => {
-          router.visit('/user/login');
-        }
       });
     }
   }

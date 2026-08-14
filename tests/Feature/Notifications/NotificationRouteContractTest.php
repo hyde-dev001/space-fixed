@@ -8,15 +8,26 @@ use Tests\TestCase;
 class NotificationRouteContractTest extends TestCase
 {
     #[Test]
-    public function customer_notification_routes_start_the_session_before_authentication(): void
+    public function session_backed_notification_routes_start_the_session_before_authentication(): void
     {
-        $source = file_get_contents(dirname(__DIR__, 3).'/routes/api.php');
+        foreach ([
+            'api.notifications.unread-count',
+            'hr.notifications.unread_count',
+            'erp.notifications.unread-count',
+            'shop_owner.notifications.unread-count',
+        ] as $routeName) {
+            $route = app('router')->getRoutes()->getByName($routeName);
+            $middleware = $route?->gatherMiddleware() ?? [];
+            $webIndex = array_search('web', $middleware, true);
+            $authIndex = collect($middleware)->search(
+                fn ($middleware) => is_string($middleware) && str_starts_with($middleware, 'auth:'),
+            );
 
-        $this->assertIsString($source);
-        $this->assertStringContainsString(
-            "Route::prefix('notifications')->middleware(['web', 'auth:user'])",
-            $source,
-        );
+            $this->assertNotNull($route, "Notification route [{$routeName}] is missing.");
+            $this->assertIsInt($webIndex, "Notification route [{$routeName}] must include the web middleware.");
+            $this->assertIsInt($authIndex, "Notification route [{$routeName}] must include an auth middleware.");
+            $this->assertLessThan($authIndex, $webIndex, "Notification route [{$routeName}] must start the session before authentication.");
+        }
     }
 
     #[Test]

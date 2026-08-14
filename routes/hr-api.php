@@ -44,7 +44,7 @@ use App\Http\Controllers\Erp\HR\HolidayCalendarController;
  * ERP Notification Routes (All ERP users)
  * Notifications are available to all authenticated ERP staff, regardless of department
  */
-Route::prefix('api/hr/notifications')->middleware(['auth:user', 'shop.isolation'])->group(function () {
+Route::prefix('api/hr/notifications')->middleware(['web', 'auth:user', 'shop.isolation'])->group(function () {
     Route::get('/', [NotificationController::class, 'index'])->name('hr.notifications.index');
     Route::get('/recent', [NotificationController::class, 'recent'])->name('hr.notifications.recent');
     Route::get('/unread-count', [NotificationController::class, 'unreadCount'])->name('hr.notifications.unread_count');
@@ -62,7 +62,7 @@ Route::prefix('api/hr/notifications')->middleware(['auth:user', 'shop.isolation'
  * All routes require authentication and permission-based access
  * Users must have at least one HR-related permission (view-employees, view-attendance, view-payroll)
  */
-Route::prefix('api/hr')->middleware(['auth:user', 'permission:access-hr-dashboard|access-employee-directory|access-attendance-records|access-leave-approvals|access-overtime-approvals|manage-attendance|access-payslip-generation|access-view-payslip|manage-salary-changes|approve-salary-change|override-salary-retroactive', 'shop.isolation'])->group(function () {
+Route::prefix('api/hr')->middleware(['web', 'auth:user', 'permission:access-hr-dashboard|access-employee-directory|access-attendance-records|access-leave-approvals|access-overtime-approvals|manage-attendance|access-payslip-generation|access-view-payslip|manage-salary-changes|approve-salary-change|override-salary-retroactive', 'shop.isolation'])->group(function () {
     // ============================================
     // DASHBOARD & ANALYTICS
     // ============================================
@@ -302,7 +302,7 @@ Route::prefix('api/hr')->middleware(['auth:user', 'permission:access-hr-dashboar
  * Accessible to ALL authenticated employees (no role restriction)
  * All employees need to clock in/out regardless of their role
  */
-Route::prefix('api/staff')->middleware(['auth:user'])->group(function () {
+Route::prefix('api/staff')->middleware(['web', 'auth:user'])->group(function () {
     // ============================================
     // SELF-SERVICE ATTENDANCE
     // ============================================

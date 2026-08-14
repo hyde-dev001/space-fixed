@@ -59,12 +59,6 @@ export default function ShopOwnerDropdown({ actor, urls }: ShopOwnerDropdownProp
     if (result.isConfirmed) {
       router.post(urls?.logout || '/shop-owner/logout', {}, {
         preserveState: false,
-        onSuccess: () => {
-          setTimeout(() => { router.visit('/user/login'); }, 200);
-        },
-        onError: () => {
-          router.visit('/user/login');
-        }
       });
     }
   }
