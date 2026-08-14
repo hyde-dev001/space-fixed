@@ -80,7 +80,7 @@ beforeEach(() => {
   };
 });
 
-it('renders owner identity and server URLs without a navbar portal action', () => {
+it('hides the center owner identity pill while keeping the account dropdown', () => {
   render(<AppHeaderERP />);
 
   expect(screen.getByRole('banner')).toHaveClass('xl:border-b');
@@ -88,10 +88,11 @@ it('renders owner identity and server URLs without a navbar portal action', () =
   expect(compactBrand).toHaveClass('xl:hidden');
   expect(compactBrand.querySelector('svg')).not.toBeInTheDocument();
   expect(screen.queryByText('TailAdmin')).not.toBeInTheDocument();
-  expect(screen.getByText('North Star Shoes')).toBeInTheDocument();
-  expect(screen.getByText('Owner mode')).toBeInTheDocument();
+  expect(screen.queryByText('North Star Shoes')).not.toBeInTheDocument();
+  expect(screen.queryByText('Owner mode')).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: /back to shop owner portal/i })).not.toBeInTheDocument();
   expect(screen.getByTestId('notification-bell')).toHaveAttribute('data-base-path', '/api/shop-owner/notifications');
+  expect(screen.getByTestId('shop-owner-dropdown')).toBeInTheDocument();
   expect(screen.getByTestId('shop-owner-dropdown')).toHaveAttribute('data-profile-url', '/shop-owner/shop-profile');
   expect(screen.getByTestId('shop-owner-dropdown')).toHaveAttribute('data-logout-url', '/shop-owner/logout');
 });
