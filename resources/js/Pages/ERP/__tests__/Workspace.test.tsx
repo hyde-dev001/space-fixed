@@ -53,6 +53,11 @@ it('shows available and unavailable modules with a server-provided manage link',
     'href',
     '/shop-owner/settings',
   );
+  expect(screen.getAllByRole('link', { name: /back to shop owner portal/i })).toHaveLength(1);
+  expect(screen.getByRole('link', { name: /back to shop owner portal/i })).toHaveAttribute(
+    'href',
+    '/shop-owner/dashboard',
+  );
 });
 
 it('links an available module card to its server-provided entry page', () => {

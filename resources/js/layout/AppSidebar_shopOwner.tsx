@@ -297,7 +297,11 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
   const isPathActive = useCallback(
     (path?: string) => {
       if (!path) return false;
-      return url === path || url.startsWith(path);
+
+      const currentPath = normalizePath(url);
+      const targetPath = normalizePath(path);
+
+      return currentPath === targetPath || currentPath.startsWith(`${targetPath}/`);
     },
     [url]
   );
@@ -517,8 +521,11 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
       {items.filter((item) => (
         isMenuItemVisible(item)
         && (!item.subItems || item.subItems.some(isSubItemVisible))
-      )).map((nav, index) => (
-        <li key={nav.name}>
+      )).map((nav, index) => {
+        const active = nav.route ? isActive(nav.route) : isPathActive(nav.path);
+
+        return (
+          <li key={nav.name}>
           {nav.subItems ? (
             <button
               onClick={() => handleSubmenuToggle(index, menuType)}
@@ -565,23 +572,16 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
                 href={getHref(nav.route, nav.path) || "#"}
                 prefetch={SIDEBAR_PREFETCH}
                 cacheFor={SIDEBAR_PREFETCH_CACHE}
-                className={`menu-item group ${nav.route
-                    ? isActive(nav.route)
-                      ? "menu-item-active"
-                      : "menu-item-inactive"
-                    : isPathActive(nav.path)
-                      ? "menu-item-active"
-                      : "menu-item-inactive"
+                aria-current={active ? "page" : undefined}
+                className={`menu-item group ${active
+                    ? "menu-item-active lg:border-l-2 lg:border-brand-500 lg:shadow-theme-sm"
+                    : "menu-item-inactive lg:border-l-2 lg:border-transparent"
                   }`}
               >
                 <span
-                  className={`menu-item-icon-size w-6 h-6 ${nav.route
-                      ? isActive(nav.route)
-                        ? "menu-item-icon-active"
-                        : "menu-item-icon-inactive"
-                      : isPathActive(nav.path)
-                        ? "menu-item-icon-active"
-                        : "menu-item-icon-inactive"
+                  className={`menu-item-icon-size w-6 h-6 ${active
+                      ? "menu-item-icon-active"
+                      : "menu-item-icon-inactive"
                     }`}
                 >
                   {nav.icon}
@@ -646,8 +646,9 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
               </ul>
             </div>
           )}
-        </li>
-      ))}
+          </li>
+        );
+      })}
     </ul>
   );
 

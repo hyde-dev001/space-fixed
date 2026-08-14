@@ -192,7 +192,7 @@ it('uses the top-level module state when the nested auth state is unavailable', 
 });
 
 it('shows core-only navigation in the owner ERP picker', () => {
-  state.url = '/shop-owner/erp/workspace';
+  state.url = '/shop-owner/erp/workspace/?tab=modules';
   state.role = 'MANAGER';
   state.roles = ['MANAGER'];
   state.permissions = ['access-manager-dashboard', 'access-attendance-records', 'access-view-payslip'];
@@ -215,6 +215,7 @@ it('shows core-only navigation in the owner ERP picker', () => {
     '/shop-owner/erp/workspace',
   );
   expect(screen.getByRole('link', { name: /ERP Workspace/i })).toHaveClass('menu-item-active');
+  expect(screen.getByRole('link', { name: /ERP Workspace/i })).toHaveAttribute('aria-current', 'page');
   expect(screen.getByRole('link', { name: /^Dashboard$/i })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: /Audit Logs/i })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: /User Access Control/i })).toBeInTheDocument();
